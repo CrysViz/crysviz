@@ -22,6 +22,8 @@
 //   setRightReserve(px)                 width the pane occupies on the right
 //   setBottomReserve(px)                height it occupies when docked bottom
 //   floatPanelForDrag(panel, pos)       float a pulled-out window mid-gesture
+//   hasCompactLauncher(panel) -> bool   the window currently has its own round
+//                                       launcher icon in the scene
 
 import { resizeRenderer } from '../WindowAndSceneControls.js';
 import { requestRender } from '../../render/index.js';
@@ -208,9 +210,15 @@ function renderTabs() {
     // which is most of what the dock is hiding when you collapse it. The tab
     // names the front window because that is the one reopening lands on; the
     // rest stay reachable from the header strip once the pane is open.
-    const front = visible.find((p) => p.id === frontId) || visible[0];
+    //
+    // A window that already has its own launcher icon in the scene is skipped:
+    // one sheet, one way in. Only windows with no other way back get a tab, so
+    // a pane holding just Structure info shows no tab at all, while an editor
+    // docked beside it keeps one.
+    const needTab = visible.filter((p) => !hooks?.hasCompactLauncher?.(p));
+    const front = needTab.find((p) => p.id === frontId) || needTab[0];
     fillTabs(tabs, front ? [front] : [], { suffix: ' ▸' });
-    tabs.hidden = visible.length === 0;
+    tabs.hidden = !front;
   }
 }
 
@@ -438,6 +446,13 @@ export function refreshSideDock() {
   if (!frontValid) setSideFront(visible[visible.length - 1]);
   else renderTabs();
   syncSceneAndSidePanels();
+}
+
+/** Re-derive the tab strips alone. Called when a window's launcher icon
+ *  appears or disappears, which changes who still needs a pull-tab. Does no
+ *  layout sync — refreshSideDock() would re-enter through the reserve. */
+export function refreshSideDockTabs() {
+  renderTabs();
 }
 
 /**

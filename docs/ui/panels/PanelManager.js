@@ -14,7 +14,7 @@ import { PanelWindow, applyEdgeAnchors } from './PanelWindow.js';
 import {
   initSideDock, sideDockPanel, sideUndockPanel,
   setSideDockCollapsed, setSideDockSide, refreshSideDock, getSideDockLayout,
-  sideDockOverlapPx,
+  sideDockOverlapPx, refreshSideDockTabs,
   applySideDockLayout, resetSideDockLayout, wantsSideDockDrop,
   sideDockDropSideAt, updateSideDockHint,
 } from './SideDock.js';
@@ -318,6 +318,7 @@ export function initPanelSystem() {
     setRightReserve,
     setBottomReserve,
     floatPanelForDrag: (panel, pos) => floatPanel(panel, pos, { noDockShift: true, user: true }),
+    hasCompactLauncher: (panel) => compactLaunchers.has(panel.id),
   });
   applySideDockLayout(stored.rightDock);
 
@@ -1314,17 +1315,24 @@ function buildCompactLauncher(panel) {
 
 /** Create/remove the launcher icons for the current viewport. */
 function updateCompactLaunchers() {
+  let changed = false;
   for (const panel of panels.values()) {
     if (!compactHomeOf(panel)) continue;
     const el = compactLaunchers.get(panel.id);
     const want = compactViewport && !panel.el.hidden;
-    if (want && !el) buildCompactLauncher(panel);
-    else if (!want && el) {
+    if (want && !el) {
+      buildCompactLauncher(panel);
+      changed = true;
+    } else if (!want && el) {
       el.remove();
       compactLaunchers.delete(panel.id);
+      changed = true;
     }
   }
   applyCompactLauncherPositions();
+  // Gaining or losing a launcher changes which side-docked windows still need
+  // a pull-tab on the collapsed edge.
+  if (changed) refreshSideDockTabs();
 }
 
 /** Keep each launcher clear of the pane it opens, so a raised sheet pushes its
