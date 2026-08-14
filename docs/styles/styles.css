@@ -2336,9 +2336,10 @@ body > #structureInfoContent {
   justify-content: center;
 }
 
-/* World (x/y/z) and lattice (a/b/c) triplets. A grouping box only the mobile
-   rung uses: `contents` means the six stacks are laid out by #cameraPanel
-   directly, exactly as they were before the wrappers existed. */
+/* World (x/y/z) and lattice (a/b/c) triplets — a grouping box for the markup
+   only. `contents` at every width, so the six stacks are always laid out by
+   #cameraPanel itself: the flat desktop row and the mobile rung's 4x2 grid
+   both want the stacks as their own direct items. */
 .camera-axis-group {
   display: contents;
 }

@@ -9,8 +9,8 @@
 // toolbar to the icon's left without moving the icon.
 //
 // The dot's own visibility is a persisted preference (panelPrefs.backgroundDot,
-// default off on touch or a phone-width window), not a width rule — a
-// desktop-sized run shows it at every rung, with a taller floor below 720px.
+// default off everywhere), not a width rule — this run opts in explicitly so
+// the dot's stack-clearing stays observable at every rung.
 'use strict';
 const H = require('../harness');
 
@@ -54,6 +54,12 @@ async function state(page) {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page);
 
+  // Dot is off by default; turn it on so its stack-tracking is testable.
+  await page.evaluate(async () => {
+    (await import('./ui/panels/PanelManager.js')).setPanelPref('backgroundDot', true);
+    (await import('./ui/BackgroundPicker.js')).setBackgroundDotVisible(true);
+  });
+
   // Force compaction: hide the dock and shrink the window so the scene is too
   // narrow for both toolbars. (Both events recheck compaction.)
   await H.clickById(page, 'mobileMenuToggle'); // hide dock
@@ -72,10 +78,9 @@ async function state(page) {
     s.view.rect.top >= s.measure.rect.bottom - 1,
     `measureBottom=${s.measure.rect.bottom} viewTop=${s.view.rect.top}`);
   // The dot used to be hidden outright by a width rule here. It now follows
-  // the `backgroundDot` panel pref, whose default is decided ONCE at load
-  // (touch, or a window that opens narrower than this rung, turns it off), so
-  // a desktop-loaded page resized down still shows it — which is what makes
-  // its stack-clearing observable at this rung at all.
+  // the `backgroundDot` panel pref (off by default, enabled above), so the
+  // enabled dot stays visible at this rung and its stack-clearing is
+  // observable here at all.
   H.check('background dot clears the icon stack at mobile width',
     !s.dotHidden && near(s.dotTop, Math.max(120, s.stackBottom + 20)),
     `dotHidden=${s.dotHidden} dotTop=${s.dotTop} stackBottom=${s.stackBottom}`);

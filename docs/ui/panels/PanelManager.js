@@ -70,11 +70,10 @@ const panelPrefDefaults = {
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
   legendTransparent: false, // Composition Display: no window chrome, swatches+text only
   // The on-canvas background picker: a 54px drag-and-resize affordance that
-  // competes with the scene's own gestures on touch and takes the corner a
-  // phone needs for the compact icons. Off by default there, on everywhere
-  // else — decided once at load like dragByHandleOnly, and a stored choice
+  // competes with the scene's own gestures and takes the corner a phone
+  // needs for the compact icons. Off by default everywhere — a stored choice
   // (Visual ▸ "Background picker on canvas") always wins.
-  backgroundDot: !window.matchMedia('(pointer: coarse), (max-width: 720px)').matches,
+  backgroundDot: false,
   axisStepButtons: 'longpress', // 'on'|'off'|'longpress' for View step-rotate arrows
 };
 const panelPrefs = { ...panelPrefDefaults };

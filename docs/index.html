@@ -322,10 +322,10 @@
          step-rotate the camera about that axis (world x/y/z, lattice a/b/c);
          clicking the letter views along the axis.
 
-         The two triplets are wrapped so a narrow screen can stack world above
-         lattice (responsive.css, mobile rung). The wrappers are
-         `display: contents` at every other width, so the flat single row is
-         untouched — and they sit OUTSIDE .camera-axis-stack because
+         The two triplets are wrapped to keep world and lattice legible here;
+         the wrappers are `display: contents` at every width, so #cameraPanel
+         lays the six stacks out itself (flat row on desktop, 4x2 grid at the
+         mobile rung). They sit OUTSIDE .camera-axis-stack because
          cameraAngleControl.js reaches the stack with .closest() and counts
          exactly six of them. -->
     <div class="camera-axis-group">

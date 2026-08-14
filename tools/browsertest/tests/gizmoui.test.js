@@ -45,6 +45,13 @@ const countDrawnGizmoPixels = async (page) => {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page);
 
+  // The background dot is off by default everywhere (panelPrefs.backgroundDot);
+  // this file exercises its drag/resize/lock, so opt in like a user would.
+  await page.evaluate(async () => {
+    (await import('./ui/panels/PanelManager.js')).setPanelPref('backgroundDot', true);
+    (await import('./ui/BackgroundPicker.js')).setBackgroundDotVisible(true);
+  });
+
   const axesReady = await page.evaluate(() => {
     const gizmo = document.getElementById('axesGizmo');
     if (gizmo) gizmo.style.display = '';

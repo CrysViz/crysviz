@@ -322,31 +322,39 @@
   }
 
   /* ---- styles.css: camera tools stack instead of running across ----
-     Two rows of three (world above lattice) beside a lock-over-reset column,
-     rather than one eight-item row that wraps wherever it happens to run out.
-     The wrappers are display:contents everywhere else. */
+     One 4x2 grid — x y z lock / a b c cube — rather than one eight-item row
+     that wraps wherever it happens to run out. Every button sits on a shared
+     grid line; the earlier two-column form spanned the lock+reset pair across
+     both rows, which left it floating between them.
+     --sp-3 on both axes is the gap .measurement-group's clamp tops out at, so
+     the two toolbars space alike. */
   #cameraPanel {
     display: grid;
-    grid-template-columns: auto auto;
+    grid-template-columns: repeat(4, auto);
+    gap: var(--sp-3);
     justify-content: start;
     align-items: center;
   }
 
-  .camera-axis-group {
-    display: flex;
-    align-items: center;
-    gap: clamp(4px, 1.1111vw, var(--sp-3));
-    /* Both triplets in column 1; auto-flow puts world on row 1, lattice on
-       row 2. The separators are display:none, so they claim no cell. */
-    grid-column: 1;
+  /* The wrapper dissolves like .camera-axis-group already does, so its two
+     buttons are the grid's own items and can take a column each. */
+  .camera-reset-stack {
+    display: contents;
   }
 
-  /* `span 2`, not `1 / -1`: the rows here are implicit, and -1 resolves
-     against the explicit row grid, so it would collapse back onto row 1. */
-  .camera-reset-stack {
-    grid-column: 2;
-    grid-row: 1 / span 2;
-    flex-direction: column;
+  /* Column 4, one per row. Explicit placement runs before auto-placement, so
+     the six stacks flow around them into columns 1-3 in DOM order. */
+  #cameraTools .camera-lock-btn {
+    grid-column: 4;
+    grid-row: 1;
+  }
+
+  #cameraTools .camera-tool-reset-btn {
+    grid-column: 4;
+    grid-row: 2;
+    /* Square like everything else here — the desktop row's extra width made it
+       the primary action of a single strip, which this grid no longer is. */
+    width: 32px;
   }
 
   /* ---- styles.css: camera tools ----
