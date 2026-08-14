@@ -359,8 +359,7 @@ export class PanelWindow {
           : []),
         { label: 'Main dock', checked: mode === 'left', onSelect: () => move('left') },
         { label: 'Side dock', checked: mode === 'right', onSelect: () => move('right') },
-        ...(this.hooks.canFloat?.() === false && this.hooks.defaultFloats?.(this)
-          ? [] : [{ label: 'Default', onSelect: () => move('default') }]),
+        { label: 'Default', onSelect: () => move('default') },
       ],
     }];
     const extra = typeof this.def.menuSections === 'function'

@@ -367,10 +367,11 @@
 
     <div class="camera-separator"></div>
 
-    <!-- Reset button -->
-    <button class="camera-tool-reset-btn" id="resetView" title="Reset Camera View">
-      <div class="reset-icon"></div>
-      <span>Reset</span>
+    <!-- Reset button. The cube reads as "back to the standard view"; it sits
+         inline with the axis buttons (WindowAndSceneControls.js wraps it and
+         the camera lock in .camera-reset-stack at startup). -->
+    <button class="camera-tool-reset-btn" id="resetView" title="Reset view">
+      <img class="reset-icon" src="./data/icons/cube-icon.svg" alt="Reset view">
     </button>
     </div>
    </div>

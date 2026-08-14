@@ -292,6 +292,9 @@ export function registerDefaultPanels() {
     title: 'Structure',
     lifecycle: 'persistent',
     infoMd: './data/structureInfo.md',
+    compactIcon: './data/icons/info-icon.svg',
+    compactLabel: 'Toggle Structure Info',
+    compactStackAfter: 'view', // dynamic anchor: pinned below View's live height
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
       // Fixed width while floating, so the panel doesn't shrink-wrap to

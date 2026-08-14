@@ -211,6 +211,9 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
   opacity: 0.45;
   font-size: var(--fs-md);
   line-height: 1;
+  /* The grip is the drag handle even where the bar around it gives the
+     vertical axis back to the dock scroller (responsive.css, coarse rung). */
+  touch-action: none;
 }
 
 .cv-panel-fold,
@@ -461,6 +464,9 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
   width: 26px;
   height: 26px;
   pointer-events: none;
+  /* White-filled SVGs on a --chrome-1 chip: invisible once that chip is a 5%
+     wash on a light palette, which is what --icon-filter-bright flips. */
+  filter: var(--icon-filter-bright);
 }
 
 /* Expanded-while-compact: unfold to the icon's LEFT, not below it. The row is
@@ -478,6 +484,15 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
   margin-right: var(--sp-3-5);
   border-radius: var(--radius-md);
   border-top: 1px solid var(--line-1);
+  /* The panel is width:max-content, so on a phone an unfolded toolbar runs off
+     the left edge (and a tall one off the bottom). Budget: the 54px icon it
+     unfolds beside, this margin, the anchor's 20px right offset, and a left
+     margin to match. min-width:0 because a flex item's auto minimum is its
+     min-content width, which outranks max-width and would pin it wide. */
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: calc(100vw - 54px - var(--sp-3-5) - 40px);
+  max-height: calc(100dvh - 32px);
 }
 
 /* ---- mobile ----

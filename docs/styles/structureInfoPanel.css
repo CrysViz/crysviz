@@ -69,11 +69,14 @@
   padding: 0 var(--sp-3-5);
   margin-right: var(--sp-1);
 }
+/* min-width, not a fixed width: the class also carries "Spins/Forces", and
+   the compact rung's .btn-mini font bump overflowed a hard 50px box. The
+   Apply/Reset labels are all under 50px, so their rows are unchanged. */
 .si-action-btn-narrow {
   height: 32px;
   font-size: var(--fs-sm);
   min-width: 50px;
-  width: 50px;
+  width: auto;
   padding: 0 var(--sp-1);
 }
 .si-action-btn-wide {

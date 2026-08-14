@@ -373,6 +373,43 @@ async function resetPerspective(page) {
     touch('pointerup', 702, pair.second, pair.y),
   ]);
 
+  // A measurement tap is delivered as the canvas' own pointerup. Stopping it
+  // there starved TrackballControls' document-level pointerup listener, so the
+  // finger stayed in its registry and the next one-finger drag was read as a
+  // pinch — with noPan set, touch input went zoom-only after the first pick.
+  await resetPerspective(page);
+  await page.evaluate(async () => {
+    const { mode } = await import('./state/store.js');
+    mode.measureMode = 'distance';
+  });
+  const tapPoint = await firstAtomProjection(page);
+  await dispatchSyntheticPointerEvents(page, [
+    touch('pointerdown', 901, tapPoint.x, tapPoint.y),
+    touch('pointerup', 901, tapPoint.x, tapPoint.y),
+  ]);
+  const afterTap = await sceneSelectionState(page);
+  const tapQuaternion = await quaternion(page);
+  const tapDistance = await cameraMetric(page);
+  await dispatchSyntheticPointerEvents(page, [
+    touch('pointerdown', 902, center.x, center.y),
+    touch('pointermove', 902, center.x + 70, center.y + 30),
+    touch('pointermove', 902, center.x + 120, center.y + 60),
+  ], 902);
+  await waitForQuiescence(page);
+  const dragQuaternion = await quaternion(page);
+  const dragDistance = await cameraMetric(page);
+  await dispatchSyntheticPointerEvents(page, [touch('pointerup', 902, center.x + 120, center.y + 60)]);
+  H.check('one finger still rotates after a measurement tap',
+    afterTap.measurements === 1
+      && Math.max(...dragQuaternion.map((value, i) => Math.abs(value - tapQuaternion[i]))) > 1e-3
+      && Math.abs(dragDistance / tapDistance - 1) < 0.01,
+    JSON.stringify({ afterTap, tapDistance, dragDistance }));
+  await page.evaluate(async () => {
+    const { mode, measurements } = await import('./state/store.js');
+    mode.measureMode = 'none';
+    measurements.selectedAtoms = [];
+  });
+
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

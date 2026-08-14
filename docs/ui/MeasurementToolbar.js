@@ -206,11 +206,8 @@ export function setupMeasurementToolbar() {
   clearBtn.addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation(); clearAllMeasureMode();
   });
-
-  // Touch handlers for better mobile support
-  [distanceBtn, angleBtn, hideBtn, clearBtn].forEach(btn => {
-    btn.addEventListener('touchstart', (e) => {
-      e.preventDefault(); e.stopPropagation(); btn.click();
-    });
-  });
+  // No touchstart shims: the page sets initial-scale=1, so a tap fires click
+  // with no delay. The old handlers fired the mode toggle on finger-DOWN and
+  // called btn.click() by hand, which double-toggled wherever preventDefault
+  // didn't suppress the compatibility click.
 }

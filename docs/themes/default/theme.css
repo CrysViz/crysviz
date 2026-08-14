@@ -417,6 +417,10 @@
      which no light theme could reach — a light palette sets this to `none`. */
   --icon-filter: invert(1);
 
+  /* The opposite polarity: the compact toolbar glyphs are white-on-transparent
+     SVGs, already legible on a dark chip. A light palette inverts these. */
+  --icon-filter-bright: none;
+
   /* Native form-control rendering (the <select> popup especially). A light
      palette must flip this or the UA paints dark widgets on a light panel. */
   --color-scheme: dark;

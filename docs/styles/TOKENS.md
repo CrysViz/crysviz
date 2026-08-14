@@ -879,6 +879,7 @@ tidiness.
 | token | value | role | call sites |
 |---|---|---|---|
 | `--icon-filter` | `invert(1)` | inversion applied to the theme-picker glyphs; light palettes set it to `none` | `controlPanel.css` `.theme-icon` |
+| `--icon-filter-bright` | `none` | the same knob for *white*-source SVGs (compact toolbar icons); polarity is reversed, so light palettes set it to `invert(1)` | `panelWindow.css` `.cv-panel-compact-btn img` |
 | `--switch-knob` | `#ffffff` | the toggle knob — contrasts with its track, not with the panel | `toggle_styles.css` `.toggle_slider::before`, `.toggle_slider_dual::before` |
 | `--switch-off` | `#cccccc` | the toggle's OFF track fill | `toggle_styles.css` `.toggle_slider` |
 

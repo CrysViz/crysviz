@@ -58,7 +58,10 @@ const PREFS_KEY = 'panelPrefs';
 const panelPrefDefaults = {
   dragIntoDock: true,
   dragOutOfDock: true,
-  dragByHandleOnly: false,
+  // Touch has no hover and no cursor to aim with, so a finger on the title bar
+  // is indistinguishable from a finger starting a scroll. Handle-only drag is
+  // the touch default; a stored pref (Settings) still wins.
+  dragByHandleOnly: window.matchMedia('(pointer: coarse)').matches,
   smallDragHandles: false, // collapsed-bar handles: original thin always-visible strip
   exportGpuMemoryGiB: 1, // PNG export render-surface GPU memory budget (GiB)
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
@@ -128,9 +131,11 @@ const hooks = {
   // The ≡ menu's Position section: move a window to one of its three homes,
   // or back to its per-panel defaults (the old ⌂ button).
   positionPanel(panel, mode, { auto = false, restorePos = null } = {}) {
-    const refusedFloat = mode === 'float'
-      || (mode === 'default' && defaultDockOf(panel.def) === false);
-    if (refusedFloat && !canFloatPanels()) return;
+    // Only an explicit Float is refused on a compact viewport. 'default' stays
+    // available there: applyPanelDefaults docks a float-by-default panel
+    // instead, which is the placement the compact viewport would have given it
+    // anyway — suppressing the item left those panels with no way back.
+    if (mode === 'float' && !canFloatPanels()) return;
     if (!auto) clearAutoDocked(panel);
     if (mode === 'default') {
       applyPanelDefaults(panel);
@@ -188,7 +193,6 @@ const hooks = {
   updateSideDockHint,
   getPref: getPanelPref,
   canFloat: canFloatPanels,
-  defaultFloats(panel) { return defaultDockOf(panel.def) === false; },
   onUserMutation: clearAutoDocked,
 };
 

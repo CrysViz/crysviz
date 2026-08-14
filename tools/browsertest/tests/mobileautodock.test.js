@@ -120,12 +120,13 @@ async function reorderToBottom(page, id) {
     await page.evaluate(() => !document.querySelector('.cv-panel-menu')));
 
   // The dock is off-canvas while compact, but its menu remains the same DOM
-  // chrome. Float and the floating Default are both gated.
+  // chrome. Only Float is gated: Default stays, falling back to a dock for a
+  // float-by-default window (exercised below).
   await page.evaluate(() => document.querySelector('.cv-panel[data-panel-id="info"] .cv-panel-menu-btn').click());
   const mobileMenu = await page.evaluate(() =>
     [...document.querySelectorAll('.cv-panel-menu-item')].map((item) => item.textContent));
-  H.check('compact Position menu has no floating affordance',
-    !mobileMenu.includes('Float') && !mobileMenu.includes('Default'), JSON.stringify(mobileMenu));
+  H.check('compact Position menu drops Float but keeps Default',
+    !mobileMenu.includes('Float') && mobileMenu.includes('Default'), JSON.stringify(mobileMenu));
   await page.keyboard.press('Escape');
   const refusedState = await page.evaluate(async () => {
     const { getPanel } = await import('./ui/panels/PanelManager.js');
@@ -260,6 +261,22 @@ async function reorderToBottom(page, id) {
     newState.mobileNewWindow.dock === 'left' && newState.mobileNewWindow.inMain
       && !newState.mobileNewWindow.autoDocked && newState.mobileNewWindow.floatPos === null,
   JSON.stringify(newState.mobileNewWindow));
+
+  // Default on a float-by-default window while compact: floating is refused,
+  // so it applies the same Main-dock fallback instead of doing nothing.
+  const compactDefault = await page.evaluate(async () => {
+    const { getPanel } = await import('./ui/panels/PanelManager.js');
+    const panel = getPanel('mobileNewWindow');
+    panel.hooks.positionPanel(panel, 'default');
+    return {
+      dock: panel.dock,
+      floating: panel.el.classList.contains('cv-floating'),
+      inMain: !!document.querySelector('#dock > .cv-panel[data-panel-id="mobileNewWindow"]'),
+    };
+  });
+  H.check('compact Default docks a float-by-default window instead of floating it',
+    compactDefault.dock === 'left' && compactDefault.inMain && !compactDefault.floating,
+  JSON.stringify(compactDefault));
 
   // Closed hide-mode panel: expansion must update its stored placement even
   // while its DOM is detached, then reopening on the large screen floats it.

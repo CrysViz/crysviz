@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Isometric cube seen from the canonical [1,1,1] direction the reset
+       restores. White faces + dark edges, matching camera-icon.svg. -->
+  <path d="M256 52 462 171v170L256 460 50 341V171Z" fill="#ffffff" stroke="#000000" stroke-width="28" stroke-linejoin="round"/>
+  <path d="M256 256 50 171M256 256l206-85M256 256v204" fill="none" stroke="#000000" stroke-width="24" stroke-linecap="round"/>
+</svg>

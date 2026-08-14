@@ -61,11 +61,17 @@ body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-colla
   position: fixed;
   top: 0;
   bottom: 0;
-  right: calc(var(--split-pane-fraction, 0.5) * 100vw);
+  /* Same floor/ceiling .split-pane's min-width/max-width impose below: on a
+     phone the raw fraction lands under 220px, the pane clamps and the handle
+     doesn't — it visibly detaches from the edge it is supposed to hug. */
+  right: clamp(220px, calc(var(--split-pane-fraction, 0.5) * 100vw), 85vw);
   width: 6px;
   cursor: col-resize;
   background: var(--panel-border);
   z-index: var(--z-dock-handle);
+  /* Without this the browser takes the drag as a scroll and pointercancel
+     ends the resize before it starts (SideDock.js captures the pointer). */
+  touch-action: none;
 }
 
 .split-handle:hover,
@@ -119,7 +125,8 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane {
 
 #viewArea.split-dock-bottom .split-handle {
   top: auto;
-  bottom: calc(var(--split-pane-fraction, 0.5) * 100dvh);
+  /* Mirrors the pane's own min-height/max-height clamp above. */
+  bottom: clamp(220px, calc(var(--split-pane-fraction, 0.5) * 100dvh), 85dvh);
   right: 0;
   left: var(--ui-total-width, 0px);
   width: auto;

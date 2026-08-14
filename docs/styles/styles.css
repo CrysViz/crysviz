@@ -1139,6 +1139,11 @@ body.panel-hidden #axesLegend {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
+  /* Was white-space:nowrap — a single unbreakable row is wider than a phone.
+     Wrapping (still centred on the anchor) keeps it on screen. */
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: calc(100vw - 24px);
   gap: var(--sp-3-5);
   padding: var(--sp-3) var(--sp-3-5);
   border-radius: var(--radius-md);
@@ -1146,7 +1151,6 @@ body.panel-hidden #axesLegend {
   border: 1px solid var(--wash-4);
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(10px);
-  white-space: nowrap;
 }
 .cv-crop-hint {
   font-size: var(--fs-base);
@@ -2134,6 +2138,9 @@ z-index:var(--z-overlay-widget); pointer-events:none;
   display: flex;
   gap: var(--sp-3);
   align-items: center;
+  /* Compact mode unfolds this row beside a 54px icon; without wrap it runs
+     straight off a phone's left edge. */
+  flex-wrap: wrap;
 }
 
 /* Until ui/panels/defaultPanels.js adopts them into their floating panel
@@ -2209,6 +2216,9 @@ body > #structureInfoContent {
 }
 
 #cameraTools .camera-tool-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: var(--sp-2) var(--sp-3-5);
   font-size: var(--fs-lg);
   color: var(--fg-1);
@@ -2223,6 +2233,14 @@ body > #structureInfoContent {
   min-height: 32px;
   flex-direction: row;
   gap: 0;
+}
+
+/* The cube glyph sits on the saturated --danger fill, not on a panel wash, so
+   it stays white in every palette — no --icon-filter-bright here. */
+#cameraTools .camera-tool-reset-btn .reset-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 #cameraTools .camera-tool-btn:hover {
@@ -2253,25 +2271,27 @@ body > #structureInfoContent {
   display: none;
 }
 
-/* Lock button + Reset button, stacked so the lock reads as "modifies what
-   Reset/switching structures do" rather than one more view shortcut in the
-   wrapping row (see setupCameraButtons in WindowAndSceneControls.js). */
+/* Lock + Reset, wrapped by setupCameraButtons (WindowAndSceneControls.js).
+   Laid out in-line with the axis buttons: as a separate column above Reset the
+   lock read as a stray floating control. Same gap as #cameraPanel's own so the
+   whole thing is one evenly spaced row. */
 .camera-reset-stack {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--sp-3);
 }
 
+/* Sized like the axis buttons now that it shares their row. */
 #cameraTools .camera-lock-btn {
   padding: var(--sp-1);
-  min-width: 26px;
-  min-height: 26px;
+  min-width: 32px;
+  min-height: 32px;
 }
 
 #cameraTools .camera-lock-btn svg {
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
 }
 
 /* Persistent highlight while unlocked (not just on hover, like the other
@@ -2586,4 +2606,57 @@ body {
 body:not(.tracer-pipeline) .material-editor,
 body:not(.tracer-pipeline) .tracer-only-control {
   display: none;
+}
+
+/* WebGL startup-failure alert (ui/WindowAndSceneControls.js). It renders while
+   app init is aborting, which is why it was written with inline styles — but
+   theme.css and this file are static <link>s in <head>, so both are parsed
+   before any module runs. Only the async #theme-active override could be
+   missing, and every token below has a base value. */
+.cv-webgl-fail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-confirm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+.cv-webgl-fail-box {
+  max-width: 520px;
+  margin: var(--sp-5);
+  padding: var(--sp-5) var(--sp-6);
+  border-radius: var(--radius-md);
+  background: var(--popup-bg);
+  color: var(--ink-5);
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg);
+  line-height: var(--lh-normal);
+  box-shadow: 0 8px 40px rgb(var(--shadow-rgb) / 0.6);
+}
+
+.cv-webgl-fail-title {
+  margin: 0 0 var(--sp-3-5) 0;
+  font-size: var(--fs-xl);
+  color: var(--fg-1);
+}
+
+.cv-webgl-fail-text {
+  margin: 0 0 var(--sp-3-5) 0;
+}
+
+.cv-webgl-fail-text:last-of-type {
+  margin-bottom: var(--sp-5);
+}
+
+.cv-webgl-fail-close {
+  padding: var(--sp-2) var(--sp-5);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  background: var(--chrome-4);
+  color: var(--fg-1);
+  font-family: var(--font-ui);
+  font-size: var(--fs-lg);
 }

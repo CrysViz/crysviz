@@ -7,6 +7,9 @@
 // height), the background dot drops below the stack, and none of it fires off
 // Measure's ordinary (non-compact) toolbar height. Clicking an icon unfolds its
 // toolbar to the icon's left without moving the icon.
+//
+// The dot itself is hidden below the mobile rung (720px), so its stack-bottom
+// tracking is asserted at the widths where it is actually on screen.
 'use strict';
 const H = require('../harness');
 
@@ -41,6 +44,7 @@ async function state(page) {
       view: panel('view'),
       stackBottom,
       dotTop: dot ? dot.getBoundingClientRect().top : null,
+      dotHidden: dot ? getComputedStyle(dot).display === 'none' : null,
     };
   });
 }
@@ -66,9 +70,14 @@ async function state(page) {
   H.check('icons stack without overlap (View below Measure, both collapsed)',
     s.view.rect.top >= s.measure.rect.bottom - 1,
     `measureBottom=${s.measure.rect.bottom} viewTop=${s.view.rect.top}`);
-  H.check('background dot drops to the stack bottom (+20)',
-    near(s.dotTop, s.stackBottom + 20) && s.stackBottom > 0,
-    `dotTop=${s.dotTop} stackBottom=${s.stackBottom}`);
+  // 720px is the mobile rung, where the dot is hidden outright (it is a
+  // drag-a-colour affordance with no touch equivalent, and it wants the same
+  // corner as the icon stack). Its --compact-stack-bottom tracking is still
+  // asserted, at desktop width, further down.
+  H.check('background dot is hidden at mobile width',
+    s.dotHidden === true, `dotHidden=${s.dotHidden}`);
+  H.check('the icon stack still publishes --compact-stack-bottom',
+    s.stackBottom > 0, `stackBottom=${s.stackBottom}`);
 
   const viewTopBothCollapsed = s.view.rect.top;
   const measureIconLeft = s.measure.rect.left;
@@ -87,9 +96,9 @@ async function state(page) {
   H.check('View icon pushed down below Measure\'s expanded height, no overlap',
     s.view.rect.top >= s.measure.rect.bottom - 1 && s.view.rect.top > viewTopBothCollapsed + 5,
     `viewTop=${s.view.rect.top} measureBottom=${s.measure.rect.bottom} was=${viewTopBothCollapsed}`);
-  H.check('dot follows the taller stack (tracks --compact-stack-bottom)',
-    near(s.dotTop, s.stackBottom + 20) && s.stackBottom >= s.view.rect.bottom - 1,
-    `dotTop=${s.dotTop} stackBottom=${s.stackBottom} viewBottom=${s.view.rect.bottom}`);
+  H.check('--compact-stack-bottom follows the taller stack',
+    s.stackBottom >= s.view.rect.bottom - 1,
+    `stackBottom=${s.stackBottom} viewBottom=${s.view.rect.bottom}`);
 
   // Collapse Measure again: View returns to just below Measure's icon.
   await page.click('.cv-panel[data-panel-id="measure"] .cv-panel-compact-btn');
@@ -131,6 +140,11 @@ async function state(page) {
   s = await state(page);
   H.check('dock shown at narrow width compacts the toolbars',
     s.measure.compact && s.view.compact, `measure=${s.measure.compact} view=${s.view.compact}`);
+  // Above the mobile rung the dot is still shown, and still keeps clear of the
+  // icon stack (the tracking that used to be checked at 720px).
+  H.check('visible dot tracks --compact-stack-bottom above the mobile rung',
+    !s.dotHidden && near(s.dotTop, Math.max(120, s.stackBottom + 20)),
+    `dotHidden=${s.dotHidden} dotTop=${s.dotTop} stackBottom=${s.stackBottom}`);
   await H.clickById(page, 'mobileMenuToggle'); // hide dock (scene grows)
   await page.waitForTimeout(400);
   s = await state(page);
