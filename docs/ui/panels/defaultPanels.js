@@ -294,7 +294,9 @@ export function registerDefaultPanels() {
     infoMd: './data/structureInfo.md',
     compactIcon: './data/icons/info-icon.svg',
     compactLabel: 'Toggle Structure Info',
-    compactStackAfter: 'view', // dynamic anchor: pinned below View's live height
+    // Its own corner, not the Measure/View stack: the full panel lives at the
+    // bottom right, so the icon it collapses into stays where the window was.
+    compactAnchor: { right: 20, bottom: 20 },
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
       // Fixed width while floating, so the panel doesn't shrink-wrap to

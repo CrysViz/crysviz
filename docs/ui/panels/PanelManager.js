@@ -1164,13 +1164,18 @@ function applyCompactPositions() {
   document.documentElement.style.setProperty('--compact-stack-bottom', `${compactStackBottomPx()}px`);
 }
 
-/** Lowest bottom edge of any CURRENTLY-compact icon/toolbar. Checks
+/** Lowest bottom edge of the CURRENTLY-compact top stack. Checks
  *  panel.compact explicitly: Measure is right-anchored in its normal toolbar
- *  layout too, and reacting to that ordinary height would be wrong. */
+ *  layout too, and reacting to that ordinary height would be wrong.
+ *
+ *  Bottom-anchored icons (Structure info) are excluded: everything reading
+ *  this (the background dot) uses it to sit BELOW the top stack, and an icon
+ *  already hugging the bottom edge would push them off screen. */
 function compactStackBottomPx() {
   let bottom = 0;
   for (const panel of panels.values()) {
     if (!panel.compactBtn || !panel.compact || panel.docked || !panel.el.isConnected) continue;
+    if (compactAnchorFor(panel)?.top === undefined) continue;
     const rect = panel.el.getBoundingClientRect();
     if (rect.height) bottom = Math.max(bottom, rect.bottom);
   }
