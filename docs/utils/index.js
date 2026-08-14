@@ -12,8 +12,14 @@ export {
 // Shared "Auto Range" formula for magnitude-driven color bars:
 export { computeAutoRange, roundToSigFigs } from './AutoRange.js';
 
+// Shared bounded webfont loading for asynchronous rendering/export paths:
+export { loadCrysVizFonts, crysVizFontsLoaded } from './FontLoading.js';
+
 // Rich-text (HTML/LaTeX-shorthand) rendering for color-bar legends:
 export {
   normalizeLegendMarkup, applyLegendHtml, legendPlainText,
   parseLegendSegments, drawLegendRichText,
 } from './LegendRichText.js';
+
+// Shared long-press gesture for scene-resident widgets:
+export { wireLongPress } from './LongPress.js';

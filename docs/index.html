@@ -7,6 +7,7 @@
     <meta name="referrer" content="no-referrer">
     <title>CrysViz Crystal Structure Viewer</title>
     <script type="module" src="./host/early.js"></script>
+    <link rel="stylesheet" href="./styles/fonts.css">
     <!-- Theme base (design tokens) loads first so component CSS can use the
          tokens; the active theme override (#theme-active) loads LAST so a theme
          can override component rules. Both managed by ui/ThemeManager.js. -->
@@ -22,7 +23,7 @@
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
     <link rel="stylesheet" href="./styles/info_button_styles.css">
     <link rel="stylesheet" href="./styles/EOSPanel.css">
-    <link rel="stylesheet" href="./styles/rightDock.css">
+    <link rel="stylesheet" href="./styles/sideDock.css">
     <link rel="stylesheet" href="./styles/DummySplitPanel.css">
     <link rel="stylesheet" href="./styles/forcePanel.css">
     <link rel="stylesheet" href="./styles/bondLengthHistogram.css">
@@ -237,13 +238,13 @@
     </div>
     <div id="viewArea">
       <div id="view"></div>
-      <!-- Right dock shell (docs/ui/panels/RightDock.js): regular panel
+      <!-- Side dock shell (docs/ui/panels/SideDock.js): regular panel
            windows dock here as tabs — #splitPaneBody hosts their .cv-panel
            elements, the header strip selects the front one, and dragging a
-           window to the right border drops it in (#rightDockDropHint is the
+           window to the right border drops it in (#sideDockDropHint is the
            drop highlight). -->
       <div id="splitHandle" class="split-handle" hidden title="Drag to resize"></div>
-      <aside id="splitPane" class="split-pane" hidden aria-label="Right dock">
+      <aside id="splitPane" class="split-pane" hidden aria-label="Side dock">
         <div class="split-pane-header">
           <div id="splitPaneHeaderTabs" class="split-pane-header-tabs" role="tablist"></div>
           <button type="button" id="splitPaneInfoBtn" class="info-button" title="About this window" hidden>i</button>
@@ -252,9 +253,9 @@
         </div>
         <div class="split-pane-body" id="splitPaneBody"></div>
       </aside>
-      <div id="splitPaneTabs" class="split-pane-tabs" hidden aria-label="Right dock windows"></div>
+      <div id="splitPaneTabs" class="split-pane-tabs" hidden aria-label="Side dock windows"></div>
       <div class="split-pane-overlay" id="splitPaneOverlay"></div>
-      <div id="rightDockDropHint" hidden></div>
+      <div id="sideDockDropHint" hidden></div>
     </div>
 
     <div id="aboutOverlay" hidden>

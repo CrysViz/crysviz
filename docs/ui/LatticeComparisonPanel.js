@@ -72,7 +72,7 @@ function renderLatticeComparisonContent(L1_matrix, L2_matrix, canvas, table, con
   ctx.strokeStyle = "#666";
   ctx.fillStyle = "#fff";
   ctx.lineWidth = 1;
-  ctx.font = `${12 * dpi}px sans-serif`;
+  ctx.font = `${12 * dpi}px 'CrysViz Sans', 'CrysViz Sans Math', sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 

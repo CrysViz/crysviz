@@ -7,7 +7,7 @@
 // This is a *curated* surface: only the symbols actually consumed by other
 // domains are re-exported. Add to it when a new cross-domain function is needed.
 
-import { captureSceneToPng, isPngCaptureInProgress } from './ImageExportModule.js';
+import { captureSceneToPng, isPngCaptureInProgress, computeContentScreenBox } from './ImageExportModule.js';
 import {
   registerPipeline, listPipelines, getActivePipeline, setActivePipeline,
   isTracerPipelineActive,
@@ -25,7 +25,8 @@ export {
 } from './AtomsFracUpdateModule.js';
 
 export {
-  rebuildChargeBadges, updateChargeBadges, disposeChargeBadges, formatCharge, parseChargeInput,
+  rebuildChargeBadges, updateChargeBadges, disposeChargeBadges, clearChargeTextureCache,
+  formatCharge, parseChargeInput,
 } from './ChargeBadgeModule.js';
 
 export {
@@ -66,10 +67,12 @@ export {
 
 export { removeSpins, updateSpins, deleteSpins, computeSpinColor } from './SpinModule.js';
 
-export { setupAxisControls, setupAxisLongPress, applyRotationFromUI } from './cameraAngleControl.js';
+export {
+  setupAxisControls, setupAxisLongPress, setAxisStepButtonsMode, applyRotationFromUI,
+} from './cameraAngleControl.js';
 
 export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
 
-export { captureSceneToPng, isPngCaptureInProgress };
+export { captureSceneToPng, computeContentScreenBox, isPngCaptureInProgress };
 
 export { registerPipeline, listPipelines, getActivePipeline, setActivePipeline, isTracerPipelineActive };

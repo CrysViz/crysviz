@@ -36,6 +36,9 @@ class BridgeSurfaceTests(unittest.TestCase):
         connection = mock.Mock()
         connection.recv_bytes.side_effect = EOFError
         webview = mock.MagicMock()
+        webview.settings = {}
+        settings_at_start = {}
+        webview.start.side_effect = lambda **kwargs: settings_at_start.update(webview.settings)
         window = webview.create_window.return_value
 
         runtime = HostRuntime(connection, [], gui="qt", debug=True)
@@ -48,6 +51,7 @@ class BridgeSurfaceTests(unittest.TestCase):
             min_size=(640, 480), js_api=runtime._bridge_api,
         )
         webview.start.assert_called_once_with(debug=True, private_mode=False, gui="qt")
+        self.assertEqual(settings_at_start["ALLOW_DOWNLOADS"], True)
 
     def test_save_image_preparation_reserves_private_output_and_discards_invalid_request(self):
         runtime = HostRuntime(mock.Mock(), [])

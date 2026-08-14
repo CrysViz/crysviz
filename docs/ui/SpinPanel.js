@@ -283,10 +283,9 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   colorMapSelect.value = general.spinColorMap ?? "none";
 
   // --- Log Scale + Auto Range, side by side, above the color bar itself ---
-  // (mirrors ForcePanel.js's own row, for the same reason: docked panels
-  // never show the floating color bar's burger menu at all —
-  // .cv-colorbar-menu-wrap is display:none until .cv-colorbar-floating — so
-  // a docked bar needs its own reachable controls, not just the menu items.)
+  // (mirrors ForcePanel.js's own row, for the same reason: a docked bar
+  // needs its own reachable controls while the floating layout menu is
+  // opened by long press.)
   const barControlsRow = document.createElement("div");
   barControlsRow.className = "cv-force-bar-controls cv-force-bar-controls--spin";
 
@@ -581,6 +580,8 @@ function refreshColorBarVisibility() {
       orientation: general.spinColorBarOrientation,
       flipSide: general.spinColorBarFlipSide,
       size: general.colorBarSize,
+      isLocked: () => general.spinColorBarLocked,
+      onLockChange: (locked) => { general.spinColorBarLocked = locked; },
       onLimitsCommit: (min, max) => {
         general.spinMin = min;
         general.spinMax = max;
@@ -624,7 +625,7 @@ colorMapSelect.addEventListener("change", () => {
 });
 
 // Shared by the side-panel checkbox and the floating color bar's own
-// burger-menu "Log Scale" item (ColorBarWidget.js's onScaleChange) — either
+// layout-menu "Log Scale" item (ColorBarWidget.js's onScaleChange) — either
 // one can flip it, and both stay in sync since this is the only place that
 // actually applies the change. Mirrors ForcePanel.js's applyLogScale.
 function applyLogScale(isLog) {
@@ -649,7 +650,7 @@ function updateNoSpinsNote() {
   noSpinsNote.classList.toggle("cv-force-hidden", !!fileBrowser.selectedStructure?.spins?.length);
 }
 
-// Shared by the Auto Range button and the burger menu's own "Auto Range"
+// Shared by the Auto Range button and the layout menu's own "Auto Range"
 // item (onAutoRange). Recomputes min/max from whichever spins are actually
 // showing right now (manual list or the structure's own), padded 20% of
 // the data's own span on each side (computeAutoRange) — mirrors

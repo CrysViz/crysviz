@@ -59,7 +59,8 @@ export function setIsosurfaceTriangleSortingEnabled(enabled) {
 }
 
 export function getIsosurfaceTriangleSortingEnabled() {
-    return isosurfaceTriangleSortingEnabled;
+    // return isosurfaceTriangleSortingEnabled;
+    return false; // Disabled as rendering engine fixes artifacts this was meant to solve
 }
 
 export function applyIsosurfaceMaterialSettings(isosurface, settings = {}) {

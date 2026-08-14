@@ -1,6 +1,6 @@
 // Force histogram: grouped bar chart (one series per element) of the current
 // structure's |F| distribution, plus a min/mean/max/RMS readout, in ONE
-// ordinary panel window that defaults to the right dock — mirrors
+// ordinary panel window that defaults to the side dock — mirrors
 // BondLengthHistogram.js / CoordinationHistogram.js. Clicking a bar
 // highlights the atoms in that (element, |F|-range) cell in the 3D viewer
 // (click again to clear).
@@ -13,7 +13,7 @@
 // recompute() is a no-op cost-wise unless the panel is actually open.
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
-import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from '../panels/SideDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
   togglePlotTheme,
@@ -184,7 +184,7 @@ export function removeForceHistogramPanel() {
 }
 
 /** The single entry point (the Forces window's "Force Histogram" button):
- *  opens the window — right-dock front tab by default, or wherever the user
+ *  opens the window — side-dock front tab by default, or wherever the user
  *  last dragged it — creating it on first use. */
 export function addForceHistogramPanel() {
   if (getPanel(PANEL_ID)) {
@@ -211,7 +211,7 @@ export function addForceHistogramPanel() {
             <div id="${PLOT_ID}" class="split-item-body"></div>
             <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
             <div class="split-item-actions">
-              <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓</button>
+              <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓︎</button>
               <button type="button" class="split-item-action-btn" data-split-action="export" title="Export PNG">📥</button>
               <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
             </div>

@@ -258,9 +258,9 @@
 }
 
 /* --- Force histogram (ui/AnalysisPanels/ForceHistogram.js) ---
-   One ordinary panel window (right-dock by default), same idiom as
+   One ordinary panel window (side-dock by default), same idiom as
    BondLengthHistogram.js / CoordinationHistogram.js: the plot itself lives in
-   the shared .cv-plot-stack/.split-item layout (rightDock.css), only the
+   the shared .cv-plot-stack/.split-item layout (sideDock.css), only the
    bin/range controls and stats readout below need panel-specific styling. */
 
 .fh-controls-row {

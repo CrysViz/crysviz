@@ -4,6 +4,16 @@ import { app } from '../state/store.js';
 
 // Degrees rotated per arrow-button click (a small, repeatable step).
 const STEP_DEG = 5;
+const cameraPanRight = new THREE.Vector3();
+const cameraPanUp = new THREE.Vector3();
+let stepButtonsMode = 'longpress';
+
+export function setAxisStepButtonsMode(mode) {
+  stepButtonsMode = mode === 'on' || mode === 'off' ? mode : 'longpress';
+  document.querySelectorAll('#cameraTools .camera-axis-stack').forEach((stack) => {
+    stack.classList.toggle('camera-axis-revealed', stepButtonsMode === 'on');
+  });
+}
 
 /**
  * Rigidly rotate the camera a small step around an axis through the cell
@@ -28,6 +38,13 @@ export function applyRotationFromUI(directionDeg, axis) {
   // away the user's zoom and pan on every arrow press, same as the alignment
   // buttons used to.
   const center = app.controls.target.clone();
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
+  app.camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+  app.camera.position.addScaledVector(cameraPanRight, -panX);
+  app.camera.position.addScaledVector(cameraPanUp, -panY);
 
   // 1) pick the rotation axis: world x/y/z by name, or an explicit direction.
   const rotAxis =
@@ -57,6 +74,11 @@ export function applyRotationFromUI(directionDeg, axis) {
 
   // 5) update controls/camera
   app.controls.update();
+  app.camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+  app.camera.position.addScaledVector(cameraPanRight, panX);
+  app.camera.position.addScaledVector(cameraPanUp, panY);
   app.camera.updateMatrixWorld(true);
 }
 
@@ -100,12 +122,12 @@ const LONG_PRESS_MS = 450;
 const REVEAL_HOLD_MS = 2500;
 
 /**
- * Reveals the ▲/▼ step-rotate arrows flanking an axis button (normally
- * hidden — see styles.css's .axis-step) only on a long-press of the button
- * itself, and — the reason this can't just be a CSS :active/:focus rule —
- * suppresses the button's own "view along axis" click when the press that
- * triggered the reveal releases, so long-pressing never also snaps the
- * camera to that axis.
+ * Reveals the ▲/▼ step-rotate arrows flanking an axis button according to the
+ * View window's "Stepwise buttons" menu option: Long press is the default,
+ * On keeps them always visible, and Off disables them. In Long press mode,
+ * the button's own "view along axis" click is suppressed when the press that
+ * triggered the reveal releases, so long-pressing never also snaps the camera
+ * to that axis.
  */
 export function setupAxisLongPress(axis) {
   const stack = document.getElementById(`${axis}Up`)?.closest('.camera-axis-stack');
@@ -118,11 +140,13 @@ export function setupAxisLongPress(axis) {
   let hideTimer = null;
 
   function reveal() {
+    if (stepButtonsMode !== 'longpress') return;
     stack.classList.add('camera-axis-revealed');
     clearTimeout(hideTimer);
     hideTimer = setTimeout(hide, REVEAL_HOLD_MS);
   }
   function hide() {
+    if (stepButtonsMode !== 'longpress') return;
     stack.classList.remove('camera-axis-revealed');
     clearTimeout(hideTimer);
   }
@@ -135,7 +159,9 @@ export function setupAxisLongPress(axis) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     longPressed = false;
     cancelPendingReveal();
+    if (stepButtonsMode !== 'longpress') return;
     pressTimer = setTimeout(() => {
+      if (stepButtonsMode !== 'longpress') return;
       longPressed = true;
       reveal();
     }, LONG_PRESS_MS);

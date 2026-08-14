@@ -6,6 +6,10 @@ body {
   font-family: var(--font-ui);
 }
 
+button, input, select, textarea, optgroup {
+  font-family: inherit;
+}
+
 body {
   display: flex;
   overflow: hidden;
@@ -126,13 +130,18 @@ body.panel-hidden #axesLegend {
   height: 54px;
   border-radius: 50%;
   border: 2px solid var(--dot-border);
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   top: max(120px, calc(var(--compact-stack-bottom, 0px) + 20px));
-  /* --split-reserve is kept in sync with the right dock's pane width (see
-     ui/panels/RightDock.js) so the dot stays clear of the pane instead of
+  /* --split-reserve is kept in sync with the side dock's pane width (see
+     ui/panels/SideDock.js) so the dot stays clear of the pane instead of
      sliding underneath it. 0px when the dock is closed. */
   right: calc(20px + var(--split-reserve, 0px));
   z-index: var(--z-anchor);
+}
+
+.background-dot.background-dot-dragging {
+  cursor: grabbing;
 }
 
 .popup {
@@ -421,12 +430,14 @@ body.panel-hidden #axesLegend {
   line-height: var(--lh-normal);
 }
 
-.png-export-modal .paste-modal-actions #pngDownloadBtn {
+/* The two primary (green) actions: Save (direct programmatic export of the
+   full view) and Choose region… (the crop-overlay flow). */
+.png-export-modal .paste-modal-actions .png-primary {
   flex: 1;
   margin-top: var(--sp-1);
   padding: var(--sp-4) var(--sp-5);
-  background: var(--bg-color);
-  color: var(--fg-1);
+  background: var(--highlight-color);
+  color: var(--fg-1); /* same text color as the theme's other green buttons */
   border: none;
   border-radius: var(--radius);
   font-size: var(--fs-lg);
@@ -434,11 +445,11 @@ body.panel-hidden #axesLegend {
   cursor: pointer;
 }
 
-.png-export-modal .paste-modal-actions #pngDownloadBtn:hover {
+.png-export-modal .paste-modal-actions .png-primary:hover {
   box-shadow: 0 0 4px 2px var(--highlight-color);
 }
 
-.png-export-modal .paste-modal-actions #pngDownloadBtn:disabled {
+.png-export-modal .paste-modal-actions .png-primary:disabled {
   opacity: 0.6;
   cursor: default;
   box-shadow: none;
@@ -1009,13 +1020,13 @@ body.panel-hidden #axesLegend {
   background: var(--hover-color);
 }
 
-/* Small "keyboard shortcuts" trigger, positioned just left of .theme-switch
- * (ui/KeyboardShortcuts.js; controlPanel.css's .theme-switch is
- * left:286px/top:10px — adjust both together if the logo width changes). */
-.shortcuts-help-trigger {
+/* Small Main-dock triggers, positioned immediately left of .theme-switch
+ * (ui/KeyboardShortcuts.js; the About trigger is the left sibling of the
+ * keyboard-shortcuts trigger). */
+.shortcuts-help-trigger,
+.about-help-trigger {
   position: absolute;
   top: 10px;
-  left: 246px;
   z-index: 10;
   width: 30px;
   height: 30px;
@@ -1029,7 +1040,22 @@ body.panel-hidden #axesLegend {
   transition: background-color 0.2s, box-shadow 0.2s;
 }
 
-.shortcuts-help-trigger:hover {
+.about-help-trigger {
+  left: 210px;
+}
+
+.shortcuts-help-trigger {
+  left: 246px;
+}
+
+.about-help-trigger svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+}
+
+.shortcuts-help-trigger:hover,
+.about-help-trigger:hover {
   background: var(--bg-color);
   box-shadow: 0 0 4px 2px var(--bg-color);
 }
@@ -1126,6 +1152,17 @@ body.panel-hidden #axesLegend {
   font-size: var(--fs-base);
   opacity: 0.7;
   color: var(--panel-fg);
+}
+/* The toolbar's own Lock aspect toggle (mirrors the export dialog's). */
+.cv-crop-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-base);
+  color: var(--panel-fg);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
 }
 .cv-crop-confirm,
 .cv-crop-cancel {
@@ -1371,7 +1408,7 @@ input[type="checkbox"] {
 #view {
   flex: 1;
   position: relative;
-  border-radius: 0 20px 20px 0;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -1414,7 +1451,7 @@ input[type="checkbox"] {
   background: transparent;
   border: none;
   color: var(--ok-bright);
-  font-size: 24px;
+  font-size: var(--fs-3xl);
   cursor: pointer;
   line-height: var(--lh-tight);
   padding: var(--sp-1);
@@ -1548,12 +1585,12 @@ input[type="checkbox"] {
 
   .bond-toggle h4 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
   }
 
   .toggle-icon {
-    font-size: 1.25rem;
+    font-size: var(--fs-2xl);
     margin-left: 0.5em;
     transition: transform 0.2s;
   }
@@ -1666,12 +1703,12 @@ justify-content: center;
 
   .spin-toggle h4 {
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
   }
 
   .toggle-icon {
-    font-size: 1.25rem;
+    font-size: var(--fs-2xl);
     margin-left: 0.5em;
     transition: transform 0.2s;
   }
@@ -1762,7 +1799,7 @@ gap: var(--sp-3);
 }
 
 .spin-input-mode-btn.active {
-  background: var(--highlight-color)
+  background: var(--highlight-color);
   color: var(--fg-1);
 }
 
@@ -1828,7 +1865,7 @@ justify-content: center;
   .comparison-toggle h4 {
     color: var(--ok-bright);
     margin: 0;
-    font-size: 1rem;
+    font-size: var(--fs-xl);
     font-weight: var(--fw-bold);
   }
 
@@ -2011,6 +2048,7 @@ z-index: var(--z-overlay-widget); overflow: hidden;
    the scene behind it, in exchange for being draggable from anywhere on it. */
 pointer-events: auto;
 cursor: grab;
+touch-action: none;
 }
 #axesGizmo.cv-gizmo-dragging {
   cursor: grabbing;
@@ -2030,86 +2068,39 @@ z-index:var(--z-overlay-widget); pointer-events:none;
 .dot-a{width:10px;height:10px;background:var(--axis-a);} .dot-b{width:10px;height:10px;background:var(--axis-b);} .dot-c{width:10px;height:10px;background:var(--axis-c);}
 .legend-row{display:flex;align-items:center;gap:var(--sp-2);line-height:1.2;}
 
-/* Drag grip + hamburger menu for the axes gizmo (ui/GizmoDrag.js). A
-   body-level overlay tracking a spot just above #axesGizmo, centered over it
-   (ui/GizmoDrag.js repositions it in JS) rather than a child of #axesGizmo
-   itself, since that box has overflow:hidden (clipping the WebGL canvas to
-   its rounded corners) which would also clip the menu dropdown the moment
-   it opened. Hidden until hovered — same hover-revealed-titlebar treatment
-   as a floating color bar's controls strip (.cv-colorbar-floating
-   .cv-colorbar-controls below), toggled by ui/GizmoDrag.js's own hover
-   tracking rather than CSS :hover (this element isn't a CSS-adjacent
-   sibling of #axesGizmo, so a :hover rule on it couldn't reveal this
-   anyway). */
-.cv-gizmo-controls {
-  position: fixed;
-  /* So the JS-set width (ui/GizmoDrag.js's positionControls, matching the
-     gizmo box's own outer width) isn't inflated further by this element's
-     own padding/border — content-box (the default) would add both on top. */
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  /* Spreads the grip and hamburger menu to the two ends of the strip —
-     width is set in JS (ui/GizmoDrag.js's positionControls) to match the
-     gizmo box's own current width, so this needs a stretch layout instead
-     of the color bars' content-sized "gap" row. */
-  justify-content: space-between;
-  z-index: var(--z-gizmo-controls);
-  transform: translate(-50%, -100%);
-  padding: 5px var(--sp-3-5);
-  border-radius: var(--radius-12);
-  /* --menu-bg, not --bg-color — see .cv-colorbar-menu's comment
-     (toggle_styles.css): the same near-opaque token every other menu/modal
-     uses, instead of the ~80%-opaque theme accent. */
-  background: var(--menu-bg);
-  border: 1px solid var(--line-1);
-  backdrop-filter: blur(10px);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-}
-.cv-gizmo-controls-visible {
-  opacity: 1;
-  pointer-events: auto;
-}
-.cv-gizmo-controls .cv-colorbar-grip {
-  font-size: 18px;
-}
+/* Axes menu (ui/GizmoDrag.js): a body-level dropdown opened by long press at
+   the press coordinates, so the gizmo's overflow clipping cannot affect it. */
 .cv-gizmo-menu-wrap {
-  position: relative;
-  display: flex;
+  position: fixed;
+  z-index: var(--z-gizmo-controls);
+  pointer-events: none;
 }
-.cv-gizmo-menu-wrap .cv-colorbar-menu-btn {
-  width: 22px;
-  height: 22px;
-  font-size: var(--fs-lg);
-  border-radius: var(--radius-4);
+.cv-gizmo-menu-wrap .cv-colorbar-menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: auto;
 }
 .cv-gizmo-dragging {
   opacity: 0.85;
 }
 
-/* Bottom-right resize grip (ui/GizmoDrag.js) — a child of #axesGizmo itself
-   (unlike .cv-gizmo-controls, which lives in its own body-level overlay to
-   escape the box's overflow:hidden): this sits fully within the box's own
-   bounds, so no clipping issue applies. Hidden until hovered (its own
-   pointer-events:none/auto toggle, independent of #axesGizmo's own — that's
-   always pointer-events:auto now that the whole box is a drag handle),
-   toggled by the same JS hover tracking that reveals .cv-gizmo-controls. */
+/* Bottom-right resize grip (ui/GizmoDrag.js). The element is a 24px hit zone;
+   its visible bracket remains a smaller corner mark. */
 .cv-gizmo-resize-handle {
   position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 14px;
-  height: 14px;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
   cursor: nwse-resize;
-  pointer-events: none;
-  opacity: 0;
+  pointer-events: auto;
+  opacity: 0.3;
   transition: opacity 0.15s ease;
 }
-.cv-gizmo-resize-handle-visible {
+#axesGizmo:hover .cv-gizmo-resize-handle,
+#axesGizmo.cv-gizmo-dragging .cv-gizmo-resize-handle {
   opacity: 0.7;
-  pointer-events: auto;
 }
 .cv-gizmo-resize-handle:hover {
   opacity: 1;
@@ -2123,12 +2114,16 @@ z-index:var(--z-overlay-widget); pointer-events:none;
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 100%;
-  height: 100%;
+  width: 14px;
+  height: 14px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   border-radius: 0 0 3px 0;
   opacity: 0.85;
+}
+#axesGizmo.cv-gizmo-locked .cv-gizmo-resize-handle {
+  display: none;
+  pointer-events: none;
 }
 
 
@@ -2305,10 +2300,9 @@ body > #structureInfoContent {
   gap: var(--sp-1);
 }
 
-/* The small step-rotation arrows flanking each axis button. Hidden until a
-   long-press on the stack's main button reveals them (see
-   cameraAngleControl.js's setupAxisLongPress) — visibility, not display, so
-   the stack's own height/gap never shifts when they appear/disappear.
+/* The small step-rotation arrows flanking each axis button. Their visibility
+   is governed by the View window's "Stepwise buttons" menu option — visibility,
+   not display, so the stack's own height/gap never shifts when they appear/disappear.
    pointer-events follows visibility so a hidden arrow can't be clicked (or
    caught by the outside-click handler's own hit-testing) while invisible. */
 #cameraTools .camera-axis-stack .axis-step {

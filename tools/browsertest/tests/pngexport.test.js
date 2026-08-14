@@ -63,8 +63,8 @@ const H = require('../harness');
       return { type: blob.type, w: bmp.width, h: bmp.height, minAlpha, transparentPx, contentPx };
     }
 
-    const opaque = await grab({ width: 800, height: 600, margin: 0, transparent: false });
-    const transparent = await grab({ width: 512, height: 512, margin: 20, transparent: true });
+    const opaque = await grab({ width: 800, height: 600, transparent: false });
+    const transparent = await grab({ width: 512, height: 512, transparent: true });
 
     const size = app.renderer.getSize(new (await import('./external/three/three.module.js')).Vector2());
     const view = document.getElementById('view');
@@ -130,8 +130,8 @@ const H = require('../harness');
     general.rtResolutionScale = 0.61;
     app.offscreenRenderHold = false;
     try {
-      const first = captureSceneToPng({ width: 320, height: 240, margin: 0, transparent: false });
-      const second = await captureSceneToPng({ width: 64, height: 64, margin: 0, transparent: false })
+      const first = captureSceneToPng({ width: 320, height: 240, transparent: false });
+      const second = await captureSceneToPng({ width: 64, height: 64, transparent: false })
         .then(() => ({ rejected: false }), (error) => ({ rejected: true, message: error.message }));
       Object.defineProperty(view, 'clientWidth', { configurable: true, value: 777 });
       Object.defineProperty(view, 'clientHeight', { configurable: true, value: 333 });
@@ -187,14 +187,12 @@ const H = require('../harness');
     const aspect = document.getElementById('pngAspect');
     aspect.value = '1:1';
     aspect.dispatchEvent(new Event('change'));
-    document.getElementById('pngMargin').value = '77';
     document.getElementById('pngTransparent').checked = true;
     document.getElementById('pngCancelBtn').click();  // close -> saves prefs
 
     document.getElementById('savePngButton').click(); // reopen -> loads prefs
     const out = {
       aspect: document.getElementById('pngAspect').value,
-      margin: document.getElementById('pngMargin').value,
       transparent: document.getElementById('pngTransparent').checked,
       width: document.getElementById('pngWidth').value,
       height: document.getElementById('pngHeight').value,
@@ -203,7 +201,6 @@ const H = require('../harness');
     return out;
   });
   H.check('prefs: aspect restored', prefs.aspect === '1:1', prefs.aspect);
-  H.check('prefs: margin restored', prefs.margin === '77', prefs.margin);
   H.check('prefs: transparent restored', prefs.transparent === true, String(prefs.transparent));
   H.check('prefs: 1:1 dimensions', prefs.width === prefs.height, `${prefs.width}x${prefs.height}`);
 
@@ -220,7 +217,7 @@ const H = require('../harness');
     const { closeCompositionLegend } = await import('./ui/CompositionLegendWidget.js');
     const W = 700, H = 500;
     const grab = async () => {
-      const blob = await captureSceneToPng({ width: W, height: H, margin: 0, transparent: false });
+      const blob = await captureSceneToPng({ width: W, height: H, transparent: false });
       const bmp = await createImageBitmap(blob);
       const c = document.createElement('canvas');
       c.width = W;

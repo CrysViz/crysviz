@@ -12,14 +12,14 @@
 // It is a SCENE WIDGET, not a panel window: the same float/dock/resize
 // machinery the colour bars use (ui/ColorBarDrag.js), so it drags around the
 // view anchored to #view's edges, survives the view resizing under it, and
-// wears the same hover-revealed ⦀/☰ strip and corner resize handle. Dragging
+// uses a long-press menu plus corner resize handle. Dragging
 // it off the scene puts it away; ❖ in the Structure Info header brings it
 // back. It was a PanelWindow before — a title bar and a dock slot are chrome
 // for a thing that only ever wants to sit over the structure.
 //
 // Figure-making affordances: every label is contenteditable (edits survive
 // refreshes for the session), the box resizes from its corner and its contents
-// scale with the width, and the ☰ menu offers a transparent mode that strips
+// scale with the width, and the long-press menu offers a transparent mode that strips
 // the surface so only swatches and text overlay the scene.
 //
 // One shared offscreen WebGL renderer paints every swatch and each row keeps
@@ -32,11 +32,12 @@
 import * as THREE from '../external/three/three.module.js';
 import { getPanelPref, setPanelPref } from './panels/PanelManager.js';
 import { makeColorBarDraggable } from './ColorBarDrag.js';
+import { wireLongPress } from '../utils/index.js';
 import { currentContrastColor } from './ColorBarWidget.js';
 import { createStyledMaterial } from '../render/MaterialStyles.js';
 import { getAtomVisSettings } from '../defaults/color_texture_defaults.js';
 import { wedgeDataForAtom } from '../render/WedgeAtoms.js';
-import { fileBrowser } from '../state/store.js';
+import { fileBrowser, general } from '../state/store.js';
 
 const FLOATING_ID = 'compositionLegendFloating';
 const SWATCH_PX = 30;   // on-screen swatch size at scale 1
@@ -341,27 +342,16 @@ function stopContrastSync() {
 }
 
 /** Strip (or restore) the legend's own surface, leaving only swatches and
- *  text over the scene. The ⦀/☰ strip and the resize frame are already
- *  hover-revealed, so nothing else is left to hide. */
+ *  text over the scene. */
 function applyTransparent(on) {
   setPanelPref('legendTransparent', on);
   widget?.wrapper.classList.toggle('comp-legend-transparent', !!on);
 }
 
-/** The hover-revealed ⦀/☰ strip, in the floating colour bars' own idiom (and
- *  their classes, so it inherits that chrome wholesale). The grip itself is
- *  inserted here by makeColorBarDraggable. */
-function buildControls() {
-  const controls = document.createElement('div');
-  controls.className = 'cv-colorbar-controls';
-
+/** The dropdown is opened by long press on the legend. */
+function buildControls(onLockChange = () => {}) {
   const menuWrap = document.createElement('div');
-  menuWrap.className = 'cv-colorbar-menu-wrap';
-  const menuBtn = document.createElement('button');
-  menuBtn.type = 'button';
-  menuBtn.className = 'cv-colorbar-menu-btn';
-  menuBtn.title = 'Legend options';
-  menuBtn.textContent = '☰';
+  menuWrap.className = 'cv-colorbar-menu-host';
   const menu = document.createElement('div');
   menu.className = 'cv-colorbar-menu';
 
@@ -376,6 +366,7 @@ function buildControls() {
       onSelect();
     });
     menu.appendChild(button);
+    return button;
   };
 
   item('Transparent background', () => applyTransparent(!getPanelPref('legendTransparent')));
@@ -391,20 +382,53 @@ function buildControls() {
     widget.drag.recaptureAnchor();
   });
   item('Close', () => closeCompositionLegend());
-
-  menuBtn.addEventListener('click', (event) => {
-    event.stopPropagation();
-    menu.classList.toggle('cv-colorbar-menu-open');
+  const lockItem = item(general.compositionLegendLocked ? 'Unlock' : 'Lock', () => {
+    general.compositionLegendLocked = !general.compositionLegendLocked;
+    onLockChange();
+    syncLock();
   });
+
+  function syncLock() {
+    lockItem.textContent = general.compositionLegendLocked ? 'Unlock' : 'Lock';
+    lockItem.classList.toggle('cv-colorbar-menu-item-active', general.compositionLegendLocked);
+    widget?.wrapper.classList.toggle('cv-colorbar-locked', general.compositionLegendLocked);
+  }
+
+  menuWrap.addEventListener('pointerdown', (event) => event.stopPropagation());
+  const onDocumentPointerDown = (event) => {
+    if (!menu.classList.contains('cv-colorbar-menu-open')) return;
+    if (!menuWrap.contains(/** @type {Node} */ (event.target))) menu.classList.remove('cv-colorbar-menu-open');
+  };
   const onDocumentClick = (event) => {
     if (!menu.classList.contains('cv-colorbar-menu-open')) return;
     if (!menuWrap.contains(/** @type {Node} */ (event.target))) menu.classList.remove('cv-colorbar-menu-open');
   };
+  const onEscape = (event) => { if (event.key === 'Escape') menu.classList.remove('cv-colorbar-menu-open'); };
+  document.addEventListener('pointerdown', onDocumentPointerDown);
   document.addEventListener('click', onDocumentClick);
+  document.addEventListener('keydown', onEscape);
 
-  menuWrap.append(menuBtn, menu);
-  controls.appendChild(menuWrap);
-  return { controls, dispose: () => document.removeEventListener('click', onDocumentClick) };
+  menuWrap.append(menu);
+  return {
+    menuWrap,
+    menu,
+    openAt(x, y) {
+      syncLock();
+      menu.classList.add('cv-colorbar-menu-open');
+      const view = document.getElementById('view')?.getBoundingClientRect();
+      const rect = menu.getBoundingClientRect();
+      const left = view ? Math.min(Math.max(x, view.left + 4), view.right - rect.width - 4) : x;
+      const top = view ? Math.min(Math.max(y, view.top + 4), view.bottom - rect.height - 4) : y;
+      menuWrap.style.left = `${left}px`;
+      menuWrap.style.top = `${top}px`;
+    },
+    dispose: () => {
+      document.removeEventListener('pointerdown', onDocumentPointerDown);
+      document.removeEventListener('click', onDocumentClick);
+      document.removeEventListener('keydown', onEscape);
+    },
+    syncLock,
+  };
 }
 
 /** Resize, mirroring ColorBarWidget's handle: one axis, like the bar's own
@@ -420,18 +444,25 @@ function buildControls() {
  *  cursor. The wrapper's inline left/top already pin its top-left corner, so
  *  growing does the expected thing; the anchor is re-taken on release, from
  *  wherever it ended up. */
-function wireResize(handle, body, drag, redrawRows) {
+function wireResize(handle, body, drag, redrawRows, isLocked) {
+  let activeAbort = null;
   handle.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (isLocked()) return;
     e.preventDefault();
     e.stopPropagation(); // never let this reach the wrapper's drag handles
-    handle.setPointerCapture(e.pointerId);
+    try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
     const startX = e.clientX;
     const startScale = currentScale(body);
     const startW = body.offsetWidth || 1;
     let raf = 0;
+    let finished = false;
 
     const onMove = (mv) => {
+      if (isLocked()) {
+        abort(mv.pointerId);
+        return;
+      }
       // Proportional to the box's own width, so the far edge tracks the
       // cursor however large the legend already is.
       const scale = clampScale(startScale * ((startW + mv.clientX - startX) / startW));
@@ -442,18 +473,32 @@ function wireResize(handle, body, drag, redrawRows) {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(redrawRows);
     };
-    const onUp = () => {
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
       handle.removeEventListener('pointermove', onMove);
       handle.removeEventListener('pointerup', onUp);
       handle.removeEventListener('pointercancel', onUp);
       cancelAnimationFrame(raf);
+      try { handle.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+      if (activeAbort === abort) activeAbort = null;
+    };
+    const onUp = () => {
+      cleanup();
       redrawRows();
       drag.recaptureAnchor();
+    };
+    const abort = (pointerId) => {
+      if (pointerId !== undefined && pointerId !== e.pointerId) return;
+      if (finished) return;
+      cleanup();
     };
     handle.addEventListener('pointermove', onMove);
     handle.addEventListener('pointerup', onUp);
     handle.addEventListener('pointercancel', onUp);
+    activeAbort = abort;
   });
+  return { abortPointer: (pointerId) => activeAbort?.(pointerId) };
 }
 
 /** Build the legend and float it over the scene. */
@@ -461,12 +506,8 @@ function openCompositionLegend() {
   const wrapper = document.createElement('div');
   wrapper.className = 'comp-legend-widget';
 
-  const { controls, dispose: disposeControls } = buildControls();
-  // The gap between the controls strip and the box, kept hit-testable so the
-  // hover that reveals the strip survives the trip up to it (see
-  // .cv-colorbar-controls-bridge's own note in styles/toggle_styles.css).
-  const bridge = document.createElement('div');
-  bridge.className = 'cv-colorbar-controls-bridge';
+  let abortInteractions = () => {};
+  const { menuWrap, openAt, dispose: disposeControls, syncLock } = buildControls(() => abortInteractions());
 
   const body = document.createElement('div');
   body.className = 'comp-legend-body';
@@ -475,8 +516,7 @@ function openCompositionLegend() {
   body.appendChild(list);
   body.style.setProperty('--legend-scale', String(legendScale ?? DEFAULT_SCALE));
 
-  // The frame shows what the handle is about to resize — the colour bars'
-  // own (hover-revealed, so it stays out of a figure), around the box rather
+  // The frame shows what the handle is about to resize around the box rather
   // than around a gradient strip and its tick labels.
   const resizeFrame = document.createElement('div');
   resizeFrame.className = 'cv-colorbar-resize-frame';
@@ -485,7 +525,7 @@ function openCompositionLegend() {
   resizeHandle.title = 'Drag to resize';
   resizeFrame.appendChild(resizeHandle);
 
-  wrapper.append(controls, bridge, body, resizeFrame);
+  wrapper.append(menuWrap, body, resizeFrame);
   // makeColorBarDraggable reads wrapper.parentElement as the place to put the
   // widget back on a drop outside the scene — an own detached host, since
   // there is no panel to dock into: that drop means "put the legend away",
@@ -494,8 +534,9 @@ function openCompositionLegend() {
   host.appendChild(wrapper);
 
   const drag = makeColorBarDraggable(wrapper, FLOATING_ID, {
-    gripParent: controls,
+    gripParent: null,
     extraHandles: [body],
+    isLocked: () => general.compositionLegendLocked,
     onFloatChange: (floating) => {
       if (!floating) { closeCompositionLegend(); return; }
       // beginFloating() pins the measured width inline; the legend keeps
@@ -511,10 +552,20 @@ function openCompositionLegend() {
     if (list.contains(document.activeElement)) return;
     renderRows(list);
   };
+  const resizeController = wireResize(resizeHandle, body, drag, refresh, () => general.compositionLegendLocked);
+  abortInteractions = () => {
+    drag.abortAll?.();
+    resizeController.abortPointer();
+  };
+  const disposeLongPress = wireLongPress(wrapper, ({ clientX, clientY }) => openAt(clientX, clientY), {
+    ignoreSelector: '.cv-colorbar-resize-handle',
+    onFire: ({ pointerId }) => {
+      drag.abortPointer(pointerId);
+      resizeController.abortPointer(pointerId);
+    },
+  });
   document.addEventListener('crysviz:colors-changed', refresh);
   document.addEventListener('crysviz:atoms-changed', refresh);
-
-  wireResize(resizeHandle, body, drag, refresh);
 
   widget = {
     wrapper,
@@ -526,6 +577,7 @@ function openCompositionLegend() {
       document.removeEventListener('crysviz:colors-changed', refresh);
       document.removeEventListener('crysviz:atoms-changed', refresh);
       stopContrastSync();
+      disposeLongPress();
       disposeControls();
       drag.destroy();
       wrapper.remove();
@@ -533,6 +585,8 @@ function openCompositionLegend() {
       disposeGL();
     },
   };
+
+  syncLock();
 
   if (getPanelPref('legendTransparent')) applyTransparent(true);
   tickContrast(wrapper);

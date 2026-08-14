@@ -37,7 +37,7 @@
 
 /* Overrides .split-item's tall defaults (min-height:220px, flex:1 1 50% —
    sized for the EOS window's one or two big plots) for a stack of many
-   low-profile cards. Loaded after rightDock.css, so this wins at equal
+   low-profile cards. Loaded after sideDock.css, so this wins at equal
    (one-class) specificity; .split-item.expanded's fullscreen rule is
    !important and always takes over regardless of load order. */
 .blh-pair-card {
@@ -85,7 +85,7 @@
   flex: 0 0 auto;
 }
 
-/* .split-item-body (rightDock.css) sets `flex: 1` (flex-basis 0%) so a plot
+/* .split-item-body (sideDock.css) sets `flex: 1` (flex-basis 0%) so a plot
    div stretches to fill whatever space its flex-column parent has to give —
    fine for the EOS/old single-chart layout, where the CARD itself has a real
    min-height (220px) to distribute. These cards deliberately have none (that
@@ -362,8 +362,7 @@
 
 .bond-expand-icon {
   margin-left: var(--sp-1);
-  font-size: 14px; /* deliberately NOT --fs-lg/--fs-xl: this caret must stay a fixed
-    size regardless of the user's font-scale control, unlike the label next to it */
+  font-size: var(--fs-lg);
   transition: transform 0.2s ease;
   color: var(--fg-75);
   transform: rotate(0deg); /* JS overrides this inline (rotate(90deg)) on expand — the

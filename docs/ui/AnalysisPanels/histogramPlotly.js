@@ -6,6 +6,7 @@
 // collision avoidance, which the old hand-rolled canvas version did not.
 
 import { loadPlotly } from '../../utils/plotlyLoader.js';
+import { downloadBlob } from '../SavePanel.js';
 
 export const HISTOGRAM_COLORS = [
   '#00202e', '#2c4875', '#8a508f', '#bc5090',
@@ -20,6 +21,7 @@ const clickWired = new WeakSet();
 // Per-plot light/dark toggle, same idiom as eos/eosPlots.js's plotThemes —
 // each histogram window remembers its own choice independently.
 const plotThemes = new Map(); // plotId -> 'dark' | 'light'
+let exportInProgress = false;
 
 export function getPlotTheme(plotId) {
   return plotThemes.get(plotId) || 'dark';
@@ -208,28 +210,37 @@ function getByPath(obj, path) {
 }
 
 export async function exportHistogramPNG(plotId) {
-  const Plotly = await loadPlotly();
-  const plotDiv = document.getElementById(plotId);
-  // Export at real print-quality dimensions regardless of the on-screen
-  // widget's box — downloadImage re-renders the chart at these dimensions
-  // rather than screenshotting the tiny on-screen version, so a 900x500
-  // floor (not just a fallback for when the div is 0x0) plus scale keeps the
-  // image sharp even for a compact ~66px-tall card.
-  const width = Math.max(plotDiv?.offsetWidth || 0, 900);
-  const height = Math.max(plotDiv?.offsetHeight || 0, 500);
-
-  // Bump every font size up just for the export, then put the live chart
-  // back exactly as it was — relayout (not react) so nothing else about the
-  // chart's data/traces is touched.
-  const paths = fontSizePaths(plotDiv?.layout);
-  const original = Object.fromEntries(paths.map((p) => [p, getByPath(plotDiv.layout, p)]));
-  const bumped = Object.fromEntries(paths.map((p) => [p, original[p] * EXPORT_FONT_BUMP]));
-
-  if (paths.length) await Plotly.relayout(plotId, bumped);
+  // Plotly.downloadImage rejected overlap; toImage does not, so serialize font changes.
+  if (exportInProgress) return;
+  exportInProgress = true;
   try {
-    await Plotly.downloadImage(plotId, { format: 'png', width, height, filename: plotId, scale: 3 });
+    const Plotly = await loadPlotly();
+    const plotDiv = document.getElementById(plotId);
+    // Export at real print-quality dimensions regardless of the on-screen
+    // widget's box — toImage re-renders the chart at these dimensions
+    // rather than screenshotting the tiny on-screen version, so a 900x500
+    // floor (not just a fallback for when the div is 0x0) plus scale keeps the
+    // image sharp even for a compact ~66px-tall card.
+    const width = Math.max(plotDiv?.offsetWidth || 0, 900);
+    const height = Math.max(plotDiv?.offsetHeight || 0, 500);
+
+    // Bump every font size up just for the export, then put the live chart
+    // back exactly as it was — relayout (not react) so nothing else about the
+    // chart's data/traces is touched.
+    const paths = fontSizePaths(plotDiv?.layout);
+    const original = Object.fromEntries(paths.map((p) => [p, getByPath(plotDiv.layout, p)]));
+    const bumped = Object.fromEntries(paths.map((p) => [p, original[p] * EXPORT_FONT_BUMP]));
+
+    if (paths.length) await Plotly.relayout(plotId, bumped);
+    try {
+      const dataUrl = await Plotly.toImage(plotId, { format: 'png', width, height, scale: 3 });
+      const blob = await (await fetch(dataUrl)).blob();
+      downloadBlob(plotId + '.png', blob);
+    } finally {
+      if (paths.length) await Plotly.relayout(plotId, original);
+    }
   } finally {
-    if (paths.length) await Plotly.relayout(plotId, original);
+    exportInProgress = false;
   }
 }
 

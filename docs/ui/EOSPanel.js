@@ -1,7 +1,7 @@
 // EOS (Birch-Murnaghan equation-of-state) fitting control window: reads a
 // Pressure/Energy/Volume dataset, fits it with SciPy (via Pyodide) and shows
 // the fit parameters; the E-V/P-V plots live in their own window
-// (EOSPlotsPanel.js, defaulting to the wide right dock), which THIS module
+// (EOSPlotsPanel.js, defaulting to the wide side dock), which THIS module
 // activates whenever there is something to show — a dataset loaded or re-fit
 // opens it, resetting the fit closes it.
 
@@ -77,7 +77,7 @@ function safeRedraw(plotId) {
 }
 
 /** There is something to show: make sure the plots window is open (front tab
- *  of the right dock by default — or wherever the user last put it). */
+ *  of the side dock by default — or wherever the user last put it). */
 function ensurePlotsWindowOpen() {
   openPanel('eosPlots');
 }

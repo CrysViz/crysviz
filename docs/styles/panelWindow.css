@@ -53,12 +53,12 @@
   margin: 0 0 var(--sp-3) 0;
 }
 
-/* ---- right-docked: the window is a TAB in the wide right dock ----
-   Its element lives inside #splitPaneBody (rightDock.css). The tab strip is
+/* ---- side-docked: the window is a TAB in the wide side dock ----
+   Its element lives inside #splitPaneBody (sideDock.css). The tab strip is
    the chrome: the title bar is hidden, the body is always shown (per-window
    collapse doesn't apply here — the whole dock collapses instead), and only
    the front window is visible, filling the pane. */
-.cv-panel.cv-right-docked {
+.cv-panel.cv-side-docked {
   display: none;
   margin: 0;
   min-height: 0;
@@ -66,11 +66,11 @@
   flex-direction: column;
 }
 
-.cv-panel.cv-right-docked.cv-front {
+.cv-panel.cv-side-docked.cv-front {
   display: flex;
 }
 
-.cv-panel.cv-right-docked > .cv-panel-titlebar {
+.cv-panel.cv-side-docked > .cv-panel-titlebar {
   display: none;
 }
 
@@ -78,8 +78,8 @@
    backdrop-filter:none is load-bearing: a backdrop-filter creates a
    containing block for fixed-position descendants, which would trap the
    ⛶-expanded .split-item inside the body. */
-.cv-panel.cv-right-docked > .cv-panel-body,
-.cv-panel.cv-right-docked.cv-collapsed > .cv-panel-body {
+.cv-panel.cv-side-docked > .cv-panel-body,
+.cv-panel.cv-side-docked.cv-collapsed > .cv-panel-body {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -183,6 +183,22 @@
 .cv-panel.cv-bar-collapsed > .cv-panel-body {
   border-radius: var(--radius-md);
   border-top: 1px solid var(--line-1);
+}
+
+/* "Always show small drag handles" (Settings): reverts the handle to the
+   EARLY short-centered strip (the "Improve look of collapsed title bars"
+   revision) — thin (2px), 64px, solid accent green, always visible (the
+   desktop hover reveal is opted out in responsive.css). Everything else —
+   the centered placement, 3px gap, and the free-standing body above — is
+   unchanged from the current handle. :not(.cv-compact) because these
+   higher-specificity rules would otherwise beat the compact round-icon
+   rules below, which normally win their tie by source order alone
+   (.cv-bar-collapsed stays set while a panel is compact). */
+body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-panel-titlebar {
+  height: 2px;
+  min-height: 0;
+  width: 64px;
+  opacity: 1;
 }
 
 .cv-panel-titlebar:active,
@@ -310,34 +326,6 @@
 .cv-panel-titlebar .cv-panel-info:hover {
   box-shadow: none;
   background: var(--hover-color);
-}
-
-/* Per-structure settings lock (ui/FeatureLockModule.js), top-right of the
-   Features window's title bar alongside the other icon buttons — sized to
-   match .cv-panel-info's flush-with-the-titlebar footprint. */
-.cv-panel-titlebar .cv-panel-lock {
-  width: calc(13px * var(--cv-font-scale, 1));
-  height: calc(13px * var(--cv-font-scale, 1));
-  padding: 0;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  border-radius: 4px;
-  color: var(--fg-2);
-  cursor: pointer;
-}
-
-.cv-panel-titlebar .cv-panel-lock:hover {
-  background: var(--hover-color);
-}
-
-/* Persistent highlight while unlocked — a standing mode, not a momentary
-   action, so it stays visible without hovering. */
-.cv-panel-titlebar .cv-panel-lock.unlocked {
-  color: var(--accent-fg, var(--ok-bright));
 }
 
 /* ---- body / collapse ---- */

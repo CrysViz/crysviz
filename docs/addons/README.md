@@ -1,6 +1,6 @@
 # CrysViz Addons
 
-An **addon** is a self-contained tool that lives in a left-dock panel and opens
+An **addon** is a self-contained tool that lives in a main-dock panel and opens
 its own view in the shared right-side **split pane** next to the 3D scene. From
 there it can read the structure shown in the main viewer and drive its atoms
 live.
@@ -15,7 +15,7 @@ Energy-Landscape tools. If you can write a panel, you can write an addon.
 ## How it fits together
 
 ```
- left dock panel  ──expand──►  your split-view "owner"  ──►  right split pane
+ main dock panel  ──expand──►  your split-view "owner"  ──►  right split pane
  (registerPanel)               (openSplitView)               (#splitPaneBody)
         │                                                          │
    buildContent(body)                                       render(container)
@@ -31,7 +31,7 @@ Two small pieces you write, one you reuse:
 | Piece | File | Role |
 |-------|------|------|
 | **Owner module** | `docs/ui/<Name>SplitView.js` | Builds your UI; opens/closes the split pane. |
-| **Registration** | one block in `docs/ui/panels/defaultPanels.js` | Adds the left-dock panel + wires expand→open. |
+| **Registration** | one block in `docs/ui/panels/defaultPanels.js` | Adds the main-dock panel + wires expand→open. |
 | **Structure API** | `docs/ui/AddonAPI.js` (reuse) | Read the structure, move atoms, load structures, react to theme. |
 
 Multiple addons can be open at once — each keeps its own content and gets a tab
@@ -90,7 +90,7 @@ const owner = {
 export function openMyAddonSplitView()  { openSplitView(owner); }
 export function closeMyAddonSplitView() { closeSplitView(owner); }
 
-// The left-dock panel body: a short description is enough — expanding the panel
+// The main-dock panel body: a short description is enough — expanding the panel
 // opens the split view. Put quick controls here if you want them docked.
 export function addMyAddonPanel(targetId = 'cvPanelBody-myAddon') {
   const el = document.getElementById(targetId);

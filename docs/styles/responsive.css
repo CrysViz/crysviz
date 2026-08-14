@@ -145,7 +145,7 @@
   }
 
   #ui h2 {
-    font-size: 20px;
+    font-size: var(--fs-2xl);
     margin: 0 0 20px 0;
   }
 
@@ -223,7 +223,7 @@
     max-height: 200px;
   }
 
-  /* ---- rightDock.css: bottom-docked pane ----
+  /* ---- sideDock.css: bottom-docked pane ----
      #ui is an off-canvas overlay on mobile, so it never narrows the scene
      — the bottom pane/handle/pull-tabs always start at the left edge. */
   #viewArea.split-dock-bottom .split-pane,
@@ -361,7 +361,7 @@
     width: 54px;
     height: 54px;
     border-radius: 50%;
-    cursor: pointer;
+    cursor: grab;
     top: max(155px, calc(var(--compact-stack-bottom, 0px) + 20px));
     right: calc(11px + var(--split-reserve, 0px));
     z-index: var(--z-anchor);
@@ -443,6 +443,12 @@
   .cv-panel.cv-bar-collapsed:hover > .cv-panel-titlebar {
     opacity: 0.6;
   }
+  /* "Always show small drag handles" (Settings) opts out of the hover
+     reveal: the original strip is always fully visible. */
+  body.cv-small-drag-handles .cv-panel.cv-bar-collapsed > .cv-panel-titlebar,
+  body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:hover > .cv-panel-titlebar {
+    opacity: 1;
+  }
 }
 
 /* ================================================================
@@ -489,7 +495,7 @@
     inset: -10px;
   }
 
-  /* ---- rightDock.css: per-tab window-menu dot + the fullscreen close btn ---- */
+  /* ---- sideDock.css: per-tab window-menu dot + the fullscreen close btn ---- */
   .split-pane-tab-menu {
     position: relative;
   }

@@ -1,4 +1,4 @@
-// A rebuild-lifecycle panel that is right-docked and then goes unavailable
+// A rebuild-lifecycle panel that is side-docked and then goes unavailable
 // (its structure lacks the feature) must close out of the dock, and — crucially
 // — reopen AND rebuild its content when the feature returns, without a UI reset.
 // Regression: refreshActivePanels reopened via openPanel()->expand() while the
@@ -27,7 +27,7 @@ const H = require('../harness');
     });
 
     const panel = PM.getPanel('availProbe');
-    // Move to the right dock and open it (front tab, expanded -> content built).
+    // Move to the side dock and open it (front tab, expanded -> content built).
     panel.dock = 'right';
     PM.openPanel('availProbe');
     await new Promise((r) => setTimeout(r, 50));
@@ -76,7 +76,7 @@ const H = require('../harness');
   });
 
   const r = res;
-  H.check('opens right-docked with built content', r.opened.built && r.opened.hasContent && !r.opened.closed, JSON.stringify(r.opened));
+  H.check('opens side-docked with built content', r.opened.built && r.opened.hasContent && !r.opened.closed, JSON.stringify(r.opened));
   H.check('closes out of the dock when feature disappears', r.gone.closed && r.gone.closedForUnavailable, JSON.stringify(r.gone));
   H.check('reopens when feature returns (refreshActivePanels)', !r.back.closed && r.back.available, JSON.stringify(r.back));
   H.check('rebuilds content on reopen (not an empty tab)', r.back.hasContent && r.back.built, JSON.stringify(r.back));

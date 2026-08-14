@@ -1,7 +1,7 @@
-// Right dock with several windows (docs/ui/panels/RightDock.js) and the
+// Side dock with several windows (docs/ui/panels/SideDock.js) and the
 // content-driven activation of the plots windows: EOS and Energy Landscape
-// are each a CONTROLS window in the left dock plus a PLOTS window that
-// defaults to the right dock and opens by itself when there is something to
+// are each a CONTROLS window in the main dock plus a PLOTS window that
+// defaults to the side dock and opens by itself when there is something to
 // show — dropping a P/V data file on the EOS controls, or a landscape JSON on
 // the Landscape controls. Tabs select the front window, the whole dock
 // collapses to pull-tabs, and the tab ≡ menu's Close item closes to a
@@ -53,8 +53,8 @@ function snap(page) {
       activeTab: activeEl ? lbl(activeEl) : '',
       eosPlotsClosed: !!getPanel('eosPlots')?.closed,
       eosPlotsDock: getPanel('eosPlots')?.dock ?? null,
-      eosInLeftDock: !!document.querySelector('#dock .cv-panel[data-panel-id="eos"]'),
-      landscapeInLeftDock: !!document.querySelector('#dock .cv-panel[data-panel-id="landscape"]'),
+      eosInMainDock: !!document.querySelector('#dock .cv-panel[data-panel-id="eos"]'),
+      landscapeInMainDock: !!document.querySelector('#dock .cv-panel[data-panel-id="landscape"]'),
       hasPlotCards: !!document.getElementById('ev-plot-wrapper') && !!document.getElementById('pv-plot-wrapper'),
     };
   });
@@ -65,18 +65,18 @@ function snap(page) {
   H.check('WebGL2 available', await H.webglAvailable(page));
   await H.loadDefaultStructure(page);
 
-  // ---- boot: controls windows in the left dock, plots windows closed ------
+  // ---- boot: controls windows in the main dock, plots windows closed ------
   let s = await snap(page);
-  H.check('EOS + Landscape controls windows sit in the left dock',
-    s.eosInLeftDock && s.landscapeInLeftDock, JSON.stringify(s));
-  H.check('plots windows start closed (no right dock)',
+  H.check('EOS + Landscape controls windows sit in the main dock',
+    s.eosInMainDock && s.landscapeInMainDock, JSON.stringify(s));
+  H.check('plots windows start closed (no side dock)',
     !s.active && s.eosPlotsClosed && s.dockedIds.length === 0, JSON.stringify(s.dockedIds));
 
   // ---- EOS activation: loading a dataset opens the plots window -----------
   await expandPanel(page, 'eos'); // build the controls (rebuild lifecycle)
   await dropFile(page, '#eosDropZone', 'pv.txt', 'P V\n10 20\n9 21\n8 22\n7 23\n6 24\n');
   s = await snap(page);
-  H.check('dropping a P/V file opens the EOS plots window in the right dock',
+  H.check('dropping a P/V file opens the EOS plots window in the side dock',
     s.active && s.dockedIds.join() === 'eosPlots' && s.frontId === 'eosPlots',
     JSON.stringify(s));
   H.check('plot cards built into the plots window', s.hasPlotCards);
@@ -191,8 +191,8 @@ function snap(page) {
         .some((b) => b.textContent === 'Close'),
     };
   });
-  H.check('tab ≡ opens the window menu (Right dock checked, Close offered)',
-    eosMenu.checked === 'Right dock' && eosMenu.hasClose, JSON.stringify(eosMenu));
+  H.check('tab ≡ opens the window menu (Side dock checked, Close offered)',
+    eosMenu.checked === 'Side dock' && eosMenu.hasClose, JSON.stringify(eosMenu));
   await page.evaluate(() => {
     [...document.querySelectorAll('.cv-panel-menu-item')]
       .find((b) => b.textContent === 'Close')?.click();
@@ -202,7 +202,7 @@ function snap(page) {
   H.check('menu Close closes only the EOS plots window',
     s.dockedIds.join() === 'landscapePlots' && s.frontId === 'landscapePlots',
     JSON.stringify(s.dockedIds));
-  H.check('closed plots window detached but remembered right-docked',
+  H.check('closed plots window detached but remembered side-docked',
     s.eosPlotsClosed && s.eosPlotsDock === 'right', `${s.eosPlotsClosed} / ${s.eosPlotsDock}`);
 
   // ---- using the feature again reopens it (units change -> re-fit) --------

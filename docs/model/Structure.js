@@ -138,6 +138,10 @@ export class Structure {
     // raytrace/pathtrace pipelines (render/pipeline/raytrace/SceneEncoder.js).
     this.atomMaterials = {};
     this.atomUserMaterials = {};
+    // Per-species spin/force arrow styles. Each entry may contain a raster
+    // color and/or a ray/path-tracing material; per-arrow user styles win.
+    this.spinCategoryStyles = {};
+    this.forceCategoryStyles = {};
     // Per-periodic-copy atom style overrides, keyed by atomImageKey()
     // ("srcIndex:dx,dy,dz", computed in render/AtomsFracUpdateModule.js
     // finishAtomsMesh) -> { element, color?, alpha?, radiusScale? }. Used by the

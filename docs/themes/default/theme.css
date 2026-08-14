@@ -265,9 +265,9 @@
      control (ui/FontScaleModule.js, which sets --cv-font-scale on
      documentElement) keeps scaling every rung, not just the ones a component
      happened to opt into before. */
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: 'CrysViz Sans', 'CrysViz Sans Math', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  --font-display: Georgia, 'Times New Roman', serif;
+  --font-display: 'CrysViz Sans', 'CrysViz Sans Math', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   --fs-xs: calc(10px * var(--cv-font-scale, 1));
   --fs-sm: calc(11px * var(--cv-font-scale, 1));
@@ -275,6 +275,8 @@
   --fs-md: calc(13px * var(--cv-font-scale, 1));
   --fs-lg: calc(14px * var(--cv-font-scale, 1));
   --fs-xl: calc(16px * var(--cv-font-scale, 1));
+  --fs-2xl: calc(20px * var(--cv-font-scale, 1));
+  --fs-3xl: calc(24px * var(--cv-font-scale, 1));
   --fs-hero: calc(64px * var(--cv-font-scale, 1));  /* the one big-number/splash outlier */
 
   --fw-normal: 400;
@@ -344,7 +346,7 @@
   --z-chrome: 2000;
   /* info-panel-overlay/info-panel (ui/InfoPanel.js) are a second popup-vs-dock
      inversion (TOKENS.md): the ⓘ button that opens them lives ON a floating
-     .cv-panel/right-dock tab (--z-dock, 1200), so the overlay+card need to
+     .cv-panel/side-dock tab (--z-dock, 1200), so the overlay+card need to
      out-rank every dock-role element or they render behind the very panel
      that opened them. Same full-screen-scrim-plus-centered-card shape as
      #aboutOverlay/#aboutModal, so --z-chrome is the matching role; the card

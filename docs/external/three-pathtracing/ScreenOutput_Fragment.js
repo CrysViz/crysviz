@@ -7,6 +7,8 @@
 // - uUseDenoiser uniform: when false, bypasses the edge-aware 37-tap denoise
 //   kernel and outputs the plain averaged sample (raw-convergence comparison).
 // ReinhardToneMapping comes from three's ShaderMaterial tone-mapping prelude.
+// Local adaptations are CrysViz work under AGPL-3.0 (repo LICENSE);
+// the upstream original is CC0 (this directory's LICENSE).
 export const ScreenOutput_Fragment = /* glsl */`
 precision highp float;
 precision highp int;

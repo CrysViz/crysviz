@@ -13,6 +13,22 @@
    `display: none` inline on creation — only the rest of each panel's chrome
    (background/border/padding/spacing) moved here. */
 
+/* ---- Panel body width (defaultPanels.js's 'info'/Structure window) ----
+   Fixed while FLOATING so the panel doesn't shrink-wrap to whichever tab's
+   content is widest and visibly resize on tab switches; still shrinks on
+   narrow viewports. 300px (not the old 340px): the Bonds tab's double-range
+   slider row no longer carries its own redundant min/max labels (the
+   combined "min - max Å" label above the slider already shows them), so the
+   row needs much less width than before. Docked, the dock width wins —
+   descendant selectors on the dock-state classes, same pattern as
+   addStructure.css's docked overrides. */
+.si-panel-body { width: min(300px, calc(100vw - 16px)); }
+
+.cv-docked .si-panel-body,
+.cv-side-docked .si-panel-body {
+  width: auto;
+}
+
 /* ---- Shared "Alpha / Size / Edge alpha" row (label + range + number-box),
    used identically by the atom/bond/polyhedron/element colour editors. ---- */
 .si-row {
@@ -281,7 +297,7 @@
 }
 .comp-expand-icon {
   margin-left: var(--sp-1);
-  font-size: 14px;
+  font-size: var(--fs-lg);
   transition: transform 0.2s ease;
   color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   transform: rotate(0deg);
@@ -679,6 +695,13 @@
   border: 1px solid var(--wash-2); /* was 0.08 — exact --wash-2 */
   border-radius: var(--radius);
 }
+.spin-force-category-editor {
+  grid-column: 2;
+  padding: var(--sp-3);
+  background: var(--wash-0);
+  border: 1px solid var(--wash-2);
+  border-radius: var(--radius);
+}
 .ece-top-row {
   display: flex;
   align-items: center;
@@ -824,8 +847,7 @@
    whole purpose is being screenshotted next to the structure.
 
    It is a scene widget on ui/ColorBarDrag.js, like the floating colour bars,
-   so it wears their chrome classes too (.cv-colorbar-controls / -grip /
-   -menu-* / -resize-handle, styles/toggle_styles.css) and only the box itself
+   so it wears their menu/resize classes (styles/toggle_styles.css) and only the box itself
    is styled here.
    ------------------------------------------------------------------------ */
 
@@ -834,6 +856,11 @@
      resizes. Sizing/placement otherwise comes from ColorBarDrag (inline
      position:fixed + left/top) and .cv-colorbar-floating. */
   width: fit-content;
+  touch-action: none;
+}
+
+.comp-legend-widget [contenteditable="true"] {
+  touch-action: auto;
 }
 
 /* .cv-colorbar-floating's own padding frames a gradient strip against its
@@ -859,8 +886,8 @@
   backdrop-filter: blur(10px);
 }
 
-/* The resize frame and its handle are the colour bars' (hover-revealed, so
-   they stay out of a figure). The frame encloses the box instead of a
+/* The resize frame and its handle are visually hover-revealed so they stay
+   out of a figure. The frame encloses the box instead of a
    gradient strip and its labels, so it's a plain inset rather than the
    measured extent ColorBarWidget computes; the handle keeps the bar's
    ew-resize cursor because, as there, the drag sets width only. */
@@ -869,8 +896,8 @@
 }
 
 .comp-legend-widget .cv-colorbar-resize-handle {
-  right: -8px;
-  bottom: -8px;
+  right: -12px;
+  bottom: -12px;
   cursor: ew-resize;
 }
 
@@ -878,16 +905,10 @@
 .comp-legend-widget:hover .cv-colorbar-resize-handle {
   opacity: 1;
 }
-
-/* Bridges the gap between .cv-colorbar-controls (top: -34px) and the box, so
-   the hover that reveals the strip survives the trip up to it — the colour
-   bars position their own bridge from JS off the bar's measured frame; the
-   legend's box has no such geometry, the strip just spans its top edge. */
-.comp-legend-widget .cv-colorbar-controls-bridge {
-  left: 0;
-  right: 0;
-  top: -8px;
-  height: 8px;
+.comp-legend-widget.cv-colorbar-locked .cv-colorbar-resize-frame,
+.comp-legend-widget.cv-colorbar-locked .cv-colorbar-resize-handle {
+  display: none;
+  pointer-events: none;
 }
 
 .comp-legend-list {
@@ -950,9 +971,8 @@
   padding: var(--sp-2);
 }
 
-/* Transparent mode (☰ menu): strip the surface so only swatches and text
-   overlay the scene. The ⦀/☰ strip and the resize handle are hover-revealed
-   already, so nothing else shows in a capture. */
+/* Transparent mode (long-press menu): strip the surface so only swatches and
+   text overlay the scene. */
 .comp-legend-transparent .comp-legend-body {
   background: transparent;
   border-color: transparent;

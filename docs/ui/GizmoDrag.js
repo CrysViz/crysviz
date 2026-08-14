@@ -1,6 +1,6 @@
 // Makes the axes gizmo (#axesGizmo + #axesLegend, built by
 // WindowAndSceneControls.initAxesGizmo) draggable anywhere over the 3D
-// scene, and adds a small hamburger menu for the "labels on arrows" toggle.
+// scene, with a long-press menu for the "labels on arrows" toggle.
 // Mirrors the drag mechanics of ui/ColorBarDrag.js (edge anchor relative to
 // #view, pointer-capture drag-threshold gesture) but simpler: the gizmo has
 // no docked/floating distinction to switch between, it's always an overlay
@@ -11,9 +11,12 @@
 import { general } from '../state/store.js';
 import { setGizmoLabelsOnArrows, resizeGizmoRenderer } from './WindowAndSceneControls.js';
 import { currentContrastColor } from './ColorBarWidget.js';
+import { captureAnchor, clampToScene, getViewRect, positionFromAnchor } from './GizmoLayout.js';
+import { wireLongPress } from '../utils/index.js';
+import { requestRender, renderFrameNow } from '../render/index.js';
+import { wireLockedWidgetForwarding } from './GizmoPointerForward.js';
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
-const STRIP_GAP = 8; // gizmo top edge -> bottom of the hover-revealed strip
 const MIN_GIZMO_SIZE = 50;
 const MAX_GIZMO_SIZE = 260;
 // The CSS default (--gizmo-size, theme.css) — the baseline applySize()'s
@@ -28,61 +31,6 @@ const LEGEND_BASE_PAD_X = 8;
 const LEGEND_BASE_RADIUS = 8;
 const LEGEND_BASE_DOT = 10;
 const LEGEND_BASE_GAP = 6;
-// #axesGizmo has pointer-events:none (deliberately — clicks pass through to
-// rotate the scene behind it), so it can never receive its own hover events;
-// this padding extends the "still counts as hovering" zone below the strip
-// so hovering the box itself (checked via plain coordinate math, not CSS
-// :hover) reveals the strip above it, with no dead gap between the two.
-const HOVER_BRIDGE = 4;
-
-function viewRect() {
-  const view = document.getElementById('view');
-  return view ? view.getBoundingClientRect() : null;
-}
-
-function clampToScene(left, top, width, height) {
-  const rect = viewRect();
-  if (!rect) return { left, top };
-  const minLeft = rect.left + 4;
-  const maxLeft = Math.max(minLeft, rect.right - width - 4);
-  const minTop = rect.top + 4;
-  const maxTop = Math.max(minTop, rect.bottom - height - 4);
-  return {
-    left: Math.min(Math.max(left, minLeft), maxLeft),
-    top: Math.min(Math.max(top, minTop), maxTop),
-  };
-}
-
-// Position remembered as an offset from the nearest edge of #view (same
-// scheme as ColorBarDrag.js) rather than a raw page-pixel position, so it
-// keeps tracking the same relative spot as #view resizes (side panel
-// docking, window resize) instead of drifting.
-function captureAnchor(gizmoDiv) {
-  const rect = viewRect();
-  if (!rect) return null;
-  const gRect = gizmoDiv.getBoundingClientRect();
-  const leftGap = gRect.left - rect.left;
-  const rightGap = rect.right - gRect.right;
-  const topGap = gRect.top - rect.top;
-  const bottomGap = rect.bottom - gRect.bottom;
-  return {
-    edgeX: leftGap <= rightGap ? 'left' : 'right',
-    offsetX: leftGap <= rightGap ? leftGap : rightGap,
-    edgeY: topGap <= bottomGap ? 'top' : 'bottom',
-    offsetY: topGap <= bottomGap ? topGap : bottomGap,
-  };
-}
-
-function positionFromAnchor(gizmoDiv, anchor) {
-  const rect = viewRect();
-  if (!rect || !anchor) return null;
-  const width = gizmoDiv.offsetWidth;
-  const height = gizmoDiv.offsetHeight;
-  const left = anchor.edgeX === 'left' ? rect.left + anchor.offsetX : rect.right - anchor.offsetX - width;
-  const top = anchor.edgeY === 'top' ? rect.top + anchor.offsetY : rect.bottom - anchor.offsetY - height;
-  return clampToScene(left, top, width, height);
-}
-
 /** Wire up dragging + the layout menu for the axes gizmo. Call once at
  *  startup, after WindowAndSceneControls.initAxesGizmo has built the gizmo
  *  canvas (so #axesGizmo/#axesLegend exist in the DOM). */
@@ -91,31 +39,10 @@ export function initGizmoDrag() {
   const legendDiv = document.getElementById('axesLegend');
   if (!gizmoDiv) return;
 
-  // The drag grip + hamburger menu live in their own body-level overlay
-  // rather than as children of #axesGizmo: that box has overflow:hidden (it
-  // clips the WebGL canvas to its rounded corners), which would also clip
-  // the menu dropdown the instant it opened below the box. Reuses the color
-  // bars' generic chrome classes (ui/ColorBarWidget.js / toggle_styles.css)
-  // for the button/dropdown look rather than duplicating that CSS for a
-  // second widget; only the wrapper/positioning classes are gizmo-specific,
-  // since the color bars' equivalent wrapper class is hidden by default (it
-  // only shows once a bar is undocked, a state the gizmo doesn't have).
-  const controls = document.createElement('div');
-  controls.className = 'cv-gizmo-controls';
-
-  const grip = document.createElement('span');
-  grip.className = 'cv-colorbar-grip';
-  grip.textContent = '⦀';
-  grip.title = 'Drag to reposition';
-  controls.appendChild(grip);
-
+  // Keep the menu outside the clipped WebGL box. It has no visible trigger:
+  // a long press on the gizmo opens it at the press point.
   const menuWrap = document.createElement('div');
   menuWrap.className = 'cv-gizmo-menu-wrap';
-  const menuBtn = document.createElement('button');
-  menuBtn.type = 'button';
-  menuBtn.className = 'cv-colorbar-menu-btn';
-  menuBtn.title = 'Gizmo options';
-  menuBtn.textContent = '☰';
   const menu = document.createElement('div');
   menu.className = 'cv-colorbar-menu';
   const menuLabels = document.createElement('button');
@@ -126,37 +53,21 @@ export function initGizmoDrag() {
   menuReset.type = 'button';
   menuReset.className = 'cv-colorbar-menu-item';
   menuReset.textContent = 'Reset';
+  const menuLock = document.createElement('button');
+  menuLock.type = 'button';
+  menuLock.className = 'cv-colorbar-menu-item';
   menu.appendChild(menuLabels);
   menu.appendChild(menuReset);
-  menuWrap.appendChild(menuBtn);
+  menu.appendChild(menuLock);
   menuWrap.appendChild(menu);
-  controls.appendChild(menuWrap);
+  document.body.appendChild(menuWrap);
 
-  document.body.appendChild(controls);
-
-  // Resize handle: a child of #axesGizmo itself (not a body-level overlay
-  // like `controls` above) — it sits fully within the box's own bounds, so
-  // #axesGizmo's overflow:hidden (which forced the menu dropdown out to a
-  // separate element) never clips it. #axesGizmo has pointer-events:none
-  // (clicks pass through to rotate the scene), so this needs its own
-  // pointer-events:auto (styles.css) the same way the menu/grip did before
-  // they moved out.
+  // The handle remains inside the clipped box; its hit zone is larger than
+  // the visible corner mark.
   const resizeHandle = document.createElement('div');
   resizeHandle.className = 'cv-gizmo-resize-handle';
   resizeHandle.title = 'Drag to resize';
   gizmoDiv.appendChild(resizeHandle);
-
-  // Keeps the (independently-positioned) controls overlay pinned just above
-  // the gizmo, centered over it and matching its current width — same
-  // "titlebar" placement the floating color bars use (styles/toggle_styles.css's
-  // .cv-colorbar-floating .cv-colorbar-controls), wherever the gizmo
-  // currently sits or however big ui/GizmoDrag.js's resize handle has made it.
-  function positionControls() {
-    const gRect = gizmoDiv.getBoundingClientRect();
-    controls.style.left = `${gRect.left + gRect.width / 2}px`;
-    controls.style.top = `${gRect.top - STRIP_GAP}px`;
-    controls.style.width = `${gRect.width}px`;
-  }
 
   // #axesLegend is a separate fixed-position element that normally tracks
   // the gizmo via CSS calc() against the same custom properties; once the
@@ -195,43 +106,7 @@ export function initGizmoDrag() {
   }
 
   function syncOverlays() {
-    positionControls();
     positionLegend();
-  }
-
-  // Hover-reveal, like a floating color bar's controls strip: hidden until
-  // the pointer is over the gizmo box or the strip itself, so it doesn't sit
-  // permanently on top of the 3D view. Driven by plain coordinate checks
-  // against a document-level pointermove rather than CSS :hover, since
-  // #axesGizmo's own pointer-events:none means it never fires hover events,
-  // and the strip is a separate body-level element (not a CSS-adjacent
-  // sibling #axesGizmo could reveal via a sibling selector either way — see
-  // the overflow:hidden comment above).
-  let hovering = false;
-  let forcedVisible = false;
-  function applyVisibility() {
-    const visible = hovering || forcedVisible;
-    controls.classList.toggle('cv-gizmo-controls-visible', visible);
-    resizeHandle.classList.toggle('cv-gizmo-resize-handle-visible', visible);
-  }
-  function checkHover(x, y) {
-    const gRect = gizmoDiv.getBoundingClientRect();
-    const cRect = controls.getBoundingClientRect();
-    const overGizmo = x >= gRect.left && x <= gRect.right
-      && y >= gRect.top - HOVER_BRIDGE && y <= gRect.bottom;
-    const overStrip = x >= cRect.left && x <= cRect.right && y >= cRect.top && y <= cRect.bottom;
-    const next = overGizmo || overStrip;
-    if (next !== hovering) {
-      hovering = next;
-      applyVisibility();
-    }
-  }
-  document.addEventListener('pointermove', (e) => checkHover(e.clientX, e.clientY));
-  // Stays visible while actively dragging or with the menu open, regardless
-  // of exactly where the pointer strays mid-gesture.
-  function setForcedVisible(value) {
-    forcedVisible = value;
-    applyVisibility();
   }
 
   function applyAnchor(anchor) {
@@ -276,22 +151,37 @@ export function initGizmoDrag() {
 
   function updateMenuState() {
     menuLabels.classList.toggle('cv-colorbar-menu-item-active', general.gizmoLabelsOnArrows);
+    menuLock.textContent = general.gizmoLocked ? 'Unlock' : 'Lock';
+    menuLock.classList.toggle('cv-colorbar-menu-item-active', general.gizmoLocked);
+    gizmoDiv.classList.toggle('cv-gizmo-locked', general.gizmoLocked);
   }
   updateMenuState();
 
   function closeMenu() {
     menu.classList.remove('cv-colorbar-menu-open');
-    setForcedVisible(false);
   }
-  menuBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    const opening = !menu.classList.contains('cv-colorbar-menu-open');
-    menu.classList.toggle('cv-colorbar-menu-open', opening);
-    setForcedVisible(opening);
-  });
-  document.addEventListener('click', (e) => {
+  function openMenuAt(x, y) {
+    updateMenuState();
+    menu.classList.add('cv-colorbar-menu-open');
+    const view = getViewRect();
+    const menuRect = menu.getBoundingClientRect();
+    const left = view ? Math.min(Math.max(x, view.left + 4), view.right - menuRect.width - 4) : x;
+    const top = view ? Math.min(Math.max(y, view.top + 4), view.bottom - menuRect.height - 4) : y;
+    menuWrap.style.left = `${left}px`;
+    menuWrap.style.top = `${top}px`;
+  }
+  const onMenuPointerDown = (e) => {
     if (!menuWrap.contains(/** @type {Node} */ (e.target))) closeMenu();
-  });
+  };
+  const onMenuClick = (e) => {
+    if (!menuWrap.contains(/** @type {Node} */ (e.target))) closeMenu();
+  };
+  const onMenuKeyDown = (e) => {
+    if (e.key === 'Escape') closeMenu();
+  };
+  document.addEventListener('pointerdown', onMenuPointerDown);
+  document.addEventListener('click', onMenuClick);
+  document.addEventListener('keydown', onMenuKeyDown);
   menuLabels.addEventListener('click', (e) => {
     e.stopPropagation();
     setGizmoLabelsOnArrows(!general.gizmoLabelsOnArrows);
@@ -301,6 +191,14 @@ export function initGizmoDrag() {
   menuReset.addEventListener('click', (e) => {
     e.stopPropagation();
     resetLayout();
+    closeMenu();
+  });
+  menuLock.addEventListener('click', (e) => {
+    e.stopPropagation();
+    general.gizmoLocked = !general.gizmoLocked;
+    abortActiveGesture?.();
+    abortForwardedGestures?.abortAll?.();
+    updateMenuState();
     closeMenu();
   });
 
@@ -316,24 +214,40 @@ export function initGizmoDrag() {
     syncOverlays();
   }
 
-  // Shared by the grip AND #axesGizmo itself (bound to both below) — the
-  // whole box is a drag handle now, not just the ⦀ grip, so repositioning
-  // doesn't require hovering to reveal the strip first and aiming for a
-  // small target inside it.
+  // The whole box is the drag handle now, so repositioning does not require a
+  // small visible control target.
+  let abortActiveGesture = null;
+  let abortForwardedGestures = null;
   function bindDragHandle(handle) {
     handle.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (general.gizmoLocked) return;
       e.preventDefault();
       e.stopPropagation();
       const startX = e.clientX;
       const startY = e.clientY;
-      handle.setPointerCapture(e.pointerId);
+      try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
 
       let dragging = false;
       let grabDX = 0;
       let grabDY = 0;
+      let finished = false;
+
+      const cleanup = () => {
+        if (finished) return;
+        finished = true;
+        handle.removeEventListener('pointermove', onMove);
+        handle.removeEventListener('pointerup', onUp);
+        handle.removeEventListener('pointercancel', onUp);
+        try { handle.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+        if (abortActiveGesture === abort) abortActiveGesture = null;
+      };
 
       const onMove = (mv) => {
+        if (general.gizmoLocked) {
+          abort(e.pointerId);
+          return;
+        }
         if (!dragging) {
           if (Math.hypot(mv.clientX - startX, mv.clientY - startY) < DRAG_THRESHOLD) return;
           dragging = true;
@@ -341,7 +255,6 @@ export function initGizmoDrag() {
           grabDX = startX - rect.left;
           grabDY = startY - rect.top;
           gizmoDiv.classList.add('cv-gizmo-dragging');
-          setForcedVisible(true);
         }
         const width = gizmoDiv.offsetWidth;
         const height = gizmoDiv.offsetHeight;
@@ -353,57 +266,92 @@ export function initGizmoDrag() {
       };
 
       const onUp = () => {
-        handle.removeEventListener('pointermove', onMove);
-        handle.removeEventListener('pointerup', onUp);
-        handle.removeEventListener('pointercancel', onUp);
+        cleanup();
         if (!dragging) return;
         gizmoDiv.classList.remove('cv-gizmo-dragging');
         general.gizmoPos = captureAnchor(gizmoDiv);
-        setForcedVisible(false);
+      };
+
+      const abort = (pointerId) => {
+        if ((pointerId !== undefined && pointerId !== e.pointerId) || finished) return;
+        cleanup();
+        gizmoDiv.classList.remove('cv-gizmo-dragging');
       };
 
       handle.addEventListener('pointermove', onMove);
       handle.addEventListener('pointerup', onUp);
       handle.addEventListener('pointercancel', onUp);
+      abortActiveGesture = abort;
     });
   }
-  bindDragHandle(grip);
   bindDragHandle(gizmoDiv);
+  abortForwardedGestures = wireLockedWidgetForwarding(gizmoDiv, () => general.gizmoLocked, {
+    ignoreSelector: '.cv-gizmo-resize-handle',
+  });
+  wireLongPress(gizmoDiv, ({ clientX, clientY }) => openMenuAt(clientX, clientY), {
+    ignoreSelector: '.cv-gizmo-resize-handle',
+    onFire: ({ pointerId }) => {
+      abortActiveGesture?.(pointerId);
+      abortForwardedGestures?.abortPointer(pointerId);
+    },
+  });
 
   resizeHandle.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (general.gizmoLocked) return;
     e.preventDefault();
     e.stopPropagation();
-    resizeHandle.setPointerCapture(e.pointerId);
+    try { resizeHandle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
     const startX = e.clientX;
     const startY = e.clientY;
     const startSize = gizmoDiv.offsetWidth;
     const startRect = gizmoDiv.getBoundingClientRect();
-    const rect = viewRect();
+    const rect = getViewRect();
     // Square stays anchored at its current top-left corner — only the
     // bottom-right one moves — so growth is capped by #view's own edges,
     // same as the drag-to-reposition gesture stays clamped to them.
     const maxByView = rect ? Math.min(rect.right - startRect.left, rect.bottom - startRect.top) : MAX_GIZMO_SIZE;
     const maxSize = Math.min(MAX_GIZMO_SIZE, maxByView);
-    setForcedVisible(true);
     gizmoDiv.classList.add('cv-gizmo-dragging');
+    let finished = false;
 
     const onMove = (mv) => {
+      if (general.gizmoLocked) {
+        abort(e.pointerId);
+        return;
+      }
       const delta = Math.max(mv.clientX - startX, mv.clientY - startY);
       const size = Math.min(Math.max(startSize + delta, MIN_GIZMO_SIZE), maxSize);
       applySize(size);
+      // resizeGizmoRenderer clears the WebGL buffer; invalidate immediately so
+      // the arrows and labels are painted during the live resize, not only on
+      // pointerup.
+      requestRender();
+      renderFrameNow({ interactive: true });
     };
-    const onUp = () => {
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
       resizeHandle.removeEventListener('pointermove', onMove);
       resizeHandle.removeEventListener('pointerup', onUp);
       resizeHandle.removeEventListener('pointercancel', onUp);
+      try { resizeHandle.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+      if (abortActiveGesture === abort) abortActiveGesture = null;
+    };
+    const onUp = () => {
+      cleanup();
       gizmoDiv.classList.remove('cv-gizmo-dragging');
       general.gizmoSize = gizmoDiv.offsetWidth;
-      setForcedVisible(false);
+    };
+    const abort = (pointerId) => {
+      if ((pointerId !== undefined && pointerId !== e.pointerId) || finished) return;
+      cleanup();
+      gizmoDiv.classList.remove('cv-gizmo-dragging');
     };
     resizeHandle.addEventListener('pointermove', onMove);
     resizeHandle.addEventListener('pointerup', onUp);
     resizeHandle.addEventListener('pointercancel', onUp);
+    abortActiveGesture = abort;
   });
 
   const view = document.getElementById('view');

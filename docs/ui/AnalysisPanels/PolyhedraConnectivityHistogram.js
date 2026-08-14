@@ -6,14 +6,14 @@
 // vertex–bond–atom–bond–vertex). See render/PolyhedraAnalysisModule.js for the
 // detection. Offered as a summary bar chart (grouped by sharing type x
 // polyhedron-pair category) plus a drill-down list of the individual
-// connections, in ONE ordinary panel window that defaults to the right dock,
+// connections, in ONE ordinary panel window that defaults to the side dock,
 // mirroring BondLengthHistogram.js. Clicking a bar or a list row highlights
 // the LINK itself: for corner/edge/face sharing that's just the shared vertex
 // atom(s) (the "corners"), not every atom of both polyhedra; for the two
 // bond-bridge categories it's the actual connecting bond(s), not any atoms.
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
-import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from '../panels/SideDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
   togglePlotTheme,
@@ -133,7 +133,7 @@ export function removePolyhedraConnectivityHistogramPanel() {
 }
 
 /** The single entry point (the Polyhedra window's "Connectivity" button):
- *  opens the window — right-dock front tab by default, or wherever the user
+ *  opens the window — side-dock front tab by default, or wherever the user
  *  last dragged it — creating it on first use. */
 export function addPolyhedraConnectivityHistogramPanel() {
   if (getPanel(PANEL_ID)) {
@@ -159,7 +159,7 @@ export function addPolyhedraConnectivityHistogramPanel() {
             <div id="pcList" class="pc-list"></div>
             <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
             <div class="split-item-actions">
-              <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓</button>
+              <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓︎</button>
               <button type="button" class="split-item-action-btn" data-split-action="export" title="Export PNG">📥</button>
               <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
             </div>

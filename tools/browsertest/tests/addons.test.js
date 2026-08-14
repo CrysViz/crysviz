@@ -1,8 +1,8 @@
 // Energy Landscape windows: an addon is now a CONTROLS window in the left
 // dock (docs/ui/LandscapePanel.js, id 'landscape', hosting the addon's 📂
 // loader) plus a PLOTS window ('landscapePlots') that defaults to the wide
-// right dock (docs/ui/panels/RightDock.js), starts closed, and opens by
-// itself when a landscape JSON is loaded. This covers the window/right-dock
+// side dock (docs/ui/panels/SideDock.js), starts closed, and opens by
+// itself when a landscape JSON is loaded. This covers the window/side-dock
 // wiring only, not the heatmap content itself.
 'use strict';
 const H = require('../harness');
@@ -45,7 +45,7 @@ async function closePanel(page, id) {
       inDom: !!document.querySelector('.cv-panel[data-panel-id="landscapePlots"]'),
     };
   });
-  H.check('plots window registered, closed, right-dock default',
+  H.check('plots window registered, closed, side-dock default',
     plotsState.present && plotsState.closed && plotsState.dock === 'right' && !plotsState.inDom,
     JSON.stringify(plotsState));
 
@@ -75,7 +75,7 @@ async function closePanel(page, id) {
     opened.active && !opened.hidden && opened.docked && opened.front, JSON.stringify(opened));
   H.check('its tab shows in the header strip', opened.tab);
   H.check('landscape content rendered into the plots window body', opened.hostPopulated);
-  H.check('3D view yields width to the right dock', opened.viewW < viewW0 - 100,
+  H.check('3D view yields width to the side dock', opened.viewW < viewW0 - 100,
     `view ${viewW0} -> ${opened.viewW}`);
 
   // ---- closing the plots window frees the dock again -----------------------

@@ -92,7 +92,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   content.appendChild(noForcesNote);
 
   // --- Histogram ---
-  // Opens ui/AnalysisPanels/ForceHistogram.js's window (right-dock by
+  // Opens ui/AnalysisPanels/ForceHistogram.js's window (side-dock by
   // default) — same "Histograms" idiom as the Bonds window's Bond Length /
   // Coordination Number buttons (BondPanel.js). Disabled while the structure
   // has no force data (updateNoForcesNote keeps this in sync on rebuild and
@@ -350,6 +350,8 @@ export function addForcePanel(target = "cvPanelBody-forces") {
         orientation: general.forceColorBarOrientation,
         flipSide: general.forceColorBarFlipSide,
         size: general.colorBarSize,
+        isLocked: () => general.forceColorBarLocked,
+        onLockChange: (locked) => { general.forceColorBarLocked = locked; },
         onLimitsCommit: (min, max) => {
           general.forceMin = min;
           general.forceMax = max;
@@ -389,7 +391,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   }
 
   // Shared by the side-panel checkbox and the floating color bar's own
-  // burger-menu "Log Scale" item (ColorBarWidget.js's onScaleChange) — either
+  // layout-menu "Log Scale" item (ColorBarWidget.js's onScaleChange) — either
   // one can flip it, and both stay in sync since this is the only place that
   // actually applies the change.
   function applyLogScale(isLog) {
@@ -407,7 +409,7 @@ export function addForcePanel(target = "cvPanelBody-forces") {
     redraw();
   }
 
-  // Shared by the Auto Range button and the burger menu's own "Auto Range"
+  // Shared by the Auto Range button and the layout menu's own "Auto Range"
   // item (onAutoRange). Recomputes min/max from the actual force magnitudes
   // currently on the structure (not whatever was last typed/loaded), padded
   // 20% of the data's own span on each side (computeAutoRange) so values

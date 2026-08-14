@@ -232,7 +232,7 @@ function detectLink(D1, D2) {
  *   controlsHost: element hosting the loader UI (the 📂 button + a drop
  *     target) instead of `container` — used by the split controls/plots
  *     window pair (ui/LandscapePanel.js), where the loader lives in the
- *     left-dock controls window and `container` is the plots window's body.
+ *     main-dock controls window and `container` is the plots window's body.
  *   onContent(): a load attempt started (files chosen/dropped) — the caller
  *     opens/reveals the plots window so the result (or the error box) is
  *     visible.
@@ -775,7 +775,7 @@ export function createLandscape(container, api, opts = {}) {
   // width/height following grid_shape, not literally 1:1), but the SIZE is
   // driven by the available space in BOTH axes, not just by how wide the
   // pane happens to be: dragging the split view taller (e.g. while docked to
-  // the bottom, see docs/ui/panels/RightDock.js) grows the tiles, a shorter
+  // the bottom, see docs/ui/panels/SideDock.js) grows the tiles, a shorter
   // pane shrinks them. A row also isn't forced to stay a single line — in a
   // narrow ("portrait") pane a full-width row of N tiles would be squeezed
   // tiny, so the layout tries every column count from N (one row) down to 1

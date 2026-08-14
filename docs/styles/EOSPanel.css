@@ -223,19 +223,19 @@
 
 /* EOS-specific plot-card content: the P-V plot's "Show Error Plots" mini
    toggle. Generic card chrome (including plot div sizing, via
-   .split-item-body) lives in rightDock.css. */
+   .split-item-body) lives in sideDock.css. */
 
 /* Docked to the bottom, the pane is wide and short — lay the E-V and P-V
    plots out side by side instead of stacked so each keeps useful height.
    Only the container's axis flips; each .split-item's own layout (title,
-   buttons, toggle) is untouched. Scoped to right-docked windows: a floating
-   or left-docked plots window keeps its stacked layout regardless of where
+   buttons, toggle) is untouched. Scoped to side-docked windows: a floating
+   or main-docked plots window keeps its stacked layout regardless of where
    the dock happens to sit. */
-#viewArea.split-dock-bottom .cv-panel.cv-right-docked .cv-plot-stack {
+#viewArea.split-dock-bottom .cv-panel.cv-side-docked .cv-plot-stack {
   flex-direction: row;
 }
 
-#viewArea.split-dock-bottom .cv-panel.cv-right-docked .cv-plot-stack .split-item {
+#viewArea.split-dock-bottom .cv-panel.cv-side-docked .cv-plot-stack .split-item {
   min-width: 0; /* let the two plots actually shrink to share the row */
 }
 

@@ -69,7 +69,8 @@ export class StructureContainer {
     // override to other trajectory frames.
     const STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
                     'polyhedraUserStyles', 'polyhedraCategoryStyles',
-                    'atomMaterials', 'atomUserMaterials'];
+                    'atomMaterials', 'atomUserMaterials',
+                    'spinCategoryStyles', 'forceCategoryStyles'];
     this.structures.forEach(structure => {
       if (structure === targetStructure) return;
       for (const k of STORES) {

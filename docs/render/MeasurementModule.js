@@ -356,7 +356,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   div.style.border = '2px solid #00ff00';
   div.style.color = '#000000';
   div.style.fontWeight = '700';
-  div.style.fontSize = '14px';
+  div.style.fontSize = 'var(--fs-lg)';
   div.style.padding = '2px 6px';
   div.style.borderRadius = '4px';
   const elements = [atom1.userData.element, atom2.userData.element, atom3.userData.element];
@@ -459,7 +459,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   div.style.border = '2px solid #000000';
   div.style.color = '#000000';
   div.style.fontWeight = '700';
-  div.style.fontSize = '14px';
+  div.style.fontSize = 'var(--fs-lg)';
   div.style.padding = '2px 6px';
   div.style.textShadow = '1px 1px 2px rgba(255,255,255,0.8)';
   div.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)';
@@ -496,7 +496,7 @@ export function drawMeasureGraphics(){
     div.style.border = '2px solid #000000';
     div.style.color = '#000000';
     div.style.fontWeight = '700';
-    div.style.fontSize = '12px';
+    div.style.fontSize = 'var(--fs-base)';
     div.style.padding = '4px 8px';
     div.style.borderRadius = '4px';
     //div.textContent = `${atom1.userData.element} — ? (click 2nd atom)`;
@@ -512,7 +512,7 @@ export function drawMeasureGraphics(){
     div.style.border = '2px solid #00ff00';
     div.style.color = '#000000';
     div.style.fontWeight = '700';
-    div.style.fontSize = '10px';
+    div.style.fontSize = 'var(--fs-xs)';
     div.style.padding = '2px 4px';
     div.style.borderRadius = '4px';
 

@@ -4,6 +4,10 @@
 // Loftis). The RayTrace() loop structure is adapted from the upstream demos
 // (InstanceMapping_Fragment.glsl), with four material types (per-object,
 // from the Structure-window material editors):
+// This file is part of CrysViz and is licensed under AGPL-3.0 (see the
+// repository LICENSE). The CC0 dedication applies only to the original
+// upstream material it adapts; the adaptations and all CrysViz additions
+// in this file are AGPL-3.0.
 //   - MAT_OPAQUE (standard): Blinn-Phong diffuse + specular with a hard
 //     shadow ray, plus a mirror reflection ray weighted by Fresnel + the
 //     "Reflectivity" slider;
@@ -20,7 +24,8 @@
 //              pre-reject; 4 columns of the inverse object matrix (unit
 //              cylinder y in [-1,1]; direction NOT renormalized in object
 //              space so t stays world-valid); (rgb, alpha);
-//              (matType, roughness, typeParam, reflectivity); reserved (zeros)
+//              (matType, roughness, typeParam, reflectivity); shape:
+//              (1, rTop, 0, 0) for capped frustums, zeros for legacy cylinders
 //   polyhedra  header (planeOffset, planeCount, matType, roughness),
 //              (rgb, alpha), (aabbMin, typeParam), (aabbMax, reflectivity),
 //              then planeCount (normal.xyz, d)
@@ -37,10 +42,12 @@ import { fieldChunk } from './fieldChunk.js';
 import { planeChunk } from './planeChunk.js';
 import { gridChunk } from './gridChunk.js';
 import { convexChunk } from './convexChunk.js';
+import { coneChunk } from './coneChunk.js';
 
 export const DATA_TEX_WIDTH = 1024;
 
-export const sceneFragment = /* glsl */`
+export function makeSceneFragment(pieChunk = '') {
+return /* glsl */`
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -115,12 +122,14 @@ int resolveMaterialType(float matCode, float alpha)
 #include <raytracing_convexpolyhedron_intersect>
 #include <raytracing_plane_intersect>
 
+${coneChunk}
+
 vec4 fetchData(sampler2D tex, int index)
 {
 	return texelFetch(tex, ivec2(index % DATA_W, index / DATA_W), 0);
 }
 
-${convexChunk}
+${convexChunk}${pieChunk ? '\n\n' + pieChunk : ''}
 
 ${fieldChunk}
 
@@ -167,8 +176,7 @@ int testAtom(int i, int isShadowRay, inout float t)
 	vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
 	vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
 	intersectionNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
-	intersectionColor = colA.rgb;
-	intersectionAlpha = colA.a;
+${pieChunk ? '\tintersectionColor = pieAtomColor(i, posRad.xyz, rayOrigin + (t * rayDirection), mat, colA.rgb);\n' : '\tintersectionColor = colA.rgb;\n'}	intersectionAlpha = colA.a;
 	intersectionMaterialType = resolveMaterialType(mat.x, colA.a);
 	intersectionRoughness = mat.y;
 	intersectionTypeParam = mat.z;
@@ -198,7 +206,10 @@ int testCylinder(int i, int isShadowRay, inout float t)
 	vec3 ro = (invM * vec4(rayOrigin, 1.0)).xyz;
 	vec3 rd = (invM * vec4(rayDirection, 0.0)).xyz;
 	vec3 cn;
-	float d = UnitCylinderIntersect(ro, rd, cn);
+	vec4 shape = fetchData(uCylindersDataTexture, o + 7);
+	float d = (shape.x > 0.5)
+		? UnitCappedConeFrustumIntersect(shape.y, ro, rd, cn)
+		: UnitCylinderIntersect(ro, rd, cn);
 	if (d >= t) return 0;
 	t = d;
 	vec4 colA = fetchData(uCylindersDataTexture, o + 5);
@@ -210,7 +221,7 @@ int testCylinder(int i, int isShadowRay, inout float t)
 	intersectionRoughness = mat.y;
 	intersectionTypeParam = mat.z;
 	intersectionReflectivity = mat.w;
-	intersectionShapeIsClosed = FALSE;
+	intersectionShapeIsClosed = (shape.x > 0.5) ? TRUE : FALSE;
 	return (isShadowRay == TRUE && colA.a >= 0.999 && intersectionMaterialType != MAT_TRANSP) ? 1 : 0;
 }
 
@@ -586,14 +597,19 @@ vec3 RayTrace()
 				continue;
 			}
 
-			// transmitted (refracted) portion, tinted towards the object color
-			// by the inverse of its alpha (alpha 1 would be fully colored glass);
-			// tintDepth (glass slot, default 0.2) sets how strongly color
-			// saturates with the path length through the medium
+			// transmitted (refracted) portion: glass tint is driven by its Tint
+			// slider, while alpha-routed non-glass transparency keeps the classic
+			// inverse-alpha tint. tintDepth (glass slot, default 0.2) sets how
+			// strongly glass color saturates with the path length through the medium.
 			float tintDepth = intersectionMatCode == 2 ? intersectionReflectivity : 0.2;
-			vec3 tintColor = mix(vec3(1), intersectionColor, clamp(1.0 - intersectionAlpha, 0.05, 0.95));
+			vec3 tintColor = intersectionMatCode == 2
+				? mix(vec3(1), intersectionColor, 0.7)
+				: mix(vec3(1), intersectionColor, clamp(1.0 - intersectionAlpha, 0.05, 0.95));
+			vec3 surfaceTint = intersectionMatCode == 2
+				? mix(vec3(1), tintColor, clamp(tintDepth, 0.0, 1.0))
+				: tintColor;
 			if (intersectionShapeIsClosed == FALSE)
-				rayColorMask *= tintColor;
+				rayColorMask *= surfaceTint;
 			else if (distance(geometryNormal, shadingNormal) > 0.1) // exiting a closed shape
 				rayColorMask *= exp(log(clamp(tintColor, 0.01, 0.99)) * tintDepth * t); // Beer's law
 
@@ -607,9 +623,10 @@ vec3 RayTrace()
 				if (intersectionRoughness > 0.0)
 					rayDirection = randomDirectionInSpecularLobe(rayDirection, intersectionRoughness * intersectionRoughness);
 			}
-			else // shadow rays pass through transparent surfaces (tinted)
+			else // shadow rays pass through transparent surfaces (glass slider tint or
+			     // alpha-routed inverse-alpha tint)
 			{
-				diffuseContribution *= tintColor;
+				diffuseContribution *= surfaceTint;
 				diffuseContribution *= max(0.2, transmittance);
 				rayOrigin = intersectionPoint + (uEPS_intersect * rayDirection);
 			}
@@ -629,3 +646,6 @@ void SetupScene(void)
 
 #include <raytracing_main>
 `;
+}
+
+export const sceneFragment = makeSceneFragment();

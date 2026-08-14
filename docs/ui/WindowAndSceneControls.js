@@ -2,10 +2,77 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general, saveLockPrefs } from '../state/store.js';
-import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline } from '../render/index.js';
+import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline, clearChargeTextureCache, rebuildChargeBadges } from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 import { createLockToggleButton } from './LockToggleButton.js';
+import { installGestureArbiter } from './GestureArbiter.js';
+import { loadCrysVizFonts } from '../utils/index.js';
+import { configureGizmoCameraProjection, GIZMO_FOV, GIZMO_ORTHO_HALF_HEIGHT } from './GizmoLayout.js';
+
+const cameraPanRight = new THREE.Vector3();
+const cameraPanUp = new THREE.Vector3();
+let fontRefreshWired = false;
+
+const GIZMO_LABEL_SCREEN_SIZE = 12;
+
+function gizmoAspect() {
+  const gizmoDiv = document.getElementById('axesGizmo');
+  return gizmoDiv ? (gizmoDiv.clientWidth || 110) / (gizmoDiv.clientHeight || 110) : 1;
+}
+
+function createGizmoCamera() {
+  const aspect = gizmoAspect();
+  const camera = app.camera?.isOrthographicCamera
+    ? new THREE.OrthographicCamera(
+      -GIZMO_ORTHO_HALF_HEIGHT * aspect,
+      GIZMO_ORTHO_HALF_HEIGHT * aspect,
+      GIZMO_ORTHO_HALF_HEIGHT,
+      -GIZMO_ORTHO_HALF_HEIGHT,
+      0.1,
+      100
+    )
+    : new THREE.PerspectiveCamera(GIZMO_FOV, aspect, 0.1, 100);
+  camera.position.set(0, 0, 3);
+  camera.lookAt(0, 0, 0);
+  return camera;
+}
+
+function gizmoLabelScale() {
+  // SpriteMaterial.sizeAttenuation=false makes perspective sprites screen-
+  // stable with respect to depth. The scale remains world-like here, so it
+  // grows with the gizmo canvas in both projection modes.
+  return app.gizmoCamera?.isOrthographicCamera
+    ? GIZMO_LABEL_SCREEN_SIZE * 2 * GIZMO_ORTHO_HALF_HEIGHT / 90
+    : GIZMO_LABEL_SCREEN_SIZE * 2 * Math.tan(THREE.MathUtils.degToRad(GIZMO_FOV / 2)) / 90;
+}
+
+function updateGizmoLabelScales() {
+  const scene = app.gizmoScene;
+  if (!scene?.userData) return;
+  const scale = gizmoLabelScale();
+  for (const key of ['aLabel', 'bLabel', 'cLabel']) {
+    scene.userData[key]?.scale.set(scale, scale, 1);
+  }
+}
+
+function syncGizmoCameraToMainProjection() {
+  if (!app.gizmoCamera) return;
+  app.gizmoCamera = createGizmoCamera();
+  resizeGizmoRenderer();
+}
+
+function wireFontRefresh() {
+  if (fontRefreshWired || !document.fonts?.ready) return;
+  fontRefreshWired = true;
+  const boundedFontLoad = loadCrysVizFonts();
+  document.fonts.ready.then(() => boundedFontLoad).then(() => {
+    clearChargeTextureCache();
+    app.gizmoScene?.userData?.rebuildLabels?.();
+    rebuildChargeBadges();
+    requestRender();
+  });
+}
 
 // Wire the camera view buttons (x/y/z + a/b/c lattice axes + reset).
 // Extracted from crystal-viewer.js initApp() (Stage 6).
@@ -45,6 +112,7 @@ export function setupCameraButtons() {
 // Build the three.js scene: renderer/camera/controls/gizmo + lights + theme.
 // Extracted from crystal-viewer.js initApp() (Stage 3).
 export function setupScene() {
+  wireFontRefresh();
   document.body.classList.add(`theme-standard`);
   app.scene = new THREE.Scene();
 
@@ -152,6 +220,48 @@ export function initCamera(useOrthographicCamera){
 
 }
 
+// Shown when WebGL context creation fails at startup — most commonly because
+// the browser disabled WebGL for the WHOLE session after a GPU-process crash
+// (e.g. a very large PNG export in another tab), in which case reloading the
+// tab does nothing and only a full browser restart helps. Deliberately
+// self-contained (inline styles, no app CSS/theme dependencies): it must
+// render even though app initialization is about to abort.
+function showWebglStartupFailureDialog() {
+  if (document.getElementById('webglFailureDialog')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'webglFailureDialog';
+  overlay.setAttribute('role', 'alertdialog');
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;'
+    + 'align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+  const box = document.createElement('div');
+  box.style.cssText = 'max-width:520px;margin:16px;padding:20px 24px;border-radius:10px;'
+    + 'background:#222;color:#eee;font:14px/1.5 sans-serif;box-shadow:0 8px 40px rgba(0,0,0,0.6);';
+  const title = document.createElement('h3');
+  title.textContent = '3D graphics could not be started';
+  title.style.cssText = 'margin:0 0 10px 0;font-size:17px;color:#fff;';
+  const body = document.createElement('p');
+  body.style.margin = '0 0 10px 0';
+  body.textContent = 'The browser refused to create a WebGL context, so CrysViz cannot render. '
+    + 'This usually means the browser disabled WebGL for the whole session after a graphics '
+    + 'crash (for example, a very large PNG export), or that hardware acceleration is off.';
+  const steps = document.createElement('p');
+  steps.style.margin = '0 0 14px 0';
+  steps.textContent = 'Restart the browser completely — reloading this tab is not enough — '
+    + 'and close other GPU-heavy tabs first. If the problem persists, check that hardware '
+    + 'acceleration / WebGL is enabled in the browser settings.';
+  const close = document.createElement('button');
+  close.textContent = 'Close';
+  close.style.cssText = 'padding:6px 16px;border:none;border-radius:6px;cursor:pointer;'
+    + 'background:#4a4a4a;color:#fff;font-size:14px;';
+  close.addEventListener('click', () => overlay.remove());
+  box.appendChild(title);
+  box.appendChild(body);
+  box.appendChild(steps);
+  box.appendChild(close);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
 export function initRenderer(){
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
@@ -167,6 +277,7 @@ export function initRenderer(){
       { antialias: false, alpha: true, powerPreference: 'default' }
     );
   } catch (_) {
+    showWebglStartupFailureDialog();
     throw new Error('WebGL could not be initialized. Close GPU-heavy tabs or restart the browser, then reload.');
   }
   app.renderer.setSize(w, h);
@@ -183,6 +294,23 @@ export function initRenderer(){
   app.renderer.toneMapping = THREE.ACESFilmicToneMapping;
   app.renderer.toneMappingExposure = 1.2;
   app.renderer.localClippingEnabled = true;
+
+  // A lost WebGL context (GPU memory exhaustion — e.g. an oversized PNG
+  // export — or a driver reset) is PERMANENT for the canvas unless the page
+  // calls preventDefault() here; with it, the browser may restore the
+  // context once the pressure clears. On restore, three re-creates its GL
+  // resources lazily on the next render — which the on-demand render loop
+  // never issues unprompted, so poke it or the view stays blank until a
+  // manual reload.
+  app.renderer.domElement.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    console.warn('[webgl] context lost — waiting for the browser to restore it');
+  });
+  app.renderer.domElement.addEventListener('webglcontextrestored', () => {
+    console.info('[webgl] context restored');
+    requestRender();
+  });
+
   view.appendChild(app.renderer.domElement);
 }
 
@@ -205,15 +333,16 @@ export function initControls(){
   app.controls.dynamicDampingFactor=0.2;
   app.controls.rotateSpeed=1.5;
   app.controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
-  app.controls.noPan= true; // disable panning as it only causes problems and does not really have a use
+  app.controls.noPan = true; // mouse and touch pan directly; trackball keeps rotate + zoom
   app.controls.noRotate= false;
   app.controls.panSpeed = 0.8;
 
   app.controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,
     MIDDLE: THREE.MOUSE.DOLLY,
-    RIGHT: THREE.MOUSE.PAN
-    };
+  };
+
+  installGestureArbiter(app.renderer.domElement);
 
   // update() fires 'change' whenever the camera actually moved (user input,
   // damping coast-down, or programmatic moves) — the trigger for on-demand rendering.
@@ -229,6 +358,12 @@ export function initControls(){
     }
   });
 
+}
+
+export function resetCameraPan() {
+  if (app.cameraPan.x !== 0 || app.cameraPan.y !== 0) requestRender();
+  app.cameraPan.x = 0;
+  app.cameraPan.y = 0;
 }
 
 
@@ -290,8 +425,9 @@ export function resizeGizmoRenderer() {
   const gw = gizmoDiv.clientWidth || 110;
   const gh = gizmoDiv.clientHeight || 110;
   app.gizmoRenderer.setSize(gw, gh);
-  app.gizmoCamera.aspect = gw / gh;
-  app.gizmoCamera.updateProjectionMatrix();
+  const aspect = gw / gh;
+  configureGizmoCameraProjection(app.gizmoCamera, aspect);
+  updateGizmoLabelScales();
 }
 
 
@@ -320,9 +456,7 @@ export function initAxesGizmo(){
   // No label renderer needed for gizmo - labels are in separate legend
 
   app.gizmoScene = new THREE.Scene();
-  app.gizmoCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-  app.gizmoCamera.position.set(0, 0, 3);
-  app.gizmoCamera.lookAt(0, 0, 0);
+  app.gizmoCamera = createGizmoCamera();
 
   const arrowLen = 1., headLen = 0.35, headWidth = 0.22;
   // Cylinder-shaft arrows instead of THREE.ArrowHelper: the helper's shaft is
@@ -353,7 +487,7 @@ export function initAxesGizmo(){
   app.gizmoScene.add(aArrow, bArrow, cArrow);
 
   // Optional a/b/c letters at each arrow tip, as an alternative to the
-  // separate #axesLegend box (toggled via GizmoDrag.js's hamburger menu,
+  // separate #axesLegend box (toggled via GizmoDrag.js's long-press menu,
   // general.gizmoLabelsOnArrows). Canvas-texture sprites rather than
   // TextGeometry: no font loading, and THREE.Sprite always faces the camera
   // regardless of the arrow's own rotation, so the letter stays readable as
@@ -365,7 +499,7 @@ export function initAxesGizmo(){
     canvas.width = size;
     canvas.height = size;
     const ctx = canvas.getContext('2d');
-    ctx.font = 'bold 92px sans-serif';
+    ctx.font = "bold 92px 'CrysViz Sans', sans-serif";
     ctx.fillStyle = `#${color.toString(16).padStart(6, '0')}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -376,9 +510,15 @@ export function initAxesGizmo(){
     // is only ~90px); a flat linear filter keeps the letter crisp instead.
     texture.minFilter = THREE.LinearFilter;
     texture.generateMipmaps = false;
-    const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: false,
+      sizeAttenuation: false,
+    });
     const sprite = new THREE.Sprite(material);
-    sprite.scale.set(0.34, 0.34, 1);
+    const scale = gizmoLabelScale();
+    sprite.scale.set(scale, scale, 1);
     // Just past the tip, not on top of the cone: a label centered on the
     // arrow's own axis this close to the head reads as overlapping it.
     // Offset stays modest — an arrow pointing near-straight "up" in camera
@@ -402,15 +542,26 @@ export function initAxesGizmo(){
   app.gizmoScene.userData.aLabel = aLabel;
   app.gizmoScene.userData.bLabel = bLabel;
   app.gizmoScene.userData.cLabel = cLabel;
+  const gizmoScene = app.gizmoScene;
+  gizmoScene.userData.rebuildLabels = () => {
+    const specs = [
+      ['aLabel', aArrow, 'a', 0xff3333],
+      ['bLabel', bArrow, 'b', 0x33cc33],
+      ['cLabel', cArrow, 'c', 0x3366ff],
+    ];
+    for (const [key, arrow, letter, color] of specs) {
+      const oldLabel = gizmoScene.userData[key];
+      oldLabel?.parent?.remove(oldLabel);
+      oldLabel?.material?.map?.dispose();
+      oldLabel?.material?.dispose();
+      const label = makeLabel(letter, color);
+      arrow.add(label);
+      gizmoScene.userData[key] = label;
+    }
+    updateGizmoLabelScales();
+  };
 
-function sizeGizmo(){
-  const w = gizmoDiv.clientWidth || 110;
-  const h = gizmoDiv.clientHeight || 110;
-  app.gizmoRenderer.setSize(w, h);
-  app.gizmoCamera.aspect = w / h;
-  app.gizmoCamera.updateProjectionMatrix();
-}
-  sizeGizmo();
+  resizeGizmoRenderer();
 }
 
 /** Re-apply general.axesLineWidth to the gizmo arrows' shaft radii (the
@@ -429,7 +580,7 @@ export function updateAxesGizmoWidth() {
 
 /** Toggle the a/b/c letters between the separate #axesLegend box (default)
  *  and billboarded sprites at each gizmo arrow's tip (ui/GizmoDrag.js's
- *  hamburger menu calls this). Both are never shown at once — enabling one
+ *  long-press menu calls this). Both are never shown at once — enabling one
  *  hides the other, respecting the current general.showAxes visibility. */
 export function setGizmoLabelsOnArrows(enabled) {
   general.gizmoLabelsOnArrows = enabled;
@@ -446,7 +597,9 @@ export function setGizmoLabelsOnArrows(enabled) {
 
 
 
+
 export function switchCameraType() {
+  resetCameraPan();
   const w = view.clientWidth || window.innerWidth;
   const h = view.clientHeight || window.innerHeight;
 
@@ -470,6 +623,7 @@ export function switchCameraType() {
     app.camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
     app.orthographicFrustumSize = null;
   }
+  syncGizmoCameraToMainProjection();
   app.controls.object = app.camera;
   ['x', 'y', 'z', 'a', 'b', 'c'].forEach(axis => { setupAxisControls(axis); setupAxisLongPress(axis); });
 
@@ -482,6 +636,10 @@ export function switchCameraType() {
 
 // makes the center of structure as the rotation center.
 export function asetViewDirection(dir) {
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
+  resetCameraPan();
+  removeCameraPanOffset(panX, panY);
   //console.log('[setView] rendered camera UUID:', camera.uuid, 'controls.object UUID:', controls.object?.uuid);
   const { center, dist } = getCellCenterAndDist();
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
@@ -505,6 +663,10 @@ export function asetViewDirection(dir) {
 // refit:true (resetView() only) to instead recompute center/distance from
 // the structure's bounding box, i.e. fit the view like the old behavior.
 export function setViewDirection(dir, { refit = false } = {}) {
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
+  resetCameraPan();
+  removeCameraPanOffset(panX, panY);
   const n = (dir.isVector3 ? dir : new THREE.Vector3(...dir)).clone().normalize();
 
   let dist;
@@ -577,7 +739,17 @@ function refitOrthographicFrustum() {
   resizeRenderer(app.orthographicFrustumSize);
 }
 
+function removeCameraPanOffset(x, y) {
+  if (x === 0 && y === 0) return;
+  app.camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+  app.camera.position.addScaledVector(cameraPanRight, -x);
+  app.camera.position.addScaledVector(cameraPanUp, -y);
+}
+
 export function resetView() {
+  resetCameraPan();
   app.controls.reset();
   stopCameraMomentum();
   setViewDirection(new THREE.Vector3(1,1,1), { refit: true });
@@ -603,6 +775,10 @@ export function resetView() {
  * yet and should start fresh instead of borrowing someone else's.
  */
 export function fitCameraToCurrentStructure({ resetDirection = false } = {}) {
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
+  resetCameraPan();
+  removeCameraPanOffset(panX, panY);
   const { center, dist } = getCellCenterAndDist();
   const dir = resetDirection
     ? new THREE.Vector3(1, 1, 1).normalize()
@@ -631,6 +807,9 @@ export function captureCameraSnapshot() {
     position: app.camera.position.clone(),
     target: app.controls.target.clone(),
     up: app.camera.up.clone(),
+    quaternion: app.camera.quaternion.clone(),
+    pan: { x: app.cameraPan.x, y: app.cameraPan.y },
+    zoom: app.camera.zoom,
     orthographicFrustumSize: app.useOrthographicCamera ? app.orthographicFrustumSize : null,
   };
 }
@@ -638,15 +817,39 @@ export function captureCameraSnapshot() {
 /** Restore a snapshot captured by captureCameraSnapshot(). */
 export function applyCameraSnapshot(snapshot) {
   if (!snapshot) return;
+  const panX = Number.isFinite(snapshot.pan?.x) ? snapshot.pan.x : 0;
+  const panY = Number.isFinite(snapshot.pan?.y) ? snapshot.pan.y : 0;
   app.camera.position.copy(snapshot.position);
   app.controls.target.copy(snapshot.target);
   app.camera.up.copy(snapshot.up);
+  if (snapshot.quaternion) app.camera.quaternion.copy(snapshot.quaternion);
+  app.cameraPan.x = panX;
+  app.cameraPan.y = panY;
+  if (snapshot.zoom != null) {
+    app.camera.zoom = snapshot.zoom;
+    app.camera.updateProjectionMatrix();
+  }
   if (app.useOrthographicCamera && snapshot.orthographicFrustumSize != null) {
     app.orthographicFrustumSize = snapshot.orthographicFrustumSize;
     resizeRenderer(app.orthographicFrustumSize);
   }
   stopCameraMomentum();
+  if (panX !== 0 || panY !== 0) {
+    app.camera.updateMatrixWorld(true);
+    cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+    cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+    app.camera.position.addScaledVector(cameraPanRight, -panX);
+    app.camera.position.addScaledVector(cameraPanUp, -panY);
+  }
   app.controls.update();
+  if (panX !== 0 || panY !== 0) {
+    app.camera.updateMatrixWorld(true);
+    cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+    cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+    app.camera.position.addScaledVector(cameraPanRight, panX);
+    app.camera.position.addScaledVector(cameraPanUp, panY);
+  }
+  app.camera.updateMatrixWorld(true);
 }
 
 /**
@@ -659,6 +862,10 @@ export function applyCameraSnapshot(snapshot) {
  * first structure shown.
  */
 export function recenterCamera() {
+  const panX = app.cameraPan.x;
+  const panY = app.cameraPan.y;
+  resetCameraPan();
+  removeCameraPanOffset(panX, panY);
   const { center } = getCellCenterAndDist();
   const offset = app.camera.position.clone().sub(app.controls.target);
   app.controls.target.copy(center);
@@ -669,6 +876,16 @@ export function recenterCamera() {
   // rotate-then-switch.
   stopCameraMomentum();
   app.controls.update();
+  app.cameraPan.x = panX;
+  app.cameraPan.y = panY;
+  if (panX !== 0 || panY !== 0) {
+    app.camera.updateMatrixWorld(true);
+    cameraPanRight.setFromMatrixColumn(app.camera.matrixWorld, 0);
+    cameraPanUp.setFromMatrixColumn(app.camera.matrixWorld, 1);
+    app.camera.position.addScaledVector(cameraPanRight, panX);
+    app.camera.position.addScaledVector(cameraPanUp, panY);
+    app.camera.updateMatrixWorld(true);
+  }
 }
 
 
@@ -686,7 +903,3 @@ export function collapseAllAtomExpansions() {
     icon.style.transform = 'rotate(0deg)';
   });
 }
-
-
-
-

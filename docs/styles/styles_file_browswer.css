@@ -71,7 +71,7 @@
   }
   .icon.copy {
     font-weight: var(--fw-normal);
-    font-size: 18px;
+    font-size: var(--fs-2xl);
   }
 
   .icon.copy:hover {
@@ -320,4 +320,3 @@
   width: 50px;
   padding: var(--sp-1);
 }
-

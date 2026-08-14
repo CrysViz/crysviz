@@ -5,6 +5,7 @@
 
 import { birchMurnaghanPressure, birchMurnaghanEnergy } from './eosMath.js';
 import { loadPlotly } from '../utils/plotlyLoader.js';
+import { downloadBlob } from '../ui/SavePanel.js';
 
 const COLORS = {
   DATA: '#d62828',
@@ -30,6 +31,7 @@ const V_DIFF_GUIDES = [
 ];
 
 const plotThemes = new Map(); // plotId -> 'dark' | 'light'
+let exportInProgress = false;
 
 export function getPlotTheme(plotId) {
   return plotThemes.get(plotId) || 'dark';
@@ -76,7 +78,7 @@ function baseLayout(plotId, xLabel, yLabel, isExpanded) {
   return {
     paper_bgcolor: paperBg,
     plot_bgcolor: paperBg,
-    font: { color: fontColor, family: 'Arial, sans-serif', size: sizes.base },
+    font: { color: fontColor, family: "'CrysViz Sans', 'CrysViz Sans Math', sans-serif", size: sizes.base },
     xaxis: {
       title: axisTitle(xLabel, sizes.title, isExpanded ? 15 : 6), tickfont: { size: sizes.tick },
       color: fontColor, gridcolor: gridColor, zerolinecolor: zeroLineColor, showgrid: true,
@@ -239,7 +241,7 @@ export async function plotPV(plotId, ctx, isExpanded = false) {
   const layout = {
     paper_bgcolor: isLight ? '#ffffff' : '#121212',
     plot_bgcolor: isLight ? '#ffffff' : '#121212',
-    font: { color: fontColor, family: 'Arial, sans-serif', size: sizes.base },
+    font: { color: fontColor, family: "'CrysViz Sans', 'CrysViz Sans Math', sans-serif", size: sizes.base },
     showlegend: true,
     legend: {
       bgcolor: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.3)',
@@ -394,11 +396,20 @@ export async function plotPV(plotId, ctx, isExpanded = false) {
 }
 
 export async function exportPlotAsPNG(plotId) {
-  const Plotly = await loadPlotly();
-  const plotDiv = document.getElementById(plotId);
-  const width = plotDiv?.offsetWidth || 1200;
-  const height = plotDiv?.offsetHeight || 900;
-  await Plotly.downloadImage(plotId, { format: 'png', width, height, filename: plotId, scale: 3 });
+  // Plotly.downloadImage rejected overlap; toImage does not, so serialize exports.
+  if (exportInProgress) return;
+  exportInProgress = true;
+  try {
+    const Plotly = await loadPlotly();
+    const plotDiv = document.getElementById(plotId);
+    const width = plotDiv?.offsetWidth || 1200;
+    const height = plotDiv?.offsetHeight || 900;
+    const dataUrl = await Plotly.toImage(plotId, { format: 'png', width, height, scale: 3 });
+    const blob = await (await fetch(dataUrl)).blob();
+    downloadBlob(plotId + '.png', blob);
+  } finally {
+    exportInProgress = false;
+  }
 }
 
 /** Wipes a chart back to empty (e.g. resetting the overall fit) — best-effort,

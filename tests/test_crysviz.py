@@ -598,6 +598,7 @@ class CLITests(unittest.TestCase):
 
     def test_native_window_enables_web_storage(self):
         webview = mock.Mock()
+        webview.settings = {}
         server = mock.Mock(url="http://127.0.0.1:1234/index.html")
         with mock.patch.dict(sys.modules, {"webview": webview}):
             self.assertEqual(_run_pywebview(server, "qt", True), 0)
@@ -605,6 +606,16 @@ class CLITests(unittest.TestCase):
             "CrysViz", server.url, width=1280, height=800, min_size=(640, 480),
         )
         webview.start.assert_called_once_with(debug=True, private_mode=False, gui="qt")
+
+    def test_native_window_enables_downloads_before_start(self):
+        webview = mock.Mock()
+        webview.settings = {}
+        settings_at_start = {}
+        webview.start.side_effect = lambda **kwargs: settings_at_start.update(webview.settings)
+        server = mock.Mock(url="http://127.0.0.1:1234/index.html")
+        with mock.patch.dict(sys.modules, {"webview": webview}):
+            self.assertEqual(_run_pywebview(server, "qt", True), 0)
+        self.assertEqual(settings_at_start["ALLOW_DOWNLOADS"], True)
 
     def test_fixed_port_failure_is_concise(self):
         occupied = socket.socket()

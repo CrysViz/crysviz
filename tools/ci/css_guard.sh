@@ -184,10 +184,11 @@ check_css_file() {
         done < <(printf '%s\n' "$tsv" | rg -P -i -e ":[^;{}]*(?<![-\\w])(${color_keywords})(?![-\\w])[^;{}]*;")
 
         # --- invariant 2: font-family literals ---
+        # @font-face descriptors define faces rather than font stacks, so exempt their selector context.
         while IFS=$'\t' read -r lineno selector content; do
             [[ -z "$lineno" ]] && continue
             report "font-family" "$rel" "$lineno" "$selector" "$(printf '%s' "$content" | sed -e 's/^[[:space:]]*//')"
-        done < <(printf '%s\n' "$tsv" | rg -e 'font-family\s*:' | rg -v -e 'font-family\s*:\s*var\(' -e 'font-family\s*:\s*inherit\b')
+        done < <(printf '%s\n' "$tsv" | rg -e 'font-family\s*:' | awk -F '\t' '$2 != "@font-face"' | rg -v -e 'font-family\s*:\s*var\(' -e 'font-family\s*:\s*inherit\b')
     fi
 
     # --- invariant 3: @media outside responsive.css (checked in every file,

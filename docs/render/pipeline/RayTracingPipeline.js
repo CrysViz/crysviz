@@ -3,6 +3,9 @@
 // with true reflections, refractive transparency, hard shadows and
 // progressive accumulation — built on the vendored
 // docs/external/three-raytracing/ GLSL chunk library (CC0, Erich Loftis).
+// This file is original CrysViz work licensed under AGPL-3.0 (see the
+// repository LICENSE); it builds on the vendored CC0 chunk library, whose
+// dedication covers the upstream material only.
 // The raster scene is NOT drawn: each frame renders a fullscreen triangle
 // whose fragment shader traces the scene from data textures
 // (render/pipeline/raytrace/SceneEncoder.js), accumulates into a ping-pong
@@ -111,10 +114,15 @@ import { requestRender } from '../AnimateModule.js';
 import { updateTracerProgress, hideTracerProgress, showTracerCompiling } from '../TracerProgressModule.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 import { DepthPeelPipeline } from './DepthPeelPipeline.js';
-import { sceneFragment } from './raytrace/sceneFragment.js';
+import { makeSceneFragment } from './raytrace/sceneFragment.js';
 import { SceneEncoder } from './raytrace/SceneEncoder.js';
+import { occupancyChunk } from './raytrace/occupancyChunk.js';
 
 const RESIZE_BOOST_SAMPLES = 16; // inner samples after a size change (PNG export)
+
+function sceneFragmentForOccupancy(hasOccupancy) {
+  return hasOccupancy ? makeSceneFragment(occupancyChunk) : makeSceneFragment();
+}
 
 // ---- tiled progressive rendering ("gentle" mode) ---------------------------
 // Bounds per-frame GPU work by rendering each accumulation SAMPLE as a series
@@ -217,7 +225,9 @@ export class RayTracingPipeline extends ForwardPipeline {
 
   _initialized = false;
   _sceneDirty = true;
+  _shaderHasOccupancy = false;
   _boostSamples = 0;
+  _lastLookBackground = undefined;
 
   // ---- async shader-compile gate ------------------------------------------
   // The scene-trace ShaderMaterial is thousands of assembled GLSL lines
@@ -285,7 +295,7 @@ export class RayTracingPipeline extends ForwardPipeline {
   _config() {
     return {
       vertexShader: CommonRayTracing_Vertex,
-      sceneFragment,
+      sceneFragment: sceneFragmentForOccupancy,
       copyFragment: ScreenCopy_Fragment,
       outputFragment: ScreenOutput_Fragment,
       copyTexUniform: 'uRayTracedImageTexture',
@@ -312,6 +322,9 @@ export class RayTracingPipeline extends ForwardPipeline {
   _init(renderer) {
     this._cfg = this._config();
     this._encoder = new SceneEncoder();
+    // Select the optional source before the first compile gate frame.
+    this._encoder.encode();
+    this._shaderHasOccupancy = this._encoder.hasOccupancy;
 
     const makeTarget = () => {
       const target = new THREE.WebGLRenderTarget(4, 4, {
@@ -356,9 +369,13 @@ export class RayTracingPipeline extends ForwardPipeline {
       uSceneIsDynamic: { value: false },
       uCameraIsMoving: { value: false },
       uUseOrthographicCamera: { value: false },
+      uPieAxis: { value: new THREE.Vector3(0, 0, 1) },
+      uPieRight: { value: new THREE.Vector3(1, 0, 0) },
+      uPieUp: { value: new THREE.Vector3(0, 1, 0) },
       uAtomsDataTexture: { value: this._encoder.atomsTexture },
       uCylindersDataTexture: { value: this._encoder.cylindersTexture },
       uPolyDataTexture: { value: this._encoder.polyTexture },
+      uOccupancyDataTexture: { value: this._encoder.occupancyTexture },
       uAtomCount: { value: 0 },
       uCylinderCount: { value: 0 },
       uPolyCount: { value: 0 },
@@ -416,7 +433,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     const material = new THREE.ShaderMaterial({
       uniforms: this._uniforms,
       vertexShader: this._cfg.vertexShader,
-      fragmentShader: this._cfg.sceneFragment,
+      fragmentShader: this._cfg.sceneFragment(this._shaderHasOccupancy),
       depthTest: false,
       depthWrite: false,
     });
@@ -533,12 +550,32 @@ export class RayTracingPipeline extends ForwardPipeline {
    *  the PNG export can advance the accumulation one RAF at a time without a
    *  synchronous multi-sample freeze. The resize path may still SET _boostSamples;
    *  it just isn't consumed in bursts. PathTracingPipeline inherits this. */
-  beginPacedRender() { this._pacedExternally = true; }
+  beginPacedRender() {
+    this._pacedExternally = true;
+    // The export presents the newest accumulation sum directly (mid-round
+    // tile seams are acceptable progress feedback; the final captured frame
+    // lands exactly at a round boundary), so the full-size display snapshot
+    // is dead weight — at export resolutions it is a third full-size RGBA32F
+    // target, a third of the tracer's GPU memory. Shrink it for the export;
+    // endPacedRender restores it.
+    this._displayTarget.setSize(4, 4);
+  }
 
   /** Leave externally-paced mode (paired with beginPacedRender in the export's
    *  finally). Any leftover boost is cleared so a later interactive frame doesn't
    *  burst unexpectedly. */
-  endPacedRender() { this._pacedExternally = false; this._boostSamples = 0; }
+  endPacedRender() {
+    this._pacedExternally = false;
+    this._boostSamples = 0;
+    // Restore the display snapshot shrunk by beginPacedRender. Its content is
+    // stale/black until the next completed round refreshes it, so re-present
+    // paths right after the export must not read it before a snapshot lands
+    // (the export's finally resizes/resets the pipeline, which handles that).
+    if (this._displayTarget.width !== this._accumTarget.width
+        || this._displayTarget.height !== this._accumTarget.height) {
+      this._displayTarget.setSize(this._accumTarget.width, this._accumTarget.height);
+    }
+  }
 
   /** True once the accumulation has reached this tracer's convergence target
    *  (the image no longer changes). The PNG export loops render() until this
@@ -885,7 +922,8 @@ export class RayTracingPipeline extends ForwardPipeline {
         && baseW === this._lastBaseW && baseH === this._lastBaseH;
       this._accumTarget.setSize(w, h);
       this._previousTarget.setSize(w, h);
-      this._displayTarget.setSize(w, h);
+      // Export mode keeps the display snapshot shrunk (see beginPacedRender).
+      if (!this._pacedExternally) this._displayTarget.setSize(w, h);
       u.uResolution.value.set(w, h);
       this._outputQuad.material.uniforms.uOutputResolution.value.copy(bufferSize);
       this._lastScale = effScale;
@@ -908,11 +946,13 @@ export class RayTracingPipeline extends ForwardPipeline {
     // consumes the _sceneDirty flag it set. _sceneDirty is sticky across
     // preview frames, so a core edit made during the preview window is picked
     // up here on the resume frame.
+    let shaderSourceChanged = false;
     if (this._sceneDirty) {
       this._encoder.encode();
       u.uAtomsDataTexture.value = this._encoder.atomsTexture;
       u.uCylindersDataTexture.value = this._encoder.cylindersTexture;
       u.uPolyDataTexture.value = this._encoder.polyTexture;
+      u.uOccupancyDataTexture.value = this._encoder.occupancyTexture;
       u.uAtomCount.value = this._encoder.atomCount;
       u.uCylinderCount.value = this._encoder.cylinderCount;
       u.uPolyCount.value = this._encoder.polyCount;
@@ -945,14 +985,34 @@ export class RayTracingPipeline extends ForwardPipeline {
       u.uPlanesDataTexture.value = this._encoder.planesTexture;
       u.uPlaneAtlasTex.value = this._encoder.planeAtlasTexture;
       u.uCellWorldToFrac.value.copy(this._encoder.cellWorldToFrac);
+      if (this._shaderHasOccupancy !== this._encoder.hasOccupancy) {
+        this._shaderHasOccupancy = this._encoder.hasOccupancy;
+        this._rtMesh.material.fragmentShader = this._cfg.sceneFragment(this._shaderHasOccupancy);
+        this._rtMesh.material.needsUpdate = true;
+        this._shaderState = 'pending';
+        shaderSourceChanged = true;
+      }
       this._sceneDirty = false;
       // content changed: flush the accumulation so the old scene cannot ghost
       this.hardResetAccumulation(renderer);
     }
 
+    // Keep occupancy source transitions behind the same async compile gate as
+    // initial activation. Do not fall through to renderer.render() here: that
+    // would synchronously link the replacement program and could accumulate a
+    // sample in the transition frame. PathTracingPipeline inherits this path.
+    if (shaderSourceChanged) {
+      this._renderCompileGate(ctx);
+      return;
+    }
+
     // --- camera uniforms ----------------------------------------------------
     u.uCameraMatrix.value.copy(camera.matrixWorld);
     u.uCameraIsMoving.value = cameraIsMoving;
+    const ce = camera.matrixWorld.elements;
+    u.uPieAxis.value.set(-ce[8], -ce[9], -ce[10]).normalize();
+    u.uPieRight.value.set(ce[0], ce[1], ce[2]).normalize();
+    u.uPieUp.value.set(ce[4], ce[5], ce[6]).normalize();
     if (camera.isOrthographicCamera) {
       // chunk convention: ortho half-extents are uULen/uVLen * 100
       u.uUseOrthographicCamera.value = true;
@@ -1043,8 +1103,18 @@ export class RayTracingPipeline extends ForwardPipeline {
       + `|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
       + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`
       + `|${general.rtGroundOffset ?? 0.75}|${general.rtGroundSize ?? 2.5}`;
-    if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) this.resetAccumulation();
+    const backgroundChanged = this._lastLookBackground !== undefined
+      && u.uBackgroundColor.value.getHex() !== this._lastLookBackground;
+    if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) {
+      // A soft look reset deliberately retains the old sum for a gentle
+      // transition. That is not valid for a display-matched background: the
+      // old backdrop is a full-frame signal and otherwise remains as a bright
+      // ghost while the new pre-compensated miss colour converges.
+      if (backgroundChanged) this.hardResetAccumulation(renderer);
+      else this.resetAccumulation();
+    }
     this._lastLookKey = lookKey;
+    this._lastLookBackground = u.uBackgroundColor.value.getHex();
 
     // --- accumulate ---------------------------------------------------------
     // Either one scissored TILE of a round (tiled mode) or the full-frame
@@ -1116,7 +1186,8 @@ export class RayTracingPipeline extends ForwardPipeline {
         // it with no extra bookkeeping. Mid-round frames re-present this
         // unchanged snapshot, so the canvas never shows a partial-round seam.
         // (Tiled rounds keep the newest sum in _accumTarget — no swap here.)
-        this._snapshotDisplay(renderer, this._accumTarget);
+        // Export mode presents the sum directly — no snapshot to refresh.
+        if (!this._pacedExternally) this._snapshotDisplay(renderer, this._accumTarget);
       } else {
         completedFraction = this._tileCursor / roundTiles;
       }
@@ -1152,7 +1223,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       // When tiling is enabled, the output pass presents the DISPLAY snapshot;
       // the untiled path (sample 1, boosts, motion frames) must refresh it so
       // it isn't stale/black. The newest sum is now in _previousTarget (swap).
-      if (tilingEnabled) this._snapshotDisplay(renderer, this._previousTarget);
+      if (tilingEnabled && !this._pacedExternally) this._snapshotDisplay(renderer, this._previousTarget);
     }
 
     // --- averaged, tone-mapped output to the canvas -------------------------
@@ -1164,7 +1235,12 @@ export class RayTracingPipeline extends ForwardPipeline {
     // present: read the newest sum (in _previousTarget since the burst swap),
     // divide by 1/max(1, uSampleCounter).
     const out = this._outputQuad.material.uniforms;
-    if (tilingEnabled) {
+    if (tilingEnabled && this._pacedExternally) {
+      // Export: present the evolving sum directly (tiled rounds keep the
+      // newest sum in _accumTarget). Mid-round frames show tile-seam progress,
+      // which is fine — the capture happens at a completed round.
+      out[this._cfg.outputTexUniform].value = this._accumTarget.texture;
+    } else if (tilingEnabled) {
       out[this._cfg.outputTexUniform].value = this._displayTarget.texture;
     } else {
       // untiled present: the burst swap leaves the newest sum in _previousTarget

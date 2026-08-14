@@ -1,11 +1,11 @@
-// Energy Landscape windows: a CONTROLS window in the left dock (description +
+// Energy Landscape windows: a CONTROLS window in the main dock (description +
 // the addon's 📂 load button / drop target) and a separate PLOTS window
-// ('landscapePlots') defaulting to the wide right dock. The plots window is
+// ('landscapePlots') defaulting to the wide side dock. The plots window is
 // not opened by hand — loading a landscape JSON (button or drop) opens it via
 // the addon's onContent hook, so it appears exactly when there is something
 // to show. All heatmap/grid content and interaction lives in
 // docs/addons/landscape/landscape.js, driven through the addon API; the
-// controller owns its own ResizeObserver, so right-dock resizes, tab switches
+// controller owns its own ResizeObserver, so side-dock resizes, tab switches
 // and floating-window growth refit automatically.
 //
 // The plots window closes with closeMode:'hide' (detached, content kept): the
@@ -30,12 +30,12 @@ function ensureController(controlsHost) {
   controller = createLandscape(plotHost, api, {
     controlsHost,
     // A load attempt started — surface the plots window (front tab of the
-    // right dock by default) so the rows, or the error box, are visible.
+    // side dock by default) so the rows, or the error box, are visible.
     onContent() { openPanel('landscapePlots'); },
   });
 }
 
-/** Controls window ('landscape', left dock) body. */
+/** Controls window ('landscape', main dock) body. */
 export function addLandscapePanel(targetId = 'cvPanelBody-landscape') {
   const container = document.getElementById(targetId);
   if (!container) return;
@@ -61,7 +61,7 @@ export function removeLandscapePanel() {
   plotHost = null;
 }
 
-/** Plots window ('landscapePlots', right dock by default) body: adopt the
+/** Plots window ('landscapePlots', side dock by default) body: adopt the
  *  persistent heatmap host. */
 export function addLandscapePlotsPanel(targetId = 'cvPanelBody-landscapePlots') {
   const container = document.getElementById(targetId);

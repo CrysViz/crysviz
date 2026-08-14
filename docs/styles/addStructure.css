@@ -603,7 +603,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Docked panes (Modify Structure adopted into the left/right dock).
+   Docked panes (Modify Structure adopted into the left/side dock).
    The editor was authored as a floating window and sizes itself via the
    --sm/--lg body widths above; a dock pane is narrower and CLIPPED it — the
    matrix column and the Occ/Charge/Color columns simply vanished off the
@@ -612,66 +612,66 @@
    coordinate columns relax so rows compress, and the table wrapper picks up
    horizontal scrolling as the last resort for panes narrower than a row's
    minimum. Descendant selectors on the dock-state classes, per the adopted-
-   content rule (see rightDock.css).
+   content rule (see sideDock.css).
    ------------------------------------------------------------------------ */
 
 .cv-docked .addstructure-panel-body--sm,
 .cv-docked .addstructure-panel-body--lg,
-.cv-right-docked .addstructure-panel-body--sm,
-.cv-right-docked .addstructure-panel-body--lg {
+.cv-side-docked .addstructure-panel-body--sm,
+.cv-side-docked .addstructure-panel-body--lg {
   width: auto;
 }
 
 .cv-docked .lattice-row,
-.cv-right-docked .lattice-row {
+.cv-side-docked .lattice-row {
   flex-wrap: wrap;
   row-gap: var(--sp-3);
 }
 
 /* Enough basis that the two columns sit side by side in a wide right pane
-   but wrap into a stack in the ~380px left dock. */
+   but wrap into a stack in the ~380px main dock. */
 .cv-docked .lattice-col,
 .cv-docked .lattice-matrix-col,
-.cv-right-docked .lattice-col,
-.cv-right-docked .lattice-matrix-col {
+.cv-side-docked .lattice-col,
+.cv-side-docked .lattice-matrix-col {
   flex: 1 1 220px;
 }
 
 /* The vertical divider is meaningless once the columns can wrap. */
 .cv-docked .lattice-divider,
-.cv-right-docked .lattice-divider {
+.cv-side-docked .lattice-divider {
   display: none;
 }
 
 .cv-docked .addstructure-col-coord,
-.cv-right-docked .addstructure-col-coord {
+.cv-side-docked .addstructure-col-coord {
   width: auto;
 }
 
 /* Auto table layout refuses to shrink a column below a number input's
    intrinsic width (~60px in Firefox), which left the row ~60px wider than
-   the left dock no matter what the cells asked for. Fixed layout hands the
+   the main dock no matter what the cells asked for. Fixed layout hands the
    coordinate columns exactly the leftover pane width and the width:100%
    inputs follow. */
 .cv-docked .addstructure-table,
-.cv-right-docked .addstructure-table {
+.cv-side-docked .addstructure-table {
   table-layout: fixed;
 }
 
 /* With fixed layout the coordinate columns only get what the decorated
    columns leave behind — at the floating widths that was ~20px per axis in
-   the left dock. Trim the fixed columns to their real content so X/Y/Z end
+   the main dock. Trim the fixed columns to their real content so X/Y/Z end
    up with ~50px each. */
 .cv-docked .addstructure-col-element,
-.cv-right-docked .addstructure-col-element { width: 64px; }
+.cv-side-docked .addstructure-col-element { width: 64px; }
 .cv-docked .addstructure-col-narrow,
-.cv-right-docked .addstructure-col-narrow { width: 40px; }
+.cv-side-docked .addstructure-col-narrow { width: 40px; }
 .cv-docked .addstructure-col-color,
-.cv-right-docked .addstructure-col-color { width: 30px; }
+.cv-side-docked .addstructure-col-color { width: 30px; }
 .cv-docked .addstructure-col-icon,
-.cv-right-docked .addstructure-col-icon { width: 24px; }
+.cv-side-docked .addstructure-col-icon { width: 24px; }
 
 .cv-docked .atoms-table-scroll,
-.cv-right-docked .atoms-table-scroll {
+.cv-side-docked .atoms-table-scroll {
   overflow-x: auto;
 }

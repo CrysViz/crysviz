@@ -1,12 +1,12 @@
-// The right dock (formerly the "split view"): a wide, resizable pane on the
+// The side dock (formerly the "split view"): a wide, resizable pane on the
 // right edge of the screen — or, via the ⇩/⇒ header toggle, along the BOTTOM
 // edge (dockSide) — that hosts regular PanelWindows as TABS. Any window can
 // be dropped here (drag to the docked border) and dragged back out (drag its
-// tab away) — the same PanelWindow instances the left dock and floating
+// tab away) — the same PanelWindow instances the main dock and floating
 // windows use, so "everything is the same kind of Window".
 //
-// While a window is right-docked its element lives inside #splitPaneBody with
-// the cv-right-docked class (title bar hidden — the tab is the chrome) and
+// While a window is side-docked its element lives inside #splitPaneBody with
+// the cv-side-docked class (title bar hidden — the tab is the chrome) and
 // exactly one window carries cv-front (visible, filling the pane). Switching
 // tabs only toggles classes: content is never re-rendered, so transient state
 // (a loaded file, scroll position) survives a tab switch. The whole dock
@@ -15,7 +15,7 @@
 //
 // This module owns only the pane plumbing (chrome, resize handle, tabs, tab
 // drag, drop zone, fullscreen-item overlay). Registry/persistence concerns
-// stay in PanelManager.js, reached through the hooks passed to initRightDock:
+// stay in PanelManager.js, reached through the hooks passed to initSideDock:
 //   resolvePanel(id) -> PanelWindow|null
 //   getPref(name) -> boolean            panelPrefs (dragIntoDock/dragOutOfDock)
 //   onLayoutChange()                    any persistable state changed
@@ -45,8 +45,8 @@ let frontId = null; // id of the window currently shown in the pane body
 // Which viewport edge the dock hugs: 'right' (default) or 'bottom'. Bottom
 // mode aligns the pane's left edge with the 3D scene's left edge (not the
 // full viewport) so it never overlaps the #ui side panel — see
-// #viewArea.split-dock-bottom in rightDock.css. Persisted in the layout
-// blob's rightDock.side.
+// #viewArea.split-dock-bottom in sideDock.css. Persisted in the layout
+// blob's historical rightDock.side field (kept for persisted-layout compatibility).
 let dockSide = 'right';
 let wired = false;
 
@@ -62,11 +62,11 @@ function els() {
     overlay: document.getElementById('splitPaneOverlay'),
     infoBtn: document.getElementById('splitPaneInfoBtn'),
     dockBtn: document.getElementById('splitPaneDockBtn'),
-    dropHint: document.getElementById('rightDockDropHint'),
+    dropHint: document.getElementById('sideDockDropHint'),
   };
 }
 
-/** All right-docked windows in pane DOM order (the tab order). */
+/** All side-docked windows in pane DOM order (the tab order). */
 function attachedPanels() {
   const { body } = els();
   if (!body || !hooks) return [];
@@ -75,7 +75,7 @@ function attachedPanels() {
     .filter(Boolean);
 }
 
-/** Right-docked windows that should show as tabs (hiddenUntilStructure
+/** Side-docked windows that should show as tabs (hiddenUntilStructure
  *  windows stay attached but tab-less until a structure loads). */
 function visiblePanels() {
   return attachedPanels().filter((p) => !p.el.hidden);
@@ -85,7 +85,7 @@ function frontPanel() {
   return frontId && hooks ? hooks.resolvePanel(frontId) : null;
 }
 
-export function isRightDockActive() {
+export function isSideDockActive() {
   return visiblePanels().length > 0;
 }
 
@@ -102,7 +102,7 @@ function applyPaneWidth() {
 }
 
 /** Switch which viewport edge the dock hugs. No-op if already there. */
-export function setRightDockSide(side) {
+export function setSideDockSide(side) {
   if (dockSide === side || (side !== 'right' && side !== 'bottom')) return;
   dockSide = side;
   applyPaneWidth();
@@ -132,7 +132,7 @@ function syncSceneAndSidePanels() {
   if (!view || !hooks) return;
   const rect = view.getBoundingClientRect();
   // Only the pane's own docked edge reserves space; the other axis is left
-  // alone (right-docked reserves no height, bottom-docked reserves no width).
+  // alone (side-docked reserves no height, bottom-docked reserves no width).
   const rightReservePx = dockSide === 'bottom' ? 0 : Math.max(0, window.innerWidth - rect.right);
   const bottomReservePx = dockSide === 'bottom' ? Math.max(0, window.innerHeight - rect.bottom) : 0;
   hooks.setRightReserve(rightReservePx);
@@ -145,7 +145,7 @@ function syncSceneAndSidePanels() {
 
 // ---- tabs --------------------------------------------------------------------
 
-/** Rebuild one tab container from the visible right-docked windows: the
+/** Rebuild one tab container from the visible side-docked windows: the
  *  horizontal strip in the pane header (the windows' chrome while open) or
  *  the vertical pull-tab stack on the pane edge (shown while collapsed, to
  *  reopen). Windows keep their pane DOM order in both. */
@@ -178,7 +178,7 @@ function fillTabs(container, panelsList, { suffix = '', withMenu = false, dragga
 
     if (withMenu) {
       // The ≡ window menu (Position / Close / def.menuSections) — the tab is
-      // the window's only chrome while right-docked, so this is where its
+      // the window's only chrome while side-docked, so this is where its
       // menu lives. Deliberately NOT a ✕: a bare close here permanently
       // unregistered transient windows, and non-closable ones have no
       // business closing at all (their menu simply has no Close item).
@@ -220,14 +220,14 @@ function activatePanel(panel) {
     collapsed = false;
     applyPaneWidth();
   }
-  setRightFront(panel);
+  setSideFront(panel);
   syncSceneAndSidePanels();
   hooks?.onLayoutChange();
 }
 
-/** Show `panel` in the pane body (hiding the other right-docked windows).
+/** Show `panel` in the pane body (hiding the other side-docked windows).
  *  Only toggles classes — never re-renders anyone. */
-export function setRightFront(panel) {
+export function setSideFront(panel) {
   const { body } = els();
   if (!body || !panel || panel.el.parentElement !== body) return;
   frontId = panel.id;
@@ -239,7 +239,7 @@ export function setRightFront(panel) {
 }
 
 /** The pane-header "i" button mirrors the front window's infoMd (the title
- *  bar that normally hosts it is hidden while right-docked). */
+ *  bar that normally hosts it is hidden while side-docked). */
 function updateHeaderInfoBtn() {
   const { infoBtn } = els();
   if (infoBtn) infoBtn.hidden = !frontPanel()?.def.infoMd;
@@ -277,16 +277,17 @@ function onTabPointerDown(panel, tab, e) {
       tab.classList.add('cv-tab-dragging');
     }
     // Left the strip band: pull the window out of the dock and continue the
-    // same gesture as a floating title-bar drag (from there the left dock's
+    // same gesture as a floating title-bar drag (from there the main dock's
     // drag-into-dock works too).
     const r = strip.getBoundingClientRect();
     const outside = mv.clientY < r.top - DRAG_OUT_PX || mv.clientY > r.bottom + DRAG_OUT_PX
       || mv.clientX < r.left - DRAG_OUT_PX || mv.clientX > r.right + DRAG_OUT_PX;
-    if (outside && hooks?.getPref('dragOutOfDock')) {
+    if (outside && hooks?.getPref('dragOutOfDock') && hooks?.canFloat?.() !== false) {
       cleanup();
       strip.releasePointerCapture(e.pointerId);
+      hooks.onUserMutation?.(panel);
       // floatPanelForDrag detaches the window from the pane (via the
-      // manager's right-dock guard) and floats it under the pointer.
+      // manager's side-dock guard) and floats it under the pointer.
       hooks.floatPanelForDrag(panel, {
         left: Math.max(0, mv.clientX - 90),
         top: Math.max(0, mv.clientY - 12),
@@ -311,7 +312,7 @@ function onTabPointerDown(panel, tab, e) {
       if (up.type === 'pointerup') activatePanel(panel);
       return;
     }
-    commitTabOrder();
+    commitTabOrder(panel);
   };
 
   strip.addEventListener('pointermove', onMove);
@@ -321,12 +322,15 @@ function onTabPointerDown(panel, tab, e) {
 
 /** After a reorder drag: make the pane body's child order (the canonical tab
  *  order, what persistence reads) match the header strip. */
-function commitTabOrder() {
+function commitTabOrder(movedPanel) {
   const { body, headerTabs } = els();
   if (!body || !headerTabs) return;
+  hooks.onUserMutation?.(movedPanel);
   for (const tab of Array.from(headerTabs.children)) {
     const panel = hooks.resolvePanel(/** @type {HTMLElement} */ (tab).dataset.panelId);
-    if (panel && panel.el.parentElement === body) body.appendChild(panel.el);
+    if (panel && panel.el.parentElement === body) {
+      body.appendChild(panel.el);
+    }
   }
   renderTabs();
   hooks.onLayoutChange();
@@ -358,23 +362,23 @@ function hidePaneChrome() {
 }
 
 /**
- * Put a window into the right dock. The element is inserted into the pane
- * body (before `beforeEl`, or appended) and marked right-docked; with
+ * Put a window into the side dock. The element is inserted into the pane
+ * body (before `beforeEl`, or appended) and marked side-docked; with
  * `front` it becomes the visible tab, with `expand` its body is expanded
  * (building deferred content). Chrome only shows if the window is visible
  * (hiddenUntilStructure windows wait for revealFeaturePanels).
  */
-export function rightDockPanel(panel, { beforeEl = null, front = true, expand = true } = {}) {
+export function sideDockPanel(panel, { beforeEl = null, front = true, expand = true } = {}) {
   wireOnce();
   const { body } = els();
   if (!body || !hooks) return;
   if (panel.el.parentElement !== body) body.insertBefore(panel.el, beforeEl);
-  panel.markRightDocked();
+  panel.markSideDocked();
   if (!panel.el.hidden) {
     showPaneChrome();
     const fp = frontPanel();
     const frontValid = fp && fp.el.parentElement === body && !fp.el.hidden;
-    if (front || !frontValid) setRightFront(panel);
+    if (front || !frontValid) setSideFront(panel);
     else renderTabs();
   }
   if (expand) panel.expand();
@@ -383,24 +387,24 @@ export function rightDockPanel(panel, { beforeEl = null, front = true, expand = 
 }
 
 /**
- * Take a window out of the right dock: its element is detached (the caller
- * re-attaches it — float, left dock, or closed) and the pane re-fronts the
+ * Take a window out of the side dock: its element is detached (the caller
+ * re-attaches it — float, main dock, or closed) and the pane re-fronts the
  * last remaining tab, or hides entirely. panel.dock is NOT changed here:
  * closePanel keeps it 'right' as the remembered reopen location; float/dock
  * transitions overwrite it via markFloating/markDocked.
  */
-export function rightUndockPanel(panel) {
+export function sideUndockPanel(panel) {
   const { body } = els();
   if (!body || panel.el.parentElement !== body) return;
   if (panel.el.querySelector('.split-item.expanded, .trajPlot.expanded')) closeExpandedSplitItem();
   panel.el.remove();
-  panel.el.classList.remove('cv-right-docked', 'cv-front');
+  panel.el.classList.remove('cv-side-docked', 'cv-front');
   if (frontId === panel.id) frontId = null;
   const visible = visiblePanels();
   if (!visible.length) {
     hidePaneChrome();
   } else {
-    if (!frontId) setRightFront(visible[visible.length - 1]);
+    if (!frontId) setSideFront(visible[visible.length - 1]);
     else renderTabs();
     syncSceneAndSidePanels();
   }
@@ -408,7 +412,7 @@ export function rightUndockPanel(panel) {
 }
 
 /** Collapse the whole dock to edge pull-tabs (»/handle-snap) or restore it. */
-export function setRightDockCollapsed(next) {
+export function setSideDockCollapsed(next) {
   collapsed = !!next;
   applyPaneWidth();
   renderTabs(); // collapse/expand changes whether the pull-tab stack shows
@@ -419,9 +423,9 @@ export function setRightDockCollapsed(next) {
 /**
  * Re-derive chrome/front/tabs from the current window visibility. Called
  * after revealFeaturePanels (hiddenUntilStructure windows restored into the
- * right dock become visible only then) and availability changes.
+ * side dock become visible only then) and availability changes.
  */
-export function refreshRightDock() {
+export function refreshSideDock() {
   const visible = visiblePanels();
   if (!visible.length) {
     const { pane } = els();
@@ -431,14 +435,14 @@ export function refreshRightDock() {
   showPaneChrome();
   const fp = frontPanel();
   const frontValid = fp && !fp.el.hidden && fp.el.parentElement === els().body;
-  if (!frontValid) setRightFront(visible[visible.length - 1]);
+  if (!frontValid) setSideFront(visible[visible.length - 1]);
   else renderTabs();
   syncSceneAndSidePanels();
 }
 
 // ---- persistence (read/written by PanelManager's layout blob) ------------------
 
-export function getRightDockLayout() {
+export function getSideDockLayout() {
   return {
     order: attachedPanels().map((p) => p.id),
     front: frontId,
@@ -450,7 +454,7 @@ export function getRightDockLayout() {
 
 /** Apply the remembered pane fraction/collapsed/side state (called before
  *  the panels register — DOM state follows as they dock in). */
-export function applyRightDockLayout(saved) {
+export function applySideDockLayout(saved) {
   if (!saved || typeof saved !== 'object') return;
   const f = Number(saved.fraction);
   if (Number.isFinite(f) && f > 0) paneFraction = Math.min(0.8, Math.max(0.1, f));
@@ -460,7 +464,7 @@ export function applyRightDockLayout(saved) {
 }
 
 /** Restore the dock's own defaults (Reset UI). */
-export function resetRightDockLayout() {
+export function resetSideDockLayout() {
   paneFraction = DEFAULT_PANE_FRACTION;
   collapsed = false;
   dockSide = 'right';
@@ -480,7 +484,7 @@ export function resetRightDockLayout() {
  * - dock holding windows but collapsed to pull-tabs: only its own edge's
  *   band (a drop must not silently relocate an occupied dock).
  */
-export function rightDockDropSideAt(ev) {
+export function sideDockDropSideAt(ev) {
   if (!hooks || !hooks.getPref('dragIntoDock')) return null;
   const { pane } = els();
   if (pane && !pane.hidden && !collapsed) {
@@ -503,17 +507,17 @@ export function rightDockDropSideAt(ev) {
 }
 
 /** Is this pointer position over the dock's drop zone? */
-export function wantsRightDockDrop(ev) {
-  return rightDockDropSideAt(ev) !== null;
+export function wantsSideDockDrop(ev) {
+  return sideDockDropSideAt(ev) !== null;
 }
 
 /** Show/position the drop highlight while a floating drag hovers the zone
  *  (null hides it — drag ended or moved away). Geometry is set inline: the
  *  open pane's rect, or the band of whichever edge would take the drop. */
-export function updateRightDockHint(ev) {
+export function updateSideDockHint(ev) {
   const { dropHint, pane } = els();
   if (!dropHint) return;
-  const side = ev ? rightDockDropSideAt(ev) : null;
+  const side = ev ? sideDockDropSideAt(ev) : null;
   const active = side !== null;
   dropHint.hidden = !active;
   dropHint.classList.toggle('active', active);
@@ -549,7 +553,7 @@ export function updateRightDockHint(ev) {
 // Generic helpers for feature content (EOS plots, the demo counter, the
 // trajectory plot's own .trajPlot root — see TrajectoryPlot.js): expand one
 // item to (almost) fullscreen over a dark overlay. Works from any window
-// state — right-docked, floating or left-docked (the host window gets
+// state — side-docked, floating or main-docked (the host window gets
 // cv-has-expanded-item, which lifts the body's backdrop-filter so the
 // fixed-position item isn't trapped inside it, and raises a floating host
 // above the overlay). closeExpandedSplitItem() matches both `.split-item` and
@@ -577,7 +581,7 @@ export function closeExpandedSplitItem() {
 
 // ---- one-time wiring ------------------------------------------------------------
 
-export function initRightDock(h) {
+export function initSideDock(h) {
   hooks = h;
   wireOnce();
 }
@@ -588,11 +592,11 @@ function wireOnce() {
   const { handle, overlay, infoBtn, dockBtn } = els();
 
   const collapseBtn = document.getElementById('splitPaneCollapseBtn');
-  if (collapseBtn) collapseBtn.addEventListener('click', () => setRightDockCollapsed(true));
+  if (collapseBtn) collapseBtn.addEventListener('click', () => setSideDockCollapsed(true));
 
   updateDockBtn();
   if (dockBtn) {
-    dockBtn.addEventListener('click', () => setRightDockSide(dockSide === 'bottom' ? 'right' : 'bottom'));
+    dockBtn.addEventListener('click', () => setSideDockSide(dockSide === 'bottom' ? 'right' : 'bottom'));
   }
 
   if (infoBtn) {
@@ -621,7 +625,7 @@ function wireOnce() {
           : Math.max(0, window.innerWidth - ev.clientX);
         const basis = dockSide === 'bottom' ? window.innerHeight : window.innerWidth;
         if (sizePx < MIN_PANE_PX) {
-          setRightDockCollapsed(true);
+          setSideDockCollapsed(true);
           return;
         }
         paneFraction = Math.min(0.8, sizePx / basis);
@@ -650,5 +654,5 @@ function wireOnce() {
   // A plain browser window resize changes #view's pixel size too (the pane's
   // width is a fraction of the viewport) — keep the reserve/dot/renderer in
   // sync without waiting for the next pane interaction.
-  window.addEventListener('resize', () => { if (isRightDockActive()) syncSceneAndSidePanels(); });
+  window.addEventListener('resize', () => { if (isSideDockActive()) syncSceneAndSidePanels(); });
 }
