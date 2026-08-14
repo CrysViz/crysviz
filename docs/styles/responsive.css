@@ -305,6 +305,50 @@
     overflow-wrap: anywhere;
   }
 
+  /* ---- styles.css: measurement toolbar goes icon-only ----
+     The fluid shrink takes the label from 13px at this rung's edge to its 9px
+     floor by ~500px, which is where it stops being readable and starts being
+     the only reason the button is as wide as it is. The icons are the same
+     glyphs the compact anchor uses and every button keeps its title. */
+  #measurementTools .measure-tool-btn > span {
+    display: none;
+  }
+
+  /* No label to set the width, so the 40px floor is now what makes the button
+     a touch target rather than an icon's bounding box. */
+  #measurementTools .measure-tool-btn {
+    min-width: var(--control-h-touch);
+    min-height: var(--control-h-touch);
+  }
+
+  /* ---- styles.css: camera tools stack instead of running across ----
+     Two rows of three (world above lattice) beside a lock-over-reset column,
+     rather than one eight-item row that wraps wherever it happens to run out.
+     The wrappers are display:contents everywhere else. */
+  #cameraPanel {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: start;
+    align-items: center;
+  }
+
+  .camera-axis-group {
+    display: flex;
+    align-items: center;
+    gap: clamp(4px, 1.1111vw, var(--sp-3));
+    /* Both triplets in column 1; auto-flow puts world on row 1, lattice on
+       row 2. The separators are display:none, so they claim no cell. */
+    grid-column: 1;
+  }
+
+  /* `span 2`, not `1 / -1`: the rows here are implicit, and -1 resolves
+     against the explicit row grid, so it would collapse back onto row 1. */
+  .camera-reset-stack {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    flex-direction: column;
+  }
+
   /* ---- styles.css: camera tools ----
      The 320px cap is a desktop tidiness limit; on a phone the compact panel
      body is already narrower than that, so the cap only forces an overflow.

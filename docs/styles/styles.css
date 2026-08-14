@@ -2336,6 +2336,13 @@ body > #structureInfoContent {
   justify-content: center;
 }
 
+/* World (x/y/z) and lattice (a/b/c) triplets. A grouping box only the mobile
+   rung uses: `contents` means the six stacks are laid out by #cameraPanel
+   directly, exactly as they were before the wrappers existed. */
+.camera-axis-group {
+  display: contents;
+}
+
 /* Vertical stack: up-arrow / view-along-axis button / down-arrow. The arrows
    keep their box while hidden (see below), so this gap and their height are
    dead space in the default long-press mode — both kept as small as the

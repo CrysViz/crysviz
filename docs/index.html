@@ -320,7 +320,15 @@
   <div id="cameraPanel" class="measurement-group">
     <!-- Each axis button carries an up/down arrow above and below that
          step-rotate the camera about that axis (world x/y/z, lattice a/b/c);
-         clicking the letter views along the axis. -->
+         clicking the letter views along the axis.
+
+         The two triplets are wrapped so a narrow screen can stack world above
+         lattice (responsive.css, mobile rung). The wrappers are
+         `display: contents` at every other width, so the flat single row is
+         untouched — and they sit OUTSIDE .camera-axis-stack because
+         cameraAngleControl.js reaches the stack with .closest() and counts
+         exactly six of them. -->
+    <div class="camera-axis-group">
     <div class="camera-axis-stack">
       <button class="angle-btn axis-step" id="xUp" title="Rotate about X (+)">▲</button>
       <button class="camera-tool-btn" id="viewX" title="View X axis">
@@ -342,7 +350,9 @@
       </button>
       <button class="angle-btn axis-step" id="zDown" title="Rotate about Z (−)">▼</button>
     </div>
+    </div>
     <div class="camera-separator"></div>
+    <div class="camera-axis-group">
     <div class="camera-axis-stack">
       <button class="angle-btn axis-step" id="aUp" title="Rotate about a (+)">▲</button>
       <button class="camera-tool-btn" id="viewA" title="View A axis">
@@ -363,6 +373,7 @@
         <div class="camera-icon">c</div><span>c</span>
       </button>
       <button class="angle-btn axis-step" id="cDown" title="Rotate about c (−)">▼</button>
+    </div>
     </div>
 
     <div class="camera-separator"></div>
