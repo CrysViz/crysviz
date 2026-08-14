@@ -10,10 +10,11 @@
 // Per-window DOM/behavior lives in PanelWindow.js; the wide side dock's pane
 // plumbing (tabs, resize handle, drop zone) lives in SideDock.js.
 
-import { PanelWindow } from './PanelWindow.js';
+import { PanelWindow, applyEdgeAnchors } from './PanelWindow.js';
 import {
   initSideDock, sideDockPanel, sideUndockPanel,
   setSideDockCollapsed, setSideDockSide, refreshSideDock, getSideDockLayout,
+  sideDockOverlapPx,
   applySideDockLayout, resetSideDockLayout, wantsSideDockDrop,
   sideDockDropSideAt, updateSideDockHint,
 } from './SideDock.js';
@@ -42,7 +43,9 @@ const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 // at the edge itself), so a pulled-out panel doesn't immediately re-dock.
 const DRAG_OUT_PX = 24;
 const COMPACT_QUERY = '(max-width: 1024px)';
-const MOBILE_EXEMPT_IDS = new Set(['view', 'measure', 'info']);
+// Windows that keep floating on a compact viewport instead of being swept
+// into the main dock. They are the scene's own toolbars, not content windows.
+const MOBILE_EXEMPT_IDS = new Set(['view', 'measure']);
 
 // ---- compact round-icon mode --------------------------------------------
 // Extra scene width kept free before the floating toolbars collapse to icons,
@@ -66,6 +69,12 @@ const panelPrefDefaults = {
   exportGpuMemoryGiB: 1, // PNG export render-surface GPU memory budget (GiB)
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
   legendTransparent: false, // Composition Display: no window chrome, swatches+text only
+  // The on-canvas background picker: a 54px drag-and-resize affordance that
+  // competes with the scene's own gestures on touch and takes the corner a
+  // phone needs for the compact icons. Off by default there, on everywhere
+  // else — decided once at load like dragByHandleOnly, and a stored choice
+  // (Visual ▸ "Background picker on canvas") always wins.
+  backgroundDot: !window.matchMedia('(pointer: coarse), (max-width: 720px)').matches,
   axisStepButtons: 'longpress', // 'on'|'off'|'longpress' for View step-rotate arrows
 };
 const panelPrefs = { ...panelPrefDefaults };
@@ -231,13 +240,13 @@ function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
     setSideDockCollapsed(false);
   } else if (dock === 'left') {
     dockPanelAtDefaultOrder(panel);
+  } else if (compactViewport && compactHomeOf(panel)) {
+    sideHomePanel(panel);
+  } else if (compactViewport && !isMobileExempt(panel)) {
+    panel.floatPos = null;
+    positionPanelForDock(panel);
   } else {
-    if (compactViewport && !isMobileExempt(panel)) {
-      panel.floatPos = null;
-      positionPanelForDock(panel);
-    } else {
-      floatPanel(panel, clampPos({ ...(defaults.anchor || { left: 40, top: 40 }) }));
-    }
+    floatPanel(panel, clampPos({ ...(defaults.anchor || { left: 40, top: 40 }) }));
   }
   const barCollapsed = defaults.barCollapsed !== undefined
     ? !!defaults.barCollapsed
@@ -365,6 +374,13 @@ function isMobileExempt(panel) {
   return MOBILE_EXEMPT_IDS.has(panel.id);
 }
 
+/** A window whose def declares a compact home: below the breakpoint it leaves
+ *  the floating layer for the side dock and is raised by its own launcher icon
+ *  (see the compact-home section further down). */
+function compactHomeOf(panel) {
+  return panel.def.compactHome || null;
+}
+
 function clearAutoDocked(panel) {
   if (!panel.autoDocked) return;
   panel.autoDocked = false;
@@ -382,7 +398,9 @@ function restoreAutoDockedPanel(panel) {
   if (panel.closed) {
     panel.dock = false;
     panel.dockShifted = false;
-  } else if (panel.dock === 'left' && panel.floatPos) {
+  } else if (panel.dock !== false && panel.floatPos) {
+    // 'right' as well as 'left': a compact-home window sits in the side dock
+    // while small, and floats again exactly where it was on a large screen.
     hooks.positionPanel(panel, 'float', { auto: true, restorePos: panel.floatPos });
   }
   panel.autoDocked = false;
@@ -398,9 +416,14 @@ function reconcileCompactViewport() {
   }
   if (compactViewport) {
     for (const panel of panels.values()) {
-      if (panel.closed || panel.docked || isMobileExempt(panel)) continue;
-      panel.autoDocked = true;
-      positionPanelForDock(panel);
+      if (panel.closed || panel.docked) continue;
+      if (compactHomeOf(panel)) {
+        panel.autoDocked = true;
+        sideHomePanel(panel);
+      } else if (!isMobileExempt(panel)) {
+        panel.autoDocked = true;
+        positionPanelForDock(panel);
+      }
     }
   } else {
     for (const panel of panels.values()) {
@@ -466,6 +489,14 @@ export function registerPanel(def) {
     // remembers where openPanel should attach it; content build is deferred.
     panel.closed = true;
     panel.dock = dock;
+  } else if (compactViewport && compactHomeOf(panel)) {
+    // Ahead of the dock branches: the compact home also owns which edge the
+    // dock hugs, which a plain 'right' restore would not re-apply.
+    // Placed by the breakpoint, not by the user, unless the window was already
+    // remembered as side-docked — the marker is what floats it again on a
+    // large screen, and a fresh compact load has no persisted entry to carry.
+    if (dock !== 'right') panel.autoDocked = true;
+    sideHomePanel(panel);
   } else if (dock === 'right') {
     sideDockPanel(panel, {
       beforeEl: sideDockBeforeFromStoredOrder(def.id),
@@ -506,7 +537,7 @@ export function registerPanel(def) {
   }
   // Once a compact-capable panel is attached, re-check crowding immediately so
   // Measure/View compact as soon as both exist, not only on the next resize.
-  if (def.compactIcon) refreshCompactFloatingPanels();
+  if (def.compactIcon || def.compactHome) refreshCompactFloatingPanels();
   return panel;
 }
 
@@ -577,8 +608,10 @@ export function revealFeaturePanels() {
   // placement (viewport clamp) before any wantExpanded expansion below
   // decides its grow-upward anchoring from the applied position.
   updateFloatPlacements();
-  // Side-docked feature windows became visible -> show the pane chrome/tabs.
+  // Side-docked feature windows became visible -> show the pane chrome/tabs,
+  // and a compact-home window that was hidden until now gets its launcher.
   refreshSideDock();
+  refreshCompactFloatingPanels();
   for (const panel of panels.values()) {
     if (panel.wantExpanded && !panel.closed) {
       panel.wantExpanded = false;
@@ -608,6 +641,7 @@ export function openPanel(id) {
     setSideDockCollapsed(false);
   } else if (!panel.el.isConnected) {
     if (panel.dock === 'left') dockPanel(panel);
+    else if (compactViewport && compactHomeOf(panel)) sideHomePanel(panel);
     else if (compactViewport && !isMobileExempt(panel)) {
       if (!panel.autoDocked) panel.floatPos = null;
       positionPanelForDock(panel);
@@ -658,6 +692,8 @@ export function removePanel(id) {
   destroyContent(panel);
   panel.remove();
   panels.delete(id);
+  compactLaunchers.get(id)?.remove();
+  compactLaunchers.delete(id);
 }
 
 /**
@@ -726,9 +762,12 @@ export function saveLayout() {
   data.rightDock = {
     order: rd.order.filter((id) => panels.get(id)?.def.persist !== false),
     front: rd.front,
-    collapsed: rd.collapsed,
+    // A borrowed edge/collapse is not the user's preference — persist what it
+    // replaced, or one phone session would set the dock's shape for every
+    // later desktop one.
+    collapsed: borrowedDock ? borrowedDock.collapsed : rd.collapsed,
     fraction: rd.fraction,
-    side: rd.side,
+    side: borrowedDock && rd.side === borrowedDock.toSide ? borrowedDock.side : rd.side,
   };
   for (const panel of panels.values()) {
     if (panel.def.persist === false) continue;
@@ -1137,6 +1176,8 @@ function refreshCompactFloatingPanels() {
     if (panel.compactBtn) panel.setCompact(small && !panel.docked);
   }
   applyCompactPositions();
+  updateCompactLaunchers();
+  releaseCompactHome();
 }
 
 /**
@@ -1161,25 +1202,146 @@ function applyCompactPositions() {
   for (const panel of panels.values()) {
     if (panel.compactBtn && !panel.docked) panel.applyFloatPosition(derivedFloatPos(panel));
   }
+  applyCompactLauncherPositions();
   document.documentElement.style.setProperty('--compact-stack-bottom', `${compactStackBottomPx()}px`);
 }
 
-/** Lowest bottom edge of the CURRENTLY-compact top stack. Checks
+/** Lowest bottom edge of any CURRENTLY-compact icon/toolbar. Checks
  *  panel.compact explicitly: Measure is right-anchored in its normal toolbar
- *  layout too, and reacting to that ordinary height would be wrong.
- *
- *  Bottom-anchored icons (Structure info) are excluded: everything reading
- *  this (the background dot) uses it to sit BELOW the top stack, and an icon
- *  already hugging the bottom edge would push them off screen. */
+ *  layout too, and reacting to that ordinary height would be wrong. */
 function compactStackBottomPx() {
   let bottom = 0;
   for (const panel of panels.values()) {
     if (!panel.compactBtn || !panel.compact || panel.docked || !panel.el.isConnected) continue;
-    if (compactAnchorFor(panel)?.top === undefined) continue;
     const rect = panel.el.getBoundingClientRect();
     if (rect.height) bottom = Math.max(bottom, rect.bottom);
   }
   return bottom;
+}
+
+// ---- compact home: a side-dock sheet behind a launcher icon -----------------
+// A def may declare
+//   compactHome: { side, icon, label, anchor }
+// meaning: below the compact breakpoint this window is too big to unfold over
+// the scene, so it moves into the side dock (a sheet on `side`) and is raised
+// by a standalone round icon parked at `anchor`. Unrelated to compactIcon /
+// compactStackAfter above, which fold a floating TOOLBAR into an icon that
+// unfolds in place — that only works for windows small enough to overlay.
+//
+// The launcher is deliberately not a PanelWindow: it carries no state, is
+// never persisted, and reuses the compact-icon chrome by wearing the same
+// classes (panelWindow.css keys on them). It has no data-panel-id, so panel
+// lookups never match it.
+
+/** @type {Map<string, HTMLElement>} */
+const compactLaunchers = new Map();
+
+// The dock's edge and its collapsed flag are global, persisted preferences, so
+// a compact home only ever BORROWS them: both go back when the dock empties
+// again, and neither borrowed value is persisted. Without that, one visit at
+// phone width left the dock on 'bottom' and collapsed forever — and BOTH of
+// `#viewArea.split-dock-bottom` and `.split-pane-collapsed` turn OFF the rule
+// that narrows #view for a right-side pane (sideDock.css), so a later split
+// view silently stopped shrinking the scene at all.
+/** @type {{side: string, collapsed: boolean, toSide: string}|null} */
+let borrowedDock = null;
+
+/** Move a window into its compact home. The sheet starts DOWN: the icon is
+ *  the way in, and a phone screen that opens with a sheet over the structure
+ *  hides the thing the user came to look at. */
+function sideHomePanel(panel) {
+  const home = compactHomeOf(panel);
+  // Whoever materializes an EMPTY dock picks its edge; an occupied one is
+  // never silently relocated (same rule as a drag-and-drop into the dock).
+  const { order, side, collapsed } = getSideDockLayout();
+  const materializing = !order.length;
+  // Dock BEFORE borrowing: both setters below reach releaseCompactHome through
+  // the reserve sync, and an empty dock would hand its state straight back.
+  sideDockPanel(panel, { front: false, expand: false });
+  if (!materializing) return;
+  const toSide = home.side || 'bottom';
+  borrowedDock = { side, collapsed, toSide };
+  if (side !== toSide) setSideDockSide(toSide);
+  setSideDockCollapsed(true);
+}
+
+/** Give the dock's edge and collapsed state back once no window is left in it.
+ *  The edge is left alone if it has since been changed by hand — that is a
+ *  deliberate choice, not ours. */
+function releaseCompactHome() {
+  if (!borrowedDock) return;
+  const { order, side } = getSideDockLayout();
+  if (order.length) return;
+  const { side: from, collapsed, toSide } = borrowedDock;
+  borrowedDock = null; // cleared first: both setters below re-enter here
+  if (side === toSide) setSideDockSide(from);
+  setSideDockCollapsed(collapsed);
+}
+
+/** Raise this window's sheet, or lower it if it is already the one showing. */
+function toggleCompactSheet(panel) {
+  const side = getSideDockLayout();
+  if (!side.collapsed && side.front === panel.id) {
+    setSideDockCollapsed(true);
+  } else {
+    sideDockPanel(panel, { front: true, expand: true });
+    setSideDockCollapsed(false);
+  }
+  scheduleSave();
+}
+
+function buildCompactLauncher(panel) {
+  const home = compactHomeOf(panel);
+  const el = document.createElement('div');
+  el.className = 'cv-panel cv-floating cv-compact cv-collapsed';
+  el.dataset.compactLauncher = panel.id;
+  const bar = document.createElement('div');
+  bar.className = 'cv-panel-titlebar';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cv-panel-compact-btn';
+  btn.title = home.label || panel.def.title || '';
+  const img = document.createElement('img');
+  img.src = home.icon;
+  img.alt = '';
+  btn.appendChild(img);
+  btn.addEventListener('click', () => toggleCompactSheet(panel));
+  bar.appendChild(btn);
+  el.appendChild(bar);
+  document.body.appendChild(el);
+  compactLaunchers.set(panel.id, el);
+}
+
+/** Create/remove the launcher icons for the current viewport. */
+function updateCompactLaunchers() {
+  for (const panel of panels.values()) {
+    if (!compactHomeOf(panel)) continue;
+    const el = compactLaunchers.get(panel.id);
+    const want = compactViewport && !panel.el.hidden;
+    if (want && !el) buildCompactLauncher(panel);
+    else if (!want && el) {
+      el.remove();
+      compactLaunchers.delete(panel.id);
+    }
+  }
+  applyCompactLauncherPositions();
+}
+
+/** Keep each launcher clear of the pane it opens, so a raised sheet pushes its
+ *  own icon ahead of it instead of swallowing the control that lowers it
+ *  again. Measured from the pane, not from the reserve the floating windows
+ *  use: on a compact viewport the pane overlays the scene and reserves 0. */
+function applyCompactLauncherPositions() {
+  if (!compactLaunchers.size) return;
+  const over = sideDockOverlapPx();
+  for (const [id, el] of compactLaunchers) {
+    const panel = panels.get(id);
+    if (!panel) continue;
+    const pos = { ...(compactHomeOf(panel).anchor || { right: 20, bottom: 20 }) };
+    if (typeof pos.right === 'number') pos.right += over.right;
+    if (typeof pos.bottom === 'number') pos.bottom += over.bottom;
+    applyEdgeAnchors(el, pos);
+  }
 }
 
 /** After any dock mutation, docked panels' sort keys follow their DOM order. */

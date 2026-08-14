@@ -401,15 +401,12 @@ export function createBackgroundControl() {
   window.addEventListener('resize', reapply);
 }
 
-/** Show/hide the on-canvas picker dot (the Visual window's toggle). */
+/** Show/hide the on-canvas picker dot. Driven by the `backgroundDot` panel
+ *  pref (Visual ▸ "Background picker on canvas"), which is the state — this
+ *  only applies it, so nothing reads the visibility back off the element. */
 export function setBackgroundDotVisible(visible) {
   const dot = document.getElementById('backgroundDot');
   if (dot) dot.style.display = visible ? '' : 'none';
-}
-
-export function isBackgroundDotVisible() {
-  const dot = document.getElementById('backgroundDot');
-  return !!dot && dot.style.display !== 'none';
 }
 
 /** A small round swatch button that opens the same background color picker,

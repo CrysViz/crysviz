@@ -1,13 +1,14 @@
-// Floating windows auto-dock at the compact/1024px breakpoint. Measure, View,
-// and Structure are deliberately excluded because their own compact behavior
-// is independent of the dock state.
+// Floating windows auto-dock at the compact/1024px breakpoint. Measure and
+// View are deliberately excluded because their own compact behavior is
+// independent of the dock state; Structure info takes a third route (its
+// def's compactHome: the side dock, behind a launcher icon).
 'use strict';
 const H = require('../harness');
 
 const TARGETS = ['backend', 'forces'];
-const EXEMPTS = ['view', 'measure', 'info'];
+const EXEMPTS = ['view', 'measure'];
 
-async function panelState(page, ids = [...TARGETS, ...EXEMPTS]) {
+async function panelState(page, ids = [...TARGETS, ...EXEMPTS, 'info']) {
   return page.evaluate(async (ids) => {
     const { getPanel } = await import('./ui/panels/PanelManager.js');
     return Object.fromEntries(ids.map((id) => {
@@ -99,7 +100,7 @@ async function reorderToBottom(page, id) {
 
   // Leave a Position menu open while crossing so the real media callback has
   // to close it before the new compact menu is built.
-  await page.evaluate(() => document.querySelector('.cv-panel[data-panel-id="info"] .cv-panel-menu-btn').click());
+  await page.evaluate(() => document.querySelector('.cv-panel[data-panel-id="measure"] .cv-panel-menu-btn').click());
   await page.setViewportSize({ width: 1000, height: 700 });
   await page.waitForTimeout(600);
   let small = await panelState(page);
@@ -109,6 +110,12 @@ async function reorderToBottom(page, id) {
   H.check('below 1024: exempt windows remain floating',
     EXEMPTS.every((id) => small[id].dock === false && small[id].floating && !small[id].autoDocked),
     JSON.stringify(small));
+  // Structure info goes to neither: it takes its compactHome in the side dock
+  // and leaves a launcher icon behind, with the marker that floats it again.
+  H.check('below 1024: the compactHome window becomes a side-dock sheet with a launcher',
+    small.info.dock === 'right' && small.info.autoDocked
+      && await page.evaluate(() => !!document.querySelector('[data-compact-launcher="info"]')),
+    JSON.stringify(small.info));
   const autoOrder = await page.evaluate(() =>
     [...document.querySelectorAll('#dock > .cv-panel')].map((el) => el.dataset.panelId));
   H.check('auto-dock produces one stable Main-dock order',
@@ -122,7 +129,7 @@ async function reorderToBottom(page, id) {
   // The dock is off-canvas while compact, but its menu remains the same DOM
   // chrome. Only Float is gated: Default stays, falling back to a dock for a
   // float-by-default window (exercised below).
-  await page.evaluate(() => document.querySelector('.cv-panel[data-panel-id="info"] .cv-panel-menu-btn').click());
+  await page.evaluate(() => document.querySelector('.cv-panel[data-panel-id="measure"] .cv-panel-menu-btn').click());
   const mobileMenu = await page.evaluate(() =>
     [...document.querySelectorAll('.cv-panel-menu-item')].map((item) => item.textContent));
   H.check('compact Position menu drops Float but keeps Default',
@@ -153,6 +160,10 @@ async function reorderToBottom(page, id) {
         ? Math.abs(900 - large[id].rect.bottom - savedPositions[id].bottom) <= 2
         : Math.abs(large[id].rect.top - savedPositions[id].top) <= 2)),
   JSON.stringify({ savedPositions, large }));
+  H.check('growing above 1024 floats the compactHome window again and drops its launcher',
+    large.info.dock === false && large.info.floating && !large.info.autoDocked
+      && await page.evaluate(() => !document.querySelector('[data-compact-launcher="info"]')),
+    JSON.stringify(large.info));
   H.check('restoration derives dock displacement and viewport-edge clamping without rewriting floatPos',
     large.backend.rect.left > savedPositions.backend.left
       && Math.abs(large.forces.rect.right - (1400 - savedPositions.forces.right)) <= 2

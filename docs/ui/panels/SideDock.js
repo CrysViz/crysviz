@@ -440,6 +440,25 @@ export function refreshSideDock() {
   syncSceneAndSidePanels();
 }
 
+/**
+ * How far the open pane reaches in from the edge it hugs, in px. This is NOT
+ * the same as the reserve syncSceneAndSidePanels publishes: below the compact
+ * breakpoint the pane lies OVER the scene instead of shrinking it, so the
+ * reserve is 0 while the pane still covers this much of the viewport. Anything
+ * that has to stay clear of the pane itself (the compact launcher icons) needs
+ * this number, not the reserve.
+ */
+export function sideDockOverlapPx() {
+  const { pane } = els();
+  const none = { right: 0, bottom: 0 };
+  if (collapsed || !pane || pane.hidden) return none;
+  const r = pane.getBoundingClientRect();
+  if (!r.width || !r.height) return none;
+  return dockSide === 'bottom'
+    ? { right: 0, bottom: Math.max(0, window.innerHeight - r.top) }
+    : { right: Math.max(0, window.innerWidth - r.left), bottom: 0 };
+}
+
 // ---- persistence (read/written by PanelManager's layout blob) ------------------
 
 export function getSideDockLayout() {

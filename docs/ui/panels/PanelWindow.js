@@ -47,6 +47,22 @@ const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 // panels (z-index 1000) and below the About overlay.
 let floatZ = 1200;
 
+/**
+ * Anchor a fixed-position element by edges: any of {left, right, top, bottom},
+ * numbers are px and strings pass through; the opposite edge of each axis is
+ * released to `auto` so the element grows away from the anchored one. Free
+ * function because PanelManager's compact launcher icons are anchored the same
+ * way and are not PanelWindows.
+ */
+export function applyEdgeAnchors(el, pos) {
+  const s = el.style;
+  const css = (v) => (typeof v === 'number' ? `${v}px` : v);
+  s.left = pos.left !== undefined ? css(pos.left) : 'auto';
+  s.right = pos.right !== undefined ? css(pos.right) : 'auto';
+  s.top = pos.top !== undefined ? css(pos.top) : 'auto';
+  s.bottom = pos.bottom !== undefined ? css(pos.bottom) : 'auto';
+}
+
 export class PanelWindow {
   constructor(def, hooks) {
     this.def = def;
@@ -489,12 +505,7 @@ export class PanelWindow {
 
   /** pos: any of {left, right, top, bottom}; numbers are px, strings pass through. */
   applyFloatPosition(pos) {
-    const s = this.el.style;
-    const css = (v) => (typeof v === 'number' ? `${v}px` : v);
-    s.left = pos.left !== undefined ? css(pos.left) : 'auto';
-    s.right = pos.right !== undefined ? css(pos.right) : 'auto';
-    s.top = pos.top !== undefined ? css(pos.top) : 'auto';
-    s.bottom = pos.bottom !== undefined ? css(pos.bottom) : 'auto';
+    applyEdgeAnchors(this.el, pos);
   }
 
   /**

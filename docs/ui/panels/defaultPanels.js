@@ -32,7 +32,7 @@ import { createFeatureLockSwitch } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
-import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
+import { setBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
 
 // ---- static-row adoption ------------------------------------------------------
 //
@@ -286,17 +286,24 @@ export function registerDefaultPanels() {
   // Same for the collapsed-bar handle style (Settings > "Always show small
   // drag handles") — a body class the CSS keys off.
   document.body.classList.toggle('cv-small-drag-handles', !!getPanelPref('smallDragHandles'));
+  // ...and for the on-canvas background picker, which has to be applied even
+  // if the Visual window carrying its toggle is never opened.
+  setBackgroundDotVisible(!!getPanelPref('backgroundDot'));
 
   registerPanel({
     id: 'info',
     title: 'Structure',
     lifecycle: 'persistent',
     infoMd: './data/structureInfo.md',
-    compactIcon: './data/icons/info-icon.svg',
-    compactLabel: 'Toggle Structure Info',
-    // Its own corner, not the Measure/View stack: the full panel lives at the
-    // bottom right, so the icon it collapses into stays where the window was.
-    compactAnchor: { right: 20, bottom: 20 },
+    // Unfolding this window in place fills a phone screen, so below the
+    // compact breakpoint it moves into the side dock as a bottom sheet and is
+    // raised by a round icon parked where the floating window used to sit.
+    compactHome: {
+      side: 'bottom',
+      icon: './data/icons/info-icon.svg',
+      label: 'Toggle Structure Info',
+      anchor: { right: 20, bottom: 20 },
+    },
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
       // Fixed width while floating, so the panel doesn't shrink-wrap to
@@ -602,7 +609,10 @@ export function registerDefaultPanels() {
       const bgRow = document.createElement('div');
       bgRow.className = 'control-row-pair';
       const bgToggle = makeToggleRow('backgroundDotToggle', 'Background picker on canvas',
-        isBackgroundDotVisible(), (on) => setBackgroundDotVisible(on));
+        !!getPanelPref('backgroundDot'), (on) => {
+          setPanelPref('backgroundDot', on);
+          setBackgroundDotVisible(on);
+        });
       bgToggle.style.flex = '1';
       bgRow.appendChild(bgToggle);
       bgRow.appendChild(createBackgroundSwatch());

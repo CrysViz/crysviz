@@ -8,8 +8,9 @@
 // Measure's ordinary (non-compact) toolbar height. Clicking an icon unfolds its
 // toolbar to the icon's left without moving the icon.
 //
-// The dot itself is hidden below the mobile rung (720px), so its stack-bottom
-// tracking is asserted at the widths where it is actually on screen.
+// The dot's own visibility is a persisted preference (panelPrefs.backgroundDot,
+// default off on touch or a phone-width window), not a width rule — a
+// desktop-sized run shows it at every rung, with a taller floor below 720px.
 'use strict';
 const H = require('../harness');
 
@@ -70,12 +71,14 @@ async function state(page) {
   H.check('icons stack without overlap (View below Measure, both collapsed)',
     s.view.rect.top >= s.measure.rect.bottom - 1,
     `measureBottom=${s.measure.rect.bottom} viewTop=${s.view.rect.top}`);
-  // 720px is the mobile rung, where the dot is hidden outright (it is a
-  // drag-a-colour affordance with no touch equivalent, and it wants the same
-  // corner as the icon stack). Its --compact-stack-bottom tracking is still
-  // asserted, at desktop width, further down.
-  H.check('background dot is hidden at mobile width',
-    s.dotHidden === true, `dotHidden=${s.dotHidden}`);
+  // The dot used to be hidden outright by a width rule here. It now follows
+  // the `backgroundDot` panel pref, whose default is decided ONCE at load
+  // (touch, or a window that opens narrower than this rung, turns it off), so
+  // a desktop-loaded page resized down still shows it — which is what makes
+  // its stack-clearing observable at this rung at all.
+  H.check('background dot clears the icon stack at mobile width',
+    !s.dotHidden && near(s.dotTop, Math.max(120, s.stackBottom + 20)),
+    `dotHidden=${s.dotHidden} dotTop=${s.dotTop} stackBottom=${s.stackBottom}`);
   H.check('the icon stack still publishes --compact-stack-bottom',
     s.stackBottom > 0, `stackBottom=${s.stackBottom}`);
 
