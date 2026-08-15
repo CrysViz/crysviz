@@ -8,7 +8,7 @@ import {fieldBrowser} from './FieldPanel.js';
 import { setActiveField, updateField, deleteField, disposeOverlayMeshes} from '../render/index.js';
 import {updateLatticeComparisonPanel, removeLatticeComparisonPopup} from './LatticeComparisonPanel.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
-import {Structure} from '../model/index.js';
+import {Structure, StructureContainer} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import { recenterCamera, captureCameraSnapshot, applyCameraSnapshot, fitCameraToCurrentStructure } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
@@ -106,30 +106,15 @@ function combineCheckedRows(name) {
     const idx = rows.indexOf(r);
     const container = structureShip.container[idx];
     if (!container) continue;
-    for (const structure of container.structures) {
-      combinedStructures.push(new Structure({
-        elements: [...structure.elements],
-        uniqueElements: [...structure.uniqueElements],
-        lattice: structure.lattice.map(row => [...row]),
-        atoms: [...structure.atoms],
-        periodic: { ...structure.periodic }, // Clone as object/Map
-        volumetricFields: null
-      }));
-    }
+    for (const structure of container.structures) combinedStructures.push(cloneStructure(structure));
   }
   if (!combinedStructures.length) return;
 
-  const newObj = {
-    name: (name && name.trim()) ? name.trim() : 'Combined Trajectory',
-    traj: combinedStructures.length,
-    step: 1,
-    structures: combinedStructures,
-  };
-
-  const newRow = createRow(newObj);
+  const combinedName = (name && name.trim()) ? name.trim() : 'Combined Trajectory';
+  const newRow = createRow({ name: combinedName, traj: combinedStructures.length, step: 1 });
   tbody.appendChild(newRow);
   structureShip.len += 1;
-  structureShip.container.push(newObj);
+  structureShip.container.push(new StructureContainer({ fileName: combinedName, structures: combinedStructures }));
 
   // Selected rows have been combined — uncheck them and re-sync the derived
   // UI state (combine button enablement, comparison structure).
@@ -162,6 +147,91 @@ export function initCombineTrajectoriesButton() {
   updateCombineButtonState();
 }
 
+/** Frame copy for the row copy/combine actions: fresh Structure, own
+ *  lattice/element arrays, no field. (Atoms are shared, as they always were.) */
+function cloneStructure(structure) {
+  return new Structure({
+    elements: [...structure.elements],
+    uniqueElements: [...structure.uniqueElements],
+    lattice: structure.lattice.map(row => [...row]),
+    atoms: [...structure.atoms],
+    periodic: { ...structure.periodic },
+    volumetricFields: null,
+  });
+}
+
+/** copy_<n>_<source>, n one past the highest copy of that source in the table. */
+function nextCopyName(sourceName) {
+  const suffix = `_${sourceName}`;
+  let n = 0;
+  for (const el of document.querySelectorAll('#objectTable tbody tr .name-inner')) {
+    const name = el.textContent ?? '';
+    if (!name.startsWith('copy_') || !name.endsWith(suffix)) continue;
+    const index = name.slice('copy_'.length, name.length - suffix.length);
+    if (/^\d+$/.test(index)) n = Math.max(n, parseInt(index, 10));
+  }
+  return `copy_${n + 1}_${sourceName}`;
+}
+
+/** Insert a row holding copies of `structures` right after `row`, and select
+ *  it. `step` is the frame the new row opens on. */
+function insertCopyRow(row, structures, step = 1) {
+  const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+  const name = nextCopyName(getRowObject(row)?.name ?? '');
+  const newRow = createRow({ name, traj: structures.length, step: Math.min(step, structures.length) });
+  row.insertAdjacentElement('afterend', newRow);
+  structureShip.len += 1;
+  structureShip.container.splice(rowIndex + 1, 0, new StructureContainer({ fileName: name, structures }));
+  // The copy sits right after its source, not necessarily last in the table —
+  // selectLastAddedRow() would pick whatever row is currently last instead.
+  selectRow(newRow);
+  return newRow;
+}
+
+/** Rename a row: the label, its row object and the container's fileName,
+ *  which is what derived rows (relax_/md_/eos_/sym_/copy_) are named after. */
+export function renameRow(row, name) {
+  const trimmed = String(name ?? '').trim();
+  const obj = getRowObject(row);
+  if (!trimmed || !obj || trimmed === obj.name) return;
+  const rowIndex = Array.from(row.parentElement.children).indexOf(row);
+  const container = structureShip.container[rowIndex];
+  if (container) container.fileName = trimmed;
+  obj.name = trimmed;
+  row.querySelector('.name-inner').textContent = trimmed;
+  row.querySelector('.name-scroll').textContent = trimmed;
+}
+
+/** Inline rename: swap the name label for a text input until Enter/blur
+ *  (commit) or Escape (cancel). */
+function startRename(row) {
+  const cell = row.querySelector('.name-cell');
+  if (!cell || cell.classList.contains('is-editing')) return;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cv-fb-rename';
+  input.value = getRowObject(row)?.name ?? '';
+  cell.classList.add('is-editing');
+  cell.appendChild(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = (commit) => {
+    if (done) return;
+    done = true;
+    if (commit) renameRow(row, input.value);
+    input.remove();
+    cell.classList.remove('is-editing');
+  };
+  input.addEventListener('keydown', (e) => {
+    // Neither key may reach the app's shortcuts while a name is being typed.
+    e.stopPropagation();
+    if (e.key === 'Enter') finish(true);
+    else if (e.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
 // Function to create a new row in the table
 export function createRow(obj) {
   const row = document.createElement("tr");
@@ -182,6 +252,12 @@ export function createRow(obj) {
 
   row.querySelector('.name-inner').textContent = String(obj.name ?? '');
   row.querySelector('.name-scroll').textContent = String(obj.name ?? '');
+  const nameCell = row.querySelector('.name-cell');
+  nameCell.title = 'Double-click to rename';
+  nameCell.addEventListener('dblclick', (e) => {
+    e.stopPropagation();
+    startRename(row);
+  });
   const trajectoryCell = row.querySelector('td:nth-child(3)');
   trajectoryCell.textContent = String(obj.traj ?? '');
   const initialStepInput = row.querySelector('input[type="number"]');
@@ -240,37 +316,11 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     e.stopPropagation();
     e.preventDefault();
 
-    // Copy current step logic
+    // Copy current step, no popup.
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
-    const stepInput = row.querySelector('input[type="number"]');
-    const currentStep = parseInt(stepInput.value, 10) - 1;
-    const currentStructure = container.structures[currentStep];
-
-    const newStructure = new Structure({
-      elements: [...currentStructure.elements],
-      uniqueElements: [...currentStructure.uniqueElements],
-      lattice: currentStructure.lattice.map(row => [...row]),
-      atoms: [...currentStructure.atoms],
-      periodic: { ...currentStructure.periodic }, // Clone as object/Map
-      volumetricFields: null
-    });
-
-    const newObj = {
-      ...updatedObj,
-      structures: [newStructure],
-      traj: 1,
-    };
-
-    const newRow = createRow(newObj);
-    row.insertAdjacentElement("afterend", newRow);
-    structureShip.len += 1;
-    structureShip.container.splice(rowIndex + 1, 0, newObj);
-
-    // Select the row just created (inserted right after the source row, not
-    // necessarily last in the table) — selectLastAddedRow() would pick
-    // whatever row is currently last instead.
-    selectRow(newRow);
+    const currentStep = parseInt(row.querySelector('input[type="number"]').value, 10) - 1;
+    insertCopyRow(row, [cloneStructure(container.structures[currentStep])]);
     return;
   }
 
@@ -285,8 +335,8 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   const select = document.createElement("select");
   select.className = "cv-fb-copy-select";
   select.innerHTML = `
-    <option value="all">Copy All Steps</option>
     <option value="current">Copy Current Step</option>
+    <option value="all">Copy All Steps</option>
     <option value="range">Copy Range of Steps</option>
   `;
 
@@ -386,92 +436,21 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     const option = select.value;
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
-    let newRow;
-
-    if (option === "all") {
-      // Copy all steps: create a new container with new Structure objects
-      const newStructures = container.structures.map(structure => {
-        return new Structure({
-          elements: [...structure.elements],
-          uniqueElements: [...structure.uniqueElements],
-          lattice: structure.lattice.map(row => [...row]),
-          atoms: [...structure.atoms],
-          periodic: { ...structure.periodic }, // Clone as object/Map
-          volumetricFields: null
-        });
-      });
-
-      const newObj = {
-        ...updatedObj,
-        structures: newStructures,
-        traj: newStructures.length,
-      };
-
-      newRow = createRow(newObj);
-      row.insertAdjacentElement("afterend", newRow);
-      structureShip.len += 1;
-      structureShip.container.splice(rowIndex + 1, 0, newObj);
-    }
-    else if (option === "current") {
-      // Copy current step: create a new container with only the current structure
-      const stepInput = row.querySelector('input[type="number"]');
-      const currentStep = parseInt(stepInput.value, 10) - 1;
-      const currentStructure = container.structures[currentStep];
-
-      const newStructure = new Structure({
-        elements: [...currentStructure.elements],
-        uniqueElements: [...currentStructure.uniqueElements],
-        lattice: currentStructure.lattice.map(row => [...row]),
-        atoms: [...currentStructure.atoms],
-        periodic: { ...currentStructure.periodic }, // Clone as object/Map
-        volumetricFields: null
-      });
-
-      const newObj = {
-        ...updatedObj,
-        structures: [newStructure],
-        traj: 1,
-      };
-
-      newRow = createRow(newObj);
-      row.insertAdjacentElement("afterend", newRow);
-      structureShip.len += 1;
-      structureShip.container.splice(rowIndex + 1, 0, newObj);
-    }
-    else if (option === "range") {
-      // Copy range of steps: create a new container with new Structure objects for the range
+    const stepInput = row.querySelector('input[type="number"]');
+    const currentStep = parseInt(stepInput.value, 10);
+    let frames;
+    if (option === 'all') {
+      frames = container.structures;
+    } else if (option === 'range') {
       const startStep = parseInt(startStepInput.value, 10) - 1;
       const endStep = parseInt(endStepInput.value, 10) - 1;
-      const rangeStructures = container.structures.slice(startStep, endStep + 1);
-
-      const newStructures = rangeStructures.map(structure => {
-        return new Structure({
-          elements: [...structure.elements],
-          uniqueElements: [...structure.uniqueElements],
-          lattice: structure.lattice.map(row => [...row]),
-          atoms: [...structure.atoms],
-          periodic: { ...structure.periodic }, // Clone as object/Map
-          volumetricFields: null
-        });
-      });
-
-      const newObj = {
-        ...updatedObj,
-        structures: newStructures,
-        traj: newStructures.length,
-      };
-
-      newRow = createRow(newObj);
-      row.insertAdjacentElement("afterend", newRow);
-      structureShip.len += 1;
-      structureShip.container.splice(rowIndex + 1, 0, newObj);
+      frames = container.structures.slice(startStep, endStep + 1);
+    } else {
+      frames = [container.structures[currentStep - 1]];
     }
-
     closePopup();
-    // Select the row just created (inserted right after the source row, not
-    // necessarily last in the table) — selectLastAddedRow() would pick
-    // whatever row is currently last instead.
-    selectRow(newRow);
+    // "All" reopens on the source's current frame; the others start at 1.
+    insertCopyRow(row, frames.map(cloneStructure), option === 'all' ? currentStep : 1);
   };
 
   // Handle cancellation

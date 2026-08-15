@@ -450,7 +450,8 @@ function bindASEHandlers(bound) {
     }
 
     structureShip.container.push(container);
-    const fileName = `rx_${sourceFileName}`;
+    const fileName = `relax_ase_${sourceFileName}`;
+    container.fileName = fileName;
     const row = createRow({ name: fileName, traj: container.structures.length, step: container.structures.length });
     tableBody.appendChild(row);
     fileBrowser.fileData.push({ name: fileName, traj: container.structures.length, step: container.structures.length });
@@ -943,7 +944,7 @@ async function runLocalRelax(shell, params, potential) {
   const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
   // Relax animates this structure in place; keep the reference to restore it.
   const originalStructure = fileBrowser.selectedStructure;
-  const relaxLabel = `Relax_${srcContainer?.fileName ?? 'run'}`;
+  const relaxLabel = `relax_${potential}_${srcContainer?.fileName ?? 'run'}`;
   const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
   // Persisted plot series (energy / mean force / pressure), 1:1 with frames.
   // `step` records the real relax step per saved frame so the plot's x-axis
@@ -1276,7 +1277,7 @@ function bindMDBody(panel, shell, potential) {
       const resumeVelocities = (isLastFrame && originalStructure.velocities) || null;
       isContinuation = !!resumeVelocities;
 
-      const mdLabel = `MD_${srcContainer?.fileName ?? 'run'}`;
+      const mdLabel = `md_${potential}_${srcContainer?.fileName ?? 'run'}`;
       let mdRow;
       if (isContinuation) {
         mdContainer = srcContainer;

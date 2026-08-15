@@ -176,7 +176,7 @@ async function runSym(page) {
     };
   });
   H.check('Conv. Cell adds a symmetrised structure and keeps the result shown',
-    afterConv.containers >= 2 && /^conv_sym_/.test(afterConv.name || '') && afterConv.resultShown,
+    afterConv.containers >= 2 && /^sym_conv_/.test(afterConv.name || '') && afterConv.resultShown,
     afterConv.name);
 
   await openSymmetry(page); // panel rebuilt for the new structure
