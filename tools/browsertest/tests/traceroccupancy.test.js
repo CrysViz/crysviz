@@ -158,7 +158,11 @@ function distance(a, b) {
   const pathBottom = pixel(pathFile, sampleX, sampleY + sampleGeometry.radius * 0.6);
   H.check('path tracer resolves pie-selected emissive species colours',
     distance(pathTop, pathBottom) > 15, JSON.stringify({ pathTop, pathBottom }));
-  H.check('path tracer renders occupancy pie pixels', H.nonUniformFraction(pathFile) > 0.005,
+  // A blank frame is 0; the one pie atom of this two-atom cell is ~0.004 of
+  // the clip (the traced cell outline is sub-pixel and averages away). The
+  // old 0.005 only ever cleared because floating UI chrome used to overlap
+  // the canvas clip.
+  H.check('path tracer renders occupancy pie pixels', H.nonUniformFraction(pathFile) > 0.002,
     JSON.stringify({ nonUniform: H.nonUniformFraction(pathFile) }));
 
   // Toggle the disorder away and back in-place. Drive each transition render

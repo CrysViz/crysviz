@@ -73,7 +73,9 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   H.check('boot: info window sits at its right/bottom default anchor',
     near(info.rightGap, 20) && near(info.bottomGap, 20),
     `rightGap=${info.rightGap} bottomGap=${info.bottomGap}`);
-  await setViewport(page, 1000, 700);
+  // Above the 1024px compact breakpoint: below it the Structure window leaves
+  // the floating layer for its side-dock sheet (compactHome).
+  await setViewport(page, 1100, 700);
   info = await panelState(page, 'info');
   H.check('resize: default-anchored info window tracks the right/bottom edges',
     near(info.rightGap, 20) && near(info.bottomGap, 20),

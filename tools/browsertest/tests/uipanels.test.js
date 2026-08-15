@@ -229,11 +229,15 @@ async function expandPanel(page, id) {
     JSON.stringify(lattice));
 
   // --- background picker toggle + in-panel swatch --------------------------------
+  // The dot is off by default; the toggle must flip it either way and back.
+  const dotShown = () => page.evaluate(() => document.getElementById('backgroundDot').style.display !== 'none');
+  const dotBefore = await dotShown();
   await H.clickById(page, 'backgroundDotToggle');
-  const dotHidden = await page.evaluate(() => document.getElementById('backgroundDot').style.display === 'none');
+  const dotFlipped = (await dotShown()) !== dotBefore;
   await H.clickById(page, 'backgroundDotToggle');
-  const dotBack = await page.evaluate(() => document.getElementById('backgroundDot').style.display !== 'none');
-  H.check('toggle hides and restores the on-canvas background dot', dotHidden && dotBack);
+  const dotBack = (await dotShown()) === dotBefore;
+  H.check('toggle flips and restores the on-canvas background dot', dotFlipped && dotBack,
+    `before=${dotBefore} flipped=${dotFlipped} back=${dotBack}`);
   await H.clickById(page, 'backgroundSwatch');
   const pickerOpen = await page.evaluate(() => !!document.querySelector('.spin-color-picker'));
   await page.evaluate(() => document.querySelector('.spin-color-picker')?.remove());
