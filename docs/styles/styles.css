@@ -262,12 +262,14 @@ body.panel-hidden #axesLegend {
   transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
-/* Fluid on the same 720px pivot as the scene toolbars: --fs-md and --sp-3 are
-   the upper bounds, so nothing moves on a desktop-width sheet. (The mobile
-   rung additionally lets the label wrap — see responsive.css.) */
+/* Fluid below a 720px pivot: --fs-md and --sp-3 are the upper bounds, so
+   nothing moves on a desktop-width sheet. (The mobile rung additionally lets
+   the label wrap — see responsive.css.) The vw term carries the font scale
+   too — otherwise a 2x user gets a button that stops short of 2x wherever
+   the fluid middle wins. */
 .file-actions .file-action-btn {
   padding: var(--sp-3-5) clamp(3px, 1.1111vw, var(--sp-3));
-  font-size: clamp(calc(10px * var(--cv-font-scale, 1)), 1.8056vw, var(--fs-md));
+  font-size: clamp(calc(10px * var(--cv-font-scale, 1)), calc(1.8056vw * var(--cv-font-scale, 1)), var(--fs-md));
 }
 
 .file-action-btn:hover {
