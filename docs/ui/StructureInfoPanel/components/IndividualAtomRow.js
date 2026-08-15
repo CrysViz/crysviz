@@ -244,12 +244,14 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   row.appendChild(nameContainer);
 
-  // Panel→3D: clicking the row (its background or the name/coords area, NOT
-  // the editor buttons/panels) highlights this atom in the 3D view — the
-  // mirror of double-clicking the atom in 3D highlighting this row.
+  // Panel→3D: clicking anywhere on the row that isn't a control (a button,
+  // the keep-toggle, or the inside of an opened editor) highlights this atom
+  // in the 3D view — the mirror of double-clicking the atom in 3D
+  // highlighting this row.
   nameContainer.title = `Highlight ${element}${displayNumber} in the 3D view`;
   row.addEventListener('click', (e) => {
-    if (e.target !== row && !nameContainer.contains(/** @type {Node} */ (e.target))) return;
+    const target = /** @type {Element} */ (e.target);
+    if (target.closest('button, label, input, select, textarea, .atom-color-editor, .atom-coord-editor, .atom-spin-editor')) return;
     e.stopPropagation();
     selectAtomFromRow(atomIndex, e, perImage ? imageIndex : null);
   });
@@ -338,10 +340,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Spin Edit button
   const spinBtn = document.createElement('button');
-  // Split the label at the slash onto two lines ("Spin/" / "Force"), the way it
-  // was before: it keeps this (longest) button narrow so the three buttons fit
-  // beside the name in a docked panel instead of overflowing it.
-  spinBtn.innerHTML = 'Spin/<br>Force';
+  spinBtn.textContent = 'Spin/Force';
   spinBtn.className = 'atom-editor-button iar-spin-btn';
   spinBtn.dataset.editorButton = 'spin';
   spinBtn.title = `Edit Spin for ${element}${displayNumber}`;

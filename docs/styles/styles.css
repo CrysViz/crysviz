@@ -1904,23 +1904,28 @@ justify-content: center;
 
 /* Formula header box: shows the chemical formula, expands (+/−) into the
    composition details below it. */
+/* Cut to the scene-toolbar square (--tb-btn, styles.css "Scene toolbars")
+   with the same border, so the header bar is level with the Measure toolbar
+   above it and reads as the same family of control. */
 #structureInfoContent .structure-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
   user-select: none;
-  padding: var(--sp-2) var(--sp-3);
+  box-sizing: border-box;
+  height: var(--tb-btn);
+  padding: 0 var(--sp-1) 0 var(--sp-3);
   border-radius: var(--radius);
   background: var(--bg-color);
-  border: 1px solid var(--line-1);
+  border: 1px solid var(--wash-4);
 }
 
 #structureInfoContent .structure-toggle h4 {
-  margin: 5px 20px 0 20px;
+  margin: 0 20px;
   font-size: var(--fs-lg);
   font-weight: 800;
-  line-height: var(--lh-tight);
+  line-height: 1;
   color: var(--fg-75);
 }
 
@@ -2024,7 +2029,10 @@ justify-content: center;
   width: 10px; height: 10px; border-radius: 50%; margin-right: var(--sp-3);
   border: 1px solid var(--fg-3);
 }
-.comp-left { display: inline-flex; align-items: center; gap: var(--sp-3); }
+/* --sp-2, not --sp-3: the Structure panel's category row shares 266px between
+   this cluster and count + Spin/Force + toggle, and 2px per gap here is what
+   keeps that right-hand group on one line (structureInfoPanel.css .comp-row). */
+.comp-left { display: inline-flex; align-items: center; gap: var(--sp-2); }
 #picked {
   display: inline-flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3); background: var(--bg-color);
@@ -2143,15 +2151,153 @@ z-index:var(--z-overlay-widget); pointer-events:none;
 
 
 
+/* ===================================================================
+   Scene toolbars — the floating "Measure" (#measurementTools) and "View"
+   (#cameraTools) windows share one control language so they read as a pair:
+
+     .cv-tb        the row: segments and standalone buttons, one gap
+     .cv-tb-group  a segment: related buttons fused edge to edge, sharing
+                   one border and the outer corners (x|y|z, distance|angle|clear)
+     .cv-tb-btn    a --tb-btn square; standalone ones keep all four corners
+
+   Colour carries state only: rest is the plain button fill, hover an accent
+   ring, and a filled/ringed segment means "this mode is on" (an active
+   measure tool, the camera unlocked). No lift on hover — a segment that
+   jumps out of its group breaks the group.
+   =================================================================== */
+/* --tb-btn: the square every scene control is cut to — toolbar buttons, the
+   Structure window's formula header, the dock toggle's glyph. --tb-pad: the
+   body padding of the scene windows around them, so all of them come out
+   the same height (--tb-btn + 2*--tb-pad + border). */
+:root {
+  --tb-btn: 40px;
+  --tb-pad: var(--sp-3);
+}
+
+.cv-tb {
+  --tb-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  /* Backstop only: the rows are sized to fit at every rung, but a stray font
+     scale still must not push a segment out of the panel body. */
+  flex-wrap: wrap;
+}
+
+.cv-tb-group {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.cv-tb-btn {
+  position: relative;
+  box-sizing: border-box; /* <button> already is; the dock toggle's <span> is not */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--tb-btn);
+  height: var(--tb-btn);
+  min-width: var(--tb-btn);
+  min-height: var(--tb-btn);
+  padding: 0;
+  margin: 0;
+  background: var(--bg-color);
+  /* --wash-4 rather than the palette's --border-color: on the light palettes
+     the accent-tinted border at 0.4 alpha all but vanishes against the
+     pastel fill, and the fused seams need to be seen to read as segments.
+     --wash-4 is ink-alpha on light and white-alpha on dark, so it holds up
+     on both. */
+  border: 1px solid var(--wash-4);
+  border-radius: var(--tb-radius);
+  color: var(--fg-1);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Fused segments: neighbours overlap by the 1px border so the seam is one
+   line, and only the two ends keep rounded corners. Camera segments hold
+   .camera-axis-stack wrappers (arrows + letter) rather than bare buttons, so
+   each rule targets both a direct button and a button inside a wrapper. */
+.cv-tb-group > * + * {
+  margin-left: -1px;
+}
+
+.cv-tb-group > .cv-tb-btn,
+.cv-tb-group > * > .cv-tb-btn {
+  border-radius: 0;
+}
+
+.cv-tb-group > .cv-tb-btn:first-child,
+.cv-tb-group > :first-child > .cv-tb-btn {
+  border-top-left-radius: var(--tb-radius);
+  border-bottom-left-radius: var(--tb-radius);
+}
+
+.cv-tb-group > .cv-tb-btn:last-child,
+.cv-tb-group > :last-child > .cv-tb-btn {
+  border-top-right-radius: var(--tb-radius);
+  border-bottom-right-radius: var(--tb-radius);
+}
+
+/* Hover/active raise the segment so its ring paints over the neighbours'
+   shared border instead of being cut by it. */
+.cv-tb-btn:hover,
+.cv-tb-btn:focus-visible {
+  z-index: 1;
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 1px var(--accent-fg), 0 0 6px 1px rgb(var(--btn-glow-rgb) / 0.35);
+}
+
+.cv-tb-btn:focus-visible {
+  outline: none;
+}
+
+/* Outranks panelWindow.css's `.cv-panel-body button` (--fs-md), which is what
+   these render under once adopted into their windows. */
+.cv-tb .cv-tb-btn {
+  font-size: var(--fs-xl);
+}
+
+/* Standing mode ON (measure .active, camera lock .unlocked): a full ring in
+   the tool-active colour, kept when hovered so the mode never reads as off
+   under the pointer. */
+.cv-tb-btn.active,
+.cv-tb-btn.active:hover {
+  z-index: 2;
+  border-color: var(--tool-active);
+  box-shadow: 0 0 0 1px var(--tool-active), 0 0 6px 1px rgb(var(--tool-active-rgb) / 0.4);
+}
+
+/* Hairline between a segment/action and a control of another kind (the
+   camera lock after Reset). */
+.camera-separator {
+  flex: 0 0 auto;
+  width: 1px;
+  height: calc(var(--tb-btn) - 10px);
+  background: var(--line-2);
+}
+
+/* The three scene windows (Measure, View, Structure) share one body padding
+   so their rows come out the same height and their contents sit the same
+   distance from the frame. */
+.cv-panel.cv-floating:is([data-panel-id="measure"], [data-panel-id="view"], [data-panel-id="info"]) > .cv-panel-body {
+  padding: var(--tb-pad);
+}
+
 /* --- Measurement tools --- (hosted by the unified "Measure" panel window,
    which provides positioning + chrome; this is just the content layout) */
 #measurementTools {
   display: flex;
-  gap: var(--sp-3);
   align-items: center;
-  /* Compact mode unfolds this row beside a 54px icon; without wrap it runs
-     straight off a phone's left edge. */
-  flex-wrap: wrap;
 }
 
 /* Until ui/panels/defaultPanels.js adopts them into their floating panel
@@ -2165,169 +2311,52 @@ body > #structureInfoContent {
   display: none;
 }
 
+/* Icon-only. The full-colour SVGs (white fill, dark stroke, orange accent)
+   read on every palette without a filter; the box is a hair smaller than the
+   button so the ruler/protractor keep their breathing room. */
+.measure-tool-btn .tool-icon {
+  width: 28px;
+  height: 22px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The white-filled shapes wash out on a pastel fill; a hairline shadow in the
+   palette's own shadow ink gives them an edge without recolouring them
+   (--icon-filter would flip the orange accents too). */
+.measure-tool-btn .tool-icon img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 0 0.6px rgb(var(--shadow-rgb) / 0.7));
+}
+
 /* --- Camera view tools --- (hosted by the unified "View" panel window) */
 #cameraTools {
   display: flex;
-  gap: clamp(4px, 1.1111vw, var(--sp-3));
-  flex-wrap: wrap;
-  max-width: 320px;
-}
-
-/* Camera panel for desktop - horizontal layout. Wrap is unconditional:
-   #cameraTools already caps its content at max-width:320px, so the panel wraps
-   consistently at every window size (a legacy 1320px breakpoint used to gate
-   this, which made the panel change appearance mid-width for no clear reason). */
-#cameraPanel {
-  display: flex;
-  gap: clamp(4px, 1.1111vw, var(--sp-3));
   align-items: center;
-  max-height: none;
-  flex-wrap: wrap;
 }
 
-
-.camerae-tool-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  padding: var(--sp-3) var(--sp-3);
-  background: var(--bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-12);
-  color: var(--fg-1);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-bold);
-  min-width: 45px;
-  min-height: 45px;
-  text-align: center;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-
-/* One size for every button in the row — 32px squares, no padding of their
-   own, so the row reads as a single control strip. Only the reset is wider:
-   it is the row's primary action, and lock+reset together then occupy about
-   what the old "Reset" text button did. */
-#cameraTools .camera-tool-btn,
-#cameraTools .camera-tool-reset-btn {
+/* Reset | divider | Lock, wrapped by setupCameraButtons
+   (WindowAndSceneControls.js) so the trio moves as one unit. */
+.camera-reset-stack {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  min-width: 32px;
-  min-height: 32px;
-  padding: 0;
+  gap: var(--sp-3);
   flex: 0 0 auto;
 }
 
-#cameraTools .camera-tool-btn {
-  font-size: var(--fs-lg);
-  color: var(--fg-1);
-  background: var(--bg-color);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius);
-  cursor: pointer;
-  flex-direction: row;
-  gap: 0;
-}
-
-#cameraTools .camera-tool-reset-btn {
-  width: 44px;
-  font-size: var(--fs-lg);
-  color: var(--fg-1);
-  background: var(--danger);
-  /* Was rgba(250, 132, 18, 1) — 250 vs --danger-rgb's 240 for the same G/B
-     (132, 18) is a one-digit typo, not a deliberate second orange. Corrected
-     and adopted; the shift is a hair darker, essentially imperceptible. */
-  border: 1px solid rgb(var(--danger-rgb) / 1);
-  border-radius: var(--radius);
-  cursor: pointer;
-  min-width: 32px;
-  min-height: 32px;
-  flex-direction: row;
-  gap: 0;
-}
-
-/* The cube glyph sits on the saturated --danger fill, not on a panel wash, so
-   it stays white in every palette — no --icon-filter-bright here. */
+/* The cube glyph is white faces + dark edges, legible on the plain fill. */
 #cameraTools .camera-tool-reset-btn .reset-icon {
   display: block;
-  width: 18px;
-  height: 18px;
-}
-
-#cameraTools .camera-tool-btn:hover {
-  background: var(--bg-color);
-  border-color: var(--accent-fg);
-  transform: translateY(-2px);
-  box-shadow:0px 0px 4px 2px  rgb(var(--camera-glow-rgb) / 1);
-}
-
-#cameraTools .camera-tool-reset-btn:hover {
-  background: var(--danger);
-  border-color: var(--fg-1);
-  transform: translateY(-1px);
-  box-shadow: 0px 0px 2px 1px  var(--highlight-color);
-}
-
-#cameraTools .camera-tool-btn .tool-icon {
-  font-size: var(--fs-lg);
-  margin: 0;
-}
-
-#cameraTools .camera-tool-btn .reset-icon {
-  font-size: var(--fs-lg);
-  margin: 0;
+  width: 20px;
+  height: 20px;
 }
 
 #cameraTools .camera-tool-btn span {
   display: none;
-}
-
-/* Lock + Reset, wrapped by setupCameraButtons (WindowAndSceneControls.js).
-   Laid out in-line with the axis buttons: as a separate column above Reset the
-   lock read as a stray floating control. Same gap as #cameraPanel's own so the
-   whole thing is one evenly spaced row. */
-.camera-reset-stack {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--sp-1);
-}
-
-/* Same 32px square as the axis buttons, but painted from the "locked" family
-   rather than the plain button fill — it is a standing mode, not another view
-   shortcut, and reading identical to the axis letters hid that. --locked-* is
-   the token family the Wyckoff lock already uses, and every light palette
-   overrides it, so the --fg-1 glyph stays legible on both. */
-#cameraTools .camera-lock-btn {
-  background: var(--locked-badge-bg);
-  border-color: var(--locked-grad-1);
-}
-
-#cameraTools .camera-lock-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-/* Persistent highlight while unlocked (not just on hover, like the other
-   camera buttons) — this is a standing mode, not a momentary action. */
-#cameraTools .camera-lock-btn.unlocked {
-  border-color: var(--accent-fg);
-  color: var(--accent-fg);
-  box-shadow: 0px 0px 4px 1px rgb(var(--camera-glow-rgb) / 0.6);
-}
-
-#cameraTools .camera-lock-btn.unlocked:hover {
-  box-shadow: 0px 0px 4px 2px rgb(var(--camera-glow-rgb) / 0.9);
 }
 
 .camera-icon {
@@ -2336,40 +2365,89 @@ body > #structureInfoContent {
   justify-content: center;
 }
 
-/* World (x/y/z) and lattice (a/b/c) triplets — a grouping box for the markup
-   only. `contents` at every width, so the six stacks are always laid out by
-   #cameraPanel itself: the flat desktop row and the mobile rung's 4x2 grid
-   both want the stacks as their own direct items. */
-.camera-axis-group {
-  display: contents;
+/* Painted from the "locked" family rather than the plain button fill — it is
+   a standing mode, not another view shortcut, and reading identical to the
+   axis letters hid that. --locked-* is the token family the Wyckoff lock
+   already uses, and every light palette overrides it, so the --fg-1 glyph
+   stays legible on both. */
+#cameraTools .camera-lock-btn {
+  background: var(--locked-badge-bg);
+  border-color: var(--locked-grad-1);
 }
 
-/* Vertical stack: up-arrow / view-along-axis button / down-arrow. The arrows
-   keep their box while hidden (see below), so this gap and their height are
-   dead space in the default long-press mode — both kept as small as the
-   chevrons allow. */
+#cameraTools .camera-lock-btn:hover {
+  border-color: var(--accent-fg);
+}
+
+#cameraTools .camera-lock-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Unlocked = the mode is on: same ring as an active measure tool. */
+#cameraTools .camera-lock-btn.unlocked,
+#cameraTools .camera-lock-btn.unlocked:hover {
+  z-index: 2;
+  color: var(--tool-active);
+  border-color: var(--tool-active);
+  box-shadow: 0 0 0 1px var(--tool-active), 0 0 6px 1px rgb(var(--tool-active-rgb) / 0.4);
+}
+
+/* World (x/y/z) and lattice (a/b/c) triplets: each is a fused .cv-tb-group
+   of .camera-axis-stack wrappers. The wrapper is only there so the step
+   arrows have somewhere to hang; it must stay exactly one letter wide. */
 .camera-axis-stack {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  flex: 0 0 auto;
 }
 
 /* The small step-rotation arrows flanking each axis button. Their visibility
    is governed by the View window's "Stepwise buttons" menu option — visibility,
    not display, so the stack's own height/gap never shifts when they appear/disappear.
    pointer-events follows visibility so a hidden arrow can't be clicked (or
-   caught by the outside-click handler's own hit-testing) while invisible. */
+   caught by the outside-click handler's own hit-testing) while invisible.
+
+   In the default Long press mode (and Off) they are transient popovers, so
+   they sit OUT of flow, overlaid just above/below the letter: the row stays
+   one button tall, level with the Measure toolbar, and the letter under a
+   long-pressing finger never moves. In On mode they are permanent and go
+   back in flow (below). */
 #cameraTools .camera-axis-stack .axis-step {
-  padding: 0 var(--sp-2);
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  padding: 0;
   border-width: 0;
+  border-radius: var(--radius-sm);
   font-size: var(--fs-xs);
-  line-height: var(--lh-tight);
-  min-width: 32px;
+  line-height: 1;
+  height: 12px;
+  min-width: 0;
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
+}
+
+/* .angle-btn's own hover re-adds a border and scales; neither suits a 12px
+   overlay chevron. */
+#cameraTools .camera-axis-stack .axis-step:hover {
+  border-width: 0;
+  transform: none;
+  color: var(--fg-1);
+  background: var(--wash-3);
+}
+
+#cameraTools .camera-axis-stack .axis-step:first-child {
+  bottom: calc(100% + 1px);
+}
+
+#cameraTools .camera-axis-stack .axis-step:last-child {
+  top: calc(100% + 1px);
 }
 
 #cameraTools .camera-axis-stack.camera-axis-revealed .axis-step {
@@ -2378,75 +2456,30 @@ body > #structureInfoContent {
   pointer-events: auto;
 }
 
-/* Separator for camera controls. Hidden unconditionally (the panel wraps at
-   every width now — see #cameraPanel above). */
-.camera-separator {
-  display: none;
-  width: 1px;
-  height: 22px;
-  background: var(--wash-3);
-  margin: 0 2px;
+/* On mode: arrows are permanent, so they take real space above and below the
+   letters and the whole toolbar grows to hold them. */
+#cameraTools.camera-axis-steps-on .camera-axis-stack {
+  gap: 1px;
 }
 
-/* Fluid toolbar sizing (#measurementPanel and #cameraPanel).
-   Every clamp() below pivots on 720px — the mobile rung — with today's desktop
-   value as the UPPER bound, so nothing moves at or above 720px and the
-   controls shrink smoothly from there down. The vw middle terms are just each
-   desktop value expressed as a fraction of 720 (6px = 0.8333vw, and so on).
-   Wrapping stays on as the backstop: at the narrowest widths the row still has
-   to break, and #measurementPanel not wrapping is what clipped "Distance" off
-   the left screen edge inside the compact panel's clamped body. */
-.measurement-group {
-  display: flex;
-  gap: clamp(4px, 1.1111vw, var(--sp-3));
-  align-items: center;
-  flex-wrap: wrap;
-  max-height: none;
+#cameraTools.camera-axis-steps-on .camera-axis-stack .axis-step {
+  position: static;
+  min-width: var(--tb-btn);
+}
+
+/* The overlaid arrows spill a few px past the body's padding; the floating
+   window body scrolls by default (long panels), which would clip them. This
+   toolbar is never tall enough to need the scroll. */
+.cv-panel.cv-floating[data-panel-id="view"] > .cv-panel-body {
   overflow: visible;
 }
 
-.measure-tool-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(3px, 0.8333vw, var(--sp-2));
-  padding: clamp(3px, 0.8333vw, var(--sp-2));
-  background: var(--bg-color);
-  border: 2px solid var(--border-color);
-  border-radius: var(--radius-12);
-  color: var(--fg-1);
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-size: var(--fs-base);
-  font-weight: var(--fw-bold);
-  /* 40px floor: the smallest this may get and still be a touch target. */
-  min-width: clamp(40px, 6.25vw, 45px);
-  min-height: clamp(40px, 6.25vw, 45px);
-  text-align: center;
-  user-select: none;
-  -webkit-user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.measure-tool-btn:hover {
-  background: var(--bg-color);
-  border-color: var(--border-color);
-  transform: translateY(-2px);
-  box-shadow: 0px 0px 4px 2px  var(--highlight-color);
-}
-
-.measure-tool-btn.active {
-  background: var( --bg-color);
-  border-color: var(--tool-active);
-  color: var(--fg-1);
-  box-shadow: 0px 0px 4px 2px  rgb(var(--tool-active-rgb) / 0.4);
-}
-
-.measure-tool-btn.active:hover {
-  box-shadow: 0px 0px 4px 2px rgb(var(--tool-active-rgb) / 0.5);
-  transform: translateY(-2px);
+/* Both toolbars are narrower than a floating window's 220px minimum; let the
+   window hug the row instead of leaving dead space after the last segment.
+   The title bar (title + info/menu/close, ~100px) still fits. */
+.cv-panel.cv-floating[data-panel-id="measure"],
+.cv-panel.cv-floating[data-panel-id="view"] {
+  min-width: 0;
 }
 
 /* "Restore All / Cancel" panel anchored below the Hide/Show mode button
@@ -2519,20 +2552,6 @@ body > #structureInfoContent {
   justify-content: center;
 }
 
-/* Fluid below 720px, same pivot as .measure-tool-btn above. Scoped to the
-   measurement buttons: .tool-icon's other users are full-width panel rows. */
-.measure-tool-btn .tool-icon {
-  width: clamp(20px, 4.4444vw, 32px);
-  height: clamp(15px, 3.3333vw, 24px);
-}
-
-/* The label. Needs the id to outrank panelWindow.css's `.cv-panel-body button`
-   (--fs-md), which is what these buttons actually render at once adopted into
-   the Measure window — hence --fs-md, not --fs-base, as the desktop bound. */
-#measurementTools .measure-tool-btn {
-  font-size: clamp(calc(9px * var(--cv-font-scale, 1)), 1.8056vw, var(--fs-md));
-}
-
 .tool-icon img {
   max-width: 100%;
   max-height: 100%;
@@ -2591,36 +2610,46 @@ body > #structureInfoContent {
   border-color: var(--fg-2);
 }
 
-/* Hamburger Menu - Always Top Left. max() so a notch/rounded corner (only
-   relevant with viewport-fit=cover, see index.html) pushes it clear
-   instead of rendering underneath — env() is 0 on a rectangular screen, so
-   this is exactly the original 12px there. */
+/* Dock toggle - always top left. One more scene window: the same chrome as
+   the floating panel bodies (padding --tb-pad, hairline, --radius-md) around
+   a --tb-btn square, so it is exactly as tall as the View toolbar beside it
+   and sits on its line. top: the toolbars anchor at 20px but their hidden
+   title-bar handle (8px + 3px gap, panelWindow.css .cv-bar-collapsed) sits
+   above the body, so the visible row starts at 31px. max() so a notch/rounded
+   corner (only relevant with viewport-fit=cover, see index.html) pushes it
+   clear instead of rendering underneath — env() is 0 on a rectangular
+   screen. The View window's default left anchor (defaultPanels.js) clears
+   this box: 12 + 58 + 12. */
 #mobileMenuToggle {
-  display: flex;
+  --tb-btn: 40px; /* pinned: does not follow the toolbars' touch size */
   position: fixed;
-  top: max(12px, env(safe-area-inset-top));
+  top: max(31px, env(safe-area-inset-top));
   left: max(12px, env(safe-area-inset-left));
   z-index: var(--z-chrome);
-  background: var(--float-panel-bg);
-  border: 1px solid var(--wash-4);
-  border-radius: var(--radius-sm);
-  padding: 0;
+  box-sizing: border-box;
+  padding: var(--tb-pad);
+  background: var(--popup-bg);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
   color: var(--fg-1);
   cursor: pointer;
-  backdrop-filter: blur(12px);
-  font-size: var(--fs-xl);
-  font-weight: 300;
-  width: 44px;
-  height: 44px;
-  align-items: center;
-  justify-content: center;
+  backdrop-filter: blur(10px);
   box-shadow: var(--shadow-glow);
-  transition: all 0.2s ease;
+  transition: transform 0.2s ease;
 }
 
-#mobileMenuToggle:hover,
+#mobileMenuToggle .cv-tb-btn {
+  font-size: var(--fs-xl);
+  font-weight: 300;
+  pointer-events: none; /* the box is the click target, not the glyph */
+}
+
+#mobileMenuToggle:hover .cv-tb-btn {
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 1px var(--accent-fg), 0 0 6px 1px rgb(var(--btn-glow-rgb) / 0.35);
+}
+
 #mobileMenuToggle:active {
-  background: var(--float-panel-bg);
   transform: scale(0.95);
 }
 

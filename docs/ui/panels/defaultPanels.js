@@ -239,7 +239,10 @@ export function registerDefaultPanels() {
       const el = document.getElementById('measurementTools');
       if (el) body.appendChild(el);
     },
-    defaults: { dock: false, anchor: { right: 20, top: 20 }, collapsed: false },
+    // right: 68, not 20 — the toolbar hugs its five squares (223px) and sits
+    // centred over the Structure window (right: 20, 318px wide) below it:
+    // 20 + (318 - 223) / 2.
+    defaults: { dock: false, anchor: { right: 68, top: 20 }, collapsed: false },
   });
 
   registerPanel({
@@ -275,10 +278,10 @@ export function registerDefaultPanels() {
       }];
     },
     // Base position (dock hidden) clears the dock-unhide menu button
-    // (#mobileMenuToggle: left 12px + 44px wide) with the same 12px margin the
+    // (#mobileMenuToggle: left 12px + 58px wide) with the same 12px margin the
     // button keeps to the screen edge. While the dock occupies that column the
     // window is displaced to sit just right of it.
-    defaults: { dock: false, anchor: { left: 68, top: 20 }, collapsed: false },
+    defaults: { dock: false, anchor: { left: 82, top: 20 }, collapsed: false },
   });
   // setupScene wired the handlers earlier under the default mode; apply the
   // stored preference now that panel preferences have been loaded.

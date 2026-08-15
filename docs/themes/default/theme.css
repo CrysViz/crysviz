@@ -95,7 +95,6 @@
   --blue-accent-rgb: 91 168 255;      /* border/ring tier: si-wyckoff-badge border, .wyckoff-locked ring, .pi-forced-notice border, .sym-link underline (4 sites, 1 a near-dupe fold — see TOKENS.md) */
   --blue-accent-fill-rgb: 35 139 230; /* fill tier of the same family: si-wyckoff-badge's lighter gradient stop, .pi-forced-notice background (2 sites) — kept apart from the border tier per "cluster by role" */
   --shortcuts-danger-rgb: 220 53 53;  /* shortcuts-help destructive-action red (clear/reset buttons, key-conflict flag) — 10 sites in styles.css, a different hue from the orange --danger */
-  --camera-glow-rgb: 6 100 50;        /* #cameraTools hover/unlocked glow ring, 3 sites — deliberately NOT --highlight-color/--border-color: the glow must stay fixed green regardless of active backend theme, same reasoning as the bond-range-slider's fixed-green track (css_guard_allow.txt) */
   --vacancy-amber-rgb: 255 210 120;   /* disordered-site species/vacancy text tint, 2 sites (structureInfoPanel.css) — thin but real, same call as --ok-tint's 2-site precedent above */
   --active-green-rgb: 125 206 160;    /* "active/applied" state accent (atom-editor button, coord-axis slider, new-row separator), 5 sites — checked against --ok-bright-rgb (126 226 168) and kept separate: the existing call sites already flagged it as "not an exact match", and the roles here are border/ring/accent-color, not the anneal badge's fill+text pairing */
 

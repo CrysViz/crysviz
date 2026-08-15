@@ -13,6 +13,11 @@ export function setAxisStepButtonsMode(mode) {
   document.querySelectorAll('#cameraTools .camera-axis-stack').forEach((stack) => {
     stack.classList.toggle('camera-axis-revealed', stepButtonsMode === 'on');
   });
+  // In On mode the arrows are permanent, so the CSS lays them out in flow
+  // (the toolbar grows to hold them); in Long press / Off they are transient
+  // popovers overlaid above/below the letter, so the row stays one button
+  // tall and matches the Measure toolbar.
+  document.getElementById('cameraTools')?.classList.toggle('camera-axis-steps-on', stepButtonsMode === 'on');
 }
 
 /**

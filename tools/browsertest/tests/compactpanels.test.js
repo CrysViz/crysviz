@@ -61,10 +61,13 @@ async function state(page) {
   });
 
   // Force compaction: hide the dock and shrink the window so the scene is too
-  // narrow for both toolbars. (Both events recheck compaction.)
+  // narrow for both toolbars. (Both events recheck compaction.) The toolbars
+  // are icon-only segmented rows now (~220-245px each at touch size), so 720
+  // fits both side by side and no longer compacts; 480 does not fit them.
+  const W = 480;
   await H.clickById(page, 'mobileMenuToggle'); // hide dock
   await page.waitForTimeout(300);
-  await setViewport(page, 720, 820);
+  await setViewport(page, W, 820);
 
   let s = await state(page);
   H.check('both toolbars compact to icons when the scene is too narrow',
@@ -97,7 +100,7 @@ async function state(page) {
   await page.waitForTimeout(300);
   s = await state(page);
   H.check('expanding Measure keeps its icon pinned in place',
-    near(s.measure.rect.right, 720 - 20) && near(s.measure.rect.top, measureIconTop),
+    near(s.measure.rect.right, W - 20) && near(s.measure.rect.top, measureIconTop),
     `right=${s.measure.rect.right} top=${s.measure.rect.top}`);
   H.check('Measure stays compact (icon + unfolded toolbar), not un-collapsed',
     s.measure.compact && !s.measure.collapsed, `compact=${s.measure.compact} collapsed=${s.measure.collapsed}`);
@@ -139,14 +142,27 @@ async function state(page) {
     s.stackBottom === 0 && near(s.dotTop, 120),
     `stackBottom=${s.stackBottom} dotTop=${s.dotTop}`);
 
-  // --- the dock DISAPPEARING must not pop compact toolbars open. Show the dock
-  // at a narrow width to compact them, then hide it (scene grows) and confirm
-  // they stay icons.
+  // --- the dock DISAPPEARING must not pop compact toolbars open. With the
+  // dock shown, crowd the scene via the split reserve (the icon-only toolbars
+  // are too narrow for a >1024px window with the dock alone to crowd them —
+  // below 1024 the dock is an overlay and no longer narrows the scene), then
+  // hide the dock (scene grows past what the toolbars need) and confirm they
+  // stay icons.
   await H.clickById(page, 'mobileMenuToggle'); // show dock
   await page.waitForTimeout(300);
-  await setViewport(page, 1120, 820); // dock present + narrow -> crowded -> compact
+  await setViewport(page, 1400, 900);
+  await page.evaluate(async () => {
+    document.getElementById('viewArea').classList.add('split-active');
+    // 0.4: with the dock the scene is ~420px (too narrow for the ~780px the
+    // two toolbars + dock toggle need); without it ~840px, which would fit —
+    // so the stay-compact check below actually exercises the gate.
+    document.documentElement.style.setProperty('--split-pane-fraction', '0.4');
+    const { setRightReserve } = await import('./ui/panels/PanelManager.js');
+    setRightReserve(0.4 * window.innerWidth);
+  });
+  await page.waitForTimeout(300);
   s = await state(page);
-  H.check('dock shown at narrow width compacts the toolbars',
+  H.check('dock shown + crowded scene compacts the toolbars',
     s.measure.compact && s.view.compact, `measure=${s.measure.compact} view=${s.view.compact}`);
   // Above the mobile rung the dot is still shown, and still keeps clear of the
   // icon stack (the tracking that used to be checked at 720px).
@@ -158,13 +174,18 @@ async function state(page) {
   s = await state(page);
   H.check('hiding the dock does NOT auto-pop the compact toolbars back open',
     s.measure.compact && s.view.compact, `measure=${s.measure.compact} view=${s.view.compact}`);
+  await page.evaluate(async () => {
+    document.getElementById('viewArea').classList.remove('split-active');
+    document.documentElement.style.setProperty('--split-pane-fraction', '0');
+    const { setRightReserve } = await import('./ui/panels/PanelManager.js');
+    setRightReserve(0);
+  });
+  await page.waitForTimeout(300);
 
   // --- split-view reserve rechecks compaction in BOTH directions. Shrink #view
   // via the reserve and confirm growing it back un-compacts (a one-way gate,
   // like the dock case, would leave them stuck as icons).
-  await setViewport(page, 1400, 900);
-  await H.clickById(page, 'mobileMenuToggle'); // hide dock -> full-width scene
-  await page.waitForTimeout(300);
+  await setViewport(page, 1400, 900); // dock already hidden -> full-width scene
   await page.evaluate(async () => {
     // Simulate the split pane claiming most of the scene width, exactly as
     // SplitView does: mark #viewArea split-active + set the vw fraction (which

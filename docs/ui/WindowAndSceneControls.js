@@ -90,14 +90,18 @@ export function setupCameraButtons() {
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 
-  // Lock button sits directly above Reset (its own column stack) rather than
-  // just another item in the wrapping row, so it reads as "modifies what
-  // Reset/switching do" rather than one more view shortcut.
+  // Reset | divider | Lock, wrapped so the trio travels as one unit when the
+  // panel wraps or goes to the mobile grid. The lock stands apart from the
+  // view actions on purpose: it is a standing mode (one shared camera across
+  // structures, or one per structure), and a hairline before it says so.
   const resetBtn = document.getElementById('resetView');
   const stack = document.createElement('div');
   stack.className = 'camera-reset-stack';
+  const divider = document.createElement('div');
+  divider.className = 'camera-separator';
+  divider.setAttribute('aria-hidden', 'true');
   const lockBtn = createLockToggleButton({
-    className: 'camera-tool-btn camera-lock-btn',
+    className: 'cv-tb-btn camera-tool-btn camera-lock-btn',
     titleLocked: 'Camera view is shared across all structures — click to move each structure independently',
     titleUnlocked: 'Camera view is independent per structure — click to share one view across all structures',
     locked: app.cameraLocked !== false,
@@ -105,8 +109,9 @@ export function setupCameraButtons() {
     onChange: (locked) => { app.cameraLocked = locked; saveLockPrefs(); },
   });
   resetBtn.parentElement.insertBefore(stack, resetBtn);
-  stack.appendChild(lockBtn);
   stack.appendChild(resetBtn);
+  stack.appendChild(divider);
+  stack.appendChild(lockBtn);
 }
 
 // Build the three.js scene: renderer/camera/controls/gizmo + lights + theme.

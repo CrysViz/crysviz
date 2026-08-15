@@ -60,13 +60,13 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   const { browser, page, errors } = await H.launchApp();
   const PANEL = 'view';
 
-  // -- initial derived placement: inherent {left:68} is displaced past the dock
+  // -- initial derived placement: inherent {left:82} is displaced past the dock
   const uiWidth = await page.evaluate(() => document.getElementById('ui').getBoundingClientRect().width);
   let s = await panelState(page, PANEL);
   H.check('boot: displaced right of the visible dock', s.left >= uiWidth + 9,
     `left=${s.left} uiWidth=${uiWidth}`);
   H.check('boot: saved pos is the inherent default, not the displaced one',
-    s.saved && s.saved.left === 68, JSON.stringify(s.saved));
+    s.saved && s.saved.left === 82, JSON.stringify(s.saved));
 
   // -- right-edge default windows track the edge without ever being dragged ---
   let info = await panelState(page, 'info');

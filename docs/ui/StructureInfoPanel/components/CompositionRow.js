@@ -302,11 +302,17 @@ export function createCompositionRow(el, count, total, options = {}) {
   const groupElements = options.elements ?? [el];
   const spinForceButton = document.createElement('button');
   spinForceButton.type = 'button';
-  spinForceButton.textContent = 'Spins/Forces';
+  spinForceButton.textContent = 'Spin/Force';
   spinForceButton.className = 'btn-mini highlight si-action-btn-narrow spin-force-category-button';
   spinForceButton.title = `Customize spin and force arrows for ${groupElements.join(', ')}`;
-  right.appendChild(keepToggle.wrapper);
-  right.insertBefore(spinForceButton, keepToggle.wrapper);
+  // Button and keep-toggle travel as one unit: when the row is too narrow
+  // for the whole right column, .comp-right wraps this pair under the count
+  // rather than stranding the toggle alone on a second line.
+  const actions = document.createElement('span');
+  actions.className = 'comp-actions';
+  actions.appendChild(spinForceButton);
+  actions.appendChild(keepToggle.wrapper);
+  right.appendChild(actions);
 
   row.appendChild(left);
   row.appendChild(right);
@@ -523,18 +529,28 @@ export function createWyckoffCompositionRow(el, entries, total) {
   const right = document.createElement('div');
   right.className = 'comp-right';
 
+  // Same count/percentage markup as createCompositionRow so both rows share
+  // one size budget in the panel's right column.
   const countLabel = document.createElement('span');
+  countLabel.className = 'comp-count-label';
   const pct = (100 * entries.length / total).toFixed(1);
-  countLabel.textContent = `${entries.length} (${pct}%)`;
+  countLabel.textContent = `${entries.length} `;
+  const pctLabel = document.createElement('span');
+  pctLabel.className = 'comp-pct-label';
+  pctLabel.textContent = `(${pct}%)`;
+  countLabel.appendChild(pctLabel);
   right.appendChild(countLabel);
 
   const spinForceButton = document.createElement('button');
   spinForceButton.type = 'button';
-  spinForceButton.textContent = 'Spins/Forces';
+  spinForceButton.textContent = 'Spin/Force';
   spinForceButton.className = 'btn-mini highlight si-action-btn-narrow spin-force-category-button';
   spinForceButton.title = `Customize spin and force arrows for ${el}`;
-  right.appendChild(spinForceButton);
-  right.appendChild(keepToggle.wrapper);
+  const actions = document.createElement('span');
+  actions.className = 'comp-actions';
+  actions.appendChild(spinForceButton);
+  actions.appendChild(keepToggle.wrapper);
+  right.appendChild(actions);
 
   row.appendChild(left);
   row.appendChild(right);

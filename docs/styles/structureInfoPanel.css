@@ -69,10 +69,9 @@
   padding: 0 var(--sp-3-5);
   margin-right: var(--sp-1);
 }
-/* min-width/min-height, not fixed width/height: the class also carries
-   "Spins/Forces", which neither fits a hard 50px box nor stays on one line in
-   a narrow dock — with a fixed height its second line spilled out of the
-   button. The Apply/Reset labels are all short, so their rows are unchanged. */
+/* min-width/min-height, not fixed width/height: the class also carries the
+   category Spin/Force button (see .spin-force-category-button below). The
+   Apply/Reset labels are all short, so their rows are unchanged. */
 .si-action-btn-narrow {
   min-height: 32px;
   font-size: var(--fs-sm);
@@ -283,11 +282,14 @@
      via its narrow-viewport media queries — this only adds the layout this
      component actually needs, which the base rule doesn't set. */
   display: grid;
-  /* The tracks floor at min-content, which is right everywhere there is room —
-     the phone-width relaxation lives in responsive.css's mobile rung. */
-  grid-template-columns: auto 1fr;
+  /* Both tracks may shrink below min-content: at the panel's 300px cap,
+     count + Spin/Force + toggle beside a wide element name has no slack, and
+     floored tracks pushed the button and toggle past the panel edge into a
+     horizontal scrollbar. With .comp-right allowed to wrap, that case drops
+     the button + toggle (one unit, .comp-actions) under the count instead. */
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   align-items: center;
-  column-gap: var(--sp-3);
+  column-gap: var(--sp-2);
   row-gap: var(--sp-2);
   cursor: pointer;
   transition: background-color 0.2s ease;
@@ -302,7 +304,6 @@
   font-size: var(--fs-lg);
 }
 .comp-expand-icon {
-  margin-left: var(--sp-1);
   font-size: var(--fs-lg);
   transition: transform 0.2s ease;
   color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
@@ -312,12 +313,35 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--sp-3);
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: var(--sp-2);
 }
-.comp-count-label { white-space: nowrap; }
+.comp-count-label {
+  white-space: nowrap;
+  font-size: var(--fs-md);
+}
+.comp-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+}
 .comp-pct-label {
   font-size: 0.8em;
   color: var(--fg-75); /* was 0.7 — Wave 2.6 --fg-75 */
+}
+/* Category-level spin/force editor button. Dense on purpose: it shares the
+   row's right column with the count and the keep-toggle, and at the panel's
+   300px cap every px it takes is what decides whether that group stays on
+   one line. nowrap so it never becomes a two-line "Spins/ Forces" button —
+   when it really doesn't fit, .comp-right wraps the whole button instead. */
+.spin-force-category-button {
+  min-height: 26px;
+  min-width: 0;
+  padding: 0 3px;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
 }
 .individual-atoms {
   margin-left: var(--sp-2);
@@ -372,7 +396,9 @@
 .comp-single-dot {
   width: 20px;
   height: 20px;
-  margin-right: var(--sp-2);
+  /* No margin of its own: .comp-left's gap already spaces it, and the 6px it
+     added on top came straight out of the right column's one-line budget. */
+  margin-right: 0;
   cursor: pointer;
 }
 
@@ -407,20 +433,20 @@
 /* A bond too short to render has nothing to highlight in 3D, so its row
    isn't clickable. */
 .individual-bond-row.not-renderable { cursor: default; }
-/* Default (non-stacked) atom row: name / buttons / keep-toggle.
-   The name column is the one that gives. Three `auto` tracks all floored at
-   their min-content, so a long name or a wide coordinate triple grew the grid
-   past the panel and pushed the trailing toggle out of view; the buttons are
-   fixed-content controls with nothing to trim, so they keep their width and
-   the name column absorbs the pressure (and ellipsizes — see below). */
+/* Default (non-stacked) atom row: two lines. Identity (name + coordinate
+   triple) on the first, the editor buttons and the keep-toggle on the second.
+   At the panel's 300px cap the triple, three buttons and the toggle never fit
+   on one line — the triple ended up wrapped one number per line and the
+   buttons still spilled past the panel edge. */
 .individual-atom-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  /* Tighter than the sibling rows': every px here is one the coordinates get
-     back, and the row is only three items wide. */
+  grid-template-columns: minmax(0, 1fr) auto;
   column-gap: var(--sp-2);
+  row-gap: var(--sp-1);
   padding: var(--sp-1) 0;
 }
+.individual-atom-row .iar-name-container { grid-column: 1 / -1; }
+.individual-atom-row .cv-tiny-toggle-wrap { grid-column: 2; align-self: center; }
 /* Wyckoff orbit rows carry a long label (site symmetry, orbit size, DOF)
    that has no room next to three buttons in a docked panel, so they stack:
    identity on its own line, buttons underneath. */
@@ -436,16 +462,18 @@
 .individual-atom-row.periodic-image { margin-left: 14px; }
 .individual-atom-row.periodic-image .iar-name { color: var(--fg-2); }
 
+/* Name and coordinate triple share a line ("Si1  (0.000, 0.000, 0.000)");
+   the triple drops to its own line only when the label is long. Everything
+   else the container carries — species lines, vacancy, meta — is a full line
+   of its own, so a disordered site still reads label -> species -> where. */
 .iar-name-container {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* The shrinking column (see .individual-atom-row): without this its
-     min-content width becomes the grid's floor again. */
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--sp-2);
+  row-gap: 2px;
+  /* Without this its min-content width becomes the grid's floor again. */
   min-width: 0;
-  /* Panel→3D: clicking the name/coords area (but not the editor buttons)
-     highlights this atom in the 3D view. */
-  cursor: pointer;
 }
 .individual-atom-row.stacked-header .iar-name-container {
   flex: 1 1 100%;
@@ -471,6 +499,11 @@
    name column's min-content floor, which is what the grid above needs. */
 .iar-coords {
   overflow-wrap: anywhere;
+}
+.iar-species-line,
+.iar-vacancy-line,
+.iar-meta {
+  flex: 1 1 100%;
 }
 .iar-species-line {
   display: flex;
@@ -510,13 +543,10 @@
 }
 .individual-atom-row .iar-buttons {
   gap: var(--sp-2);
-  justify-content: flex-end;
+  justify-content: center;
 }
 .individual-atom-row.stacked-header .iar-buttons {
   gap: var(--sp-3);
-  /* Reset back to the default (the non-stacked rule above sets flex-end) —
-     the stacked layout never had a justify-content of its own. */
-  justify-content: flex-start;
   flex: 1 1 auto;
   flex-wrap: wrap;
 }
@@ -568,14 +598,6 @@
   white-space: nowrap;
   line-height: 1.15;
   text-align: center;
-}
-/* IndividualAtomRow.js writes the Spin/Force label as "Spin/<br>Force" to keep
-   the button narrow. The row now shrinks its name column instead, so the two
-   halves belong on one line — and a <br> ignores white-space, so suppressing
-   the element is what joins them. The literal <br> (and its stale comment)
-   should come out of IndividualAtomRow.js when that file is next touched. */
-.atom-editor-button.iar-spin-btn br {
-  display: none;
 }
 .atom-editor-button.iar-coord-btn:disabled {
   opacity: 0.45;
