@@ -88,7 +88,9 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     parked.saved && near(parked.saved.right, 60) && near(parked.saved.bottom, 60),
     JSON.stringify(parked.saved));
 
-  await setViewport(page, 900, 600);
+  // Stays above the 1024px compact breakpoint: below it 'view' folds to its
+  // icon (see the crowding section further down) and no longer tracks a corner.
+  await setViewport(page, 1100, 600);
   s = await panelState(page, PANEL);
   H.check('shrink: corner panel hugs the corner', near(s.rightGap, 60) && near(s.bottomGap, 60),
     `rightGap=${s.rightGap} bottomGap=${s.bottomGap}`);
@@ -108,12 +110,13 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   H.check('drag to mid-canvas captures left/top anchors',
     s.saved && near(s.saved.left, 150) && near(s.saved.top, 100), JSON.stringify(s.saved));
 
-  // 'view' is compact-capable: a scene this narrow crowds the two toolbars, so
-  // it collapses to its round icon (pinned to the compact stack anchor, not its
-  // floatPos) — while the saved inherent pos is left untouched for restore.
+  // 'view' is compact-capable: a compact viewport (and a scene narrow enough
+  // to crowd the two toolbars) collapses it to its round icon (pinned to the
+  // compact stack anchor, not its floatPos) — while the saved inherent pos is
+  // left untouched for restore.
   await setViewport(page, 700, 500);
   s = await panelState(page, PANEL);
-  H.check('shrink to crowding width: view compacts to its icon', s.compact,
+  H.check('shrink to compact width: view compacts to its icon', s.compact,
     `compact=${s.compact} left=${s.left}`);
   H.check('compacting does not touch the saved pos',
     s.saved && near(s.saved.left, 150) && near(s.saved.top, 100), JSON.stringify(s.saved));

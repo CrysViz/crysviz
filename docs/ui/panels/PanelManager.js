@@ -1171,7 +1171,12 @@ function requiredSceneWidthForCompact() {
 function refreshCompactFloatingPanels() {
   const scene = sceneRect();
   const available = scene ? scene.width : window.innerWidth;
-  const small = available < requiredSceneWidthForCompact();
+  // Icons when the toolbars crowd each other, and on any compact viewport:
+  // the Structure window is behind its launcher there (compactHome), and the
+  // three scene windows fold and unfold together — the icon-only toolbars
+  // fit a 900px scene fine, but unfolding them while the Structure icon
+  // stays put made that one look stuck.
+  const small = compactViewport || available < requiredSceneWidthForCompact();
   for (const panel of panels.values()) {
     if (panel.compactBtn) panel.setCompact(small && !panel.docked);
   }

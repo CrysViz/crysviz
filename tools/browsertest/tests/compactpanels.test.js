@@ -60,16 +60,23 @@ async function state(page) {
     (await import('./ui/BackgroundPicker.js')).setBackgroundDotVisible(true);
   });
 
-  // Force compaction: hide the dock and shrink the window so the scene is too
-  // narrow for both toolbars. (Both events recheck compaction.) The toolbars
-  // are icon-only segmented rows now (~220-245px each at touch size), so 720
-  // fits both side by side and no longer compacts; 480 does not fit them.
-  const W = 480;
+  // --- a compact viewport (<=1024) folds the toolbars in step with the
+  // Structure window's launcher icon, even when the icon-only toolbars would
+  // fit the scene: the three scene windows fold and unfold together.
   await H.clickById(page, 'mobileMenuToggle'); // hide dock
   await page.waitForTimeout(300);
+  await setViewport(page, 900, 820);
+  let s = await state(page);
+  const infoLauncher = await page.evaluate(() => !!document.querySelector('[data-compact-launcher="info"]'));
+  H.check('compact viewport: toolbars are icons alongside the Structure launcher',
+    s.measure.compact && s.view.compact && infoLauncher,
+    `measure=${s.measure.compact} view=${s.view.compact} launcher=${infoLauncher}`);
+
+  // Narrow enough that the toolbars also crowd each other (the other trigger).
+  const W = 480;
   await setViewport(page, W, 820);
 
-  let s = await state(page);
+  s = await state(page);
   H.check('both toolbars compact to icons when the scene is too narrow',
     s.measure.compact && s.view.compact,
     `measure=${s.measure.compact} view=${s.view.compact}`);
