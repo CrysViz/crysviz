@@ -1,6 +1,7 @@
 import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
+import { Spin } from "../model/index.js";
 import { Stress } from "../model/index.js";
 import { StructureContainer } from "../model/index.js";
 import { cartToFractional } from "../math/index.js";
@@ -55,15 +56,15 @@ export function parsePWSCFout(content, fileName) {
   }
 
   const steps = [];
-  /** @type {{energy: number | null, forces: number[][], stress: number[][] | null}} */
-  let pending = { energy: null, forces: [], stress: null };
-  const hasPending = () => pending.energy !== null || pending.forces.length > 0 || pending.stress !== null;
+  /** @type {{energy: number | null, forces: number[][], stress: number[][] | null, spins: number[][]}} */
+  let pending = { energy: null, forces: [], stress: null, spins: [] };
+  const hasPending = () => pending.energy !== null || pending.forces.length > 0 || pending.stress !== null || pending.spins.length > 0;
 
   function emit() {
     // Clear pending even when there is no geometry to attach it to, so a
     // dropped frame can never mispair its data onto the next geometry.
     if (!lattice || positionsFrac.length === 0) {
-      pending = { energy: null, forces: [], stress: null };
+      pending = { energy: null, forces: [], stress: null, spins: [] };
       return;
     }
     steps.push({
@@ -73,9 +74,19 @@ export function parsePWSCFout(content, fileName) {
       forces: pending.forces,
       stressTensor: pending.stress,
       energy: pending.energy,
+      spins: pending.spins,
     });
-    pending = { energy: null, forces: [], stress: null };
+    pending = { energy: null, forces: [], stress: null, spins: [] };
   }
+
+  // Non-collinear per-site magnetization accumulator (pw.x `report` output:
+  // blocks of "atom number N relative position" / "magnetization : x y z").
+  // Resets when atom index 1 reappears (a fresh block) so the last block
+  // before a geometry is the one that lands on the frame — same last-wins,
+  // reset-per-step handling the OUTCAR reader uses.
+  /** @type {number[][] | null} */
+  let ncMoments = null;
+  let ncAtom = 0;
 
   for (let i = 0; i < n; i++) {
     const line = lines[i];
@@ -94,6 +105,25 @@ export function parsePWSCFout(content, fileName) {
     } else if (line.includes("total") && line.includes("stress") && line.includes("Ry/bohr**3")) {
       if (pending.stress !== null) emit();
       pending.stress = readStress(lines, i, n);
+
+    } else if (/Magnetic moment per site/i.test(line)) {
+      // Collinear / magnitude-only per-site moments. QE reports magnetization
+      // in Cartesian axes, so no SAXIS-style rotation is needed on read.
+      if (pending.spins.length > 0) emit();
+      pending.spins = readMagMomPerSite(lines, i, n);
+      ncMoments = null;
+
+    } else if (/^\s*atom\s+number\s+(\d+)\s+relative\s+position/i.test(line)) {
+      const idx = parseInt(line.match(/^\s*atom\s+number\s+(\d+)/i)[1], 10);
+      if (idx === 1) ncMoments = []; // start of a fresh report block
+      ncAtom = idx;
+
+    } else if (ncMoments && /^\s*magnetization\s*:\s*-?\d/i.test(line)) {
+      const mv = line.match(/^\s*magnetization\s*:\s*(-?\d[\d.eE+-]*)\s+(-?\d[\d.eE+-]*)\s+(-?\d[\d.eE+-]*)/i);
+      if (mv && ncAtom >= 1) {
+        ncMoments[ncAtom - 1] = [parseFloat(mv[1]), parseFloat(mv[2]), parseFloat(mv[3])];
+        pending.spins = ncMoments; // last block before the next geometry wins
+      }
 
     } else if (line.startsWith("CELL_PARAMETERS") || line.startsWith("ATOMIC_POSITIONS")) {
       // First geometry marker after a batch of scf data closes the frame.
@@ -127,6 +157,17 @@ export function parsePWSCFout(content, fileName) {
       uuid: generateID([s.elements[i]]),
     }));
     const forces = s.forces.map(vector => new Force({ vector, scaling: 1.0 }));
+    // QE magnetization is already Cartesian, so rawVector == vector and the
+    // structure keeps the default (0,0,1) spinFrame — the Spins panel's visual
+    // rotation still applies (useful since the absolute direction is arbitrary
+    // for collinear / no-spin-orbit runs).
+    const spins = (s.spins || []).map((vector, i) => new Spin({
+      vector: [...vector],
+      scaling: 1.0,
+      color: "#008080",
+      atomIndex: i,
+      element: s.elements[i],
+    }));
 
     return new Structure({
       elements: s.elements,
@@ -137,7 +178,7 @@ export function parsePWSCFout(content, fileName) {
       energy: s.energy,
       stress: s.stressTensor ? new Stress({ tensor: s.stressTensor }) : null,
       atoms,
-      spins: [],
+      spins,
     });
   });
 
@@ -220,6 +261,25 @@ function readAtomicPositions(lines, idx, n, alatAng, lattice) {
     elements,
     positionsFrac: raw.map(p => cartToFractional(p.map(v => v * scale), lattice)),
   };
+}
+
+// pw.x "Magnetic moment per site" block, e.g.
+//   atom:    1    charge:    8.9861    magn:    2.7794    constr:    0.0000
+// (older builds: "atom   1 (R=0.357)  charge=  8.99  magn=  2.78"). This form
+// reports only a magnitude/projection, not a direction, so each moment is
+// placed on z — the Spins panel's visual rotation can then orient them, since
+// the absolute direction is arbitrary for a collinear run. Returns one raw
+// moment per atom, in file order.
+function readMagMomPerSite(lines, idx, n) {
+  const out = [];
+  for (let j = idx + 1; j < n; j++) {
+    const t = lines[j].trim();
+    const m = t.match(/^atom[:\s].*?\bmagn\s*[:=]\s*(-?\d[\d.eE+-]*)/i);
+    if (m) { out.push([0, 0, parseFloat(m[1])]); continue; }
+    if (t.length === 0 && out.length === 0) continue; // tolerate a blank lead-in
+    break; // first non-atom line after the block ends it
+  }
+  return out;
 }
 
 function readForces(lines, idx, n) {

@@ -239,6 +239,21 @@ export const general = {
   // Custom legend text for the Spins color bar (SpinPanel.js), falls back
   // to "Spin (μB)" when unset.
   spinLegendText: null,
+  // Spin reference frame (Spins panel "Spin Reference Frame" dropdown): how
+  // each spin's raw moments map to global Cartesian — 'file' (re-project from
+  // the SAXIS the file was written with), 'cartesian', 'crystal', or 'custom'.
+  // utils/spinFrame.js applies it. 'file' is the default so a loaded file
+  // renders physically correct without touching the panel.
+  spinFrameMode: 'file',
+  // User-entered SAXIS for the 'custom' frame mode above (VASP convention).
+  spinCustomSaxis: [0, 0, 1],
+  // Decorative global rotation of every spin arrow, in DEGREES [pitch,yaw,roll]
+  // (Spins panel rotation gizmo: turntable ball drives pitch/yaw, Roll slider
+  // the roll). Fed to utils/spinFrame.js's eulerToMatrix path. Purely visual —
+  // the absolute spin direction is arbitrary for collinear / no-spin-orbit
+  // data, so this lets the user orient every arrow for a clearer picture
+  // without changing the underlying values.
+  spinVisualRot: [0, 0, 0],
   // Atoms "Force" mode colormap normalization: 'linear' | 'log' (ColorPanel.js
   // Log Scale toggle for the atom color bar).
   atomColorScale: 'linear',

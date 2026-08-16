@@ -61,6 +61,80 @@
   flex: 1;
 }
 
+/* --- Spin reference frame + visual rotation (ui/SpinPanel.js) --- */
+
+/* Editable "SAXIS = x y z" line, shown only in Custom frame mode:
+   label | grow-to-fill input | compact Apply button, all on one row. */
+.cv-spin-saxis-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.cv-spin-saxis-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--fg-2);
+}
+
+.cv-spin-saxis-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--textarea-bg);
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  border: 1px solid var(--chrome-5);
+  padding: var(--sp-1) var(--sp-2);
+}
+
+.cv-spin-saxis-apply {
+  flex: 0 0 auto;
+  width: auto; /* override .file-action-btn's width:100% so it sits inline */
+}
+
+/* A brief red outline flashed when a typed SAXIS can't be parsed. */
+.cv-input-error {
+  border-color: var(--danger, #e5484d) !important;
+  outline: 1px solid var(--danger, #e5484d);
+}
+
+/* Visual-rotation: three angle inputs (X/Y/Z) + Reset, all on one line. */
+.cv-spin-angle-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+
+.cv-spin-angle-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cv-spin-angle-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+
+.cv-spin-angle-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--textarea-bg);
+  color: var(--fg-1);
+  border: 1px solid var(--chrome-5);
+  padding: var(--sp-1) var(--sp-2);
+  text-align: right;
+}
+
+.cv-spin-angle-reset {
+  flex: 0 0 auto;
+  width: auto;
+}
+
 /* --- Overlay panel (ui/OverlayPanel.js) --- */
 
 /* Toggle rows: the pill itself is the stock .toggle_switch/.toggle_slider

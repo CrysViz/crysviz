@@ -18,6 +18,24 @@ import {
   multiplyMatVec,
   invert3x3,
 } from '../math/backend-js.js';
+// Main-thread only (NOT stringified into the worker): rotate the SAXIS-frame
+// moments the worker returns into global Cartesian.
+import { saxisToMatrix, parseSaxis } from '../utils/spinFrame.js';
+
+// VASP reports the on-site magnetisation (magnetization (x)/(y)/(z) blocks) in
+// the frame whose z-axis is SAXIS, not the global Cartesian frame. Read the
+// SAXIS the run used from the INCAR echo near the top of the OUTCAR; absent
+// (the common case) it defaults to (0,0,1) and the rotation is the identity.
+function findSaxis(lines) {
+  for (const line of lines) {
+    const m = line.match(/\bSAXIS\b\s*=\s*(.+)$/i);
+    if (m) {
+      const s = parseSaxis(m[1]);
+      if (s) return s;
+    }
+  }
+  return [0, 0, 1];
+}
 
 // Function to show progress bar
 function showProgressBar() {
@@ -92,6 +110,10 @@ export function parseOUTCAR(content, fileName) {
 
     // Count the number of POSITION blocks to estimate steps
     const lines = content.split(/\r?\n/);
+    // SAXIS the run used (default (0,0,1)) and the matching global<-SAXIS
+    // rotation, applied to each spin's raw moments once the worker returns.
+    const saxis = findSaxis(lines);
+    const saxisMatrix = saxisToMatrix(saxis);
     let positionBlocks = 0;
     for (const line of lines) {
       if (/^\s*POSITION\s+TOTAL-FORCE/i.test(line)) {
@@ -162,10 +184,19 @@ export function parseOUTCAR(content, fileName) {
               currentForces = forces;
 
               if (currentLattice && currentPositions.length === natoms) {
+                // These moments are in VASP's SAXIS-local frame; the main
+                // thread rotates them into global Cartesian afterwards.
                 if (spinX && spinY && spinZ) {
+                  // Non-collinear: full (mx,my,mz) in the SAXIS frame.
                   currentSpins = spinX.map((_, idx) => [spinX[idx], spinY[idx], spinZ[idx]]);
                 } else if (spinX) {
-                  currentSpins = spinX.map(m => [m, 0, 0]);
+                  // Collinear (ISPIN=2): a single scalar moment per atom that
+                  // lies along the spin-quantisation axis, i.e. SAXIS. In the
+                  // SAXIS-local frame that axis IS z, so place it on z (not x);
+                  // the main-thread SAXIS rotation then points it correctly in
+                  // global Cartesian. (The old code put it on x, drawing every
+                  // collinear moment 90 degrees off along global +x.)
+                  currentSpins = spinX.map(m => [0, 0, m]);
                 } else {
                   currentSpins = new Array(natoms).fill([0, 0, 0]);
                 }
@@ -178,6 +209,15 @@ export function parseOUTCAR(content, fileName) {
                   energy: null,
                   stress: null,
                 });
+
+                // Reset per-step so the NEXT ionic step only picks up the
+                // magnetization block(s) printed within its own window. VASP
+                // may print several magnetization blocks per step (e.g. high
+                // NWRITE) -- those all precede this POSITION line, so spinX/Y/Z
+                // already hold the last (converged) one. But a later step that
+                // prints no block of its own must not silently inherit this
+                // step's moments, which is what happened without this reset.
+                spinX = null; spinY = null; spinZ = null;
 
                 // Update progress
                 const progress = (i / lines.length) * 100;
@@ -230,7 +270,9 @@ export function parseOUTCAR(content, fileName) {
         const structures = steps.map(step => {
           const frac = convertCartesianToFractional(step.positions, step.lattice);
           const atoms = frac.map((pos, i) => ({ position: pos, element: elements[i] }));
-          const spins = step.spins.map(vector => ({ vector, scaling: 1.0, color:"#008080" }));
+          // rawVector is in the SAXIS-local frame; the main thread rotates it
+          // into the rendered global-Cartesian vector below.
+          const spins = step.spins.map(rawVector => ({ rawVector, scaling: 1.0, color:"#008080" }));
           const forces = step.forces.map(vector => ({ vector, scaling: 1.0 }));
 
           return {
@@ -263,7 +305,13 @@ export function parseOUTCAR(content, fileName) {
         // Build Structure objects
         const structureObjects = structures.map(structureData => {
           const atoms = structureData.atoms.map(atomData => new Atom({...atomData, uuid: generateID([atomData.element])}));
-          const spins = structureData.spins.map(spinData => new Spin(spinData));
+          // Rotate each spin's SAXIS-frame raw moments into global Cartesian
+          // for the rendered vector; keep the raw components on the Spin so the
+          // Spins panel can re-project to another frame later.
+          const spins = structureData.spins.map(spinData => new Spin({
+            ...spinData,
+            vector: multiplyMatVec(saxisMatrix, spinData.rawVector),
+          }));
           const forces = structureData.forces.map(forceData => new Force(forceData));
 
           return new Structure({
@@ -272,6 +320,7 @@ export function parseOUTCAR(content, fileName) {
             lattice: structureData.lattice,
             atoms,
             spins,
+            spinFrame: { fileSaxis: saxis },
             forces,
             energy: structureData.energy,
             stress: structureData.stress ? new Stress({ tensor: structureData.stress }) : null,

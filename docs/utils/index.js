@@ -17,3 +17,9 @@ export {
   normalizeLegendMarkup, applyLegendHtml, legendPlainText,
   parseLegendSegments, drawLegendRichText,
 } from './LegendRichText.js';
+
+// Spin reference-frame (SAXIS) + decorative-rotation math:
+export {
+  applySpinFrame, frameMatrix, saxisToMatrix, crystalToMatrix,
+  eulerToMatrix, quatToMatrix, multiply3x3, parseSaxis,
+} from './spinFrame.js';

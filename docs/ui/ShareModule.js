@@ -109,7 +109,7 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelManager.js';
-import { fracToCart } from '../math/index.js';
+import { fracToCart, cartToFractional } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
 
@@ -874,14 +874,62 @@ function restoreMeasurements(measurementData) {
 
 function makeAtomProxy(wrapped, ref) {
   const atomIndex = ref?.atomIndex;
-  const savedPosition = ref?.atomPosition ?? null;
-  let bestMatch = null;
-  let bestDistance = Infinity;
+  const structure = fileBrowser.selectedStructure;
 
+  // Resolve against structure.atoms by POSITION, not by atomIndex. atomIndex is
+  // fragile across a reload — a supercell round-trips through buildPOSCAR (which
+  // re-groups atoms by element), so the same source index points at a different
+  // atom, AND the periodic wrap's srcIndex can be out of sync with the reordered
+  // atoms. Resolving by index (or by the wrap's srcIndex) then lands on the
+  // wrong atom / wrong periodic image — visible as measurements that jump to a
+  // different cell after sharing, especially when both endpoints sit on a
+  // boundary.
+  //
+  // The ref carries `lastResolvedFrac`: the picked copy's fractional position in
+  // the saved lattice, which is the SAME lattice on reload. We find the base
+  // atom whose own fractional position differs from it by an integer lattice
+  // translation — that gives a self-consistent { atomIndex, imageOffset } pair
+  // in the current structure, independent of any renumbering. (`atomPosition` is
+  // the legacy Cartesian form of the same information.)
+  let targetFrac = null;
+  if (Array.isArray(ref?.lastResolvedFrac)) {
+    targetFrac = ref.lastResolvedFrac;
+  } else if (ref?.atomPosition?.length && structure?.lattice) {
+    targetFrac = cartToFractional(ref.atomPosition, structure.lattice);
+  }
+
+  if (targetFrac && structure?.atoms?.length && structure.lattice) {
+    let bestJ = -1;
+    let bestResidual = Infinity;
+    let bestOffset = null;
+    for (let j = 0; j < structure.atoms.length; j++) {
+      if (ref?.element && structure.elements?.[j] && structure.elements[j] !== ref.element) continue;
+      const baseFrac = structure.atoms[j].position;
+      const offset = targetFrac.map((value, axis) => Math.round(value - baseFrac[axis]));
+      // Residual after removing the integer translation — zero for the true atom.
+      const residual = targetFrac.reduce((sum, value, axis) => sum + Math.abs(value - baseFrac[axis] - offset[axis]), 0);
+      if (residual < bestResidual) { bestResidual = residual; bestJ = j; bestOffset = offset; }
+    }
+    if (bestJ >= 0 && bestResidual < 0.05) {
+      const wrappedFrac = structure.atoms[bestJ].position.map((value, axis) => value + bestOffset[axis]);
+      const cart = fracToCart([wrappedFrac], structure.lattice)[0];
+      return {
+        position: new THREE.Vector3(...cart),
+        userData: {
+          atomIndex: bestJ,
+          element: structure.elements?.[bestJ] ?? ref?.element ?? '?',
+          wrappedFrac,
+        },
+      };
+    }
+  }
+
+  // Legacy fallback: no saved position at all — resolve by atomIndex, honouring
+  // imageOffset if present (never grab the first source-index match, which is
+  // the base copy).
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     if (srcIdx !== atomIndex) continue;
-
     const candidate = {
       position: new THREE.Vector3(...wrapped.cart[i]),
       userData: {
@@ -891,39 +939,31 @@ function makeAtomProxy(wrapped, ref) {
         wrappedFrac: wrapped.frac?.[i] ? [...wrapped.frac[i]] : null,
       },
     };
-
     if (Array.isArray(ref?.imageOffset) && candidate.userData.wrappedFrac) {
-      const baseFrac = fileBrowser.selectedStructure?.atoms?.[atomIndex]?.position;
+      const baseFrac = structure?.atoms?.[atomIndex]?.position;
       if (baseFrac) {
         const candidateOffset = candidate.userData.wrappedFrac.map((value, axis) => Math.round(value - baseFrac[axis]));
         if (candidateOffset.every((value, axis) => value === ref.imageOffset[axis])) return candidate;
       }
     }
-
-    if (!savedPosition?.length) return candidate;
-
-    const distance = candidate.position.distanceTo(new THREE.Vector3(...savedPosition));
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestMatch = candidate;
-    }
+    if (!Array.isArray(ref?.imageOffset)) return candidate;
   }
 
-  if (Array.isArray(ref?.imageOffset) && fileBrowser.selectedStructure?.atoms?.[atomIndex]) {
-    const baseFrac = fileBrowser.selectedStructure.atoms[atomIndex].position;
+  if (Array.isArray(ref?.imageOffset) && structure?.atoms?.[atomIndex]) {
+    const baseFrac = structure.atoms[atomIndex].position;
     const wrappedFrac = baseFrac.map((value, axis) => value + ref.imageOffset[axis]);
-    const cart = fracToCart([wrappedFrac], fileBrowser.selectedStructure.lattice)[0];
+    const cart = fracToCart([wrappedFrac], structure.lattice)[0];
     return {
       position: new THREE.Vector3(...cart),
       userData: {
         atomIndex,
-        element: fileBrowser.selectedStructure.elements?.[atomIndex] ?? '?',
+        element: structure.elements?.[atomIndex] ?? '?',
         wrappedFrac,
       },
     };
   }
 
-  return bestMatch;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
