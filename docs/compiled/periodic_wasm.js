@@ -584,6 +584,9 @@ export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n
  * * `face_tol`    – tolerance (fractional coords) for treating an atom as
  *   sitting on a cell face/edge/corner. Real structures carry small offsets
  *   from 0/1, so this must be looser than machine eps (default ~1e-3).
+ * * `bounds`      – VESTA-style fractional display bounds, packed as
+ *   `[xmin,xmax,ymin,ymax,zmin,zmax]`. Defaults to `[0,1]` per axis (classic
+ *   face-mirror behaviour). An empty/short slice falls back to `[0,1]`.
  * @param {boolean} show_periodic
  * @param {boolean} show_pbc_bonds
  * @param {Uint32Array} elements_in
@@ -592,9 +595,10 @@ export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n
  * @param {Float64Array} bond_table
  * @param {number} n_elem
  * @param {number} face_tol
+ * @param {Float64Array} bounds
  * @returns {PeriodicResult}
  */
-export function periodic_wrapped(show_periodic, show_pbc_bonds, elements_in, frac_in, lattice_flat, bond_table, n_elem, face_tol) {
+export function periodic_wrapped(show_periodic, show_pbc_bonds, elements_in, frac_in, lattice_flat, bond_table, n_elem, face_tol, bounds) {
     const ptr0 = passArray32ToWasm0(elements_in, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArrayF64ToWasm0(frac_in, wasm.__wbindgen_malloc);
@@ -603,7 +607,9 @@ export function periodic_wrapped(show_periodic, show_pbc_bonds, elements_in, fra
     const len2 = WASM_VECTOR_LEN;
     const ptr3 = passArrayF64ToWasm0(bond_table, wasm.__wbindgen_malloc);
     const len3 = WASM_VECTOR_LEN;
-    const ret = wasm.periodic_wrapped(show_periodic, show_pbc_bonds, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, face_tol);
+    const ptr4 = passArrayF64ToWasm0(bounds, wasm.__wbindgen_malloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ret = wasm.periodic_wrapped(show_periodic, show_pbc_bonds, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, face_tol, ptr4, len4);
     return PeriodicResult.__wrap(ret);
 }
 

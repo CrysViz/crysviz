@@ -115,6 +115,25 @@ export function recomputeLatticeDirs() {
 export function latticeDirsNorm() { return cachedLatticeDirs; }
 
 
+// Normalize the (possibly partial / user-edited) periodicBounds object into a
+// [[xmin,xmax],[ymin,ymax],[zmin,zmax]] array of finite numbers with min<=max.
+// Defaults to the classic unit cell [0,1] per axis. Shared by the JS wrapper,
+// the WASM caller, and the hash so all three agree.
+export function normalizePeriodicBounds(b) {
+  const axis = (lo, hi) => {
+    let a = Number.isFinite(lo) ? lo : 0;
+    let z = Number.isFinite(hi) ? hi : 1;
+    if (a > z) { const t = a; a = z; z = t; }   // tolerate swapped inputs
+    return [a, z];
+  };
+  b = b || {};
+  return [
+    axis(b.xmin, b.xmax),
+    axis(b.ymin, b.ymax),
+    axis(b.zmin, b.zmax),
+  ];
+}
+
 function periodicWrappedJS(general, frac, elements, lattice) {
   const newElements = [];
   const newFcrds = [];
@@ -131,28 +150,35 @@ function periodicWrappedJS(general, frac, elements, lattice) {
   }
 
   const faceTol = general.periodicFaceTol ?? 1e-3;
+  const bounds = normalizePeriodicBounds(general.periodicBounds);
 
   for (let i = 0; i < frac.length; i++) {
     const f = frac[i];
     const atm = elements[i];
-    // Detect which cell faces this atom sits on (within faceTol, fractional).
-    // Each detected face contributes a mirror offset; we then emit *every*
-    // combination unconditionally — a corner atom lands on all 8 corners, an
-    // edge atom on all 4 edges, a face atom on both faces. The mirror is placed
-    // at the true periodic position (f ± 1), with no re-detection / clamping of
-    // the mirrored coordinate.
-    const offX = [0];
-    const offY = [0];
-    const offZ = [0];
-    if (f[0] < faceTol) offX.push(1);
-    if (f[0] > 1 - faceTol) offX.push(-1);
-    if (f[1] < faceTol) offY.push(1);
-    if (f[1] > 1 - faceTol) offY.push(-1);
-    if (f[2] < faceTol) offZ.push(1);
-    if (f[2] > 1 - faceTol) offZ.push(-1);
-    for (const dx of offX) {
-      for (const dy of offY) {
-        for (const dz of offZ) {
+    // Boundary display (VESTA-style): wrap each axis into [0,1), then emit every
+    // integer image n whose wrapped coordinate lands inside the display bounds
+    // [min,max] (widened by faceTol so an atom sitting exactly on a face still
+    // mirrors). The offset stored is (wrappedCoord + n) - f[a], always an
+    // integer, so the image sits at the true periodic position f[a] + offset.
+    //
+    // The default bounds [0,1] per axis reproduce the classic face-mirror
+    // behaviour exactly: a corner atom lands on all 8 corners, an edge atom on
+    // all 4 edges, a face atom on both faces, an interior atom stays single.
+    // Widening a max (e.g. xmax = 1.2) reveals atoms up to 0.2 of a cell past
+    // the boundary; lowering a min reveals atoms before it.
+    const offsets = [null, null, null];
+    for (let a = 0; a < 3; a++) {
+      const wf = f[a] - Math.floor(f[a]);          // wrapped into [0,1)
+      const base = wf - f[a];                       // integer: -floor(f[a])
+      const nLo = Math.ceil(bounds[a][0] - faceTol - wf);
+      const nHi = Math.floor(bounds[a][1] + faceTol - wf);
+      const axisOffs = [];
+      for (let n = nLo; n <= nHi; n++) axisOffs.push(base + n);
+      offsets[a] = axisOffs;
+    }
+    for (const dx of offsets[0]) {
+      for (const dy of offsets[1]) {
+        for (const dz of offsets[2]) {
           const m = [f[0] + dx, f[1] + dy, f[2] + dz];
           newElements.push(atm);
           newFcrds.push(m);
@@ -203,6 +229,20 @@ function periodicWrappedJS(general, frac, elements, lattice) {
       }
       const minD2 = 0.005 * 0.005;
 
+      // Positions already emitted as boundary atoms (mm-rounded key). A wide
+      // display boundary can already show the very atom a cross-cell bond would
+      // reach; without this a coincident PBC ghost would be added on top of it,
+      // producing overlapping duplicate instances (and duplicate bonds). Keyed
+      // on rounded Cartesian since a ghost and its boundary twin are both whole-
+      // cell translations of the same source atom, so they coincide exactly.
+      const posKey = (x, y, z) =>
+        `${Math.round(x * 1000)},${Math.round(y * 1000)},${Math.round(z * 1000)}`;
+      const emittedPos = new Set();
+      for (let i = 0; i < wrappedLen; i++) {
+        const p = wrappedCart[i];
+        emittedPos.add(posKey(p[0], p[1], p[2]));
+      }
+
       // Each (j, shift) candidate is visited once → add a ghost iff it bonds to
       // any wrapped atom (one match is enough; no dedup set needed).
       for (let j = 0; j < frac.length; j++) {
@@ -227,6 +267,9 @@ function periodicWrappedJS(general, frac, elements, lattice) {
                 }
               }
           if (bonded) {
+            const key = posKey(qx, qy, qz);
+            if (emittedPos.has(key)) continue; // already shown as a boundary atom
+            emittedPos.add(key);
             newElements.push(ej);
             newFcrds.push(cartToFrac([qx, qy, qz], lattice, latticeInverse));
             newCcrds.push([qx, qy, qz]);
@@ -275,9 +318,11 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
     let showPeriodic = general.showPeriodic
     let faceTol = general.periodicFaceTol
 
+    let bounds = normalizePeriodicBounds(general.periodicBounds)
+
     let inputHash = hashInputFast(
       frac, elements, lattice, bondLenghts,
-      showPeriodic, showPBCBonds, general.completePolyhedra, faceTol
+      showPeriodic, showPBCBonds, general.completePolyhedra, faceTol, bounds
     )
 
     if (periodic.hash != inputHash){
@@ -324,12 +369,18 @@ function hashString(h, s) {
   return (Math.imul(h, 33) ^ 0x1f) >>> 0;
 }
 
-function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol) {
+function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol, bounds) {
   let h = 5381 >>> 0;
   h = (Math.imul(h, 33) ^ (showPeriodic ? 1 : 0)) >>> 0;
   h = (Math.imul(h, 33) ^ (showPBCBonds ? 1 : 0)) >>> 0;
   h = (Math.imul(h, 33) ^ (completePolyhedra ? 1 : 0)) >>> 0;
   h = hashFloat(h, faceTol ?? 1e-3);
+  // Display bounds (VESTA-style boundary) — changing any of the 6 values must
+  // recompute the wrapped set. Only meaningful when showPeriodic is on, but
+  // folded in unconditionally (cheap, and keeps the hash total-order stable).
+  if (bounds) {
+    for (let a = 0; a < 3; a++) { h = hashFloat(h, bounds[a][0]); h = hashFloat(h, bounds[a][1]); }
+  }
 
   for (let i = 0; i < frac.length; i++) {
     const f = frac[i];

@@ -250,6 +250,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       showPeriodic: general.showPeriodic,
       linkPeriodicCopies: general.linkPeriodicCopies,
       periodicFaceTol: general.periodicFaceTol,
+      periodicBounds: general.periodicBounds,
       showPBCBonds: general.showPBCBonds,
       showAxes: general.showAxes,
       showPolyhedra: general.showPolyhedra,
@@ -451,6 +452,9 @@ function applyDisplaySettings(display) {
   if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
   if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }
+  // Active Cell Boundary (VESTA-style display bounds); the Cell panel rebuilds
+  // its inputs from `general` when next opened.
+  if (display.periodicBounds != null){ general.periodicBounds = display.periodicBounds; }
   // The Atoms-tab toggle is rebuilt from `general` on the next renderComposition.
   if (display.linkPeriodicCopies != null){ general.linkPeriodicCopies = display.linkPeriodicCopies; }
   if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }

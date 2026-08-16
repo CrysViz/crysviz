@@ -71,6 +71,22 @@ export function periodicWrapped(general, frac, elements, lattice) {
   const showPBCBonds = !!general.showPBCBonds;
   const faceTol = general.periodicFaceTol ?? 1e-3;
 
+  // VESTA-style fractional display bounds, packed as [xmin,xmax,ymin,ymax,
+  // zmin,zmax]. Defaults to the classic unit cell [0,1] per axis. Kept in
+  // lockstep with the JS path (LatticeModule.normalizePeriodicBounds); the two
+  // must agree since either can serve depending on general.useWasmPeriodic.
+  const pb = general.periodicBounds || {};
+  const bnd = (lo, hi, dLo, dHi) => {
+    let a = Number.isFinite(lo) ? lo : dLo;
+    let z = Number.isFinite(hi) ? hi : dHi;
+    if (a > z) { const t = a; a = z; z = t; }
+    return [a, z];
+  };
+  const [xmin, xmax] = bnd(pb.xmin, pb.xmax, 0, 1);
+  const [ymin, ymax] = bnd(pb.ymin, pb.ymax, 0, 1);
+  const [zmin, zmax] = bnd(pb.zmin, pb.zmax, 0, 1);
+  const boundsFlat = new Float64Array([xmin, xmax, ymin, ymax, zmin, zmax]);
+
   const { table: bondTable, nElem, elementToIdx } = buildBondTable(
     elements,
     general.bondLengths
@@ -105,7 +121,8 @@ export function periodicWrapped(general, frac, elements, lattice) {
     latticeFlat,
     bondTable,
     nElem,
-    faceTol
+    faceTol,
+    boundsFlat
   );
 
   const m = result.len();

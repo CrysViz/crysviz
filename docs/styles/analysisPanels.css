@@ -1087,6 +1087,103 @@
   min-width: 0;
 }
 
+/* Active Cell Boundary: one compact row per axis —
+   [label] [min entry] [==dual-range slider==] [max entry]. The overlapping
+   range inputs + inset-corrected fill reuse the histogram range-slider
+   technique (.blh-range-slider); PBND_THUMB in LatticeSupercellPanel.js must
+   match the 12px thumb below. */
+.pbnd-axes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.pbnd-axis-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.pbnd-axis-label {
+  width: 1em;
+  flex: 0 0 auto;
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--fg-75);
+}
+.pbnd-end {
+  width: 3.1em;
+  flex: 0 0 auto;
+  text-align: center;
+}
+.pbnd-slider {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 56px;
+  height: 14px;
+}
+.pbnd-slider .pbnd-bg {
+  position: absolute;
+  height: 3px;
+  background: var(--track-bg-strong);
+  border-radius: 2px;
+  top: 50%;
+  left: 6px;
+  right: 6px;
+  transform: translateY(-50%);
+  z-index: -2;
+}
+.pbnd-slider .pbnd-fill {
+  position: absolute;
+  height: 3px;
+  background: rgba(34, 197, 94, 0.9);
+  border-radius: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: -1;
+}
+.pbnd-slider input[type="range"] {
+  position: absolute;
+  width: 100%;
+  height: 14px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  pointer-events: none;
+  margin: 0;
+}
+.pbnd-slider input[type="range"].pbnd-range-min { z-index: 2; }
+.pbnd-slider input[type="range"].pbnd-range-max { z-index: 1; }
+.pbnd-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg-1);
+  border: 1px solid var(--ink-3);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pbnd-slider input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg-1);
+  border: 1px solid var(--ink-3);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pbnd-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.pbnd-hint {
+  color: var(--fg-75);
+}
+
 .lsc-btn-center-row {
   display: flex;
   justify-content: center;

@@ -377,6 +377,14 @@ export const general = {
   // / DFT-output) structures carry small numerical offsets from 0/1, so this
   // must be much looser than machine eps or boundary atoms get missed.
   periodicFaceTol:1e-3,
+  // Fractional-coordinate display bounds (VESTA-style "boundary"). When
+  // showPeriodic is on, every periodic image of every atom whose wrapped
+  // fractional coordinate lands inside [min,max] on each axis is drawn. The
+  // default [0,1] per axis reproduces the classic face-mirror behaviour
+  // (corner/edge/face atoms duplicated onto all their images); widening e.g.
+  // xmax to 1.2 reveals atoms up to 0.2 of a cell past the boundary. Applied
+  // in render/LatticeModule.js periodicWrapped (JS + WASM parity).
+  periodicBounds:{ xmin:0, xmax:1, ymin:0, ymax:1, zmin:0, zmax:1 },
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   completePolyhedra:false, // Show the out-of-cell atoms needed to complete the polyhedra
   useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)
