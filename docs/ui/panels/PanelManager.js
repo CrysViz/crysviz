@@ -42,7 +42,32 @@ const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 // is pulled out. Also the hysteresis gap against wantsDockDrop (which triggers
 // at the edge itself), so a pulled-out panel doesn't immediately re-dock.
 const DRAG_OUT_PX = 24;
-const COMPACT_QUERY = '(max-width: 1024px)';
+// A phone, not merely a narrow window. The compact workflow — the Structure
+// window's bottom-sheet home, the dock-sweep of ordinary floats, the folded
+// scene toolbars — is built for a hand-held screen. The old '(max-width:1024px)'
+// keyed off the WINDOW, so a desktop with a shrunk window, or a tablet, got
+// swept into the phone layout. Key off the physical SCREEN instead: its short
+// edge stays large on a desktop no matter how narrow the window is, sits at
+// ~768 on the smallest tablet, and only a phone reports <=600.
+const PHONE_SCREEN_SHORT_EDGE = 600;
+// null = use the real screen; true/false pins the answer. The headless browser
+// reports screen==viewport and can't emulate a hand-held device, so the mobile
+// tests drive the workflow through setPhoneScreenOverride() (see below). Backed
+// by sessionStorage so the pin survives a reload — a real phone reloaded is
+// still a phone — and seeded from it here at module load.
+const PHONE_OVERRIDE_KEY = 'cvForcePhoneScreen';
+function readStoredPhoneOverride() {
+  try {
+    const v = sessionStorage.getItem(PHONE_OVERRIDE_KEY);
+    return v === null ? null : v === '1';
+  } catch { return null; }
+}
+let phoneScreenOverride = readStoredPhoneOverride();
+function isPhoneScreen() {
+  if (phoneScreenOverride !== null) return phoneScreenOverride;
+  const s = window.screen;
+  return Math.min(s.width, s.height) <= PHONE_SCREEN_SHORT_EDGE;
+}
 // Windows that keep floating on a compact viewport instead of being swept
 // into the main dock. They are the scene's own toolbars, not content windows.
 const MOBILE_EXEMPT_IDS = new Set(['view', 'measure']);
@@ -75,6 +100,10 @@ const panelPrefDefaults = {
   // (Visual ▸ "Background picker on canvas") always wins.
   backgroundDot: false,
   axisStepButtons: 'longpress', // 'on'|'off'|'longpress' for View step-rotate arrows
+  // Visual ▸ "Icon-only toolbars": fold Measure/View to round icons at any
+  // window size. Independent of the phone workflow — it never sends the
+  // Structure window to its bottom-sheet home.
+  forceCompactIcons: false,
 };
 const panelPrefs = { ...panelPrefDefaults };
 
@@ -118,9 +147,8 @@ let dockOccupies = false; // side panel currently takes layout space
 let lastUiWidth = 0; // last known #ui width (it measures 0 while hidden)
 let rightReservePx = 0; // width reserved on the right (e.g. the EOS split pane)
 let bottomReservePx = 0; // height reserved at the bottom (e.g. the split pane docked to the bottom)
-let compactViewport = false;
+let compactViewport = false; // a phone-sized screen (see isPhoneScreen)
 let panelSystemReady = false;
-let compactMediaQuery = null;
 
 const hooks = {
   beforeExpand(panel) {
@@ -300,13 +328,11 @@ export function initPanelSystem() {
   dockEl = document.getElementById('dock');
   loadStoredLayout();
   loadPanelPrefs();
-  compactMediaQuery = window.matchMedia(COMPACT_QUERY);
-  compactViewport = compactMediaQuery.matches;
-  compactMediaQuery.addEventListener('change', (event) => {
-    compactViewport = event.matches;
-    for (const panel of panels.values()) panel.closeMenu();
-    if (panelSystemReady) reconcileCompactViewport();
-  });
+  compactViewport = isPhoneScreen();
+  // The screen's short edge only changes with orientation, so a plain resize
+  // listener suffices — and on a desktop the screen never crosses the threshold
+  // however the window is dragged, so the guard makes this a no-op there.
+  window.addEventListener('resize', reevaluatePhoneScreen);
 
   // The side dock never imports the manager (acyclic layering): everything
   // it needs from the registry/persistence side is handed over here.
@@ -404,6 +430,36 @@ function restoreAutoDockedPanel(panel) {
     hooks.positionPanel(panel, 'float', { auto: true, restorePos: panel.floatPos });
   }
   panel.autoDocked = false;
+}
+
+/** Re-derive the phone/compact state and reconcile if it flipped. Shared by the
+ *  resize listener and the test override seam. */
+function reevaluatePhoneScreen() {
+  const now = isPhoneScreen();
+  if (now === compactViewport) return;
+  compactViewport = now;
+  for (const panel of panels.values()) panel.closeMenu();
+  if (panelSystemReady) reconcileCompactViewport();
+}
+
+/** Pin phone detection: true/false forces the answer, null restores the real
+ *  screen check. The headless browser reports screen==viewport and can't
+ *  emulate a hand-held, so the mobile browser tests use this to enter/leave the
+ *  compact workflow while sizing the viewport for the layout space they need. */
+export function setPhoneScreenOverride(value) {
+  phoneScreenOverride = value === null ? null : !!value;
+  try {
+    if (phoneScreenOverride === null) sessionStorage.removeItem(PHONE_OVERRIDE_KEY);
+    else sessionStorage.setItem(PHONE_OVERRIDE_KEY, phoneScreenOverride ? '1' : '0');
+  } catch { /* storage unavailable */ }
+  reevaluatePhoneScreen();
+}
+
+/** Visual ▸ "Icon-only toolbars": fold the Measure/View toolbars to icons at
+ *  any window size (the phone bottom-sheet workflow stays screen-gated). */
+export function setForcedIconMode(on) {
+  setPanelPref('forceCompactIcons', on);
+  refreshCompactFloatingPanels();
 }
 
 function reconcileCompactViewport() {
@@ -996,9 +1052,15 @@ function floatPanel(panel, pos, opts = {}) {
 /** Does the side panel currently reserve layout space? (On mobile it slides
  *  OVER the canvas, so floating windows never need to make room for it.) */
 function dockOccupiesSpace() {
-  if (compactViewport) return false;
   const ui = document.getElementById('ui');
-  return !!ui && ui.getBoundingClientRect().width > 0;
+  if (!ui) return false;
+  // The compact rung (responsive.css) makes #ui `position: fixed` — an
+  // off-canvas sheet that paints over the scene and never displaces floating
+  // windows. Reading the computed position keeps this in step with the CSS
+  // rung itself, rather than the phone check: a narrow DESKTOP window is past
+  // that rung (dock overlaid) without being a phone (windows still float).
+  if (getComputedStyle(ui).position === 'fixed') return false;
+  return ui.getBoundingClientRect().width > 0;
 }
 
 function measureUiWidth() {
@@ -1176,7 +1238,8 @@ function refreshCompactFloatingPanels() {
   // three scene windows fold and unfold together — the icon-only toolbars
   // fit a 900px scene fine, but unfolding them while the Structure icon
   // stays put made that one look stuck.
-  const small = compactViewport || available < requiredSceneWidthForCompact();
+  const small = panelPrefs.forceCompactIcons
+    || compactViewport || available < requiredSceneWidthForCompact();
   for (const panel of panels.values()) {
     if (panel.compactBtn) panel.setCompact(small && !panel.docked);
   }

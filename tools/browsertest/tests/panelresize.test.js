@@ -90,9 +90,10 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     parked.saved && near(parked.saved.right, 60) && near(parked.saved.bottom, 60),
     JSON.stringify(parked.saved));
 
-  // Stays above the 1024px compact breakpoint: below it 'view' folds to its
-  // icon (see the crowding section further down) and no longer tracks a corner.
-  await setViewport(page, 1100, 600);
+  // Stays a desktop-sized screen: on a phone (or a scene narrow enough to
+  // crowd) 'view' folds to its icon (see below) and no longer tracks a corner.
+  // Height 700 keeps the screen's short edge above the phone threshold.
+  await setViewport(page, 1100, 700);
   s = await panelState(page, PANEL);
   H.check('shrink: corner panel hugs the corner', near(s.rightGap, 60) && near(s.bottomGap, 60),
     `rightGap=${s.rightGap} bottomGap=${s.bottomGap}`);

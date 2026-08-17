@@ -1,12 +1,24 @@
-// Floating windows auto-dock at the compact/1024px breakpoint. Measure and
-// View are deliberately excluded because their own compact behavior is
-// independent of the dock state; Structure info takes a third route (its
-// def's compactHome: the side dock, behind a launcher icon).
+// Floating windows auto-dock on a phone screen. Measure and View are
+// deliberately excluded because their own compact behavior is independent of
+// the dock state; Structure info takes a third route (its def's compactHome:
+// the side dock, behind a launcher icon).
+//
+// The workflow keys off the physical screen, not the window, so the headless
+// browser (screen==viewport, no hand-held emulation) drives it through the
+// setPhoneScreenOverride() seam — the viewport is still sized for the layout
+// space each rung needs.
 'use strict';
 const H = require('../harness');
 
 const TARGETS = ['backend', 'forces'];
 const EXEMPTS = ['view', 'measure'];
+
+async function setPhone(page, on) {
+  await page.evaluate(async (v) => {
+    const { setPhoneScreenOverride } = await import('./ui/panels/PanelManager.js');
+    setPhoneScreenOverride(v);
+  }, on);
+}
 
 async function panelState(page, ids = [...TARGETS, ...EXEMPTS, 'info']) {
   return page.evaluate(async (ids) => {
@@ -98,10 +110,11 @@ async function reorderToBottom(page, id) {
   H.check('control windows are floating at remembered positions',
     TARGETS.every((id) => before[id].dock === false && before[id].floatPos), JSON.stringify(before));
 
-  // Leave a Position menu open while crossing so the real media callback has
-  // to close it before the new compact menu is built.
+  // Leave a Position menu open while crossing so the compact reconciliation
+  // has to close it before the new compact menu is built.
   await page.evaluate(() => document.querySelector('.cv-panel[data-panel-id="measure"] .cv-panel-menu-btn').click());
   await page.setViewportSize({ width: 1000, height: 700 });
+  await setPhone(page, true);
   await page.waitForTimeout(600);
   let small = await panelState(page);
   H.check('below 1024: every ordinary floating window enters the Main dock',
@@ -151,6 +164,7 @@ async function reorderToBottom(page, id) {
     JSON.stringify({ savedPositionBytes, small }));
 
   await page.setViewportSize({ width: 1400, height: 900 });
+  await setPhone(page, false);
   await page.waitForTimeout(700);
   let large = await panelState(page);
   H.check('growing above 1024 restores the same floating coordinates',
@@ -195,6 +209,7 @@ async function reorderToBottom(page, id) {
   await page.mouse.move(dragPre.x + 12, dragPre.y + 12);
   await page.waitForTimeout(50);
   await page.setViewportSize({ width: 1000, height: 700 });
+  await setPhone(page, true);
   await page.waitForTimeout(600);
   await page.mouse.up();
   const aborted = await page.evaluate(async (id) => {
@@ -211,6 +226,7 @@ async function reorderToBottom(page, id) {
     aborted.dock === 'left' && aborted.floatPos === dragPreBytes
       && !aborted.moving && !aborted.dragging, JSON.stringify({ dragPreBytes, aborted }));
   await page.setViewportSize({ width: 1400, height: 900 });
+  await setPhone(page, false);
   await page.waitForTimeout(700);
   const afterAbortRestore = await page.evaluate(async (id) => {
     const { getPanel } = await import('./ui/panels/PanelManager.js');
@@ -225,6 +241,7 @@ async function reorderToBottom(page, id) {
   // Repeating the same media transition must not accumulate or reshuffle
   // slots. This also exercises the resize-drag end state twice.
   await page.setViewportSize({ width: 1000, height: 700 });
+  await setPhone(page, true);
   await page.waitForTimeout(600);
   const autoOrderAgain = await page.evaluate(() =>
     [...document.querySelectorAll('#dock > .cv-panel')].map((el) => el.dataset.panelId));
@@ -297,6 +314,7 @@ async function reorderToBottom(page, id) {
     defaults: { dock: false, anchor: { left: 180, top: 180 }, collapsed: true },
   };
   await page.setViewportSize({ width: 1400, height: 900 });
+  await setPhone(page, false);
   await page.waitForTimeout(600);
   const closedBefore = await page.evaluate(async (def) => {
     const { registerPanel, getPanel } = await import('./ui/panels/PanelManager.js');
@@ -304,12 +322,14 @@ async function reorderToBottom(page, id) {
     return { pos: JSON.stringify(panel.floatPos), dock: panel.dock };
   }, closedDef);
   await page.setViewportSize({ width: 1000, height: 700 });
+  await setPhone(page, true);
   await page.waitForTimeout(600);
   await page.evaluate(async () => {
     const { closePanel } = await import('./ui/panels/PanelManager.js');
     closePanel('mobileClosedWindow');
   });
   await page.setViewportSize({ width: 1400, height: 900 });
+  await setPhone(page, false);
   await page.waitForTimeout(600);
   const closedAfter = await page.evaluate(async () => {
     const { getPanel, openPanel } = await import('./ui/panels/PanelManager.js');
@@ -339,12 +359,14 @@ async function reorderToBottom(page, id) {
     return JSON.stringify(getPanel('mobileTransientWindow').floatPos);
   });
   await page.setViewportSize({ width: 1000, height: 700 });
+  await setPhone(page, true);
   await page.waitForTimeout(600);
   await page.evaluate(async () => {
     const { removePanel } = await import('./ui/panels/PanelManager.js');
     removePanel('mobileTransientWindow');
   });
   await page.setViewportSize({ width: 1400, height: 900 });
+  await setPhone(page, false);
   await page.waitForTimeout(600);
   const transientAfter = await page.evaluate(async (def) => {
     const { registerPanel, getPanel } = await import('./ui/panels/PanelManager.js');
@@ -358,6 +380,7 @@ async function reorderToBottom(page, id) {
   // Reset UI must discard the removed transient cache, not just registered
   // panels and the persisted snapshot.
   await page.setViewportSize({ width: 1000, height: 700 });
+  await setPhone(page, true);
   await page.waitForTimeout(600);
   await page.evaluate(async () => {
     const { removePanel, resetAllPanels } = await import('./ui/panels/PanelManager.js');
@@ -365,6 +388,7 @@ async function reorderToBottom(page, id) {
     resetAllPanels();
   });
   await page.setViewportSize({ width: 1400, height: 900 });
+  await setPhone(page, false);
   await page.waitForTimeout(600);
   const transientAfterReset = await page.evaluate(async (def) => {
     const { registerPanel } = await import('./ui/panels/PanelManager.js');
@@ -414,6 +438,7 @@ async function reorderToBottom(page, id) {
   JSON.stringify({ customLayout, customAfterReload }));
 
   await page.setViewportSize({ width: 1000, height: 700 });
+  await setPhone(page, true);
   await page.waitForTimeout(600);
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(5000);
@@ -424,6 +449,7 @@ async function reorderToBottom(page, id) {
       && persisted.panels?.backend?.autoDocked === false,
   JSON.stringify({ backend: persisted.panels?.backend, forces: persisted.panels?.forces }));
   await page.setViewportSize({ width: 1400, height: 900 });
+  await setPhone(page, false);
   await page.waitForTimeout(700);
   large = await panelState(page);
   H.check('after reload expansion restores untouched auto window only',

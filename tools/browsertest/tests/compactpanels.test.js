@@ -21,6 +21,16 @@ async function setViewport(page, w, h) {
   await page.waitForTimeout(400); // rAF-coalesced resize + save debounce
 }
 
+// The phone workflow keys off the physical screen (unreachable in headless),
+// so pin it through the detection seam; crowding-driven folds don't need it.
+async function setPhone(page, on) {
+  await page.evaluate(async (v) => {
+    const { setPhoneScreenOverride } = await import('./ui/panels/PanelManager.js');
+    setPhoneScreenOverride(v);
+  }, on);
+  await page.waitForTimeout(300);
+}
+
 async function state(page) {
   return page.evaluate(() => {
     const q = (id) => document.querySelector(`.cv-panel[data-panel-id="${id}"]`);
@@ -60,19 +70,21 @@ async function state(page) {
     (await import('./ui/BackgroundPicker.js')).setBackgroundDotVisible(true);
   });
 
-  // --- a compact viewport (<=1024) folds the toolbars in step with the
-  // Structure window's launcher icon, even when the icon-only toolbars would
-  // fit the scene: the three scene windows fold and unfold together.
+  // --- a phone screen folds the toolbars in step with the Structure window's
+  // launcher icon, even when the icon-only toolbars would fit the scene: the
+  // three scene windows fold and unfold together.
   await H.clickById(page, 'mobileMenuToggle'); // hide dock
   await page.waitForTimeout(300);
   await setViewport(page, 900, 820);
+  await setPhone(page, true); // 900x820 fits the toolbars; the phone screen is what folds them
   let s = await state(page);
   const infoLauncher = await page.evaluate(() => !!document.querySelector('[data-compact-launcher="info"]'));
-  H.check('compact viewport: toolbars are icons alongside the Structure launcher',
+  H.check('phone screen: toolbars are icons alongside the Structure launcher',
     s.measure.compact && s.view.compact && infoLauncher,
     `measure=${s.measure.compact} view=${s.view.compact} launcher=${infoLauncher}`);
 
-  // Narrow enough that the toolbars also crowd each other (the other trigger).
+  // Narrow enough that the toolbars also crowd each other (the other trigger);
+  // still a phone here (crowding in isolation is exercised at 1400 below).
   const W = 480;
   await setViewport(page, W, 820);
 
@@ -140,6 +152,7 @@ async function state(page) {
   // --- dot must NOT react to Measure's ORDINARY (non-compact) toolbar height.
   // Grow back so nothing is compact, then expand Measure's real toolbar: the
   // stack bottom must be 0 and the dot back at its default 120px resting spot.
+  await setPhone(page, false); // off the phone: only crowding can fold now
   await setViewport(page, 1400, 900);
   s = await state(page);
   H.check('growing back un-compacts both toolbars',

@@ -3,7 +3,7 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref } from './PanelManager.js';
+import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref, setForcedIconMode } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender, setAxisStepButtonsMode } from '../../render/index.js';
@@ -239,10 +239,10 @@ export function registerDefaultPanels() {
       const el = document.getElementById('measurementTools');
       if (el) body.appendChild(el);
     },
-    // right: 68, not 20 — the toolbar hugs its five squares (223px) and sits
-    // centred over the Structure window (right: 20, 318px wide) below it:
-    // 20 + (318 - 223) / 2.
-    defaults: { dock: false, anchor: { right: 68, top: 20 }, collapsed: false },
+    // right: 115, not 20 — the toolbar hugs its five squares (223px) and its
+    // left edge lines up with the Structure window (right: 20, 318px wide)
+    // below it: 20 + 318 - 223.
+    defaults: { dock: false, anchor: { right: 115, top: 20 }, collapsed: false },
   });
 
   registerPanel({
@@ -292,6 +292,10 @@ export function registerDefaultPanels() {
   // ...and for the on-canvas background picker, which has to be applied even
   // if the Visual window carrying its toggle is never opened.
   setBackgroundDotVisible(!!getPanelPref('backgroundDot'));
+  // Same for the measurement-toolbar labels — the Measure window shows the
+  // icon-only buttons regardless of whether the Visual window is ever built.
+  document.getElementById('measurementTools')
+    ?.classList.toggle('show-tool-labels', !!getPanelPref('measureToolLabels'));
 
   registerPanel({
     id: 'info',
@@ -620,6 +624,17 @@ export function registerDefaultPanels() {
       bgRow.appendChild(bgToggle);
       bgRow.appendChild(createBackgroundSwatch());
       sceneGroup.appendChild(bgRow);
+      // Restore the names under the Measure toolbar's icon-only buttons for
+      // anyone who'd rather read them than lean on the tooltips.
+      sceneGroup.appendChild(makeToggleRow('measureToolLabelsToggle', 'Measurement tool labels',
+        !!getPanelPref('measureToolLabels'), (on) => {
+          setPanelPref('measureToolLabels', on);
+          document.getElementById('measurementTools')?.classList.toggle('show-tool-labels', on);
+        }));
+      // Fold the Measure/View toolbars to round icons at any size — the mobile
+      // fold made available on demand. Never triggers the phone bottom-sheet.
+      sceneGroup.appendChild(makeToggleRow('forceCompactIconsToggle', 'Icon-only toolbars',
+        !!getPanelPref('forceCompactIcons'), (on) => setForcedIconMode(on)));
       sceneSection.appendChild(sceneGroup);
 
       // Rendering and Colors share one box: addColorPanel appends its own
