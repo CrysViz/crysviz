@@ -224,7 +224,12 @@ export function setupSceneInteraction() {
   // Don't open info panel while measuring — two measurement clicks look like a dblclick
   if (mode.measureMode !== 'none') return;
   event.preventDefault();
-  event.stopPropagation();
+  // Not a raw stopPropagation(): on touch this runs on the double-tap's live
+  // pointerup, and swallowing it starves TrackballControls' document-level
+  // pointerup listener, so its drag never ends and the camera sticks in
+  // zoom-only (rotate dead). stopUnlessTouchTap lets a touch pointerup bubble
+  // through while still stopping a desktop dblclick, exactly as onClickPick does.
+  stopUnlessTouchTap(event);
 
   // Handle both mouse and touch events
   let clientX, clientY;
