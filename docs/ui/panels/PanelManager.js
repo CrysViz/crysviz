@@ -264,12 +264,20 @@ function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
   panel.closed = false;
   if (dock === 'right') {
     sideDockPanel(panel, { front: true, expand: false });
-    setSideDockCollapsed(false);
+    // Show the dock on a desktop reset. On a phone the side dock is the
+    // Structure sheet's compact home and must stay DOWN — the right-dock panels
+    // reset here are closed-by-default anyway, so un-collapsing would only lift
+    // the sheet over the scene (registration never does this).
+    if (!compactViewport) setSideDockCollapsed(false);
   } else if (dock === 'left') {
     dockPanelAtDefaultOrder(panel);
   } else if (compactViewport && compactHomeOf(panel)) {
+    // Marked auto so growing back to a desktop floats it again — same as the
+    // breakpoint reconcile and the initial registration do.
+    panel.autoDocked = true;
     sideHomePanel(panel);
   } else if (compactViewport && !isMobileExempt(panel)) {
+    panel.autoDocked = true;
     panel.floatPos = null;
     positionPanelForDock(panel);
   } else {
@@ -453,6 +461,12 @@ export function setPhoneScreenOverride(value) {
     else sessionStorage.setItem(PHONE_OVERRIDE_KEY, phoneScreenOverride ? '1' : '0');
   } catch { /* storage unavailable */ }
   reevaluatePhoneScreen();
+}
+
+/** True while the phone/compact workflow is active (a phone-sized screen, see
+ *  isPhoneScreen). Read by panels that default differently on a phone. */
+export function isCompactViewport() {
+  return compactViewport;
 }
 
 /** Visual ▸ "Icon-only toolbars": fold the Measure/View toolbars to icons at
@@ -1321,23 +1335,28 @@ const compactLaunchers = new Map();
 /** @type {{side: string, collapsed: boolean, toSide: string}|null} */
 let borrowedDock = null;
 
-/** Move a window into its compact home. The sheet starts DOWN: the icon is
- *  the way in, and a phone screen that opens with a sheet over the structure
- *  hides the thing the user came to look at. */
+/** Move a window into its compact home. The sheet starts OPEN on a phone — the
+ *  Structure info is the main thing a hand-held user came for, and it sits below
+ *  the scene (a bottom sheet), so raising it by default doesn't bury the view.
+ *  The launcher icon lowers it. */
 function sideHomePanel(panel) {
   const home = compactHomeOf(panel);
-  // Whoever materializes an EMPTY dock picks its edge; an occupied one is
-  // never silently relocated (same rule as a drag-and-drop into the dock).
+  // Whoever materializes the dock picks its edge; a dock occupied by OTHER
+  // windows is never silently relocated (same rule as a drag-and-drop into the
+  // dock). "Occupied by others" ignores this panel itself: on Reset UI the sheet
+  // is still attached from before, and a bare `!order.length` would then read as
+  // occupied and skip re-establishing the bottom edge — leaving it a right,
+  // expanded tab instead of the bottom sheet.
   const { order, side, collapsed } = getSideDockLayout();
-  const materializing = !order.length;
+  const materializing = order.every((id) => id === panel.id);
   // Dock BEFORE borrowing: both setters below reach releaseCompactHome through
   // the reserve sync, and an empty dock would hand its state straight back.
-  sideDockPanel(panel, { front: false, expand: false });
+  sideDockPanel(panel, { front: true, expand: false });
   if (!materializing) return;
   const toSide = home.side || 'bottom';
   borrowedDock = { side, collapsed, toSide };
   if (side !== toSide) setSideDockSide(toSide);
-  setSideDockCollapsed(true);
+  setSideDockCollapsed(false);
 }
 
 /** Give the dock's edge and collapsed state back once no window is left in it.
