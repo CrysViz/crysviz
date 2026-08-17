@@ -1102,6 +1102,11 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   }
 
   revealFeaturePanels();
+  // A share-URL boot restores through here instead of loadStructure(), so the
+  // Share button (added by the normal load path, crystal-viewer.js) would never
+  // be created — the loaded shared structure ended up with no Share button.
+  // createShareButton() is idempotent (guards on #shareBtn).
+  createShareButton();
   createBondLengthControls();
 
   // Apply colors on top of loaded structure, then push to GPU
