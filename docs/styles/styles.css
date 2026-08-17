@@ -2335,6 +2335,31 @@ body > #structureInfoContent {
   filter: drop-shadow(0 0 0.6px rgb(var(--shadow-rgb) / 0.7));
 }
 
+/* Opt-in labels (Visual panel > "Measurement tool labels"): the buttons drop
+   the square lock and grow a caption under the icon, so the toolbar reads as
+   named tools again. The label is the same .visually-hidden span the icons
+   otherwise carry for assistive tech — here it's un-clipped back into flow. */
+#measurementTools.show-tool-labels .measure-tool-btn {
+  flex-direction: column;
+  gap: 3px;
+  width: auto;
+  height: auto;
+  min-height: var(--tb-btn);
+  padding: 4px 8px;
+}
+
+#measurementTools.show-tool-labels .measure-tool-btn .visually-hidden {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-normal);
+  line-height: 1;
+}
+
 /* --- Camera view tools --- (hosted by the unified "View" panel window) */
 #cameraTools {
   display: flex;
@@ -2367,16 +2392,8 @@ body > #structureInfoContent {
   justify-content: center;
 }
 
-/* Painted from the "locked" family rather than the plain button fill — it is
-   a standing mode, not another view shortcut, and reading identical to the
-   axis letters hid that. --locked-* is the token family the Wyckoff lock
-   already uses, and every light palette overrides it, so the --fg-1 glyph
-   stays legible on both. */
-#cameraTools .camera-lock-btn {
-  background: var(--locked-badge-bg);
-  border-color: var(--locked-grad-1);
-}
-
+/* Wears the plain .cv-tb-btn fill and border, same as the reset and axis-view
+   buttons — the .unlocked ring below is what marks the standing mode. */
 #cameraTools .camera-lock-btn:hover {
   border-color: var(--accent-fg);
 }
@@ -2423,11 +2440,11 @@ body > #structureInfoContent {
   right: 0;
   z-index: 3;
   padding: 0;
-  border-width: 0;
+  border-width: 2px;
   border-radius: var(--radius-sm);
   font-size: var(--fs-xs);
   line-height: 1;
-  height: 12px;
+  height: 25px;
   min-width: 0;
   visibility: hidden;
   opacity: 0;
@@ -2435,13 +2452,13 @@ body > #structureInfoContent {
   transition: opacity 0.15s ease;
 }
 
-/* .angle-btn's own hover re-adds a border and scales; neither suits a 12px
-   overlay chevron. */
+/* Hover matches the camera control buttons (.cv-tb-btn:hover): accent ring +
+   glow, so the highlight is theme-dependent rather than a flat wash. */
 #cameraTools .camera-axis-stack .axis-step:hover {
-  border-width: 0;
   transform: none;
   color: var(--fg-1);
-  background: var(--wash-3);
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 1px var(--accent-fg), 0 0 6px 1px rgb(var(--btn-glow-rgb) / 0.35);
 }
 
 #cameraTools .camera-axis-stack .axis-step:first-child {

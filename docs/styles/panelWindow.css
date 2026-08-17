@@ -453,12 +453,17 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
   height: 100%;
   padding: 0;
   background: none;
-  border: none;
+  border: 2px solid var(--line-grey);
   border-radius: 50%;
   cursor: pointer;
 }
 
-.cv-panel.cv-compact .cv-panel-compact-btn:hover { background: var(--hover-color); }
+/* Hover matches the scene control buttons: an accent ring + glow, theme-driven,
+   in place of the old flat background wash. */
+.cv-panel.cv-compact .cv-panel-compact-btn:hover {
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 1px var(--accent-fg), 0 0 6px 1px rgb(var(--btn-glow-rgb) / 0.35);
+}
 
 .cv-panel-compact-btn img {
   width: 26px;
