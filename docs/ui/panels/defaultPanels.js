@@ -239,10 +239,9 @@ export function registerDefaultPanels() {
       const el = document.getElementById('measurementTools');
       if (el) body.appendChild(el);
     },
-    // right: 115, not 20 — the toolbar hugs its five squares (223px) and its
-    // left edge lines up with the Structure window (right: 20, 318px wide)
-    // below it: 20 + 318 - 223.
-    defaults: { dock: false, anchor: { right: 115, top: 20 }, collapsed: false },
+    // right: 20 — the toolbar's right edge lines up with the Structure window
+    // (also right: 20) below it.
+    defaults: { dock: false, anchor: { right: 20, top: 20 }, collapsed: false },
   });
 
   registerPanel({
