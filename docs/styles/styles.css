@@ -2451,6 +2451,14 @@ body > #structureInfoContent {
   pointer-events: none;
 }
 
+/* Marquee atom-SELECT variant (Shift+drag in no measure mode): amber accent
+ * instead of hide mode's danger red, so a select-drag never looks like a
+ * hide-drag. See dragSelectKind === 'select' in ui/SceneInteraction.js. */
+.cv-drag-select-rect.select-mode {
+  border-color: var(--highlight-color, #ff8c00);
+  background: rgb(255 140 0 / 0.14);
+}
+
 .tool-icon {
   width: 32px;
   height: 24px; /* Set a fixed height to match your tallest icon */

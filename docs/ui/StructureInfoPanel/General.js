@@ -14,6 +14,7 @@ import { updateForces, updateSpins } from '../../render/index.js';
 import { applyToOtherTrajectoryFrames, wirePressHoldPopup, getSiteSignatureGroups } from './components/utils.js';
 import { toggleCompositionLegend, refreshCompositionLegend } from '../CompositionLegendWidget.js';
 import { createToggleRow } from '../ToggleSwitch.js';
+import { renderSelectionActionBarInto } from './SelectionActionBar.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
@@ -455,6 +456,37 @@ export function renderComposition(panelState="closed") {
   titleWrapper.appendChild(addButtonsRow);
   compDiv.appendChild(titleWrapper);
 
+  // "Link periodic copies": governs the per-copy vs grouped behavior of ALL tabs
+  // below — Atoms per-image rows, Bonds/Poly grouped rows (general.linkPeriodicCopies)
+  // — and the selection bar's bulk edits. Sits at the very top, above the
+  // selection bar and tab selector, so this mode switch is the first thing seen.
+  // Wyckoff orbit rows are unaffected, but the toggle still applies to Bonds/Poly
+  // in wyckoff mode, so it is shown unconditionally.
+  const { row: linkCopiesRow } = createToggleRow({
+    id: 'linkPeriodicCopiesToggle',
+    label: 'Link colors of periodic copies',
+    checked: general.linkPeriodicCopies !== false,
+    onChange: (checked) => {
+      general.linkPeriodicCopies = checked;
+      // Selection rows go stale across the list rebuilds.
+      clearAllHighlights({ reason: 'link-copies-toggle' });
+      // Rebuilding immediately replaces this very switch with a fresh node
+      // already rendered in its new state, so the knob never visibly slid.
+      // Let the pill's 0.25s transition play out first. Kept under the 300ms
+      // the browser tests wait between clicking this toggle and asserting on
+      // the rebuilt rows.
+      setTimeout(() => renderComposition("open"), 260);
+    },
+  });
+  linkCopiesRow.className = 'si-link-copies-row';
+  compDiv.appendChild(linkCopiesRow);
+
+  // Bulk-visuals bar for the current multi-atom selection — hidden when nothing
+  // is selected, so it costs no space until a selection exists (see
+  // SelectionActionBar.js). Sits below the link toggle so it reads as "your
+  // current selection" above the per-species/per-bond tabs.
+  renderSelectionActionBarInto(compDiv);
+
   if (hasWyckoffPanel) {
     const symmetryBadge = document.createElement('div');
     symmetryBadge.textContent = 'Symmetry Locked  |  Wyckoff Mode Active';
@@ -467,29 +499,6 @@ export function renderComposition(panelState="closed") {
   // expanded, anything else closes the box (matching the old default-closed
   // behavior on re-render). The window itself stays as the user left it.
   setStructurePanelOpen(panelState === "open");
-
-// "Link periodic copies": governs the per-copy vs grouped behavior of ALL tabs
-// below — Atoms per-image rows, Bonds/Poly grouped rows (general.linkPeriodicCopies).
-// Wyckoff orbit rows are unaffected, but the toggle still applies to Bonds/Poly
-// in wyckoff mode, so it is shown unconditionally above the tab selector.
-const { row: linkCopiesRow } = createToggleRow({
-  id: 'linkPeriodicCopiesToggle',
-  label: 'Link colors of periodic copies',
-  checked: general.linkPeriodicCopies !== false,
-  onChange: (checked) => {
-    general.linkPeriodicCopies = checked;
-    // Selection rows go stale across the list rebuilds.
-    clearAllHighlights({ reason: 'link-copies-toggle' });
-    // Rebuilding immediately replaces this very switch with a fresh node
-    // already rendered in its new state, so the knob never visibly slid.
-    // Let the pill's 0.25s transition play out first. Kept under the 300ms
-    // the browser tests wait between clicking this toggle and asserting on
-    // the rebuilt rows.
-    setTimeout(() => renderComposition("open"), 260);
-  },
-});
-linkCopiesRow.className = 'si-link-copies-row';
-compDiv.appendChild(linkCopiesRow);
 
 // One-click propagation of the current frame's styling to every trajectory
 // frame (multi-frame files only). Mirrors the element editor's "Apply to

@@ -1020,6 +1020,48 @@ export function updateAtomSelectionFrom3DHit(hit, options = {}) {
 }
 
 /**
+ * Batch-add many atoms to the current selection at once, given their mesh
+ * INSTANCE ids (e.g. every atom a marquee rectangle covers). One commit for
+ * the whole set — a per-hit loop would re-sync highlights and rebuild the
+ * panel rows N times. Additive only (never replaces or toggles): instances
+ * already selected are skipped, and with "Link periodic copies" on, images of
+ * the same source atom collapse to a single selection entry (sameSelectionAtom).
+ * Reveals/scrolls nothing by default so a shift-drag stays in the 3D view.
+ */
+export function addAtomsToSelectionByInstances(instanceIds, options = {}) {
+  if (!instanceIds?.length || !groups.atomsMesh) return snapshotSelectedAtoms();
+
+  const previousSelection = snapshotSelectedAtoms();
+  const nextSelection = atomSelection.selectedAtoms.map(cloneSelectionAtom);
+  const addedAtoms = [];
+
+  for (const instanceId of instanceIds) {
+    const selectionAtom = buildSelectionAtomFromHit({ instanceId, object: groups.atomsMesh });
+    if (!selectionAtom) continue;
+    if (nextSelection.some((atom) => sameSelectionAtom(atom, selectionAtom))) continue;
+    nextSelection.push(selectionAtom);
+    addedAtoms.push(selectionAtom);
+  }
+
+  if (!addedAtoms.length) return previousSelection;
+
+  return commitSelection(
+    reindexSelection(nextSelection),
+    {
+      action: 'selected',
+      atom: null,
+      atoms: addedAtoms.map(cloneSelectionAtom),
+      addedAtoms: addedAtoms.map(cloneSelectionAtom),
+      removedAtoms: [],
+      modifiers: getEventModifiers(options.sourceEvent),
+      sourceEvent: options.sourceEvent ?? null,
+      reason: options.reason ?? 'marquee',
+    },
+    { scrollToLast: false, revealPanel: options.revealPanel ?? false },
+  );
+}
+
+/**
  * Panel→3D: select an atom from a click on its row in the Atoms/Wyckoff tab.
  * Runs through the same selection machinery as double-clicking the atom in the
  * 3D view (same modifier semantics: ctrl/cmd toggles, shift adds, plain click

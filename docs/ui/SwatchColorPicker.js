@@ -25,9 +25,9 @@ let activePicker = null;
  * @param {HTMLElement} anchor
  * @param {string|number} hex
  * @param {(hex: string) => void} onChange
- * @param {{onReset?: () => void}} options
+ * @param {{onReset?: () => void, onClose?: () => void}} options
  */
-export function openSwatchColorPicker(anchor, hex, onChange, { onReset } = {}) {
+export function openSwatchColorPicker(anchor, hex, onChange, { onReset, onClose } = {}) {
   if (activePicker) {
     const reopeningSame = activePicker.anchor === anchor;
     activePicker.close();
@@ -77,6 +77,7 @@ export function openSwatchColorPicker(anchor, hex, onChange, { onReset } = {}) {
     panel.remove();
     document.removeEventListener('mousedown', outsideClick);
     if (activePicker && activePicker.anchor === anchor) activePicker = null;
+    onClose?.();
   };
   const outsideClick = (e) => {
     if (!panel.contains(e.target) && e.target !== anchor) close();

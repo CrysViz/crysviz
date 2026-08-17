@@ -13,6 +13,7 @@ import {
   clearAllHighlights, clearBondSelection, selectBondFromInstance,
   clearPolyhedronSelection, selectPolyhedronFromMesh,
   clearSelectedAtoms, updateAtomSelectionFrom3DHit,
+  addAtomsToSelectionByInstances,
 } from './SelectAndHighlightModule.js';
 import {
   clearMeasureGraphics, addDistanceMeasurement, addAngleMeasurement, drawMeasureGraphics,
@@ -269,15 +270,18 @@ export function setupSceneInteraction() {
     hit = atomHits[0];
     clearBondSelection();
     clearPolyhedronSelection();
+    // Any modifier (Shift add / Ctrl-Cmd toggle) is building a multi-atom
+    // selection in the 3D view — for the Planes panel's best-fit plane, or the
+    // Structure panel's bulk-visuals selection bar. The atom still glows, but
+    // opening/scrolling the per-atom rows on each pick is the wrong surface for
+    // a group edit (the selection bar handles reveal for multi-select), so a
+    // modifier pick stays quiet. A plain pick keeps inspecting the one atom.
+    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     updateAtomSelectionFrom3DHit(hit, {
       selectionMode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
       sourceEvent: event,
-      scrollToSelection: true,
-      // A Shift-add is building a multi-atom selection in the 3D view (e.g.
-      // for the Planes panel's best-fit-plane calculation) — the atom still
-      // glows, but every click yanking focus to the Structure panel is
-      // disruptive for a workflow that's staying in the 3D view.
-      revealPanel: !event.shiftKey,
+      scrollToSelection: !additive,
+      revealPanel: !additive,
     });
 
   } else if (bondHits.length > 0) {
@@ -329,20 +333,30 @@ let moved = false;
 const LONG_PRESS_MS = 700;        // adjust to preference
 const MOVE_THRESHOLD_PX = 10;
 
-// Shift+drag rectangle-toggle: mouse-only (touch has no modifier key to hold
-// — a touch-friendly equivalent is a future improvement), active in hide or
-// restore mode. Reuses TrackballControls' own drag gesture space, so it must
-// disable app.controls for the duration or a shift-drag would also rotate
-// the camera; a plain (non-shift) drag in either mode still orbits normally.
+// Shift+drag rectangle over the 3D view: mouse-only (touch has no modifier key
+// to hold — a touch-friendly equivalent is a future improvement). Its meaning
+// follows the current mode:
+//   - hide/restore mode  -> 'hide-restore' kind: rectangle hides/restores atoms
+//   - no measure mode    -> 'select' kind: rectangle ADDS atoms to the selection
+// Reuses TrackballControls' own drag gesture space, so it must disable
+// app.controls for the duration or a shift-drag would also rotate the camera;
+// a plain (non-shift) drag in any mode still orbits normally.
 let dragSelectStart = null;   // {x,y} in viewport px, set on a qualifying pointerdown
 let dragSelectEl = null;      // the live rectangle overlay, built lazily on first move past threshold
 let dragSelectActive = false; // true once the rect is actually showing (past DRAG_THRESHOLD_PX)
+let dragSelectKind = null;    // 'hide-restore' | 'select' — what the current drag will commit to
 let dragSelectSuppressClick = false; // sours the click that follows a completed drag-select
 const DRAG_THRESHOLD_PX = 6;
 
-function isDragSelectEligible(e) {
-  return e.pointerType === 'mouse' && e.button === 0 && e.shiftKey
-    && (mode.measureMode === 'hide' || mode.measureMode === 'restore');
+// What a shift+drag starting now would mean, or null if it isn't eligible.
+// Hide/restore keep their own rectangle-hide/restore; every other (i.e. the
+// plain "none") mode gets marquee atom-selection — the same mode where
+// double-click already inspects/selects, so the two never collide.
+function dragSelectKindFor(e) {
+  if (e.pointerType !== 'mouse' || e.button !== 0 || !e.shiftKey) return null;
+  if (mode.measureMode === 'hide' || mode.measureMode === 'restore') return 'hide-restore';
+  if (mode.measureMode === 'none') return 'select';
+  return null;
 }
 
 function ensureDragSelectEl() {
@@ -351,6 +365,9 @@ function ensureDragSelectEl() {
   div.className = 'cv-drag-select-rect';
   document.body.appendChild(div);
   dragSelectEl = div;
+  // The select-mode marquee is tinted with the highlight/accent colour rather
+  // than hide mode's danger red, so the two gestures never look alike.
+  div.classList.toggle('select-mode', dragSelectKind === 'select');
   return div;
 }
 
@@ -369,6 +386,42 @@ function teardownDragSelect() {
   if (app.controls) app.controls.enabled = true;
   dragSelectStart = null;
   dragSelectActive = false;
+  dragSelectKind = null;
+}
+
+// Marquee atom-selection (dragSelectKind === 'select'): every VISIBLE atom
+// whose centre projects inside the rectangle is ADDED to the current
+// selection (never hidden). Only groups.atomsMesh is tested — bonds/polyhedra
+// are single-select for now — and, like the hide/restore drag, this is a
+// screen-space rectangle test (occluded atoms inside the rect are included
+// too, matching that gesture). Adds nothing and clears nothing on an empty
+// rectangle, so a stray shift-drag over blank space is a no-op.
+function commitMarqueeSelect(x0, y0, x1, y1) {
+  const atomsMesh = groups.atomsMesh;
+  const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
+  if (!atomsMesh || !wrapped) return;
+
+  const left = Math.min(x0, x1), right = Math.max(x0, x1);
+  const top = Math.min(y0, y1), bottom = Math.max(y0, y1);
+  const rect = app.renderer.domElement.getBoundingClientRect();
+  const dummy = new THREE.Vector3();
+
+  const instanceIds = [];
+  for (let i = 0; i < atomsMesh.count; i++) {
+    dummy.set(...wrapped.cart[i]);
+    const proj = dummy.project(app.camera);
+    if (proj.z < -1 || proj.z > 1) continue; // behind camera or past far plane
+    const sx = (proj.x * 0.5 + 0.5) * rect.width + rect.left;
+    const sy = (-proj.y * 0.5 + 0.5) * rect.height + rect.top;
+    if (sx >= left && sx <= right && sy >= top && sy <= bottom) instanceIds.push(i);
+  }
+  if (!instanceIds.length) return;
+
+  // Building an atom selection: drop any bond/polyhedron selection first, the
+  // same way a double-click atom pick does.
+  clearBondSelection();
+  clearPolyhedronSelection();
+  addAtomsToSelectionByInstances(instanceIds, { reason: 'marquee', revealPanel: false });
 }
 
 // Projects every instance of whichever ONE mesh the active mode owns to
@@ -472,11 +525,15 @@ function onPointerDown(e) {
       onDoubleClickAtom(e);   // use same logic as double-click
       lastTouchTime = Date.now(); // prevent follow-up ghost click
     }, LONG_PRESS_MS);
-  } else if (isDragSelectEligible(e)) {
-    // Don't build the rect yet — wait for real movement (onPointerMove) so a
-    // plain shift+click still reaches the click handler as a single pick.
-    dragSelectStart = { x: e.clientX, y: e.clientY };
-    if (app.controls) app.controls.enabled = false; // Shift+drag must not also rotate the camera
+  } else {
+    const kind = dragSelectKindFor(e);
+    if (kind) {
+      // Don't build the rect yet — wait for real movement (onPointerMove) so a
+      // plain shift+click still reaches the click handler as a single pick.
+      dragSelectKind = kind;
+      dragSelectStart = { x: e.clientX, y: e.clientY };
+      if (app.controls) app.controls.enabled = false; // Shift+drag must not also rotate the camera
+    }
   }
 
   try { e.target.setPointerCapture(e.pointerId); } catch {}
@@ -506,7 +563,11 @@ function onPointerUp(e) {
 
   if (dragSelectStart) {
     if (dragSelectActive) {
-      commitDragSelectRect(dragSelectStart.x, dragSelectStart.y, e.clientX, e.clientY);
+      if (dragSelectKind === 'select') {
+        commitMarqueeSelect(dragSelectStart.x, dragSelectStart.y, e.clientX, e.clientY);
+      } else {
+        commitDragSelectRect(dragSelectStart.x, dragSelectStart.y, e.clientX, e.clientY);
+      }
       dragSelectSuppressClick = true; // the click that follows this pointerup shouldn't also re-pick
     }
     teardownDragSelect();
