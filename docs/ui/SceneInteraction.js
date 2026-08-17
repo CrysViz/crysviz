@@ -334,14 +334,19 @@ const el = app.renderer.domElement;
 // Prevent browser gestures (zoom, scroll, long-press menu)
 el.style.touchAction = 'none';
 
-// Long-press config
-let longPressTimer = null;
-let longPressFired = false;
+// Touch tap config. Atom selection on touch is a DOUBLE-TAP now, not a
+// long-press: a held press over the scene no longer picks (scene-widget
+// long-presses live in utils/LongPress.js), and a lone tap still
+// picks/measures via onClickPick.
 let pointerDownPos = null;
 let moved = false;
 const cameraOnlyPointerIds = new Set();
-const LONG_PRESS_MS = 700;        // adjust to preference
 const MOVE_THRESHOLD_PX = 10;
+// Two taps within this window and distance count as a double-tap (atom select).
+let lastTapTime = 0;
+let lastTapPos = null;
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_DIST_PX = 30;
 
 // Shift+drag rectangle over the 3D view: mouse-only (touch has no modifier key
 // to hold — a touch-friendly equivalent is a future improvement). Its meaning
@@ -531,16 +536,8 @@ function onPointerDown(e) {
 
   // Track touch separately for long-press
   if (e.pointerType === 'touch') {
-    clearLongPress(); // always clear any pending timer before starting a new one
-    longPressFired = false;
     moved = false;
     pointerDownPos = { x: e.clientX, y: e.clientY };
-
-    longPressTimer = setTimeout(() => {
-      longPressFired = true;
-      onDoubleClickAtom(e);   // use same logic as double-click
-      lastTouchTime = Date.now(); // prevent follow-up ghost click
-    }, LONG_PRESS_MS);
   } else {
     const kind = dragSelectKindFor(e);
     if (kind) {
@@ -575,14 +572,11 @@ function onPointerMove(e) {
   const dy = e.clientY - pointerDownPos.y;
   if (Math.hypot(dx, dy) > MOVE_THRESHOLD_PX) {
     moved = true;
-    clearLongPress();
   }
 }
 
 function onPointerUp(e) {
   if (cameraOnlyPointerIds.delete(e.pointerId)) return;
-
-  clearLongPress();
 
   if (dragSelectStart) {
     if (dragSelectActive) {
@@ -598,24 +592,32 @@ function onPointerUp(e) {
   }
 
   if (e.pointerType === 'touch') {
-    // If the long-press already triggered, skip normal tap
-    if (longPressFired) {
-      longPressFired = false;
-      pointerDownPos = null;
-      return;
-    }
-
-    // Ignore small drags
+    // Ignore small drags (an orbit/pan, not a tap)
     if (moved) {
       pointerDownPos = null;
       moved = false;
       return;
     }
 
-    // Normal tap on touch → behave like click
     lastTouchTime = Date.now();
     e.preventDefault(); // prevent synthetic mouse click
-    onClickPick(e);
+
+    // Two quick taps in the same spot select an atom (same path as a desktop
+    // double-click); a lone tap picks/measures. The double-tap's own second
+    // pointerup fires it, so the highlight paints on this release — immediate
+    // feedback, unlike the old hold-and-wait long-press.
+    const now = lastTouchTime;
+    const near = lastTapPos &&
+      Math.hypot(e.clientX - lastTapPos.x, e.clientY - lastTapPos.y) < DOUBLE_TAP_DIST_PX;
+    if (near && now - lastTapTime < DOUBLE_TAP_MS) {
+      lastTapTime = 0;
+      lastTapPos = null;
+      onDoubleClickAtom(e);
+    } else {
+      lastTapTime = now;
+      lastTapPos = { x: e.clientX, y: e.clientY };
+      onClickPick(e);
+    }
   }
 
   pointerDownPos = null;
@@ -624,15 +626,7 @@ function onPointerUp(e) {
 function onPointerCancel(e) {
   if (cameraOnlyPointerIds.delete(e.pointerId)) return;
 
-  clearLongPress();
   pointerDownPos = null;
   if (dragSelectStart) teardownDragSelect();
-}
-
-function clearLongPress() {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
 }
 }
