@@ -810,10 +810,17 @@
   flex: 0 0 auto;
 }
 
-.cv-tiny-toggle {
+/* input[type="checkbox"] qualifier is load-bearing, not redundant: the global
+   `input[type="checkbox"]` rule (styles.css) and the mobile one (responsive.css)
+   are both (0,1,1) and outrank a bare `.cv-tiny-toggle` (0,1,0), so their
+   margin-right + transform:scale() win — the margin gets eaten by the 10px flex
+   wrap and shrinks this to a thin line. Qualifying to (0,2,1) lets margin:0 /
+   transform:none hold and keeps it a 10px circle. */
+input[type="checkbox"].cv-tiny-toggle {
   width: 10px;
   height: 10px;
   margin: 0;
+  transform: none;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;
