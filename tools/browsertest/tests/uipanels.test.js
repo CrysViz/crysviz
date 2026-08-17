@@ -322,7 +322,7 @@ async function expandPanel(page, id) {
   H.check('Cell: flip-outs replaced by flat headlines',
     cell.flipouts === 0
       && JSON.stringify(cell.headlines)
-        === JSON.stringify(['Supercell', 'Vacuum', 'Order Structure', 'Lattice Transformation']),
+        === JSON.stringify(['Supercell', 'Active Cell Boundary', 'Vacuum', 'Order Structure', 'Lattice Transformation']),
     JSON.stringify(cell));
   H.check('Cell: remaining sections\' content visible',
     cell.supercellVisible && cell.transformVisible, JSON.stringify(cell));
