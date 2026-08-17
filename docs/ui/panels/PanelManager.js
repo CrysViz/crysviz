@@ -1233,13 +1233,20 @@ function requiredSceneWidthForCompact() {
 function refreshCompactFloatingPanels() {
   const scene = sceneRect();
   const available = scene ? scene.width : window.innerWidth;
-  // Icons when the toolbars crowd each other, and on any compact viewport:
-  // the Structure window is behind its launcher there (compactHome), and the
-  // three scene windows fold and unfold together — the icon-only toolbars
-  // fit a 900px scene fine, but unfolding them while the Structure icon
-  // stays put made that one look stuck.
+  // Icons on a phone (compactViewport: the Structure window is behind its
+  // launcher there, so the three scene windows fold and unfold together), when
+  // forced, or when the scene is crowded. But NOT when the crowding is only the
+  // dock's own sidebar footprint: dragging the window narrower would fold the
+  // toolbars, then the dock collapses to its hamburger overlay at ~1024 (freeing
+  // that width) and they pop back open, then fold again — a flip-flop across the
+  // dock transition. Fold only once the dock has actually compressed to the
+  // overlay, or a split-pane reserve is what's claiming the scene (the reserve
+  // check keeps the legitimate "dock shown + a wide plot pane" fold intact).
+  const crowded = available < requiredSceneWidthForCompact();
+  const dockOnlyCrowd = crowded && dockOccupiesSpace()
+    && rightReservePx === 0 && bottomReservePx === 0;
   const small = panelPrefs.forceCompactIcons
-    || compactViewport || available < requiredSceneWidthForCompact();
+    || compactViewport || (crowded && !dockOnlyCrowd);
   for (const panel of panels.values()) {
     if (panel.compactBtn) panel.setCompact(small && !panel.docked);
   }
