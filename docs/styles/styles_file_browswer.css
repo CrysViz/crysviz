@@ -256,6 +256,11 @@
    the combine-name prompt. */
 .cv-fb-popup--anchored {
   position: absolute;
+  /* Above the side dock pane (--z-dock-pane 1300): the copy button lives inside
+     that pane when the Files panel is docked right/bottom or is the mobile
+     sheet, so without this the body-appended popup stacks behind the opaque
+     pane and never shows. */
+  z-index: var(--z-popup);
   padding: var(--sp-3-5);
 }
 
