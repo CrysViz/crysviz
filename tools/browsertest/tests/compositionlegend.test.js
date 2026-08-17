@@ -192,25 +192,51 @@ const WIDGET = '.comp-legend-widget.cv-colorbar-floating';
     shrunk.width < 200 && shrunk.overflowX <= 0 && shrunk.overflowY <= 0,
     JSON.stringify(shrunk));
 
-  // ---- transparent mode ----------------------------------------------------
-  const transparent = await page.evaluate((sel) => {
-    const widget = document.querySelector(sel);
-    widget.querySelector('.cv-colorbar-menu-btn').click();
-    const item = [...widget.querySelectorAll('.cv-colorbar-menu-item')]
-      .find((b) => b.textContent.includes('Transparent background'));
-    if (!item) {
-      return { found: false, menu: [...widget.querySelectorAll('.cv-colorbar-menu-item')].map((b) => b.textContent) };
-    }
-    item.click();
-    const cs = getComputedStyle(widget.querySelector('.comp-legend-body'));
-    return {
-      found: true,
-      classOn: widget.className.includes('comp-legend-transparent'),
-      bg: cs.backgroundColor,
-      shadow: cs.boxShadow,
-    };
+  // ---- per-widget lock ----------------------------------------------------
+  const lockPoint = await page.evaluate((sel) => {
+    const r = document.querySelector(sel).querySelector('.comp-legend-body').getBoundingClientRect();
+    return { x: r.left + 5, y: r.top + 5 };
   }, WIDGET);
-  H.check('the ☰ menu offers Transparent background and it strips the surface',
+  await page.mouse.move(lockPoint.x, lockPoint.y);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  await page.locator(`${WIDGET} .cv-colorbar-menu-item`).filter({ hasText: /^Lock$/ }).click();
+  const locked = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const item = [...document.querySelectorAll('.comp-legend-widget .cv-colorbar-menu-item')]
+      .find((button) => button.textContent === 'Unlock');
+    return { locked: general.compositionLegendLocked, active: item?.classList.contains('cv-colorbar-menu-item-active') };
+  });
+  H.check('the composition legend Lock item is active and persists', locked.locked && locked.active, JSON.stringify(locked));
+  await page.mouse.move(lockPoint.x, lockPoint.y);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  await page.locator(`${WIDGET} .cv-colorbar-menu-item`).filter({ hasText: /^Unlock$/ }).click();
+  H.check('unlocking the composition legend updates its state',
+    await page.evaluate(async () => !(await import('./state/store.js')).general.compositionLegendLocked));
+
+  // ---- transparent mode ----------------------------------------------------
+  const transparentPoint = await page.evaluate((sel) => {
+    const body = document.querySelector(sel).querySelector('.comp-legend-body').getBoundingClientRect();
+    return { x: body.left + 5, y: body.top + 5 };
+  }, WIDGET);
+  await page.mouse.move(transparentPoint.x, transparentPoint.y);
+  await page.mouse.down();
+  await page.waitForTimeout(650);
+  const transparentFound = await page.locator(`${WIDGET} .cv-colorbar-menu-open`).count() > 0;
+  const transparentItem = page.locator(`${WIDGET} .cv-colorbar-menu-item`, { hasText: 'Transparent background' });
+  const transparentItemFound = await transparentItem.count() > 0;
+  if (transparentItemFound) await transparentItem.click();
+  await page.mouse.up();
+  const transparent = await page.evaluate(([sel, found, itemFound]) => {
+    const widget = document.querySelector(sel);
+    const cs = getComputedStyle(widget.querySelector('.comp-legend-body'));
+    return { found: found && itemFound, classOn: widget.className.includes('comp-legend-transparent'),
+      bg: cs.backgroundColor, shadow: cs.boxShadow };
+  }, [WIDGET, transparentFound, transparentItemFound]);
+  H.check('a long press opens Transparent background and it strips the surface',
     transparent.found && transparent.classOn
     && /rgba\(0,\s*0,\s*0,\s*0\)|transparent/.test(transparent.bg)
     && transparent.shadow === 'none',

@@ -16,6 +16,8 @@ export class Force extends ColoredObject {
     // editor "Color" button) — same precedent as Atom.userColor: wins over
     // whatever the live colormap would otherwise compute, until cleared.
     this.userColor = null;
+    // Per-arrow ray/path-tracing material override; raster arrows ignore it.
+    this.userMaterial = null;
     // Per-atom arrow visibility (that row's "Hide" checkbox), independent of
     // the Forces panel's per-species show/hide toggles.
     this.hidden = false;

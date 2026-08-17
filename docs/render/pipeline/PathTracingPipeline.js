@@ -9,6 +9,9 @@
 // radius is the "Light softness" slider) and the denoising output pass
 // (denoiser toggled by general.ptDenoise; edge flags travel in the
 // accumulation buffer's alpha channel).
+// This file is original CrysViz work licensed under AGPL-3.0 (see the
+// repository LICENSE); it builds on the vendored CC0 chunk library, whose
+// dedication covers the upstream material only.
 //
 // Same v1 scope/limits as the raytrace pipeline (see its header). Path
 // tracing is stochastic: the image starts noisy and refines over many more
@@ -27,7 +30,8 @@ import { common_PathTracing_Vertex } from '../../external/three-pathtracing/comm
 import { ScreenCopy_Fragment } from '../../external/three-pathtracing/ScreenCopy_Fragment.js';
 import { ScreenOutput_Fragment } from '../../external/three-pathtracing/ScreenOutput_Fragment.js';
 import { RayTracingPipeline } from './RayTracingPipeline.js';
-import { ptSceneFragment } from './pathtrace/ptSceneFragment.js';
+import { makePtSceneFragment, ptPrimaryRandAdapter } from './pathtrace/ptSceneFragment.js';
+import { occupancyChunk } from './raytrace/occupancyChunk.js';
 
 export class PathTracingPipeline extends RayTracingPipeline {
   static id = 'pathtrace';
@@ -45,7 +49,9 @@ export class PathTracingPipeline extends RayTracingPipeline {
   _config() {
     return {
       vertexShader: common_PathTracing_Vertex,
-      sceneFragment: ptSceneFragment,
+      sceneFragment: (hasOccupancy) => hasOccupancy
+        ? makePtSceneFragment(occupancyChunk, ptPrimaryRandAdapter)
+        : makePtSceneFragment('', ptPrimaryRandAdapter),
       copyFragment: ScreenCopy_Fragment,
       outputFragment: ScreenOutput_Fragment,
       copyTexUniform: 'tPathTracedImageTexture',

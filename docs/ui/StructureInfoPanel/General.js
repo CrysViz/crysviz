@@ -6,7 +6,7 @@ import { createCompositionRow, createWyckoffCompositionRow, clearCompositionRowR
 import { createBondLengthControls} from '../BondLengthPanel.js'
 import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
 import { clearAllHighlights } from '../SelectAndHighlightModule.js'
-import { getPanel } from '../panels/PanelManager.js'
+import { getPanel, isCompactViewport } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
@@ -18,7 +18,8 @@ import { renderSelectionActionBarInto } from './SelectionActionBar.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
-                          'polyhedraUserStyles', 'polyhedraCategoryStyles'];
+                          'polyhedraUserStyles', 'polyhedraCategoryStyles',
+                          'spinCategoryStyles', 'forceCategoryStyles'];
 
 /** Reset every COLOR customization; alpha/size/visibility overrides survive. */
 function resetAllColorStyling(structure) {
@@ -52,8 +53,14 @@ function resetAllColorStyling(structure) {
   // Spin/Force row editor "Color" button) atoms/bonds get stripped above.
   // Vector/scaling (real data) and hidden (visibility) are left alone here —
   // resetAllStyling() below also clears hidden, matching its broader scope.
-  structure.forces?.forEach((force) => { force.userColor = null; });
-  structure.spins?.forEach((spin) => { spin.userColor = null; });
+  structure.forces?.forEach((force) => {
+    force.userColor = null;
+    force.color = force.defaultColor?.clone?.() ?? force.defaultColor;
+  });
+  structure.spins?.forEach((spin) => {
+    spin.userColor = null;
+    spin.color = spin.defaultColor?.clone?.() ?? spin.defaultColor;
+  });
 }
 
 /** Re-render force/spin arrows (if shown) and any currently-open Structure
@@ -91,7 +98,15 @@ function resetAllStyling(structure) {
   // polyhedra visibility overrides cleared above.
   structure.forces?.forEach((force) => { force.hidden = false; });
   structure.spins?.forEach((spin) => { spin.hidden = false; });
+  structure.forces?.forEach((force) => { force.userMaterial = null; });
+  structure.spins?.forEach((spin) => { spin.userMaterial = null; });
 }
+
+// Remembers the box's open/closed state so it survives a re-render (every
+// structure change rebuilds the box, which would otherwise reset it — see
+// renderComposition). On a phone the box defaults OPEN, so this is what a
+// deliberate collapse latches onto and keeps closed until reopened.
+let compositionUserClosed = false;
 
 /**
  * Open/close the formula box inside the Structure window (the +/− expandable
@@ -100,6 +115,7 @@ function resetAllStyling(structure) {
 export function setStructurePanelOpen(open) {
   const composition = document.getElementById('composition');
   if (!composition) return;
+  compositionUserClosed = !open;
   composition.classList.toggle('open', open);
   composition.setAttribute('aria-hidden', String(!open));
   const icon = document.getElementById('structureToggleIcon');
@@ -195,7 +211,10 @@ export function getCompositionString() {
 function captureCompositionUiState() {
   const compDiv = document.getElementById('composition');
   if (!compDiv) {
-    return { expandedElements: [], elementEditorsOpen: [], atomEditorsOpen: [], expandedBondPairs: [], bondEditorsOpen: [] };
+    return {
+      expandedElements: [], elementEditorsOpen: [], spinForceEditorsOpen: [],
+      atomEditorsOpen: [], expandedBondPairs: [], bondEditorsOpen: [],
+    };
   }
 
   const expandedElements = [];
@@ -216,9 +235,21 @@ function captureCompositionUiState() {
       expandedElements.push(element);
     }
 
-    const elementEditor = container.querySelector('.element-color-editor');
+    const elementEditor = container.querySelector(
+      '.element-color-editor:not(.spin-force-category-editor)');
     if (elementEditor && elementEditor.style.display !== 'none') {
       elementEditorsOpen.push(element);
+    }
+  });
+
+  const spinForceEditorsOpen = [];
+  compDiv.querySelectorAll('.comp-container').forEach((container) => {
+    const editor = container.querySelector('.spin-force-category-editor');
+    if (editor && editor.style.display !== 'none') {
+      spinForceEditorsOpen.push({
+        key: container.dataset.signature ?? container.dataset.element,
+        mode: /** @type {any} */ (editor).getMode?.() ?? 'spin',
+      });
     }
   });
 
@@ -285,6 +316,7 @@ function captureCompositionUiState() {
     expandedElements, elementEditorsOpen, atomEditorsOpen,
     expandedBondPairs, bondEditorsOpen,
     expandedPolyCategories, polyEditorsOpen, polyCatEditorsOpen,
+    spinForceEditorsOpen,
   };
 }
 
@@ -345,10 +377,23 @@ function restoreCompositionUiState(state) {
 
   for (const element of state.elementEditorsOpen || []) {
     const container = compDiv.querySelector(`.comp-container[data-element="${element}"]`);
-    const editor = container?.querySelector('.element-color-editor');
+    const editor = container?.querySelector(
+      '.element-color-editor:not(.spin-force-category-editor)');
     if (!editor) continue;
     editor.style.display = 'flex';
     editor.style.flexDirection = 'column';
+  }
+
+  for (const entry of state.spinForceEditorsOpen || []) {
+    const key = typeof entry === 'string' ? entry : entry.key;
+    const container = [...compDiv.querySelectorAll('.comp-container')]
+      .find((candidate) => (candidate.dataset.signature ?? candidate.dataset.element) === key);
+    const editor = container?.querySelector('.spin-force-category-editor');
+    if (!editor) continue;
+    if (typeof entry !== 'string' && entry.mode) {
+      /** @type {any} */ (editor).setMode?.(entry.mode);
+    }
+    editor.style.display = 'block';
   }
 
   for (const entry of state.atomEditorsOpen || []) {
@@ -498,7 +543,11 @@ export function renderComposition(panelState="closed") {
   // Sync the formula box: "open" keeps/forces it (and the hosting window)
   // expanded, anything else closes the box (matching the old default-closed
   // behavior on re-render). The window itself stays as the user left it.
-  setStructurePanelOpen(panelState === "open");
+  // Exception — a phone: the box is open by default (the user shouldn't have to
+  // tap the +/− after every structure), unless they've deliberately collapsed
+  // it this session (compositionUserClosed).
+  const openByDefault = isCompactViewport() && !compositionUserClosed;
+  setStructurePanelOpen(panelState === "open" || openByDefault);
 
 // One-click propagation of the current frame's styling to every trajectory
 // frame (multi-frame files only). Mirrors the element editor's "Apply to

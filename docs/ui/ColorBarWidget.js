@@ -8,7 +8,7 @@ import { general } from '../state/store.js';
 import { getHeatMapColors, getBatlowColors, getHawaiiColors, getManaguaColors, getViridisColors, getPlasmaColors, getSpectralRColors, getJetColors } from '../defaults/color_texture_defaults.js';
 import { makeColorBarDraggable } from './ColorBarDrag.js';
 import { listActiveColorBars } from './ColorBarRegistry.js';
-import { applyLegendHtml, legendPlainText } from '../utils/index.js';
+import { applyLegendHtml, legendPlainText, wireLongPress } from '../utils/index.js';
 
 function createElement(tag, attributes = {}, styles = {}, textContent = "") {
   const el = document.createElement(tag);
@@ -116,10 +116,7 @@ const MIN_BAR_LENGTH = 120;
 const MAX_BAR_LENGTH = 700;
 const THICKNESS = 36;
 // Breathing room between the resize frame and the measured tick/legend
-// content it encloses — shared by positionResizeHandle (the frame itself)
-// and positionControlsStrip (which now aligns to that same frame rather
-// than the bare bar, since the frame reads as the bar's actual boundary
-// once it's floating), so the strip's width always matches the frame's.
+// content it encloses.
 const FRAME_PAD = 6;
 // Tick/legend/min-max text sizes at DEFAULT_BAR_LENGTH, once floating —
 // scaled by the same ratio as the bar's own length (ui/GizmoDrag.js's
@@ -127,9 +124,9 @@ const FRAME_PAD = 6;
 // bar reads with bigger labels instead of the same fixed-size text just
 // spread further apart. x1.2 (not the original size, but not the earlier
 // x1.5 either — dialed back 20% after that read too large).
-const TICK_LABEL_BASE_FONT = 16.8;
-const LEGEND_BASE_FONT = 18;
-const INPUT_BASE_FONT = 18;
+const TICK_LABEL_BASE_FONT = 16;
+const LEGEND_BASE_FONT = 20;
+const INPUT_BASE_FONT = 20;
 // Docked bars ignore the above entirely (see fontScale()) — a fixed, quite
 // a bit smaller size instead of the floating scale, since a resized floating
 // bar sharing its length via general.colorBarSize would otherwise inflate a
@@ -138,8 +135,8 @@ const INPUT_BASE_FONT = 18;
 // original sizes this widget used before floating bars got their own,
 // larger scale.
 const DOCKED_TICK_LABEL_FONT = 14;
-const DOCKED_LEGEND_FONT = 15;
-const DOCKED_INPUT_FONT = 15;
+const DOCKED_LEGEND_FONT = 14;
+const DOCKED_INPUT_FONT = 14;
 // Legend placement is fixed geometry, not measured off the rendered tick
 // labels: this widget is often built while its panel is still `display:none`
 // mid-expand, where every offsetTop/offsetHeight reads back as 0. x1.2,
@@ -196,6 +193,7 @@ export function currentContrastColor() {
  *   fallbackMin?: number, fallbackMax?: number, legend?: string, scale?: string,
  *   onScaleChange?: (scale: string) => void, onAutoRange?: () => void,
  *   onLegendChange?: (legend: string) => void, isScaleLocked?: () => boolean,
+ *   isLocked?: () => boolean, onLockChange?: (locked: boolean) => void,
  *   orientation?: string, flipSide?: boolean, size?: number }} [opts]
  *   legend: axis title shown alongside the bar (e.g. "Force (eV/Å)"), rotated
  *   to read bottom-to-top when the bar is vertical. Click-to-edit: the raw
@@ -235,7 +233,11 @@ export function currentContrastColor() {
  *   length.
  */
 export function createColorBar(container, colormap, minValue, maxValue, opts = {}) {
-  const { floatingId, onLimitsCommit, onScaleChange, onAutoRange, onLegendChange, isScaleLocked = () => false, fallbackMin = 0, fallbackMax = 2, legend = '' } = opts;
+  const {
+    floatingId, onLimitsCommit, onScaleChange, onAutoRange, onLegendChange,
+    isScaleLocked = () => false, isLocked = () => false, onLockChange,
+    fallbackMin = 0, fallbackMax = 2, legend = '',
+  } = opts;
   container.innerHTML = '';
 
   let orientation = opts.orientation === 'vertical' ? 'vertical' : 'horizontal';
@@ -250,46 +252,18 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // applyLayout). Resized via the drag handle at the bar's far end.
   let barLength = Math.min(Math.max(opts.size || DEFAULT_BAR_LENGTH, MIN_BAR_LENGTH), MAX_BAR_LENGTH);
 
-  // display:flex row so the grip sits beside the bar (docked has nowhere
-  // else useful to put it — orientation/simplify are floating-only). Once
-  // floating, controlsBar goes position:absolute (styles/toggle_styles.css)
-  // and drops out of this flow entirely, leaving valueRow to fill the row
-  // alone exactly as before. margin-top/bottom aren't set here — the
-  // applyLayout() call at the end of this function always sets both before
-  // the widget ever paints, off the orientation/flipSide state that isn't
-  // known yet at creation time.
+  // Docked bars retain their small grip beside the values row. The grip is
+  // removed from the DOM when the bar becomes a floating scene widget.
   const wrapper = createElement("div", { class: "cv-colorbar-wrapper" });
 
   const controlsBar = createElement("div", { class: "cv-colorbar-controls" });
-  // Bridges the CONTROLS_GAP dead zone between the frame's top edge and the
-  // controls strip's own bottom edge (positioned alongside it, below) — see
-  // positionControlsStrip for why that gap exists and why hovering across it
-  // needs something hit-testable there. Deliberately just this thin sliver,
-  // not the whole (large, mostly-empty) strip: making the entire strip
-  // permanently pointer-events:auto so it stays reachable regardless of
-  // :hover timing (a fix tried here previously) meant the invisible
-  // controls strip - opacity 0 except while actively hovered - was always
-  // live and could silently swallow clicks meant for whatever's underneath
-  // it wherever the bar happened to be floating. This bridge keeps that
-  // footprint to the minimum needed to keep the hover chain unbroken.
-  const controlsBridge = createElement("div", { class: "cv-colorbar-controls-bridge" });
-  // flex:1/min-width:0 (valueRow as a flex ITEM of wrapper) live in
-  // sceneWidgets.css alongside .cv-colorbar-values' own display:flex rule
-  // (toggle_styles.css, which governs valueRow as a flex CONTAINER for its
-  // own children — a different axis, no overlap).
   const valueRow = createElement("div", { class: "cv-colorbar-values" });
   wrapper.appendChild(controlsBar);
-  wrapper.appendChild(controlsBridge);
   wrapper.appendChild(valueRow);
 
-  // Hamburger menu (floating-only, like the layout it replaced): Horizontal /
-  // Vertical / Dock in one dropdown instead of three separate icon buttons.
-  // menu is a sibling of menuBtn (not a child) — a <button> can't validly
-  // contain other <button>s, which the menu items are.
-  const menuWrap = createElement("div", { class: "cv-colorbar-menu-wrap" });
-  const menuBtn = createElement("button", {
-    type: "button", class: "cv-colorbar-menu-btn", title: "Layout options"
-  }, {}, "☰");
+  // The dropdown remains in the widget, but is opened only by long press and
+  // positioned at that press point. No visible strip or menu button exists.
+  const menuWrap = createElement("div", { class: "cv-colorbar-menu-host" });
   const menu = createElement("div", { class: "cv-colorbar-menu" });
   const menuHorizontal = createElement("button", {
     type: "button", class: "cv-colorbar-menu-item"
@@ -312,6 +286,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   const menuDock = createElement("button", {
     type: "button", class: "cv-colorbar-menu-item"
   }, {}, "Dock");
+  const menuLock = createElement("button", {
+    type: "button", class: "cv-colorbar-menu-item"
+  });
   menu.appendChild(menuHorizontal);
   menu.appendChild(menuVertical);
   menu.appendChild(menuFlip);
@@ -319,10 +296,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   menu.appendChild(menuAutoRange);
   menu.appendChild(menuResetSize);
   menu.appendChild(menuDock);
-  menuWrap.appendChild(menuBtn);
+  menu.appendChild(menuLock);
   menuWrap.appendChild(menu);
-
-  controlsBar.appendChild(menuWrap);
+  wrapper.appendChild(menuWrap);
 
   // position:relative lives on .cv-colorbar-bar-handle itself (sceneWidgets.css,
   // alongside the cursor:grab/grabbing rule that class already carries from
@@ -456,8 +432,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // needing to be too: an earlier version made the whole frame
   // pointer-events: auto so the gap between the bar and the handle stayed
   // continuously hoverable, but since the frame also encloses Min/Max and
-  // sits under the controls strip, that ended up swallowing clicks meant
-  // for both instead. Floating-only (styles/toggle_styles.css scopes both
+  // Floating-only (styles/toggle_styles.css scopes both
   // to .cv-colorbar-floating) — docked horizontal bars stretch to fill the
   // panel row instead of having a length of their own to resize. handle is
   // a child of frame (not barOuter) so its CSS corner offsets (-11px etc.)
@@ -506,7 +481,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   function scaledInputWidth(input) {
     if (!(dragCtl?.isFloating() ?? false)) return `${MINMAX_WIDTH}px`;
     const fontPx = scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT);
-    measureCtx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    measureCtx.font = `${fontPx}px 'CrysViz Sans', sans-serif`;
     const textWidth = measureCtx.measureText(input.value || '').width;
     return `${Math.max(MINMAX_WIDTH * fontScale(), textWidth + 14)}px`;
   }
@@ -536,7 +511,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     const min = parseFloat(minInput.value);
     const max = parseFloat(maxInput.value);
     if (!isFinite(min) || !isFinite(max) || min >= max) return TICK_LABEL_SPAN_V;
-    measureCtx.font = `${scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT)}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    measureCtx.font = `${scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT)}px 'CrysViz Sans', sans-serif`;
     let widest = TICK_LABEL_SPAN_V;
     for (const { label } of computeTicks(min, max, currentScale)) {
       widest = Math.max(widest, measureCtx.measureText(label).width);
@@ -559,7 +534,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // overlap even though the tick-clearing math above looked right.
   function legendHalfHeight() {
     const fontPx = scaledFont(LEGEND_BASE_FONT, DOCKED_LEGEND_FONT);
-    measureCtx.font = `${fontPx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    measureCtx.font = `${fontPx}px 'CrysViz Sans', sans-serif`;
     const m = measureCtx.measureText(legendPlainText(currentLegendRaw) || LEGEND_PLACEHOLDER);
     const ascent = m.actualBoundingBoxAscent || fontPx * 0.8;
     const descent = m.actualBoundingBoxDescent || fontPx * 0.2;
@@ -658,73 +633,6 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     };
   }
 
-  // The resize frame's rect in screen coordinates — barOuter's own box
-  // expanded by labeledExtent() + FRAME_PAD on every side. The single
-  // source both positionResizeHandle (which draws the frame) and
-  // positionControlsStrip (which aligns the hover strip to it, now that
-  // the frame — not the bare color strip — reads as the bar's actual
-  // visual boundary once floating) size themselves against, so the two
-  // always agree on where "the bar" is.
-  function frameRect() {
-    const barRect = barOuter.getBoundingClientRect();
-    const ext = labeledExtent();
-    return {
-      left: barRect.left - ext.left - FRAME_PAD,
-      top: barRect.top - ext.top - FRAME_PAD,
-      width: barRect.width + ext.left + ext.right + FRAME_PAD * 2,
-      height: barRect.height + ext.top + ext.bottom + FRAME_PAD * 2,
-    };
-  }
-
-  const CONTROLS_GAP = 8; // frame's top edge -> bottom edge of the controls strip
-
-  // Matches the hover-revealed controls strip's width/position to the
-  // resize frame (CSS handles the docked case — .cv-colorbar-controls sits
-  // in normal flex flow beside the bar there, no absolute positioning to
-  // compute) — the full frame width in both orientations now (vertical used
-  // to only center over the frame's midpoint at an auto width, since the
-  // bare bar is only THICKNESS px wide, too narrow to anchor the strip's
-  // width to — the frame doesn't have that problem, it's already however
-  // wide the labeled content needs). `top` is computed here too, not left
-  // to CSS's fixed -34px: that was measured against the bare bar, and once
-  // Min/Max moved onto the bar itself (positionMinMax) vertical mode's
-  // frame can extend upward past a fixed offset — the strip and frame
-  // overlapping instead of clearing it. Reads frameRect(), so — like
-  // positionResizeHandle below — this has to run after renderTicks() has
-  // (re)built the current tick labels, hence it's called from the end of
-  // render() (and again from relayoutFloating(), after a resize or
-  // orientation switch settles the wrapper's own final size/position —
-  // these offsets are expressed relative to wrapper's edges, which that can
-  // move), not from inside applyLayout() like it used to be.
-  function positionControlsStrip() {
-    if (!dragCtl?.isFloating()) {
-      controlsBar.style.left = '';
-      controlsBar.style.right = '';
-      controlsBar.style.width = '';
-      controlsBar.style.top = '';
-      controlsBar.style.bottom = '';
-      controlsBridge.style.left = '';
-      controlsBridge.style.width = '';
-      controlsBridge.style.bottom = '';
-      controlsBridge.style.height = '';
-      return;
-    }
-    const frame = frameRect();
-    const wrapperRect = wrapper.getBoundingClientRect();
-    const left = `${frame.left - wrapperRect.left}px`;
-    const width = `${frame.width}px`;
-    const gapBottom = wrapperRect.bottom - frame.top; // frame's own top edge, wrapper-bottom-relative
-    controlsBar.style.left = left;
-    controlsBar.style.right = 'auto';
-    controlsBar.style.width = width;
-    controlsBar.style.top = 'auto';
-    controlsBar.style.bottom = `${gapBottom + CONTROLS_GAP}px`;
-    controlsBridge.style.left = left;
-    controlsBridge.style.width = width;
-    controlsBridge.style.bottom = `${gapBottom}px`;
-    controlsBridge.style.height = `${CONTROLS_GAP}px`;
-  }
-
   const RESIZE_HANDLE_CORNERS = ['nw', 'ne', 'sw', 'se'];
 
   // Sizes resizeFrame to enclose the bar's whole visual footprint (color
@@ -774,15 +682,6 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // having a length of their own to resize; every other case (floating
     // horizontal, or vertical — which is floating-only anyway) does.
     const fixedLength = floating || !horizontal;
-    // The hover-revealed controls strip spans the full bar width in
-    // horizontal mode (the bar is wide, so a full-width strip guarantees
-    // whichever part of it the pointer approaches from still leads into the
-    // strip). Vertical mode inverts that: the bar itself is narrow (just
-    // THICKNESS px) while the strip's buttons need much more room than that,
-    // so pinning it to the bar's width let the buttons overflow past their
-    // own box and paint disconnected from the bar below. cv-colorbar-vertical
-    // (styles/toggle_styles.css) switches the strip to shrink-to-fit and
-    // center over the bar instead.
     wrapper.classList.toggle('cv-colorbar-vertical', !horizontal);
 
     valueRow.style.width = horizontal ? "100%" : "auto";
@@ -837,8 +736,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     minInput.style.textAlign = minMaxAlign;
     maxInput.style.textAlign = minMaxAlign;
     positionLegend();
-    // positionControlsStrip()/positionResizeHandle()/renderMinMax() run
-    // later, from render() — see positionControlsStrip's own comment.
+    // positionResizeHandle()/renderMinMax() run later, from render().
     // valueRow's only child is barOuter now (Min/Max moved off it onto the
     // bar itself, see their creation comment) — nothing left to reorder
     // here the way orientation switches used to require.
@@ -860,15 +758,6 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     wrapper.style.width = '';
     wrapper.style.width = `${wrapper.offsetWidth || 260}px`;
     dragCtl.reapplyAnchor();
-    // positionControlsStrip's `left` is a snapshot pixel offset from
-    // wrapper's own edge, not barOuter-relative like positionResizeHandle's
-    // (that one's a child of barOuter itself, so it tracks automatically) —
-    // clearing/re-measuring wrapper's width just above can shift where
-    // barOuter actually sits inside it (vertical mode right-aligns onto
-    // wrapper's own box via flex, so a wrapper narrower or wider than its
-    // snapshot moves that alignment), leaving the strip stranded wherever it
-    // was computed for the pre-reflow width instead of the settled one.
-    positionControlsStrip();
   }
 
   // Undocked, text has no opaque box of its own to lean on, so it borrows
@@ -1003,9 +892,6 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     renderTicks();
-    // Both read the tick labels renderTicks() just (re)built, so they have
-    // to run after them — see positionControlsStrip's own comment.
-    positionControlsStrip();
     positionResizeHandle();
   }
 
@@ -1083,6 +969,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // opts doc comment).
   function updateMenuState() {
     const floating = dragCtl?.isFloating() ?? false;
+    wrapper.classList.toggle('cv-colorbar-locked', floating && isLocked());
     menuHorizontal.classList.toggle('cv-colorbar-menu-item-active', orientation === 'horizontal');
     menuVertical.classList.toggle('cv-colorbar-menu-item-active', orientation === 'vertical');
     menuVertical.disabled = !floating;
@@ -1096,18 +983,38 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     menuAutoRange.style.display = onAutoRange ? '' : 'none';
     menuResetSize.style.display = floating ? '' : 'none';
     menuDock.style.display = floating ? '' : 'none';
+    menuLock.style.display = floating ? '' : 'none';
+    menuLock.textContent = isLocked() ? 'Unlock' : 'Lock';
+    menuLock.classList.toggle('cv-colorbar-menu-item-active', isLocked());
   }
 
-  menuBtn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    const opening = !menu.classList.contains('cv-colorbar-menu-open');
-    if (opening) updateMenuState();
-    menu.classList.toggle('cv-colorbar-menu-open', opening);
-  });
-  document.addEventListener("click", (e) => {
+  function openMenuAt(x, y) {
+    if (!dragCtl?.isFloating()) return;
+    updateMenuState();
+    menu.classList.add('cv-colorbar-menu-open');
+    const view = document.getElementById('view')?.getBoundingClientRect();
+    const rect = menu.getBoundingClientRect();
+    const left = view ? Math.min(Math.max(x, view.left + 4), view.right - rect.width - 4) : x;
+    const top = view ? Math.min(Math.max(y, view.top + 4), view.bottom - rect.height - 4) : y;
+    menuWrap.style.left = `${left}px`;
+    menuWrap.style.top = `${top}px`;
+  }
+
+  menuWrap.addEventListener('pointerdown', (e) => e.stopPropagation());
+  const onMenuPointerDown = (e) => {
     if (!menu.classList.contains('cv-colorbar-menu-open')) return;
     if (!menuWrap.contains(/** @type {Node} */ (e.target))) closeMenu();
-  });
+  };
+  const onMenuClick = (e) => {
+    if (!menu.classList.contains('cv-colorbar-menu-open')) return;
+    if (!menuWrap.contains(/** @type {Node} */ (e.target))) closeMenu();
+  };
+  const onMenuKeyDown = (e) => {
+    if (e.key === 'Escape') closeMenu();
+  };
+  document.addEventListener("pointerdown", onMenuPointerDown);
+  document.addEventListener("click", onMenuClick);
+  document.addEventListener("keydown", onMenuKeyDown);
 
   menuHorizontal.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1158,17 +1065,28 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     dragCtl?.dockBack();
     closeMenu();
   });
+  menuLock.addEventListener("click", (e) => {
+    e.stopPropagation();
+    onLockChange?.(!isLocked());
+    dragCtl?.abortAll?.();
+    abortResizePointer?.();
+    updateMenuState();
+    closeMenu();
+  });
 
   // Defined before the first applyLayout() call below (which reads
   // dragCtl?.isFloating() to size the bar) — makeColorBarDraggable only
   // wires up event listeners at this point, none of which depend on layout
   // having already run.
-  const dragCtl = floatingId
+  let dragCtl = floatingId
     ? makeColorBarDraggable(wrapper, floatingId, {
       gripParent: controlsBar,
-      extraHandles: [barOuter],
+      extraHandles: [barOuter, wrapper],
+      isLocked,
       onFloatChange: (floating) => {
         closeMenu();
+        if (floating) controlsBar.remove();
+        else if (!controlsBar.parentElement) wrapper.insertBefore(controlsBar, valueRow);
         // Orientation is hidden once docked (CSS), so leaving it vertical
         // from the bar's time in the scene would strand the docked panel in
         // a state with no control to undo it.
@@ -1176,11 +1094,21 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
           orientation = 'horizontal';
         }
         applyLayout();
+        updateMenuState();
         if (floating) startContrastSync(); else stopContrastSync();
         render(currentColormap);
       },
     })
     : null;
+
+  let abortResizePointer = null;
+  const disposeLongPress = wireLongPress(wrapper, ({ clientX, clientY }) => openMenuAt(clientX, clientY), {
+    ignoreSelector: '.cv-colorbar-resize-handle',
+    onFire: ({ pointerId }) => {
+      dragCtl?.abortPointer(pointerId);
+      abortResizePointer?.(pointerId);
+    },
+  });
 
   // Resize handle: drag to change the bar's length. Every currently-showing
   // color bar (Forces/Spins/Atoms/Bonds — ui/ColorBarRegistry.js) is kept at
@@ -1190,9 +1118,10 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   resizeHandle.addEventListener('pointerdown', (e) => {
     if (!dragCtl?.isFloating()) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (isLocked()) return;
     e.preventDefault();
     e.stopPropagation();
-    resizeHandle.setPointerCapture(e.pointerId);
+    try { resizeHandle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
     const startX = e.clientX;
     const startY = e.clientY;
     const startLength = barLength;
@@ -1218,8 +1147,13 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     const startRect = wrapper.getBoundingClientRect();
     const pinnedLeft = startRect.left - marginLeft;
     const pinnedTop = startRect.top - marginTop;
+    let finished = false;
 
     const onMove = (mv) => {
+      if (isLocked()) {
+        abort(mv.pointerId);
+        return;
+      }
       const delta = horizontalAtStart ? (mv.clientX - startX) : (mv.clientY - startY);
       const size = Math.min(Math.max(startLength + delta, MIN_BAR_LENGTH), MAX_BAR_LENGTH);
       general.colorBarSize = size;
@@ -1227,23 +1161,46 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       wrapper.style.left = `${pinnedLeft}px`;
       wrapper.style.top = `${pinnedTop}px`;
     };
-    const onUp = () => {
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
       resizeHandle.removeEventListener('pointermove', onMove);
       resizeHandle.removeEventListener('pointerup', onUp);
       resizeHandle.removeEventListener('pointercancel', onUp);
+      try { resizeHandle.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+      if (abortResizePointer === abort) abortResizePointer = null;
+    };
+    const onUp = () => {
+      cleanup();
       dragCtl?.recaptureAnchor();
+    };
+    const abort = (pointerId) => {
+      if (pointerId !== undefined && pointerId !== e.pointerId) return;
+      if (finished) return;
+      cleanup();
     };
     resizeHandle.addEventListener('pointermove', onMove);
     resizeHandle.addEventListener('pointerup', onUp);
     resizeHandle.addEventListener('pointercancel', onUp);
+    abortResizePointer = abort;
   });
 
   applyLayout();
   render(colormap);
+  updateMenuState();
 
   return {
     update(cmap, scale) { render(cmap, scale); },
-    remove() { stopContrastSync(); dragCtl?.destroy(); wrapper.remove(); },
+    remove() {
+      disposeLongPress();
+      document.removeEventListener("pointerdown", onMenuPointerDown);
+      document.removeEventListener("click", onMenuClick);
+      document.removeEventListener("keydown", onMenuKeyDown);
+      abortResizePointer?.();
+      stopContrastSync();
+      dragCtl?.destroy();
+      wrapper.remove();
+    },
     isFloating: () => dragCtl?.isFloating() ?? false,
     getFloatPos: () => dragCtl?.getFloatPos() ?? null,
     floatAt: (left, top) => dragCtl?.floatAt(left, top),
@@ -1312,6 +1269,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       // resolution choices that have nothing to do with the widget's own
       // font-scaling (fontScale(), tied to barLength).
       tickFontPx: scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT),
+      legendFontPx: scaledFont(LEGEND_BASE_FONT, DOCKED_LEGEND_FONT),
+      inputFontPx: scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT),
     }),
     // Push a min/max the caller computed externally (e.g. flooring 0 to a
     // log-safe value on switching to log scale) into the visible inputs and

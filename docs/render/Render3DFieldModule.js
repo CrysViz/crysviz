@@ -228,10 +228,10 @@ export function parseCubeFile(content, fileName) {
   return container;
 }
 
-export function parseCHGCARFile(content, fileName) {
+export function parseCHGCARFile(content, fileName, source = 'CHGCAR') {
   // Parse the CHGCAR file (volumetric fields are now included in the structure).
   // Errors intentionally propagate to loadStructure and the host facade.
-  const result = readCHGCAR(content, fileName);
+  const result = readCHGCAR(content, fileName, source);
 
   if (result.structure_with_field.volumetricFields) {
     fieldBrowser.setAvailableFields(result.structure_with_field.volumetricFields.fields);

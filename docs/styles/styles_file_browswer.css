@@ -71,7 +71,7 @@
   }
   .icon.copy {
     font-weight: var(--fw-normal);
-    font-size: 18px;
+    font-size: var(--fs-2xl);
   }
 
   .icon.copy:hover {
@@ -119,6 +119,23 @@
   @keyframes scroll-left {
     0% { transform: translateX(0%); }
     100% { transform: translateX(-100%); }
+  }
+
+  /* Inline rename (double-click the name): the input takes the cell over,
+     both labels and the hover marquee step aside. */
+  .name-cell.is-editing .name-inner,
+  .name-cell.is-editing .name-scroll {
+    display: none;
+  }
+  .cv-fb-rename {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 1px var(--sp-1);
+    border: 1px solid var(--accent-fg);
+    border-radius: var(--radius-4);
+    background: var(--bg-color);
+    color: var(--fg-1);
+    font: inherit;
   }
 
   input[type="number"] {
@@ -320,4 +337,3 @@
   width: 50px;
   padding: var(--sp-1);
 }
-

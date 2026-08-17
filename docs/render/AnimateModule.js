@@ -128,6 +128,11 @@ const DISCO_HOLD_MS = 1000;
 let comboHeldSince = null;
 let discoEngaged = false;
 
+const cameraPanRight = new THREE.Vector3();
+const cameraPanUp = new THREE.Vector3();
+const cameraPanOffset = new THREE.Vector3();
+const cameraPanDrift = new THREE.Vector3();
+const cameraPanTarget = new THREE.Vector3();
 
 let _counter = 1;
 
@@ -160,16 +165,20 @@ window.addEventListener('blur', () => { keyState = {}; });
  *  The residuals live in the (private) gap vectors `_moveCurr - _movePrev`,
  *  `_zoomEnd - _zoomStart`, `_panEnd - _panStart` and the decaying
  *  `_lastAngle`; each shrinks by dynamicDampingFactor per frame and only
- *  approaches zero asymptotically. Thresholds are chosen at the sub-pixel
+ *  approaches zero asymptotically. When noPan is set, Trackball can still
+ *  receive touch pan samples, but `_panCamera()` is intentionally skipped, so
+ *  its pan gap is already irrelevant. Thresholds are chosen at the sub-pixel
  *  level (screen-normalized units / radians). No-op for staticMoving. */
 function settleControlsMomentum(controls) {
   if (!controls || controls.staticMoving || !controls._moveCurr) return;
   const GAP2 = 1e-8; // squared length of a ~1e-4 screen-units residual
   const ANGLE = 1e-4; // radians — sub-pixel rotation at typical view sizes
+  const panSettled = controls.noPan
+    || controls._panEnd.distanceToSquared(controls._panStart) < GAP2;
   if (controls._moveCurr.distanceToSquared(controls._movePrev) < GAP2
       && Math.abs(controls._lastAngle ?? 0) < ANGLE
       && controls._zoomEnd.distanceToSquared(controls._zoomStart) < GAP2
-      && controls._panEnd.distanceToSquared(controls._panStart) < GAP2) {
+      && panSettled) {
     controls._movePrev.copy(controls._moveCurr);
     controls._zoomStart.copy(controls._zoomEnd);
     controls._panStart.copy(controls._panEnd);
@@ -188,10 +197,46 @@ export function animation_update(time = 0) {
   if (time - lastFrameTime < interval) return;
   lastFrameTime = time;
 
-  // Always update controls: damping needs to keep progressing, and update()
-  // fires the 'change' event (-> requestRender) whenever the camera actually
-  // moved — including programmatic moves and the damping coast-down.
-  app.controls.update();
+  // Keep the target fixed on the structure center, and represent the camera
+  // plane translation as an offset so later rotations continue to pivot around
+  // the structure in place. Mouse and touch pan are direct now, so Trackball's
+  // target drift is normally zero; this remains a safety net for residual
+  // drift. The pre/post offset removal and reapplication are load-bearing.
+  const camera = app.camera;
+  const controls = app.controls;
+  camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(camera.matrixWorld, 1);
+  cameraPanOffset.copy(cameraPanRight).multiplyScalar(app.cameraPan.x)
+    .addScaledVector(cameraPanUp, app.cameraPan.y);
+  camera.position.sub(cameraPanOffset);
+  cameraPanTarget.copy(controls.target);
+
+  // Damping needs to keep progressing, and update() fires the 'change' event
+  // (-> requestRender) whenever the camera actually moved — including
+  // programmatic moves and the damping coast-down.
+  controls.update();
+
+  // Absorb native pan drift into the persistent 2D state using the NEW camera
+  // basis, then restore the structure center as controls.target. Trackball's
+  // update() has already called lookAt(target), so translating the camera back
+  // and reapplying the offset does not require (and must not cause) another
+  // lookAt call.
+  cameraPanDrift.subVectors(controls.target, cameraPanTarget);
+  camera.updateMatrixWorld(true);
+  cameraPanRight.setFromMatrixColumn(camera.matrixWorld, 0);
+  cameraPanUp.setFromMatrixColumn(camera.matrixWorld, 1);
+  app.cameraPan.x += cameraPanDrift.dot(cameraPanRight);
+  app.cameraPan.y += cameraPanDrift.dot(cameraPanUp);
+  controls.target.copy(cameraPanTarget);
+  camera.position.sub(cameraPanDrift);
+  camera.position.addScaledVector(cameraPanRight, app.cameraPan.x);
+  camera.position.addScaledVector(cameraPanUp, app.cameraPan.y);
+  // The matrix update above captured the UNPANNED pose, and an idle frame
+  // returns before rendering (which is what would refresh it) — so between
+  // renders every reader of camera.matrixWorld (raycast picking, tooltips,
+  // projections) saw the camera sitting one pan away from where it is.
+  camera.updateMatrixWorld(true);
   // Snap out the damping tail: TrackballControls' momentum decays
   // exponentially and never reaches zero on its own, so 'change' events (and
   // thus render-on-demand frames + tracer accumulation resets) trail on for

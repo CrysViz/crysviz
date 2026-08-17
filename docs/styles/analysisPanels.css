@@ -483,7 +483,7 @@
   left: 50%;
   transform: translate(-50%, -50%);
   font-weight: bold; /* literal, not --fw-bold(600) — see .pt-selected-tile note */
-  font-size: 24px; /* no --fs rung covers 24px — documented outlier in TOKENS.md */
+  font-size: var(--fs-3xl);
 }
 
 .pt-selected-name {

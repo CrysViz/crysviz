@@ -60,20 +60,22 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   const { browser, page, errors } = await H.launchApp();
   const PANEL = 'view';
 
-  // -- initial derived placement: inherent {left:68} is displaced past the dock
+  // -- initial derived placement: inherent {left:82} is displaced past the dock
   const uiWidth = await page.evaluate(() => document.getElementById('ui').getBoundingClientRect().width);
   let s = await panelState(page, PANEL);
   H.check('boot: displaced right of the visible dock', s.left >= uiWidth + 9,
     `left=${s.left} uiWidth=${uiWidth}`);
   H.check('boot: saved pos is the inherent default, not the displaced one',
-    s.saved && s.saved.left === 68, JSON.stringify(s.saved));
+    s.saved && s.saved.left === 82, JSON.stringify(s.saved));
 
   // -- right-edge default windows track the edge without ever being dragged ---
   let info = await panelState(page, 'info');
   H.check('boot: info window sits at its right/bottom default anchor',
     near(info.rightGap, 20) && near(info.bottomGap, 20),
     `rightGap=${info.rightGap} bottomGap=${info.bottomGap}`);
-  await setViewport(page, 1000, 700);
+  // Above the 1024px compact breakpoint: below it the Structure window leaves
+  // the floating layer for its side-dock sheet (compactHome).
+  await setViewport(page, 1100, 700);
   info = await panelState(page, 'info');
   H.check('resize: default-anchored info window tracks the right/bottom edges',
     near(info.rightGap, 20) && near(info.bottomGap, 20),
@@ -88,7 +90,10 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     parked.saved && near(parked.saved.right, 60) && near(parked.saved.bottom, 60),
     JSON.stringify(parked.saved));
 
-  await setViewport(page, 900, 600);
+  // Stays a desktop-sized screen: on a phone (or a scene narrow enough to
+  // crowd) 'view' folds to its icon (see below) and no longer tracks a corner.
+  // Height 700 keeps the screen's short edge above the phone threshold.
+  await setViewport(page, 1100, 700);
   s = await panelState(page, PANEL);
   H.check('shrink: corner panel hugs the corner', near(s.rightGap, 60) && near(s.bottomGap, 60),
     `rightGap=${s.rightGap} bottomGap=${s.bottomGap}`);
@@ -108,12 +113,13 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   H.check('drag to mid-canvas captures left/top anchors',
     s.saved && near(s.saved.left, 150) && near(s.saved.top, 100), JSON.stringify(s.saved));
 
-  // 'view' is compact-capable: a scene this narrow crowds the two toolbars, so
-  // it collapses to its round icon (pinned to the compact stack anchor, not its
-  // floatPos) — while the saved inherent pos is left untouched for restore.
+  // 'view' is compact-capable: a compact viewport (and a scene narrow enough
+  // to crowd the two toolbars) collapses it to its round icon (pinned to the
+  // compact stack anchor, not its floatPos) — while the saved inherent pos is
+  // left untouched for restore.
   await setViewport(page, 700, 500);
   s = await panelState(page, PANEL);
-  H.check('shrink to crowding width: view compacts to its icon', s.compact,
+  H.check('shrink to compact width: view compacts to its icon', s.compact,
     `compact=${s.compact} left=${s.left}`);
   H.check('compacting does not touch the saved pos',
     s.saved && near(s.saved.left, 150) && near(s.saved.top, 100), JSON.stringify(s.saved));
@@ -160,7 +166,7 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
   // -- a remembered dock order differing from registration order is restored,
   //    exercised through the v2 -> v4 migration path: float positions and the
   //    dock order survive, while the old eos stub entry is dropped (eos gets
-  //    its new default: a left-dock controls window) ---------------------------
+  //    its new default: a main-dock controls window) ---------------------------
   await page.evaluate(() => {
     localStorage.setItem('panelLayout', JSON.stringify({
       version: 2,
@@ -201,7 +207,7 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     JSON.stringify(migrated));
 
   // -- a v3 blob (the merged-window dev iteration) also migrates: its stale
-  //    eos/landscape right-dock entries are dropped, everything else survives --
+  //    eos/landscape side-dock entries are dropped, everything else survives --
   await page.evaluate(() => {
     localStorage.setItem('panelLayout', JSON.stringify({
       version: 3,
@@ -222,19 +228,19 @@ const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
     return {
       version: layout.version,
       viewPos: layout.panels.view?.pos || null,
-      rightOrder: layout.rightDock.order,
-      rightFraction: layout.rightDock.fraction,
+      sideOrder: layout.rightDock.order,
+      sideFraction: layout.rightDock.fraction,
       eosDock: getPanel('eos')?.dock ?? null,
       eosClosed: !!getPanel('eos')?.closed,
       landscapeDock: getPanel('landscape')?.dock ?? null,
     };
   });
   H.check('v3 blob migrated to v4, float pos + pane fraction kept',
-    v3m.version === 4 && v3m.viewPos?.left === 333 && Math.abs(v3m.rightFraction - 0.4) < 1e-6,
+    v3m.version === 4 && v3m.viewPos?.left === 333 && Math.abs(v3m.sideFraction - 0.4) < 1e-6,
     JSON.stringify(v3m));
-  H.check('v3 stale eos/landscape right-dock entries dropped (left-dock defaults apply)',
+  H.check('v3 stale eos/landscape side-dock entries dropped (main-dock defaults apply)',
     v3m.eosDock === 'left' && !v3m.eosClosed && v3m.landscapeDock === 'left'
-      && !v3m.rightOrder.includes('eos'),
+      && !v3m.sideOrder.includes('eos'),
     JSON.stringify(v3m));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');

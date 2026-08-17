@@ -211,10 +211,10 @@ export function renderOverlay(D, ovCanvas, ovCtx, minPt, cur, model, opts = {}) 
     ovCtx.fillRect(0, 0, w, h);
     ovCtx.textAlign = 'center';
     ovCtx.fillStyle = 'rgba(255,200,60,0.92)';
-    ovCtx.font = 'bold 11px system-ui, sans-serif';
+    ovCtx.font = "bold 11px 'CrysViz Sans', sans-serif";
     ovCtx.fillText(opts.invalidLabel ?? 'displaced', w / 2, h / 2 - 9);
     ovCtx.fillStyle = 'rgba(220,220,220,0.72)';
-    ovCtx.font = '9px system-ui, sans-serif';
+    ovCtx.font = "10px 'CrysViz Sans', sans-serif";
     ovCtx.fillText(opts.invalidSub ?? '', w / 2, h / 2 + 7);
     ovCtx.textAlign = 'left';
   }

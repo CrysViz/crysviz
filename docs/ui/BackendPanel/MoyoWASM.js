@@ -367,7 +367,7 @@ function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec()) {
 
 
 function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
-  let fileName = structureShip.container[fileBrowser.selectedRowIndex].fileName
+  const fileName = `sym_${primConv}_${structureShip.container[fileBrowser.selectedRowIndex].fileName}`;
   let atoms = [];
   const container = new StructureContainer({fileName:fileName})
   const normPositions = positions.map(p => p.map(normalizeFractional));
@@ -388,7 +388,6 @@ function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
      });
   container.structures.push(structure);
   structureShip.container.push(container)
-  fileName=primConv+"_sym_"+fileName;
   const row = createRow({ name: fileName, traj: container.structures.length, step: container.structures.length });
   document.querySelector("#objectTable tbody").appendChild(row);
   fileBrowser.fileData.push({ name: fileName, traj: container.structures.length, step: container.structures.length });

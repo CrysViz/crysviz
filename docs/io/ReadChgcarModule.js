@@ -8,7 +8,7 @@ import { readPOSCAR } from './ReadPOSCARModule.js';
 //  readCHGCAR(url) → { lattice, positions_cart, field }
 //  Parser for VASP CHGCAR files (supports multiple spin components)
 //------------------------------------------------------------
-export function readCHGCAR(text, fileName) {
+export function readCHGCAR(text, fileName, source = 'CHGCAR') {
   // Find first empty line and split, separates structure from charge density data
   const firstEmptyIndex = text.search(/\n\s*\n/);
   const textAfterEmpty = firstEmptyIndex !== -1 ? text.substring(firstEmptyIndex + 2) : text;
@@ -190,7 +190,7 @@ export function readCHGCAR(text, fileName) {
   // Create volumetric field container with metadata
   const fieldContainer = new FieldContainer({
     fileName,
-    source: 'CHGCAR',
+    source: source,
     fieldCount: fields.length,
     fields: fields
   });

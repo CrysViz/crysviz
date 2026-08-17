@@ -31,6 +31,10 @@ async function setPickerHex(page, hex) {
   await page.evaluate(async () => {
     const { getPanel } = await import('./ui/panels/PanelManager.js');
     getPanel('visual').expand();
+    // The dot is off by default. A hidden dot has no box, so the picker would
+    // open at the viewport's top-left corner — right where the "outside" click
+    // below lands.
+    (await import('./ui/BackgroundPicker.js')).setBackgroundDotVisible(true);
   });
   await page.waitForTimeout(200);
 

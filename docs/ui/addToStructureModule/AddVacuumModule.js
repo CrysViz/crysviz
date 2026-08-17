@@ -9,7 +9,7 @@
 // CollisionWarningUI.js) so the same pieces can be reused by
 // AddStructureModule.js and, later, a symmetry/Wyckoff generator.
 
-import { registerPanel, removePanel } from '../panels/PanelManager.js';
+import { removePanel } from '../panels/PanelManager.js';
 import { createTabSwitcher } from '../TabSwitcher.js';
 import { createAtomTableEditor } from './AtomTableInput.js';
 import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
@@ -20,7 +20,7 @@ import { fileBrowser } from '../../state/store.js';
 import { fracToCart, cartToFrac } from '../../render/index.js';
 import { fracToCartPoint } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
-import { defaultFloatingAnchor } from './floatingPanelAnchor.js';
+import { openEditorPanel } from './floatingPanelAnchor.js';
 import { invalidElementMessage } from './ElementValidation.js';
 
 const PANEL_ID = 'addAtomsVacuum';
@@ -223,7 +223,7 @@ export function addAtomVacuumPanel(buttonId = 'addButton') {
   button.addEventListener('click', () => {
     removePanel(PANEL_ID); // idempotent re-open
 
-    registerPanel({
+    openEditorPanel({
       id: PANEL_ID,
       title: 'Add Atoms / Vacuum',
       lifecycle: 'persistent',
@@ -238,7 +238,6 @@ export function addAtomVacuumPanel(buttonId = 'addButton') {
           { id: 'vacuum', label: 'Add Vacuum', render: addVacuumPanel },
         ]);
       },
-      defaults: { docked: false, collapsed: false, barCollapsed: false, anchor: defaultFloatingAnchor() },
     });
   });
 }

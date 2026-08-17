@@ -980,7 +980,7 @@ export function drawMeasureGraphics(){
     div.style.border = '2px solid #000000';
     div.style.color = '#000000';
     div.style.fontWeight = '700';
-    div.style.fontSize = '12px';
+    div.style.fontSize = 'var(--fs-base)';
     div.style.padding = '4px 8px';
     div.style.borderRadius = '4px';
     //div.textContent = `${atom1.userData.element} — ? (click 2nd atom)`;
@@ -1005,7 +1005,7 @@ export function drawMeasureGraphics(){
     div.style.border = 'none';
     div.style.color = '#ffffff';
     div.style.fontWeight = '700';
-    div.style.fontSize = '10px';
+    div.style.fontSize = 'var(--fs-xs)';
     div.style.padding = '2px 4px';
     div.style.borderRadius = '4px';
 

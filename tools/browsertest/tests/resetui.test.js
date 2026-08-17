@@ -69,9 +69,9 @@ const snap = (page, id) => page.evaluate((pid) => {
   });
   H.check('≡ menu shows a Position section with the four choices',
     menuShape.header === 'Position'
-      && JSON.stringify(menuShape.items) === JSON.stringify(['Float', 'Left dock', 'Right dock', 'Default']),
+      && JSON.stringify(menuShape.items) === JSON.stringify(['Float', 'Main dock', 'Side dock', 'Default']),
     JSON.stringify(menuShape));
-  H.check('current position (Left dock) is check-marked', menuShape.checked === 'Left dock',
+  H.check('current position (Main dock) is check-marked', menuShape.checked === 'Main dock',
     String(menuShape.checked));
   await page.evaluate(() => {
     [...document.querySelectorAll('.cv-panel-menu-item')]

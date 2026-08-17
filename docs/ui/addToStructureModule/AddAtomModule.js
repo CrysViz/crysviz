@@ -12,7 +12,7 @@
 // the Cell & Supercell panel's job much better than the add-atoms popup — see
 // addVacuumSection() in ui/LatticeSupercellPanel.js.
 
-import { registerPanel, removePanel } from '../panels/PanelManager.js';
+import { removePanel } from '../panels/PanelManager.js';
 import { createAtomTableEditor } from './AtomTableInput.js';
 import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
 import { addAtomsToExistingStructure, removeSessionAddedAtom } from './CommitAtoms.js';
@@ -22,7 +22,7 @@ import { fileBrowser } from '../../state/store.js';
 import { fracToCart } from '../../render/index.js';
 import { fracToCartPoint } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
-import { defaultFloatingAnchor } from './floatingPanelAnchor.js';
+import { openEditorPanel } from './floatingPanelAnchor.js';
 import { highlightAtomsIn3D, clearHighlightAtom } from '../SelectAndHighlightModule.js';
 import { invalidElementMessage } from './ElementValidation.js';
 
@@ -207,7 +207,7 @@ export function addAtomPanel(buttonId = 'addButton') {
   button.addEventListener('click', () => {
     removePanel(PANEL_ID); // idempotent re-open
 
-    registerPanel({
+    openEditorPanel({
       id: PANEL_ID,
       title: 'Add Atoms',
       lifecycle: 'persistent',
@@ -217,7 +217,6 @@ export function addAtomPanel(buttonId = 'addButton') {
         body.classList.add('addstructure-panel-body--sm');
         addAtomsPanel(body);
       },
-      defaults: { docked: false, collapsed: false, barCollapsed: false, anchor: defaultFloatingAnchor() },
     });
   });
 }

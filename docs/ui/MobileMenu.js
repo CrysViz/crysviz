@@ -15,6 +15,24 @@ import { resizeRenderer } from './WindowAndSceneControls.js';
 // browser evaluation instead of JS re-deriving it from window.innerWidth.
 const COMPACT_QUERY = '(max-width: 1024px)';
 
+/** True on the compact rung, where #ui is an off-canvas sheet rather than
+ *  in-flow chrome. The single reader of COMPACT_QUERY outside this module. */
+export function isCompactViewport() {
+  return window.matchMedia(COMPACT_QUERY).matches;
+}
+
+/** Fold the panel away (both the mobile sheet and the desktop hide state) and
+ *  give the renderer its new size. Exported for flows that need the 3D view
+ *  unobstructed — the PNG export's region selection. */
+export function closeMobilePanel() {
+  const ui = document.getElementById('ui');
+  if (!ui) return;
+  ui.classList.remove('panel-open', 'panel-hidden');
+  document.body.classList.remove('panel-hidden');
+  document.getElementById('mobileOverlay')?.classList.remove('active');
+  resizeRenderer(app.orthographicFrustumSize);
+}
+
 export function setupMobileMenu() {
   const hamburger = document.getElementById('mobileMenuToggle');
   const overlay = document.getElementById('mobileOverlay');
@@ -40,13 +58,6 @@ export function setupMobileMenu() {
     }
   }
 
-  function closePanel() {
-    if (!ui) return;
-    ui.classList.remove('panel-open', 'panel-hidden');
-    document.body.classList.remove('panel-hidden');
-    if (overlay) overlay.classList.remove('active');
-  }
-
   if (hamburger) {
     hamburger.addEventListener('click', (e) => {
       e.preventDefault();
@@ -64,12 +75,12 @@ export function setupMobileMenu() {
   if (overlay) {
     overlay.addEventListener('click', (e) => {
       e.preventDefault();
-      closePanel();
+      closeMobilePanel();
     });
 
     overlay.addEventListener('touchend', (e) => {
       e.preventDefault();
-      closePanel();
+      closeMobilePanel();
     });
   }
 }

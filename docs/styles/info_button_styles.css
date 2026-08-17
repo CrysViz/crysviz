@@ -30,7 +30,7 @@
   width: 100%;
   height: 100%;
   background: var(--popup-bg);
-  /* Was --z-anchor (999) — opened from a floating panel/right-dock tab's ⓘ
+  /* Was --z-anchor (999) — opened from a floating panel/side-dock tab's ⓘ
      button (ui/panels/PanelWindow.js), so it must outrank --z-dock (1200) or
      it renders behind the panel that opened it. See --z-info-panel's own
      comment in theme.css. */

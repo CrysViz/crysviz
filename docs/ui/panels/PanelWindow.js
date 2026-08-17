@@ -1,13 +1,13 @@
 // Unified panel/window component. Every UI panel is one of these: a small
 // title bar (drag grip, collapse/expand triangle, title, ≡ window menu,
 // optional close button) above a content body. A panel is either docked in
-// the LEFT dock (stacked inside #dock in the side panel), docked in the
-// RIGHT dock (a tab in the wide right pane — ui/panels/RightDock.js; the
+// the main dock (stacked inside #dock in the side panel), docked in the
+// side dock (a tab in the wide right pane — ui/panels/SideDock.js; the
 // title bar is hidden there, the tab is the chrome), or "floating" (a
 // fixed-position window over the canvas). dock ∈ {'left','right',false}.
 //
 // The ≡ button opens a dropdown menu of window options. Its first section is
-// always "Position" (Float / Left dock / Right dock / Default — replacing the
+// always "Position" (Float / Main dock / Side dock / Default — replacing the
 // old ⌂ and ↦/⇤ title-bar buttons); a panel definition can append its own
 // sections via def.menuSections — an array (or a function of the panel
 // returning an array, for dynamic state) of
@@ -29,13 +29,13 @@
 //                                    drag-into-dock setting is enabled
 //   dockAtPointer(panel, event)      commit a drag-into-dock; the manager
 //                                    continues the gesture as a reorder drag
-//   wantsRightDockDrop(event) -> boolean  floating drag RELEASED over the
-//                                    right dock's drop zone (checked on
+//   wantsSideDockDrop(event) -> boolean  floating drag RELEASED over the
+//                                    side dock's drop zone (checked on
 //                                    pointerup only — the right edge is a
 //                                    normal parking spot for floating
 //                                    windows, so no live commit)
-//   rightDockAtPointer(panel, event) commit a drop into the right dock
-//   updateRightDockHint(event|null)  show/hide the right-dock drop highlight
+//   sideDockAtPointer(panel, event) commit a drop into the side dock
+//   updateSideDockHint(event|null)  show/hide the side-dock drop highlight
 //                                    while a floating drag is in progress
 
 import { showInfoPanel } from '../InfoPanel.js';
@@ -47,6 +47,22 @@ const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
 // panels (z-index 1000) and below the About overlay.
 let floatZ = 1200;
 
+/**
+ * Anchor a fixed-position element by edges: any of {left, right, top, bottom},
+ * numbers are px and strings pass through; the opposite edge of each axis is
+ * released to `auto` so the element grows away from the anchored one. Free
+ * function because PanelManager's compact launcher icons are anchored the same
+ * way and are not PanelWindows.
+ */
+export function applyEdgeAnchors(el, pos) {
+  const s = el.style;
+  const css = (v) => (typeof v === 'number' ? `${v}px` : v);
+  s.left = pos.left !== undefined ? css(pos.left) : 'auto';
+  s.right = pos.right !== undefined ? css(pos.right) : 'auto';
+  s.top = pos.top !== undefined ? css(pos.top) : 'auto';
+  s.bottom = pos.bottom !== undefined ? css(pos.bottom) : 'auto';
+}
+
 export class PanelWindow {
   constructor(def, hooks) {
     this.def = def;
@@ -55,7 +71,7 @@ export class PanelWindow {
     this.bodyId = `cvPanelBody-${def.id}`;
     this.available = true;
     this.collapsed = true;
-    /** Where the window lives: 'left' (#dock), 'right' (the wide right dock,
+    /** Where the window lives: 'left' (#dock), 'right' (the wide side dock,
      *  shown as a tab), or false (floating). The legacy boolean `docked`
      *  getter below means "not floating" and covers both docks.
      *  @type {'left'|'right'|false} */
@@ -64,7 +80,7 @@ export class PanelWindow {
     // EOS). PanelManager owns attach/detach; `dock` keeps the remembered
     // location for reopening.
     this.closed = false;
-    // Set by PanelManager when a right-docked panel is auto-closed because its
+    // Set by PanelManager when a side-docked panel is auto-closed because its
     // feature became unavailable, so it can be reopened when the feature returns.
     this._closedForUnavailable = false;
     this.barCollapsed = false; // title bar shrunk to a thin strip
@@ -79,6 +95,7 @@ export class PanelWindow {
     this.redockBeforeId = null;
     this.redockRemembered = false;
     this._moving = false; // a floating drag is in progress
+    this._gestureCancel = null;
     // Lifecycle/layout bookkeeping maintained by PanelManager:
     this.built = false;        // content has been built into the body
     this.stale = false;        // built content refers to a previous structure
@@ -88,6 +105,7 @@ export class PanelWindow {
      *  time), so it is what dock-hide and window-grow restore.
      *  @type {{left?: number, right?: number, top?: number, bottom?: number}|null} */
     this.floatPos = null;
+    this.autoDocked = false;
     this.sortKey = 0;          // dock ordering key
     // Compact round-icon mode (only for panels that declare a compactIcon):
     // when the scene is too narrow for the floating toolbars, the window
@@ -241,13 +259,13 @@ export class PanelWindow {
     return this.docked;
   }
 
-  isRightDocked() {
+  isSideDocked() {
     return this.dock === 'right';
   }
 
   toggleCollapsed() {
-    // Right-docked windows have no individual collapse — the whole right dock
-    // collapses to edge pull-tabs instead (RightDock.js).
+    // Side-docked windows have no individual collapse — the whole side dock
+    // collapses to edge pull-tabs instead (SideDock.js).
     if (this.dock === 'right') return;
     if (this.collapsed) this.expand();
     else this.collapse();
@@ -325,8 +343,19 @@ export class PanelWindow {
 
   remove() {
     this._closeMenu();
+    this.cancelActiveGesture();
     this._sizeObserver.disconnect();
     this.el.remove();
+  }
+
+  /** Close a portaled Position menu through its normal cleanup path. */
+  closeMenu() {
+    this._closeMenu();
+  }
+
+  /** Abort a live pointer gesture without committing its geometry. */
+  cancelActiveGesture() {
+    this._gestureCancel?.();
   }
 
   // ---- ≡ window menu -------------------------------------------------------
@@ -341,9 +370,11 @@ export class PanelWindow {
     const sections = [{
       title: 'Position',
       items: [
-        { label: 'Float', checked: mode === 'float', onSelect: () => move('float') },
-        { label: 'Left dock', checked: mode === 'left', onSelect: () => move('left') },
-        { label: 'Right dock', checked: mode === 'right', onSelect: () => move('right') },
+        ...(this.hooks.canFloat?.() !== false
+          ? [{ label: 'Float', checked: mode === 'float', onSelect: () => move('float') }]
+          : []),
+        { label: 'Main dock', checked: mode === 'left', onSelect: () => move('left') },
+        { label: 'Side dock', checked: mode === 'right', onSelect: () => move('right') },
         { label: 'Default', onSelect: () => move('default') },
       ],
     }];
@@ -351,7 +382,7 @@ export class PanelWindow {
       ? this.def.menuSections(this)
       : this.def.menuSections;
     if (Array.isArray(extra)) sections.push(...extra);
-    // Closable windows get a Close item at the end. While right-docked this
+    // Closable windows get a Close item at the end. While side-docked this
     // is the ONLY close path (the title-bar ✕ is hidden with the bar, and
     // the tab deliberately carries no ✕ — a stray click there permanently
     // unregistered transient windows).
@@ -367,7 +398,7 @@ export class PanelWindow {
   }
 
   /** Open/toggle the ≡ menu anchored at an arbitrary element — used by the
-   *  right dock's tab ≡ button, where the title bar (and its own ≡) is
+   *  side dock's tab ≡ button, where the title bar (and its own ≡) is
    *  hidden. */
   toggleMenuAt(anchorEl) {
     this._toggleMenu(anchorEl);
@@ -444,20 +475,20 @@ export class PanelWindow {
     this.dock = 'left';
     this.dockShifted = false;
     this.el.classList.add('cv-docked');
-    this.el.classList.remove('cv-floating', 'cv-right-docked', 'cv-front');
+    this.el.classList.remove('cv-floating', 'cv-side-docked', 'cv-front');
     // Clear floating geometry.
     const s = this.el.style;
     s.left = s.right = s.top = s.bottom = s.zIndex = '';
   }
 
-  /** Called by RightDock after the element has been inserted into the right
+  /** Called by SideDock after the element has been inserted into the right
    *  pane's body. The title bar is hidden there (the tab is the chrome);
    *  floatPos is deliberately NOT touched — it is where the window returns
    *  when pulled back out. */
-  markRightDocked() {
+  markSideDocked() {
     this.dock = 'right';
     this.dockShifted = false;
-    this.el.classList.add('cv-right-docked');
+    this.el.classList.add('cv-side-docked');
     this.el.classList.remove('cv-docked', 'cv-floating', 'cv-drag-moving');
     const s = this.el.style;
     s.left = s.right = s.top = s.bottom = s.zIndex = '';
@@ -467,19 +498,14 @@ export class PanelWindow {
   markFloating(pos) {
     this.dock = false;
     this.el.classList.add('cv-floating');
-    this.el.classList.remove('cv-docked', 'cv-right-docked', 'cv-front');
+    this.el.classList.remove('cv-docked', 'cv-side-docked', 'cv-front');
     this.applyFloatPosition(pos);
     this.raise();
   }
 
   /** pos: any of {left, right, top, bottom}; numbers are px, strings pass through. */
   applyFloatPosition(pos) {
-    const s = this.el.style;
-    const css = (v) => (typeof v === 'number' ? `${v}px` : v);
-    s.left = pos.left !== undefined ? css(pos.left) : 'auto';
-    s.right = pos.right !== undefined ? css(pos.right) : 'auto';
-    s.top = pos.top !== undefined ? css(pos.top) : 'auto';
-    s.bottom = pos.bottom !== undefined ? css(pos.bottom) : 'auto';
+    applyEdgeAnchors(this.el, pos);
   }
 
   /**
@@ -628,7 +654,7 @@ export class PanelWindow {
   // ---- title bar pointer handling ------------------------------------------
 
   _onTitlebarPointerDown(e) {
-    // The title bar is hidden while right-docked (the tab is the chrome);
+    // The title bar is hidden while side-docked (the tab is the chrome);
     // defensive in case a hidden bar still receives a press.
     if (this.dock === 'right') return;
     const target = /** @type {HTMLElement} */ (e.target);
@@ -643,17 +669,33 @@ export class PanelWindow {
     const startY = e.clientY;
 
     const bar = this.titlebar;
-    bar.setPointerCapture(e.pointerId);
+    try { bar.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
+
+    let finished = false;
+    const releaseCapture = () => {
+      try { bar.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    };
+    const cleanup = () => {
+      if (finished) return;
+      finished = true;
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      bar.removeEventListener('pointercancel', onUp);
+      if (this._gestureCancel === cancel) this._gestureCancel = null;
+    };
+    const cancel = () => {
+      cleanup();
+      releaseCapture();
+    };
+    this._gestureCancel = cancel;
 
     const onMove = (ev) => {
       if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD &&
           Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
-      bar.removeEventListener('pointermove', onMove);
-      bar.removeEventListener('pointerup', onUp);
-      bar.removeEventListener('pointercancel', onUp);
+      cleanup();
       if (this.dock === 'left') {
         // Hand the whole gesture over to the manager's reorder logic.
-        bar.releasePointerCapture(e.pointerId);
+        releaseCapture();
         this.hooks.beginDockReorder(this, ev);
         return;
       }
@@ -661,9 +703,8 @@ export class PanelWindow {
     };
 
     const onUp = (ev) => {
-      bar.removeEventListener('pointermove', onMove);
-      bar.removeEventListener('pointerup', onUp);
-      bar.removeEventListener('pointercancel', onUp);
+      cleanup();
+      if (ev.type === 'pointercancel') return;
       // Plain click on the title bar toggles collapse — except on the thin
       // strip of a hidden bar, where only double-click (restore) acts.
       if (!this.barCollapsed) {
@@ -691,7 +732,7 @@ export class PanelWindow {
   /** Run a floating title-bar drag (threshold already crossed). */
   _startFloatMove(ev, pointerId) {
     const bar = this.titlebar;
-    bar.setPointerCapture(pointerId); // no-op if already captured
+    try { bar.setPointerCapture(pointerId); } catch { /* synthetic event */ }
     this._anchorTopLeft();
     this._moving = true;
     const rect = this.el.getBoundingClientRect();
@@ -699,14 +740,26 @@ export class PanelWindow {
     const grabDY = ev.clientY - rect.top;
     this.el.classList.add('cv-drag-moving');
 
+    let finished = false;
+    const releaseCapture = () => {
+      try { bar.releasePointerCapture(pointerId); } catch { /* already released */ }
+    };
     const teardown = () => {
+      if (finished) return;
+      finished = true;
       bar.removeEventListener('pointermove', onMove);
       bar.removeEventListener('pointerup', onUp);
       bar.removeEventListener('pointercancel', onUp);
       this.el.classList.remove('cv-drag-moving');
       this._moving = false;
-      this.hooks.updateRightDockHint?.(null);
+      this.hooks.updateSideDockHint?.(null);
+      if (this._gestureCancel === cancel) this._gestureCancel = null;
     };
+    const cancel = () => {
+      teardown();
+      releaseCapture();
+    };
+    this._gestureCancel = cancel;
 
     const onMove = (mv) => {
       if (this.hooks.wantsDockDrop && this.hooks.wantsDockDrop(mv)) {
@@ -714,13 +767,13 @@ export class PanelWindow {
         // gesture as a reorder drag. Capture is released explicitly (the
         // reparent into #dock would drop it anyway).
         teardown();
-        bar.releasePointerCapture(pointerId);
+        releaseCapture();
         this.hooks.dockAtPointer(this, mv);
         return;
       }
-      // Right-dock drop is on-release only (the right edge is a normal
+      // Side-dock drop is on-release only (the right edge is a normal
       // parking spot); while hovering the zone, just show the highlight.
-      this.hooks.updateRightDockHint?.(mv);
+      this.hooks.updateSideDockHint?.(mv);
       // Floating move, clamped so the title bar (or the collapsed handle,
       // which is a short centered strip) stays reachable: its top never goes
       // above the viewport, and at least 40px of it stays visible
@@ -739,11 +792,12 @@ export class PanelWindow {
 
     const onUp = (up) => {
       teardown();
-      // Released over the right dock's drop zone: dock there instead of
+      if (up.type === 'pointercancel') return;
+      // Released over the side dock's drop zone: dock there instead of
       // parking. Only a real pointerup commits (a pointercancel must not).
       if (up.type === 'pointerup'
-          && this.hooks.wantsRightDockDrop && this.hooks.wantsRightDockDrop(up)) {
-        this.hooks.rightDockAtPointer(this, up);
+          && this.hooks.wantsSideDockDrop && this.hooks.wantsSideDockDrop(up)) {
+        this.hooks.sideDockAtPointer(this, up);
         return;
       }
       // A user-chosen position replaces any dock displacement, and becomes

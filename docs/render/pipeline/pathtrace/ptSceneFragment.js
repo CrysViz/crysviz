@@ -4,6 +4,10 @@
 // The CalculateRadiance() loop is adapted from the upstream demos
 // (Geometry_Showcase_Fragment.glsl), with one spherical area light and
 // per-object materials (from the Structure-window material editors):
+// This file is part of CrysViz and is licensed under AGPL-3.0 (see the
+// repository LICENSE). The CC0 dedication applies only to the original
+// upstream material it adapts; the adaptations and all CrysViz additions
+// in this file are AGPL-3.0.
 //   - LIGHT: the main area light AND any emissive object. Both are DIRECTLY
 //     sampled by next-event estimation (ptSampleNEE, up to 64 listed emitters
 //     from SceneEncoder) so emissive materials light their neighbours with low
@@ -25,8 +29,10 @@ import { fieldChunk } from '../raytrace/fieldChunk.js';
 import { planeChunk } from '../raytrace/planeChunk.js';
 import { gridChunk } from '../raytrace/gridChunk.js';
 import { convexChunk } from '../raytrace/convexChunk.js';
+import { coneChunk } from '../raytrace/coneChunk.js';
 
-export const ptSceneFragment = /* glsl */`
+export function makePtSceneFragment(pieChunk = '', preMainChunk = '') {
+return /* glsl */`
 precision highp float;
 precision highp int;
 precision highp sampler2D;
@@ -81,6 +87,7 @@ float hitReflectivity = -1.0; // < 0 = use the global uReflectivity
 float hitGloss = 0.6;      // standard: coat reflection tightness
 float hitCoatTint = 0.6;   // standard: coat reflection color tint (0 = white/legacy)
 float hitTintDepth = 0.2;  // glass: Beer's-law strength
+int gHitIsGlass = FALSE;
 float hitScatter = 0.5;    // translucent: scatter depth
 float hitAlpha = 1.0;      // surface alpha (non-glass: stochastic see-through)
 int hitType = -100;
@@ -108,6 +115,7 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 	hitGloss = 0.6;
 	hitCoatTint = 0.6;
 	hitTintDepth = 0.2;
+	gHitIsGlass = FALSE;
 	hitScatter = 0.5;
 	hitEmission = vec3(0);
 	int code = int(mat.x + 0.5);
@@ -126,7 +134,7 @@ int resolveHitType(vec4 mat, vec3 color, float alpha)
 	// materials is handled as stochastic (non-refractive) transparency in
 	// CalculateRadiance
 	hitIor = code == 2 && mat.z > 1.0 ? mat.z : 1.5;
-	if (code == 2) { hitTintDepth = mat.w; hitReflectivity = -1.0; return REFR; }
+	if (code == 2) { gHitIsGlass = TRUE; hitTintDepth = mat.w; hitReflectivity = -1.0; return REFR; }
 	if (code == 1)
 	{
 		hitCoatTint = clamp(mat.z, 0.0, 1.0); // metal: typeParam slot carries the tint (1 = colored, 0 = chrome)
@@ -159,6 +167,8 @@ int gRayExiting = FALSE;
 #include <pathtracing_boundingbox_intersect>
 #include <pathtracing_convexpolyhedron_intersect>
 #include <pathtracing_plane_intersect>
+
+${coneChunk}
 #include <pathtracing_sample_sphere_light>
 
 // ===========================================================================
@@ -326,7 +336,7 @@ vec3 ptSampleNEE(vec3 x, vec3 nl, out float weight)
 	return dir;
 }
 
-${convexChunk}
+${convexChunk}${pieChunk ? '\n\n' + pieChunk : ''}
 
 ${fieldChunk}
 
@@ -375,8 +385,7 @@ int testAtom(int i, inout float t)
 	vec4 colA = fetchData(uAtomsDataTexture, (i * 3) + 1);
 	vec4 mat = fetchData(uAtomsDataTexture, (i * 3) + 2);
 	hitNormal = (rayOrigin + (t * rayDirection)) - posRad.xyz;
-	hitColor = colA.rgb;
-	hitType = resolveHitType(mat, colA.rgb, colA.a);
+${pieChunk ? '\thitColor = pieAtomColor(i, posRad.xyz, rayOrigin + (t * rayDirection), mat, colA.rgb);\n' : '\thitColor = colA.rgb;\n'}	hitType = resolveHitType(mat, ${pieChunk ? 'hitColor' : 'colA.rgb'}, colA.a);
 	hitObjectID = float(1 + i);
 	gRayExiting = dot(hitNormal, rayDirection) > 0.0 ? TRUE : FALSE;
 	return (gShadowRay == TRUE && uShadowAnyHit
@@ -403,7 +412,10 @@ int testCylinder(int i, inout float t)
 	vec3 ro = (invM * vec4(rayOrigin, 1.0)).xyz;
 	vec3 rd = (invM * vec4(rayDirection, 0.0)).xyz;
 	vec3 cn;
-	float d = UnitCylinderIntersect(ro, rd, cn);
+	vec4 shape = fetchData(uCylindersDataTexture, o + 7);
+	float d = (shape.x > 0.5)
+		? UnitCappedConeFrustumIntersect(shape.y, ro, rd, cn)
+		: UnitCylinderIntersect(ro, rd, cn);
 	if (d >= t) return 0;
 	t = d;
 	vec4 colA = fetchData(uCylindersDataTexture, o + 5);
@@ -412,7 +424,8 @@ int testCylinder(int i, inout float t)
 	hitColor = colA.rgb;
 	hitType = resolveHitType(mat, colA.rgb, colA.a);
 	hitObjectID = float(1 + uAtomCount + i);
-	gRayExiting = FALSE; // open cylinders are not closed shapes
+	// The frustum intersector flips normals toward the ray; arrows are never glass.
+	gRayExiting = FALSE;
 	return (gShadowRay == TRUE && uShadowAnyHit
 		&& (int(mat.x + 0.5) == 2 || colA.a >= 0.999)) ? 1 : 0;
 }
@@ -835,8 +848,9 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				willNeedReflectionRay = TRUE;
 			}
 
-			// tint towards the object color by the inverse of its alpha;
-			// tintDepth (glass slot) scales the Beer's-law saturation
+			// Glass entry tint is scaled by its Tint slider; alpha-routed non-glass
+			// transparency keeps the existing fixed tint. tintDepth (glass slot)
+			// scales the Beer's-law saturation on exit.
 			vec3 tintColor = mix(vec3(1), hitColor, 0.7);
 			if (gRayExiting == TRUE)
 			{
@@ -844,7 +858,9 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				mask *= exp(log(clamp(tintColor, 0.01, 0.99)) * hitTintDepth * t);
 			}
 			else
-				mask *= tintColor;
+				mask *= (gHitIsGlass == TRUE)
+					? mix(vec3(1), tintColor, clamp(hitTintDepth, 0.0, 1.0))
+					: tintColor;
 
 			mask *= Tr;
 
@@ -954,5 +970,30 @@ void SetupScene(void)
 	lightSphere = Sphere(uLightRadius, uLightPosition, uLightColor * 12.0, vec3(0), LIGHT);
 }
 
-#include <pathtracing_main>
+${preMainChunk}#include <pathtracing_main>
 `;
+}
+
+// pathtracing_main is vendored and calls rand() for the two primary-pixel
+// jitter draws before CalculateRadiance resets the path state. Adapt those
+// calls locally: LDS-off keeps the original rand() stream; LDS-on seeds the
+// same per-pixel sequence used by the path decisions. This is supplied by the
+// pipeline assembly, so makePtSceneFragment() without a pre-main chunk keeps
+// its historical no-occupancy source byte-for-byte.
+export const ptPrimaryRandAdapter = /* glsl */`
+float ptPrimaryRand()
+{
+	if (uLdsEnabled)
+	{
+		gLdsSampleIndex = uint(uFrameCounter + 0.5);
+		gLdsPixelHash = ptHashLowbias32(uint(gl_FragCoord.x)
+			+ ptHashLowbias32(uint(gl_FragCoord.y)));
+		return ptRand();
+	}
+	return rand();
+}
+
+#define rand ptPrimaryRand
+`;
+
+export const ptSceneFragment = makePtSceneFragment();

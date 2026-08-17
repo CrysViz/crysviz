@@ -68,12 +68,17 @@ export function currentBaseName() {
 /** Trigger a browser download of a Blob under the given file name. */
 export function downloadBlob(fileName, blob) {
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  link.href = url;
   link.download = fileName;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(link.href);
+  // Native webview hosts (pywebview Qt/GTK) resolve the blob URL
+  // asynchronously, potentially after a modal save dialog closes. Immediate
+  // revocation can abort the download; ten minutes bounds memory use while
+  // covering any realistic dialog time.
+  setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
 }
 
 function downloadTextFile(fileName, content) {

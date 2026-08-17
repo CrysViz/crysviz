@@ -47,7 +47,7 @@ const H = require('../harness');
   H.check('the newly-copied row (right after "middle") is selected, not the last row',
     result.insertedRightAfterMiddle && result.selectedIndex === result.middleIndex + 1, JSON.stringify(result));
   H.check('the selected row is a copy of "middle", not of the last row',
-    result.selectedName === result.middleRowName && result.selectedName !== result.lastRowName, JSON.stringify(result));
+    result.selectedName === `copy_1_${result.middleRowName}` && result.selectedName !== result.lastRowName, JSON.stringify(result));
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

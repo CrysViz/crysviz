@@ -53,12 +53,12 @@
   margin: 0 0 var(--sp-3) 0;
 }
 
-/* ---- right-docked: the window is a TAB in the wide right dock ----
-   Its element lives inside #splitPaneBody (rightDock.css). The tab strip is
+/* ---- side-docked: the window is a TAB in the wide side dock ----
+   Its element lives inside #splitPaneBody (sideDock.css). The tab strip is
    the chrome: the title bar is hidden, the body is always shown (per-window
    collapse doesn't apply here — the whole dock collapses instead), and only
    the front window is visible, filling the pane. */
-.cv-panel.cv-right-docked {
+.cv-panel.cv-side-docked {
   display: none;
   margin: 0;
   min-height: 0;
@@ -66,11 +66,11 @@
   flex-direction: column;
 }
 
-.cv-panel.cv-right-docked.cv-front {
+.cv-panel.cv-side-docked.cv-front {
   display: flex;
 }
 
-.cv-panel.cv-right-docked > .cv-panel-titlebar {
+.cv-panel.cv-side-docked > .cv-panel-titlebar {
   display: none;
 }
 
@@ -78,8 +78,8 @@
    backdrop-filter:none is load-bearing: a backdrop-filter creates a
    containing block for fixed-position descendants, which would trap the
    ⛶-expanded .split-item inside the body. */
-.cv-panel.cv-right-docked > .cv-panel-body,
-.cv-panel.cv-right-docked.cv-collapsed > .cv-panel-body {
+.cv-panel.cv-side-docked > .cv-panel-body,
+.cv-panel.cv-side-docked.cv-collapsed > .cv-panel-body {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -185,6 +185,22 @@
   border-top: 1px solid var(--line-1);
 }
 
+/* "Always show small drag handles" (Settings): reverts the handle to the
+   EARLY short-centered strip (the "Improve look of collapsed title bars"
+   revision) — thin (2px), 64px, solid accent green, always visible (the
+   desktop hover reveal is opted out in responsive.css). Everything else —
+   the centered placement, 3px gap, and the free-standing body above — is
+   unchanged from the current handle. :not(.cv-compact) because these
+   higher-specificity rules would otherwise beat the compact round-icon
+   rules below, which normally win their tie by source order alone
+   (.cv-bar-collapsed stays set while a panel is compact). */
+body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-panel-titlebar {
+  height: 2px;
+  min-height: 0;
+  width: 64px;
+  opacity: 1;
+}
+
 .cv-panel-titlebar:active,
 .cv-panel.cv-dragging .cv-panel-titlebar,
 .cv-panel.cv-drag-moving .cv-panel-titlebar {
@@ -195,6 +211,9 @@
   opacity: 0.45;
   font-size: var(--fs-md);
   line-height: 1;
+  /* The grip is the drag handle even where the bar around it gives the
+     vertical axis back to the dock scroller (responsive.css, coarse rung). */
+  touch-action: none;
 }
 
 .cv-panel-fold,
@@ -310,34 +329,6 @@
 .cv-panel-titlebar .cv-panel-info:hover {
   box-shadow: none;
   background: var(--hover-color);
-}
-
-/* Per-structure settings lock (ui/FeatureLockModule.js), top-right of the
-   Features window's title bar alongside the other icon buttons — sized to
-   match .cv-panel-info's flush-with-the-titlebar footprint. */
-.cv-panel-titlebar .cv-panel-lock {
-  width: calc(13px * var(--cv-font-scale, 1));
-  height: calc(13px * var(--cv-font-scale, 1));
-  padding: 0;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  border-radius: 4px;
-  color: var(--fg-2);
-  cursor: pointer;
-}
-
-.cv-panel-titlebar .cv-panel-lock:hover {
-  background: var(--hover-color);
-}
-
-/* Persistent highlight while unlocked — a standing mode, not a momentary
-   action, so it stays visible without hovering. */
-.cv-panel-titlebar .cv-panel-lock.unlocked {
-  color: var(--accent-fg, var(--ok-bright));
 }
 
 /* ---- body / collapse ---- */
@@ -462,17 +453,25 @@
   height: 100%;
   padding: 0;
   background: none;
-  border: none;
+  border: 2px solid var(--line-grey);
   border-radius: 50%;
   cursor: pointer;
 }
 
-.cv-panel.cv-compact .cv-panel-compact-btn:hover { background: var(--hover-color); }
+/* Hover matches the scene control buttons: an accent ring + glow, theme-driven,
+   in place of the old flat background wash. */
+.cv-panel.cv-compact .cv-panel-compact-btn:hover {
+  border-color: var(--accent-fg);
+  box-shadow: 0 0 0 1px var(--accent-fg), 0 0 6px 1px rgb(var(--btn-glow-rgb) / 0.35);
+}
 
 .cv-panel-compact-btn img {
   width: 26px;
   height: 26px;
   pointer-events: none;
+  /* White-filled SVGs on a --chrome-1 chip: invisible once that chip is a 5%
+     wash on a light palette, which is what --icon-filter-bright flips. */
+  filter: var(--icon-filter-bright);
 }
 
 /* Expanded-while-compact: unfold to the icon's LEFT, not below it. The row is
@@ -490,6 +489,15 @@
   margin-right: var(--sp-3-5);
   border-radius: var(--radius-md);
   border-top: 1px solid var(--line-1);
+  /* The panel is width:max-content, so on a phone an unfolded toolbar runs off
+     the left edge (and a tall one off the bottom). Budget: the 54px icon it
+     unfolds beside, this margin, the anchor's 20px right offset, and a left
+     margin to match. min-width:0 because a flex item's auto minimum is its
+     min-content width, which outranks max-width and would pin it wide. */
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: calc(100vw - 54px - var(--sp-3-5) - 40px);
+  max-height: calc(100dvh - 32px);
 }
 
 /* ---- mobile ----

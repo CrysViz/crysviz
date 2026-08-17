@@ -3,10 +3,10 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref } from './PanelManager.js';
+import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref, setForcedIconMode } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
-import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender } from '../../render/index.js';
+import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender, setAxisStepButtonsMode } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
@@ -29,11 +29,11 @@ import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, remove
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
-import { createFeatureLockButton } from '../FeatureLockModule.js';
+import { createFeatureLockSwitch } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
-import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
+import { setBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
 
 // ---- static-row adoption ------------------------------------------------------
 //
@@ -126,6 +126,8 @@ function stashStaticRows(inputIds) {
 // window; feature windows keep only their feature-specific rows. The Neighbour
 // Bonds toggle lives in the Features window, next to Show Bonds.)
 const CELL_ROWS = ['showPeriodic'];
+const FEATURE_STATIC_ROWS = ['showAtoms', 'showBonds', 'showCharges', 'PBCBondToggle',
+  'showPolyhedra', 'completePolyhedraToggle'];
 
 // ---- Features window toggle rows ---------------------------------------------
 
@@ -148,6 +150,7 @@ function makeToggleRow(id, labelText, checked, onChange) {
 function buildFeaturesBody(body) {
   const group = document.createElement('div');
   group.className = 'toggle_group';
+  group.appendChild(createFeatureLockSwitch());
 
   const showAtoms = detachStaticRow('showAtoms');
   if (showAtoms) group.appendChild(showAtoms);
@@ -237,6 +240,8 @@ export function registerDefaultPanels() {
       const el = document.getElementById('measurementTools');
       if (el) body.appendChild(el);
     },
+    // right: 20 — the toolbar's right edge lines up with the Structure window
+    // (also right: 20) below it.
     defaults: { dock: false, anchor: { right: 20, top: 20 }, collapsed: false },
   });
 
@@ -252,29 +257,68 @@ export function registerDefaultPanels() {
       const el = document.getElementById('cameraTools');
       if (el) body.appendChild(el);
     },
+    // Radio-style choices for the View window's step-rotate arrows.
+    menuSections: () => {
+      const current = getPanelPref('axisStepButtons');
+      const mode = current === 'on' || current === 'off' ? current : 'longpress';
+      return [{
+        title: 'Stepwise buttons',
+        items: [
+          { label: 'On', value: 'on' },
+          { label: 'Off', value: 'off' },
+          { label: 'Long press', value: 'longpress' },
+        ].map(({ label, value }) => ({
+          label,
+          checked: mode === value,
+          onSelect: () => {
+            setPanelPref('axisStepButtons', value);
+            setAxisStepButtonsMode(value);
+          },
+        })),
+      }];
+    },
     // Base position (dock hidden) clears the dock-unhide menu button
-    // (#mobileMenuToggle: left 12px + 44px wide) with the same 12px margin the
+    // (#mobileMenuToggle: left 12px + 58px wide) with the same 12px margin the
     // button keeps to the screen edge. While the dock occupies that column the
     // window is displaced to sit just right of it.
-    defaults: { dock: false, anchor: { left: 68, top: 20 }, collapsed: false },
+    defaults: { dock: false, anchor: { left: 82, top: 20 }, collapsed: false },
   });
+  // setupScene wired the handlers earlier under the default mode; apply the
+  // stored preference now that panel preferences have been loaded.
+  setAxisStepButtonsMode(getPanelPref('axisStepButtons'));
+  // Same for the collapsed-bar handle style (Settings > "Always show small
+  // drag handles") — a body class the CSS keys off.
+  document.body.classList.toggle('cv-small-drag-handles', !!getPanelPref('smallDragHandles'));
+  // ...and for the on-canvas background picker, which has to be applied even
+  // if the Visual window carrying its toggle is never opened.
+  setBackgroundDotVisible(!!getPanelPref('backgroundDot'));
+  // Same for the measurement-toolbar labels — the Measure window shows the
+  // icon-only buttons regardless of whether the Visual window is ever built.
+  document.getElementById('measurementTools')
+    ?.classList.toggle('show-tool-labels', !!getPanelPref('measureToolLabels'));
 
   registerPanel({
     id: 'info',
     title: 'Structure',
     lifecycle: 'persistent',
     infoMd: './data/structureInfo.md',
+    // Unfolding this window in place fills a phone screen, so below the
+    // compact breakpoint it moves into the side dock as a bottom sheet and is
+    // raised by a round icon parked where the floating window used to sit.
+    compactHome: {
+      side: 'bottom',
+      icon: './data/icons/info-icon.svg',
+      label: 'Toggle Structure Info',
+      anchor: { right: 20, bottom: 20 },
+    },
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
-      // Fixed width regardless of which tab (Atoms/Bonds/Poly/Wyckoff) is
-      // active — without this the floating panel shrink-wraps to whichever
-      // tab's content is currently widest, so it visibly resizes every time
-      // the user switches tabs. Still shrinks on narrow viewports.
-      // 300px (not the old 340px): the Bonds tab's double-range slider row no
-      // longer carries its own redundant min/max labels (the combined "min -
-      // max Å" label above the slider already shows them), so the row needs
-      // much less width than before.
-      body.style.width = 'min(300px, calc(100vw - 16px))';
+      // Fixed width while floating, so the panel doesn't shrink-wrap to
+      // whichever tab (Atoms/Bonds/Poly/Wyckoff) is currently widest and
+      // visibly resize on tab switches. The width itself, and the docked
+      // override that lets the body follow the dock's width instead, live in
+      // styles/structureInfoPanel.css.
+      body.classList.add('si-panel-body');
 
       // Adopt the formula header box (+/− expandable) and the composition
       // details it controls; wire the header (the old inline-script behavior).
@@ -347,21 +391,16 @@ export function registerDefaultPanels() {
     defaults: { dock: 'left', order: -20, collapsed: false, barCollapsed: true },
   });
 
-  const featuresPanel = registerPanel({
+  registerPanel({
     id: 'features',
     title: 'Features',
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     infoMd: './data/analysisInfo.md',
     buildContent: buildFeaturesBody,
+    onDestroyContent() { stashStaticRows(FEATURE_STATIC_ROWS); },
     defaults: { dock: 'left', order: 2, collapsed: false },
   });
-  // Per-structure lock, top-right of the title bar next to the other window
-  // controls (see FeatureLockModule.js).
-  featuresPanel.titlebar.insertBefore(
-    createFeatureLockButton(),
-    featuresPanel.titlebar.querySelector('.cv-panel-menu-btn'),
-  );
 
   //
   // Feature panels are lifecycle 'rebuild': their content is built lazily on
@@ -385,7 +424,7 @@ export function registerDefaultPanels() {
     },
     buildContent(body) { addTrajectoryPlayer(body.id); },
     onDestroyContent() { removeTrajectoryPlayer(); },
-    // Left dock, but directly above Atomistic (order -10) rather than down at
+    // Main dock, but directly above Atomistic (order -10) rather than down at
     // 10 with the feature panels: this is the live MD/relax monitor, so it
     // belongs next to the controls that drive it instead of below a dozen
     // collapsed panels where it was easy to miss. Files (-20) stays on top.
@@ -577,11 +616,25 @@ export function registerDefaultPanels() {
       const bgRow = document.createElement('div');
       bgRow.className = 'control-row-pair';
       const bgToggle = makeToggleRow('backgroundDotToggle', 'Background picker on canvas',
-        isBackgroundDotVisible(), (on) => setBackgroundDotVisible(on));
+        !!getPanelPref('backgroundDot'), (on) => {
+          setPanelPref('backgroundDot', on);
+          setBackgroundDotVisible(on);
+        });
       bgToggle.style.flex = '1';
       bgRow.appendChild(bgToggle);
       bgRow.appendChild(createBackgroundSwatch());
       sceneGroup.appendChild(bgRow);
+      // Restore the names under the Measure toolbar's icon-only buttons for
+      // anyone who'd rather read them than lean on the tooltips.
+      sceneGroup.appendChild(makeToggleRow('measureToolLabelsToggle', 'Measurement tool labels',
+        !!getPanelPref('measureToolLabels'), (on) => {
+          setPanelPref('measureToolLabels', on);
+          document.getElementById('measurementTools')?.classList.toggle('show-tool-labels', on);
+        }));
+      // Fold the Measure/View toolbars to round icons at any size — the mobile
+      // fold made available on demand. Never triggers the phone bottom-sheet.
+      sceneGroup.appendChild(makeToggleRow('forceCompactIconsToggle', 'Icon-only toolbars',
+        !!getPanelPref('forceCompactIcons'), (on) => setForcedIconMode(on)));
       sceneSection.appendChild(sceneGroup);
 
       // Rendering and Colors share one box: addColorPanel appends its own
@@ -600,13 +653,13 @@ export function registerDefaultPanels() {
 
   // ---- controls + plots window pairs (EOS, Energy Landscape) -----------------
   //
-  // Each feature is TWO ordinary windows: a controls window in the left dock
+  // Each feature is TWO ordinary windows: a controls window in the main dock
   // (like any feature window) and a plots window that DEFAULTS to the wide
-  // right dock (ui/panels/RightDock.js) and starts closed. The plots window
+  // side dock (ui/panels/SideDock.js) and starts closed. The plots window
   // is never opened by hand — the feature opens it when there is something
   // to show (EOSPanel.js on dataset load/re-fit, LandscapePanel.js when a
   // landscape JSON loads) — and, like any window, it can be dragged out to
-  // float or into the left dock. Plots windows are 'persistent' +
+  // float or into the main dock. Plots windows are 'persistent' +
   // closeMode:'hide': their content (fit data / loaded JSON) is independent
   // of the selected structure and survives both structure switches and
   // close/reopen; the build is simply deferred to first open.
@@ -638,7 +691,7 @@ export function registerDefaultPanels() {
 
   registerPanel({
     id: 'splitDemo',
-    title: 'Right Dock Demo',
+    title: 'Side Dock Demo',
     lifecycle: 'persistent',
     closable: true,
     closeMode: 'hide',
@@ -646,7 +699,7 @@ export function registerDefaultPanels() {
     available() { return true; },
     buildContent(body) { addDummySplitPanel(body.id); },
     onDestroyContent() { removeDummySplitPanel(); },
-    // Minimal reference example of a right-dock-by-default window (open it
+    // Minimal reference example of a side-dock-by-default window (open it
     // from the console/tests via openPanel('splitDemo')).
     defaults: { dock: 'right', closed: true, order: 93 },
   });
@@ -709,6 +762,14 @@ export function registerDefaultPanels() {
         !!getPanelPref('dragOutOfDock'), (on) => setPanelPref('dragOutOfDock', on)));
       dragGroup.appendChild(makeToggleRow('dragByHandleToggle', 'Only drag windows by handle',
         !!getPanelPref('dragByHandleOnly'), (on) => setPanelPref('dragByHandleOnly', on)));
+      // Collapsed-bar drag handles: ON restores the early short-centered
+      // strip (thin 2px, 64px, always visible — styles/panelWindow.css);
+      // OFF keeps the current thicker hover-revealed handle.
+      dragGroup.appendChild(makeToggleRow('smallDragHandlesToggle', 'Always show small drag handles',
+        !!getPanelPref('smallDragHandles'), (on) => {
+          setPanelPref('smallDragHandles', on);
+          document.body.classList.toggle('cv-small-drag-handles', on);
+        }));
       body.appendChild(dragGroup);
       // Warnings: the ray/path-tracing performance modal (shown on every
       // raster -> tracer switch unless suppressed). Unchecking re-enables it.
@@ -719,6 +780,39 @@ export function registerDefaultPanels() {
         'Disable raytracing warning', !!getPanelPref('hideRaytraceWarning'),
         (on) => setPanelPref('hideRaytraceWarning', on)));
       body.appendChild(warnGroup);
+      // Graphics: GPU memory the PNG export may allocate for its render
+      // surface (render/ImageExportModule.js reads it live). WebGL cannot
+      // query real GPU memory, so this is the user's promise about their
+      // hardware: raising it lets big-GPU machines render larger/sharper
+      // exports in one pass; the default is safe for integrated GPUs.
+      body.appendChild(makeSectionHeadline('Graphics'));
+      const gmRow = document.createElement('label');
+      gmRow.className = 'toggle_row toggle_container';
+      gmRow.style.gap = '8px';
+      const gmText = document.createElement('span');
+      gmText.className = 'toggle_text';
+      gmText.textContent = 'Allocated GPU memory';
+      const gmSlider = document.createElement('input');
+      gmSlider.type = 'range';
+      gmSlider.id = 'exportGpuMemorySlider';
+      gmSlider.min = '0.25';
+      gmSlider.max = '8';
+      gmSlider.step = '0.25';
+      gmSlider.value = String(getPanelPref('exportGpuMemoryGiB') || 1);
+      gmSlider.style.flex = '1';
+      const gmVal = document.createElement('span');
+      gmVal.className = 'toggle_text';
+      gmVal.style.minWidth = '58px';
+      gmVal.style.textAlign = 'right';
+      gmVal.textContent = `${gmSlider.value} GiB`;
+      gmSlider.addEventListener('input', () => {
+        setPanelPref('exportGpuMemoryGiB', parseFloat(gmSlider.value));
+        gmVal.textContent = `${gmSlider.value} GiB`;
+      });
+      gmRow.appendChild(gmText);
+      gmRow.appendChild(gmSlider);
+      gmRow.appendChild(gmVal);
+      body.appendChild(gmRow);
       // Overall font scale: multiplies the window fonts (title bars, headlines,
       // labels) live via --cv-font-scale; persisted across sessions.
       body.appendChild(makeSectionHeadline('Text'));

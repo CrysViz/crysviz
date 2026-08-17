@@ -14,7 +14,7 @@
 // back to all its copies when "Link periodic copies" is on.
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
-import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from '../panels/SideDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
   togglePlotTheme,

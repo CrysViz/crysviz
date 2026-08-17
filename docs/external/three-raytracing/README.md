@@ -7,6 +7,12 @@ rendering pipeline (`docs/render/pipeline/RayTracingPipeline.js`).
 - Upstream: https://github.com/erichlof/THREE.js-RayTracing-Renderer
 - Version: commit `74ff1e8a304ce1d0cf638069f337634e72a4a817`
 - License: **CC0 1.0 (public domain)** — see `LICENSE` in this directory.
+- The CC0 dedication covers the upstream snapshot only. CrysViz's
+  modifications in the adapted JavaScript files in this directory (the
+  LOCAL ADAPTATIONS documented below) are licensed under the project's
+  AGPL-3.0 (see the repository LICENSE); incorporated upstream material
+  remains CC0 public domain, and the unmodified upstream assets (the
+  LICENSE text and blue-noise texture) are untouched CC0 material.
   Attribution is not required by CC0; credited here and in the root
   NOTICE/README as a courtesy to Erich Loftis (@erichlof).
 

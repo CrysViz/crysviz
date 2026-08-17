@@ -95,7 +95,6 @@
   --blue-accent-rgb: 91 168 255;      /* border/ring tier: si-wyckoff-badge border, .wyckoff-locked ring, .pi-forced-notice border, .sym-link underline (4 sites, 1 a near-dupe fold — see TOKENS.md) */
   --blue-accent-fill-rgb: 35 139 230; /* fill tier of the same family: si-wyckoff-badge's lighter gradient stop, .pi-forced-notice background (2 sites) — kept apart from the border tier per "cluster by role" */
   --shortcuts-danger-rgb: 220 53 53;  /* shortcuts-help destructive-action red (clear/reset buttons, key-conflict flag) — 10 sites in styles.css, a different hue from the orange --danger */
-  --camera-glow-rgb: 6 100 50;        /* #cameraTools hover/unlocked glow ring, 3 sites — deliberately NOT --highlight-color/--border-color: the glow must stay fixed green regardless of active backend theme, same reasoning as the bond-range-slider's fixed-green track (css_guard_allow.txt) */
   --vacancy-amber-rgb: 255 210 120;   /* disordered-site species/vacancy text tint, 2 sites (structureInfoPanel.css) — thin but real, same call as --ok-tint's 2-site precedent above */
   --active-green-rgb: 125 206 160;    /* "active/applied" state accent (atom-editor button, coord-axis slider, new-row separator), 5 sites — checked against --ok-bright-rgb (126 226 168) and kept separate: the existing call sites already flagged it as "not an exact match", and the roles here are border/ring/accent-color, not the anneal badge's fill+text pairing */
 
@@ -265,9 +264,9 @@
      control (ui/FontScaleModule.js, which sets --cv-font-scale on
      documentElement) keeps scaling every rung, not just the ones a component
      happened to opt into before. */
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-ui: 'CrysViz Sans', 'CrysViz Sans Math', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'Fira Code', 'SFMono-Regular', ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-  --font-display: Georgia, 'Times New Roman', serif;
+  --font-display: 'CrysViz Sans', 'CrysViz Sans Math', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 
   --fs-xs: calc(10px * var(--cv-font-scale, 1));
   --fs-sm: calc(11px * var(--cv-font-scale, 1));
@@ -275,6 +274,8 @@
   --fs-md: calc(13px * var(--cv-font-scale, 1));
   --fs-lg: calc(14px * var(--cv-font-scale, 1));
   --fs-xl: calc(16px * var(--cv-font-scale, 1));
+  --fs-2xl: calc(20px * var(--cv-font-scale, 1));
+  --fs-3xl: calc(24px * var(--cv-font-scale, 1));
   --fs-hero: calc(64px * var(--cv-font-scale, 1));  /* the one big-number/splash outlier */
 
   --fw-normal: 400;
@@ -344,7 +345,7 @@
   --z-chrome: 2000;
   /* info-panel-overlay/info-panel (ui/InfoPanel.js) are a second popup-vs-dock
      inversion (TOKENS.md): the ⓘ button that opens them lives ON a floating
-     .cv-panel/right-dock tab (--z-dock, 1200), so the overlay+card need to
+     .cv-panel/side-dock tab (--z-dock, 1200), so the overlay+card need to
      out-rank every dock-role element or they render behind the very panel
      that opened them. Same full-screen-scrim-plus-centered-card shape as
      #aboutOverlay/#aboutModal, so --z-chrome is the matching role; the card
@@ -414,6 +415,10 @@
      dark panel. This was a hardcoded filter:invert(1) in controlPanel.css,
      which no light theme could reach — a light palette sets this to `none`. */
   --icon-filter: invert(1);
+
+  /* The opposite polarity: the compact toolbar glyphs are white-on-transparent
+     SVGs, already legible on a dark chip. A light palette inverts these. */
+  --icon-filter-bright: none;
 
   /* Native form-control rendering (the <select> popup especially). A light
      palette must flip this or the UA paints dark widgets on a light panel. */

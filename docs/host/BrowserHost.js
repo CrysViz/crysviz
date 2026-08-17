@@ -379,8 +379,14 @@ export function createBrowserHost({
         if (!integerInRange(input.margin, 0, 4096)) {
           throw commandError('INVALID_ARGS', 'save_image.margin must be an integer from 0 through 4096');
         }
+        if (input.margin * 2 >= input.width || input.margin * 2 >= input.height) {
+          throw commandError('INVALID_ARGS', 'save_image.margin must be smaller than half of each dimension');
+        }
         if (typeof input.transparent !== 'boolean') {
           throw commandError('INVALID_ARGS', 'save_image.transparent must be boolean');
+        }
+        if (typeof input.structureOnly !== 'boolean') {
+          throw commandError('INVALID_ARGS', 'save_image.structureOnly must be boolean');
         }
         if (typeof captureSceneToPng !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'PNG capture is unavailable');
         const outputUrl = sameOriginURL(input.outputUrl, window.location.origin);
@@ -390,7 +396,8 @@ export function createBrowserHost({
           throw commandError('INVALID_OUTPUT_URL', 'Managed output URL is invalid');
         }
         const blob = await captureSceneToPng({
-          width: input.width, height: input.height, margin: input.margin, transparent: input.transparent,
+          width: input.width, height: input.height, margin: input.margin,
+          transparent: input.transparent, structureOnly: input.structureOnly,
         });
         if (!(blob instanceof Blob) || blob.type !== 'image/png') {
           throw commandError('CAPTURE_FAILED', 'PNG capture did not return an image/png Blob');

@@ -9,6 +9,12 @@ by the `pathtrace` rendering pipeline
 - Upstream: https://github.com/erichlof/THREE.js-PathTracing-Renderer
 - Version: commit `a86260d22d14f6ab26c6058e0a8f40a902005075` (branch `gh-pages`)
 - License: **CC0 1.0 (public domain)** — see `LICENSE` in this directory.
+- The CC0 dedication covers the upstream snapshot only. CrysViz's
+  modifications in the adapted JavaScript files in this directory (the
+  LOCAL ADAPTATIONS documented below) are licensed under the project's
+  AGPL-3.0 (see the repository LICENSE); incorporated upstream material
+  remains CC0 public domain, and the unmodified upstream assets (the
+  LICENSE text and blue-noise texture) are untouched CC0 material.
   Attribution is not required by CC0; credited here and in the root
   NOTICE/README as a courtesy to Erich Loftis (@erichlof).
 

@@ -69,6 +69,17 @@ export function setupSceneInteraction() {
     };
   }
 
+  // Keeps a pick from also reaching document-level click handlers — but never
+  // on the touch path. A tap arrives here as the canvas' own pointerup, and
+  // TrackballControls removes the finger from its pointer list in a *document*
+  // pointerup listener: stopping the event there left the finger registered
+  // forever, so the next one-finger drag counted as two pointers and became a
+  // pinch — zoom-only, since app.controls.noPan is set. GestureArbiter listens
+  // in the capture phase, so it has seen the event either way.
+  function stopUnlessTouchTap(event) {
+    if (event.type !== 'pointerup') event.stopPropagation();
+  }
+
   // Hide mode: a plain click (no modifier) directly hides a real atom, with
   // a brief flash first — no selection step, no confirmation. Only ever
   // picks groups.atomsMesh — a ghost under the cursor is ignored entirely,
@@ -80,7 +91,7 @@ export function setupSceneInteraction() {
     const ndc = pointerNDC(event);
     if (!ndc) return;
     event.preventDefault();
-    event.stopPropagation();
+    stopUnlessTouchTap(event);
 
     mouse.set(ndc.x, ndc.y);
     raycaster.setFromCamera(mouse, app.camera);
@@ -107,7 +118,7 @@ export function setupSceneInteraction() {
     const ndc = pointerNDC(event);
     if (!ndc) return;
     event.preventDefault();
-    event.stopPropagation();
+    stopUnlessTouchTap(event);
 
     mouse.set(ndc.x, ndc.y);
     raycaster.setFromCamera(mouse, app.camera);
@@ -136,7 +147,7 @@ export function setupSceneInteraction() {
 
     // Prevent default behavior to avoid conflicts with pan/zoom
     event.preventDefault();
-    event.stopPropagation();
+    stopUnlessTouchTap(event);
 
     // Note: Double-click detection is handled by separate onDoubleClickAtom function
 
@@ -195,7 +206,6 @@ export function setupSceneInteraction() {
       measurements.selectedAtoms.forEach(atom => clearHighlightAtom());
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
-      resetControlsTouch();
     } else if (mode.measureMode === 'angle' && measurements.selectedAtoms.length === 3) {
       // Angle measurement complete
       addAngleMeasurement(measurements.selectedAtoms[0], measurements.selectedAtoms[1], measurements.selectedAtoms[2]);
@@ -204,7 +214,6 @@ export function setupSceneInteraction() {
       measurements.selectedAtoms.forEach(atom => clearHighlightAtom());
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
-      resetControlsTouch();
     }
 
     drawMeasureGraphics();
@@ -330,6 +339,7 @@ let longPressTimer = null;
 let longPressFired = false;
 let pointerDownPos = null;
 let moved = false;
+const cameraOnlyPointerIds = new Set();
 const LONG_PRESS_MS = 700;        // adjust to preference
 const MOVE_THRESHOLD_PX = 10;
 
@@ -513,6 +523,12 @@ el.addEventListener('pointerup', onPointerUp);
 el.addEventListener('pointercancel', onPointerCancel);
 
 function onPointerDown(e) {
+  // GestureArbiter marks promoted camera-only touch pointers with this flag.
+  if (e._cvCameraOnly) {
+    cameraOnlyPointerIds.add(e.pointerId);
+    return;
+  }
+
   // Track touch separately for long-press
   if (e.pointerType === 'touch') {
     clearLongPress(); // always clear any pending timer before starting a new one
@@ -536,10 +552,16 @@ function onPointerDown(e) {
     }
   }
 
+  // Capture so a drag that leaves the canvas keeps reporting moves here. No
+  // matching release: the browser drops capture implicitly on pointerup, and
+  // releasing it by hand mid-dispatch made TrackballControls' own release of
+  // the same element/pointer throw before it could unhook its listeners.
   try { e.target.setPointerCapture(e.pointerId); } catch {}
 }
 
 function onPointerMove(e) {
+  if (cameraOnlyPointerIds.has(e.pointerId)) return;
+
   if (dragSelectStart) {
     const dx = e.clientX - dragSelectStart.x;
     const dy = e.clientY - dragSelectStart.y;
@@ -558,8 +580,9 @@ function onPointerMove(e) {
 }
 
 function onPointerUp(e) {
+  if (cameraOnlyPointerIds.delete(e.pointerId)) return;
+
   clearLongPress();
-  try { e.target.releasePointerCapture(e.pointerId); } catch {}
 
   if (dragSelectStart) {
     if (dragSelectActive) {
@@ -598,7 +621,9 @@ function onPointerUp(e) {
   pointerDownPos = null;
 }
 
-function onPointerCancel() {
+function onPointerCancel(e) {
+  if (cameraOnlyPointerIds.delete(e.pointerId)) return;
+
   clearLongPress();
   pointerDownPos = null;
   if (dragSelectStart) teardownDragSelect();
@@ -609,15 +634,5 @@ function clearLongPress() {
     clearTimeout(longPressTimer);
     longPressTimer = null;
   }
-}
-
-// After a touch-based measurement completes, TrackballControls may have stale
-// pointer state that causes 1-finger drag to zoom instead of rotate.
-// Dispatching pointercancel flushes its internal pointer list.
-function resetControlsTouch() {
-  try {
-    const cancel = new PointerEvent('pointercancel', { bubbles: true, cancelable: false, pointerId: 1 });
-    el.dispatchEvent(cancel);
-  } catch {}
 }
 }

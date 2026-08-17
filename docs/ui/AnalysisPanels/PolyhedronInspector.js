@@ -207,7 +207,7 @@ export function removePolyhedronInspectorPanel() {
 }
 
 /** The single entry point (the Polyhedra window's "Inspector" button): opens
- *  the window — right-dock front tab by default, or wherever the user last
+ *  the window — side-dock front tab by default, or wherever the user last
  *  dragged it — creating it on first use. */
 export function addPolyhedronInspectorPanel() {
   if (getPanel(PANEL_ID)) {

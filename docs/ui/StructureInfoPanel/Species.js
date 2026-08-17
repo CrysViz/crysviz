@@ -4,6 +4,7 @@ export { createIndividualAtomRow } from './components/IndividualAtomRow.js';
 export { createTinyImmunityToggle } from './components/Immunity.js';
 export { createElementColorEditor } from './components/ColorEditor.js';
 export { createSpinForceEditor } from './components/SpinForceEditor.js';
+export { createSpinForceCategoryEditor } from './components/SpinForceCategoryEditor.js';
 export {
   clampOpacity,
   getElementAtomIndices,

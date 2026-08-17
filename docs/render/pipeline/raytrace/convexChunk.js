@@ -10,6 +10,10 @@
 // entirely (arbitrary planeCount, capped only by the encoder's texture/perf
 // sanity bound) and lowers register pressure (no local 20-vec4 array), while
 // touching NO vendored file.
+// This file is part of CrysViz and is licensed under AGPL-3.0 (see the
+// repository LICENSE). The CC0 dedication applies only to the original
+// upstream material it adapts; the adaptations and all CrysViz additions
+// in this file are AGPL-3.0.
 //
 // Byte-equivalence: the loop body, the t0/n0 (max entering, dot<0) vs t1/n1
 // (min exiting, dot>0) bookkeeping, the UNCONDITIONAL division (a parallel

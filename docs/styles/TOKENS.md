@@ -151,7 +151,7 @@ Wave 2 does the substitution.
 |---|---|---|---|
 | `--z-canvas` | `0` | WebGL scene | no explicit `z-index` anywhere — the canvas paints first; token exists so nothing can accidentally sort under it |
 | `--z-panel` | `1` | base panel chrome + local intra-component sibling ordering (slider thumbs, sticky table cells, colorbar resize frame/handle, drag handles) | 1, 2, 3, 4, 5, 10, 20, 100 |
-| `--z-dock` | `1200` | RightDock (pane/splitter/toggle/edge-shadow), floating `.cv-panel` windows, the mobile slide-in menu and its scrim | 900, 1200, 1300, 1301, 1302, 1350, 1400, 1500 |
+| `--z-dock` | `1200` | SideDock (pane/splitter/toggle/edge-shadow), floating `.cv-panel` windows, the mobile slide-in menu and its scrim | 900, 1200, 1300, 1301, 1302, 1350, 1400, 1500 |
 | `--z-popup` | `2000` | small floating overlays anchored to a panel: background-color dot, dropdown menus, gizmo box/tooltip, restore-popover, info-modal, file-browser inline menu, draggable measurement widget | 20, 100, 999, 1000, 1001, 1100 |
 | `--z-menu` | `3000` | body-portaled context/dropdown menus | 3200 (`.cv-panel-menu`, `panelWindow.css`) |
 | `--z-modal` | `4000` | blocking dialogs and full-screen alert banners | 1999, 2000, 3000, 3100 |
@@ -176,7 +176,7 @@ Wave 2 does the substitution.
   were `--z-anchor`/999 and `--z-overlay-widget`/1000) — this one *is* a
   real overlap, not just a numbers-on-paper mismatch: `ui/panels/
   PanelWindow.js`'s ⓘ button (any floating panel's titlebar) and
-  `ui/panels/RightDock.js`'s ⓘ button both call `showInfoPanel()`, so the
+  `ui/panels/SideDock.js`'s ⓘ button both call `showInfoPanel()`, so the
   overlay+card can be opened from inside a `--z-dock`-role element (1200)
   while that element stays open and on top — the "modal" rendered behind
   the panel that opened it. Moved to `--z-chrome`/`--z-info-panel` (2000/
@@ -186,7 +186,7 @@ Wave 2 does the substitution.
   elements (999–1100: `.background-dot`, `.popup`, `#LatticeComparisonPopUp`,
   `.theme-menu`, `.restore-popover`, `#axesGizmo`/`#axesLegend`) sit below
   `--z-dock`-role elements (1200+). Checked each for a real trigger path:
-  `.background-dot` explicitly offsets itself clear of the right dock via
+  `.background-dot` explicitly offsets itself clear of the side dock via
   `--split-reserve` (position-based avoidance, not z-index); `.popup` and
   `#LatticeComparisonPopUp` have no `classList`/`className` call anywhere
   in `docs/ui/**/*.js` — dead CSS, nothing to overlap; `.theme-menu` opens
@@ -381,7 +381,7 @@ them would imply a global relationship none of them have.
 **Naming collision, flagged:** the plan's step 2 asked for the dock's five
 internal levels as `--z-dock`, `--z-dock-handle`, `--z-dock-hint`,
 `--z-dock-scrim`, `--z-dock-expanded`. But `--z-dock` already exists (Wave 1,
-value `1200`, matching `.cv-panel.cv-floating` exactly) and rightDock.css's
+value `1200`, matching `.cv-panel.cv-floating` exactly) and sideDock.css's
 own base pane level (`.split-pane`/`.split-pane-tabs`) is `1300`, not `1200`
 — reusing the name `--z-dock` for the pane level would silently overwrite
 the existing token's value, which the constraints explicitly forbid. Resolved
@@ -398,12 +398,12 @@ Full mapping, in stacking order (lowest to highest):
 | 900 | `--z-mobile-scrim` | `#mobileOverlay` |
 | 999 | `--z-anchor` | `.background-dot`, `.popup` |
 | 1000 | `--z-overlay-widget` | `#status`, `#axesGizmo`, `#axesLegend`, `.restore-popover`, `.theme-menu` |
-| 1001 | `--z-gizmo-controls` | `.cv-gizmo-controls` |
+| 1001 | `--z-gizmo-controls` | `.cv-gizmo-menu-wrap` |
 | 1100 | `--z-comp-panel` | `.floating-comp-panel` |
 | 1200 | `--z-dock` (existing, unchanged) | `.cv-panel.cv-floating` |
 | 1300 | `--z-dock-pane` | `.split-pane`, `.split-pane-tabs` |
 | 1301 | `--z-dock-handle` | `.split-handle` |
-| 1302 | `--z-dock-hint` | `#rightDockDropHint` |
+| 1302 | `--z-dock-hint` | `#sideDockDropHint` |
 | 1350 | `--z-dock-scrim` | `.split-pane-overlay` |
 | 1400 | `--z-dock-expanded` | `.split-item.expanded` `!important`, `#viewArea.split-item-expanded .split-pane`, `.cv-panel.cv-floating.cv-has-expanded-item` `!important`, `.trajPlot.expanded` `!important` |
 | 1500 | `--z-mobile-panel` | `#ui.panel-open` (mobile) |
@@ -572,7 +572,7 @@ against every existing token's literal value:
 | `analysisPanels.css` ×5 (`.pt-*` rules) | `var(--highlight-color, #00bcd4)` | `--info` (`#00bcd4`, exact) |
 | `structureInfoPanel.css:117` `.press-hold-popup-btn` | `var(--panel-fg, #fff)` | `--panel-fg` / `--fg-1` (`#ffffff`, exact) |
 | `bondLengthHistogram.css` (`.phl-alpha-value-input`'s sibling rule) | `var(--highlight-color, #f08412)` | `--danger-rgb` (`240 132 18`, exact — use `rgb(var(--danger-rgb))`) |
-| 6× (`rightDock.css`, `panelWindow.css` et al.) | `border: 1px solid var(--border-color, rgba(255, 255, 255, 0.3))` | `--popup-border` (`rgba(255, 255, 255, 0.3)`, exact) |
+| 6× (`sideDock.css`, `panelWindow.css` et al.) | `border: 1px solid var(--border-color, rgba(255, 255, 255, 0.3))` | `--popup-border` (`rgba(255, 255, 255, 0.3)`, exact) |
 
 **Becomes tokenisable now that Wave 2.6 exists (wasn't free before this pass):**
 
@@ -594,7 +594,7 @@ judgment):** `var(--highlight-color, #4caf50)`, `var(--highlight-color,
 ### Two bugs found, not fixed here
 
 - **`var(--muted-fg, #9aa0a6)`** (`panelWindow.css:264`,
-  `rightDock.css:357`) — `--muted-fg` **is** defined (`theme.css:30`,
+  `sideDock.css:357`) — `--muted-fg` **is** defined (`theme.css:30`,
   `#f9f9f9`), so this fallback can never actually render; it's dead code,
   not an intentional degrade path. Recommend adopters just drop the
   fallback (`var(--muted-fg)`), not tokenise `#9aa0a6` — there is nothing
@@ -625,7 +625,6 @@ justify it and adopted them; the rest stayed literal. 21 sites moved.
 | `--blue-accent-rgb` | `91 168 255` | 4 (1 a near-dupe fold, `.sym-link`'s `rgba(111,182,255,.5)`) | border/ring: `.si-wyckoff-badge` border, `.wyckoff-locked` ring, `.pi-forced-notice` border, `.sym-link` underline |
 | `--blue-accent-fill-rgb` | `35 139 230` | 2 | fill tier of the same family: badge gradient's lighter stop, `.pi-forced-notice` background — kept apart from the border tier per "cluster by role" |
 | `--shortcuts-danger-rgb` | `220 53 53` | 10 | shortcuts-help destructive actions (clear/reset/conflict) — all in `styles.css`, a different hue from the orange `--danger` |
-| `--camera-glow-rgb` | `6 100 50` | 3 | `#cameraTools` hover/unlocked glow ring — deliberately not `--highlight-color`/`--border-color`: must stay fixed green regardless of active backend theme, same call as the bond-range-slider's fixed track (`css_guard_allow.txt`) |
 | `--vacancy-amber-rgb` | `255 210 120` | 2 | disordered-site species/vacancy text tint — thin but real, same call as `--ok-tint`'s 2-site precedent |
 | `--active-green-rgb` | `125 206 160` | 5 | "active/applied" state accent (atom-editor button, coord-axis slider, new-row separator) — checked against `--ok-bright-rgb` (`126 226 168`) and kept separate: the call sites had already flagged it "not an exact match," and the roles here (border/ring/accent-color) don't match the anneal badge's fill+text pairing |
 | `--chrome-1-9` | `rgba(25, 25, 25, 0.9)` | 4 (3 near-dupes: `17/17/17`@.9, `22/22/22`@.88, `26/26/26`@.95) | near-opaque near-black fills above `--chrome-1`'s 0.8 alpha — `.backend-error-panel`, `.backend-potential-toggle`, `.atomistic-grid input`, and a dead `.control-panel` rule (tokenised anyway for consistency) |
@@ -879,6 +878,7 @@ tidiness.
 | token | value | role | call sites |
 |---|---|---|---|
 | `--icon-filter` | `invert(1)` | inversion applied to the theme-picker glyphs; light palettes set it to `none` | `controlPanel.css` `.theme-icon` |
+| `--icon-filter-bright` | `none` | the same knob for *white*-source SVGs (compact toolbar icons); polarity is reversed, so light palettes set it to `invert(1)` | `panelWindow.css` `.cv-panel-compact-btn img` |
 | `--switch-knob` | `#ffffff` | the toggle knob — contrasts with its track, not with the panel | `toggle_styles.css` `.toggle_slider::before`, `.toggle_slider_dual::before` |
 | `--switch-off` | `#cccccc` | the toggle's OFF track fill | `toggle_styles.css` `.toggle_slider` |
 
@@ -912,3 +912,21 @@ light palette — where the scrim stays dark by definition — they rendered as
 black boxes. They're `--float-panel-bg` now, which is what the other floating
 scene widgets already used. The default appearance shifts a hair, from
 `rgba(0, 0, 0, 0.8)` to `rgba(26, 26, 26, 0.8)`.
+
+## Wave 2 completion — font-size ladder
+
+Added `--fs-2xl` (20px) and `--fs-3xl` (24px), both scaled by
+`--cv-font-scale`. First-party 17px/18px/20px sites now use `--fs-2xl`, 24px
+sites use `--fs-3xl`, 14px sites use `--fs-lg`, and panel/button 1em/1rem/
+1.25rem sites use the matching ladder rung. Inline DOM styles use ladder
+variables; the label-like canvas 9px heatmap text is now 10px, while its
+existing DPI/zoom expressions remain unchanged. ColorBar label bases were
+snapped from 16.8px/18px/15px to 16px/20px/14px.
+
+Deliberately retained: the two 8px swatch/tile labels because 10px can break
+their compact badge layouts; `3em` for the oversized planes vector bracket;
+`0.8em` for the intentionally subordinate composition percentage; the two
+CSS `0.85em` labels and the reset button because they scale with their
+variable-size panel parent; and the About-panel `rem`/`0.92em` hierarchy for
+relative help/content typography. Canvas 56px polyhedron labels, 64px charge
+badges, and 92px atom-symbol textures remain deliberate display art.

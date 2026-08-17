@@ -1,4 +1,6 @@
 // Global keyboard shortcuts, organized by how often each thing is used
+import { openAboutPanel } from './AboutPanel.js';
+
 // rather than by category — the more frequent an action, the fewer/easier
 // its modifiers:
 //
@@ -18,7 +20,7 @@
 // safety net so a missed keyup (alt-tab while held, a dialog stealing focus)
 // can't leave it stuck "on" forever. Four other places in the app used to
 // treat Space as an activation key on custom (non-<button>) controls — the
-// right-dock tab bar, the Structure panel's own formula-box toggle, the
+// side-dock tab bar, the Structure panel's own formula-box toggle, the
 // About-panel logo, and the volumetric-field color-box toggle — those now
 // only respond to Enter; Space is reserved for this file globally. The theme
 // menu's keyboard activation was dropped entirely (click-only) rather than
@@ -761,4 +763,23 @@ function addHelpTriggerButton() {
   btn.textContent = '⌨';
   btn.addEventListener('click', openShortcutsHelp);
   themeSwitch.insertAdjacentElement('beforebegin', btn);
+
+  const aboutBtn = document.createElement('button');
+  aboutBtn.type = 'button';
+  aboutBtn.id = 'aboutHelpTrigger';
+  aboutBtn.className = 'about-help-trigger';
+  aboutBtn.title = 'About CrysViz';
+  aboutBtn.setAttribute('aria-label', 'About CrysViz');
+  aboutBtn.setAttribute('aria-haspopup', 'dialog');
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  icon.setAttribute('viewBox', '0 0 24 24');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.setAttribute('focusable', 'false');
+  icon.innerHTML = `
+    <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" />
+    <path d="M12 10.8v5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+    <circle cx="12" cy="7.4" r="1" fill="currentColor" />`;
+  aboutBtn.appendChild(icon);
+  aboutBtn.addEventListener('click', openAboutPanel);
+  btn.insertAdjacentElement('beforebegin', aboutBtn);
 }

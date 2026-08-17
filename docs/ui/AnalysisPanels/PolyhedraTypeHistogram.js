@@ -1,13 +1,13 @@
 // Polyhedra type/composition histogram: one bar per polyhedron category (e.g.
 // "SiO4", "AlO6", "O6 cage · CN 8" — the same categories as the Poly tab), in
-// ONE ordinary panel window that defaults to the right dock, mirroring
+// ONE ordinary panel window that defaults to the side dock, mirroring
 // BondLengthHistogram.js / CoordinationHistogram.js. Clicking a bar highlights
 // every atom (centre + vertices) belonging to a polyhedron of that category.
 // The window stays open across structure switches — polyhedraAnalysisHub
 // pushes fresh data after every polyhedra rebuild.
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
-import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from '../panels/SideDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
   togglePlotTheme,
@@ -57,7 +57,7 @@ export function removePolyhedraTypeHistogramPanel() {
 }
 
 /** The single entry point (the Polyhedra window's "Type" button): opens the
- *  window — right-dock front tab by default, or wherever the user last
+ *  window — side-dock front tab by default, or wherever the user last
  *  dragged it — creating it on first use. */
 export function addPolyhedraTypeHistogramPanel() {
   if (getPanel(PANEL_ID)) {
@@ -82,7 +82,7 @@ export function addPolyhedraTypeHistogramPanel() {
             <div id="${PLOT_ID}" class="split-item-body"></div>
             <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
             <div class="split-item-actions">
-              <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓</button>
+              <button type="button" class="split-item-action-btn" data-split-action="theme" title="Toggle light/dark">🌓︎</button>
               <button type="button" class="split-item-action-btn" data-split-action="export" title="Export PNG">📥</button>
               <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
             </div>

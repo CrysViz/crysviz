@@ -13,7 +13,7 @@ export function addErrorPanel(message="Default") {
   panel.className = "backend-error-panel";
 
   const header = document.createElement("div");
-  header.textContent = "⚠️   Warning!  ⚠️"
+  header.textContent = "⚠   Warning!  ⚠"
   header.className = "backend-error-header";
 
   const msg = document.createElement("div");

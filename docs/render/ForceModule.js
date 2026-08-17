@@ -27,6 +27,7 @@ function disposeForceMeshes() {
     }
   }
   groups.forcesInstanceBySrcIndex = null;
+  groups.forcesArrowByInstance = null;
 }
 
 export function removeForces() {
@@ -145,6 +146,12 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     // is sticky — it wins over the colormap until the row's Reset clears
     // it, so this loop leaves force.color (and userColor) untouched here.
     if (force.userColor) return;
+
+    const categoryColor = structure.forceCategoryStyles?.[structure.elements[idx]]?.color;
+    if (categoryColor != null) {
+      force.color = new THREE.Color(categoryColor);
+      return;
+    }
 
     if (colorMap === "element") {
       force.color = new THREE.Color(getElementDefaultColor(structure.elements[idx]));
@@ -271,8 +278,14 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   // (called from inside it, on a rebuild) unconditionally nulls this out —
   // setting it earlier would just have it wiped again immediately.
   const instanceBySrcIndex = new Map();
-  arrows.forEach(({ srcIdx }, i) => instanceBySrcIndex.set(srcIdx, i));
+  const arrowByInstance = new Map();
+  arrows.forEach(({ srcIdx }, i) => {
+    instanceBySrcIndex.set(srcIdx, i);
+    arrowByInstance.set(i, forces[srcIdx]);
+  });
   groups.forcesInstanceBySrcIndex = instanceBySrcIndex;
+  groups.forcesArrowByInstance = arrowByInstance;
+  groups.forcesShaftMesh.userData.arrowStylesByInstance = arrowByInstance;
 
   const dummy = new THREE.Object3D();
 

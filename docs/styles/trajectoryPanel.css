@@ -183,7 +183,7 @@
     }
 
     /* ---- fullscreen (⛶), same mechanism as the analysis histograms'
-       .split-item.expanded (rightDock.css) — expandSplitItem()/
+       .split-item.expanded (sideDock.css) — expandSplitItem()/
        closeExpandedSplitItem() toggle this class and the shared overlay.
        !important on every geometry property: the native `resize` handle above
        sets an INLINE height on this div, and only an !important stylesheet
@@ -255,8 +255,8 @@
       color: var(--ink-3);
     }
 
-    /* ---- Right-docked (either edge): the pane owns the height, not the plot.
-       Free-floating or left-docked, .trajPlot's fixed 260px is what makes the
+    /* ---- Side-docked (either edge): the pane owns the height, not the plot.
+       Free-floating or main-docked, .trajPlot's fixed 260px is what makes the
        chart a sensible size. Inside the dock that's wrong: the pane already
        has a definite height the user drags, so a fixed-height chart either
        leaves dead space or (docked to the bottom, where the pane is short and
@@ -266,16 +266,16 @@
        ResizeObserver (TrajectoryPlot.js) re-lays it out from there.
        min-height:0 at every level — flex items default to min-height:auto and
        refuse to shrink below their content otherwise. ---- */
-    .cv-panel.cv-right-docked[data-panel-id="trajectory"] > .cv-panel-body > #TrajControlPanel,
-    .cv-panel.cv-right-docked[data-panel-id="trajectory"] .panelBody,
-    .cv-panel.cv-right-docked[data-panel-id="trajectory"] #trajPlotHost {
+    .cv-panel.cv-side-docked[data-panel-id="trajectory"] > .cv-panel-body > #TrajControlPanel,
+    .cv-panel.cv-side-docked[data-panel-id="trajectory"] .panelBody,
+    .cv-panel.cv-side-docked[data-panel-id="trajectory"] #trajPlotHost {
       flex: 1 1 auto;
       min-height: 0;
       display: flex;
       flex-direction: column;
     }
 
-    .cv-panel.cv-right-docked[data-panel-id="trajectory"] #trajPlotHost > .trajPlot {
+    .cv-panel.cv-side-docked[data-panel-id="trajectory"] #trajPlotHost > .trajPlot {
       flex: 1 1 auto;
       height: auto;
       /* Below this the axes stop being readable; the body scrolls instead. */

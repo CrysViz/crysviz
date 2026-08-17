@@ -6,7 +6,7 @@
 }
 
 .toggle-icon {
-  font-size: 18px;
+  font-size: var(--fs-2xl);
   margin-left: 5px;
 }
 

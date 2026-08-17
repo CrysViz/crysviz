@@ -1,4 +1,4 @@
-/* Right dock (docs/ui/panels/RightDock.js). #viewArea replaces #view as the
+/* Side dock (docs/ui/panels/SideDock.js). #viewArea replaces #view as the
    flex sibling of #ui; #view itself keeps all its existing rules (this just
    adds a wrapper around it), so the 3D scene is unaffected while the dock is
    empty.
@@ -9,13 +9,13 @@
    body.panel-hidden), and a flex-based pane would visibly jump with it.
    #view instead reserves space via a plain margin (--split-pane-fraction is
    a vw-based fraction, independent of #ui's width), so the pane stays put on
-   screen regardless of the left dock's state.
+   screen regardless of the main dock's state.
 
    The windows themselves are regular .cv-panel elements (panelWindow.css owns
-   their right-docked chrome: title bar hidden, tab strip as chrome). The
+   their side-docked chrome: title bar hidden, tab strip as chrome). The
    generic .split-item block (a plot/content card with action buttons and an
    optional ⛶ fullscreen state) is styled here UNSCOPED so it renders the same
-   when its window floats or sits in the left dock. */
+   when its window floats or sits in the main dock. */
 
 #viewArea {
   flex: 1;
@@ -28,10 +28,10 @@
 #viewArea #view {
   flex: 1 1 auto;
   min-width: 0;
-  border-radius: 0 20px 20px 0;
+  border-radius: 0;
 }
 
-/* Only actually narrow the 3D view once the right dock holds a window. */
+/* Only actually narrow the 3D view once the side dock holds a window. */
 #viewArea.split-active #view {
   border-radius: 0;
 }
@@ -61,11 +61,17 @@ body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-colla
   position: fixed;
   top: 0;
   bottom: 0;
-  right: calc(var(--split-pane-fraction, 0.5) * 100vw);
+  /* Same floor/ceiling .split-pane's min-width/max-width impose below: on a
+     phone the raw fraction lands under 220px, the pane clamps and the handle
+     doesn't — it visibly detaches from the edge it is supposed to hug. */
+  right: clamp(220px, calc(var(--split-pane-fraction, 0.5) * 100vw), 85vw);
   width: 6px;
   cursor: col-resize;
   background: var(--panel-border);
   z-index: var(--z-dock-handle);
+  /* Without this the browser takes the drag as a scroll and pointercancel
+     ends the resize before it starts (SideDock.js captures the pointer). */
+  touch-action: none;
 }
 
 .split-handle:hover,
@@ -79,7 +85,7 @@ body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-colla
   right: 0;
   bottom: 0;
   width: calc(var(--split-pane-fraction, 0.5) * 100vw);
-  /* Must match MIN_PANE_PX in panels/RightDock.js, or dragging into that gap
+  /* Must match MIN_PANE_PX in panels/SideDock.js, or dragging into that gap
      computes a valid (smaller) fraction that this floor then silently
      overrides — the pane visibly stops following the pointer. */
   min-width: 220px;
@@ -119,7 +125,8 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane {
 
 #viewArea.split-dock-bottom .split-handle {
   top: auto;
-  bottom: calc(var(--split-pane-fraction, 0.5) * 100dvh);
+  /* Mirrors the pane's own min-height/max-height clamp above. */
+  bottom: clamp(220px, calc(var(--split-pane-fraction, 0.5) * 100dvh), 85dvh);
   right: 0;
   left: var(--ui-total-width, 0px);
   width: auto;
@@ -199,7 +206,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   transform: rotate(90deg);
 }
 
-/* The body hosts the right-docked windows' .cv-panel elements; only the
+/* The body hosts the side-docked windows' .cv-panel elements; only the
    .cv-front one is visible (panelWindow.css), filling the pane. */
 .split-pane-body {
   flex: 1;
@@ -210,8 +217,8 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
 }
 
 /* ---- .split-item content cards (EOS plots, demo counter, ...) --------------
-   Unscoped: the same markup renders inside a right-docked, floating or
-   left-docked window body. Inside the (tall) right dock, items flex-share the
+   Unscoped: the same markup renders inside a side-docked, floating or
+   main-docked window body. Inside the (tall) side dock, items flex-share the
    height; elsewhere the min-height keeps them usable and the window body
    scrolls. */
 .split-item {
@@ -266,7 +273,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
 }
 
 /* A column of .split-item cards inside a window body (the EOS window's two
-   plots, the analysis histogram windows). Fills the right dock's height;
+   plots, the analysis histogram windows). Fills the side dock's height;
    elsewhere the items' min-height makes the window body scroll instead. */
 .cv-plot-stack {
   flex: 1 1 auto;
@@ -284,8 +291,8 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   max-width: 100%;
 }
 
-/* The Energy Landscape window's addon host: fills the right dock's height;
-   keeps a workable minimum when the window floats or sits in the left dock
+/* The Energy Landscape window's addon host: fills the side dock's height;
+   keeps a workable minimum when the window floats or sits in the main dock
    (the window body scrolls). */
 .landscape-host {
   flex: 1 1 auto;
@@ -295,12 +302,12 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   overflow-y: auto;
 }
 
-.cv-panel:not(.cv-right-docked) .landscape-host {
+.cv-panel:not(.cv-side-docked) .landscape-host {
   min-height: 320px;
 }
 
-/* Window tabs come in two forms, both built from the right-docked windows in
-   pane order (RightDock.js renderTabs()):
+/* Window tabs come in two forms, both built from the side-docked windows in
+   pane order (SideDock.js renderTabs()):
    - a horizontal strip in the pane HEADER — the windows' chrome while the
      dock is open (click = front, drag = reorder / pull the window out,
      ✕ = close);
@@ -400,7 +407,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
 }
 
 /* Per-tab ≡ window-menu button (Position / Close / panel-specific sections
-   — the tab is the window's only chrome while right-docked, so its menu
+   — the tab is the window's only chrome while side-docked, so its menu
    lives here; see PanelWindow.toggleMenuAt). */
 .split-pane-tab-menu {
   flex: 0 0 auto;
@@ -486,10 +493,10 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
 }
 
 /* ---- drop highlight (floating window dragged over the right border) -------*/
-/* JS (RightDock.updateRightDockHint) sets an inline width matching the open
+/* JS (SideDock.updateSideDockHint) sets an inline width matching the open
    pane; this default width is the closed/collapsed edge band. Above the
    handle (1301) but below the fullscreen overlay. */
-#rightDockDropHint {
+#sideDockDropHint {
   display: none;
   position: fixed;
   top: 0;
@@ -503,7 +510,7 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
   background: rgb(var(--info-rgb) / 0.10);
 }
 
-#rightDockDropHint.active {
+#sideDockDropHint.active {
   display: block;
 }
 

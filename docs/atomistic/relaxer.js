@@ -1,6 +1,9 @@
 import { fileBrowser, groups, general } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped } from '../render/index.js';
+import {
+  runPeriodicWrapped, applyFrameFast, BOND_TOPOLOGY_STRIDE, deriveVisibleWrapped,
+  updateForces, updateSpins,
+} from '../render/index.js';
 
 let _viewerUpdateCount = 0;
 import {
@@ -341,6 +344,10 @@ export function applyStructureToViewer(nepStruct, structure = fileBrowser.select
     // them on the run-end full apply (P6).
     reRenderPolyhedra: full || general.showPolyhedra || general.completePolyhedra,
   });
+  // Full/periodic syncs refresh both overlays; FastFrameModule deliberately
+  // keeps only its existing force refresh on the per-frame budget path.
+  if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
+  if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
 }
 
 function nextFrame() {

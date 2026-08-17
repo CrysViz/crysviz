@@ -8,6 +8,8 @@
 //   "RT resolution" control); upsampling uses the texture's Linear filter.
 // ReinhardToneMapping comes from three's ShaderMaterial tone-mapping prelude
 // (present whenever the renderer tone-maps to the screen).
+// Local adaptations are CrysViz work under AGPL-3.0 (repo LICENSE);
+// the upstream original is CC0 (this directory's LICENSE).
 export const ScreenOutput_Fragment = /* glsl */`
 precision highp float;
 precision highp int;

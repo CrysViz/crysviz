@@ -31,6 +31,7 @@ function disposeSpinMeshes() {
     }
   }
   groups.spinsInstanceBySrcIndex = null;
+  groups.spinsArrowByInstance = null;
 }
 
 export function removeSpins() {
@@ -152,6 +153,12 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     // manualSpins isn't index-aligned to structure.atoms the way
     // structure.spins is — each entry carries its own atomIndex instead.
     const atomIdx = useManualSpins ? (spin.atomIndex ?? idx) : idx;
+
+    const categoryColor = structure.spinCategoryStyles?.[structure.elements[atomIdx]]?.color;
+    if (categoryColor != null) {
+      spin.color = new THREE.Color(categoryColor);
+      return;
+    }
 
     if (colorMap === "element") {
       spin.color = new THREE.Color(getElementDefaultColor(structure.elements[atomIdx]));
@@ -284,8 +291,14 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
   // (called from inside it, on a rebuild) unconditionally nulls this out —
   // setting it earlier would just have it wiped again immediately.
   const instanceBySrcIndex = new Map();
-  arrows.forEach(({ srcIdx }, i) => instanceBySrcIndex.set(srcIdx, i));
+  const arrowByInstance = new Map();
+  arrows.forEach(({ srcIdx }, i) => {
+    instanceBySrcIndex.set(srcIdx, i);
+    arrowByInstance.set(i, useManualSpins ? structure.spins[srcIdx] : spins[srcIdx]);
+  });
   groups.spinsInstanceBySrcIndex = instanceBySrcIndex;
+  groups.spinsArrowByInstance = arrowByInstance;
+  groups.spinShaftMesh.userData.arrowStylesByInstance = arrowByInstance;
 
   const dummy = new THREE.Object3D();
 

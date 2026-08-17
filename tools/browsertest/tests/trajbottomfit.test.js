@@ -1,6 +1,6 @@
 // The Trajectory panel is the live MD/relax monitor, so (a) it defaults to the
-// left dock directly ABOVE Atomistic rather than down among the feature
-// panels, and (b) once the user drags it into the right dock its plot must
+// main dock directly ABOVE Atomistic rather than down among the feature
+// panels, and (b) once the user drags it into the side dock its plot must
 // fill the pane instead of standing at the fixed 260px .trajPlot height.
 // (b) is what broke docked to the BOTTOM: a short, wide pane left the chart
 // overflowing and the panel body scrolling.
@@ -18,7 +18,7 @@ const H = require('../harness');
   const res = await page.evaluate(async (traj) => {
     const cv = await import('./core/crystal-viewer.js');
     const pm = await import('./ui/panels/PanelManager.js');
-    const rd = await import('./ui/panels/RightDock.js');
+    const rd = await import('./ui/panels/SideDock.js');
     const tp = await import('./ui/TrajectoryPanel.js');
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -35,7 +35,7 @@ const H = require('../harness');
     const atomisticOrder = (pm.getPanel('backend').def.defaults || {}).order;
     const filesOrder = (pm.getPanel('files').def.defaults || {}).order;
 
-    // The rendered left-dock order, which is what the user actually sees.
+    // The rendered main-dock order, which is what the user actually sees.
     const leftIds = Array.from(document.querySelectorAll('#ui .cv-panel.cv-docked'))
       .map((el) => el.dataset.panelId);
 
@@ -65,15 +65,15 @@ const H = require('../harness');
       };
     }
 
-    rd.setRightDockSide('bottom');
+    rd.setSideDockSide('bottom');
     await sleep(250);
     const bottom = measure();
 
-    rd.setRightDockSide('right');
+    rd.setSideDockSide('right');
     await sleep(250);
     const right = measure();
 
-    rd.setRightDockSide('bottom');
+    rd.setSideDockSide('bottom');
     await sleep(250);
 
     return {
@@ -88,7 +88,7 @@ const H = require('../harness');
     };
   }, TRAJ);
 
-  H.check('Trajectory panel defaults to the LEFT dock',
+  H.check('Trajectory panel defaults to the main dock',
     res.defaultDock === 'left', `defaults.dock=${res.defaultDock}`);
 
   H.check('its default order puts it above Atomistic but below Files',
@@ -119,7 +119,7 @@ const H = require('../harness');
   H.check('plot height tracks the dock side (no fixed 260px)',
     Math.abs(b.plotH - r.plotH) > 20, `bottom=${b.plotH} right=${r.plotH}`);
 
-  H.check('right-docked plot also fits its pane',
+  H.check('side-docked plot also fits its pane',
     r.plotH > 0 && r.plotH <= r.paneH + 1, JSON.stringify(r));
 
   H.check('the chart itself, not just the frame, gets the height',

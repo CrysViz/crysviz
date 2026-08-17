@@ -42,6 +42,12 @@ let badges = [];
 /** @type {Map<string, any>} */
 const textureCache = new Map();
 
+/** Clear cached canvas textures after the bundled faces have finished loading. */
+export function clearChargeTextureCache() {
+  for (const texture of textureCache.values()) texture.dispose();
+  textureCache.clear();
+}
+
 const _raycaster = new THREE.Raycaster();
 const _toBadge = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -126,7 +132,7 @@ function chargeTexture(text) {
   if (cached) return cached;
 
   const fontPx = 64;
-  const font = `700 ${fontPx}px sans-serif`;
+  const font = `700 ${fontPx}px 'CrysViz Sans', sans-serif`;
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
   ctx.font = font;

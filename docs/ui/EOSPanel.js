@@ -1,7 +1,7 @@
 // EOS (Birch-Murnaghan equation-of-state) fitting control window: reads a
 // Pressure/Energy/Volume dataset, fits it with SciPy (via Pyodide) and shows
 // the fit parameters; the E-V/P-V plots live in their own window
-// (EOSPlotsPanel.js, defaulting to the wide right dock), which THIS module
+// (EOSPlotsPanel.js, defaulting to the wide side dock), which THIS module
 // activates whenever there is something to show — a dataset loaded or re-fit
 // opens it, resetting the fit closes it.
 
@@ -77,7 +77,7 @@ function safeRedraw(plotId) {
 }
 
 /** There is something to show: make sure the plots window is open (front tab
- *  of the right dock by default — or wherever the user last put it). */
+ *  of the side dock by default — or wherever the user last put it). */
 function ensurePlotsWindowOpen() {
   openPanel('eosPlots');
 }
@@ -204,12 +204,13 @@ async function handlePrimaryFile(container, file) {
 }
 
 /** Register (or refresh, on a re-run) the computed scan as a file-browser row
- *  named "EOS scan (<potential>)" — each point's structure is a frame, so the
- *  scan is scrubbable/selectable like any loaded trajectory. */
+ *  named eos_<potential>_<source row> — each point's structure is a frame, so
+ *  the scan is scrubbable/selectable like any loaded trajectory. */
 function registerScanRow(scan, potential) {
   const tbody = document.querySelector('#objectTable tbody');
   if (!tbody) return;
-  const name = `EOS scan (${potential})`;
+  const source = structureShip.container[fileBrowser.selectedRowIndex]?.fileName ?? 'structure';
+  let name = `eos_${potential}_${source}`;
   const row = state.computedRow;
   if (row && row.isConnected) {
     // Re-run: swap the frames into the existing row's container instead of
@@ -218,6 +219,9 @@ function registerScanRow(scan, potential) {
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
     if (container) {
+      // Re-scanning from one of the scan's own frames keeps the row's name
+      // rather than nesting eos_ prefixes.
+      if (rowIndex === fileBrowser.selectedRowIndex) name = container.fileName;
       container.fileName = name;
       container.structures = scan.structures;
       updateRow(row, { name, traj: scan.structures.length, step: 1 });

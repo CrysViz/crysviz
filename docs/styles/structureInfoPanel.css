@@ -13,6 +13,22 @@
    `display: none` inline on creation — only the rest of each panel's chrome
    (background/border/padding/spacing) moved here. */
 
+/* ---- Panel body width (defaultPanels.js's 'info'/Structure window) ----
+   Fixed while FLOATING so the panel doesn't shrink-wrap to whichever tab's
+   content is widest and visibly resize on tab switches; still shrinks on
+   narrow viewports. 300px (not the old 340px): the Bonds tab's double-range
+   slider row no longer carries its own redundant min/max labels (the
+   combined "min - max Å" label above the slider already shows them), so the
+   row needs much less width than before. Docked, the dock width wins —
+   descendant selectors on the dock-state classes, same pattern as
+   addStructure.css's docked overrides. */
+.si-panel-body { width: min(300px, calc(100vw - 16px)); }
+
+.cv-docked .si-panel-body,
+.cv-side-docked .si-panel-body {
+  width: auto;
+}
+
 /* ---- Shared "Alpha / Size / Edge alpha" row (label + range + number-box),
    used identically by the atom/bond/polyhedron/element colour editors. ---- */
 .si-row {
@@ -53,11 +69,14 @@
   padding: 0 var(--sp-3-5);
   margin-right: var(--sp-1);
 }
+/* min-width/min-height, not fixed width/height: the class also carries the
+   category Spin/Force button (see .spin-force-category-button below). The
+   Apply/Reset labels are all short, so their rows are unchanged. */
 .si-action-btn-narrow {
-  height: 32px;
+  min-height: 32px;
   font-size: var(--fs-sm);
   min-width: 50px;
-  width: 50px;
+  width: auto;
   padding: 0 var(--sp-1);
 }
 .si-action-btn-wide {
@@ -263,9 +282,14 @@
      via its narrow-viewport media queries — this only adds the layout this
      component actually needs, which the base rule doesn't set. */
   display: grid;
-  grid-template-columns: auto 1fr;
+  /* Both tracks may shrink below min-content: at the panel's 300px cap,
+     count + Spin/Force + toggle beside a wide element name has no slack, and
+     floored tracks pushed the button and toggle past the panel edge into a
+     horizontal scrollbar. With .comp-right allowed to wrap, that case drops
+     the button + toggle (one unit, .comp-actions) under the count instead. */
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
   align-items: center;
-  column-gap: var(--sp-3);
+  column-gap: var(--sp-2);
   row-gap: var(--sp-2);
   cursor: pointer;
   transition: background-color 0.2s ease;
@@ -280,8 +304,7 @@
   font-size: var(--fs-lg);
 }
 .comp-expand-icon {
-  margin-left: var(--sp-1);
-  font-size: 14px;
+  font-size: var(--fs-lg);
   transition: transform 0.2s ease;
   color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   transform: rotate(0deg);
@@ -290,12 +313,35 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--sp-3);
+  flex-wrap: wrap;
+  min-width: 0;
+  gap: var(--sp-2);
 }
-.comp-count-label { white-space: nowrap; }
+.comp-count-label {
+  white-space: nowrap;
+  font-size: var(--fs-md);
+}
+.comp-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: none;
+}
 .comp-pct-label {
   font-size: 0.8em;
   color: var(--fg-75); /* was 0.7 — Wave 2.6 --fg-75 */
+}
+/* Category-level spin/force editor button. Dense on purpose: it shares the
+   row's right column with the count and the keep-toggle, and at the panel's
+   300px cap every px it takes is what decides whether that group stays on
+   one line. nowrap so it never becomes a two-line "Spins/ Forces" button —
+   when it really doesn't fit, .comp-right wraps the whole button instead. */
+.spin-force-category-button {
+  min-height: 26px;
+  min-width: 0;
+  padding: 0 3px;
+  font-size: var(--fs-xs);
+  white-space: nowrap;
 }
 .individual-atoms {
   margin-left: var(--sp-2);
@@ -350,7 +396,9 @@
 .comp-single-dot {
   width: 20px;
   height: 20px;
-  margin-right: var(--sp-2);
+  /* No margin of its own: .comp-left's gap already spaces it, and the 6px it
+     added on top came straight out of the right column's one-line budget. */
+  margin-right: 0;
   cursor: pointer;
 }
 
@@ -385,14 +433,20 @@
 /* A bond too short to render has nothing to highlight in 3D, so its row
    isn't clickable. */
 .individual-bond-row.not-renderable { cursor: default; }
-/* Default (non-stacked) atom row: name column shrinks to its min-content but
-   no further, so coordinates never overflow into the buttons. */
+/* Default (non-stacked) atom row: two lines. Identity (name + coordinate
+   triple) on the first, the editor buttons and the keep-toggle on the second.
+   At the panel's 300px cap the triple, three buttons and the toggle never fit
+   on one line — the triple ended up wrapped one number per line and the
+   buttons still spilled past the panel edge. */
 .individual-atom-row {
   display: grid;
-  grid-template-columns: auto auto auto;
-  column-gap: var(--sp-3-5);
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--sp-2);
+  row-gap: var(--sp-1);
   padding: var(--sp-1) 0;
 }
+.individual-atom-row .iar-name-container { grid-column: 1 / -1; }
+.individual-atom-row .cv-tiny-toggle-wrap { grid-column: 2; align-self: center; }
 /* Wyckoff orbit rows carry a long label (site symmetry, orbit size, DOF)
    that has no room next to three buttons in a docked panel, so they stack:
    identity on its own line, buttons underneath. */
@@ -408,13 +462,18 @@
 .individual-atom-row.periodic-image { margin-left: 14px; }
 .individual-atom-row.periodic-image .iar-name { color: var(--fg-2); }
 
+/* Name and coordinate triple share a line ("Si1  (0.000, 0.000, 0.000)");
+   the triple drops to its own line only when the label is long. Everything
+   else the container carries — species lines, vacancy, meta — is a full line
+   of its own, so a disordered site still reads label -> species -> where. */
 .iar-name-container {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  /* Panel→3D: clicking the name/coords area (but not the editor buttons)
-     highlights this atom in the 3D view. */
-  cursor: pointer;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--sp-2);
+  row-gap: 2px;
+  /* Without this its min-content width becomes the grid's floor again. */
+  min-width: 0;
 }
 .individual-atom-row.stacked-header .iar-name-container {
   flex: 1 1 100%;
@@ -434,6 +493,17 @@
   font-size: var(--fs-xs);
   color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   font-family: var(--font-mono);
+}
+/* The coordinate triple keeps wrapping rather than being trimmed — it is the
+   row's actual information. This only stops one long token from becoming the
+   name column's min-content floor, which is what the grid above needs. */
+.iar-coords {
+  overflow-wrap: anywhere;
+}
+.iar-species-line,
+.iar-vacancy-line,
+.iar-meta {
+  flex: 1 1 100%;
 }
 .iar-species-line {
   display: flex;
@@ -473,13 +543,10 @@
 }
 .individual-atom-row .iar-buttons {
   gap: var(--sp-2);
-  justify-content: flex-end;
+  justify-content: center;
 }
 .individual-atom-row.stacked-header .iar-buttons {
   gap: var(--sp-3);
-  /* Reset back to the default (the non-stacked rule above sets flex-end) —
-     the stacked layout never had a justify-content of its own. */
-  justify-content: flex-start;
   flex: 1 1 auto;
   flex-wrap: wrap;
 }
@@ -524,11 +591,11 @@
   background: var(--bg-color);
   border: 1px solid var(--line-2);
   color: var(--fg-1);
-  padding: var(--sp-1) var(--sp-3);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--radius-sm);
   cursor: pointer;
   font-size: var(--fs-xs);
-  white-space: normal;
+  white-space: nowrap;
   line-height: 1.15;
   text-align: center;
 }
@@ -679,6 +746,13 @@
   border: 1px solid var(--wash-2); /* was 0.08 — exact --wash-2 */
   border-radius: var(--radius);
 }
+.spin-force-category-editor {
+  grid-column: 2;
+  padding: var(--sp-3);
+  background: var(--wash-0);
+  border: 1px solid var(--wash-2);
+  border-radius: var(--radius);
+}
 .ece-top-row {
   display: flex;
   align-items: center;
@@ -824,8 +898,7 @@
    whole purpose is being screenshotted next to the structure.
 
    It is a scene widget on ui/ColorBarDrag.js, like the floating colour bars,
-   so it wears their chrome classes too (.cv-colorbar-controls / -grip /
-   -menu-* / -resize-handle, styles/toggle_styles.css) and only the box itself
+   so it wears their menu/resize classes (styles/toggle_styles.css) and only the box itself
    is styled here.
    ------------------------------------------------------------------------ */
 
@@ -834,6 +907,11 @@
      resizes. Sizing/placement otherwise comes from ColorBarDrag (inline
      position:fixed + left/top) and .cv-colorbar-floating. */
   width: fit-content;
+  touch-action: none;
+}
+
+.comp-legend-widget [contenteditable="true"] {
+  touch-action: auto;
 }
 
 /* .cv-colorbar-floating's own padding frames a gradient strip against its
@@ -859,8 +937,8 @@
   backdrop-filter: blur(10px);
 }
 
-/* The resize frame and its handle are the colour bars' (hover-revealed, so
-   they stay out of a figure). The frame encloses the box instead of a
+/* The resize frame and its handle are visually hover-revealed so they stay
+   out of a figure. The frame encloses the box instead of a
    gradient strip and its labels, so it's a plain inset rather than the
    measured extent ColorBarWidget computes; the handle keeps the bar's
    ew-resize cursor because, as there, the drag sets width only. */
@@ -869,8 +947,8 @@
 }
 
 .comp-legend-widget .cv-colorbar-resize-handle {
-  right: -8px;
-  bottom: -8px;
+  right: -12px;
+  bottom: -12px;
   cursor: ew-resize;
 }
 
@@ -878,16 +956,10 @@
 .comp-legend-widget:hover .cv-colorbar-resize-handle {
   opacity: 1;
 }
-
-/* Bridges the gap between .cv-colorbar-controls (top: -34px) and the box, so
-   the hover that reveals the strip survives the trip up to it — the colour
-   bars position their own bridge from JS off the bar's measured frame; the
-   legend's box has no such geometry, the strip just spans its top edge. */
-.comp-legend-widget .cv-colorbar-controls-bridge {
-  left: 0;
-  right: 0;
-  top: -8px;
-  height: 8px;
+.comp-legend-widget.cv-colorbar-locked .cv-colorbar-resize-frame,
+.comp-legend-widget.cv-colorbar-locked .cv-colorbar-resize-handle {
+  display: none;
+  pointer-events: none;
 }
 
 .comp-legend-list {
@@ -950,9 +1022,8 @@
   padding: var(--sp-2);
 }
 
-/* Transparent mode (☰ menu): strip the surface so only swatches and text
-   overlay the scene. The ⦀/☰ strip and the resize handle are hover-revealed
-   already, so nothing else shows in a capture. */
+/* Transparent mode (long-press menu): strip the surface so only swatches and
+   text overlay the scene. */
 .comp-legend-transparent .comp-legend-body {
   background: transparent;
   border-color: transparent;

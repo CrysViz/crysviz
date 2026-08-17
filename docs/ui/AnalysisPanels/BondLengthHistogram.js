@@ -22,7 +22,7 @@
 // pushes fresh data via refreshBondLengthHistogram after every rebuildBonds.
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
-import { expandSplitItem, closeExpandedSplitItem } from '../panels/RightDock.js';
+import { expandSplitItem, closeExpandedSplitItem } from '../panels/SideDock.js';
 import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
 } from './histogramPlotly.js';
@@ -166,7 +166,7 @@ export function removeBondLengthHistogramPanel() {
 }
 
 /** The single entry point (the Bonds window's "Bond Length" button): opens
- *  the window — right-dock front tab by default, or wherever the user last
+ *  the window — side-dock front tab by default, or wherever the user last
  *  dragged it — creating it on first use. */
 export function addBondLengthHistogramPanel() {
   if (getPanel(PANEL_ID)) {
@@ -207,7 +207,7 @@ export function addBondLengthHistogramPanel() {
             </span>
             <span class="toggle_text">Show distances</span>
           </label>
-          <button type="button" class="split-item-action-btn blh-theme-btn" title="Toggle light/dark">🌓</button>
+          <button type="button" class="split-item-action-btn blh-theme-btn" title="Toggle light/dark">🌓︎</button>
           <button type="button" class="split-item-action-btn blh-collapseall-btn">▸ Expand All</button>
         </div>
         <div class="blh-pair-list" id="blhPairList"></div>

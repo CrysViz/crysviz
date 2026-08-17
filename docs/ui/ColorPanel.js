@@ -947,7 +947,7 @@ export function addColorPanel(target = "colorContainer") {
   // Structure-window material editors. Color-palette parity: switching the
   // map RESETS manual material edits on the selected structure.
   const atomsElementMaterialsMapMenu = createDropdown("atomsElementMaterialsMapMenu", "Element Materials Map", [
-    { value: "crysviz", text: "CrysViz Default", selected: general.elementMaterialsMap !== "standard" },
+    { value: "crysviz", text: "Chemistry", selected: general.elementMaterialsMap !== "standard" },
     { value: "standard", text: "Standard", selected: general.elementMaterialsMap === "standard" }
   ], () => {
     general.elementMaterialsMap = atomsElementMaterialsMapMenu.querySelector("select").value;
@@ -995,14 +995,14 @@ export function addColorPanel(target = "colorContainer") {
     }
   });
   // --- Log color scale toggle --- (mirrors ForcePanel.js/SpinPanel.js's own
-  // checkboxes: the floating color bar's burger menu only exists once
+  // checkboxes: the floating color bar's layout menu only exists once
   // .cv-colorbar-floating applies, so a docked bar needs its own reachable
   // toggle too, not just the menu item.)
   const atomsBarControlsRow = createElement("div", {}, {
     display: "flex", alignItems: "center", gap: "12px", margin: "4px 0",
   });
   const atomsLogLabel = createElement("label", {}, {
-    display: "flex", alignItems: "center", gap: "4px", fontSize: "12px",
+    display: "flex", alignItems: "center", gap: "4px", fontSize: "var(--fs-base)",
     color: "white", whiteSpace: "nowrap", cursor: "pointer",
   });
   const atomsLogCheckbox = createElement("input", { type: "checkbox", id: "atomsLogScaleCheckbox" });
@@ -1017,7 +1017,7 @@ export function addColorPanel(target = "colorContainer") {
   atomsBarControlsRow.appendChild(atomsLogLabel);
   atomsBarControlsRow.appendChild(atomsAutoRangeBtn);
 
-  // Shared by atomsLogCheckbox and the color bar's own burger-menu "Log
+  // Shared by atomsLogCheckbox and the color bar's own layout-menu "Log
   // Scale" item (onScaleChange below) — either can flip it, both stay synced.
   function applyAtomLogScale(isLog) {
     general.atomColorScale = isLog ? "log" : "linear";
@@ -1036,7 +1036,7 @@ export function addColorPanel(target = "colorContainer") {
   }
   atomsLogCheckbox.addEventListener("change", () => applyAtomLogScale(atomsLogCheckbox.checked));
 
-  // Shared by atomsAutoRangeBtn and the burger menu's own "Auto Range" item.
+  // Shared by atomsAutoRangeBtn and the layout menu's own "Auto Range" item.
   // Recomputes min/max from the structure's actual force magnitudes, padded
   // 20% of the data's own span on each side (computeAutoRange).
   function applyAtomAutoRange() {
@@ -1113,6 +1113,8 @@ export function addColorPanel(target = "colorContainer") {
             orientation: general.atomColorBarOrientation,
             flipSide: general.atomColorBarFlipSide,
             size: general.colorBarSize,
+            isLocked: () => general.atomColorBarLocked,
+            onLockChange: (locked) => { general.atomColorBarLocked = locked; },
             onLimitsCommit: (min, max) => {
               general.ForceMin = min;
               general.ForceMax = max;
@@ -1216,12 +1218,12 @@ export function addColorPanel(target = "colorContainer") {
   });
 
   // --- Log Scale + Auto Range, side by side --- (see the atoms ones above
-  // for why docked-reachable controls are needed alongside the burger menu.)
+  // for why docked-reachable controls are needed alongside the layout menu.)
   const bondsBarControlsRow = createElement("div", {}, {
     display: "flex", alignItems: "center", gap: "12px", margin: "4px 0",
   });
   const bondsLogLabel = createElement("label", {}, {
-    display: "flex", alignItems: "center", gap: "4px", fontSize: "12px",
+    display: "flex", alignItems: "center", gap: "4px", fontSize: "var(--fs-base)",
     color: "white", whiteSpace: "nowrap", cursor: "pointer",
   });
   const bondsLogCheckbox = createElement("input", { type: "checkbox", id: "bondsLogScaleCheckbox" });
@@ -1250,7 +1252,7 @@ export function addColorPanel(target = "colorContainer") {
   }
   bondsLogCheckbox.addEventListener("change", () => applyBondLogScale(bondsLogCheckbox.checked));
 
-  // Shared by bondsAutoRangeBtn and the burger menu's own "Auto Range" item.
+  // Shared by bondsAutoRangeBtn and the layout menu's own "Auto Range" item.
   // Recomputes min/max from the actual visible bond lengths, padded 20% of
   // the data's own span on each side (computeAutoRange).
   function applyBondAutoRange() {
@@ -1329,6 +1331,8 @@ export function addColorPanel(target = "colorContainer") {
             orientation: general.bondColorBarOrientation,
             flipSide: general.bondColorBarFlipSide,
             size: general.colorBarSize,
+            isLocked: () => general.bondColorBarLocked,
+            onLockChange: (locked) => { general.bondColorBarLocked = locked; },
             onLimitsCommit: (min, max) => {
               general.BondMin = min;
               general.BondMax = max;
@@ -1418,8 +1422,7 @@ export function addColorPanel(target = "colorContainer") {
   group.appendChild(panel);
   targetPanel.appendChild(group);
 
-  // The dropdown above hardcodes "CrysViz Default" as selected at creation;
-  // fix it up to the real state (including "User (custom)" if overrides were
-  // already restored from localStorage before this panel built).
+  // Fix the dropdown to the real state (including "User (custom)" if overrides
+  // were already restored from localStorage before this panel built).
   syncElementColorMapDropdown();
 }
