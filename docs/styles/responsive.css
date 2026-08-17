@@ -431,9 +431,14 @@
      #ui, so --ui-total-width's other consumers (--gizmo-left,
      --popup-left) see the change too, same as the mobile rung above —
      scoping it to #ui alone would only have been visible inside #ui's own
-     subtree. */
+     subtree.
+
+     This rung is landscape phones (short height, e.g. iPhone SE/17 rotated).
+     280px was too narrow there — the Upload/Paste Text/Download/Share row
+     truncated on every phone. Widen it, but cap at 58dvw so a genuinely
+     narrow short window (not a phone) can't let the pane swallow the scene. */
   :root {
-    --ui-width: 280px;
+    --ui-width: min(360px, 58dvw);
   }
 
   .collapsible-content.open { padding-top:var(--sp-3);max-height: 230px;
