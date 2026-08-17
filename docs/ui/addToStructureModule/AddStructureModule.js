@@ -26,12 +26,12 @@
 // with orbit rows in place of atom rows - one editor, both modes. See
 // StructureEditorPanel.js's buildWyckoffModifyEditor.
 
-import { registerPanel, removePanel } from '../panels/PanelManager.js';
+import { removePanel } from '../panels/PanelManager.js';
 import { createTabSwitcher } from '../TabSwitcher.js';
 import { createSymmetryWyckoffTab } from './SymmetryWyckoffTab.js';
 import { buildStructureEditor } from './StructureEditorPanel.js';
 import { createNewStructureFromAtoms } from './CommitAtoms.js';
-import { defaultFloatingAnchor } from './floatingPanelAnchor.js';
+import { openEditorPanel } from './floatingPanelAnchor.js';
 import { fileBrowser } from '../../state/store.js';
 
 const ADD_PANEL_ID = 'addStructure';
@@ -50,7 +50,7 @@ export function initAddStructureButton(buttonSelector = '.add-structure-button')
     /** @type {{dispose: () => void} | null} */
     let editor = null;
 
-    registerPanel({
+    openEditorPanel({
       id: ADD_PANEL_ID,
       title: 'Add Structure',
       lifecycle: 'persistent',
@@ -85,7 +85,6 @@ export function initAddStructureButton(buttonSelector = '.add-structure-button')
         editor?.dispose();
         editor = null;
       },
-      defaults: { docked: false, collapsed: false, barCollapsed: false, anchor: defaultFloatingAnchor() },
     });
   });
 }
@@ -118,7 +117,7 @@ export function initModifyStructureButton(buttonId = 'addButton') {
     /** @type {((event: KeyboardEvent) => void) | null} */
     let onKeyDown = null;
 
-    registerPanel({
+    openEditorPanel({
       id: MODIFY_PANEL_ID,
       // One title for both modes: the panel offers the same edits either way,
       // and a Revert can drop the lock mid-session, which would leave a
@@ -156,7 +155,6 @@ export function initModifyStructureButton(buttonId = 'addButton') {
         editor?.dispose();
         editor = null;
       },
-      defaults: { docked: false, collapsed: false, barCollapsed: false, anchor: defaultFloatingAnchor() },
     });
   });
 }

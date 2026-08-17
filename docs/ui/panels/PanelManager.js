@@ -10,10 +10,11 @@
 // Per-window DOM/behavior lives in PanelWindow.js; the wide side dock's pane
 // plumbing (tabs, resize handle, drop zone) lives in SideDock.js.
 
-import { PanelWindow } from './PanelWindow.js';
+import { PanelWindow, applyEdgeAnchors } from './PanelWindow.js';
 import {
   initSideDock, sideDockPanel, sideUndockPanel,
   setSideDockCollapsed, setSideDockSide, refreshSideDock, getSideDockLayout,
+  sideDockOverlapPx, refreshSideDockTabs,
   applySideDockLayout, resetSideDockLayout, wantsSideDockDrop,
   sideDockDropSideAt, updateSideDockHint,
 } from './SideDock.js';
@@ -41,8 +42,35 @@ const DOCK_GAP = 10; // gap between the dock's right edge and displaced windows
 // is pulled out. Also the hysteresis gap against wantsDockDrop (which triggers
 // at the edge itself), so a pulled-out panel doesn't immediately re-dock.
 const DRAG_OUT_PX = 24;
-const COMPACT_QUERY = '(max-width: 1024px)';
-const MOBILE_EXEMPT_IDS = new Set(['view', 'measure', 'info']);
+// A phone, not merely a narrow window. The compact workflow — the Structure
+// window's bottom-sheet home, the dock-sweep of ordinary floats, the folded
+// scene toolbars — is built for a hand-held screen. The old '(max-width:1024px)'
+// keyed off the WINDOW, so a desktop with a shrunk window, or a tablet, got
+// swept into the phone layout. Key off the physical SCREEN instead: its short
+// edge stays large on a desktop no matter how narrow the window is, sits at
+// ~768 on the smallest tablet, and only a phone reports <=600.
+const PHONE_SCREEN_SHORT_EDGE = 600;
+// null = use the real screen; true/false pins the answer. The headless browser
+// reports screen==viewport and can't emulate a hand-held device, so the mobile
+// tests drive the workflow through setPhoneScreenOverride() (see below). Backed
+// by sessionStorage so the pin survives a reload — a real phone reloaded is
+// still a phone — and seeded from it here at module load.
+const PHONE_OVERRIDE_KEY = 'cvForcePhoneScreen';
+function readStoredPhoneOverride() {
+  try {
+    const v = sessionStorage.getItem(PHONE_OVERRIDE_KEY);
+    return v === null ? null : v === '1';
+  } catch { return null; }
+}
+let phoneScreenOverride = readStoredPhoneOverride();
+function isPhoneScreen() {
+  if (phoneScreenOverride !== null) return phoneScreenOverride;
+  const s = window.screen;
+  return Math.min(s.width, s.height) <= PHONE_SCREEN_SHORT_EDGE;
+}
+// Windows that keep floating on a compact viewport instead of being swept
+// into the main dock. They are the scene's own toolbars, not content windows.
+const MOBILE_EXEMPT_IDS = new Set(['view', 'measure']);
 
 // ---- compact round-icon mode --------------------------------------------
 // Extra scene width kept free before the floating toolbars collapse to icons,
@@ -58,12 +86,24 @@ const PREFS_KEY = 'panelPrefs';
 const panelPrefDefaults = {
   dragIntoDock: true,
   dragOutOfDock: true,
-  dragByHandleOnly: false,
+  // Touch has no hover and no cursor to aim with, so a finger on the title bar
+  // is indistinguishable from a finger starting a scroll. Handle-only drag is
+  // the touch default; a stored pref (Settings) still wins.
+  dragByHandleOnly: window.matchMedia('(pointer: coarse)').matches,
   smallDragHandles: false, // collapsed-bar handles: original thin always-visible strip
   exportGpuMemoryGiB: 1, // PNG export render-surface GPU memory budget (GiB)
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
   legendTransparent: false, // Composition Display: no window chrome, swatches+text only
+  // The on-canvas background picker: a 54px drag-and-resize affordance that
+  // competes with the scene's own gestures and takes the corner a phone
+  // needs for the compact icons. Off by default everywhere — a stored choice
+  // (Visual ▸ "Background picker on canvas") always wins.
+  backgroundDot: false,
   axisStepButtons: 'longpress', // 'on'|'off'|'longpress' for View step-rotate arrows
+  // Visual ▸ "Icon-only toolbars": fold Measure/View to round icons at any
+  // window size. Independent of the phone workflow — it never sends the
+  // Structure window to its bottom-sheet home.
+  forceCompactIcons: false,
 };
 const panelPrefs = { ...panelPrefDefaults };
 
@@ -107,9 +147,8 @@ let dockOccupies = false; // side panel currently takes layout space
 let lastUiWidth = 0; // last known #ui width (it measures 0 while hidden)
 let rightReservePx = 0; // width reserved on the right (e.g. the EOS split pane)
 let bottomReservePx = 0; // height reserved at the bottom (e.g. the split pane docked to the bottom)
-let compactViewport = false;
+let compactViewport = false; // a phone-sized screen (see isPhoneScreen)
 let panelSystemReady = false;
-let compactMediaQuery = null;
 
 const hooks = {
   beforeExpand(panel) {
@@ -128,9 +167,11 @@ const hooks = {
   // The ≡ menu's Position section: move a window to one of its three homes,
   // or back to its per-panel defaults (the old ⌂ button).
   positionPanel(panel, mode, { auto = false, restorePos = null } = {}) {
-    const refusedFloat = mode === 'float'
-      || (mode === 'default' && defaultDockOf(panel.def) === false);
-    if (refusedFloat && !canFloatPanels()) return;
+    // Only an explicit Float is refused on a compact viewport. 'default' stays
+    // available there: applyPanelDefaults docks a float-by-default panel
+    // instead, which is the placement the compact viewport would have given it
+    // anyway — suppressing the item left those panels with no way back.
+    if (mode === 'float' && !canFloatPanels()) return;
     if (!auto) clearAutoDocked(panel);
     if (mode === 'default') {
       applyPanelDefaults(panel);
@@ -188,7 +229,6 @@ const hooks = {
   updateSideDockHint,
   getPref: getPanelPref,
   canFloat: canFloatPanels,
-  defaultFloats(panel) { return defaultDockOf(panel.def) === false; },
   onUserMutation: clearAutoDocked,
 };
 
@@ -224,16 +264,24 @@ function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
   panel.closed = false;
   if (dock === 'right') {
     sideDockPanel(panel, { front: true, expand: false });
-    setSideDockCollapsed(false);
+    // Show the dock on a desktop reset. On a phone the side dock is the
+    // Structure sheet's compact home and must stay DOWN — the right-dock panels
+    // reset here are closed-by-default anyway, so un-collapsing would only lift
+    // the sheet over the scene (registration never does this).
+    if (!compactViewport) setSideDockCollapsed(false);
   } else if (dock === 'left') {
     dockPanelAtDefaultOrder(panel);
+  } else if (compactViewport && compactHomeOf(panel)) {
+    // Marked auto so growing back to a desktop floats it again — same as the
+    // breakpoint reconcile and the initial registration do.
+    panel.autoDocked = true;
+    sideHomePanel(panel);
+  } else if (compactViewport && !isMobileExempt(panel)) {
+    panel.autoDocked = true;
+    panel.floatPos = null;
+    positionPanelForDock(panel);
   } else {
-    if (compactViewport && !isMobileExempt(panel)) {
-      panel.floatPos = null;
-      positionPanelForDock(panel);
-    } else {
-      floatPanel(panel, clampPos({ ...(defaults.anchor || { left: 40, top: 40 }) }));
-    }
+    floatPanel(panel, clampPos({ ...(defaults.anchor || { left: 40, top: 40 }) }));
   }
   const barCollapsed = defaults.barCollapsed !== undefined
     ? !!defaults.barCollapsed
@@ -288,13 +336,11 @@ export function initPanelSystem() {
   dockEl = document.getElementById('dock');
   loadStoredLayout();
   loadPanelPrefs();
-  compactMediaQuery = window.matchMedia(COMPACT_QUERY);
-  compactViewport = compactMediaQuery.matches;
-  compactMediaQuery.addEventListener('change', (event) => {
-    compactViewport = event.matches;
-    for (const panel of panels.values()) panel.closeMenu();
-    if (panelSystemReady) reconcileCompactViewport();
-  });
+  compactViewport = isPhoneScreen();
+  // The screen's short edge only changes with orientation, so a plain resize
+  // listener suffices — and on a desktop the screen never crosses the threshold
+  // however the window is dragged, so the guard makes this a no-op there.
+  window.addEventListener('resize', reevaluatePhoneScreen);
 
   // The side dock never imports the manager (acyclic layering): everything
   // it needs from the registry/persistence side is handed over here.
@@ -305,6 +351,7 @@ export function initPanelSystem() {
     setRightReserve,
     setBottomReserve,
     floatPanelForDrag: (panel, pos) => floatPanel(panel, pos, { noDockShift: true, user: true }),
+    hasCompactLauncher: (panel) => compactLaunchers.has(panel.id),
   });
   applySideDockLayout(stored.rightDock);
 
@@ -361,6 +408,13 @@ function isMobileExempt(panel) {
   return MOBILE_EXEMPT_IDS.has(panel.id);
 }
 
+/** A window whose def declares a compact home: below the breakpoint it leaves
+ *  the floating layer for the side dock and is raised by its own launcher icon
+ *  (see the compact-home section further down). */
+function compactHomeOf(panel) {
+  return panel.def.compactHome || null;
+}
+
 function clearAutoDocked(panel) {
   if (!panel.autoDocked) return;
   panel.autoDocked = false;
@@ -378,10 +432,48 @@ function restoreAutoDockedPanel(panel) {
   if (panel.closed) {
     panel.dock = false;
     panel.dockShifted = false;
-  } else if (panel.dock === 'left' && panel.floatPos) {
+  } else if (panel.dock !== false && panel.floatPos) {
+    // 'right' as well as 'left': a compact-home window sits in the side dock
+    // while small, and floats again exactly where it was on a large screen.
     hooks.positionPanel(panel, 'float', { auto: true, restorePos: panel.floatPos });
   }
   panel.autoDocked = false;
+}
+
+/** Re-derive the phone/compact state and reconcile if it flipped. Shared by the
+ *  resize listener and the test override seam. */
+function reevaluatePhoneScreen() {
+  const now = isPhoneScreen();
+  if (now === compactViewport) return;
+  compactViewport = now;
+  for (const panel of panels.values()) panel.closeMenu();
+  if (panelSystemReady) reconcileCompactViewport();
+}
+
+/** Pin phone detection: true/false forces the answer, null restores the real
+ *  screen check. The headless browser reports screen==viewport and can't
+ *  emulate a hand-held, so the mobile browser tests use this to enter/leave the
+ *  compact workflow while sizing the viewport for the layout space they need. */
+export function setPhoneScreenOverride(value) {
+  phoneScreenOverride = value === null ? null : !!value;
+  try {
+    if (phoneScreenOverride === null) sessionStorage.removeItem(PHONE_OVERRIDE_KEY);
+    else sessionStorage.setItem(PHONE_OVERRIDE_KEY, phoneScreenOverride ? '1' : '0');
+  } catch { /* storage unavailable */ }
+  reevaluatePhoneScreen();
+}
+
+/** True while the phone/compact workflow is active (a phone-sized screen, see
+ *  isPhoneScreen). Read by panels that default differently on a phone. */
+export function isCompactViewport() {
+  return compactViewport;
+}
+
+/** Visual ▸ "Icon-only toolbars": fold the Measure/View toolbars to icons at
+ *  any window size (the phone bottom-sheet workflow stays screen-gated). */
+export function setForcedIconMode(on) {
+  setPanelPref('forceCompactIcons', on);
+  refreshCompactFloatingPanels();
 }
 
 function reconcileCompactViewport() {
@@ -394,9 +486,14 @@ function reconcileCompactViewport() {
   }
   if (compactViewport) {
     for (const panel of panels.values()) {
-      if (panel.closed || panel.docked || isMobileExempt(panel)) continue;
-      panel.autoDocked = true;
-      positionPanelForDock(panel);
+      if (panel.closed || panel.docked) continue;
+      if (compactHomeOf(panel)) {
+        panel.autoDocked = true;
+        sideHomePanel(panel);
+      } else if (!isMobileExempt(panel)) {
+        panel.autoDocked = true;
+        positionPanelForDock(panel);
+      }
     }
   } else {
     for (const panel of panels.values()) {
@@ -462,6 +559,14 @@ export function registerPanel(def) {
     // remembers where openPanel should attach it; content build is deferred.
     panel.closed = true;
     panel.dock = dock;
+  } else if (compactViewport && compactHomeOf(panel)) {
+    // Ahead of the dock branches: the compact home also owns which edge the
+    // dock hugs, which a plain 'right' restore would not re-apply.
+    // Placed by the breakpoint, not by the user, unless the window was already
+    // remembered as side-docked — the marker is what floats it again on a
+    // large screen, and a fresh compact load has no persisted entry to carry.
+    if (dock !== 'right') panel.autoDocked = true;
+    sideHomePanel(panel);
   } else if (dock === 'right') {
     sideDockPanel(panel, {
       beforeEl: sideDockBeforeFromStoredOrder(def.id),
@@ -502,7 +607,7 @@ export function registerPanel(def) {
   }
   // Once a compact-capable panel is attached, re-check crowding immediately so
   // Measure/View compact as soon as both exist, not only on the next resize.
-  if (def.compactIcon) refreshCompactFloatingPanels();
+  if (def.compactIcon || def.compactHome) refreshCompactFloatingPanels();
   return panel;
 }
 
@@ -573,8 +678,10 @@ export function revealFeaturePanels() {
   // placement (viewport clamp) before any wantExpanded expansion below
   // decides its grow-upward anchoring from the applied position.
   updateFloatPlacements();
-  // Side-docked feature windows became visible -> show the pane chrome/tabs.
+  // Side-docked feature windows became visible -> show the pane chrome/tabs,
+  // and a compact-home window that was hidden until now gets its launcher.
   refreshSideDock();
+  refreshCompactFloatingPanels();
   for (const panel of panels.values()) {
     if (panel.wantExpanded && !panel.closed) {
       panel.wantExpanded = false;
@@ -604,6 +711,7 @@ export function openPanel(id) {
     setSideDockCollapsed(false);
   } else if (!panel.el.isConnected) {
     if (panel.dock === 'left') dockPanel(panel);
+    else if (compactViewport && compactHomeOf(panel)) sideHomePanel(panel);
     else if (compactViewport && !isMobileExempt(panel)) {
       if (!panel.autoDocked) panel.floatPos = null;
       positionPanelForDock(panel);
@@ -654,6 +762,8 @@ export function removePanel(id) {
   destroyContent(panel);
   panel.remove();
   panels.delete(id);
+  compactLaunchers.get(id)?.remove();
+  compactLaunchers.delete(id);
 }
 
 /**
@@ -722,9 +832,12 @@ export function saveLayout() {
   data.rightDock = {
     order: rd.order.filter((id) => panels.get(id)?.def.persist !== false),
     front: rd.front,
-    collapsed: rd.collapsed,
+    // A borrowed edge/collapse is not the user's preference — persist what it
+    // replaced, or one phone session would set the dock's shape for every
+    // later desktop one.
+    collapsed: borrowedDock ? borrowedDock.collapsed : rd.collapsed,
     fraction: rd.fraction,
-    side: rd.side,
+    side: borrowedDock && rd.side === borrowedDock.toSide ? borrowedDock.side : rd.side,
   };
   for (const panel of panels.values()) {
     if (panel.def.persist === false) continue;
@@ -953,9 +1066,15 @@ function floatPanel(panel, pos, opts = {}) {
 /** Does the side panel currently reserve layout space? (On mobile it slides
  *  OVER the canvas, so floating windows never need to make room for it.) */
 function dockOccupiesSpace() {
-  if (compactViewport) return false;
   const ui = document.getElementById('ui');
-  return !!ui && ui.getBoundingClientRect().width > 0;
+  if (!ui) return false;
+  // The compact rung (responsive.css) makes #ui `position: fixed` — an
+  // off-canvas sheet that paints over the scene and never displaces floating
+  // windows. Reading the computed position keeps this in step with the CSS
+  // rung itself, rather than the phone check: a narrow DESKTOP window is past
+  // that rung (dock overlaid) without being a phone (windows still float).
+  if (getComputedStyle(ui).position === 'fixed') return false;
+  return ui.getBoundingClientRect().width > 0;
 }
 
 function measureUiWidth() {
@@ -1128,11 +1247,26 @@ function requiredSceneWidthForCompact() {
 function refreshCompactFloatingPanels() {
   const scene = sceneRect();
   const available = scene ? scene.width : window.innerWidth;
-  const small = available < requiredSceneWidthForCompact();
+  // Icons on a phone (compactViewport: the Structure window is behind its
+  // launcher there, so the three scene windows fold and unfold together), when
+  // forced, or when the scene is crowded. But NOT when the crowding is only the
+  // dock's own sidebar footprint: dragging the window narrower would fold the
+  // toolbars, then the dock collapses to its hamburger overlay at ~1024 (freeing
+  // that width) and they pop back open, then fold again — a flip-flop across the
+  // dock transition. Fold only once the dock has actually compressed to the
+  // overlay, or a split-pane reserve is what's claiming the scene (the reserve
+  // check keeps the legitimate "dock shown + a wide plot pane" fold intact).
+  const crowded = available < requiredSceneWidthForCompact();
+  const dockOnlyCrowd = crowded && dockOccupiesSpace()
+    && rightReservePx === 0 && bottomReservePx === 0;
+  const small = panelPrefs.forceCompactIcons
+    || compactViewport || (crowded && !dockOnlyCrowd);
   for (const panel of panels.values()) {
     if (panel.compactBtn) panel.setCompact(small && !panel.docked);
   }
   applyCompactPositions();
+  updateCompactLaunchers();
+  releaseCompactHome();
 }
 
 /**
@@ -1157,6 +1291,7 @@ function applyCompactPositions() {
   for (const panel of panels.values()) {
     if (panel.compactBtn && !panel.docked) panel.applyFloatPosition(derivedFloatPos(panel));
   }
+  applyCompactLauncherPositions();
   document.documentElement.style.setProperty('--compact-stack-bottom', `${compactStackBottomPx()}px`);
 }
 
@@ -1171,6 +1306,143 @@ function compactStackBottomPx() {
     if (rect.height) bottom = Math.max(bottom, rect.bottom);
   }
   return bottom;
+}
+
+// ---- compact home: a side-dock sheet behind a launcher icon -----------------
+// A def may declare
+//   compactHome: { side, icon, label, anchor }
+// meaning: below the compact breakpoint this window is too big to unfold over
+// the scene, so it moves into the side dock (a sheet on `side`) and is raised
+// by a standalone round icon parked at `anchor`. Unrelated to compactIcon /
+// compactStackAfter above, which fold a floating TOOLBAR into an icon that
+// unfolds in place — that only works for windows small enough to overlay.
+//
+// The launcher is deliberately not a PanelWindow: it carries no state, is
+// never persisted, and reuses the compact-icon chrome by wearing the same
+// classes (panelWindow.css keys on them). It has no data-panel-id, so panel
+// lookups never match it.
+
+/** @type {Map<string, HTMLElement>} */
+const compactLaunchers = new Map();
+
+// The dock's edge and its collapsed flag are global, persisted preferences, so
+// a compact home only ever BORROWS them: both go back when the dock empties
+// again, and neither borrowed value is persisted. Without that, one visit at
+// phone width left the dock on 'bottom' and collapsed forever — and BOTH of
+// `#viewArea.split-dock-bottom` and `.split-pane-collapsed` turn OFF the rule
+// that narrows #view for a right-side pane (sideDock.css), so a later split
+// view silently stopped shrinking the scene at all.
+/** @type {{side: string, collapsed: boolean, toSide: string}|null} */
+let borrowedDock = null;
+
+/** Move a window into its compact home. The sheet starts OPEN on a phone — the
+ *  Structure info is the main thing a hand-held user came for, and it sits below
+ *  the scene (a bottom sheet), so raising it by default doesn't bury the view.
+ *  The launcher icon lowers it. */
+function sideHomePanel(panel) {
+  const home = compactHomeOf(panel);
+  // Whoever materializes the dock picks its edge; a dock occupied by OTHER
+  // windows is never silently relocated (same rule as a drag-and-drop into the
+  // dock). "Occupied by others" ignores this panel itself: on Reset UI the sheet
+  // is still attached from before, and a bare `!order.length` would then read as
+  // occupied and skip re-establishing the bottom edge — leaving it a right,
+  // expanded tab instead of the bottom sheet.
+  const { order, side, collapsed } = getSideDockLayout();
+  const materializing = order.every((id) => id === panel.id);
+  // Dock BEFORE borrowing: both setters below reach releaseCompactHome through
+  // the reserve sync, and an empty dock would hand its state straight back.
+  sideDockPanel(panel, { front: true, expand: false });
+  if (!materializing) return;
+  const toSide = home.side || 'bottom';
+  borrowedDock = { side, collapsed, toSide };
+  if (side !== toSide) setSideDockSide(toSide);
+  setSideDockCollapsed(false);
+}
+
+/** Give the dock's edge and collapsed state back once no window is left in it.
+ *  The edge is left alone if it has since been changed by hand — that is a
+ *  deliberate choice, not ours. */
+function releaseCompactHome() {
+  if (!borrowedDock) return;
+  const { order, side } = getSideDockLayout();
+  if (order.length) return;
+  const { side: from, collapsed, toSide } = borrowedDock;
+  borrowedDock = null; // cleared first: both setters below re-enter here
+  if (side === toSide) setSideDockSide(from);
+  setSideDockCollapsed(collapsed);
+}
+
+/** Raise this window's sheet, or lower it if it is already the one showing. */
+function toggleCompactSheet(panel) {
+  const side = getSideDockLayout();
+  if (!side.collapsed && side.front === panel.id) {
+    setSideDockCollapsed(true);
+  } else {
+    sideDockPanel(panel, { front: true, expand: true });
+    setSideDockCollapsed(false);
+  }
+  scheduleSave();
+}
+
+function buildCompactLauncher(panel) {
+  const home = compactHomeOf(panel);
+  const el = document.createElement('div');
+  el.className = 'cv-panel cv-floating cv-compact cv-collapsed';
+  el.dataset.compactLauncher = panel.id;
+  const bar = document.createElement('div');
+  bar.className = 'cv-panel-titlebar';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'cv-panel-compact-btn';
+  btn.title = home.label || panel.def.title || '';
+  const img = document.createElement('img');
+  img.src = home.icon;
+  img.alt = '';
+  btn.appendChild(img);
+  btn.addEventListener('click', () => toggleCompactSheet(panel));
+  bar.appendChild(btn);
+  el.appendChild(bar);
+  document.body.appendChild(el);
+  compactLaunchers.set(panel.id, el);
+}
+
+/** Create/remove the launcher icons for the current viewport. */
+function updateCompactLaunchers() {
+  let changed = false;
+  for (const panel of panels.values()) {
+    if (!compactHomeOf(panel)) continue;
+    const el = compactLaunchers.get(panel.id);
+    const want = compactViewport && !panel.el.hidden;
+    if (want && !el) {
+      buildCompactLauncher(panel);
+      changed = true;
+    } else if (!want && el) {
+      el.remove();
+      compactLaunchers.delete(panel.id);
+      changed = true;
+    }
+  }
+  applyCompactLauncherPositions();
+  // Gaining or losing a launcher changes which side-docked windows still need
+  // a pull-tab on the collapsed edge.
+  if (changed) refreshSideDockTabs();
+}
+
+/** Keep each launcher clear of the pane it opens, so a raised sheet pushes its
+ *  own icon ahead of it instead of swallowing the control that lowers it
+ *  again. Measured from the pane, not from the reserve the floating windows
+ *  use: on a compact viewport the pane overlays the scene and reserves 0. */
+function applyCompactLauncherPositions() {
+  if (!compactLaunchers.size) return;
+  const over = sideDockOverlapPx();
+  for (const [id, el] of compactLaunchers) {
+    const panel = panels.get(id);
+    if (!panel) continue;
+    const pos = { ...(compactHomeOf(panel).anchor || { right: 20, bottom: 20 }) };
+    if (typeof pos.right === 'number') pos.right += over.right;
+    if (typeof pos.bottom === 'number') pos.bottom += over.bottom;
+    applyEdgeAnchors(el, pos);
+  }
 }
 
 /** After any dock mutation, docked panels' sort keys follow their DOM order. */

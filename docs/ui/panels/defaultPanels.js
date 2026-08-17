@@ -3,7 +3,7 @@
 // migration is concentrated here; the builders themselves only need to build
 // into the panel body they are given.
 
-import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref } from './PanelManager.js';
+import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref, setForcedIconMode } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender, setAxisStepButtonsMode } from '../../render/index.js';
@@ -32,7 +32,7 @@ import { createFeatureLockSwitch } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
-import { setBackgroundDotVisible, isBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
+import { setBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
 
 // ---- static-row adoption ------------------------------------------------------
 //
@@ -239,6 +239,8 @@ export function registerDefaultPanels() {
       const el = document.getElementById('measurementTools');
       if (el) body.appendChild(el);
     },
+    // right: 20 — the toolbar's right edge lines up with the Structure window
+    // (also right: 20) below it.
     defaults: { dock: false, anchor: { right: 20, top: 20 }, collapsed: false },
   });
 
@@ -275,10 +277,10 @@ export function registerDefaultPanels() {
       }];
     },
     // Base position (dock hidden) clears the dock-unhide menu button
-    // (#mobileMenuToggle: left 12px + 44px wide) with the same 12px margin the
+    // (#mobileMenuToggle: left 12px + 58px wide) with the same 12px margin the
     // button keeps to the screen edge. While the dock occupies that column the
     // window is displaced to sit just right of it.
-    defaults: { dock: false, anchor: { left: 68, top: 20 }, collapsed: false },
+    defaults: { dock: false, anchor: { left: 82, top: 20 }, collapsed: false },
   });
   // setupScene wired the handlers earlier under the default mode; apply the
   // stored preference now that panel preferences have been loaded.
@@ -286,12 +288,28 @@ export function registerDefaultPanels() {
   // Same for the collapsed-bar handle style (Settings > "Always show small
   // drag handles") — a body class the CSS keys off.
   document.body.classList.toggle('cv-small-drag-handles', !!getPanelPref('smallDragHandles'));
+  // ...and for the on-canvas background picker, which has to be applied even
+  // if the Visual window carrying its toggle is never opened.
+  setBackgroundDotVisible(!!getPanelPref('backgroundDot'));
+  // Same for the measurement-toolbar labels — the Measure window shows the
+  // icon-only buttons regardless of whether the Visual window is ever built.
+  document.getElementById('measurementTools')
+    ?.classList.toggle('show-tool-labels', !!getPanelPref('measureToolLabels'));
 
   registerPanel({
     id: 'info',
     title: 'Structure',
     lifecycle: 'persistent',
     infoMd: './data/structureInfo.md',
+    // Unfolding this window in place fills a phone screen, so below the
+    // compact breakpoint it moves into the side dock as a bottom sheet and is
+    // raised by a round icon parked where the floating window used to sit.
+    compactHome: {
+      side: 'bottom',
+      icon: './data/icons/info-icon.svg',
+      label: 'Toggle Structure Info',
+      anchor: { right: 20, bottom: 20 },
+    },
     onCollapse() { collapseAllAtomExpansions(); },
     buildContent(body) {
       // Fixed width while floating, so the panel doesn't shrink-wrap to
@@ -597,11 +615,25 @@ export function registerDefaultPanels() {
       const bgRow = document.createElement('div');
       bgRow.className = 'control-row-pair';
       const bgToggle = makeToggleRow('backgroundDotToggle', 'Background picker on canvas',
-        isBackgroundDotVisible(), (on) => setBackgroundDotVisible(on));
+        !!getPanelPref('backgroundDot'), (on) => {
+          setPanelPref('backgroundDot', on);
+          setBackgroundDotVisible(on);
+        });
       bgToggle.style.flex = '1';
       bgRow.appendChild(bgToggle);
       bgRow.appendChild(createBackgroundSwatch());
       sceneGroup.appendChild(bgRow);
+      // Restore the names under the Measure toolbar's icon-only buttons for
+      // anyone who'd rather read them than lean on the tooltips.
+      sceneGroup.appendChild(makeToggleRow('measureToolLabelsToggle', 'Measurement tool labels',
+        !!getPanelPref('measureToolLabels'), (on) => {
+          setPanelPref('measureToolLabels', on);
+          document.getElementById('measurementTools')?.classList.toggle('show-tool-labels', on);
+        }));
+      // Fold the Measure/View toolbars to round icons at any size — the mobile
+      // fold made available on demand. Never triggers the phone bottom-sheet.
+      sceneGroup.appendChild(makeToggleRow('forceCompactIconsToggle', 'Icon-only toolbars',
+        !!getPanelPref('forceCompactIcons'), (on) => setForcedIconMode(on)));
       sceneSection.appendChild(sceneGroup);
 
       // Rendering and Colors share one box: addColorPanel appends its own

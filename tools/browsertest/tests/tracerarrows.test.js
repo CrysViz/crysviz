@@ -271,6 +271,20 @@ function forceTaperProfile(file, base, apex) {
   await waitArrowBodies(6);
   await waitTracer('raytrace');
 
+  // Headless Firefox can hand page.screenshot a stale WebGL frame for a while
+  // after the tracer has already restarted on the new scene (byte-identical
+  // shots seconds apart, sample counter well past the reset). Poll until the
+  // presented image differs from `baseline`; past the deadline, return the
+  // stale shot and let the assertion say so.
+  const shotUnlike = async (name, baseline, deadlineMs = 15000) => {
+    const t0 = Date.now();
+    for (;;) {
+      const file = await H.shotCanvas(page, name);
+      if (changedPixels(baseline, file) > 0 || Date.now() - t0 > deadlineMs) return file;
+      await page.waitForTimeout(500);
+    }
+  };
+
   for (const id of ['raytrace', 'pathtrace']) {
     await switchTracer(id);
     const on = await H.shotCanvas(page, `tracer-arrows-${id}-force-on`);
@@ -296,7 +310,7 @@ function forceTaperProfile(file, base, apex) {
     await waitArrowBodies(0);
     await waitTracer(id);
     await page.waitForTimeout(300);
-    const off = await H.shotCanvas(page, `tracer-arrows-${id}-force-off`);
+    const off = await shotUnlike(`tracer-arrows-${id}-force-off`, on);
     H.check(`${id} force arrows change the image`, changedPixels(off, on) > 120,
       JSON.stringify({ changed: changedPixels(off, on) }));
     H.check(`${id} force arrow colour is visible`, arrowColorPixels(on, 'force') > 5,
@@ -306,7 +320,7 @@ function forceTaperProfile(file, base, apex) {
     await waitArrowBodies(6);
     await waitTracer(id);
     await page.waitForTimeout(300);
-    const spin = await H.shotCanvas(page, `tracer-arrows-${id}-spin-on`);
+    const spin = await shotUnlike(`tracer-arrows-${id}-spin-on`, off);
     H.check(`${id} spin arrows change the image`, changedPixels(off, spin) > 10,
       JSON.stringify({ changed: changedPixels(off, spin) }));
     H.check(`${id} spin arrow colour is visible`, arrowColorPixels(spin, 'spin') > 5,

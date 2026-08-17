@@ -48,7 +48,10 @@
   </head>
 
   <body>
-    <div id="mobileMenuToggle">☰</div>
+    <!-- Dock toggle. Styled as one more scene window (styles.css "Scene
+         toolbars"): a --tb-btn square inside the same chrome, so it sits
+         level with the View toolbar beside it. -->
+    <div id="mobileMenuToggle" class="cv-tb"><span class="cv-tb-btn" aria-hidden="true">☰</span></div>
     <div id="mobileOverlay"></div>
     <div id="backgroundDot" class="background-dot"></div>
     <div id="ui">
@@ -270,113 +273,119 @@
       </div>
     </div>
 
-    <!-- Measurement Tools UI -->
+    <!-- Measurement Tools UI. Adopted into the "Measure" panel window by
+         ui/panels/defaultPanels.js. Same control language as #cameraTools:
+         .cv-tb-btn squares fused into .cv-tb-group segments (styles.css
+         "Scene toolbars"). Icon-only — the labels stay for assistive tech,
+         the tooltips carry them for everyone else. -->
     <div id="measurementTools">
-      <!-- Measurement panel -->
-      <div id="measurementPanel" class="measurement-group">
-        
-
-        <button id="distanceModeBtn" class="measure-tool-btn" title="Distance Measurement">
-          <div class="tool-icon">
-            <img src="./data/icons/measure-icon2.svg" alt="Ruler">
-          </div>
-          <span>Distance</span>
-        </button>
-
-        <button id="angleModeBtn" class="measure-tool-btn" title="Angle Measurement">
-          <div class="tool-icon">
-            <img src="./data/icons/angle-icon2.svg" alt="Angle">
-          </div>
-          <span>Angle</span>
-        
-        </button>
-
-        <button id="clearAllMeasurements" class="measure-tool-btn" title="Clear All Measurements">
-          <div class="tool-icon">
-            <img src="./data/icons/delete-icon2.svg" alt="Clear">
-          </div>
-          <span>Clear</span>
-
-        </button>
-
-        <button id="hideAtomsBtn" class="measure-tool-btn" title="Hide mode: click an atom to hide it, Shift+drag to hide several at once.">
-          <div class="tool-icon">
-            <img src="./data/icons/hide-icon.svg" alt="Hide">
-          </div>
-          <span>Hide</span>
-        </button>
-
-        <button id="restoreBtn" class="measure-tool-btn" title="Restore mode: click a ghost to restore it, Shift+drag to restore several at once. Long-press for Restore All.">
-          <div class="tool-icon">
-            <img src="./data/icons/restore-icon.svg" alt="Restore">
-          </div>
-          <span>Restore</span>
-        </button>
+      <div id="measurementPanel" class="cv-tb">
+        <!-- Measurements: place / clear. -->
+        <div class="cv-tb-group" role="group" aria-label="Measurements">
+          <button id="distanceModeBtn" class="cv-tb-btn measure-tool-btn" title="Distance measurement">
+            <div class="tool-icon">
+              <img src="./data/icons/measure-icon2.svg" alt="">
+            </div>
+            <span class="visually-hidden">Distance</span>
+          </button>
+          <button id="angleModeBtn" class="cv-tb-btn measure-tool-btn" title="Angle measurement">
+            <div class="tool-icon">
+              <img src="./data/icons/angle-icon2.svg" alt="">
+            </div>
+            <span class="visually-hidden">Angle</span>
+          </button>
+          <button id="clearAllMeasurements" class="cv-tb-btn measure-tool-btn" title="Clear all measurements">
+            <div class="tool-icon">
+              <img src="./data/icons/delete-icon2.svg" alt="">
+            </div>
+            <span class="visually-hidden">Clear</span>
+          </button>
+        </div>
+        <!-- Atom visibility: a different job from measuring, so its own segment. -->
+        <div class="cv-tb-group" role="group" aria-label="Atom visibility">
+          <button id="hideAtomsBtn" class="cv-tb-btn measure-tool-btn" title="Hide mode: click an atom to hide it, Shift+drag to hide several at once.">
+            <div class="tool-icon">
+              <img src="./data/icons/hide-icon.svg" alt="">
+            </div>
+            <span class="visually-hidden">Hide</span>
+          </button>
+          <button id="restoreBtn" class="cv-tb-btn measure-tool-btn" title="Restore mode: click a ghost to restore it, Shift+drag to restore several at once. Long-press for Restore All.">
+            <div class="tool-icon">
+              <img src="./data/icons/restore-icon.svg" alt="">
+            </div>
+            <span class="visually-hidden">Restore</span>
+          </button>
+        </div>
       </div>
     </div>
 
-<div id="cameraTools">
-  <!-- Camera panel -->
-  <div id="cameraPanel" class="measurement-group">
-    <!-- Each axis button carries an up/down arrow above and below that
-         step-rotate the camera about that axis (world x/y/z, lattice a/b/c);
-         clicking the letter views along the axis. -->
-    <div class="camera-axis-stack">
-      <button class="angle-btn axis-step" id="xUp" title="Rotate about X (+)">▲</button>
-      <button class="camera-tool-btn" id="viewX" title="View X axis">
-        <div class="camera-icon">x</div><span>x</span>
-      </button>
-      <button class="angle-btn axis-step" id="xDown" title="Rotate about X (−)">▼</button>
-    </div>
-    <div class="camera-axis-stack">
-      <button class="angle-btn axis-step" id="yUp" title="Rotate about Y (+)">▲</button>
-      <button class="camera-tool-btn" id="viewY" title="View Y axis">
-        <div class="camera-icon">y</div><span>y</span>
-      </button>
-      <button class="angle-btn axis-step" id="yDown" title="Rotate about Y (−)">▼</button>
-    </div>
-    <div class="camera-axis-stack">
-      <button class="angle-btn axis-step" id="zUp" title="Rotate about Z (+)">▲</button>
-      <button class="camera-tool-btn" id="viewZ" title="View Z axis">
-        <div class="camera-icon">z</div><span>z</span>
-      </button>
-      <button class="angle-btn axis-step" id="zDown" title="Rotate about Z (−)">▼</button>
-    </div>
-    <div class="camera-separator"></div>
-    <div class="camera-axis-stack">
-      <button class="angle-btn axis-step" id="aUp" title="Rotate about a (+)">▲</button>
-      <button class="camera-tool-btn" id="viewA" title="View A axis">
-        <div class="camera-icon">a</div><span>a</span>
-      </button>
-      <button class="angle-btn axis-step" id="aDown" title="Rotate about a (−)">▼</button>
-    </div>
-    <div class="camera-axis-stack">
-      <button class="angle-btn axis-step" id="bUp" title="Rotate about b (+)">▲</button>
-      <button class="camera-tool-btn" id="viewB" title="View B axis">
-        <div class="camera-icon">b</div><span>b</span>
-      </button>
-      <button class="angle-btn axis-step" id="bDown" title="Rotate about b (−)">▼</button>
-    </div>
-    <div class="camera-axis-stack">
-      <button class="angle-btn axis-step" id="cUp" title="Rotate about c (+)">▲</button>
-      <button class="camera-tool-btn" id="viewC" title="View C axis">
-        <div class="camera-icon">c</div><span>c</span>
-      </button>
-      <button class="angle-btn axis-step" id="cDown" title="Rotate about c (−)">▼</button>
-    </div>
+    <!-- Camera view tools. Adopted into the "View" panel window. -->
+    <div id="cameraTools">
+      <div id="cameraPanel" class="cv-tb">
+        <!-- Each axis button carries an up/down arrow above and below that
+             step-rotate the camera about that axis (world x/y/z, lattice a/b/c);
+             clicking the letter views along the axis.
 
-    <div class="camera-separator"></div>
+             The two triplets are fused segments (world | lattice). The arrows
+             sit OUTSIDE the letter button but inside .camera-axis-stack because
+             cameraAngleControl.js reaches the stack with .closest() and counts
+             exactly six of them. -->
+        <div class="camera-axis-group cv-tb-group" role="group" aria-label="View along world axis">
+          <div class="camera-axis-stack">
+            <button class="angle-btn axis-step" id="xUp" title="Rotate about X (+)">▲</button>
+            <button class="cv-tb-btn camera-tool-btn" id="viewX" title="View X axis">
+              <div class="camera-icon">x</div><span>x</span>
+            </button>
+            <button class="angle-btn axis-step" id="xDown" title="Rotate about X (−)">▼</button>
+          </div>
+          <div class="camera-axis-stack">
+            <button class="angle-btn axis-step" id="yUp" title="Rotate about Y (+)">▲</button>
+            <button class="cv-tb-btn camera-tool-btn" id="viewY" title="View Y axis">
+              <div class="camera-icon">y</div><span>y</span>
+            </button>
+            <button class="angle-btn axis-step" id="yDown" title="Rotate about Y (−)">▼</button>
+          </div>
+          <div class="camera-axis-stack">
+            <button class="angle-btn axis-step" id="zUp" title="Rotate about Z (+)">▲</button>
+            <button class="cv-tb-btn camera-tool-btn" id="viewZ" title="View Z axis">
+              <div class="camera-icon">z</div><span>z</span>
+            </button>
+            <button class="angle-btn axis-step" id="zDown" title="Rotate about Z (−)">▼</button>
+          </div>
+        </div>
+        <div class="camera-axis-group cv-tb-group" role="group" aria-label="View along lattice axis">
+          <div class="camera-axis-stack">
+            <button class="angle-btn axis-step" id="aUp" title="Rotate about a (+)">▲</button>
+            <button class="cv-tb-btn camera-tool-btn" id="viewA" title="View A axis">
+              <div class="camera-icon">a</div><span>a</span>
+            </button>
+            <button class="angle-btn axis-step" id="aDown" title="Rotate about a (−)">▼</button>
+          </div>
+          <div class="camera-axis-stack">
+            <button class="angle-btn axis-step" id="bUp" title="Rotate about b (+)">▲</button>
+            <button class="cv-tb-btn camera-tool-btn" id="viewB" title="View B axis">
+              <div class="camera-icon">b</div><span>b</span>
+            </button>
+            <button class="angle-btn axis-step" id="bDown" title="Rotate about b (−)">▼</button>
+          </div>
+          <div class="camera-axis-stack">
+            <button class="angle-btn axis-step" id="cUp" title="Rotate about c (+)">▲</button>
+            <button class="cv-tb-btn camera-tool-btn" id="viewC" title="View C axis">
+              <div class="camera-icon">c</div><span>c</span>
+            </button>
+            <button class="angle-btn axis-step" id="cDown" title="Rotate about c (−)">▼</button>
+          </div>
+        </div>
 
-    <!-- Reset button -->
-    <button class="camera-tool-reset-btn" id="resetView" title="Reset Camera View">
-      <div class="reset-icon"></div>
-      <span>Reset</span>
-    </button>
+        <!-- Reset: back to the standard view (the cube is the [1,1,1] view it
+             restores). WindowAndSceneControls.js wraps it with the camera lock
+             in .camera-reset-stack at startup: reset | divider | lock, the lock
+             set apart because it is a standing mode, not another view action. -->
+        <button class="cv-tb-btn camera-tool-reset-btn" id="resetView" title="Reset view">
+          <img class="reset-icon" src="./data/icons/cube-icon.svg" alt="">
+        </button>
+      </div>
     </div>
-   </div>
-</div>
-
-
 
     <!-- Structure info: adopted into the "Structure" panel window
          (ui/panels/defaultPanels.js). The header box shows the chemical

@@ -21,6 +21,23 @@ const syntheticLongPress = (page, selector, pointerType, pointerId, x, y) =>
     }, 650);
   }), { selector, pointerType, pointerId, x, y });
 
+// Trackball momentum decays per FRAME, so how long a coast takes to settle
+// (AnimateModule's settleControlsMomentum snaps it to exact zero) depends on
+// the frame rate — seconds under the software renderer. Wait for the camera
+// to actually stop instead of guessing a duration.
+const waitForCameraSettled = async (page, timeoutMs = 15000) => {
+  const sample = () => page.evaluate(async () => (await import('./state/store.js')).app.camera.quaternion.toArray());
+  const t0 = Date.now();
+  let prev = await sample();
+  while (Date.now() - t0 < timeoutMs) {
+    await page.waitForTimeout(400);
+    const cur = await sample();
+    if (cur.every((v, i) => v === prev[i])) return true;
+    prev = cur;
+  }
+  return false;
+};
+
 const mouseLongPress = async (page, selector, x, y) => {
   await page.mouse.move(x, y);
   await page.mouse.down();
@@ -44,6 +61,13 @@ const countDrawnGizmoPixels = async (page) => {
 (async () => {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page);
+
+  // The background dot is off by default everywhere (panelPrefs.backgroundDot);
+  // this file exercises its drag/resize/lock, so opt in like a user would.
+  await page.evaluate(async () => {
+    (await import('./ui/panels/PanelManager.js')).setPanelPref('backgroundDot', true);
+    (await import('./ui/BackgroundPicker.js')).setBackgroundDotVisible(true);
+  });
 
   const axesReady = await page.evaluate(() => {
     const gizmo = document.getElementById('axesGizmo');
@@ -483,7 +507,7 @@ const countDrawnGizmoPixels = async (page) => {
   // The preceding locked touch pass-through is an ordinary release and now
   // deliberately retains Trackball inertia; let that coast settle before
   // measuring the unlocked widget drag.
-  await page.waitForTimeout(3000);
+  await waitForCameraSettled(page);
   const axesUnlockedBefore = await page.evaluate(async () => {
     const { app, general } = await import('./state/store.js');
     const r = document.getElementById('axesGizmo').getBoundingClientRect();
@@ -597,7 +621,7 @@ const countDrawnGizmoPixels = async (page) => {
   await page.mouse.up();
   H.check('a locked color bar still opens Unlock', await page.locator('#gizmoui-colorbar .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).count() > 0);
   await page.locator('#gizmoui-colorbar .cv-colorbar-menu-item').filter({ hasText: /^Unlock$/ }).click();
-  await page.waitForTimeout(1800);
+  await waitForCameraSettled(page);
   const barUnlockedBefore = await page.evaluate(async () => {
     const { app, general } = await import('./state/store.js');
     const r = document.querySelector('#gizmoui-colorbar').getBoundingClientRect();

@@ -188,7 +188,7 @@ const H = require('../harness');
 
     const names = [...document.querySelectorAll('#objectTable tbody tr')]
       .map((r) => r.querySelector('.name-inner')?.textContent ?? '');
-    const scanRows = names.filter((n) => /^EOS scan/.test(n));
+    const scanRows = names.filter((n) => /^eos_/.test(n));
     const evPlot = document.getElementById('ev-plot');
     const marker = (evPlot?.data ?? []).find((t) => t.mode === 'markers');
     const eosBody = document.getElementById('cvPanelBody-eos');
@@ -216,7 +216,7 @@ const H = require('../harness');
   H.check('the fit actually completed', ui.status === 'Fit complete.' && ui.resultsShown
     && ui.evV0Text.length > 0, `status "${ui.status}" V0 "${ui.evV0Text}"`);
   H.check('re-running the scan replaces its file-browser row (exactly one)',
-    ui.scanRows.length === 1 && ui.scanRows[0] === 'EOS scan (nep)', JSON.stringify(ui.names));
+    ui.scanRows.length === 1 && ui.scanRows[0] === 'eos_nep_YBCO', JSON.stringify(ui.names));
   H.check('ingest reset the input units to computed (eV)', ui.unitsReset);
   H.check('the panel exposes the pressure-range inputs', ui.hasPressureInputs);
 
@@ -238,7 +238,7 @@ const H = require('../harness');
 
   const first = await clickPoint(0);
   H.check('clicking the smallest-volume (highest-P) point selects that scan frame',
-    first.emitOk && first.rowName === 'EOS scan (nep)'
+    first.emitOk && first.rowName === 'eos_nep_YBCO'
       && Math.abs(first.volume - ui.scanVolumes[0]) < 1e-6 && first.step === '1',
     JSON.stringify(first));
   const sixth = await clickPoint(5);

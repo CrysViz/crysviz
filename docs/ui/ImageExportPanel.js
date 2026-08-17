@@ -12,6 +12,8 @@
 import { captureSceneToPng, computeContentScreenBox } from '../render/index.js';
 import { downloadBlob, currentBaseName } from './SavePanel.js';
 import { openCropOverlay } from './CropOverlay.js';
+import { closeMobilePanel, isCompactViewport } from './MobileMenu.js';
+import { isSideDockActive, setSideDockCollapsed, getSideDockLayout } from './panels/SideDock.js';
 
 const PRESET_ASPECTS = {
   '16:9': 16 / 9,
@@ -281,6 +283,19 @@ export function initImageExportPanel() {
     const free = isFree();
     closeModal();
 
+    // On a compact viewport the panel sheet and the side dock cover most of
+    // the view being framed, so fold them away for the selection. The dock is
+    // put back the way it was once the overlay closes; the panel sheet isn't,
+    // since reopening it is one tap and it would cover the result.
+    let restoreDock = null;
+    if (isCompactViewport()) {
+      closeMobilePanel();
+      if (isSideDockActive() && !getSideDockLayout().collapsed) {
+        setSideDockCollapsed(true);
+        restoreDock = () => setSideDockCollapsed(false);
+      }
+    }
+
     openCropOverlay({
       // The initial crop shape: the exact width/height ratio (Free mode fits
       // the view instead). Whether corner drags then PRESERVE that shape is
@@ -322,8 +337,9 @@ export function initImageExportPanel() {
           width: outWidth, height: outHeight, transparent, structureOnly, crop, signal, onProgress,
         });
         downloadBlob(currentBaseName() + '.png', blob);
+        restoreDock?.();
       },
-      onCancel: () => {},
+      onCancel: () => { restoreDock?.(); },
     });
   }
 

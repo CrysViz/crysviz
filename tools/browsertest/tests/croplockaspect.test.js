@@ -31,6 +31,17 @@ async function dragSE(page, from, dx, dy) {
   await page.mouse.up();
 }
 
+async function dragHandleTo(page, corner, x, y) {
+  const from = await page.evaluate((c) => {
+    const r = document.querySelector(`.cv-crop-handle-${c}`).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, corner);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(x, y, { steps: 5 });
+  await page.mouse.up();
+}
+
 (async () => {
   const { browser, page, errors } = await H.launchApp();
   H.check('webgl available', await H.webglAvailable(page));
@@ -86,6 +97,25 @@ async function dragSE(page, from, dx, dy) {
   // crop's current shape, and verify the PNG's dimensions: the dialog's
   // long edge kept, the short edge derived from the drawn aspect.
   await page.evaluate(() => document.querySelector('.cv-crop-lock input').click());
+
+  // Grow the crop to the whole view: with no room below or above it, the
+  // toolbar has to move inside the rect. It used to be placed a full view
+  // height above the top edge, taking the Download button off-screen.
+  const view = await page.evaluate(() => {
+    const r = document.getElementById('view').getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  });
+  await dragHandleTo(page, 'se', view.right - 1, view.bottom - 1);
+  await dragHandleTo(page, 'nw', view.left + 1, view.top + 1);
+  const toolbar = await page.evaluate(() => {
+    const t = document.querySelector('.cv-crop-toolbar').getBoundingClientRect();
+    return { left: t.left, top: t.top, right: t.right, bottom: t.bottom };
+  });
+  H.check('toolbar stays inside the view when the crop fills it',
+    toolbar.top >= view.top - 1 && toolbar.bottom <= view.bottom + 1
+      && toolbar.left >= view.left - 1 && toolbar.right <= view.right + 1,
+    JSON.stringify({ view, toolbar }));
+
   const final = await cropState(page);
   const png = await page.evaluate(async () => {
     const orig = HTMLAnchorElement.prototype.click;

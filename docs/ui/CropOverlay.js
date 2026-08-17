@@ -7,6 +7,7 @@
 // screen) rather than an auto-detected content box.
 
 const MIN_SIZE = 40; // px, floor so the rect can't be dragged to nothing
+const TOOLBAR_GAP = 10; // px between the toolbar and the rect / the view edge
 
 function currentViewRect() {
   const view = document.getElementById('view');
@@ -162,16 +163,26 @@ export function openCropOverlay({ aspect, locked = aspect != null, initial = nul
     maskRight.style.width = `${Math.max(0, vRect.width - (rect.left + rect.width))}px`;
     maskRight.style.height = `${rect.height}px`;
 
-    // Toolbar sits just under the rect, or above it if there's no room below.
-    const belowSpace = vRect.height - (rect.top + rect.height);
-    if (belowSpace > 60) {
-      toolbar.style.top = `${rect.top + rect.height + 10}px`;
-      toolbar.style.bottom = '';
-    } else {
-      toolbar.style.top = '';
-      toolbar.style.bottom = `${vRect.height - rect.top + 10}px`;
+    // Toolbar sits just under the rect, above it when there's no room below,
+    // and inside it along the bottom edge when a rect filling the view leaves
+    // no room either way — it must never leave the view, or the Download
+    // button goes with it.
+    const tw = toolbar.offsetWidth;
+    const th = toolbar.offsetHeight;
+    let top = rect.top + rect.height + TOOLBAR_GAP;
+    if (top + th > vRect.height) {
+      const above = rect.top - th - TOOLBAR_GAP;
+      top = above >= 0 ? above : Math.max(0, vRect.height - th - TOOLBAR_GAP);
     }
-    toolbar.style.left = `${rect.left + rect.width / 2}px`;
+    toolbar.style.top = `${top}px`;
+    toolbar.style.bottom = '';
+
+    // translateX(-50%) centering, kept off both edges — on a narrow screen the
+    // rect's centre alone would hang half the toolbar off the view.
+    const minX = tw / 2 + TOOLBAR_GAP;
+    const maxX = vRect.width - tw / 2 - TOOLBAR_GAP;
+    const centerX = rect.left + rect.width / 2;
+    toolbar.style.left = `${minX > maxX ? vRect.width / 2 : Math.min(Math.max(centerX, minX), maxX)}px`;
   }
   positionOverlay();
   render();

@@ -6,7 +6,7 @@ import { createCompositionRow, createWyckoffCompositionRow, clearCompositionRowR
 import { createBondLengthControls} from '../BondLengthPanel.js'
 import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
 import { clearAllHighlights } from '../SelectAndHighlightModule.js'
-import { getPanel } from '../panels/PanelManager.js'
+import { getPanel, isCompactViewport } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
@@ -101,6 +101,12 @@ function resetAllStyling(structure) {
   structure.spins?.forEach((spin) => { spin.userMaterial = null; });
 }
 
+// Remembers the box's open/closed state so it survives a re-render (every
+// structure change rebuilds the box, which would otherwise reset it — see
+// renderComposition). On a phone the box defaults OPEN, so this is what a
+// deliberate collapse latches onto and keeps closed until reopened.
+let compositionUserClosed = false;
+
 /**
  * Open/close the formula box inside the Structure window (the +/− expandable
  * composition details). Opening also expands the hosting panel window.
@@ -108,6 +114,7 @@ function resetAllStyling(structure) {
 export function setStructurePanelOpen(open) {
   const composition = document.getElementById('composition');
   if (!composition) return;
+  compositionUserClosed = !open;
   composition.classList.toggle('open', open);
   composition.setAttribute('aria-hidden', String(!open));
   const icon = document.getElementById('structureToggleIcon');
@@ -504,7 +511,11 @@ export function renderComposition(panelState="closed") {
   // Sync the formula box: "open" keeps/forces it (and the hosting window)
   // expanded, anything else closes the box (matching the old default-closed
   // behavior on re-render). The window itself stays as the user left it.
-  setStructurePanelOpen(panelState === "open");
+  // Exception — a phone: the box is open by default (the user shouldn't have to
+  // tap the +/− after every structure), unless they've deliberately collapsed
+  // it this session (compositionUserClosed).
+  const openByDefault = isCompactViewport() && !compositionUserClosed;
+  setStructurePanelOpen(panelState === "open" || openByDefault);
 
 // "Link periodic copies": governs the per-copy vs grouped behavior of ALL tabs
 // below — Atoms per-image rows, Bonds/Poly grouped rows (general.linkPeriodicCopies).

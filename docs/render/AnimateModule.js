@@ -230,6 +230,11 @@ export function animation_update(time = 0) {
   camera.position.sub(cameraPanDrift);
   camera.position.addScaledVector(cameraPanRight, app.cameraPan.x);
   camera.position.addScaledVector(cameraPanUp, app.cameraPan.y);
+  // The matrix update above captured the UNPANNED pose, and an idle frame
+  // returns before rendering (which is what would refresh it) — so between
+  // renders every reader of camera.matrixWorld (raycast picking, tooltips,
+  // projections) saw the camera sitting one pan away from where it is.
+  camera.updateMatrixWorld(true);
   // Snap out the damping tail: TrackballControls' momentum decays
   // exponentially and never reaches zero on its own, so 'change' events (and
   // thus render-on-demand frames + tracer accumulation resets) trail on for

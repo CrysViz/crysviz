@@ -90,14 +90,18 @@ export function setupCameraButtons() {
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
 
-  // Lock button sits directly above Reset (its own column stack) rather than
-  // just another item in the wrapping row, so it reads as "modifies what
-  // Reset/switching do" rather than one more view shortcut.
+  // Reset | divider | Lock, wrapped so the trio travels as one unit when the
+  // panel wraps or goes to the mobile grid. The lock stands apart from the
+  // view actions on purpose: it is a standing mode (one shared camera across
+  // structures, or one per structure), and a hairline before it says so.
   const resetBtn = document.getElementById('resetView');
   const stack = document.createElement('div');
   stack.className = 'camera-reset-stack';
+  const divider = document.createElement('div');
+  divider.className = 'camera-separator';
+  divider.setAttribute('aria-hidden', 'true');
   const lockBtn = createLockToggleButton({
-    className: 'camera-tool-btn camera-lock-btn',
+    className: 'cv-tb-btn camera-tool-btn camera-lock-btn',
     titleLocked: 'Camera view is shared across all structures — click to move each structure independently',
     titleUnlocked: 'Camera view is independent per structure — click to share one view across all structures',
     locked: app.cameraLocked !== false,
@@ -105,8 +109,9 @@ export function setupCameraButtons() {
     onChange: (locked) => { app.cameraLocked = locked; saveLockPrefs(); },
   });
   resetBtn.parentElement.insertBefore(stack, resetBtn);
-  stack.appendChild(lockBtn);
   stack.appendChild(resetBtn);
+  stack.appendChild(divider);
+  stack.appendChild(lockBtn);
 }
 
 // Build the three.js scene: renderer/camera/controls/gizmo + lights + theme.
@@ -223,36 +228,33 @@ export function initCamera(useOrthographicCamera){
 // Shown when WebGL context creation fails at startup — most commonly because
 // the browser disabled WebGL for the WHOLE session after a GPU-process crash
 // (e.g. a very large PNG export in another tab), in which case reloading the
-// tab does nothing and only a full browser restart helps. Deliberately
-// self-contained (inline styles, no app CSS/theme dependencies): it must
-// render even though app initialization is about to abort.
+// tab does nothing and only a full browser restart helps. Styled from
+// styles.css (.cv-webgl-fail-*); it still renders with app init aborting,
+// because that stylesheet and theme.css are static <link>s in <head>.
 function showWebglStartupFailureDialog() {
   if (document.getElementById('webglFailureDialog')) return;
   const overlay = document.createElement('div');
   overlay.id = 'webglFailureDialog';
   overlay.setAttribute('role', 'alertdialog');
-  overlay.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;'
-    + 'align-items:center;justify-content:center;background:rgba(0,0,0,0.6);';
+  overlay.classList.add('cv-webgl-fail-overlay');
   const box = document.createElement('div');
-  box.style.cssText = 'max-width:520px;margin:16px;padding:20px 24px;border-radius:10px;'
-    + 'background:#222;color:#eee;font:14px/1.5 sans-serif;box-shadow:0 8px 40px rgba(0,0,0,0.6);';
+  box.classList.add('cv-webgl-fail-box');
   const title = document.createElement('h3');
   title.textContent = '3D graphics could not be started';
-  title.style.cssText = 'margin:0 0 10px 0;font-size:17px;color:#fff;';
+  title.classList.add('cv-webgl-fail-title');
   const body = document.createElement('p');
-  body.style.margin = '0 0 10px 0';
+  body.classList.add('cv-webgl-fail-text');
   body.textContent = 'The browser refused to create a WebGL context, so CrysViz cannot render. '
     + 'This usually means the browser disabled WebGL for the whole session after a graphics '
     + 'crash (for example, a very large PNG export), or that hardware acceleration is off.';
   const steps = document.createElement('p');
-  steps.style.margin = '0 0 14px 0';
+  steps.classList.add('cv-webgl-fail-text');
   steps.textContent = 'Restart the browser completely — reloading this tab is not enough — '
     + 'and close other GPU-heavy tabs first. If the problem persists, check that hardware '
     + 'acceleration / WebGL is enabled in the browser settings.';
   const close = document.createElement('button');
   close.textContent = 'Close';
-  close.style.cssText = 'padding:6px 16px;border:none;border-radius:6px;cursor:pointer;'
-    + 'background:#4a4a4a;color:#fff;font-size:14px;';
+  close.classList.add('cv-webgl-fail-close');
   close.addEventListener('click', () => overlay.remove());
   box.appendChild(title);
   box.appendChild(body);

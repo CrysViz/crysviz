@@ -121,6 +121,23 @@
     100% { transform: translateX(-100%); }
   }
 
+  /* Inline rename (double-click the name): the input takes the cell over,
+     both labels and the hover marquee step aside. */
+  .name-cell.is-editing .name-inner,
+  .name-cell.is-editing .name-scroll {
+    display: none;
+  }
+  .cv-fb-rename {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 1px var(--sp-1);
+    border: 1px solid var(--accent-fg);
+    border-radius: var(--radius-4);
+    background: var(--bg-color);
+    color: var(--fg-1);
+    font: inherit;
+  }
+
   input[type="number"] {
     width: 45px;
     padding: 2px;

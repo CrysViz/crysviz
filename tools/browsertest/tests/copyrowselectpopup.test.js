@@ -45,15 +45,28 @@ async function copyViaPopup(page, option) {
   await H.loadDefaultStructure(page, 'defaultPOSCAR2', 'middle');
   await H.loadDefaultStructure(page, 'defaultPOSCAR3', 'last');
 
+  // Copies are numbered per source: the first is copy_1_middle, the next copy_2_middle.
+  let n = 0;
   for (const option of ['all', 'current']) {
+    n += 1;
     const result = await copyViaPopup(page, option);
     H.check(`popup "${option}": inserted exactly one new row`,
       result.rowCountAfter === result.rowCountBefore + 1, JSON.stringify(result));
     H.check(`popup "${option}": the newly-copied row (right after "middle") is selected, not the last row`,
       result.insertedRightAfterMiddle && result.selectedIndex === result.middleIndex + 1, JSON.stringify(result));
     H.check(`popup "${option}": the selected row is a copy of "middle", not of the last row`,
-      result.selectedName === result.middleRowName && result.selectedName !== result.lastRowName, JSON.stringify(result));
+      result.selectedName === `copy_${n}_${result.middleRowName}` && result.selectedName !== result.lastRowName, JSON.stringify(result));
   }
+  const defaultOption = await page.evaluate(() => {
+    const rows = document.querySelectorAll('#objectTable tbody tr');
+    const middleRow = [...rows].find((r) => r.querySelector('.name-inner')?.textContent === 'middle');
+    middleRow.querySelector('.ftd.icon.copy').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const select = document.querySelector('.cv-fb-copy-select');
+    const value = select?.value;
+    document.querySelector('.cv-fb-popup')?.remove();
+    return value;
+  });
+  H.check('the copy popup defaults to Copy Current Step', defaultOption === 'current', String(defaultOption));
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

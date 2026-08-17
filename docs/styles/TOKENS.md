@@ -625,7 +625,6 @@ justify it and adopted them; the rest stayed literal. 21 sites moved.
 | `--blue-accent-rgb` | `91 168 255` | 4 (1 a near-dupe fold, `.sym-link`'s `rgba(111,182,255,.5)`) | border/ring: `.si-wyckoff-badge` border, `.wyckoff-locked` ring, `.pi-forced-notice` border, `.sym-link` underline |
 | `--blue-accent-fill-rgb` | `35 139 230` | 2 | fill tier of the same family: badge gradient's lighter stop, `.pi-forced-notice` background — kept apart from the border tier per "cluster by role" |
 | `--shortcuts-danger-rgb` | `220 53 53` | 10 | shortcuts-help destructive actions (clear/reset/conflict) — all in `styles.css`, a different hue from the orange `--danger` |
-| `--camera-glow-rgb` | `6 100 50` | 3 | `#cameraTools` hover/unlocked glow ring — deliberately not `--highlight-color`/`--border-color`: must stay fixed green regardless of active backend theme, same call as the bond-range-slider's fixed track (`css_guard_allow.txt`) |
 | `--vacancy-amber-rgb` | `255 210 120` | 2 | disordered-site species/vacancy text tint — thin but real, same call as `--ok-tint`'s 2-site precedent |
 | `--active-green-rgb` | `125 206 160` | 5 | "active/applied" state accent (atom-editor button, coord-axis slider, new-row separator) — checked against `--ok-bright-rgb` (`126 226 168`) and kept separate: the call sites had already flagged it "not an exact match," and the roles here (border/ring/accent-color) don't match the anneal badge's fill+text pairing |
 | `--chrome-1-9` | `rgba(25, 25, 25, 0.9)` | 4 (3 near-dupes: `17/17/17`@.9, `22/22/22`@.88, `26/26/26`@.95) | near-opaque near-black fills above `--chrome-1`'s 0.8 alpha — `.backend-error-panel`, `.backend-potential-toggle`, `.atomistic-grid input`, and a dead `.control-panel` rule (tokenised anyway for consistency) |
@@ -879,6 +878,7 @@ tidiness.
 | token | value | role | call sites |
 |---|---|---|---|
 | `--icon-filter` | `invert(1)` | inversion applied to the theme-picker glyphs; light palettes set it to `none` | `controlPanel.css` `.theme-icon` |
+| `--icon-filter-bright` | `none` | the same knob for *white*-source SVGs (compact toolbar icons); polarity is reversed, so light palettes set it to `invert(1)` | `panelWindow.css` `.cv-panel-compact-btn img` |
 | `--switch-knob` | `#ffffff` | the toggle knob — contrasts with its track, not with the panel | `toggle_styles.css` `.toggle_slider::before`, `.toggle_slider_dual::before` |
 | `--switch-off` | `#cccccc` | the toggle's OFF track fill | `toggle_styles.css` `.toggle_slider` |
 

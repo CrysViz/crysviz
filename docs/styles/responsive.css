@@ -210,8 +210,12 @@
     border: 1px solid var(--wash-4);
   }
 
-  /* Measure panel improvements */
-  .btn-mini {
+  /* Measure panel improvements.
+     The .si-action-* variants are excluded: they are dense in-row actions
+     (Apply/Reset, Spin/Force) sized against the row they sit in, not
+     standalone taps. Bumped to --fs-xl, the category Spin/Force label
+     needed three lines and pushed its row off a phone-width panel. */
+  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide) {
     padding: var(--sp-4) var(--sp-5);
     font-size: var(--fs-xl);
     align-self: stretch;
@@ -273,6 +277,53 @@
      edge instead, same idea as the gizmo's mobile override below. */
   :root {
     --popup-left: max(var(--sp-3), env(safe-area-inset-left));
+  }
+
+  /* ---- styles.css: file-actions row ----
+     Last resort if the fluid shrink still isn't enough for a label: wrap it
+     onto a second line rather than let it spill out of the sheet. Kept out of
+     the base rule because at desktop width there is room, and wrapping there
+     would change a row nothing was wrong with. */
+  .file-actions .file-action-btn {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* ---- styles.css: scene toolbars at touch size ----
+     Both toolbars step their squares up to the touch target together, so
+     the pair stays the same scale on a phone as it is on the desktop. */
+  :root {
+    --tb-btn: var(--control-h-touch);
+  }
+
+  /* ---- styles.css: camera tools stack instead of running across ----
+     Two rows — [x y z] [reset] / [a b c] [lock] — rather than one row that
+     wraps wherever it happens to run out. The segments are grid items in
+     column 1; Reset and Lock take column 2, one per row, and the desktop's
+     hairline between them has no place in a column, so it goes. */
+  #cameraPanel {
+    display: grid;
+    grid-template-columns: auto auto;
+    justify-content: start;
+    align-items: center;
+  }
+
+  .camera-reset-stack {
+    display: contents;
+  }
+
+  #cameraTools .camera-tool-reset-btn {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  #cameraTools .camera-lock-btn {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  #cameraTools .camera-separator {
+    display: none;
   }
 }
 
@@ -530,5 +581,42 @@
     content: "";
     position: absolute;
     inset: -10px;
+  }
+
+  /* ---- sideDock.css: the dock resize handle ----
+     A 6px line is a mouse target. Widen the grab band along the axis it
+     resizes; .split-handle is position:fixed, so it already anchors its own
+     overlay. */
+  .split-handle::after {
+    content: "";
+    position: absolute;
+    inset: 0 -12px;
+  }
+  #viewArea.split-dock-bottom .split-handle::after {
+    inset: -12px 0;
+  }
+
+  /* ---- styles.css: PNG crop rectangle corner handles (22px) ---- */
+  .cv-crop-handle::after {
+    content: "";
+    position: absolute;
+    inset: -11px;
+  }
+
+  /* ---- panelWindow.css: compact round icons ----
+     PanelManager anchors these inline (Structure Info at bottom: 20), which
+     can't know about a home indicator. A margin composes with that offset
+     instead of mirroring it, so the JS stays the single source of the anchor. */
+  .cv-panel.cv-compact {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* ---- panelWindow.css: docked panel headers ----
+     .cv-panel-titlebar sets touch-action:none so a drag isn't stolen by the
+     scroller. A docked panel isn't dragged by its bar, so that only made the
+     #ui dock unscrollable from any header — give the vertical axis back. The
+     grip stays `none` (panelWindow.css) so drag-by-handle still works. */
+  .cv-panel.cv-docked > .cv-panel-titlebar {
+    touch-action: pan-y;
   }
 }
