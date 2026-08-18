@@ -1,4 +1,4 @@
-// .........................................................................................................
+// .........................................................................................................core
 // store.js contains all state and default variables, e.g. three,js related, colors, default structure, etc.
 //
 //  This is currently necessary as classes are not yet fully adapter. structureData, originalStructureData,spinsData are global variables for now and should be replaced
@@ -7,7 +7,7 @@
 // .........................................................................................................
 
 import { measurements,app,fileBrowser, general} from '../state/store.js';
-import {defaultPOSCAR5} from '../defaults/structure_defaults.js'
+import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
@@ -410,8 +410,8 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
 
 
 async function loadDefaultStructure() {
-  setStatus('Loading default NaCl structure...');
-  await loadStructure(defaultPOSCAR5, 'Si', true);
+  setStatus('Loading default structure...');
+  await loadStructure(defaultPOSCAR4, 'oP28-C3N4', true);
 }
 
 export async function initializeCore(browserHostController) {

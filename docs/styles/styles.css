@@ -556,6 +556,98 @@ body.panel-hidden #axesLegend {
   display: none;
 }
 
+/* Share-link dialog: the URL plus its QR code (reuses the .png-export-modal
+ * card + .paste-modal-actions button row). The QR's own colours live in the
+ * generated SVG — it must stay black-on-white in every theme to scan. */
+#shareLinkModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+#shareLinkModal[hidden] {
+  display: none;
+}
+
+.share-qr {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--sp-3-5);
+}
+
+.share-qr:empty {
+  display: none;
+}
+
+/* Wider than the other dialogs on purpose: a ~1.5 KB link is a 140-module
+ * symbol, and below roughly 2 screen pixels per module phone cameras stop
+ * locking on. */
+.share-link-modal {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.share-qr svg {
+  width: min(360px, 70vw);
+  height: auto;
+  border-radius: var(--radius-sm);
+}
+
+.share-qr-actions {
+  display: flex;
+  justify-content: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3-5);
+}
+
+.share-qr-actions[hidden] {
+  display: none;
+}
+
+.share-qr-actions button {
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--wash-2);
+  color: var(--fg-1);
+  border: none;
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+
+.share-qr-actions button:hover {
+  background: var(--hover-color);
+}
+
+.share-link-url {
+  width: 100%;
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3) var(--sp-3-5);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  background: var(--overlay-20);
+  color: var(--ink-6);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.share-link-modal .paste-modal-actions #shareLinkClose {
+  margin-top: var(--sp-1);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--wash-2);
+  color: var(--fg-1);
+  border: none;
+  border-radius: var(--radius);
+  font-size: var(--fs-lg);
+  cursor: pointer;
+}
+
+
 /* Order Structure's random-sample build/compare list, inline in the Cell &
  * Supercell panel (ui/LatticeSupercellPanel.js) — no floating dialog. One row
  * per built decoration; before Compare Energy runs it shows atom count only,

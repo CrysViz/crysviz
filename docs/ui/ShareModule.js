@@ -110,9 +110,10 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelManager.js';
-import { fracToCart, cartToFractional } from '../math/index.js';
+import { fracToCart, cartToFractional, normalizeFractional } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
+import { showShareLink } from './ShareLinkModal.js';
 
 const URL_WARN_CHARS = 4000;
 const URL_HARD_CHARS = 10000;
@@ -349,28 +350,32 @@ export function captureState({ includeFrames = false, includeFields = false } = 
 function buildPOSCAR(state) {
   const { elements, lattice, positions } = state.structure;
 
-  const seen = new Set();
-  const uniqueElements = [];
+  // Species RUNS, not one group per element: VASP 5 lets a symbol repeat
+  // ("Ba Y Ba" over counts "1 1 1"), so the captured atom order survives.
+  //
+  // Grouping by element used to permute the atoms here. restoreAtomOrder put
+  // structure.atoms back, but NOT structure.periodic, which readPOSCAR builds
+  // from the order it parsed — and the renderer colours instance i from
+  // atoms[periodic.wrapped.srcIndex[i]]. The two disagreed, so every per-atom
+  // colour was drawn on a different atom. Invisible in a unit cell whose atoms
+  // already arrive element-grouped; obvious in a supercell, where the tiling
+  // interleaves species.
+  const species = [];
+  const counts = [];
   for (const el of elements) {
-    if (!seen.has(el)) { seen.add(el); uniqueElements.push(el); }
+    if (species.length && species[species.length - 1] === el) counts[counts.length - 1]++;
+    else { species.push(el); counts.push(1); }
   }
-
-  const counts = uniqueElements.map(el => elements.filter(e => e === el).length);
 
   const lines = [
     'Shared via CrysViz',
     '   1.0',
     ...lattice.map(v => v.map(x => x.toFixed(8).padStart(18)).join('')),
-    '   ' + uniqueElements.join('   '),
+    '   ' + species.join('   '),
     '   ' + counts.join('   '),
     'Direct',
+    ...positions.map(p => p.map(v => v.toFixed(8).padStart(18)).join('')),
   ];
-
-  for (const el of uniqueElements) {
-    elements.forEach((e, i) => {
-      if (e === el) lines.push(positions[i].map(v => v.toFixed(8).padStart(18)).join(''));
-    });
-  }
 
   return lines.join('\n');
 }
@@ -379,15 +384,48 @@ function buildPOSCAR(state) {
 // Share (capture → encode → clipboard)
 // ---------------------------------------------------------------------------
 
-export function shareStructure() {
+// Share URLs carry the state as JSON -> raw deflate -> base64url. Uncompressed
+// it runs ~3.7 KB for a plain structure, past the ~2.9 KB a QR code can hold at
+// ALL; deflate brings a typical state to well under a kilobyte, which is what
+// makes the share dialog's QR useful rather than a permanent "too long" note.
+//
+// Compressed payloads travel as ?z=, uncompressed as ?state=. Old links keep
+// working, and a browser without CompressionStream simply emits the old form.
+const STATE_PARAM = 'state';
+const PACKED_PARAM = 'z';
+
+function bytesToB64URL(bytes) {
+  // Chunked so a large payload can't blow the argument limit of String.fromCharCode.
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+/** Raw-deflate `bytes`, or null when the browser has no CompressionStream. */
+async function deflateRaw(bytes) {
+  if (typeof CompressionStream === 'undefined') return null;
+  try {
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  } catch {
+    return null; // unsupported format string on older engines
+  }
+}
+
+async function inflateRaw(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+export async function shareStructure() {
   const state = captureState();
   if (!state) { alert('No structure loaded to share.'); return; }
 
-  // TextEncoder → Uint8Array → btoa avoids Latin-1 limitation of btoa(string)
   const jsonBytes = new TextEncoder().encode(JSON.stringify(state));
-  let binary = '';
-  for (let i = 0; i < jsonBytes.length; i++) binary += String.fromCharCode(jsonBytes[i]);
-  const b64 = btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  const packed = await deflateRaw(jsonBytes);
+  const b64 = bytesToB64URL(packed ?? jsonBytes);
 
   if (b64.length > URL_HARD_CHARS) {
     const kb = (b64.length / 1024).toFixed(1);
@@ -400,13 +438,17 @@ export function shareStructure() {
   }
 
   const shareURL = new URL(window.location.href);
-  shareURL.searchParams.set('state', b64);
+  shareURL.searchParams.delete(packed ? STATE_PARAM : PACKED_PARAM);
+  shareURL.searchParams.set(packed ? PACKED_PARAM : STATE_PARAM, b64);
 
-  // Always show URL in prompt so user can copy the full text (address bar truncates long URLs).
-  // Also attempt clipboard write for convenience.
+  // A dialog, not the address bar: long URLs are truncated there, and the
+  // dialog is where the QR code lives. The eager clipboard write is only
+  // best-effort now that an await sits between the click and here — some
+  // browsers drop user activation across it — so the dialog's Copy button is
+  // the path that always works.
   const shareURLText = shareURL.toString();
   navigator.clipboard?.writeText(shareURLText).catch(() => {});
-  prompt('Share URL (select all and copy):', shareURLText);
+  showShareLink(shareURLText);
 }
 
 // ---------------------------------------------------------------------------
@@ -688,10 +730,13 @@ function applyAtomColors(colors, structure) {
   }
 }
 
+// readPOSCAR wraps every fractional coordinate into [0,1), so a saved position
+// of 1.0 (or -1e-12) comes back as 0. Normalise both sides or the lookup misses
+// and the whole reorder is abandoned.
 function atomKey(element, position) {
   return [
     element,
-    ...position.map(v => Number(v).toFixed(8)),
+    ...position.map(v => normalizeFractional(Number(v)).toFixed(8)),
   ].join('|');
 }
 
@@ -988,7 +1033,12 @@ function makeAtomProxy(wrapped, ref) {
 // ---------------------------------------------------------------------------
 
 export async function loadSharedStructure() {
-  const stateParam = new URLSearchParams(window.location.search).get('state');
+  const params = new URLSearchParams(window.location.search);
+  // ?z= is the deflated payload written since the QR code landed; ?state= is the
+  // plain form, still emitted where CompressionStream is missing and still
+  // present in every link shared before that.
+  const packedParam = params.get(PACKED_PARAM);
+  const stateParam = packedParam ?? params.get(STATE_PARAM);
   if (!stateParam) return false;
 
   let state;
@@ -1006,8 +1056,9 @@ export async function loadSharedStructure() {
     const pad = padded.length % 4;
     const b64 = pad ? padded + '='.repeat(4 - pad) : padded;
     const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
+    let bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    if (packedParam) bytes = await inflateRaw(bytes);
     state = JSON.parse(new TextDecoder().decode(bytes));
   } catch (e) {
     const invalidChars = [...stateParam].filter(c => !/[A-Za-z0-9\-_]/.test(c));
@@ -1026,7 +1077,8 @@ export async function loadSharedStructure() {
 
   // Clean URL
   const newUrl = new URL(window.location.href);
-  newUrl.searchParams.delete('state');
+  newUrl.searchParams.delete(STATE_PARAM);
+  newUrl.searchParams.delete(PACKED_PARAM);
   window.history.replaceState({}, document.title, newUrl.toString());
   return true;
 }
@@ -1222,7 +1274,9 @@ export function createShareButton() {
   shareBtn.type = 'button';
   shareBtn.textContent = 'Share';
   shareBtn.className = 'file-action-btn';
-  shareBtn.onclick = shareStructure;
+  // shareStructure is async (it deflates the state); swallow the rejection here
+  // so a failure surfaces in the console rather than as an unhandled rejection.
+  shareBtn.onclick = () => { shareStructure().catch(e => console.error('Share failed:', e)); };
 
   // The Share button joins the Upload / Paste Text / Download action row in
   // the Files window (#uploadSection exists from startup, so this works even
