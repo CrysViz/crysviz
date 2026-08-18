@@ -73,7 +73,6 @@ direct
    0.2591076899999990    0.1551272100000000    0.3769878899999990 Cl-`;
 
 
-/*
 export const defaultPOSCAR4= `
 Symmetrized structure: Pnnm (58) -> Pnnm (58)
 1.0
@@ -111,9 +110,7 @@ Direct
 0.46906497185000007 0.8563367182999999 0.0
 0.9690649718500001 0.6436632817000001 0.5
 0.030935028150000043 0.3563367182999999 0.5
-
 `
-*/
 
 export const defaultPOSCAR5 = `Si diamond primitive
 1.0
