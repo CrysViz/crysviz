@@ -1073,6 +1073,14 @@ body.panel-hidden #axesLegend {
   box-shadow: 0 0 4px 2px var(--bg-color);
 }
 
+/* A phone has no keyboard, and the dock header there is only wide enough for
+ * the theme switch — the two absolutely-positioned triggers slid under it.
+ * Class set by ui/panels/PanelManager.js from the phone-screen check. */
+body.cv-phone-screen .shortcuts-help-trigger,
+body.cv-phone-screen .about-help-trigger {
+  display: none;
+}
+
 /* Drag&drop hover highlight on the drop targets (Files window / 3D view) */
 .cv-drop-hover {
   outline: 2px dashed var(--highlight-color);

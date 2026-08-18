@@ -337,6 +337,7 @@ export function initPanelSystem() {
   loadStoredLayout();
   loadPanelPrefs();
   compactViewport = isPhoneScreen();
+  applyPhoneScreenClass();
   // The screen's short edge only changes with orientation, so a plain resize
   // listener suffices — and on a desktop the screen never crosses the threshold
   // however the window is dragged, so the guard makes this a no-op there.
@@ -440,12 +441,20 @@ function restoreAutoDockedPanel(panel) {
   panel.autoDocked = false;
 }
 
+/** Mirror the phone/compact state onto <body> for the chrome that only CSS
+ *  owns — the About and keyboard-shortcut triggers, which have no room beside
+ *  the theme switch on a phone. */
+function applyPhoneScreenClass() {
+  document.body.classList.toggle('cv-phone-screen', compactViewport);
+}
+
 /** Re-derive the phone/compact state and reconcile if it flipped. Shared by the
  *  resize listener and the test override seam. */
 function reevaluatePhoneScreen() {
   const now = isPhoneScreen();
   if (now === compactViewport) return;
   compactViewport = now;
+  applyPhoneScreenClass();
   for (const panel of panels.values()) panel.closeMenu();
   if (panelSystemReady) reconcileCompactViewport();
 }
