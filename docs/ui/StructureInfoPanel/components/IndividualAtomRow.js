@@ -96,6 +96,16 @@ document.addEventListener('crysviz:colors-changed', () => {
   Object.values(atomRowSwatchUpdateFunctions).forEach((updateFn) => updateFn());
 });
 
+// Same pattern as the swatch registry above, but for the Alpha/Size controls:
+// a bulk alpha/size edit from the selection bar (SelectionActionBar.js) mutates
+// the atom model and the mesh, but the number/slider inputs of any row already
+// open show stale values until this pulls them back from the model. Keyed by
+// atom+image so a rebuilt row overwrites its own entry.
+const atomRowStyleUpdateFunctions = {};
+document.addEventListener('crysviz:atom-style-changed', () => {
+  Object.values(atomRowStyleUpdateFunctions).forEach((updateFn) => updateFn());
+});
+
 
 
 // Helper to get the current color for an atom based on the active color mode
@@ -764,6 +774,23 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   atomSizeSlider.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
   atomSizeValue.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
+
+  // Re-read Alpha/Size straight from the model onto this row's controls, so a
+  // bulk edit elsewhere (the selection bar) that changed this atom is reflected
+  // here. Reads the same per-image vs source-atom values the row was built with.
+  function syncAlphaSizeControlsFromModel() {
+    const structure = fileBrowser.selectedStructure;
+    const atom = structure?.atoms?.[atomIndex];
+    if (!atom) return;
+    const style = perImage ? getAtomImageStyle(structure, imageIndex) : null;
+    const opacity = clampOpacity(style?.alpha ?? atom.getOpacity?.() ?? atom.opacity ?? 1);
+    const scale = clampRadiusScale(style?.radiusScale ?? atom.getRadiusScale?.() ?? 1);
+    atomAlphaSlider.value = String(opacity);
+    atomAlphaValue.value = opacity.toFixed(2);
+    atomSizeSlider.value = String(scale);
+    atomSizeValue.value = scale.toFixed(2);
+  }
+  atomRowStyleUpdateFunctions[`${atomIndex}:${imageIndex ?? 'all'}`] = syncAlphaSizeControlsFromModel;
 
   colorBtn.onclick = (e) => {
     e.stopPropagation();

@@ -337,6 +337,7 @@ export function initPanelSystem() {
   loadStoredLayout();
   loadPanelPrefs();
   compactViewport = isPhoneScreen();
+  applyPhoneScreenClass();
   // The screen's short edge only changes with orientation, so a plain resize
   // listener suffices — and on a desktop the screen never crosses the threshold
   // however the window is dragged, so the guard makes this a no-op there.
@@ -440,12 +441,20 @@ function restoreAutoDockedPanel(panel) {
   panel.autoDocked = false;
 }
 
+/** Mirror the phone/compact state onto <body> for the chrome that only CSS
+ *  owns — the About and keyboard-shortcut triggers, which have no room beside
+ *  the theme switch on a phone. */
+function applyPhoneScreenClass() {
+  document.body.classList.toggle('cv-phone-screen', compactViewport);
+}
+
 /** Re-derive the phone/compact state and reconcile if it flipped. Shared by the
  *  resize listener and the test override seam. */
 function reevaluatePhoneScreen() {
   const now = isPhoneScreen();
   if (now === compactViewport) return;
   compactViewport = now;
+  applyPhoneScreenClass();
   for (const panel of panels.values()) panel.closeMenu();
   if (panelSystemReady) reconcileCompactViewport();
 }
@@ -1335,10 +1344,19 @@ const compactLaunchers = new Map();
 /** @type {{side: string, collapsed: boolean, toSide: string}|null} */
 let borrowedDock = null;
 
-/** Move a window into its compact home. The sheet starts OPEN on a phone — the
- *  Structure info is the main thing a hand-held user came for, and it sits below
- *  the scene (a bottom sheet), so raising it by default doesn't bury the view.
- *  The launcher icon lowers it. */
+/** Which edge a compact home opens on for the current orientation. Portrait
+ *  phones get the bottom sheet (compactHome.side); rotate to landscape and the
+ *  scene needs its vertical space, so the panel opens as a right-side pane
+ *  instead of a bottom sheet that would leave the view a thin strip. */
+function compactSheetSideFor(home) {
+  if (window.innerWidth > window.innerHeight) return 'right';
+  return (home && home.side) || 'bottom';
+}
+
+/** Move a window into its compact home. The sheet starts LOWERED — the launcher
+ *  icon is the deliberate way in. Auto-raising it buried the scene the moment a
+ *  hand-held user loaded a structure; tapping the launcher (toggleCompactSheet)
+ *  raises it, non-collapsed. */
 function sideHomePanel(panel) {
   const home = compactHomeOf(panel);
   // Whoever materializes the dock picks its edge; a dock occupied by OTHER
@@ -1353,10 +1371,10 @@ function sideHomePanel(panel) {
   // the reserve sync, and an empty dock would hand its state straight back.
   sideDockPanel(panel, { front: true, expand: false });
   if (!materializing) return;
-  const toSide = home.side || 'bottom';
+  const toSide = compactSheetSideFor(home);
   borrowedDock = { side, collapsed, toSide };
   if (side !== toSide) setSideDockSide(toSide);
-  setSideDockCollapsed(false);
+  setSideDockCollapsed(true);
 }
 
 /** Give the dock's edge and collapsed state back once no window is left in it.
@@ -1372,12 +1390,20 @@ function releaseCompactHome() {
   setSideDockCollapsed(collapsed);
 }
 
-/** Raise this window's sheet, or lower it if it is already the one showing. */
+/** Raise this window's sheet, or lower it if it is already the one showing.
+ *  Re-picks the edge for the current orientation on every raise, so a phone
+ *  rotated after startup opens the panel on the right (landscape) or bottom
+ *  (portrait) rather than wherever it last materialized. */
 function toggleCompactSheet(panel) {
   const side = getSideDockLayout();
   if (!side.collapsed && side.front === panel.id) {
     setSideDockCollapsed(true);
   } else {
+    const toSide = compactSheetSideFor(compactHomeOf(panel));
+    if (side.side !== toSide) {
+      setSideDockSide(toSide);
+      if (borrowedDock) borrowedDock.toSide = toSide;
+    }
     sideDockPanel(panel, { front: true, expand: true });
     setSideDockCollapsed(false);
   }

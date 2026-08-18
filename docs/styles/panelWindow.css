@@ -93,6 +93,16 @@
   backdrop-filter: none;
 }
 
+/* A side-docked panel is a single scroll surface. An open collapsible section
+   inside it — e.g. the individual-atom list after a 3x3x3 supercell — otherwise
+   keeps its own capped max-height + overflow-y:auto (styles.css / responsive.css)
+   and scrolls INSIDE the panel that already scrolls: two nested scrollbars in
+   the sheet. Docked, it must flow into the one pane/body scroller instead. */
+.cv-panel.cv-side-docked .collapsible-content.open {
+  max-height: none;
+  overflow: visible;
+}
+
 /* Host of a ⛶-expanded (fullscreen) .split-item in ANY window state: lift
    the body's backdrop-filter (fixed-position containing block, see above)
    and raise a floating host above the fullscreen overlay (z-index 1350) —

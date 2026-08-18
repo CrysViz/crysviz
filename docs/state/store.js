@@ -240,6 +240,21 @@ export const general = {
   // Custom legend text for the Spins color bar (SpinPanel.js), falls back
   // to "Spin (μB)" when unset.
   spinLegendText: null,
+  // Spin reference frame (Spins panel "Spin Reference Frame" dropdown): how
+  // each spin's raw moments map to global Cartesian — 'file' (re-project from
+  // the SAXIS the file was written with), 'cartesian', 'crystal', or 'custom'.
+  // utils/spinFrame.js applies it. 'file' is the default so a loaded file
+  // renders physically correct without touching the panel.
+  spinFrameMode: 'file',
+  // User-entered SAXIS for the 'custom' frame mode above (VASP convention).
+  spinCustomSaxis: [0, 0, 1],
+  // Decorative global rotation of every spin arrow, in DEGREES [pitch,yaw,roll]
+  // (Spins panel rotation gizmo: turntable ball drives pitch/yaw, Roll slider
+  // the roll). Fed to utils/spinFrame.js's eulerToMatrix path. Purely visual —
+  // the absolute spin direction is arbitrary for collinear / no-spin-orbit
+  // data, so this lets the user orient every arrow for a clearer picture
+  // without changing the underlying values.
+  spinVisualRot: [0, 0, 0],
   // Atoms "Force" mode colormap normalization: 'linear' | 'log' (ColorPanel.js
   // Log Scale toggle for the atom color bar).
   atomColorScale: 'linear',
@@ -351,6 +366,23 @@ export const general = {
   // Cylinder radius of the unit-cell outline edges, in world units (Å)
   // (LatticeModule.createLatticeLines).
   latticeLineWidth:0.015,
+  // Measurement value-label size multiplier (render/MeasurementModule.js).
+  // 1.0 is the default on-screen size; the Settings slider drives it.
+  measureLabelScale: 1.0,
+  // Measurement atom-marker appearance (render/MeasurementModule.js, wired by
+  // ui/MeasurementSettingsPanel.js): 'shell' = translucent sphere hugging the
+  // atom, 'ring' = three orthogonal rings around it, 'none' = no marker.
+  measureMarkerStyle: 'shell',
+  // One accent per measurement type, driving its line, atom markers, angle
+  // arc and label outline. Defaults keep each type's existing signature
+  // colour (distance blue, angle orange).
+  measureDistanceColor: '#0066ff',
+  measureAngleColor: '#ff6600',
+  // 'dashed' (default) or 'solid' connecting line.
+  measureLineStyle: 'dashed',
+  // 0..1 opacity for the atom highlight (shell/rings) and for the line.
+  measureMarkerOpacity: 0.32,
+  measureLineOpacity: 1.0,
   showComparisonInfo:false,
   showPeriodic:true,
   // Atoms tab: edit all periodic-image copies of an atom together. When false
@@ -362,6 +394,14 @@ export const general = {
   // / DFT-output) structures carry small numerical offsets from 0/1, so this
   // must be much looser than machine eps or boundary atoms get missed.
   periodicFaceTol:1e-3,
+  // Fractional-coordinate display bounds (VESTA-style "boundary"). When
+  // showPeriodic is on, every periodic image of every atom whose wrapped
+  // fractional coordinate lands inside [min,max] on each axis is drawn. The
+  // default [0,1] per axis reproduces the classic face-mirror behaviour
+  // (corner/edge/face atoms duplicated onto all their images); widening e.g.
+  // xmax to 1.2 reveals atoms up to 0.2 of a cell past the boundary. Applied
+  // in render/LatticeModule.js periodicWrapped (JS + WASM parity).
+  periodicBounds:{ xmin:0, xmax:1, ymin:0, ymax:1, zmin:0, zmax:1 },
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   completePolyhedra:false, // Show the out-of-cell atoms needed to complete the polyhedra
   useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)

@@ -398,13 +398,24 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   popup.appendChild(confirmButton);
   popup.appendChild(cancelButton);
 
-  // Position the popup near the copy button
+  // Position the popup near the copy button, then clamp it into the viewport.
+  // Docked right/bottom (or the mobile sheet) puts the button near an edge, so
+  // anchoring naively at its left/bottom would spill the popup off-screen; must
+  // measure it in the DOM first, hence append before positioning.
   const rect = e.target.getBoundingClientRect();
-  popup.style.left = `${rect.left + window.scrollX}px`;
-  popup.style.top = `${rect.bottom + window.scrollY}px`;
-
-  // Append the popup to the body
   document.body.appendChild(popup);
+  const pr = popup.getBoundingClientRect();
+  const margin = 8;
+  let left = rect.left;
+  if (left + pr.width > window.innerWidth - margin) {
+    left = Math.max(margin, window.innerWidth - pr.width - margin);
+  }
+  let top = rect.bottom;
+  if (top + pr.height > window.innerHeight - margin) {
+    top = Math.max(margin, rect.top - pr.height); // flip above the button
+  }
+  popup.style.left = `${left + window.scrollX}px`;
+  popup.style.top = `${top + window.scrollY}px`;
 
   // Toggle range inputs based on selection
   select.addEventListener("change", () => {

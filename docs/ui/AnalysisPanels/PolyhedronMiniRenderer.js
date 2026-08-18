@@ -84,18 +84,8 @@ function makeLabelSprite(text, { color = '#fff', bg = 'rgba(0,0,0,0.72)', bold =
   return sprite;
 }
 
-/** A vector of length `magnitude`, perpendicular to `dir` and tilted as far
- *  toward world "up" as it can while staying perpendicular — i.e. the
- *  direction that reads as "above" a bond pointing in `dir`, not sideways
- *  off it — for pushing a label off the bond's own centreline so it doesn't
- *  render embedded inside the (opaque) cylinder mesh drawn along that line. */
-function upwardOffset(dir, magnitude) {
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  // A near-vertical bond has no meaningful perpendicular "up" — fall back to
-  // world Z so the offset is still well-defined.
-  const ref = Math.abs(dir.dot(worldUp)) > 0.98 ? new THREE.Vector3(0, 0, 1) : worldUp;
-  return ref.clone().sub(dir.clone().multiplyScalar(dir.dot(ref))).normalize().multiplyScalar(magnitude);
-}
+// Scratch vector for the per-frame camera-lift of the bond-length labels.
+const _miniToCam = new THREE.Vector3();
 
 /** A short two-tone cylinder from `a` (colour ca) to `b` (colour cb) — the
  *  half-and-half bond look the main viewer uses. */
@@ -213,6 +203,12 @@ export function createPolyhedronMiniRenderer(container) {
   // (no selection/geometry change) instead of snapping the user's own
   // orbit/zoom in this mini viewport back to the auto-framed view every time.
   let hasFramed = false;
+  // Angle arcs/labels are toggleable (the inspector's "Angles" switch). The
+  // last detail + face-opacity are remembered so toggling can rebuild the
+  // scene in place — keeping the camera — without the caller re-supplying them.
+  let showAngles = true;
+  let lastDetail = null;
+  let lastFaceOpacityOpt;
 
   let running = false;
   let rafId = null;
@@ -223,14 +219,27 @@ export function createPolyhedronMiniRenderer(container) {
       new THREE.Vector3(3, 4, 3).applyQuaternion(camera.quaternion),
     );
     keyLight.target.position.copy(controls.target);
-    // Hide labels actually blocked (by an atom, a bond, or the hull) from the
-    // current camera angle — a real raycast rather than an angle-from-centre
-    // heuristic, since the latter wrongly flags labels as "far side" whenever
-    // the polyhedron is viewed anywhere near one of its own vertices (e.g. a
-    // tetrahedron's classic three-legs-toward-camera framing has its three
-    // visible bonds sitting more than 90° from the view axis, well past any
-    // fixed angular cutoff, despite nothing actually occluding them).
     for (const sprite of labelSprites) {
+      // Bond-length labels sit ON their bond and are lifted toward the camera
+      // so the bond renders BEHIND them — the same "value in front of the line"
+      // look as the main measurement labels, instead of the bond cutting into
+      // the label. Crucially this lift is ALONG the camera→anchor ray, so it
+      // never changes where the label lands on screen (a point moved toward the
+      // camera along its own view ray projects to the same pixel): the label
+      // stays visually glued to its bond as the viewport rotates, no sliding.
+      const base = sprite.userData.baseAnchor;
+      if (base) {
+        _miniToCam.copy(camera.position).sub(base);
+        const d = _miniToCam.length() || 1;
+        _miniToCam.multiplyScalar(1 / d);
+        sprite.position.copy(base).addScaledVector(_miniToCam, Math.min(sprite.userData.lift, d * 0.5));
+      }
+      // Hide a label actually blocked (by an atom, another bond, or the hull)
+      // from the current angle — a real raycast rather than an angle-from-centre
+      // heuristic, which wrongly flags labels as "far side" whenever the
+      // polyhedron is viewed near one of its own vertices. The label's OWN bond
+      // sits behind the lifted position, so it is past the ray's far clip and
+      // never counts as an occluder — only genuinely-in-front geometry hides it.
       const toLabel = sprite.position.clone().sub(camera.position);
       const dist = toLabel.length();
       labelRay.set(camera.position, toLabel.normalize());
@@ -267,6 +276,8 @@ export function createPolyhedronMiniRenderer(container) {
     faceMaterial = null;
     occluders = [];
     labelSprites = [];
+    lastDetail = detail;
+    if (opts.faceOpacity != null) lastFaceOpacityOpt = opts.faceOpacity;
     if (!detail) { hasFramed = false; return; }
 
     const { centerCart, centerElement, centerColor, centerRadius, vertices, angles, faceColor, faceOpacity, edgeColor } = detail;
@@ -325,14 +336,19 @@ export function createPolyhedronMiniRenderer(container) {
         group.add(bond);
         occluders.push(bond);
         if (v.bondLength != null) {
-          const label = makeLabelSprite(`${v.bondLength.toFixed(3)} Å`, { bold: true, worldHeight: bondSpan * 0.11 });
-          // Toward the vertex (not the exact midpoint) so bond labels clear the
-          // angle-arc cluster that gathers near the centre — then nudged
-          // above the bond's own centreline, or the label renders embedded
-          // in the (opaque) bond cylinder instead of sitting above it.
-          const bondDir = vVec.clone().sub(centerVec).normalize();
-          const above = upwardOffset(bondDir, bondRadius * 2.6);
-          label.position.copy(centerVec.clone().lerp(vVec, 0.62)).add(above);
+          const labelHeight = bondSpan * 0.11;
+          const label = makeLabelSprite(`${v.bondLength.toFixed(3)} Å`, { bold: true, worldHeight: labelHeight });
+          // Anchor ON the bond, toward the vertex (not the exact midpoint) so
+          // the label clears the angle-arc cluster near the centre. It is NOT
+          // offset sideways: the frame loop lifts it toward the camera so the
+          // bond renders behind it (the main measurement labels' "value in
+          // front of the line" look), and that lift keeps its screen position
+          // fixed on the bond, so nothing slides as the viewport rotates.
+          label.userData.baseAnchor = centerVec.clone().lerp(vVec, 0.62);
+          // Lift far enough to clear the bond cylinder's near surface (radius)
+          // with margin, so the bond can never cut into the label.
+          label.userData.lift = bondRadius * 3 + labelHeight * 0.5;
+          label.position.copy(label.userData.baseAnchor);
           group.add(label);
           labelSprites.push(label);
         }
@@ -366,11 +382,14 @@ export function createPolyhedronMiniRenderer(container) {
       } catch { /* degenerate/coplanar point set — skip the hull, spheres+bonds still show */ }
     }
 
-    // Angle indicators: an arc between the two bonds + the value on it, for the
-    // angles the distortion metric is defined over (all pairs for CN4, cis
-    // pairs for CN6). Trans (~180°) pairs are omitted — a near-constant 180°
-    // on every axis would just clutter the view.
-    if (centerVec) {
+    // Angle indicators: an arc between the two bonds + the value on it, for
+    // whichever pairs computePolyhedronDetail supplied — all 6 pairs for CN4,
+    // the 12 cis pairs the OAV metric is defined over for CN6, and the
+    // adjacent (polyhedron-edge) pairs for every other coordination number.
+    // Trans (~180°) pairs are omitted — a near-constant 180° on every axis
+    // would just clutter the view. Suppressed entirely when the inspector's
+    // Angles toggle is off (see setShowAngles).
+    if (centerVec && showAngles) {
       // A bit bigger than "just clear of the centre atom sphere" — pushes the
       // arc (and the label riding on it) further out so neither reads as
       // overlapping the centre atom from any orientation.
@@ -440,6 +459,15 @@ export function createPolyhedronMiniRenderer(container) {
     applyFaceOpacity(faceMaterial, opacity);
   }
 
+  /** Show/hide the bond-angle arcs and their labels. Rebuilds the scene from
+   *  the last detail (the arcs are baked in setDetail) but keeps the camera, so
+   *  flipping the toggle doesn't disturb the user's orbit/zoom. */
+  function setShowAngles(show) {
+    if (show === showAngles) return;
+    showAngles = show;
+    if (lastDetail) setDetail(lastDetail, { keepCamera: true, faceOpacity: lastFaceOpacityOpt });
+  }
+
   function dispose() {
     stop();
     disposeObject3D(group);
@@ -448,5 +476,5 @@ export function createPolyhedronMiniRenderer(container) {
     renderer.domElement.remove();
   }
 
-  return { setDetail, setFaceOpacity, resize, start, stop, dispose, getCamera: () => camera };
+  return { setDetail, setFaceOpacity, setShowAngles, resize, start, stop, dispose, getCamera: () => camera };
 }

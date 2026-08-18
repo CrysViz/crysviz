@@ -19,6 +19,7 @@ docs/styles/analysisPanels.css:.cutplane-plane-row.is-selected  # selected-row g
 docs/styles/analysisPanels.css:.md-stream-dot--connected  # MD-stream connection status dot, fill + glow
 docs/styles/analysisPanels.css:.md-stream-dot--error  # MD-stream connection status dot, fill + glow
 docs/styles/bondLengthHistogram.css:.blh-range-fill  # bond-length-histogram range slider fill
+docs/styles/analysisPanels.css:.pbnd-slider .pbnd-fill  # active-boundary dual-range slider fill (ui/LatticeSupercellPanel.js), same fixed green as .blh-range-fill — a selected-range indicator, not themed chrome
 docs/styles/bondLengthHistogram.css:.bond-range-slider .range-track  # deliberately NOT var(--accent-color): must stay a fixed green independent of the active backend theme (the Symmetry backend's blue accent must not leak into this slider)
 docs/styles/EOSPanel.css:.eos-copy-value.eos-copied  # "copied to clipboard" flash (background + text), a transient status colour
 
@@ -43,3 +44,10 @@ docs/styles/formControls.css:%23c8c8c8  # native <select> chevron, inline SVG fi
 # --- CSS-in-JS: addons/ is excluded from the guard entirely (see css_guard.sh
 # header). This is the one exception outside addons/. ---
 docs/ui/DiscoBallModule.js:createElement('style')  # decorative disco-ball overlay, self-contained like an addon; intentionally left alone (CSSPlan.md Wave 5)
+
+# --- scene-floating measurement/select chrome: fixed colours that must NOT
+# follow the theme, because they render directly over the 3D viewport (always
+# black) rather than over a themed panel (ft_measure_poly_inspector) ---
+docs/styles/styles.css:.cv-drag-select-rect.select-mode  # amber select-drag tint (rgb 255 140 0): a fixed state colour marking Shift+drag SELECT apart from hide-drag's danger red, no themed token by design (ui/SceneInteraction.js)
+docs/styles/styles.css:.measure-label-remove ::  # remove-"×" button floats over the always-black viewport, never a panel, so it must stay fully opaque fixed light — white fill / dark glyph / black border+shadow, un-themeable by design (see in-code comment)
+docs/styles/styles.css:.measure-label-remove:hover  # hover state of that viewport-floating button: fixed white glyph + light border over danger-fill, same un-themeable-by-design reason

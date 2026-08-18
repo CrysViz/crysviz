@@ -561,6 +561,191 @@ function addVacuumSection(container) {
   });
 }
 
+// VESTA-style "boundary" controls: per-axis fractional min/max defining the
+// display region. Every periodic image of every atom whose wrapped fractional
+// coordinate lands inside the region is drawn (render/LatticeModule.js). The
+// default [0,1] per axis is the classic unit cell; widening e.g. a-max to 1.2
+// reveals atoms up to 0.2 of a cell past the boundary. Only takes effect while
+// "Show Periodic Images" is on, so editing a bound switches it on.
+const PERIODIC_BOUNDS_AXES = [
+  { key: 'x', label: 'a' },
+  { key: 'y', label: 'b' },
+  { key: 'z', label: 'c' },
+];
+// Slider/entry range. Bounded (not a free number field): a runaway bound like
+// "1000" would ask the wrapper for billions of images and freeze the tab. ±2
+// cells each way is plenty for a boundary view — use a supercell for a larger
+// solid block.
+const PBND_LIMIT_MIN = -2;
+const PBND_LIMIT_MAX = 2;
+const PBND_STEP = 0.1;
+const PBND_THUMB = 12; // must match the thumb size in analysisPanels.css (.pbnd-slider)
+
+function readPeriodicBound(axisKey, edge) {
+  const b = general.periodicBounds || {};
+  const v = b[`${axisKey}${edge}`];
+  if (Number.isFinite(v)) return v;
+  return edge === 'min' ? 0 : 1;
+}
+const pbndClamp = (v) => Math.max(PBND_LIMIT_MIN, Math.min(PBND_LIMIT_MAX, v));
+const pbndRound = (v) => Math.round(v / PBND_STEP) * PBND_STEP;
+// Thumb-center pixel offset for value `v`, inset by half the thumb so the fill
+// track lines up with the thumbs at both stops (same technique as the bonds /
+// histogram range sliders).
+function pbndThumbPos(v, width) {
+  const inset = PBND_THUMB / 2;
+  const frac = (v - PBND_LIMIT_MIN) / (PBND_LIMIT_MAX - PBND_LIMIT_MIN);
+  return inset + frac * (width - 2 * inset);
+}
+
+// One axis: number entry (min) · dual-range slider · number entry (max). All
+// four controls share one [lo,hi] state; any edit re-syncs the others, clamps
+// to the limits, keeps lo<=hi, and calls onChange. Returns { row, get, set }.
+function buildBoundaryAxisRow(label, initLo, initHi, onChange) {
+  const row = document.createElement('div');
+  row.className = 'pbnd-axis-row';
+
+  const lab = document.createElement('span');
+  lab.className = 'pbnd-axis-label';
+  lab.textContent = label;
+
+  const mkNumber = (title) => {
+    const el = document.createElement('input');
+    el.type = 'number';
+    el.className = 'coord-input lsc-compact-input pbnd-end';
+    // step="any": typed entries keep full precision (e.g. 1.234); only the
+    // slider is quantised to PBND_STEP.
+    el.min = String(PBND_LIMIT_MIN); el.max = String(PBND_LIMIT_MAX); el.step = 'any';
+    el.title = title;
+    return el;
+  };
+  const minNum = mkNumber(`${label} min (fractional)`);
+  const maxNum = mkNumber(`${label} max (fractional)`);
+
+  const slider = document.createElement('div');
+  slider.className = 'pbnd-slider';
+  const bg = document.createElement('div'); bg.className = 'pbnd-bg';
+  const fill = document.createElement('div'); fill.className = 'pbnd-fill';
+  const mkRange = (cls) => {
+    const el = document.createElement('input');
+    el.type = 'range';
+    el.className = cls;
+    el.min = String(PBND_LIMIT_MIN); el.max = String(PBND_LIMIT_MAX); el.step = String(PBND_STEP);
+    return el;
+  };
+  const minR = mkRange('pbnd-range-min');
+  const maxR = mkRange('pbnd-range-max');
+  slider.append(bg, fill, minR, maxR);
+
+  row.append(lab, minNum, slider, maxNum);
+
+  let lo = pbndClamp(initLo);
+  let hi = pbndClamp(initHi);
+
+  const redrawFill = () => {
+    const width = slider.clientWidth || 120;
+    const a = pbndThumbPos(lo, width);
+    const b = pbndThumbPos(hi, width);
+    fill.style.left = `${a}px`;
+    fill.style.width = `${Math.max(0, b - a)}px`;
+  };
+  // Number fields show the true value (up to 4 dp, trailing zeros stripped) so
+  // a typed 1.234 survives; the range inputs snap to PBND_STEP on their own.
+  const fmt = (v) => String(Number(v.toFixed(4)));
+  const paint = () => {
+    minNum.value = fmt(lo);
+    maxNum.value = fmt(hi);
+    minR.value = String(lo);
+    maxR.value = String(hi);
+    redrawFill();
+  };
+
+  // The slider fill needs the container's real width; it reads 0 while the
+  // panel/tab is hidden, so recompute the instant it gains layout.
+  new ResizeObserver(redrawFill).observe(slider);
+
+  // Clamp only — no step snapping — so a typed value keeps its full precision.
+  // Slider drags snap to PBND_STEP in their own handlers (pbndRound) before
+  // calling set().
+  const set = (nextLo, nextHi, notify = true) => {
+    lo = pbndClamp(nextLo);
+    hi = pbndClamp(nextHi);
+    if (lo > hi) { const t = lo; lo = hi; hi = t; }
+    paint();
+    if (notify) onChange();
+  };
+
+  minR.addEventListener('input', () => {
+    const v = pbndRound(parseFloat(minR.value));
+    set(v, Math.max(hi, v));
+  });
+  maxR.addEventListener('input', () => {
+    const v = pbndRound(parseFloat(maxR.value));
+    set(Math.min(lo, v), v);
+  });
+  minNum.addEventListener('change', () => {
+    const v = parseFloat(minNum.value);
+    set(Number.isFinite(v) ? v : 0, hi);
+  });
+  maxNum.addEventListener('change', () => {
+    const v = parseFloat(maxNum.value);
+    set(lo, Number.isFinite(v) ? v : 1);
+  });
+
+  paint();
+  return { row, get: () => [lo, hi], set };
+}
+
+function addPeriodicBoundarySection(container) {
+  container.innerHTML = '';
+
+  const axesBox = document.createElement('div');
+  axesBox.className = 'pbnd-axes';
+
+  const foot = document.createElement('div');
+  foot.className = 'pbnd-foot';
+  const hint = document.createElement('span');
+  hint.className = 'pbnd-hint';
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn-mini lsc-reset-vacuum-btn';
+  resetBtn.textContent = 'Reset';
+  resetBtn.title = 'Reset the boundary to the unit cell (0–1 on every axis).';
+  foot.append(hint, resetBtn);
+
+  const axes = [];
+
+  const commit = () => {
+    const [[xmin, xmax], [ymin, ymax], [zmin, zmax]] = axes.map((a) => a.get());
+    general.periodicBounds = { xmin, xmax, ymin, ymax, zmin, zmax };
+
+    // Bounds are meaningless while periodic images are off — turn them on and
+    // keep the master toggle's checkbox in sync so the UI reflects reality.
+    if (!general.showPeriodic) {
+      general.showPeriodic = true;
+      const toggle = document.getElementById('showPeriodic');
+      if (toggle) toggle.checked = true;
+    }
+
+    const widened = xmin < 0 || xmax > 1 || ymin < 0 || ymax > 1 || zmin < 0 || zmax > 1;
+    hint.textContent = widened ? 'Showing atoms beyond the unit cell.' : '';
+
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+  };
+
+  for (const { key, label } of PERIODIC_BOUNDS_AXES) {
+    const axis = buildBoundaryAxisRow(label, readPeriodicBound(key, 'min'), readPeriodicBound(key, 'max'), commit);
+    axes.push(axis);
+    axesBox.appendChild(axis.row);
+  }
+
+  resetBtn.addEventListener('click', () => {
+    axes.forEach((a) => a.set(0, 1, false));
+    commit();
+  });
+
+  container.append(axesBox, foot);
+}
+
 export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   const targetPanel = document.getElementById(target);
   if (!targetPanel) {
@@ -626,6 +811,18 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
 
   supercellPanel.appendChild(makeSectionHeadline("Supercell"));
   supercellPanel.appendChild(supercellContent);
+
+  // --- Periodic boundary section ---
+  const boundaryPanel = document.createElement("div");
+  boundaryPanel.id = "periodicBoundaryPanel";
+  boundaryPanel.className = "panel-section";
+
+  const boundaryContent = document.createElement("div");
+  boundaryContent.id = "periodicBoundaryContent";
+
+  boundaryPanel.appendChild(makeSectionHeadline("Active Cell Boundary"));
+  boundaryPanel.appendChild(boundaryContent);
+  addPeriodicBoundarySection(boundaryContent);
 
   // --- Vacuum section ---
   const vacuumPanel = document.createElement("div");
@@ -799,6 +996,7 @@ transformResetBtn.onclick = () => {
 
   // --- Build Structure ---
   group.appendChild(supercellPanel);
+  group.appendChild(boundaryPanel);
   group.appendChild(vacuumPanel);
   group.appendChild(orderPanel);
   group.appendChild(transformPanel);

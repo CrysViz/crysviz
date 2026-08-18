@@ -121,6 +121,20 @@
     border-radius: 0;
   }
 
+  /* A split sheet must shrink the scene here too. On mobile #ui is an off-canvas
+     overlay, NOT body.panel-hidden, so sideDock.css's height/width compensation
+     never fires and the fixed 100vw/100dvh above would let the pane paint over
+     the scene. Give the reserved edge back so the structure moves clear of the
+     pane — bottom sheet (portrait) reserves height, right pane (landscape,
+     see sideHomePanel) reserves width. Mirrors sideDock.css:52-58. */
+  #viewArea.split-active.split-dock-bottom:not(.split-pane-collapsed) #view {
+    height: calc(100dvh - (var(--split-pane-fraction, 0.5) * 100dvh));
+  }
+
+  #viewArea.split-active:not(.split-pane-collapsed):not(.split-dock-bottom) #view {
+    width: calc(100dvw - (var(--split-pane-fraction, 0.5) * 100vw));
+  }
+
   /* Mobile/Tablet overlay to close menu */
   #mobileOverlay {
     display: none;
@@ -214,8 +228,11 @@
      The .si-action-* variants are excluded: they are dense in-row actions
      (Apply/Reset, Spin/Force) sized against the row they sit in, not
      standalone taps. Bumped to --fs-xl, the category Spin/Force label
-     needed three lines and pushed its row off a phone-width panel. */
-  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide) {
+     needed three lines and pushed its row off a phone-width panel.
+     .lsc-panel-btn (Cell & Supercell / Transform "Apply") is likewise a dense
+     panel button with its own fixed 32px height and --fs-sm sizing; the big-tap
+     rung zoomed its font to --fs-xl and stretched it, offsetting it in its row. */
+  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn) {
     padding: var(--sp-4) var(--sp-5);
     font-size: var(--fs-xl);
     align-self: stretch;
@@ -250,6 +267,21 @@
    ================================================================ */
 
 @media screen and (max-width: 720px) {
+
+  /* ---- sideDock.css / panelWindow.css: one scroll surface in the bottom sheet
+     A phone bottom sheet nested a scroller (the side-docked window's own
+     .cv-panel-body, panelWindow.css) inside the fixed-height pane, so a tall
+     panel — e.g. the StructureInfoPanel after a 3x3x3 supercell — scrolled
+     against the sheet AND against itself. Hand scrolling to the pane body and
+     let the window body grow to content, so there is a single scrollbar. */
+  #viewArea.split-dock-bottom .split-pane-body {
+    overflow-y: auto;
+  }
+
+  #viewArea.split-dock-bottom .cv-panel.cv-side-docked > .cv-panel-body,
+  #viewArea.split-dock-bottom .cv-panel.cv-side-docked.cv-collapsed > .cv-panel-body {
+    overflow: visible;
+  }
 
   /* ---- controlPanel.css: Planes field/colormap picker ----
      Folded from a standalone max-width:640px breakpoint (nearest rung is
@@ -399,9 +431,14 @@
      #ui, so --ui-total-width's other consumers (--gizmo-left,
      --popup-left) see the change too, same as the mobile rung above —
      scoping it to #ui alone would only have been visible inside #ui's own
-     subtree. */
+     subtree.
+
+     This rung is landscape phones (short height, e.g. iPhone SE/17 rotated).
+     280px was too narrow there — the Upload/Paste Text/Download/Share row
+     truncated on every phone. Widen it, but cap at 58dvw so a genuinely
+     narrow short window (not a phone) can't let the pane swallow the scene. */
   :root {
-    --ui-width: 280px;
+    --ui-width: min(360px, 58dvw);
   }
 
   .collapsible-content.open { padding-top:var(--sp-3);max-height: 230px;

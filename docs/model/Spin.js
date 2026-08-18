@@ -4,8 +4,8 @@ import * as THREE from '../external/three/three.module.js';
 
 
 export class Spin extends ColoredObject {
-  /** @param {{vector?:any, scaling?:any, color?:any, atomIndex?:any, element?:any, position?:any}} [opts] */
-  constructor({ vector = [], scaling = null, color = [], atomIndex = null, element = null, position = null } = {}) {
+  /** @param {{vector?:any, rawVector?:any, scaling?:any, color?:any, atomIndex?:any, element?:any, position?:any}} [opts] */
+  constructor({ vector = [], rawVector = null, scaling = null, color = [], atomIndex = null, element = null, position = null } = {}) {
         const colorObj = color ?
       (color instanceof THREE.Color ? color : new THREE.Color(/** @type {any} */ (color))) :
       new THREE.Color("#008080");
@@ -14,6 +14,13 @@ export class Spin extends ColoredObject {
 
     // Store current values
     this.vector = vector;
+    // As-read components in the file's own reporting frame (e.g. VASP's
+    // SAXIS-local frame). The rendered `vector` is derived from this by
+    // utils/spinFrame.js's applySpinFrame(); keeping raw immutable lets the
+    // Spins panel re-project between frames losslessly. Defaults to a copy of
+    // `vector` so spins from formats that are already Cartesian (mCIF, manual)
+    // round-trip through applySpinFrame() unchanged.
+    this.rawVector = rawVector ? [...rawVector] : (Array.isArray(vector) ? [...vector] : vector);
     this.scaling = scaling;
     this.atomIndex = atomIndex;
     this.element = element;
@@ -35,6 +42,7 @@ export class Spin extends ColoredObject {
     // colormap pass overwrote it.
     this.original = Object.freeze({
       vector: [...vector],
+      rawVector: [...this.rawVector],
       scaling: scaling,
       color: colorObj,
       atomIndex: atomIndex,
@@ -63,6 +71,7 @@ export class Spin extends ColoredObject {
   reset() {
     // Restore from original data
     this.vector = [...this.original.vector];
+    this.rawVector = [...this.original.rawVector];
     this.scaling = this.original.scaling;
     this.color = this.original.color;
     this.userColor = null;

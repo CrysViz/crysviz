@@ -9,10 +9,11 @@ import { app, groups, mode, fileBrowser, measurements, general } from '../state/
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { updateForces, updateSpins } from '../render/index.js';
 import {
-  clearHighlightAtom, highlightAtomIn3D,
+  clearHighlightAtom, applyAtomHighlightIndices,
   clearAllHighlights, clearBondSelection, selectBondFromInstance,
   clearPolyhedronSelection, selectPolyhedronFromMesh,
   clearSelectedAtoms, updateAtomSelectionFrom3DHit,
+  addAtomsToSelectionByInstances,
 } from './SelectAndHighlightModule.js';
 import {
   clearMeasureGraphics, addDistanceMeasurement, addAngleMeasurement, drawMeasureGraphics,
@@ -191,9 +192,10 @@ export function setupSceneInteraction() {
     // but avoid double-picking the exact same rendered instance.
     if (measurements.selectedAtoms.some(a => a.userData.instanceId === instanceId)) return;
 
-    // Add atom to selection and highlight it
+    // Add atom to selection and highlight it (all selected atoms stay
+    // highlighted at once — highlightAtomIn3D would clear prior highlights).
     measurements.selectedAtoms.push(hit);
-    highlightAtomIn3D(instanceId);
+    applyAtomHighlightIndices(measurements.selectedAtoms.map(a => a.userData.instanceId));
 
     // Handle actions based on mode
     if (mode.measureMode === 'distance' && measurements.selectedAtoms.length === 2) {
@@ -222,7 +224,12 @@ export function setupSceneInteraction() {
   // Don't open info panel while measuring — two measurement clicks look like a dblclick
   if (mode.measureMode !== 'none') return;
   event.preventDefault();
-  event.stopPropagation();
+  // Not a raw stopPropagation(): on touch this runs on the double-tap's live
+  // pointerup, and swallowing it starves TrackballControls' document-level
+  // pointerup listener, so its drag never ends and the camera sticks in
+  // zoom-only (rotate dead). stopUnlessTouchTap lets a touch pointerup bubble
+  // through while still stopping a desktop dblclick, exactly as onClickPick does.
+  stopUnlessTouchTap(event);
 
   // Handle both mouse and touch events
   let clientX, clientY;
@@ -277,15 +284,18 @@ export function setupSceneInteraction() {
     hit = atomHits[0];
     clearBondSelection();
     clearPolyhedronSelection();
+    // Any modifier (Shift add / Ctrl-Cmd toggle) is building a multi-atom
+    // selection in the 3D view — for the Planes panel's best-fit plane, or the
+    // Structure panel's bulk-visuals selection bar. The atom still glows, but
+    // opening/scrolling the per-atom rows on each pick is the wrong surface for
+    // a group edit (the selection bar handles reveal for multi-select), so a
+    // modifier pick stays quiet. A plain pick keeps inspecting the one atom.
+    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
     updateAtomSelectionFrom3DHit(hit, {
       selectionMode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
       sourceEvent: event,
-      scrollToSelection: true,
-      // A Shift-add is building a multi-atom selection in the 3D view (e.g.
-      // for the Planes panel's best-fit-plane calculation) — the atom still
-      // glows, but every click yanking focus to the Structure panel is
-      // disruptive for a workflow that's staying in the 3D view.
-      revealPanel: !event.shiftKey,
+      scrollToSelection: !additive,
+      revealPanel: !additive,
     });
 
   } else if (bondHits.length > 0) {
@@ -329,29 +339,44 @@ const el = app.renderer.domElement;
 // Prevent browser gestures (zoom, scroll, long-press menu)
 el.style.touchAction = 'none';
 
-// Long-press config
-let longPressTimer = null;
-let longPressFired = false;
+// Touch tap config. Atom selection on touch is a DOUBLE-TAP now, not a
+// long-press: a held press over the scene no longer picks (scene-widget
+// long-presses live in utils/LongPress.js), and a lone tap still
+// picks/measures via onClickPick.
 let pointerDownPos = null;
 let moved = false;
 const cameraOnlyPointerIds = new Set();
-const LONG_PRESS_MS = 700;        // adjust to preference
 const MOVE_THRESHOLD_PX = 10;
+// Two taps within this window and distance count as a double-tap (atom select).
+let lastTapTime = 0;
+let lastTapPos = null;
+const DOUBLE_TAP_MS = 300;
+const DOUBLE_TAP_DIST_PX = 30;
 
-// Shift+drag rectangle-toggle: mouse-only (touch has no modifier key to hold
-// — a touch-friendly equivalent is a future improvement), active in hide or
-// restore mode. Reuses TrackballControls' own drag gesture space, so it must
-// disable app.controls for the duration or a shift-drag would also rotate
-// the camera; a plain (non-shift) drag in either mode still orbits normally.
+// Shift+drag rectangle over the 3D view: mouse-only (touch has no modifier key
+// to hold — a touch-friendly equivalent is a future improvement). Its meaning
+// follows the current mode:
+//   - hide/restore mode  -> 'hide-restore' kind: rectangle hides/restores atoms
+//   - no measure mode    -> 'select' kind: rectangle ADDS atoms to the selection
+// Reuses TrackballControls' own drag gesture space, so it must disable
+// app.controls for the duration or a shift-drag would also rotate the camera;
+// a plain (non-shift) drag in any mode still orbits normally.
 let dragSelectStart = null;   // {x,y} in viewport px, set on a qualifying pointerdown
 let dragSelectEl = null;      // the live rectangle overlay, built lazily on first move past threshold
 let dragSelectActive = false; // true once the rect is actually showing (past DRAG_THRESHOLD_PX)
+let dragSelectKind = null;    // 'hide-restore' | 'select' — what the current drag will commit to
 let dragSelectSuppressClick = false; // sours the click that follows a completed drag-select
 const DRAG_THRESHOLD_PX = 6;
 
-function isDragSelectEligible(e) {
-  return e.pointerType === 'mouse' && e.button === 0 && e.shiftKey
-    && (mode.measureMode === 'hide' || mode.measureMode === 'restore');
+// What a shift+drag starting now would mean, or null if it isn't eligible.
+// Hide/restore keep their own rectangle-hide/restore; every other (i.e. the
+// plain "none") mode gets marquee atom-selection — the same mode where
+// double-click already inspects/selects, so the two never collide.
+function dragSelectKindFor(e) {
+  if (e.pointerType !== 'mouse' || e.button !== 0 || !e.shiftKey) return null;
+  if (mode.measureMode === 'hide' || mode.measureMode === 'restore') return 'hide-restore';
+  if (mode.measureMode === 'none') return 'select';
+  return null;
 }
 
 function ensureDragSelectEl() {
@@ -360,6 +385,9 @@ function ensureDragSelectEl() {
   div.className = 'cv-drag-select-rect';
   document.body.appendChild(div);
   dragSelectEl = div;
+  // The select-mode marquee is tinted with the highlight/accent colour rather
+  // than hide mode's danger red, so the two gestures never look alike.
+  div.classList.toggle('select-mode', dragSelectKind === 'select');
   return div;
 }
 
@@ -378,6 +406,42 @@ function teardownDragSelect() {
   if (app.controls) app.controls.enabled = true;
   dragSelectStart = null;
   dragSelectActive = false;
+  dragSelectKind = null;
+}
+
+// Marquee atom-selection (dragSelectKind === 'select'): every VISIBLE atom
+// whose centre projects inside the rectangle is ADDED to the current
+// selection (never hidden). Only groups.atomsMesh is tested — bonds/polyhedra
+// are single-select for now — and, like the hide/restore drag, this is a
+// screen-space rectangle test (occluded atoms inside the rect are included
+// too, matching that gesture). Adds nothing and clears nothing on an empty
+// rectangle, so a stray shift-drag over blank space is a no-op.
+function commitMarqueeSelect(x0, y0, x1, y1) {
+  const atomsMesh = groups.atomsMesh;
+  const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
+  if (!atomsMesh || !wrapped) return;
+
+  const left = Math.min(x0, x1), right = Math.max(x0, x1);
+  const top = Math.min(y0, y1), bottom = Math.max(y0, y1);
+  const rect = app.renderer.domElement.getBoundingClientRect();
+  const dummy = new THREE.Vector3();
+
+  const instanceIds = [];
+  for (let i = 0; i < atomsMesh.count; i++) {
+    dummy.set(...wrapped.cart[i]);
+    const proj = dummy.project(app.camera);
+    if (proj.z < -1 || proj.z > 1) continue; // behind camera or past far plane
+    const sx = (proj.x * 0.5 + 0.5) * rect.width + rect.left;
+    const sy = (-proj.y * 0.5 + 0.5) * rect.height + rect.top;
+    if (sx >= left && sx <= right && sy >= top && sy <= bottom) instanceIds.push(i);
+  }
+  if (!instanceIds.length) return;
+
+  // Building an atom selection: drop any bond/polyhedron selection first, the
+  // same way a double-click atom pick does.
+  clearBondSelection();
+  clearPolyhedronSelection();
+  addAtomsToSelectionByInstances(instanceIds, { reason: 'marquee', revealPanel: false });
 }
 
 // Projects every instance of whichever ONE mesh the active mode owns to
@@ -477,21 +541,17 @@ function onPointerDown(e) {
 
   // Track touch separately for long-press
   if (e.pointerType === 'touch') {
-    clearLongPress(); // always clear any pending timer before starting a new one
-    longPressFired = false;
     moved = false;
     pointerDownPos = { x: e.clientX, y: e.clientY };
-
-    longPressTimer = setTimeout(() => {
-      longPressFired = true;
-      onDoubleClickAtom(e);   // use same logic as double-click
-      lastTouchTime = Date.now(); // prevent follow-up ghost click
-    }, LONG_PRESS_MS);
-  } else if (isDragSelectEligible(e)) {
-    // Don't build the rect yet — wait for real movement (onPointerMove) so a
-    // plain shift+click still reaches the click handler as a single pick.
-    dragSelectStart = { x: e.clientX, y: e.clientY };
-    if (app.controls) app.controls.enabled = false; // Shift+drag must not also rotate the camera
+  } else {
+    const kind = dragSelectKindFor(e);
+    if (kind) {
+      // Don't build the rect yet — wait for real movement (onPointerMove) so a
+      // plain shift+click still reaches the click handler as a single pick.
+      dragSelectKind = kind;
+      dragSelectStart = { x: e.clientX, y: e.clientY };
+      if (app.controls) app.controls.enabled = false; // Shift+drag must not also rotate the camera
+    }
   }
 
   // Capture so a drag that leaves the canvas keeps reporting moves here. No
@@ -517,18 +577,19 @@ function onPointerMove(e) {
   const dy = e.clientY - pointerDownPos.y;
   if (Math.hypot(dx, dy) > MOVE_THRESHOLD_PX) {
     moved = true;
-    clearLongPress();
   }
 }
 
 function onPointerUp(e) {
   if (cameraOnlyPointerIds.delete(e.pointerId)) return;
 
-  clearLongPress();
-
   if (dragSelectStart) {
     if (dragSelectActive) {
-      commitDragSelectRect(dragSelectStart.x, dragSelectStart.y, e.clientX, e.clientY);
+      if (dragSelectKind === 'select') {
+        commitMarqueeSelect(dragSelectStart.x, dragSelectStart.y, e.clientX, e.clientY);
+      } else {
+        commitDragSelectRect(dragSelectStart.x, dragSelectStart.y, e.clientX, e.clientY);
+      }
       dragSelectSuppressClick = true; // the click that follows this pointerup shouldn't also re-pick
     }
     teardownDragSelect();
@@ -536,24 +597,32 @@ function onPointerUp(e) {
   }
 
   if (e.pointerType === 'touch') {
-    // If the long-press already triggered, skip normal tap
-    if (longPressFired) {
-      longPressFired = false;
-      pointerDownPos = null;
-      return;
-    }
-
-    // Ignore small drags
+    // Ignore small drags (an orbit/pan, not a tap)
     if (moved) {
       pointerDownPos = null;
       moved = false;
       return;
     }
 
-    // Normal tap on touch → behave like click
     lastTouchTime = Date.now();
     e.preventDefault(); // prevent synthetic mouse click
-    onClickPick(e);
+
+    // Two quick taps in the same spot select an atom (same path as a desktop
+    // double-click); a lone tap picks/measures. The double-tap's own second
+    // pointerup fires it, so the highlight paints on this release — immediate
+    // feedback, unlike the old hold-and-wait long-press.
+    const now = lastTouchTime;
+    const near = lastTapPos &&
+      Math.hypot(e.clientX - lastTapPos.x, e.clientY - lastTapPos.y) < DOUBLE_TAP_DIST_PX;
+    if (near && now - lastTapTime < DOUBLE_TAP_MS) {
+      lastTapTime = 0;
+      lastTapPos = null;
+      onDoubleClickAtom(e);
+    } else {
+      lastTapTime = now;
+      lastTapPos = { x: e.clientX, y: e.clientY };
+      onClickPick(e);
+    }
   }
 
   pointerDownPos = null;
@@ -562,15 +631,7 @@ function onPointerUp(e) {
 function onPointerCancel(e) {
   if (cameraOnlyPointerIds.delete(e.pointerId)) return;
 
-  clearLongPress();
   pointerDownPos = null;
   if (dragSelectStart) teardownDragSelect();
-}
-
-function clearLongPress() {
-  if (longPressTimer) {
-    clearTimeout(longPressTimer);
-    longPressTimer = null;
-  }
 }
 }

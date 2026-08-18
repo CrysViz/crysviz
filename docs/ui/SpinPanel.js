@@ -4,7 +4,7 @@ import { fileBrowser, general } from '../state/store.js';
 import { Spin } from '../model/index.js'; // Update path
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange } from '../utils/index.js';
+import { computeAutoRange, applySpinFrame, parseSaxis } from '../utils/index.js';
 
 const SPIN_COLORBAR_FLOATING_ID = 'spinColorBarFloating';
 
@@ -169,6 +169,193 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   sizeWrapper.appendChild(sizeValue);
   sizeWrapper.appendChild(sizeSlider);
   content.appendChild(sizeWrapper);
+
+  // --- Spin Reference Frame + Visual Rotation ---------------------------
+  // A moment is a Cartesian vector, but VASP reports it in the SAXIS-local
+  // frame, so a non-default SAXIS needs re-projecting; and for collinear /
+  // no-spin-orbit data the absolute direction is arbitrary, so a decorative
+  // "rotate all spins" control is genuinely useful. Both operate on each
+  // spin's immutable rawVector via utils/spinFrame.js's applySpinFrame().
+  // Both live in collapsible sections (the app's native <details> idiom,
+  // same `eos-collapsible` styling as ColorPanel/EOS) — seldom needed, so
+  // collapsed by default to keep the panel short.
+  function makeCollapsible(title) {
+    const details = document.createElement("details");
+    details.className = "eos-collapsible";
+    const summary = document.createElement("summary");
+    summary.className = "eos-collapsible-summary";
+    const arrow = document.createElement("span");
+    arrow.className = "eos-collapsible-arrow";
+    arrow.textContent = "▶";
+    summary.appendChild(arrow);
+    summary.appendChild(document.createTextNode(title));
+    details.appendChild(summary);
+    const body = document.createElement("div");
+    body.className = "eos-collapsible-body";
+    details.appendChild(body);
+    return { details, body };
+  }
+
+  const frameSection = makeCollapsible("Spin Reference Frame");
+
+  const frameRow = document.createElement("div");
+  frameRow.className = "cv-force-row";
+
+  const frameSelect = document.createElement("select");
+  frameSelect.className = "cv-scene-select cv-scene-select--block";
+  [
+    ["file", "Quantization axis from file"],
+    ["cartesian", "Cartesian (raw x y z)"],
+    ["crystal", "Crystal axes (a b c)"],
+    ["custom", "Custom quantization axis…"],
+  ].forEach(([value, label]) => {
+    const opt = document.createElement("option");
+    opt.value = value;
+    opt.textContent = label;
+    frameSelect.appendChild(opt);
+  });
+  frameSelect.value = general.spinFrameMode ?? "file";
+  frameRow.appendChild(frameSelect);
+  frameSection.body.appendChild(frameRow);
+
+  // Read-only note of the SAXIS detected in the loaded file.
+  const frameNote = document.createElement("div");
+  frameNote.className = "control-note";
+  frameSection.body.appendChild(frameNote);
+
+  // Editable quantization-axis line (x y z), only shown in "Custom" mode.
+  const saxisRow = document.createElement("div");
+  saxisRow.className = "cv-spin-saxis-row cv-force-hidden";
+
+  const saxisLabel = document.createElement("label");
+  saxisLabel.className = "cv-spin-saxis-label";
+  saxisLabel.textContent = "Axis =";
+
+  const saxisInput = /** @type {any} */ (document.createElement("input"));
+  saxisInput.type = "text";
+  saxisInput.className = "cv-spin-saxis-input";
+  saxisInput.value = (general.spinCustomSaxis ?? [0, 0, 1]).join(" ");
+  saxisInput.placeholder = "0 0 1";
+  saxisInput.title = "Spin-quantization axis in Cartesian coordinates, e.g. 0 0 1";
+
+  const saxisApply = document.createElement("button");
+  saxisApply.type = "button";
+  saxisApply.textContent = "Apply";
+  saxisApply.className = "file-action-btn cv-spin-saxis-apply";
+
+  saxisRow.appendChild(saxisLabel);
+  saxisRow.appendChild(saxisInput);
+  saxisRow.appendChild(saxisApply);
+  frameSection.body.appendChild(saxisRow);
+  content.appendChild(frameSection.details);
+
+  // Visual (decorative) rotation — three angle inputs (about x/y/z, degrees) on
+  // one line. general.spinVisualRot is [rx, ry, rz]; it feeds
+  // utils/spinFrame.js's eulerToMatrix path (Rz(rz)·Ry(ry)·Rx(rx)).
+  const rotSection = makeCollapsible("Visual Rotation (all spins)");
+
+  const rotNote = document.createElement("div");
+  rotNote.className = "control-note";
+  rotNote.textContent = "Rotate every arrow together, in degrees about the x/y/z axes. Orientation only — the moment magnitudes are unchanged.";
+  rotSection.body.appendChild(rotNote);
+
+  const rotRow = document.createElement("div");
+  rotRow.className = "cv-spin-angle-row";
+  /** @type {any[]} */
+  const rotInputs = [];
+  ["X", "Y", "Z"].forEach((axis, k) => {
+    const cell = document.createElement("div");
+    cell.className = "cv-spin-angle-cell";
+    const lab = document.createElement("label");
+    lab.className = "cv-spin-angle-label";
+    lab.textContent = axis;
+    const inp = /** @type {any} */ (document.createElement("input"));
+    inp.type = "number";
+    inp.step = 15;
+    inp.value = (general.spinVisualRot ?? [0, 0, 0])[k] ?? 0;
+    inp.className = "cv-spin-angle-input";
+    inp.title = `Rotation about ${axis} (°)`;
+    rotInputs.push(inp);
+    cell.appendChild(lab);
+    cell.appendChild(inp);
+    rotRow.appendChild(cell);
+  });
+
+  const rotReset = document.createElement("button");
+  rotReset.type = "button";
+  rotReset.textContent = "Reset";
+  rotReset.className = "file-action-btn cv-spin-angle-reset";
+  rotRow.appendChild(rotReset);
+  rotSection.body.appendChild(rotRow);
+  content.appendChild(rotSection.details);
+
+  // Re-derive every structure spin's rendered vector from its rawVector using
+  // the current frame + visual rotation, then redraw. (Function declaration so
+  // it can be referenced by the listeners below the later-declared helpers it
+  // calls; those only run at event time, when everything exists.)
+  function reprojectSpins() {
+    const structure = fileBrowser.selectedStructure;
+    if (!structure?.spins?.length) return;
+    applySpinFrame(structure, {
+      mode: general.spinFrameMode ?? "file",
+      customSaxis: general.spinCustomSaxis ?? [0, 0, 1],
+      visualRot: general.spinVisualRot ?? [0, 0, 0],
+    });
+    if (general.spinsActive) {
+      updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+    }
+    updateCurrentSpinsList();
+  }
+
+  function updateFrameControls() {
+    saxisRow.classList.toggle("cv-force-hidden", frameSelect.value !== "custom");
+    const fileSaxis = fileBrowser.selectedStructure?.spinFrame?.fileSaxis;
+    frameNote.textContent = fileSaxis
+      ? `Detected quantization axis: ${fileSaxis.map(v => (+v).toFixed(2)).join(" ")}`
+      : "";
+  }
+
+  frameSelect.addEventListener("change", () => {
+    general.spinFrameMode = frameSelect.value;
+    updateFrameControls();
+    reprojectSpins();
+  });
+
+  saxisApply.addEventListener("click", () => {
+    const parsed = parseSaxis(saxisInput.value);
+    if (!parsed) {
+      saxisInput.classList.add("cv-input-error");
+      setTimeout(() => saxisInput.classList.remove("cv-input-error"), 1200);
+      return;
+    }
+    general.spinCustomSaxis = parsed;
+    saxisInput.value = parsed.join(" ");
+    if (frameSelect.value !== "custom") {
+      frameSelect.value = "custom";
+      general.spinFrameMode = "custom";
+      updateFrameControls();
+    }
+    reprojectSpins();
+  });
+  saxisInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); saxisApply.click(); }
+  });
+
+  // Three angle inputs (about x/y/z): each edit writes its component and
+  // re-projects. Empty/invalid parses to 0.
+  rotInputs.forEach((inp, k) => {
+    inp.addEventListener("input", () => {
+      const rot = [...(general.spinVisualRot ?? [0, 0, 0])];
+      rot[k] = parseFloat(inp.value) || 0;
+      general.spinVisualRot = rot;
+      reprojectSpins();
+    });
+  });
+  rotReset.addEventListener("click", () => {
+    general.spinVisualRot = [0, 0, 0];
+    rotInputs.forEach((inp) => { inp.value = "0"; });
+    reprojectSpins();
+  });
 
   // --- Species Visibility Panel ---
   const speciesVisibilityLabel = document.createElement("div");
@@ -732,6 +919,15 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
     // true as-loaded state, so "Restore" works below even if Overwrite is
     // never clicked; nothing to snapshot here.
     structure.spins = spins;
+    // Manual/overwritten vectors are literal global Cartesian, so their frame
+    // is the identity — reset spinFrame so the "SAXIS from file" mode doesn't
+    // rotate hand-entered directions. The visual rotation still applies.
+    structure.spinFrame = { fileSaxis: [0, 0, 1] };
+    applySpinFrame(structure, {
+      mode: general.spinFrameMode ?? "file",
+      customSaxis: general.spinCustomSaxis ?? [0, 0, 1],
+      visualRot: general.spinVisualRot ?? [0, 0, 0],
+    });
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], colorMapSelect.value);
       updateNoSpinsNote()
       updateCurrentSpinsList();
@@ -747,9 +943,13 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
     // Restore the as-loaded spins (model/Structure.js's originalSpins
     // snapshot) — an empty array when the structure had none at load, which
     // correctly empties structure.spins back out below rather than no-op'ing.
+    // Restore the raw components too, and the file's own frame, so the frame
+    // controls behave exactly as they did right after load.
+    structure.spinFrame = { fileSaxis: [...(structure.original?.spinFrame?.fileSaxis ?? [0, 0, 1])] };
     structure.spins = structure.originalSpins.map(original => {
       return new Spin({
         vector: [...original.vector],
+        rawVector: [...(original.rawVector ?? original.vector)],
         scaling: original.scaling,
         color: original.color || "#008080", // Fallback to teal if no color was stored
         atomIndex: original.atomIndex,
@@ -758,6 +958,13 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
       });
     });
 
+    // Re-apply the currently-selected frame/rotation to the restored raw
+    // moments (a no-op at defaults; honours an active custom frame/rotation).
+    applySpinFrame(structure, {
+      mode: general.spinFrameMode ?? "file",
+      customSaxis: general.spinCustomSaxis ?? [0, 0, 1],
+      visualRot: general.spinVisualRot ?? [0, 0, 0],
+    });
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], colorMapSelect.value);
     updateCurrentSpinsList();
     createSpeciesVisibilityToggles();
@@ -852,6 +1059,11 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
   // persisted colormap/orientation/floating position), and current spins list
   createSpeciesVisibilityToggles();
   refreshColorBarVisibility();
+  // Sync the frame controls to persisted state and apply it once, so a
+  // restored non-default frame/rotation (or just the file's SAXIS) is reflected
+  // on (re)build without waiting for the user to touch a control.
+  updateFrameControls();
+  reprojectSpins();
   updateCurrentSpinsList();
   updateNoSpinsNote();
 }

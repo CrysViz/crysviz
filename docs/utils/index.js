@@ -21,5 +21,10 @@ export {
   parseLegendSegments, drawLegendRichText,
 } from './LegendRichText.js';
 
+// Spin reference-frame (SAXIS) + decorative-rotation math:
+export {
+  applySpinFrame, frameMatrix, saxisToMatrix, crystalToMatrix,
+  eulerToMatrix, quatToMatrix, multiply3x3, parseSaxis,
+} from './spinFrame.js';
 // Shared long-press gesture for scene-resident widgets:
 export { wireLongPress } from './LongPress.js';

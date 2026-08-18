@@ -6,6 +6,7 @@ mod polyhedra;
 
 use linalg::{cart_to_frac, lattice_from_flat, Vec3};
 use std::collections::HashMap;
+use std::collections::HashSet;
 use wasm_bindgen::prelude::*;
 
 // ---------------------------------------------------------------------------
@@ -425,6 +426,9 @@ fn get_bond_cutoff(bond_table: &[f64], n_elem: usize, ei: usize, ej: usize) -> f
 /// * `face_tol`    – tolerance (fractional coords) for treating an atom as
 ///   sitting on a cell face/edge/corner. Real structures carry small offsets
 ///   from 0/1, so this must be looser than machine eps (default ~1e-3).
+/// * `bounds`      – VESTA-style fractional display bounds, packed as
+///   `[xmin,xmax,ymin,ymax,zmin,zmax]`. Defaults to `[0,1]` per axis (classic
+///   face-mirror behaviour). An empty/short slice falls back to `[0,1]`.
 #[wasm_bindgen]
 pub fn periodic_wrapped(
     show_periodic: bool,
@@ -435,6 +439,7 @@ pub fn periodic_wrapped(
     bond_table: &[f64],
     n_elem: usize,
     face_tol: f64,
+    bounds: &[f64],
 ) -> PeriodicResult {
     let n = elements_in.len();
     assert_eq!(frac_in.len(), 3 * n);
@@ -472,12 +477,31 @@ pub fn periodic_wrapped(
     // ------------------------------------------------------------------
     // showPeriodic = true  →  wrap atoms and duplicate boundary atoms
     // ------------------------------------------------------------------
-    // Detect which cell faces an atom sits on within `face_tol` (fractional);
-    // each detected face contributes a mirror offset. Every combination is
-    // emitted unconditionally — a corner atom lands on all 8 corners, an edge
-    // atom on all 4 edges, a face atom on both faces. Mirrors are placed at the
-    // true periodic position (f ± 1), with no re-detection or clamping of the
-    // mirrored coordinate. Mirrors the JS implementation (periodicWrappedJS).
+    // Boundary display (VESTA-style): wrap each axis into [0,1), then emit every
+    // integer image `k` whose wrapped coordinate lands inside the display bounds
+    // [min,max] (widened by `face_tol` so an atom exactly on a face still
+    // mirrors). The default bounds [0,1] per axis reproduce the classic
+    // behaviour — a corner atom lands on all 8 corners, an edge atom on all 4
+    // edges, a face atom on both faces, an interior atom stays single. Widening
+    // a max (e.g. xmax = 1.2) reveals atoms up to 0.2 of a cell past the
+    // boundary. Mirrors the JS implementation (periodicWrappedJS).
+    let bnd = |lo_i: usize, hi_i: usize, d_lo: f64, d_hi: f64| -> (f64, f64) {
+        let mut lo = bounds.get(lo_i).copied().filter(|v| v.is_finite()).unwrap_or(d_lo);
+        let mut hi = bounds.get(hi_i).copied().filter(|v| v.is_finite()).unwrap_or(d_hi);
+        if lo > hi {
+            std::mem::swap(&mut lo, &mut hi);
+        }
+        (lo, hi)
+    };
+    let bounds_axis = [bnd(0, 1, 0.0, 1.0), bnd(2, 3, 0.0, 1.0), bnd(4, 5, 0.0, 1.0)];
+
+    // Per-axis integer image range for a wrapped coord: k in [nlo, nhi].
+    let axis_range = |wf: f64, lo: f64, hi: f64| -> (i32, i32) {
+        let nlo = (lo - face_tol - wf).ceil() as i32;
+        let nhi = (hi + face_tol - wf).floor() as i32;
+        (nlo, nhi)
+    };
+
     let mut new_elements: Vec<u32> = Vec::with_capacity(n * 2);
     let mut new_frac: Vec<Vec3> = Vec::with_capacity(n * 2);
     let mut new_cart: Vec<Vec3> = Vec::with_capacity(n * 2);
@@ -487,21 +511,17 @@ pub fn periodic_wrapped(
         let f = Vec3::new(frac_in[3 * i], frac_in[3 * i + 1], frac_in[3 * i + 2]);
         let atm = elements_in[i];
 
-        // Offsets to try on each axis: always include 0; add ±1 if near a face.
-        let offs = |coord: f64| -> &'static [f64] {
-            if coord < face_tol {
-                &[0.0, 1.0]          // near 0 face → also mirror to +1
-            } else if coord > 1.0 - face_tol {
-                &[0.0, -1.0]         // near 1 face → also mirror to -1
-            } else {
-                &[0.0]
-            }
-        };
+        let wfx = wrap1(f.x);
+        let wfy = wrap1(f.y);
+        let wfz = wrap1(f.z);
+        let (nlx, nhx) = axis_range(wfx, bounds_axis[0].0, bounds_axis[0].1);
+        let (nly, nhy) = axis_range(wfy, bounds_axis[1].0, bounds_axis[1].1);
+        let (nlz, nhz) = axis_range(wfz, bounds_axis[2].0, bounds_axis[2].1);
 
-        for &dx in offs(f.x) {
-            for &dy in offs(f.y) {
-                for &dz in offs(f.z) {
-                    let fw = Vec3::new(f.x + dx, f.y + dy, f.z + dz);
+        for kx in nlx..=nhx {
+            for ky in nly..=nhy {
+                for kz in nlz..=nhz {
+                    let fw = Vec3::new(wfx + kx as f64, wfy + ky as f64, wfz + kz as f64);
                     let c = lattice.mul_vec(fw);
                     new_elements.push(atm);
                     new_frac.push(fw);
@@ -590,6 +610,24 @@ pub fn periodic_wrapped(
 
             let min_d2 = 0.005 * 0.005;
 
+            // Positions already emitted as boundary atoms (mm-rounded key). A wide
+            // display boundary can already show the atom a cross-cell bond would
+            // reach; without this a coincident ghost would be stacked on top of
+            // it (overlapping duplicate instances + duplicate bonds). A ghost and
+            // its boundary twin are both whole-cell translations of the same
+            // source atom, so they coincide exactly. Mirrors periodicWrappedJS.
+            let pos_key = |p: Vec3| -> (i64, i64, i64) {
+                (
+                    (p.x * 1000.0).round() as i64,
+                    (p.y * 1000.0).round() as i64,
+                    (p.z * 1000.0).round() as i64,
+                )
+            };
+            let mut emitted_pos: HashSet<(i64, i64, i64)> = HashSet::new();
+            for i in 0..wrapped_len {
+                emitted_pos.insert(pos_key(new_cart[i]));
+            }
+
             // For each original atom's periodic images, add a ghost iff the
             // image bonds to at least one wrapped atom. Each (j, shift) is
             // visited once, so a single match (then break) is enough.
@@ -629,6 +667,10 @@ pub fn periodic_wrapped(
                     }
 
                     if bonded {
+                        let key = pos_key(candidate);
+                        if !emitted_pos.insert(key) {
+                            continue; // already shown as a boundary atom
+                        }
                         let cf = cart_to_frac(candidate, &lat_inv);
                         new_elements.push(elements_in[j]);
                         new_frac.push(cf);

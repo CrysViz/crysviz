@@ -1044,3 +1044,66 @@
 .comp-legend-transparent .comp-legend-sub {
   opacity: 0.78;
 }
+
+/* ---- Selection bulk-visuals bar (ui/StructureInfoPanel/SelectionActionBar.js)
+   -------------------------------------------------------------------------
+   Docked at the top of the Structure panel; visible only while atoms are
+   selected (JS toggles display). An accent left-border + faint accent wash
+   flag it as "your current selection", distinct from the per-species rows
+   below. */
+.si-selection-bar {
+  display: none; /* JS switches to block when the selection is non-empty */
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-1); /* neutral hairline — no coloured accent bar */
+  background: var(--wash-1);
+}
+.si-selbar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.si-selbar-summary {
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+  font-weight: 600;
+}
+/* Compact Clear/Reset — smaller than the shared .btn-mini so they read as
+   secondary actions on the bar rather than primary buttons. Scoped through
+   .si-selection-bar to out-rank .cv-panel-body button's font-size (panelWindow.css). */
+.si-selection-bar .si-selbar-clear,
+.si-selection-bar .si-selbar-reset {
+  flex: none;
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.si-selbar-color-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+.si-selbar-swatch {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-1);
+  background: transparent;
+  cursor: pointer;
+}
+.si-selbar-dot {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+  pointer-events: none; /* clicks belong to the button, not the canvas */
+}
+.si-selbar-reset {
+  margin-left: auto; /* push Reset to the right, dot stays next to the label */
+}

@@ -61,6 +61,80 @@
   flex: 1;
 }
 
+/* --- Spin reference frame + visual rotation (ui/SpinPanel.js) --- */
+
+/* Editable "SAXIS = x y z" line, shown only in Custom frame mode:
+   label | grow-to-fill input | compact Apply button, all on one row. */
+.cv-spin-saxis-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+
+.cv-spin-saxis-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--fg-2);
+}
+
+.cv-spin-saxis-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--textarea-bg);
+  color: var(--fg-1);
+  font-family: var(--font-mono);
+  border: 1px solid var(--chrome-5);
+  padding: var(--sp-1) var(--sp-2);
+}
+
+.cv-spin-saxis-apply {
+  flex: 0 0 auto;
+  width: auto; /* override .file-action-btn's width:100% so it sits inline */
+}
+
+/* A brief red outline flashed when a typed SAXIS can't be parsed. */
+.cv-input-error {
+  border-color: var(--danger) !important;
+  outline: 1px solid var(--danger);
+}
+
+/* Visual-rotation: three angle inputs (X/Y/Z) + Reset, all on one line. */
+.cv-spin-angle-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+
+.cv-spin-angle-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cv-spin-angle-label {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+
+.cv-spin-angle-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: var(--textarea-bg);
+  color: var(--fg-1);
+  border: 1px solid var(--chrome-5);
+  padding: var(--sp-1) var(--sp-2);
+  text-align: right;
+}
+
+.cv-spin-angle-reset {
+  flex: 0 0 auto;
+  width: auto;
+}
+
 /* --- Overlay panel (ui/OverlayPanel.js) --- */
 
 /* Toggle rows: the pill itself is the stock .toggle_switch/.toggle_slider
@@ -736,10 +810,17 @@
   flex: 0 0 auto;
 }
 
-.cv-tiny-toggle {
+/* input[type="checkbox"] qualifier is load-bearing, not redundant: the global
+   `input[type="checkbox"]` rule (styles.css) and the mobile one (responsive.css)
+   are both (0,1,1) and outrank a bare `.cv-tiny-toggle` (0,1,0), so their
+   margin-right + transform:scale() win — the margin gets eaten by the 10px flex
+   wrap and shrinks this to a thin line. Qualifying to (0,2,1) lets margin:0 /
+   transform:none hold and keeps it a 10px circle. */
+input[type="checkbox"].cv-tiny-toggle {
   width: 10px;
   height: 10px;
   margin: 0;
+  transform: none;
   cursor: pointer;
   appearance: none;
   -webkit-appearance: none;

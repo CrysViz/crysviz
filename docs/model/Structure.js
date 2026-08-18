@@ -53,6 +53,7 @@ export class Structure {
     atoms = [],
     symmetry = null,
     spins = [],
+    spinFrame = null,
     forces = [],
     stress = null,
     energy = null,
@@ -77,6 +78,11 @@ export class Structure {
     this.atoms = atoms;           // list of atoms
     this.symmetry = symmetry;
     this.spins = spins;           // list of spins
+    // How the loaded spins' raw components map to global Cartesian, so the
+    // Spins panel can re-project them (utils/spinFrame.js). Currently carries
+    // { fileSaxis:[x,y,z] } — the SAXIS a VASP OUTCAR was written with, or
+    // (0,0,1) for formats that already report Cartesian moments.
+    this.spinFrame = spinFrame ?? { fileSaxis: [0, 0, 1] };
     this.forces = forces;         // list of forces
     // True as-loaded spins snapshot, captured once here rather than lazily by
     // SpinPanel.js's "Overwrite Structure" button — so "Restore" always has
@@ -85,6 +91,7 @@ export class Structure {
     // Restore correctly empties structure.spins back out rather than no-op'ing.
     this.originalSpins = spins.map(spin => ({
       vector: [...(spin.vector ?? [0, 0, 0])],
+      rawVector: [...(spin.rawVector ?? spin.vector ?? [0, 0, 0])],
       scaling: spin.scaling,
       color: spin.color,
       atomIndex: spin.atomIndex,
@@ -161,6 +168,7 @@ export class Structure {
       lattice: lattice.map(row => [...row]),  // deep copy of lattice array
       atoms: deepCopyArrayOfObjects(atoms),   // deep copy of atom objects
       spins: deepCopyArrayOfObjects(spins),   // deep copy of spin objects
+      spinFrame: { fileSaxis: [...this.spinFrame.fileSaxis] },
       forces: deepCopyArrayOfObjects(forces), // deep copy of force objects
       stress: stress ? { ...stress } : null,  // deep copy of stress object if it exists
       energy: energy ?? null,                 // per-frame free energy in eV; null when unknown
