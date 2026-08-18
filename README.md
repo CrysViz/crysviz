@@ -203,6 +203,13 @@ For more, see [examples](examples/).
      pipeline; see docs/external/three-pathtracing/README.md for the adaptations.
    - License and code can be found in docs/external/three-pathtracing/
 
+9. QR Code generator
+   - Repository: https://github.com/nayuki/QR-Code-generator
+   - License: MIT
+   - Copyright: Project Nayuki
+   - Loaded on demand from jsDelivr (npm `nayuki-qr-code-generator`) to draw the
+     QR code in the share-link dialog.
+
 ## Other Attributions
 
 - CrysViz uses some color maps from the [Scientific colour maps by Fabio Crameri](https://doi.org/10.5281/zenodo.1243862) (Version 8)
