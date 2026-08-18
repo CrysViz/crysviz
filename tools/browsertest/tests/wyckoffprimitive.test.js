@@ -1,6 +1,10 @@
-// Wyckoff site chooser on a PRIMITIVE cell — the app's own startup structure.
+// Wyckoff site chooser on a PRIMITIVE cell.
 //
-// Si loads as the 2-atom primitive FCC cell of diamond, Fd-3m. Tabulated Wyckoff
+// Si is loaded explicitly rather than taken from the app's startup default: this
+// file is about an F-centred cell whose primitive form is 4x smaller than the
+// conventional one, and the default (Pnnm C3N4) has no centring to test.
+//
+// Si is the 2-atom primitive FCC cell of diamond, Fd-3m. Tabulated Wyckoff
 // multiplicities are quoted for the conventional cell (8 atoms), so an equality
 // test against them rejected every primitive structure and the Add Site chooser
 // fell back to "free" — which is what a user hit. It only worked after
@@ -18,14 +22,14 @@ const MODIFY = '[data-panel-id="modifyStructure"]';
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
-  await page.waitForTimeout(2500); // the app loads Si by itself
+  await H.loadDefaultStructure(page, 'defaultPOSCAR5', 'Si');
 
   const start = await page.evaluate(async () => {
     const { fileBrowser } = await import('./state/store.js');
     const s = fileBrowser.selectedStructure;
     return { atoms: s?.atoms.length, elements: s?.uniqueElements };
   });
-  H.check('startup structure is the 2-atom primitive Si cell',
+  H.check('the loaded structure is the 2-atom primitive Si cell',
     start.atoms === 2 && start.elements.join() === 'Si', JSON.stringify(start));
 
   await page.evaluate(async () => {

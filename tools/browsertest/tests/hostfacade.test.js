@@ -654,7 +654,8 @@ async function waitForHostFailure(page) {
   });
   H.check('empty host manifest loads the built-in default authoritatively',
     emptyManifest.dispatch.ok && emptyManifest.dispatch.result.length === 1
-      && emptyManifest.defaultName === 'Si'
+      // The app's built-in default (crystal-viewer.js loadDefaultStructure).
+      && emptyManifest.defaultName === 'oP28-C3N4'
       && emptyManifestCompletions.length === 1 && emptyManifestCompletions[0].ok === true);
   await page.unroute('**/_crysviz/manifest/empty{,/complete}');
 
