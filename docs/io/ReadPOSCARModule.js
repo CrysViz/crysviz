@@ -84,7 +84,11 @@ export function readPOSCAR(content, fileName) {
 
   const structure = new Structure({
   elements: elements,
-  uniqueElements: elementLine,
+  // Deduped, not elementLine: a POSCAR may legitimately list a symbol more than
+  // once ("Ba Y Ba"), which CrysViz's own share export now does to preserve
+  // atom order — elementLine would then hand every consumer a species list with
+  // repeats in it.
+  uniqueElements: [...new Set(elements)],
   lattice: lattice,
   atoms: atoms,
   periodic: periodic,

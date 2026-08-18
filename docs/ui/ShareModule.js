@@ -110,7 +110,7 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelManager.js';
-import { fracToCart, cartToFractional } from '../math/index.js';
+import { fracToCart, cartToFractional, normalizeFractional } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
 import { showShareLink } from './ShareLinkModal.js';
@@ -350,28 +350,32 @@ export function captureState({ includeFrames = false, includeFields = false } = 
 function buildPOSCAR(state) {
   const { elements, lattice, positions } = state.structure;
 
-  const seen = new Set();
-  const uniqueElements = [];
+  // Species RUNS, not one group per element: VASP 5 lets a symbol repeat
+  // ("Ba Y Ba" over counts "1 1 1"), so the captured atom order survives.
+  //
+  // Grouping by element used to permute the atoms here. restoreAtomOrder put
+  // structure.atoms back, but NOT structure.periodic, which readPOSCAR builds
+  // from the order it parsed — and the renderer colours instance i from
+  // atoms[periodic.wrapped.srcIndex[i]]. The two disagreed, so every per-atom
+  // colour was drawn on a different atom. Invisible in a unit cell whose atoms
+  // already arrive element-grouped; obvious in a supercell, where the tiling
+  // interleaves species.
+  const species = [];
+  const counts = [];
   for (const el of elements) {
-    if (!seen.has(el)) { seen.add(el); uniqueElements.push(el); }
+    if (species.length && species[species.length - 1] === el) counts[counts.length - 1]++;
+    else { species.push(el); counts.push(1); }
   }
-
-  const counts = uniqueElements.map(el => elements.filter(e => e === el).length);
 
   const lines = [
     'Shared via CrysViz',
     '   1.0',
     ...lattice.map(v => v.map(x => x.toFixed(8).padStart(18)).join('')),
-    '   ' + uniqueElements.join('   '),
+    '   ' + species.join('   '),
     '   ' + counts.join('   '),
     'Direct',
+    ...positions.map(p => p.map(v => v.toFixed(8).padStart(18)).join('')),
   ];
-
-  for (const el of uniqueElements) {
-    elements.forEach((e, i) => {
-      if (e === el) lines.push(positions[i].map(v => v.toFixed(8).padStart(18)).join(''));
-    });
-  }
 
   return lines.join('\n');
 }
@@ -726,10 +730,13 @@ function applyAtomColors(colors, structure) {
   }
 }
 
+// readPOSCAR wraps every fractional coordinate into [0,1), so a saved position
+// of 1.0 (or -1e-12) comes back as 0. Normalise both sides or the lookup misses
+// and the whole reorder is abandoned.
 function atomKey(element, position) {
   return [
     element,
-    ...position.map(v => Number(v).toFixed(8)),
+    ...position.map(v => normalizeFractional(Number(v)).toFixed(8)),
   ].join('|');
 }
 
