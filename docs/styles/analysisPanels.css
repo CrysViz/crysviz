@@ -965,6 +965,305 @@
   gap: var(--sp-3); /* 8px */
 }
 
+/* ---------------------------------------------------------------------------
+   FieldCatalogWidget.js — the field selector.
+
+   Serves both shapes of catalog (model/FieldCatalog.js): a flat list of
+   already-loaded fields (cube, CHGCAR), which renders as a plain rows list, and
+   a spin -> k-point -> band tree of lazily-loaded wavefunctions (WAVECAR),
+   which adds the toolbar, the group carets and the per-row Load buttons.
+
+   Indentation is driven by `data-depth` (bounded at the tree's real depth)
+   rather than an inline style, so the ladder stays in this file.
+   `.field-catalog-*` for the chrome, `.fc-*` for the tree rows.
+   --------------------------------------------------------------------------- */
+
+.field-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.field-catalog-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.field-catalog-field {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.field-catalog-filter,
+.field-catalog-select,
+.field-catalog-derived-nameinput {
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--wash-2);
+  color: var(--fg-1);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+
+.field-catalog-filter {
+  flex: 1;
+  min-width: 6rem;
+}
+
+
+/* The tree gets its own scroll region: a WAVECAR can list hundreds of
+   k-points, and the panel below it (isovalue slider, colours) must stay
+   reachable without scrolling past all of them.
+
+   --fc-header-h is the height of one group header row. The sticky `top` ladder
+   further down stacks nested headers at multiples of it, so it has to match the
+   real rendered height: .fc-group-toggle pins that with min-height and
+   border-box, and its label is clipped to one line so a long k-point label
+   cannot grow the row and knock the ladder out of alignment. */
+.field-catalog-tree {
+  --fc-header-h: 1.9rem;
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+}
+
+.field-catalog-empty {
+  margin: 0;
+  padding: var(--sp-3);
+  font-size: var(--fs-sm);
+  opacity: 0.75;
+}
+
+/* Group headers stay pinned while their contents scroll.
+   A k-point can hold hundreds of bands, and without this the only way to
+   collapse the group you are inside is to scroll all the way back up to find
+   its header. The background must be OPAQUE (a wash would let rows show
+   through) — hence the chrome ramp rather than the wash ramp used elsewhere in
+   this widget. */
+.fc-group-toggle {
+  position: sticky;
+  box-sizing: border-box;
+  min-height: var(--fc-header-h);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--chrome-2);
+  color: var(--fg-1);
+  border: none;
+  /* Hairline under the header so a row scrolling beneath it reads as passing
+     under an edge rather than being clipped at random. */
+  box-shadow: inset 0 -1px 0 var(--wash-2);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fc-group-toggle:hover {
+  background: var(--chrome-3);
+}
+
+/* Nested headers stack instead of overlapping: the spin row pins to the very
+   top and its k-point row sits directly beneath, so both remain clickable at
+   any scroll depth. Shallower headers take the higher z-index so a deeper one
+   slides under its parent rather than through it. */
+.fc-group-toggle[data-depth="0"] { top: 0; z-index: 3; }
+
+.fc-group-toggle[data-depth="1"] {
+  top: var(--fc-header-h);
+  z-index: 2;
+  padding-left: var(--sp-5);
+}
+
+.fc-group-toggle[data-depth="2"] {
+  top: calc(var(--fc-header-h) * 2);
+  z-index: 1;
+  padding-left: var(--sp-6);
+}
+
+.fc-caret {
+  width: 1em;
+  opacity: 0.7;
+}
+
+/* One line, always: the sticky `top` ladder assumes every header is exactly
+   --fc-header-h tall, and a wrapped k-point label would break that. */
+.fc-group-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-group-count {
+  font-size: var(--fs-xs);
+  opacity: 0.7;
+}
+
+.fc-leaf {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+}
+
+.fc-leaf[data-depth="1"] { padding-left: var(--sp-5); }
+.fc-leaf[data-depth="2"] { padding-left: var(--sp-6); }
+.fc-leaf[data-depth="3"] { padding-left: calc(var(--sp-6) + var(--sp-3)); }
+
+.fc-leaf:hover {
+  background: var(--wash-1);
+}
+
+/* An unloaded band is dimmed: it is listed, but there is nothing to draw
+   until it has been expanded. */
+.fc-leaf:not(.fc-leaf-loaded) .fc-leaf-label {
+  opacity: 0.6;
+}
+
+.fc-leaf-label {
+  flex: 1;
+}
+
+.fc-leaf-meta {
+  font-size: var(--fs-xs);
+  opacity: 0.7;
+}
+
+.fc-load {
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--wash-2);
+  color: var(--fg-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.fc-load:hover:not(:disabled) {
+  background: var(--hover-color);
+}
+
+.fc-load:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+
+
+
+
+.field-catalog-derived {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.field-catalog-derived-title {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.field-catalog-derived-hint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  opacity: 0.75;
+}
+
+.field-catalog-derived-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 10rem;
+  overflow-y: auto;
+}
+
+.field-catalog-derived-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.field-catalog-weight {
+  width: 4rem;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--wash-2);
+  color: var(--fg-1);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+
+.field-catalog-derived-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.field-catalog-derived-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.field-catalog-derived-nameinput {
+  flex: 1;
+  min-width: 6rem;
+}
+
+.field-catalog-derived-build {
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-color);
+  color: var(--fg-1);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.field-catalog-derived-build:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+/* Load failures for a single field (a truncated file, a grid too large to
+   allocate) are shown here rather than only in the console — the user is
+   looking at the panel, not the devtools. Empty by default, so it takes no
+   space until something goes wrong. */
+.field-catalog-error:empty {
+  display: none;
+}
+
+.field-catalog-error {
+  margin: var(--sp-2) 0 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--wash-1);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+/* Cell-mismatch banner: shown when a WAVECAR was attached to a structure whose
+   lattice differs, because the isosurface is only meaningful if the viewer
+   knows the two cells are not the same. */
+.field-cell-mismatch {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--wash-1);
+  border-left: 3px solid var(--highlight-color);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
 /* ===========================================================================
    LatticeSupercellPanel.js — Cell & Supercell panel: the Supercell,
    Vacuum, Order Structure and Lattice Transformation sections in the

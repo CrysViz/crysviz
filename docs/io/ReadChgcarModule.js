@@ -1,8 +1,36 @@
 import { Field } from '../model/index.js'; // Adjust path as needed
 import { FieldContainer } from '../model/index.js'; // Adjust path as needed
+import { combineFields, computeFieldStats } from '../model/index.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
 
 
+
+/**
+ * One parsed spin component as a Field.
+ *
+ * The two call sites below (a new grid header, and end-of-file) used to hold
+ * byte-identical copies of this, each running four separate `reduce` passes over
+ * the values — eight full walks of a multi-million-entry array per file.
+ * `computeFieldStats` does it in one.
+ *
+ * @param {Float32Array} values
+ * @param {number} nx @param {number} ny @param {number} nz
+ * @param {number} index position in the file: 0 is the charge density, 1+ spin
+ * @returns {Field}
+ */
+function makeComponentField(values, nx, ny, nz, index) {
+  return new Field({
+    nx,
+    ny,
+    nz,
+    origin: [0, 0, 0],
+    voxel: null, // will set later
+    values: new Float32Array(values),
+    component: index, // 0 for charge density, 1+ for spin components
+    label: index === 0 ? 'Charge Density' : 'Spin Density',
+    ...computeFieldStats(values),
+  });
+}
 
 //------------------------------------------------------------
 //  readCHGCAR(url) → { lattice, positions_cart, field }
@@ -76,24 +104,7 @@ export function readCHGCAR(text, fileName, source = 'CHGCAR') {
     if (tokens.length === 3 && tokens.every(t => /^\d+$/.test(t))) {
       // Save current field if we have data
       if (currentValues && currentValues.length > 0) {
-        const absMinValue = currentValues.reduce((m, v) => Math.min(Math.abs(m), Math.abs(v)), Infinity);
-        const absMaxValue = currentValues.reduce((m, v) => Math.max(Math.abs(m), Math.abs(v)), 0);
-        const minValue = currentValues.reduce((m, v) => Math.min(m, v), Infinity);
-        const maxValue = currentValues.reduce((m, v) => Math.max(m, v), -Infinity);
-        fields.push(new Field({
-          nx,
-          ny,
-          nz,
-          origin: [0, 0, 0],
-          voxel: null, // will set later
-          values: new Float32Array(currentValues),
-          component: fields.length, // 0 for charge density, 1+ for spin components
-          label: fields.length == 0 ? 'Charge Density' : `Spin Density`,
-          minValue: minValue,
-          maxValue: maxValue,
-          absMinValue: absMinValue,
-          absMaxValue: absMaxValue
-        })); 
+        fields.push(makeComponentField(currentValues, nx, ny, nz, fields.length));
       }
       fill_ind = 0;
       [nx, ny, nz] = tokens.map(Number);
@@ -117,74 +128,21 @@ export function readCHGCAR(text, fileName, source = 'CHGCAR') {
 
   // Push final field
   if (currentValues && currentValues.length > 0) {
-    const absMinValue = currentValues.reduce((m, v) => Math.min(Math.abs(m), Math.abs(v)), Infinity);
-    const absMaxValue = currentValues.reduce((m, v) => Math.max(Math.abs(m), Math.abs(v)), 0);
-    const minValue = currentValues.reduce((m, v) => Math.min(m, v), Infinity);
-    const maxValue = currentValues.reduce((m, v) => Math.max(m, v), -Infinity);
-    fields.push(new Field({
-      nx,
-      ny,
-      nz,
-      origin: [0, 0, 0],
-      voxel: null, // will set later
-      values: new Float32Array(currentValues),
-      component: fields.length, // 0 for charge density, 1+ for spin components
-      label: fields.length == 0 ? 'Charge Density' : `Spin Density`,
-      minValue: minValue,
-      maxValue: maxValue,
-      absMinValue: absMinValue,
-      absMaxValue: absMaxValue
-    }));
+    fields.push(makeComponentField(currentValues, nx, ny, nz, fields.length));
   }
 
-  // if it is a chgcar with spin density, form the spin up and spin down densities separately for visualization
+  // A spin-polarised CHGCAR stores (rho, s); the separately-visualisable spin
+  // channels are the two halves of that sum. This is exactly the weighted
+  // combination the derived-field UI offers, so it goes through the same helper
+  // rather than open-coding the arithmetic and eight more reduce passes.
   if (fields.length == 2 && fields[0].label === 'Charge Density' && fields[1].label === 'Spin Density') {
-    const chargeField = fields[0];
-    const spinField = fields[1];
-    const spinUpValues = new Float32Array(chargeField.values.length);
-    const spinDownValues = new Float32Array(chargeField.values.length);
-    for (let i = 0; i < chargeField.values.length; i++) {
-      spinUpValues[i] = 0.5 * (chargeField.values[i] + spinField.values[i]);
-      spinDownValues[i] = 0.5 * (chargeField.values[i] - spinField.values[i]);
-    }
-    // min max value calculation
-    const spinUpMax = spinUpValues.reduce((m, v) => Math.max(m, v), -Infinity);
-    const spinDownMax = spinDownValues.reduce((m, v) => Math.max(m, v), -Infinity);
-    const spinUpMin = spinUpValues.reduce((m, v) => Math.min(m, v), Infinity);
-    const spinDownMin = spinDownValues.reduce((m, v) => Math.min(m, v), Infinity);
-    const spinUpAbsMax = spinUpValues.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-    const spinDownAbsMax = spinDownValues.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-    const spinUpAbsMin = spinUpValues.reduce((m, v) => Math.min(m, Math.abs(v)), Infinity);
-    const spinDownAbsMin = spinDownValues.reduce((m, v) => Math.min(m, Math.abs(v)), Infinity);
-
-    fields.push(new Field({
-      nx: chargeField.nx,
-      ny: chargeField.ny,
-      nz: chargeField.nz,
-      origin: [0, 0, 0],
-      voxel: null, // will set later
-      values: spinUpValues,
-      component: fields.length, // 0 for charge density, 1+ for spin components
-      label: 'Spin Up Density',
-      minValue: spinUpMin,
-      maxValue: spinUpMax,
-      absMinValue: spinUpAbsMin,
-      absMaxValue: spinUpAbsMax
-    }));
-    fields.push(new Field({
-      nx: chargeField.nx,
-      ny: chargeField.ny,
-      nz: chargeField.nz,
-      origin: [0, 0, 0],
-      voxel: null, // will set later
-      values: spinDownValues,
-      component: fields.length, // 0 for charge density, 1+ for spin components
-      label: 'Spin Down Density',
-      minValue: spinDownMin,
-      maxValue: spinDownMax,
-      absMinValue: spinDownAbsMin,
-      absMaxValue: spinDownAbsMax
-    }));
+    const [chargeField, spinField] = fields;
+    fields.push(combineFields(
+      [{ field: chargeField, weight: 0.5 }, { field: spinField, weight: 0.5 }],
+      { label: 'Spin Up Density', component: fields.length }));
+    fields.push(combineFields(
+      [{ field: chargeField, weight: 0.5 }, { field: spinField, weight: -0.5 }],
+      { label: 'Spin Down Density', component: fields.length }));
   }
 
   // Create volumetric field container with metadata

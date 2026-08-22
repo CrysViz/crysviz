@@ -812,19 +812,28 @@ function updateStructureFromRowAndStep(rowIndex) {
   if (spins != null && general.spinsActive) updateSpins();
   let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
   if (forces != null && general.forcesActive) updateForces();
-  let fields = fileBrowser.selectedStructure.volumetricFields?.fields ?? null;
-  if (fields && fields.length > 0) {
-    fieldBrowser.setAvailableFields(fileBrowser.selectedStructure.volumetricFields.fields);
-    fieldBrowser.setSelectedField(0);
+  // Point the field browser at the newly selected structure's catalog. Going
+  // through the catalog rather than the flat `fields` array matters for proxy
+  // formats: a WAVECAR's `fields` is empty until a band is expanded, but the
+  // catalog still lists everything the file offers, and switching back to that
+  // structure must restore whatever the user had already loaded.
+  const fieldCatalog = fileBrowser.selectedStructure.volumetricFields?.catalog ?? null;
+  if (fieldCatalog && fieldCatalog.nodes.length > 0) {
+    fieldBrowser.setCatalog(fieldCatalog);
     const selectedField = fieldBrowser.selectedField;
-    // Honor the global "Show Volumetric Field" toggle (Features window).
-    selectedField.isVisible = general.fieldActive;
-    setActiveField(selectedField);
-    updateField();
+    if (selectedField) {
+      // Honor the global "Show Volumetric Field" toggle (Features window).
+      selectedField.isVisible = general.fieldActive;
+      setActiveField(selectedField);
+      updateField();
+    } else {
+      // A catalog with nothing expanded yet (a freshly-opened WAVECAR): there is
+      // no isosurface to draw until the user picks a band.
+      deleteField();
+    }
   }
   else {
-    fieldBrowser.setAvailableFields();
-    fieldBrowser.setSelectedField(null);
+    fieldBrowser.setCatalog(null);
     deleteField();
   }
   //if (fileBrowser.selectedStructure.stress != null) stress = fileBrowser.selectedStructure.stress.map(r => r.tensor);

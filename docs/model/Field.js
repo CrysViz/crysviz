@@ -37,6 +37,17 @@ export class Field {
     this.label = label;
     this.useAbsoluteIsoValue = useAbsoluteIsoValue;
     this.isVisible = isVisible;
+
+    // Set by model/WavefunctionSource.js when this field is one band of a
+    // WAVECAR, so the UI can trace a field back to its (spin, k-point, band)
+    // and to the proxy that produced it. Null for every other field source.
+    /** @type {{source: any, spin: number, kpt: number, band: number, quantity: number} | null} */
+    this.wavefunction = null;
+
+    // Set by model/CompositeField.js on a weighted combination: the recipe it
+    // was built from, so it can be rebuilt when a term is reloaded.
+    /** @type {Array<{field: Field, weight: number}> | null} */
+    this.derivedFrom = null;
   }
 
   getValueAt(i, j, k) {

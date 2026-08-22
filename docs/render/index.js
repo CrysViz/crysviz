@@ -62,7 +62,7 @@ export {
 
 export {
   updateField, setActiveField, toggleFieldVisibility, clearField, deleteField,
-  parseCHGCARFile, parseCubeFile,
+  parseCHGCARFile, parseCubeFile, parseWavecarFile,
 } from './Render3DFieldModule.js';
 
 export { removeSpins, updateSpins, deleteSpins, computeSpinColor } from './SpinModule.js';

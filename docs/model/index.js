@@ -15,6 +15,15 @@ export { Wyckoff } from './Wyckoff.js';
 export { Field } from './Field.js';
 export { Plane, getCutPlaneMaskSign } from './Plane.js';
 export { FieldContainer } from './FieldContainer.js';
+
+// Volumetric-field composition and the tree view over a file's fields:
+export { combineFields, recomputeComposite, computeFieldStats, describeCombination } from './CompositeField.js';
+export { FieldCatalog, FieldCatalogNode, NodeKind } from './FieldCatalog.js';
+
+// Lazily-read plane-wave wavefunctions (WAVECAR) and the byte-budgeted cache
+// that keeps them inside the browser's memory limits:
+export { WavefunctionSource, GammaMode, WaveQuantity, RTAG_SINGLE, RTAG_DOUBLE } from './WavefunctionSource.js';
+export { LruByteCache, DEFAULT_CACHE_BUDGET_BYTES, byteSizeOf } from './LruByteCache.js';
 export { ColoredObject } from './ColoredObject.js';
 
 // Instanced-mesh helper (default export re-exported as a name):

@@ -58,6 +58,21 @@ const handlers = {
       ],
     };
   },
+
+  // One WAVECAR band: scatter the plane-wave coefficients into an FFT box,
+  // inverse-transform it and reduce to a Float32 scalar field. The complex
+  // intermediate (up to hundreds of MB) is allocated and freed inside the WASM
+  // module, so only the coefficients come in and only the field goes back.
+  //
+  // The wave module is imported lazily rather than alongside periodic_wasm at
+  // the top of this file: most sessions never open a wavefunction, and every
+  // worker in the pool would otherwise pay the instantiation.
+  wavefunctionRealSpace: async (payload) => {
+    const { getWaveBackend, transformToRealSpace } = await import('../math/wave-backend-wasm.js');
+    const module = await getWaveBackend();
+    const result = transformToRealSpace(module, payload);
+    return { result, transfer: [result.values.buffer] };
+  },
 };
 
 self.onmessage = async (e) => {

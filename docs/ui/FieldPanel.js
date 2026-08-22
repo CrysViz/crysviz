@@ -9,8 +9,14 @@ import {
 } from '../model/index.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import { createMaterialEditor, MATERIAL_TYPES } from './StructureInfoPanel/components/MaterialEditor.js';
+import { createFieldCatalogWidget } from './FieldCatalogWidget.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
+
+// The live field-selector widget, so a panel rebuild can tear the previous one
+// down (it holds a subscription to the catalog).
+/** @type {{destroy: () => void, refresh: () => void} | null} */
+let activeCatalogWidget = null;
 
 /**
  * Convert an isoSlider value (0-100) to an iso value based on the selected field's range.
@@ -96,33 +102,96 @@ export function isoValueToSlider(isoValue, field) {
   }
 }
 
-// Field browser object to track field selection state
+// Field browser object to track field selection state.
+//
+// `availableFields` is the single list every other module reads — PlanesPanel
+// builds its Field dropdown from it, the Features toggle and the panel
+// availability predicate consult `selectedField`. It is now a GETTER over the
+// active FieldCatalog's *loaded* fields rather than a stored array.
+//
+// That one change is what keeps unloaded wavefunctions out of every menu in the
+// app: a WAVECAR offers thousands of bands, but until a band has actually been
+// expanded into a grid there is nothing to sample, and anything that offered it
+// would be offering a field with no values. Formats whose fields are all parsed
+// up front (cube, CHGCAR) get a flat catalog in which every entry is loaded, so
+// for them the list is exactly what it always was.
 export const fieldBrowser = {
+  /** @type {import('../model/FieldCatalog.js').FieldCatalog | null} */
+  catalog: null,
   selectedField: null,
   selectedFieldIndex: 0,
-  availableFields: [],
-  
+
+  /** @returns {import('../model/Field.js').Field[]} fields that actually hold data */
+  get availableFields() {
+    return this.catalog ? this.catalog.loadedFields() : [];
+  },
+
   setSelectedField(fieldIndex) {
-    if (this.availableFields.length > 0 && fieldIndex >= 0 && fieldIndex < this.availableFields.length) {
+    const fields = this.availableFields;
+    if (fields.length > 0 && fieldIndex >= 0 && fieldIndex < fields.length) {
+      const previous = this.selectedField;
       this.selectedFieldIndex = fieldIndex;
-      this.selectedField = this.availableFields[fieldIndex];
+      this.selectedField = fields[fieldIndex];
+      this._repin(previous, this.selectedField);
       setActiveField(this.selectedField); // Update the active field in the Render3DFieldModule
       return true;
     }
     return false;
   },
 
-  setAvailableFields(fields = null) {
-    this.availableFields = fields || [];
-    // Set default to first field if available
-    if (this.availableFields.length > 0) {
-      if (!this.selectedField) {
-        this.setSelectedField(0);
-      }
-    } else {
-      this.selectedField = null;
-      this.selectedFieldIndex = -1;
-    }
+  /**
+   * Keep the displayed wavefunction out of reach of the cache's eviction sweep.
+   *
+   * The isosurface and both tracers read `Field.values` on every rebuild, and
+   * the catalog decides what to show as "loaded" from what is still cached. If
+   * the on-screen band were evicted, its row would flip back to "Load" while it
+   * was still being drawn. Only wavefunction-backed fields have a cache behind
+   * them; everything else is a plain object and this is a no-op.
+   *
+   * @param {import('../model/Field.js').Field | null} previous
+   * @param {import('../model/Field.js').Field | null} next
+   */
+  _repin(previous, next) {
+    if (previous === next) return;
+    const pin = (field, pinned) => {
+      const w = field?.wavefunction;
+      if (w) w.source.pinField(w.spin, w.kpt, w.band, w.quantity, pinned);
+    };
+    pin(previous, false);
+    pin(next, true);
+  },
+
+  /**
+   * Select by identity rather than position. The catalog widget works in terms
+   * of nodes, and a field's index in `availableFields` shifts as other fields
+   * are loaded or evicted, so an index would go stale under it.
+   * @param {import('../model/Field.js').Field} field
+   */
+  selectField(field) {
+    const index = this.availableFields.indexOf(field);
+    if (index < 0) return false;
+    return this.setSelectedField(index);
+  },
+
+  /** Point the browser at a new file's catalog, clearing any previous selection. */
+  setCatalog(catalog) {
+    this._repin(this.selectedField, null);
+    this.catalog = catalog || null;
+    this.selectedField = null;
+    this.selectedFieldIndex = -1;
+    if (this.availableFields.length > 0) this.setSelectedField(0);
+  },
+
+  /**
+   * Drop a field that no longer has data (evicted from the wavefunction cache)
+   * from the current selection, so the panel does not keep pointing at it.
+   */
+  forgetSelectionIfUnloaded() {
+    if (!this.selectedField) return;
+    if (this.availableFields.includes(this.selectedField)) return;
+    this._repin(this.selectedField, null);
+    this.selectedField = null;
+    this.selectedFieldIndex = -1;
   },
 
   hasFields() {
@@ -138,27 +207,27 @@ export function addFieldPanel(target = "cvPanelBody-field") {
   }
 
   const structure = fileBrowser.selectedStructure;
-  if (!structure || !structure.volumetricFields || !structure.volumetricFields.fields) {
+  if (!structure || !structure.volumetricFields) {
     console.warn("No volumetric fields available for current structure");
     showNoFieldsMessage(target);
     return;
   }
 
-  const fields = structure.volumetricFields.fields;
-  if (fields.length === 0) {
-    console.warn("Volumetric fields array is empty");
+  // The catalog, not the flat `fields` array, is what the panel is built from.
+  // For a WAVECAR `fields` is empty by design — the entries exist but none has
+  // been expanded yet — so checking it here would hide the panel that is the
+  // only place to load one.
+  const catalog = structure.volumetricFields.catalog;
+  if (!catalog || catalog.nodes.length === 0) {
+    console.warn("Volumetric field catalog is empty");
     showNoFieldsMessage(target);
     return;
   }
 
-  if (!fieldBrowser.selectedField) {
-    console.warn("No selected field in fieldBrowser after setting available fields");
-    showNoFieldsMessage(target);
-    return;
-  }
-
-  // Update fieldBrowser with available fields
-  fieldBrowser.setAvailableFields(fields);
+  // Keep the browser pointed at this structure's catalog. Switching rows in the
+  // file browser rebuilds this panel, and the previous structure's catalog must
+  // not linger in `fieldBrowser.availableFields`.
+  if (fieldBrowser.catalog !== catalog) fieldBrowser.setCatalog(catalog);
 
   const container = document.getElementById(target);
   if (!container) {
@@ -166,19 +235,34 @@ export function addFieldPanel(target = "cvPanelBody-field") {
     return;
   }
 
-  const isoValue = fieldBrowser.selectedField.isoValue || sliderToIsoValue(55, fieldBrowser.selectedField);
-  const sliderVal = isoValueToSlider(isoValue, fieldBrowser.selectedField);
+  // A catalog with nothing loaded yet (a freshly-opened WAVECAR) still gets the
+  // full panel; the isosurface controls are simply disabled until a field is
+  // chosen, which is what `syncIsoControlsToSelection` below handles.
+  const selected = fieldBrowser.selectedField;
+  const isoValue = selected
+    ? (selected.isoValue || sliderToIsoValue(55, selected))
+    : 0;
+  const sliderVal = selected ? isoValueToSlider(isoValue, selected) : 50;
   const materialSettings = getIsosurfaceMaterialSettings();
+
+  const mismatch = structure.volumetricFields.cellMismatch;
+  const summary = catalog.summary ? ` &mdash; ${catalog.summary}` : '';
 
   container.innerHTML = `
     <div class="field-info">
-      <p><strong>Source:</strong> ${structure.volumetricFields.source}</p>
+      <p><strong>Source:</strong> ${structure.volumetricFields.source}${summary}</p>
     </div>
+    ${mismatch ? `
+    <div class="field-cell-mismatch">
+      This file's cell does not match the structure it was attached to (largest
+      component difference ${mismatch.deviation.toFixed(4)} &#8491;). The field is drawn in the
+      structure's cell.
+    </div>` : ''}
 
     <div class="control-group">
       <label class="toggle_row toggle_container">
         <span class="toggle_switch">
-          <input type="checkbox" id="FieldAbsoluteValueToggle" ${fieldBrowser.selectedField.useAbsoluteIsoValue ? 'checked' : ''}>
+          <input type="checkbox" id="FieldAbsoluteValueToggle" ${selected?.useAbsoluteIsoValue ? 'checked' : ''}${selected ? '' : ' disabled'}>
           <span class="toggle_slider"></span>
         </span>
         <span class="toggle_text"> Absolute Isosurface Values</span>
@@ -194,17 +278,8 @@ export function addFieldPanel(target = "cvPanelBody-field") {
 
     <div class="control-group">
       <label>Field Selection:</label>
-      <table id="fieldSelectionTable">
-        <thead>
-          <tr>
-            <th class="fth">Selected</th>
-            <th class="fth">Field</th>
-          </tr>
-        </thead>
-        <tbody>
-        <!-- Rows will be populated dynamically -->
-        </tbody>
-      </table>
+      <div id="fieldCatalogMount"></div>
+      <p id="fieldCatalogError" class="field-catalog-error" role="alert"></p>
     </div>
 
     <div class="control-group">
@@ -240,27 +315,35 @@ export function addFieldPanel(target = "cvPanelBody-field") {
    
   `;
 
-  // Populate field selection table
-  const tableBody = document.querySelector("#fieldSelectionTable tbody");
-  fields.forEach((field, index) => {
-    const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>
-        <input type="radio" name="primaryField" class="fieldPrimary" data-field-index="${index}" ${index === fieldBrowser.selectedFieldIndex ? 'checked' : ''}>
-      </td>
-      <td>${field.label}</td>
-    `;
-    tableBody.appendChild(row);
-  });
+  // Wire up the isovalue slider, colour pickers and material editor first, so
+  // the widget's onSelect callback can drive them.
+  const controls = setupFieldControlEvents(container);
 
-  // Add event listeners
-  setupFieldControlEvents(fields, container);
+  // The field selector. One widget covers a flat list of already-loaded fields
+  // and a lazily-loaded spin/k-point/band tree — see ui/FieldCatalogWidget.js.
+  const mount = document.getElementById('fieldCatalogMount');
+  if (mount) {
+    if (activeCatalogWidget) activeCatalogWidget.destroy();
+    activeCatalogWidget = createFieldCatalogWidget({
+      container: mount,
+      catalog,
+      selectedField: fieldBrowser.selectedField,
+      onSelect: (field) => {
+        if (!fieldBrowser.selectField(field)) return;
+        controls.syncToSelection();
+        updateField(field.isoValue || undefined);
+      },
+      onError: (error) => {
+        // Loading a band can fail for real, recoverable reasons (a truncated
+        // file, a grid too large to allocate). Say so where the user is looking
+        // rather than only in the console.
+        const notice = document.getElementById('fieldCatalogError');
+        if (notice) notice.textContent = error.message;
+      },
+    });
+  }
 
-  // Setup delete field button
-  //const deleteButton = document.getElementById("deleteField");
-  //if (deleteButton) {
-  //  deleteButton.onclick = removeFieldPanel;
-  //}
+  controls.syncToSelection();
 }
 
 function showNoFieldsMessage(target = "cvPanelBody-field") {
@@ -280,38 +363,41 @@ function showNoFieldsMessage(target = "cvPanelBody-field") {
 
 export function removeFieldPanel(target = "cvPanelBody-field") {
   const fieldControlsGroup = document.getElementById(target);
-  
+
+  // The selector holds a subscription to the catalog; dropping the DOM without
+  // unsubscribing would leave it redrawing into a detached element forever.
+  if (activeCatalogWidget) {
+    activeCatalogWidget.destroy();
+    activeCatalogWidget = null;
+  }
+
   if (fieldControlsGroup) {
-    // Clean up any existing field meshes
-    if (fieldBrowser.hasFields()) {
-      fieldBrowser.availableFields.forEach(field => {
-        if (field.__fieldMesh) {
-          app.scene.remove(field.__fieldMesh);
-          field.__fieldMesh.geometry.dispose();
-          field.__fieldMesh.material.dispose();
-          field.__fieldMesh = null;
-        }
-        if (field.__fieldMeshNegative) {
-          app.scene.remove(field.__fieldMeshNegative);
-          field.__fieldMeshNegative.geometry.dispose();
-          field.__fieldMeshNegative.material.dispose();
-          field.__fieldMeshNegative = null;
-        }
-      });
-    }
-    
-    // Clear the controls content
+    // NOTE: this used to walk every field disposing `__fieldMesh` /
+    // `__fieldMeshNegative`. Nothing in the codebase has ever assigned those
+    // properties — the isosurface meshes live on groups.isosurfaceGroup and are
+    // disposed by clearField()/deleteField() in render/Render3DFieldModule.js —
+    // so the block was dead. It type-checked only because `availableFields` was
+    // an untyped empty array; now that it is a Field[] the dead access is a
+    // visible error, which is what surfaced it.
     fieldControlsGroup.innerHTML = '';
   }
 }
 
-function setupFieldControlEvents(fields, container) {
+/**
+ * Wire the isovalue slider, the two toggles and the colour/material controls.
+ *
+ * Field SELECTION is no longer handled here — that moved to the catalog widget,
+ * which calls back into `syncToSelection()` (returned below) so the slider
+ * follows whichever field is now active.
+ *
+ * @returns {{syncToSelection: () => void}}
+ */
+function setupFieldControlEvents(container) {
   const slider = document.getElementById('isoSlider');
   const valueDisplay = document.getElementById('isoValue');
   const absoluteValueCheckbox = document.getElementById('FieldAbsoluteValueToggle');
   const logScaleCheckbox = document.getElementById('LogSliderScaleToggle');
   const triangleSortCheckbox = document.getElementById('FieldTriangleSortToggle');
-  const fieldPrimaryRadios = document.querySelectorAll('.fieldPrimary');
   const fieldColorToggle = document.getElementById('fieldColorToggle');
   const fieldColorToggleIcon = document.getElementById('fieldColorToggleIcon');
   const fieldColorContent = document.getElementById('fieldColorContent');
@@ -537,22 +623,40 @@ function setupFieldControlEvents(fields, container) {
   // Initialize with first field visible
   //updateAllIsosurfaces();
 
-  // Primary field selection radios
-  fieldPrimaryRadios.forEach((radio) => {
-    radio.addEventListener('change', function() {
-      const fieldIndex = parseInt(this.dataset.fieldIndex);
-      if (fieldBrowser.setSelectedField(fieldIndex)) {
-        const isoValue = fieldBrowser.selectedField.isoValue || sliderToIsoValue(55, fieldBrowser.selectedField);
-        slider.value = isoValueToSlider(isoValue, fieldBrowser.selectedField);
-        valueDisplay.textContent = isoValue.toExponential(3);
-        // Update the Absolute Iso Value toggle state based on the newly selected field
-        absoluteValueCheckbox.checked = fieldBrowser.selectedField.useAbsoluteIsoValue;
+  /**
+   * Point the iso controls at whatever field is currently selected.
+   *
+   * Called once when the panel is built and again every time the catalog widget
+   * reports a new selection. It replaces the per-radio handlers that used to
+   * live here: selection is the widget's job now, because with a lazily-loaded
+   * catalog a field's position in `availableFields` shifts as other fields are
+   * loaded or evicted, and an index-based handler would go stale.
+   *
+   * With nothing selected (a freshly-opened WAVECAR) the controls are disabled
+   * rather than hidden, so the panel keeps its shape while the user picks a band.
+   */
+  function syncToSelection() {
+    const field = fieldBrowser.selectedField;
+    const enabled = Boolean(field);
 
-        // Update field with iso value for newly selected field
-        updateField(isoValue);
-      }
-    });
-  });
+    slider.disabled = !enabled;
+    absoluteValueCheckbox.disabled = !enabled;
+
+    if (!field) {
+      valueDisplay.textContent = '—';
+      return;
+    }
+
+    const isoValue = field.isoValue || sliderToIsoValue(55, field);
+    field.isoValue = isoValue;
+    slider.value = String(isoValueToSlider(isoValue, field));
+    valueDisplay.textContent = isoValue.toExponential(3);
+    // Track the newly selected field's own absolute-value preference.
+    absoluteValueCheckbox.checked = Boolean(field.useAbsoluteIsoValue);
+    lastBuiltIso = null; // a different field: force the next rebuild through
+  }
+
+  return { syncToSelection };
 }
 
 export function updateFieldPanel() {

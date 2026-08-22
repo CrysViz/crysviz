@@ -50,7 +50,7 @@ import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
 import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
 
-import { updateField, parseCHGCARFile, parseCubeFile, clearField } from '../render/index.js';
+import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
 
 // .........................................................................................................
@@ -83,6 +83,7 @@ import {initRaytraceWarningModal} from '../ui/RaytraceWarningModal.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any } from '../io/index.js';
+import { FileSource, detectFormat, materialize } from '../io/index.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
@@ -321,57 +322,71 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     const parserFileName = format && !String(fileName).toLowerCase().endsWith(`.${String(format).toLowerCase()}`)
       ? `${fileName}.${format}`
       : fileName;
-    const lower = (parserFileName || '').toLowerCase();
-    const contentString = typeof content === 'string' ? content : '';
     let structureContainer = null;
-    
-    // Field files and .crysviz state files are handled directly; every other
-    // format is dispatched by parse_any (which owns the structure-format
-    // sniffing).
-    const treatAsCrysviz = lower.endsWith('.crysviz');
 
-    const treatAsCube = lower.endsWith('.cube') ||
-                       lower.includes('.cube');
+    // `content` may be a string, an ArrayBuffer, a Blob/File, or an io/FileSource.
+    // Wrapping it here means nothing below has to care, and crucially means a
+    // format can decline to be read in full — which is the only way a multi-GB
+    // WAVECAR can be opened at all.
+    const source = FileSource.from(content);
 
-    const treatAsCHGCAR = lower.includes('chgcar') ||
-                         lower.endsWith('.chgcar');
+    // Format detection lives in io/formats.js, which is also where the
+    // (currently unused) content-sniffing hooks are declared. `head` is read for
+    // every file so that switching detection over to inspecting contents needs
+    // no change here.
+    const head = await source.readHead();
+    const descriptor = detectFormat({ fileName: parserFileName, head });
 
-    const treatAsELFCAR = lower.includes('elfcar') ||
-                          lower.endsWith('.elfcar');
+    // Text formats get the whole file as a string exactly as before; .traj gets
+    // an ArrayBuffer; WAVECAR gets the FileSource itself and reads byte ranges.
+    const payload = await materialize(source, descriptor);
 
-    if (treatAsCrysviz) {
-      // A saved CrysViz session: structure + full visual state (ShareModule).
-      // Loads its own structure via parsePOSCAR -> initializeUIOnLoad.
-      structureContainer = await loadCrysvizFile(contentString, fileName);
-    }
-    else if (treatAsCube) {
-      structureContainer = await parseCubeFile(contentString, fileName);
-    }
-    else if (treatAsCHGCAR || treatAsELFCAR) {
-      let source = '';
-      if (treatAsCHGCAR) {
-        source = 'CHGCAR';
-      } else if (treatAsELFCAR) {
-        source = 'ELFCAR';
-      } else {
-        console.warn("Unrecognized volumetric field file type; defaulting to CHGCAR parser");
-        source = 'CHGCAR';
-      }
-      structureContainer = await parseCHGCARFile(contentString, fileName, source);
-    }
+    switch (descriptor.id) {
+      case 'crysviz':
+        // A saved CrysViz session: structure + full visual state (ShareModule).
+        // Loads its own structure via parsePOSCAR -> initializeUIOnLoad.
+        structureContainer = await loadCrysvizFile(payload, fileName);
+        break;
 
-    // Everything else is a structure file and goes through the single pure
-    // pipeline. parse_any picks the format (POSCAR is its fallback) and returns
-    // a StructureContainer; registration happens once via initializeUIOnLoad.
-    else {
-        // Pass the raw `content` (not contentString): most formats are text, but
-        // binary formats like ASE .traj arrive as an ArrayBuffer and parse_any
-        // dispatches them by extension.
-        structureContainer = await parse_any(content, parserFileName);
+      case 'wavecar':
+        // A proxy over the file rather than a parse of it: only the headers are
+        // read now, and individual bands are expanded on demand. This may open a
+        // dialog when the cell does not match the selected structure.
+        // `materialize` returns the FileSource itself for a random-access format;
+        // the cast tells the checker which arm of its union this branch is in.
+        structureContainer = await parseWavecarFile(
+          /** @type {import('../io/index.js').FileSource} */ (payload), fileName);
+        break;
+
+      case 'cube':
+        structureContainer = await parseCubeFile(payload, fileName);
+        break;
+
+      case 'chgcar':
+      case 'elfcar':
+        structureContainer = await parseCHGCARFile(
+          payload, fileName, descriptor.id === 'elfcar' ? 'ELFCAR' : 'CHGCAR');
+        break;
+
+      // Everything else is a structure file and goes through the single pure
+      // pipeline. parse_any picks the format (POSCAR is its fallback) and
+      // returns a StructureContainer; registration happens once via
+      // initializeUIOnLoad.
+      default:
+        structureContainer = await parse_any(payload, parserFileName);
         // The parser filename may carry a format suffix, but the browser must
         // display the manifest/addon supplied name verbatim.
         if (structureContainer) structureContainer.fileName = fileName;
         if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
+        break;
+    }
+
+    // A WAVECAR whose dialog was cancelled deliberately loads nothing. That is a
+    // user decision, not a failure, so return quietly instead of falling into
+    // the "loader returned no container" error below.
+    if (structureContainer === null && descriptor.id === 'wavecar') {
+      setStatus('Load cancelled.');
+      return { ok: false, cancelled: true, name: fileName, format: format || undefined };
     }
 
     if (!structureContainer) throw new Error('Structure loader returned no structure container');
@@ -386,7 +401,7 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     console.warn(fileBrowser.selectedStructure)
     // .crysviz restores its camera asynchronously as part of the session;
     // that saved pose is authoritative and must not be overwritten here.
-    if (!treatAsCrysviz) {
+    if (descriptor.id !== 'crysviz') {
       // The first structure ever shown gets a fresh fit-to-structure camera;
       // later loads/switches keep the user's rotation and zoom, only
       // re-centering on the new structure (see `cameraFitted`).

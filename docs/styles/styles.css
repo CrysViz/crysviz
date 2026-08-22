@@ -1125,6 +1125,68 @@ body.panel-hidden #axesLegend {
   background: var(--hover-color);
 }
 
+/* Multi-choice variant of the confirm modal (ui/ConfirmModal.js choiceDialog).
+ * Used where the answer is genuinely not binary — opening a WAVECAR whose cell
+ * does not match the loaded structure offers three real alternatives. Each
+ * option gets its own full-width row so the explanation fits next to it. */
+.lock-confirm-modal .paste-modal-actions.confirm-choices {
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.lock-confirm-modal .confirm-choices .confirm-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  width: 100%;
+  padding: var(--sp-3-5) var(--sp-5);
+  background: var(--wash-2);
+  color: var(--fg-1);
+  border: none;
+  border-radius: var(--radius);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lock-confirm-modal .confirm-choices .confirm-choice:hover {
+  background: var(--hover-color);
+}
+
+/* The first row is the recommended action, so it carries the accent fill the
+ * single-choice dialog gives its Ok button. */
+.lock-confirm-modal .confirm-choices .confirm-choice:first-child {
+  background: var(--bg-color);
+}
+
+.lock-confirm-modal .confirm-choices .confirm-choice:first-child:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+.lock-confirm-modal .confirm-choice-label {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-medium);
+}
+
+.lock-confirm-modal .confirm-choice-desc {
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  opacity: 0.8;
+}
+
+/* Preformatted context block. Monospaced through --font-mono (the token, not a
+ * literal stack — see STYLE.md invariant 2) so the two lattices line up
+ * column-by-column and a discrepancy is visible at a glance. */
+.lock-confirm-modal .confirm-detail {
+  margin: 0 0 var(--sp-3-5) 0;
+  font-family: var(--font-mono);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--wash-1);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  overflow-x: auto;
+}
+
 /* Small Main-dock triggers, positioned immediately left of .theme-switch
  * (ui/KeyboardShortcuts.js; the About trigger is the left sibling of the
  * keyboard-shortcuts trigger). */
