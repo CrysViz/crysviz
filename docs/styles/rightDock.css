@@ -1,0 +1,565 @@
+/* Right dock (docs/ui/panels/RightDock.js). #viewArea replaces #view as the
+   flex sibling of #ui; #view itself keeps all its existing rules (this just
+   adds a wrapper around it), so the 3D scene is unaffected while the dock is
+   empty.
+
+   The pane/handle/tab are viewport-anchored (position: fixed), NOT flex
+   children of #viewArea — #viewArea's own layout shifts when #ui is
+   hidden/shown (body drops out of flex entirely, see styles.css
+   body.panel-hidden), and a flex-based pane would visibly jump with it.
+   #view instead reserves space via a plain margin (--split-pane-fraction is
+   a vw-based fraction, independent of #ui's width), so the pane stays put on
+   screen regardless of the left dock's state.
+
+   The windows themselves are regular .cv-panel elements (panelWindow.css owns
+   their right-docked chrome: title bar hidden, tab strip as chrome). The
+   generic .split-item block (a plot/content card with action buttons and an
+   optional ⛶ fullscreen state) is styled here UNSCOPED so it renders the same
+   when its window floats or sits in the left dock. */
+
+#viewArea {
+  flex: 1;
+  position: relative;
+  display: flex;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#viewArea #view {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 0 20px 20px 0;
+}
+
+/* Only actually narrow the 3D view once the right dock holds a window. */
+#viewArea.split-active #view {
+  border-radius: 0;
+}
+
+#viewArea.split-active:not(.split-pane-collapsed):not(.split-dock-bottom) #view {
+  margin-right: calc(var(--split-pane-fraction, 0.5) * 100vw);
+}
+
+/* Docked to the bottom: the pane spans the scene's own width, not the full
+   viewport, so it reserves height instead of width. */
+#viewArea.split-active.split-dock-bottom:not(.split-pane-collapsed) #view {
+  margin-right: 0;
+  margin-bottom: calc(var(--split-pane-fraction, 0.5) * 100dvh);
+}
+
+/* #ui hidden: #view normally goes fullscreen (styles.css) — keep it clear
+   of the pane instead, at the same width/height the pane itself is drawn at. */
+body.panel-hidden #viewArea.split-active:not(.split-pane-collapsed):not(.split-dock-bottom) #view {
+  width: calc(100dvw - (var(--split-pane-fraction, 0.5) * 100vw)) !important;
+}
+
+body.panel-hidden #viewArea.split-active.split-dock-bottom:not(.split-pane-collapsed) #view {
+  height: calc(100dvh - (var(--split-pane-fraction, 0.5) * 100dvh)) !important;
+}
+
+.split-handle {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: calc(var(--split-pane-fraction, 0.5) * 100vw);
+  width: 6px;
+  cursor: col-resize;
+  background: var(--panel-border);
+  z-index: var(--z-dock-handle);
+}
+
+.split-handle:hover,
+.split-handle:active {
+  background: var(--highlight-color, var(--info));
+}
+
+.split-pane {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: calc(var(--split-pane-fraction, 0.5) * 100vw);
+  /* Must match MIN_PANE_PX in panels/RightDock.js, or dragging into that gap
+     computes a valid (smaller) fraction that this floor then silently
+     overrides — the pane visibly stops following the pointer. */
+  min-width: 220px;
+  max-width: 85vw;
+  z-index: var(--z-dock-pane);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  overflow: hidden;
+}
+
+/* Docked to the bottom: hug the bottom edge, left-aligned with the 3D scene
+   (i.e. clear of #ui, using the same total-width token #ui's neighbors —
+   the axes gizmo, camera tools — already position off of) instead of the
+   viewport's left edge, and only as tall as the fraction dictates. */
+#viewArea.split-dock-bottom .split-pane {
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: var(--ui-total-width, 0px);
+  width: auto;
+  height: calc(var(--split-pane-fraction, 0.5) * 100dvh);
+  min-width: 0;
+  max-width: none;
+  min-height: 220px; /* keep in sync with MIN_PANE_PX */
+  max-height: 85dvh;
+  border-left: none;
+  border-top: 1px solid var(--panel-border);
+}
+
+/* #ui hidden or off-canvas (mobile overlay): the scene starts at the
+   viewport's left edge, so the bottom pane should too. */
+body.panel-hidden #viewArea.split-dock-bottom .split-pane {
+  left: 0;
+}
+
+#viewArea.split-dock-bottom .split-handle {
+  top: auto;
+  bottom: calc(var(--split-pane-fraction, 0.5) * 100dvh);
+  right: 0;
+  left: var(--ui-total-width, 0px);
+  width: auto;
+  height: 6px;
+  cursor: row-resize;
+}
+
+body.panel-hidden #viewArea.split-dock-bottom .split-handle {
+  left: 0;
+}
+
+/* The max-width:1024px override for this rule (and for .split-pane-tabs
+   below) now lives in styles/responsive.css's compact rung, per Wave 4's
+   single-file @media rule. */
+
+/* Dock empty (no visible window docked): pane + handle take no space. */
+#viewArea:not(.split-active) .split-pane,
+#viewArea:not(.split-active) .split-handle {
+  display: none;
+}
+
+/* Dock collapsed to pull-tabs: give the 3D view the width back (or, docked
+   to the bottom, the height back). */
+#viewArea.split-pane-collapsed:not(.split-dock-bottom) .split-pane {
+  width: 0;
+  min-width: 0;
+  border: none;
+  overflow: hidden;
+}
+
+#viewArea.split-pane-collapsed.split-dock-bottom .split-pane {
+  height: 0;
+  min-height: 0;
+  border: none;
+  overflow: hidden;
+}
+
+#viewArea.split-pane-collapsed .split-handle {
+  display: none;
+}
+
+.split-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  color: var(--panel-fg);
+  border-bottom: 1px solid var(--panel-border);
+  flex: 0 0 auto;
+}
+
+.split-pane-btn {
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--sp-3);
+  cursor: pointer;
+  font-size: var(--fs-md);
+}
+
+.split-pane-btn:hover {
+  background: var(--wash-2);
+}
+
+/* The "»" hide icon points the direction the pane collapses toward: right
+   normally, rotated to point down once docked to the bottom. */
+#splitPaneCollapseBtn {
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+#viewArea.split-dock-bottom #splitPaneCollapseBtn {
+  transform: rotate(90deg);
+}
+
+/* The body hosts the right-docked windows' .cv-panel elements; only the
+   .cv-front one is visible (panelWindow.css), filling the pane. */
+.split-pane-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- .split-item content cards (EOS plots, demo counter, ...) --------------
+   Unscoped: the same markup renders inside a right-docked, floating or
+   left-docked window body. Inside the (tall) right dock, items flex-share the
+   height; elsewhere the min-height keeps them usable and the window body
+   scrolls. */
+.split-item {
+  flex: 1 1 50%;
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  background: var(--group-bg);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3);
+  position: relative;
+}
+
+/* Our own `display: flex` above otherwise outranks the UA [hidden] rule. */
+.split-item[hidden] {
+  display: none;
+}
+
+.split-item h4 {
+  margin: 0 0 var(--sp-1) 0;
+  text-align: center;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  color: var(--muted-fg);
+}
+
+.split-item-body {
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-sm);
+}
+
+.split-item-actions {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+  margin-top: var(--sp-1);
+}
+
+.split-item-action-btn {
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-4);
+  padding: 2px var(--sp-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.split-item-action-btn:hover {
+  background: var(--wash-2);
+}
+
+/* A column of .split-item cards inside a window body (the EOS window's two
+   plots, the analysis histogram windows). Fills the right dock's height;
+   elsewhere the items' min-height makes the window body scroll instead. */
+.cv-plot-stack {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3-5);
+}
+
+/* Floating: the window is shrink-to-fit, which would let a Plotly chart
+   collapse toward the 220px window minimum — give the card column a real
+   width (capped under .cv-panel.cv-floating's 600px max-width). */
+.cv-panel.cv-floating .cv-plot-stack {
+  width: min(90vw, 560px);
+  max-width: 100%;
+}
+
+/* The Energy Landscape window's addon host: fills the right dock's height;
+   keeps a workable minimum when the window floats or sits in the left dock
+   (the window body scrolls). */
+.landscape-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.cv-panel:not(.cv-right-docked) .landscape-host {
+  min-height: 320px;
+}
+
+/* Window tabs come in two forms, both built from the right-docked windows in
+   pane order (RightDock.js renderTabs()):
+   - a horizontal strip in the pane HEADER — the windows' chrome while the
+     dock is open (click = front, drag = reorder / pull the window out,
+     ✕ = close);
+   - a vertical pull-tab stack on the pane EDGE, shown only while the dock is
+     collapsed, to reopen it on a chosen window. */
+
+/* Base look, shared by both forms; each form overrides orientation/shape. */
+.split-pane-tab {
+  cursor: pointer;
+  font-size: var(--fs-base);
+  letter-spacing: 0.04em;
+  color: var(--panel-fg);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  user-select: none;
+  touch-action: none;
+}
+
+.split-pane-tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ---- header strip (open): browser-style tabs ------------------------------*/
+.split-pane-header-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 11px;                /* room for the active tab's bottom flares */
+  overflow: visible;        /* let the flare pseudo-elements spill out */
+  align-self: stretch;      /* fill the header height … */
+  align-items: flex-end;    /* … so tabs sit on the bottom edge, like a browser */
+  /* pull the strip down so the active tab's bottom flares meet the header's
+     bottom border, giving the "tab connected to the pane" look */
+  margin-bottom: -9px;
+  padding-top: var(--sp-1);
+}
+
+.split-pane-header-tabs .split-pane-tab {
+  position: relative;
+  writing-mode: horizontal-tb;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 190px;
+  padding: 5px var(--sp-2) 7px var(--sp-4);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-9) var(--radius-9) 0 0;
+  color: var(--muted-fg); /* --muted-fg is always defined; the #9aa0a6 fallback was dead code */
+}
+
+.split-pane-header-tabs .split-pane-tab:hover {
+  background: var(--wash-1);
+  color: var(--panel-fg);
+}
+
+.split-pane-header-tabs .split-pane-tab.cv-tab-dragging {
+  opacity: 0.75;
+}
+
+/* Active tab: filled + raised, outlined, its bottom flaring into the strip.
+   --split-tab-bg is the shared fill used by the tab body and its flares. */
+.split-pane-header-tabs .split-pane-tab.active {
+  --split-tab-bg: var(--group-bg, var(--wash-2));
+  background: var(--split-tab-bg);
+  border: 1px solid var(--panel-border);
+  border-bottom: none;
+  color: var(--panel-fg);
+}
+
+/* Browser-style bottom flares: a quarter-disc of the tab colour on each side
+   with a concave arc cut out of its inner corner, so the active tab curves
+   outward into the strip instead of ending on a square edge. */
+.split-pane-header-tabs .split-pane-tab.active::before,
+.split-pane-header-tabs .split-pane-tab.active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 11px;
+  height: 11px;
+  pointer-events: none;
+}
+
+.split-pane-header-tabs .split-pane-tab.active::before {
+  left: -11px;
+  background: radial-gradient(circle at top left, transparent 11px, var(--split-tab-bg) 11px);
+}
+
+.split-pane-header-tabs .split-pane-tab.active::after {
+  right: -11px;
+  background: radial-gradient(circle at top right, transparent 11px, var(--split-tab-bg) 11px);
+}
+
+/* Per-tab ≡ window-menu button (Position / Close / panel-specific sections
+   — the tab is the window's only chrome while right-docked, so its menu
+   lives here; see PanelWindow.toggleMenuAt). */
+.split-pane-tab-menu {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-md);
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.split-pane-tab-menu:hover {
+  background: var(--line-2);
+  opacity: 1;
+}
+
+/* ---- edge pull-tab stack (collapsed) --------------------------------------*/
+.split-pane-tabs {
+  display: none;
+  position: fixed;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  z-index: var(--z-dock-pane);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+
+#viewArea.split-active.split-pane-collapsed .split-pane-tabs {
+  display: flex;
+}
+
+.split-pane-tabs .split-pane-tab {
+  writing-mode: vertical-rl;
+  border-right: none;
+  border-radius: var(--radius) 0 0 var(--radius);
+  padding: var(--sp-4) var(--sp-2);
+  opacity: 0.75;
+}
+
+/* Docked to the bottom: the pull-tabs sit on the pane's own edge (the
+   bottom of the viewport) as a horizontal row, centered over the scene's
+   own width (not the full viewport, which would sit them off-center behind
+   #ui), each reading horizontally like an ordinary tab. */
+#viewArea.split-dock-bottom .split-pane-tabs {
+  top: auto;
+  bottom: 0;
+  right: auto;
+  left: calc((var(--ui-total-width, 0px) + 100vw) / 2);
+  transform: translateX(-50%);
+  flex-direction: row;
+  align-items: flex-end;
+}
+
+/* #ui hidden or off-canvas (mobile overlay): the scene spans the full
+   viewport, so center on it instead of the #ui-offset midpoint. */
+body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
+  left: 50vw;
+}
+
+#viewArea.split-dock-bottom .split-pane-tabs .split-pane-tab {
+  writing-mode: horizontal-tb;
+  border-right: 1px solid var(--panel-border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: var(--sp-2) 14px;
+}
+
+.split-pane-tabs .split-pane-tab:hover,
+.split-pane-tabs .split-pane-tab.active {
+  opacity: 1;
+  color: var(--accent-fg, var(--info));
+  border-color: var(--accent-fg, var(--info));
+}
+
+/* ---- drop highlight (floating window dragged over the right border) -------*/
+/* JS (RightDock.updateRightDockHint) sets an inline width matching the open
+   pane; this default width is the closed/collapsed edge band. Above the
+   handle (1301) but below the fullscreen overlay. */
+#rightDockDropHint {
+  display: none;
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 48px;
+  z-index: var(--z-dock-hint);
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px dashed var(--highlight-color, var(--info));
+  background: rgb(var(--info-rgb) / 0.10);
+}
+
+#rightDockDropHint.active {
+  display: block;
+}
+
+/* ---- expanded (fullscreen) single item, toggled from the ⛶ button ---------*/
+/* Above the split handle (z-index 1301) so the handle doesn't float on top of
+   it; the handle is also hidden outright while expanded (see below). */
+.split-item.expanded {
+  position: fixed !important;
+  top: 5dvh !important;
+  left: 5vw !important;
+  width: 90vw !important;
+  height: 90dvh !important;
+  z-index: var(--z-dock-expanded) !important;
+  box-shadow: 0 0 24px var(--overlay) !important;
+}
+
+.split-item-close-btn {
+  display: none;
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: 1;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-4);
+  padding: 2px 7px;
+  cursor: pointer;
+  font-size: var(--fs-base);
+}
+
+.split-item.expanded .split-item-close-btn {
+  display: block;
+}
+
+/* The resize handle otherwise sits on top of the expanded (fullscreen) item. */
+#viewArea.split-item-expanded .split-handle {
+  display: none;
+}
+
+/* .split-pane's own z-index otherwise caps its expanded child below the
+   overlay (a sibling) — z-index only ever wins fights within the stacking
+   context an ancestor establishes, no matter how high the child's own value
+   is. Raise the whole pane above the overlay while it holds an expanded item. */
+#viewArea.split-item-expanded .split-pane {
+  z-index: var(--z-dock-expanded);
+}
+
+.split-pane-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: var(--overlay);
+  z-index: var(--z-dock-scrim);
+}
+
+.split-pane-overlay.active {
+  display: block;
+}

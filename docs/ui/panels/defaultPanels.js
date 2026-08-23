@@ -29,7 +29,7 @@ import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, remove
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
-import { createFeatureLockSwitch } from '../FeatureLockModule.js';
+import { createFeatureLockButton } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';

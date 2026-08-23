@@ -347,11 +347,6 @@ let pointerDownPos = null;
 let moved = false;
 const cameraOnlyPointerIds = new Set();
 const MOVE_THRESHOLD_PX = 10;
-// Two taps within this window and distance count as a double-tap (atom select).
-let lastTapTime = 0;
-let lastTapPos = null;
-const DOUBLE_TAP_MS = 300;
-const DOUBLE_TAP_DIST_PX = 30;
 
 // Shift+drag rectangle over the 3D view: mouse-only (touch has no modifier key
 // to hold — a touch-friendly equivalent is a future improvement). Its meaning
@@ -543,6 +538,12 @@ function onPointerDown(e) {
   if (e.pointerType === 'touch') {
     moved = false;
     pointerDownPos = { x: e.clientX, y: e.clientY };
+
+    longPressTimer = setTimeout(() => {
+      longPressFired = true;
+      onDoubleClickAtom(e);   // use same logic as double-click
+      lastTouchTime = Date.now(); // prevent follow-up ghost click
+    }, LONG_PRESS_MS);
   } else {
     const kind = dragSelectKindFor(e);
     if (kind) {

@@ -95,8 +95,8 @@
 
 /* A brief red outline flashed when a typed SAXIS can't be parsed. */
 .cv-input-error {
-  border-color: var(--danger) !important;
-  outline: 1px solid var(--danger);
+  border-color: var(--danger, #e5484d) !important;
+  outline: 1px solid var(--danger, #e5484d);
 }
 
 /* Visual-rotation: three angle inputs (X/Y/Z) + Reset, all on one line. */

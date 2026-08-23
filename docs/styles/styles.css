@@ -573,6 +573,23 @@ body.panel-hidden #axesLegend {
   display: none;
 }
 
+/* Password prompt for opening an encrypted ?e= link — same centered overlay
+ * as the share dialog above (without it the card renders in normal flow,
+ * pinned beside the side panel instead of over the canvas). */
+#sharePasswordModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+#sharePasswordModal[hidden] {
+  display: none;
+}
+
 .share-qr {
   display: flex;
   justify-content: center;
@@ -645,6 +662,47 @@ body.panel-hidden #axesLegend {
   border-radius: var(--radius);
   font-size: var(--fs-lg);
   cursor: pointer;
+}
+
+/* Optional password field in the Share dialog: empty leaves the link
+ * unprotected, a value swaps it for the AES-GCM ?e= form (ShareModule). */
+.share-link-lock {
+  margin-bottom: var(--sp-4);
+}
+
+.share-link-lock[hidden] {
+  display: none;
+}
+
+.share-link-lock label {
+  display: block;
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+}
+
+.share-link-lock input,
+#sharePwInput {
+  width: 100%;
+  padding: var(--sp-3) var(--sp-3-5);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  background: var(--overlay-20);
+  color: var(--ink-6);
+  font-size: var(--fs-md);
+  box-sizing: border-box;
+}
+
+#sharePwInput {
+  margin-bottom: var(--sp-3);
+}
+
+.share-pw-error {
+  color: var(--danger, #d9534f);
+}
+
+.share-pw-error[hidden] {
+  display: none;
 }
 
 
@@ -2667,7 +2725,7 @@ body > #structureInfoContent {
  * instead of hide mode's danger red, so a select-drag never looks like a
  * hide-drag. See dragSelectKind === 'select' in ui/SceneInteraction.js. */
 .cv-drag-select-rect.select-mode {
-  border-color: var(--highlight-color);
+  border-color: var(--highlight-color, #ff8c00);
   background: rgb(255 140 0 / 0.14);
 }
 
@@ -2757,21 +2815,15 @@ body > #structureInfoContent {
 }
 
 .measure-label-remove:hover {
-  background: var(--danger-fill);
+  background: var(--danger-fill, #c82323);
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.6);
 }
 
-/* Dock toggle - always top left. One more scene window: the same chrome as
-   the floating panel bodies (padding --tb-pad, hairline, --radius-md) around
-   a --tb-btn square, so it is exactly as tall as the View toolbar beside it
-   and sits on its line. top: the toolbars anchor at 20px but their hidden
-   title-bar handle (8px + 3px gap, panelWindow.css .cv-bar-collapsed) sits
-   above the body, so the visible row starts at 31px. max() so a notch/rounded
-   corner (only relevant with viewport-fit=cover, see index.html) pushes it
-   clear instead of rendering underneath — env() is 0 on a rectangular
-   screen. The View window's default left anchor (defaultPanels.js) clears
-   this box: 12 + 58 + 12. */
+/* Hamburger Menu - Always Top Left. max() so a notch/rounded corner (only
+   relevant with viewport-fit=cover, see index.html) pushes it clear
+   instead of rendering underneath — env() is 0 on a rectangular screen, so
+   this is exactly the original 12px there. */
 #mobileMenuToggle {
   --tb-btn: 40px; /* pinned: does not follow the toolbars' touch size */
   position: fixed;
@@ -2849,6 +2901,7 @@ body:not(.tracer-pipeline) .tracer-only-control {
   display: none;
 }
 
+
 /* Settings > Measurements (ui/MeasurementSettingsPanel.js). Seven controls,
  * so they are split into labelled sub-groups with comfortable spacing rather
  * than one dense wall of rows. */
@@ -2881,56 +2934,3 @@ body:not(.tracer-pipeline) .tracer-only-control {
 .measure-settings-slider .slider-value { min-width: 2.6em; text-align: right; }
 .measure-settings-row select { padding: 2px 6px; max-width: 130px; }
 .measure-settings-row .color-swatch-btn { width: 30px; height: 18px; }
-
-/* WebGL startup-failure alert (ui/WindowAndSceneControls.js). It renders while
-   app init is aborting, which is why it was written with inline styles — but
-   theme.css and this file are static <link>s in <head>, so both are parsed
-   before any module runs. Only the async #theme-active override could be
-   missing, and every token below has a base value. */
-.cv-webgl-fail-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-confirm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--overlay);
-}
-
-.cv-webgl-fail-box {
-  max-width: 520px;
-  margin: var(--sp-5);
-  padding: var(--sp-5) var(--sp-6);
-  border-radius: var(--radius-md);
-  background: var(--popup-bg);
-  color: var(--ink-5);
-  font-family: var(--font-ui);
-  font-size: var(--fs-lg);
-  line-height: var(--lh-normal);
-  box-shadow: 0 8px 40px rgb(var(--shadow-rgb) / 0.6);
-}
-
-.cv-webgl-fail-title {
-  margin: 0 0 var(--sp-3-5) 0;
-  font-size: var(--fs-xl);
-  color: var(--fg-1);
-}
-
-.cv-webgl-fail-text {
-  margin: 0 0 var(--sp-3-5) 0;
-}
-
-.cv-webgl-fail-text:last-of-type {
-  margin-bottom: var(--sp-5);
-}
-
-.cv-webgl-fail-close {
-  padding: var(--sp-2) var(--sp-5);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  background: var(--chrome-4);
-  color: var(--fg-1);
-  font-family: var(--font-ui);
-  font-size: var(--fs-lg);
-}

@@ -543,11 +543,7 @@ export function renderComposition(panelState="closed") {
   // Sync the formula box: "open" keeps/forces it (and the hosting window)
   // expanded, anything else closes the box (matching the old default-closed
   // behavior on re-render). The window itself stays as the user left it.
-  // Exception — a phone: the box is open by default (the user shouldn't have to
-  // tap the +/− after every structure), unless they've deliberately collapsed
-  // it this session (compositionUserClosed).
-  const openByDefault = isCompactViewport() && !compositionUserClosed;
-  setStructurePanelOpen(panelState === "open" || openByDefault);
+  setStructurePanelOpen(panelState === "open");
 
 // One-click propagation of the current frame's styling to every trajectory
 // frame (multi-frame files only). Mirrors the element editor's "Apply to

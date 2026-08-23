@@ -110,10 +110,10 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelManager.js';
-import { fracToCart, cartToFractional, normalizeFractional } from '../math/index.js';
-import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
+import { fracToCart, cartToFractional } from '../math/index.js';
+import { updateAxesGizmoWidth, switchCameraType, resizeRenderer } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
-import { showShareLink } from './ShareLinkModal.js';
+import { showShareLink, promptSharePassword } from './ShareLinkModal.js';
 
 const URL_WARN_CHARS = 4000;
 const URL_HARD_CHARS = 10000;
@@ -393,6 +393,14 @@ function buildPOSCAR(state) {
 // working, and a browser without CompressionStream simply emits the old form.
 const STATE_PARAM = 'state';
 const PACKED_PARAM = 'z';
+// Password-encrypted payloads travel as ?e= (salt || iv || AES-GCM ciphertext,
+// see encryptBytes). Distinct param so the loader knows to ask for a password.
+const ENC_PARAM = 'e';
+
+// AES-256-GCM with a PBKDF2-derived key. All standard Web Crypto, no deps.
+const PBKDF2_ITERS = 250000; // ~a few hundred ms on a phone; a real brute-force cost
+const SALT_BYTES = 16;
+const IV_BYTES = 12;  // 96-bit nonce, the size AES-GCM is defined for
 
 function bytesToB64URL(bytes) {
   // Chunked so a large payload can't blow the argument limit of String.fromCharCode.
@@ -419,36 +427,103 @@ async function inflateRaw(bytes) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
+/** Whether the Web Crypto API is usable — false on insecure (plain http)
+ *  origins, where crypto.subtle is undefined. localhost and https are fine. */
+function cryptoAvailable() {
+  return typeof crypto !== 'undefined' && !!crypto.subtle;
+}
+
+/** PBKDF2(password, salt) -> a 256-bit AES-GCM key. */
+async function deriveKey(password, salt) {
+  const base = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERS, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+
+/** Encrypt `bytes` under `password`, returning salt || iv || ciphertext. The
+ *  salt and IV are non-secret and fresh per call, so they ride in front of the
+ *  ciphertext; GCM's auth tag is appended by subtle.encrypt itself. */
+async function encryptBytes(bytes, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const key = await deriveKey(password, salt);
+  const ct = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
+  const out = new Uint8Array(SALT_BYTES + IV_BYTES + ct.length);
+  out.set(salt, 0);
+  out.set(iv, SALT_BYTES);
+  out.set(ct, SALT_BYTES + IV_BYTES);
+  return out;
+}
+
+/** Reverse encryptBytes. Throws on the wrong password: GCM authentication
+ *  fails and subtle.decrypt rejects, which is exactly the wrong-password
+ *  signal the loader loops on — no separate integrity check needed. */
+async function decryptBytes(bytes, password) {
+  const salt = bytes.subarray(0, SALT_BYTES);
+  const iv = bytes.subarray(SALT_BYTES, SALT_BYTES + IV_BYTES);
+  const ct = bytes.subarray(SALT_BYTES + IV_BYTES);
+  const key = await deriveKey(password, salt);
+  return new Uint8Array(
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct));
+}
+
 export async function shareStructure() {
   const state = captureState();
   if (!state) { alert('No structure loaded to share.'); return; }
 
   const jsonBytes = new TextEncoder().encode(JSON.stringify(state));
   const packed = await deflateRaw(jsonBytes);
-  const b64 = bytesToB64URL(packed ?? jsonBytes);
+  // The bytes that go on the wire, and whether they are deflated. The encrypted
+  // form carries this same payload behind a 1-byte "compressed?" flag (below),
+  // so an ?e= link is self-describing regardless of which browser opens it.
+  const payload = packed ?? jsonBytes;
+  const plainParam = packed ? PACKED_PARAM : STATE_PARAM;
 
-  if (b64.length > URL_HARD_CHARS) {
-    const kb = (b64.length / 1024).toFixed(1);
+  // Build a share URL for `bytes` under `param`, replacing any state param the
+  // current location already carries (so re-sharing a shared link is clean).
+  const buildURL = (bytes, param) => {
+    const b64 = bytesToB64URL(bytes);
+    const url = new URL(window.location.href);
+    for (const p of [STATE_PARAM, PACKED_PARAM, ENC_PARAM]) url.searchParams.delete(p);
+    url.searchParams.set(param, b64);
+    return { text: url.toString(), chars: b64.length };
+  };
+
+  const plain = buildURL(payload, plainParam);
+
+  if (plain.chars > URL_HARD_CHARS) {
+    const kb = (plain.chars / 1024).toFixed(1);
     const ok = confirm(
       `Warning: the share URL is very large (${kb} KB). It may not work in all browsers or messaging platforms. Continue?`
     );
     if (!ok) return;
-  } else if (b64.length > URL_WARN_CHARS) {
-    console.warn(`Share URL is ${(b64.length / 1024).toFixed(1)} KB — may be large for some platforms.`);
+  } else if (plain.chars > URL_WARN_CHARS) {
+    console.warn(`Share URL is ${(plain.chars / 1024).toFixed(1)} KB — may be large for some platforms.`);
   }
-
-  const shareURL = new URL(window.location.href);
-  shareURL.searchParams.delete(packed ? STATE_PARAM : PACKED_PARAM);
-  shareURL.searchParams.set(packed ? PACKED_PARAM : STATE_PARAM, b64);
 
   // A dialog, not the address bar: long URLs are truncated there, and the
   // dialog is where the QR code lives. The eager clipboard write is only
   // best-effort now that an await sits between the click and here — some
   // browsers drop user activation across it — so the dialog's Copy button is
   // the path that always works.
-  const shareURLText = shareURL.toString();
-  navigator.clipboard?.writeText(shareURLText).catch(() => {});
-  showShareLink(shareURLText);
+  navigator.clipboard?.writeText(plain.text).catch(() => {});
+
+  // Handed to the dialog's optional password field: encrypt the same payload
+  // and hand back the ?e= URL. Null when Web Crypto is unavailable (insecure
+  // origin), which tells the dialog to hide the password field entirely.
+  const encryptURL = cryptoAvailable()
+    ? async (password) => {
+        const flagged = new Uint8Array(1 + payload.length);
+        flagged[0] = packed ? 1 : 0; // reader inflates iff this bit is set
+        flagged.set(payload, 1);
+        return buildURL(await encryptBytes(flagged, password), ENC_PARAM).text;
+      }
+    : null;
+
+  showShareLink(plain.text, { encryptURL });
 }
 
 // ---------------------------------------------------------------------------
@@ -1037,8 +1112,9 @@ export async function loadSharedStructure() {
   // ?z= is the deflated payload written since the QR code landed; ?state= is the
   // plain form, still emitted where CompressionStream is missing and still
   // present in every link shared before that.
+  const encParam = params.get(ENC_PARAM);
   const packedParam = params.get(PACKED_PARAM);
-  const stateParam = packedParam ?? params.get(STATE_PARAM);
+  const stateParam = encParam ?? packedParam ?? params.get(STATE_PARAM);
   if (!stateParam) return false;
 
   let state;
@@ -1058,8 +1134,26 @@ export async function loadSharedStructure() {
     const binary = atob(b64);
     let bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    if (packedParam) bytes = await inflateRaw(bytes);
-    state = JSON.parse(new TextDecoder().decode(bytes));
+    if (encParam) {
+      if (!cryptoAvailable()) {
+        throw new Error('This share link is password-encrypted, which needs a secure (https) context. Open the link over https and try again.');
+      }
+      // Ask, decrypt, repeat until the password is right or the user cancels.
+      // A wrong password makes AES-GCM's auth check fail (decryptBytes throws),
+      // so it never reaches the outer catch — we just re-prompt.
+      let plain = null;
+      for (let attempt = 0; ; attempt++) {
+        const password = await promptSharePassword({ retry: attempt > 0 });
+        if (password === null) return false; // cancelled: fall back to default load
+        try { plain = await decryptBytes(bytes, password); break; }
+        catch { /* wrong password — loop */ }
+      }
+      const raw = plain[0] === 1 ? await inflateRaw(plain.subarray(1)) : plain.subarray(1);
+      state = JSON.parse(new TextDecoder().decode(raw));
+    } else {
+      if (packedParam) bytes = await inflateRaw(bytes);
+      state = JSON.parse(new TextDecoder().decode(bytes));
+    }
   } catch (e) {
     const invalidChars = [...stateParam].filter(c => !/[A-Za-z0-9\-_]/.test(c));
     console.error('Failed to decode shared state:', e,
@@ -1079,6 +1173,7 @@ export async function loadSharedStructure() {
   const newUrl = new URL(window.location.href);
   newUrl.searchParams.delete(STATE_PARAM);
   newUrl.searchParams.delete(PACKED_PARAM);
+  newUrl.searchParams.delete(ENC_PARAM);
   window.history.replaceState({}, document.title, newUrl.toString());
   return true;
 }
