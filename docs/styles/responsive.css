@@ -311,16 +311,6 @@
     --popup-left: max(var(--sp-3), env(safe-area-inset-left));
   }
 
-  /* ---- styles.css: file-actions row ----
-     Last resort if the fluid shrink still isn't enough for a label: wrap it
-     onto a second line rather than let it spill out of the sheet. Kept out of
-     the base rule because at desktop width there is room, and wrapping there
-     would change a row nothing was wrong with. */
-  .file-actions .file-action-btn {
-    white-space: normal;
-    overflow-wrap: anywhere;
-  }
-
   /* ---- styles.css: scene toolbars at touch size ----
      Both toolbars step their squares up to the touch target together, so
      the pair stays the same scale on a phone as it is on the desktop. */
