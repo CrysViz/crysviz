@@ -9,6 +9,9 @@
 
 import { captureSceneToPng, isPngCaptureInProgress, computeContentScreenBox } from './ImageExportModule.js';
 import {
+  captureSceneToSvg, estimateVectorPrimitiveCount, lastVectorExportInfo,
+} from './SvgExportModule.js';
+import {
   registerPipeline, listPipelines, getActivePipeline, setActivePipeline,
   isTracerPipelineActive,
 } from './pipeline/index.js';
@@ -74,5 +77,7 @@ export {
 export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
 
 export { captureSceneToPng, computeContentScreenBox, isPngCaptureInProgress };
+
+export { captureSceneToSvg, estimateVectorPrimitiveCount, lastVectorExportInfo };
 
 export { registerPipeline, listPipelines, getActivePipeline, setActivePipeline, isTracerPipelineActive };
