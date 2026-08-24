@@ -42,6 +42,7 @@ import { showInfoPanel } from '../InfoPanel.js';
 
 const VIEWPORT_MARGIN = 8;
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
+const LONG_PRESS_MS = 500; // press-and-hold before a touch gesture fires
 
 // Runtime z-order for floating windows. Base sits above the legacy fixed
 // panels (z-index 1000) and below the About overlay.
@@ -314,7 +315,8 @@ export class PanelWindow {
     this.hooks.onCompactResize?.(this);
   }
 
-  /** Shrink the title bar to a thin strip (dblclick restores). */
+  /** Shrink the title bar to a thin strip (dblclick, a tap, or a long press
+   *  on the strip restores it — see _onTitlebarPointerDown). */
   collapseBar() {
     if (this.barCollapsed) return;
     this.barCollapsed = true;
@@ -661,8 +663,14 @@ export class PanelWindow {
     if (target.closest('button')) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     // "Only drag windows by handle" (Settings): restrict drag starts to the
-    // ⦀ grip so the rest of the title bar never grabs the window.
-    if (this.hooks.getPref?.('dragByHandleOnly') && !target.closest('.cv-panel-grip')) return;
+    // ⦀ grip so the rest of the title bar never grabs the window. A hidden
+    // bar is exempt: its children (the grip among them) are display:none, so
+    // the strip IS the handle there — honouring the pref would swallow every
+    // press on it, including the restore gestures below, and the pref
+    // defaults ON for coarse pointers, i.e. exactly on the touch devices that
+    // have no dblclick to fall back on.
+    if (!this.barCollapsed
+        && this.hooks.getPref?.('dragByHandleOnly') && !target.closest('.cv-panel-grip')) return;
     e.preventDefault();
 
     const startX = e.clientX;
@@ -672,12 +680,19 @@ export class PanelWindow {
     try { bar.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
 
     let finished = false;
+    let longPressTimer = 0;
     const releaseCapture = () => {
       try { bar.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    };
+    /** Drop a pending long-press timer along with its "press registered" cue. */
+    const clearLongPress = () => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = 0; }
+      this.el.classList.remove('cv-bar-longpress');
     };
     const cleanup = () => {
       if (finished) return;
       finished = true;
+      clearLongPress();
       bar.removeEventListener('pointermove', onMove);
       bar.removeEventListener('pointerup', onUp);
       bar.removeEventListener('pointercancel', onUp);
@@ -688,6 +703,25 @@ export class PanelWindow {
       releaseCapture();
     };
     this._gestureCancel = cancel;
+
+    // Press-and-hold on the hidden bar's strip restores it. The other restore
+    // gestures don't cover every device: dblclick is mouse-only (this
+    // handler's preventDefault + pointer capture suppress the browser's
+    // tap-to-dblclick synthesis), and the single-tap restore in onUp is lost
+    // whenever the finger slides past DRAG_THRESHOLD on the way up — easy on
+    // an 8px strip, and indistinguishable from starting a drag. A press held
+    // in place is unambiguous and works with either input. Not while compact:
+    // there the "strip" is the round launcher icon, which is not a title bar.
+    if (this.barCollapsed && !this.compact) {
+      this.el.classList.add('cv-bar-longpress');
+      longPressTimer = setTimeout(() => {
+        longPressTimer = 0;
+        // End the gesture first: the press is spent on the restore, so it must
+        // not also drag the window or toggle the body on release.
+        cancel();
+        this.expandBar();
+      }, LONG_PRESS_MS);
+    }
 
     const onMove = (ev) => {
       if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD &&
@@ -706,7 +740,8 @@ export class PanelWindow {
       cleanup();
       if (ev.type === 'pointercancel') return;
       // Plain click on the title bar toggles collapse — except on the thin
-      // strip of a hidden bar, where only double-click (restore) acts.
+      // strip of a hidden bar, which is restored instead (by dblclick, by the
+      // long press armed above, or by the touch tap below).
       if (!this.barCollapsed) {
         this.toggleCollapsed();
       } else if (ev.type === 'pointerup' && ev.pointerType === 'touch') {

@@ -683,10 +683,11 @@ export async function bootstrapAuthoritative(deps) {
   const loadHash = initialized?.loadHash || deps.loadHash;
   const loadDefault = initialized?.loadDefault || deps.loadDefault;
 
-  // ?z= is the deflated share payload, ?state= the plain one; ShareModule owns
-  // both and loadShared() picks whichever is present.
+  // ?z= is the deflated share payload, ?state= the plain one, ?e= the
+  // password-encrypted one; ShareModule owns all three and loadShared() picks
+  // whichever is present (?e= prompts for the password).
   const query = new URLSearchParams(window.location.search);
-  if (query.has('state') || query.has('z')) {
+  if (query.has('state') || query.has('z') || query.has('e')) {
     const result = await loadShared();
     if (!result) throw manifestError('SHARED_STATE_FAILED', 'Shared state was present but could not be loaded');
     return { source: 'shared' };

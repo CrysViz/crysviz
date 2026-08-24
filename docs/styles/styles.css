@@ -573,6 +573,23 @@ body.panel-hidden #axesLegend {
   display: none;
 }
 
+/* Password prompt for opening an encrypted ?e= link — same centered overlay
+ * as the share dialog above (without it the card renders in normal flow,
+ * pinned beside the side panel instead of over the canvas). */
+#sharePasswordModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+#sharePasswordModal[hidden] {
+  display: none;
+}
+
 .share-qr {
   display: flex;
   justify-content: center;
@@ -645,6 +662,47 @@ body.panel-hidden #axesLegend {
   border-radius: var(--radius);
   font-size: var(--fs-lg);
   cursor: pointer;
+}
+
+/* Optional password field in the Share dialog: empty leaves the link
+ * unprotected, a value swaps it for the AES-GCM ?e= form (ShareModule). */
+.share-link-lock {
+  margin-bottom: var(--sp-4);
+}
+
+.share-link-lock[hidden] {
+  display: none;
+}
+
+.share-link-lock label {
+  display: block;
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+}
+
+.share-link-lock input,
+#sharePwInput {
+  width: 100%;
+  padding: var(--sp-3) var(--sp-3-5);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  background: var(--overlay-20);
+  color: var(--ink-6);
+  font-size: var(--fs-md);
+  box-sizing: border-box;
+}
+
+#sharePwInput {
+  margin-bottom: var(--sp-3);
+}
+
+.share-pw-error {
+  color: var(--danger, #d9534f);
+}
+
+.share-pw-error[hidden] {
+  display: none;
 }
 
 
