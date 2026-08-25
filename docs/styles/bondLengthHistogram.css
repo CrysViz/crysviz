@@ -441,8 +441,11 @@
   height: 32px;
   padding: 0 var(--sp-1);
   font-size: var(--fs-sm);
+  /* min-width, not a fixed width: 50px is what "Reset"/"Apply" need at
+     --fs-sm, but a label that ever needs more should widen the button rather
+     than run out through its own border. */
   min-width: 50px;
-  width: 50px;
+  white-space: nowrap;
 }
 
 /* ---- individual-bond list (expandable, lazily built) ---- */

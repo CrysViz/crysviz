@@ -231,8 +231,11 @@
      needed three lines and pushed its row off a phone-width panel.
      .lsc-panel-btn (Cell & Supercell / Transform "Apply") is likewise a dense
      panel button with its own fixed 32px height and --fs-sm sizing; the big-tap
-     rung zoomed its font to --fs-xl and stretched it, offsetting it in its row. */
-  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn) {
+     rung zoomed its font to --fs-xl and stretched it, offsetting it in its row.
+     .bond-cat-btn (per-pair Reset/Apply in the bond-length panel) is the same
+     case again: a 32px x 50px box sized to its row, so the --fs-xl rung spilled
+     both labels straight out of their borders. */
+  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn):not(.bond-cat-btn) {
     padding: var(--sp-4) var(--sp-5);
     font-size: var(--fs-xl);
     align-self: stretch;
