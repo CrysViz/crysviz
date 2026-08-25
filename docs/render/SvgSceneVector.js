@@ -40,6 +40,17 @@ const FACE_AMBIENT = 0.38;
 // Faces are stroked with their own fill colour to hide the hairline
 // background seams SVG anti-aliasing leaves between adjacent triangles.
 const FACE_SEAM_STROKE = 0.5;
+// A segment carries ONE depth into the painter's sort, so a segment that runs
+// away from the camera is drawn wholly in front of or wholly behind every
+// sphere it actually passes through — which is how a unit-cell edge ends up
+// laid over the whole structure. Long segments are cut into pieces short
+// enough in depth for the sort to be right; this caps the pieces so a huge
+// supercell cannot turn twelve cell edges into thousands of elements.
+const MAX_SEGMENT_PIECES = 64;
+// Bonds get a tighter budget: they are the one segment kind whose count grows
+// with the structure, and a bond half is at most an atom or two long, so a few
+// pieces already put the residual sort error well under an atom radius.
+const MAX_BOND_PIECES = 4;
 
 /** @typedef {{x:number, y:number, depth:number}} ProjectedPoint */
 /**
@@ -238,6 +249,28 @@ function bondHalves(mesh) {
     });
   }
   return out;
+}
+
+/** Smallest visible atom radius in world units, over every atom mesh the
+ *  export draws (the instance matrix's x scale IS the radius). This is the
+ *  size of the smallest thing a segment has to sort against, so it sets how
+ *  finely segments must be cut for the painter's sort to come out right.
+ *  0 when the scene has no atoms at all — nothing to interleave with. */
+function smallestAtomRadius() {
+  let min = Infinity;
+  const scan = (mesh) => {
+    if (!mesh?.visible || !mesh.count) return;
+    const matrices = mesh.instanceMatrix?.array;
+    if (!matrices) return;
+    for (let i = 0; i < mesh.count; i++) {
+      const r = matrices[i * 16];
+      if (r > 0 && r < min) min = r;
+    }
+  };
+  scan(groups.atomsMesh);
+  scan(groups.ghostAtomsMesh);
+  for (const entry of (groups.overlayMeshes ?? new Map()).values()) scan(entry?.atomsMesh);
+  return Number.isFinite(min) ? min : 0;
 }
 
 /** World endpoints + radius of every unit-cell edge. The lattice group's
@@ -479,6 +512,76 @@ export function buildVectorStructure(ctx) {
   const onPage = (minX, minY, maxX, maxY) =>
     maxX >= 0 && minX <= width && maxY >= 0 && minY <= height;
 
+  // The finest depth difference the one global sort has to resolve: half the
+  // smallest visible atom radius, so a mis-sorted piece can never stick out
+  // from behind the sphere that should hide it. 0 (no atoms) disables
+  // splitting — there is nothing for a segment to interleave with.
+  const grain = smallestAtomRadius() * 0.5;
+
+  /** How many pieces a segment spanning `d1`..`d2` in depth must be cut into
+   *  for the painter's sort to place each piece correctly. */
+  const splitCount = (d1, d2, cap) => {
+    if (!(grain > 0)) return 1;
+    const span = Math.abs(d1 - d2);
+    if (!(span > grain)) return 1;
+    return Math.min(cap, Math.ceil(span / grain));
+  };
+
+  /** One world segment -> one <line>, or a run of depth-sorted pieces when it
+   *  spans too much depth to sort as a unit (see MAX_SEGMENT_PIECES). Pieces
+   *  keep the class and the Inkscape label and only differ in id. An opaque
+   *  run overlaps its pieces by a fraction of a pixel so no seam shows at the
+   *  joins; a translucent one must not (the overlap would blend twice and band
+   *  the line), so it abuts butt-capped pieces exactly instead. Each piece
+   *  takes its width from its own endpoints, so a long edge under a
+   *  perspective camera also tapers the way the raster render draws it. */
+  const pushSegment = (seg, id, cls, label, linecap, cap = MAX_SEGMENT_PIECES) => {
+    const p1 = project(seg.x1, seg.y1, seg.z1);
+    const p2 = project(seg.x2, seg.y2, seg.z2);
+    if (!p1 || !p2) return false;
+    const w1 = radiusPx(seg.x1, seg.y1, seg.z1, seg.radius);
+    const w2 = radiusPx(seg.x2, seg.y2, seg.z2, seg.radius);
+    const w = w1 + w2;
+    if (!(w > 0.05)) return false;
+    if (!onPage(Math.min(p1.x, p2.x) - w, Math.min(p1.y, p2.y) - w,
+      Math.max(p1.x, p2.x) + w, Math.max(p1.y, p2.y) + w)) return false;
+    const translucent = seg.alpha < 0.999;
+    const alpha = translucent ? ` stroke-opacity="${fmt(seg.alpha)}"` : '';
+    const line = (a, b, wa, wb, pieceId, cap2) => {
+      prims.push({
+        depth: (a.depth + b.depth) / 2,
+        svg: `<line id="${pieceId}" class="${cls}" inkscape:label="${esc(label)}"`
+          + ` x1="${fmt(a.x)}" y1="${fmt(a.y)}" x2="${fmt(b.x)}" y2="${fmt(b.y)}"`
+          + ` stroke="${seg.hex}" stroke-width="${fmt(wa + wb)}"`
+          + ` stroke-linecap="${cap2}"${alpha}/>`,
+      });
+    };
+    const pieces = splitCount(p1.depth, p2.depth, cap);
+    if (pieces === 1) {
+      line(p1, p2, w1, w2, id, linecap);
+      return true;
+    }
+    const pieceCap = translucent ? 'butt' : linecap;
+    const lenPx = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const pad = (!translucent && lenPx > 1)
+      ? Math.min(0.75 / lenPx, 0.25 / pieces) : 0;
+    const at = (t) => {
+      const x = seg.x1 + (seg.x2 - seg.x1) * t;
+      const y = seg.y1 + (seg.y2 - seg.y1) * t;
+      const z = seg.z1 + (seg.z2 - seg.z1) * t;
+      return { p: project(x, y, z), w: radiusPx(x, y, z, seg.radius) };
+    };
+    let drew = false;
+    for (let i = 0; i < pieces; i++) {
+      const a = at(Math.max(0, i / pieces - pad));
+      const b = at(Math.min(1, (i + 1) / pieces + pad));
+      if (!a.p || !b.p) continue;
+      line(a.p, b.p, a.w, b.w, `${id}-s${i}`, pieceCap);
+      drew = true;
+    }
+    return drew;
+  };
+
   const emitAtoms = (mesh, cutPlanes, idKind, labelPrefix) => {
     const atoms = atomInstances(mesh, cutPlanes);
     for (const a of atoms) {
@@ -519,49 +622,22 @@ export function buildVectorStructure(ctx) {
       if (!(d > atom.r)) continue; // the sphere swallows the whole half
       dx /= d; dy /= d; dz /= d;
       const sx = atom.x + dx * atom.r, sy = atom.y + dy * atom.r, sz = atom.z + dz * atom.r;
-      const p1 = project(sx, sy, sz);
-      const p2 = project(h.mx, h.my, h.mz);
-      if (!p1 || !p2) continue;
-      const w = radiusPx(sx, sy, sz, h.radius) + radiusPx(h.mx, h.my, h.mz, h.radius);
-      if (!(w > 0.05)) continue;
-      if (!onPage(Math.min(p1.x, p2.x) - w, Math.min(p1.y, p2.y) - w,
-        Math.max(p1.x, p2.x) + w, Math.max(p1.y, p2.y) + w)) continue;
       const bond = bondModel?.[Math.floor(h.i / 2)];
       const pair = bond?.elements?.length >= 2
         ? `${bond.elements[0]}–${bond.elements[1]}` : (atom.element ?? '');
       const label = `${labelPrefix}${pair ? `${pair} ` : ''}bond`;
-      const alpha = h.alpha < 0.999 ? ` stroke-opacity="${fmt(h.alpha)}"` : '';
       const id = `${prefix}${idKind}-${Math.floor(h.i / 2)}${h.i % 2 === 0 ? 'a' : 'b'}`;
-      prims.push({
-        depth: (p1.depth + p2.depth) / 2,
-        svg: `<line id="${id}" class="bond" inkscape:label="${esc(label)}"`
-          + ` x1="${fmt(p1.x)}" y1="${fmt(p1.y)}" x2="${fmt(p2.x)}" y2="${fmt(p2.y)}"`
-          + ` stroke="${h.hex}" stroke-width="${fmt(w)}" stroke-linecap="butt"${alpha}/>`,
-      });
-      counts.bondHalves++;
+      const seg = {
+        x1: sx, y1: sy, z1: sz, x2: h.mx, y2: h.my, z2: h.mz,
+        radius: h.radius, hex: h.hex, alpha: h.alpha,
+      };
+      if (pushSegment(seg, id, 'bond', label, 'butt', MAX_BOND_PIECES)) counts.bondHalves++;
     }
   };
 
   /** Round-capped world segment -> <line>. Shared by cell edges, polyhedra
    *  edges and measurement dashes: identical geometry, different labels. */
-  const emitSegment = (seg, id, cls, label) => {
-    const p1 = project(seg.x1, seg.y1, seg.z1);
-    const p2 = project(seg.x2, seg.y2, seg.z2);
-    if (!p1 || !p2) return false;
-    const w = radiusPx(seg.x1, seg.y1, seg.z1, seg.radius)
-      + radiusPx(seg.x2, seg.y2, seg.z2, seg.radius);
-    if (!(w > 0.05)) return false;
-    if (!onPage(Math.min(p1.x, p2.x) - w, Math.min(p1.y, p2.y) - w,
-      Math.max(p1.x, p2.x) + w, Math.max(p1.y, p2.y) + w)) return false;
-    const alpha = seg.alpha < 0.999 ? ` stroke-opacity="${fmt(seg.alpha)}"` : '';
-    prims.push({
-      depth: (p1.depth + p2.depth) / 2,
-      svg: `<line id="${id}" class="${cls}" inkscape:label="${esc(label)}"`
-        + ` x1="${fmt(p1.x)}" y1="${fmt(p1.y)}" x2="${fmt(p2.x)}" y2="${fmt(p2.y)}"`
-        + ` stroke="${seg.hex}" stroke-width="${fmt(w)}" stroke-linecap="round"${alpha}/>`,
-    });
-    return true;
-  };
+  const emitSegment = (seg, id, cls, label) => pushSegment(seg, id, cls, label, 'round');
 
   // ---- atoms + bonds (main structure, then overlays, then hide-mode ghosts)
   const cutPlanes = activeAtomCutPlanes();
@@ -684,7 +760,10 @@ export function buildVectorStructure(ctx) {
 
 /** Count the SVG elements a vector export would produce, without building any
  *  of them, so the dialog can warn before a 100k-element document. Deliberately
- *  a rough upper bound: no projection, no culling, no atom lookups. */
+ *  rough: no projection, no culling, no atom lookups — an over-count in that
+ *  direction, and an under-count for the depth splitting buildVectorStructure
+ *  applies to segments that run away from the camera (it needs the projection
+ *  this deliberately skips). */
 export function estimateVectorPrimitiveCount() {
   let total = 0;
   const countInstances = (mesh, stride) => {
