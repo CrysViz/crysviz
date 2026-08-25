@@ -155,6 +155,11 @@ export const RENDERING_DEFAULTS = {
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)
   celHullPolyWidth: 0.025, // hull outline width in world units, polyhedra
+  // Cel outline color, shared by both outline modes. 'auto' picks black or
+  // white for maximum contrast against the scene background; 'black'/'white'
+  // are fixed; 'custom' uses celOutlineColor.
+  celOutlineColorMode: 'auto', // 'auto' | 'black' | 'white' | 'custom'
+  celOutlineColor: '#000000', // custom outline color (used when mode === 'custom')
 };
 
 export const general = {

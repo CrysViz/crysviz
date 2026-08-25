@@ -71,7 +71,7 @@ export {
   setupAxisControls, setupAxisLongPress, setAxisStepButtonsMode, applyRotationFromUI,
 } from './cameraAngleControl.js';
 
-export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
+export { setCelHullWidth, setCelHullPolyWidth, setCelOutlineColor } from './MaterialStyles.js';
 
 export { captureSceneToPng, computeContentScreenBox, isPngCaptureInProgress };
 

@@ -102,7 +102,7 @@ import {
   applyMaterialSettingsToStoredIsosurfaces,
 } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField, updateForces, updateSpins, removeForces, removeSpins } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField, updateForces, updateSpins, removeForces, removeSpins, setCelOutlineColor } from '../render/index.js';
 import { showTrajectoryFrame } from './TrajectoryPanel.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
@@ -314,6 +314,8 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       rtSaturation: general.rtSaturation,
       celOutlineWidth: general.celOutlineWidth,
       celHullWidth: general.celHullWidth,
+      celOutlineColorMode: general.celOutlineColorMode,
+      celOutlineColor: general.celOutlineColor,
       polyEdgeWidth: general.polyEdgeWidth,
       atomsColor: general.atomsColor,
       bondsColor: general.bondsColor,
@@ -729,6 +731,17 @@ function applyStyleSettings(style) {
   }
   if (style.celOutlineWidth != null) general.celOutlineWidth = style.celOutlineWidth;
   if (style.celHullWidth != null) general.celHullWidth = style.celHullWidth;
+  if (style.celOutlineColor) general.celOutlineColor = style.celOutlineColor;
+  if (style.celOutlineColorMode) {
+    general.celOutlineColorMode = style.celOutlineColorMode;
+    setSelect('celOutlineColorMenu', style.celOutlineColorMode);
+    const customBlock = /** @type {any} */ (document.getElementById('celOutlineCustomColorBlock'));
+    if (customBlock) {
+      customBlock.style.display = style.celOutlineColorMode === 'custom' ? 'block' : 'none';
+      // Sync the inline picker's swatch/inputs to the restored custom color.
+      if (style.celOutlineColor) customBlock.setHex?.(style.celOutlineColor);
+    }
+  }
   if (style.polyEdgeWidth != null) {
     general.polyEdgeWidth = style.polyEdgeWidth;
     setSelect('polyEdgeWidth', style.polyEdgeWidth);
@@ -741,6 +754,9 @@ function applyStyleSettings(style) {
     // background picker does (the lattice is built after this runs).
     general.currentLatticeColor = getContrastingBorder(style.background);
   }
+  // Refresh any existing hull outline materials for the restored color mode /
+  // background ('auto' depends on the background just applied above).
+  setCelOutlineColor();
 }
 
 function applyAtomColors(colors, structure) {

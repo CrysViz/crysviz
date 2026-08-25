@@ -32,7 +32,7 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
-import { updateLattice, requestRender } from '../render/index.js';
+import { updateLattice, requestRender, setCelOutlineColor } from '../render/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 
 const THEMES_DIR = './themes/';
@@ -106,6 +106,8 @@ export function applySceneFromCSS() {
     // Keep the Visual window's background swatch in sync with theme/reset.
     const swatch = document.getElementById('backgroundSwatch');
     if (swatch) swatch.style.background = '#' + app.scene.background.getHexString();
+    // An 'auto' cel outline (hull mode) contrasts against the theme background.
+    setCelOutlineColor();
   }
   if (latticeColor) {
     general.currentLatticeColor = latticeColor;
