@@ -38,6 +38,7 @@ import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
 import {rebuildAtoms,updateAtoms,deriveVisibleWrapped} from '../render/index.js';
 import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
+import {updateHydrogenBonds} from '../render/index.js';
 
 
 import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
@@ -263,6 +264,12 @@ export function updateVisualization(options = {}) {
   if (measurements.measureLines.length > 0) {
     updateAllMeasurements();
   }
+
+  // Dashed D-H...A hydrogen bonds track the same geometry as bonds/measurements:
+  // recompute them here so they follow structure switches, trajectory steps,
+  // periodic-image changes and slider edits. Cheap no-op when nothing eligible
+  // is enabled (see HydrogenBondModule.computeHydrogenBonds).
+  updateHydrogenBonds(fileBrowser.selectedStructure);
 
   // Reposition the raster ground disc to the (possibly new) structure bottom —
   // covers load/switch, supercell, cut planes, atom-size rebuilds, trajectory
