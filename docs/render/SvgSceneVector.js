@@ -47,10 +47,10 @@ const FACE_SEAM_STROKE = 0.5;
 // enough in depth for the sort to be right; this caps the pieces so a huge
 // supercell cannot turn twelve cell edges into thousands of elements.
 const MAX_SEGMENT_PIECES = 64;
-// Bonds get a tighter budget: they are the one segment kind whose count grows
-// with the structure, and a bond half is at most an atom or two long, so a few
-// pieces already put the residual sort error well under an atom radius.
-const MAX_BOND_PIECES = 4;
+// A bond half stays whole. Splitting a cel-outlined stroke exposes the outline
+// at every join as dark cross-bands; owning atoms explicitly paint over the
+// buried cap below, which removes the reason bonds originally needed pieces.
+const MAX_BOND_PIECES = 1;
 /** @typedef {{x:number, y:number, depth:number}} ProjectedPoint */
 /**
  * @typedef {{
@@ -453,6 +453,40 @@ function measurementDashes() {
   return out;
 }
 
+/** Measurement atom highlights as projected shell discs or billboard rings. */
+function measurementMarkers() {
+  /** @type {any[]} */
+  const out = [];
+  for (const group of measurements?.measureLines ?? []) {
+    const type = group?.userData?.type;
+    if (type !== 'distanceMarker' && type !== 'angleMarker') continue;
+    if (group.visible === false) continue;
+    const marker = group.children?.[0];
+    if (!marker || marker.visible === false || !marker.geometry?.parameters) continue;
+    marker.updateWorldMatrix(true, false);
+    marker.matrixWorld.decompose(_v, _quat, _scale);
+    const params = marker.geometry.parameters;
+    const scale = Math.max(Math.abs(_scale.x), Math.abs(_scale.y), Math.abs(_scale.z));
+    const alpha = marker.material?.opacity ?? 1;
+    if (!(alpha > 0.004)) continue;
+    if (params.radius > 0) {
+      out.push({
+        type: 'shell', x: _v.x, y: _v.y, z: _v.z,
+        radius: params.radius * scale,
+        hex: hexFromColor(marker.material.color), alpha,
+      });
+    } else if (params.innerRadius > 0 && params.outerRadius > params.innerRadius) {
+      out.push({
+        type: 'ring', x: _v.x, y: _v.y, z: _v.z,
+        innerRadius: params.innerRadius * scale,
+        outerRadius: params.outerRadius * scale,
+        hex: hexFromColor(marker.material.color), alpha,
+      });
+    }
+  }
+  return out;
+}
+
 /** Visible scene content this module cannot turn into vector shapes. Only
  *  things that are actually on screen right now are reported, so the dialog's
  *  note stays truthful instead of listing every unsupported feature. */
@@ -471,11 +505,6 @@ function skippedContent() {
   if (Array.isArray(atoms) && atoms.some((a) => wedgeDataForAtom(a))) {
     skipped.push('fractional-occupancy wedges (atoms keep their base colour)');
   }
-  const markers = (measurements?.measureLines ?? []).some((g) => {
-    const type = g?.userData?.type;
-    return (type === 'distanceMarker' || type === 'angleMarker') && g.visible !== false;
-  });
-  if (markers) skipped.push('measurement shell markers');
   return skipped;
 }
 
@@ -487,7 +516,8 @@ function skippedContent() {
  *   defs: string,
  *   body: string,
  *   counts: { atoms:number, bondHalves:number, cellEdges:number, polyFaces:number,
- *             polyEdges:number, arrows:number, measurementLines:number },
+ *             polyEdges:number, arrows:number, measurementLines:number,
+ *             measurementMarkers:number },
  *   skipped: string[],
  * }}
  */
@@ -505,7 +535,7 @@ export function buildVectorStructure(ctx) {
   const prims = [];
   const counts = {
     atoms: 0, bondHalves: 0, cellEdges: 0, polyFaces: 0,
-    polyEdges: 0, arrows: 0, measurementLines: 0,
+    polyEdges: 0, arrows: 0, measurementLines: 0, measurementMarkers: 0,
   };
 
   const onPage = (minX, minY, maxX, maxY) =>
@@ -760,6 +790,34 @@ export function buildVectorStructure(ctx) {
       `${dash.type} measurement`)) counts.measurementLines++;
   });
 
+  // ---- measurement atom highlights
+  measurementMarkers().forEach((marker, i) => {
+    const p = project(marker.x, marker.y, marker.z);
+    if (!p) return;
+    const outerWorld = marker.type === 'ring' ? marker.outerRadius : marker.radius;
+    const outerPx = radiusPx(marker.x, marker.y, marker.z, outerWorld);
+    if (!(outerPx > 0.05) || !onPage(
+      p.x - outerPx, p.y - outerPx, p.x + outerPx, p.y + outerPx)) return;
+    const alpha = marker.alpha < 0.999
+      ? ` opacity="${fmt(marker.alpha)}"` : '';
+    let shape;
+    if (marker.type === 'ring') {
+      const innerPx = radiusPx(marker.x, marker.y, marker.z, marker.innerRadius);
+      shape = `<circle cx="${fmt(p.x)}" cy="${fmt(p.y)}"`
+        + ` r="${fmt((innerPx + outerPx) / 2)}" fill="none" stroke="${marker.hex}"`
+        + ` stroke-width="${fmt(outerPx - innerPx)}"${alpha}/>`;
+    } else {
+      shape = `<circle cx="${fmt(p.x)}" cy="${fmt(p.y)}" r="${fmt(outerPx)}"`
+        + ` fill="${marker.hex}"${alpha}/>`;
+    }
+    prims.push({
+      depth: p.depth - outerWorld,
+      svg: `<g id="${prefix}measure-marker-${i}" class="measurement-marker"`
+        + ` inkscape:label="${marker.type} measurement highlight">${shape}</g>`,
+    });
+    counts.measurementMarkers++;
+  });
+
   // ONE painter's sort over every kind at once: bigger depth = farther, so
   // descending depth puts near primitives last (on top).
   prims.sort((a, b) => b.depth - a.depth);
@@ -826,5 +884,6 @@ export function estimateVectorPrimitiveCount() {
     if (group.visible === false) continue;
     total += (group.children ?? []).filter((d) => d.visible !== false).length;
   }
+  total += measurementMarkers().length;
   return total;
 }

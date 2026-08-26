@@ -321,6 +321,9 @@ const SVG_OUT = path.join(__dirname, 'artifacts', 'svgvector.svg');
     `circles=${res.circles} visibleAtoms=${res.visibleAtoms}`);
   H.check('unit cell drawn as >= 12 edge lines', res.cellLines >= 12, `cellLines=${res.cellLines}`);
   H.check('bonds drawn as lines', res.bondLines > 0, `bondLines=${res.bondLines}`);
+  H.check('cel bond halves stay continuous instead of depth-splitting into bands',
+    res.bondLines === res.counts.bondHalves,
+    `lines=${res.bondLines} halves=${res.counts.bondHalves}`);
   H.check('owning atoms paint over their buried bond caps',
     res.bondOwnerOrderChecked > 0 && res.bondOwnerOrderBreaks === 0,
     `breaks=${res.bondOwnerOrderBreaks} of ${res.bondOwnerOrderChecked}`);

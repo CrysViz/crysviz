@@ -78,6 +78,7 @@ const ARTIFACTS = path.join(__dirname, 'artifacts');
           .hasAttribute('dominant-baseline') || el.hasAttribute('alignment-baseline')).length,
         clippedLayers: layerEls.filter((g) => g.hasAttribute('clip-path')).length,
         circles: doc.getElementsByTagNameNS(SVG_NS, 'circle').length,
+        measurementMarkers: doc.querySelectorAll('g.measurement-marker').length,
         lines: doc.getElementsByTagNameNS(SVG_NS, 'line').length,
         gradients: doc.getElementsByTagNameNS(SVG_NS, 'radialGradient').length
           + doc.getElementsByTagNameNS(SVG_NS, 'linearGradient').length,
@@ -217,6 +218,8 @@ const ARTIFACTS = path.join(__dirname, 'artifacts');
       `circles=${v.circles} atoms=${res.visibleAtoms}`);
     H.check('vector: the unit cell contributes at least its 12 edges',
       v.lines >= 12, `lines=${v.lines}`);
+    H.check('vector: measurement atom highlights are editable marker groups',
+      v.measurementMarkers >= 2, `markers=${v.measurementMarkers}`);
     H.check('vector: shaded atoms come from gradients in <defs>', v.gradients > 0,
       `gradients=${v.gradients}`);
     H.check('vector: overlays are still layers with real <text>',

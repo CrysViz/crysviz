@@ -346,6 +346,7 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
    floating popups had, minus the top edge where the title bar sits. */
 .cv-panel-body {
   padding: var(--sp-3-5) var(--sp-3);
+  color: var(--fg-1);
   border: 1px solid var(--line-1);
   border-top: none;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
