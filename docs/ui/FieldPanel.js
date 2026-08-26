@@ -1,5 +1,5 @@
 import { fileBrowser, app, groups } from '../state/store.js';
-import { updateField, setActiveField, requestRender } from '../render/index.js';
+import { updateField, setActiveField, requestRender, suggestIsoValue } from '../render/index.js';
 import {
   getIsosurfaceMaterialSettings,
   getIsosurfaceTriangleSortingEnabled,
@@ -241,7 +241,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
   // chosen, which is what `syncIsoControlsToSelection` below handles.
   const selected = fieldBrowser.selectedField;
   const isoValue = selected
-    ? (selected.isoValue || sliderToIsoValue(55, selected))
+    ? (selected.isoValue || suggestIsoValue(selected))
     : 0;
   const sliderVal = selected ? isoValueToSlider(isoValue, selected) : 50;
   const materialSettings = getIsosurfaceMaterialSettings();
@@ -346,6 +346,13 @@ export function addFieldPanel(target = "cvPanelBody-field") {
         if (!fieldBrowser.selectField(field)) return;
         controls.syncToSelection();
         updateField(field.isoValue || undefined);
+        // Rendering is on demand (render/AnimateModule.js). Picking an
+        // already-loaded field rides the document-level click/change catch-all,
+        // but expanding a WAVECAR band resolves a transform or two later — by
+        // then that frame has been drawn and the flag cleared, so the new
+        // isosurface would sit in the scene unpainted until the user next
+        // touched something.
+        requestRender();
       },
       onError: (error) => {
         // Loading a band can fail for real, recoverable reasons (a truncated
@@ -607,18 +614,25 @@ function setupFieldControlEvents(container) {
   });
 
   logScaleCheckbox.addEventListener('change', function () {
-    if (!fieldBrowser.selectedField) return;
-
+    // A view preference, not a per-field one: set it even with nothing selected,
+    // so the next field selected is already mapped the way the box says.
     useLogSliderScale = logScaleCheckbox.checked;
 
-    // Update the slider range and displayed value based on the new setting
-    const sliderValue = parseFloat(slider.value);
-    if (useLogSliderScale) {
-      slider.value = sliderValue.toExponential(3);
-    }
-    else {
-      slider.value = sliderValue.toPrecision(3);
-    }
+    const field = fieldBrowser.selectedField;
+    if (!field) return;
+
+    // The toggle changes how slider positions map to iso values, not the iso
+    // value itself — so hold the value and move the handle to wherever it now
+    // lives. (This used to reformat the handle POSITION as
+    // `(55).toExponential(3)`, which parses straight back to 55: the handle
+    // never moved and the readout was never touched.)
+    const isoValue = field.isoValue || suggestIsoValue(field);
+    field.isoValue = isoValue;
+    slider.value = String(isoValueToSlider(isoValue, field));
+    valueDisplay.textContent = isoValue.toExponential(3);
+    // The slider's ends mean different values under the two mappings, so a
+    // drag must not be diffed against a position from the old scale.
+    lastBuiltIso = null;
   });
 
   if (triangleSortCheckbox) {
@@ -661,7 +675,7 @@ function setupFieldControlEvents(container) {
       return;
     }
 
-    const isoValue = field.isoValue || sliderToIsoValue(55, field);
+    const isoValue = field.isoValue || suggestIsoValue(field);
     field.isoValue = isoValue;
     slider.value = String(isoValueToSlider(isoValue, field));
     valueDisplay.textContent = isoValue.toExponential(3);

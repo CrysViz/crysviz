@@ -1203,6 +1203,10 @@
   gap: var(--sp-1);
   max-height: 10rem;
   overflow-y: auto;
+  /* The rows scroll, so a focused input's highlight sits right on the clipping
+     edge and loses its left half. Inset the whole column instead of padding the
+     input, which would eat into the digits. */
+  padding-left: 1.5em;
 }
 
 .field-catalog-derived-row {
@@ -1213,11 +1217,12 @@
 }
 
 .field-catalog-weight {
-  /* Room for a signed decimal ("−0.25") *and* the number input's spinner
-     arrows, which take about a character's worth of the box on their own —
-     at 4rem a value like -0.25 was already scrolling out of view. flex: none
-     so the field-name column can't squeeze it back down. */
-  width: 6rem;
+  /* Sized in `ch` so it tracks the digit width of whatever font is in use:
+     5 digits, plus a sign and a decimal point, plus roughly 2ch for the number
+     input's spinner arrows, which take a bite out of the box on their own.
+     flex: none so the field-name column can't squeeze it back down. */
+  width: 9.5ch;
+  min-width: 9.5ch;
   flex: none;
   padding: var(--sp-1) var(--sp-2);
   background: var(--wash-2);

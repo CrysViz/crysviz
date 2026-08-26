@@ -17,7 +17,9 @@ export { Plane, getCutPlaneMaskSign } from './Plane.js';
 export { FieldContainer } from './FieldContainer.js';
 
 // Volumetric-field composition and the tree view over a file's fields:
-export { combineFields, recomputeComposite, computeFieldStats, describeCombination } from './CompositeField.js';
+export {
+  combineFields, recomputeComposite, computeFieldStats, describeCombination, defaultIsoValue,
+} from './CompositeField.js';
 export { FieldCatalog, FieldCatalogNode, NodeKind } from './FieldCatalog.js';
 
 // Lazily-read plane-wave wavefunctions (WAVECAR) and the byte-budgeted cache

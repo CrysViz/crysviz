@@ -1,4 +1,6 @@
 #include <math.h>
+#include <cmath>
+#include <cstring>
 #include <algorithm>
 #include <cstdlib>
 #include <cstdint>
@@ -509,6 +511,88 @@ public:
 		return vertex_count;
 	}
 
+	/*
+	 * A starting isosurface level: the magnitude exceeded by `fraction` of the
+	 * grid points.
+	 *
+	 * Picking the level by how much of the cell it encloses is what makes one
+	 * rule work for a charge density, an ELF grid and a wavefunction alike --
+	 * see model/CompositeField.js defaultIsoValue() for why the old midpoint of
+	 * [min, max] does not. The JS side computed it by sampling 100k points and
+	 * sorting them, which is a visible pause on every field of a large file.
+	 * Here the field is already resident, so it costs one linear pass.
+	 *
+	 * The histogram bins on the FLOAT BIT PATTERN rather than on log10(|v|).
+	 * Positive IEEE-754 floats compare in the same order as their bit patterns
+	 * read as integers, so the top bits are already a log-spaced bucket index:
+	 * the 8 exponent bits give the binade and the next 7 mantissa bits divide it
+	 * into 128, which is ~0.8% relative resolution everywhere from 1e-38 to
+	 * 1e38. That matters because a log10() per point cost more on a 120^3 grid
+	 * (~40ms) than the sampling it was meant to replace; this way it is integer
+	 * work only.
+	 *
+	 * Returns 0 for an empty or all-zero field.
+	 */
+	float default_isovalue(float fraction) {
+		/* Keep sign+exponent+7 mantissa bits. Positive floats have the sign bit
+		 * clear, so they occupy the low half of the index space. */
+		const int SHIFT = 16;
+		const int BIN_COUNT = 1 << (31 - SHIFT); /* 32768 */
+
+		if (field_size == 0) return 0.0f;
+		if (fraction < 0.001f) fraction = 0.001f;
+		if (fraction > 0.999f) fraction = 0.999f;
+
+		std::vector<size_t> bins(BIN_COUNT, 0);
+		size_t counted = 0;
+		for (size_t i = 0; i < field_size; i++) {
+			const float a = std::fabs(field[i]);
+			if (!(a > 0.0f) || !std::isfinite(a)) continue; /* zeros, NaN, inf */
+			uint32_t bits;
+			std::memcpy(&bits, &a, sizeof(bits));
+			bins[bits >> SHIFT]++;
+			counted++;
+		}
+		if (counted == 0) return 0.0f;
+
+		/* Walk down from the largest values until `fraction` of the WHOLE grid
+		 * is accounted for -- the zeros skipped above are part of the cell and
+		 * have to count towards the enclosed volume, or a mostly-empty field
+		 * would report a level enclosing far more than asked. */
+		const double target = (double)fraction * (double)field_size;
+		double running = 0.0;
+		for (int bin = BIN_COUNT - 1; bin >= 0; bin--) {
+			const double in_bin = (double)bins[bin];
+			if (in_bin <= 0.0) continue;
+			if (running + in_bin >= target) {
+				/* Interpolate across the bin's bit range, assuming its points are
+				 * spread evenly through it; without this the answer quantises to
+				 * bin edges. Bit patterns are linear in the value within a
+				 * binade, so this is a linear interpolation there. */
+				const double needed = target - running;
+				const double within = 1.0 - (needed / in_bin);
+				uint32_t bits = ((uint32_t)bin << SHIFT)
+					+ (uint32_t)(within * (double)((uint32_t)1 << SHIFT));
+				float level;
+				std::memcpy(&level, &bits, sizeof(level));
+				return std::isfinite(level) ? level : 0.0f;
+			}
+			running += in_bin;
+		}
+
+		/* Fewer non-zero points than the requested fraction: the field is mostly
+		 * zeros, so the smallest non-zero level is the honest answer. */
+		for (int bin = 0; bin < BIN_COUNT; bin++) {
+			if (bins[bin] > 0) {
+				uint32_t bits = (uint32_t)bin << SHIFT;
+				float level;
+				std::memcpy(&level, &bits, sizeof(level));
+				return level;
+			}
+		}
+		return 0.0f;
+	}
+
 	inline void calc_norm(size_t v, float* norm) {
 		// takes a vertex index, and 3-element array to write the normal to.
 		// Computes the normal using central differences, with forward/backward differences at the boundaries.
@@ -684,5 +768,6 @@ EMSCRIPTEN_BINDINGS(marching_cubes_module) {
 		.function("getNormals", &MarchingCubes::get_vnormal_list)
 		.function("getVNormalCache", &MarchingCubes::get_vnormal_cache)
 		.function("getVertexCount", &MarchingCubes::get_vertex_count)
+		.function("defaultIsoValue", &MarchingCubes::default_isovalue)
 		.function("updateVertices", &MarchingCubes::update_vertices);
 }

@@ -10,8 +10,9 @@ import { app, groups, fileBrowser, structureShip } from '../state/store.js';
 import { readCHGCAR } from "../io/ReadChgcarModule.js";
 import { readCubeFile } from "../io/ReadCubeModule.js";
 import { readWAVECAR } from "../io/ReadWavecarModule.js";
-import { Isosurface, FieldCatalog, FieldContainer } from "../model/index.js";
+import { Isosurface, FieldCatalog, FieldContainer, defaultIsoValue } from "../model/index.js";
 import { choiceDialog, noticeDialog } from "../ui/ConfirmModal.js";
+import { openPanel, refreshPanelAvailability } from "../ui/panels/PanelManager.js";
 
 
 
@@ -168,6 +169,28 @@ export function setActiveField(field, absoluteIsoValue = null) {
   groups.activeField = field;
 }
 
+/**
+ * The isosurface level to start a field at.
+ *
+ * Prefers the marching-cubes WASM module, which already holds this field's
+ * values and answers from one integer pass over all of them (a few ms on a
+ * 120^3 grid). The JS implementation in model/CompositeField.js samples and
+ * sorts instead — several times slower and only approximate — so it is the
+ * fallback for a field that has no live isosurface yet, or a backend that
+ * cannot compute one.
+ *
+ * @param {import('../model/Field.js').Field} field
+ * @param {number} [fraction] target fraction of the cell inside the surface
+ * @returns {number}
+ */
+export function suggestIsoValue(field, fraction = 0.05) {
+  if (field && groups.activeField === field && groups.isosurfaceGroup) {
+    const level = groups.isosurfaceGroup.defaultIsoValue(fraction);
+    if (Number.isFinite(level) && level > 0) return level;
+  }
+  return defaultIsoValue(field, { volumeFraction: fraction });
+}
+
 export function toggleFieldVisibility(visible) {
   if (groups.activeField) {
     groups.activeField.isVisible = visible;
@@ -196,15 +219,9 @@ export function updateField(iso = null) {
       iso = field.isoValue;
     }
     else {
-      let min;
-      if (field.useAbsoluteIsoValue) {
-        min = Math.abs(field.minValue);
-      }
-      else {
-        min = field.minValue;
-      }
-      const max = field.maxValue;
-      iso = (min + max) / 2;
+      // Was the midpoint of [min, max], which only shows anything when the
+      // values are spread evenly over that range — see suggestIsoValue().
+      iso = suggestIsoValue(field);
       field.isoValue = iso; // store for future use
     }
   }
@@ -306,6 +323,78 @@ function containerForStructure(structure) {
   return structureShip.container.find((c) => c?.structures?.includes(structure)) || null;
 }
 
+/** What to call a structure when talking to the user about it. */
+function structureDisplayName(structure) {
+  const owner = containerForStructure(structure);
+  if (owner?.fileName && owner.fileName !== 'Unspecified') return owner.fileName;
+  const formula = structure?.uniqueElements?.join('');
+  return formula || 'the loaded structure';
+}
+
+/**
+ * Open the Volumetric Field window when the current structure has field data.
+ *
+ * A file carrying a volumetric field is nearly always opened *for* that field,
+ * so leaving the panel collapsed in the dock hides the only reason the load
+ * happened. Availability is refreshed first: the panel's `available()` gate
+ * reads the catalog, which only became non-empty during this load.
+ */
+export function revealFieldPanelForCurrentStructure() {
+  const catalog = fileBrowser.selectedStructure?.volumetricFields?.catalog;
+  if (!catalog?.nodes?.length) return;
+  refreshPanelAvailability();
+  openPanel('field');
+}
+
+/**
+ * Let the user open a structure file, and resolve once it has finished loading.
+ *
+ * The upload button's file input is wrapped rather than duplicated so the file
+ * goes through exactly the same loader (format detection, registration, camera
+ * fit) as any other structure — only the waiting is ours. Offered from the
+ * cell-mismatch dialog, where "the WAVECAR is fine, the wrong structure is
+ * selected" is a real possibility and the alternatives all mean losing the
+ * atoms.
+ *
+ * @returns {Promise<boolean>} false if the file dialog was dismissed
+ */
+function promptForStructureFile() {
+  const fileInput = /** @type {HTMLInputElement | null} */ (document.getElementById('fileInput'));
+  if (!fileInput) {
+    console.warn('WAVECAR: no structure file input to open.');
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    const previous = fileInput.onchange;
+    let settled = false;
+
+    const settle = (loaded) => {
+      if (settled) return;
+      settled = true;
+      fileInput.onchange = previous;
+      resolve(loaded);
+    };
+
+    fileInput.onchange = async (event) => {
+      const files = /** @type {HTMLInputElement} */ (event.target).files;
+      try {
+        if (typeof previous === 'function') await previous.call(fileInput, event);
+      } finally {
+        settle(Boolean(files && files.length));
+      }
+    };
+
+    // A dismissed file dialog fires no `change` event at all, and the window
+    // regaining focus is the only notification of that; without this the
+    // wrapper would sit there and hijack the user's next upload. The delay
+    // gives a real selection time to fire `change` first.
+    window.addEventListener('focus', () => setTimeout(() => settle(false), 500), { once: true });
+
+    fileInput.click();
+  });
+}
+
 /**
  * Open a WAVECAR.
  *
@@ -331,7 +420,7 @@ export async function parseWavecarFile(source, fileName) {
   const wf = result.source;
 
   const selected = fileBrowser.selectedStructure;
-  const matches = selected && latticesMatch(selected.lattice, wf.lattice);
+  let matches = selected && latticesMatch(selected.lattice, wf.lattice);
 
   let attachTo = null;
   if (matches) {
@@ -346,6 +435,12 @@ export async function parseWavecarFile(source, fileName) {
           + "WAVECAR's own cell. The mismatch stays flagged in the field panel.",
       });
     }
+    choices.push({
+      value: 'open',
+      label: 'Open a different structure…',
+      description: 'Load a structure file now and put the WAVECAR into that instead — for when '
+        + 'the right structure simply is not the one selected.',
+    });
     choices.push({
       value: 'standalone',
       label: 'Load as its own structure',
@@ -368,6 +463,18 @@ export async function parseWavecarFile(source, fileName) {
 
     if (choice === 'cancel' || choice === null) return null;
     if (choice === 'attach') attachTo = selected;
+    if (choice === 'open') {
+      // The structure the user picks becomes the host, and the cell question is
+      // asked again against it: a matching cell attaches cleanly, a still-
+      // mismatched one attaches with the flag rather than re-opening this
+      // dialog on top of itself.
+      if (!await promptForStructureFile()) return null;
+      attachTo = fileBrowser.selectedStructure;
+      matches = attachTo && latticesMatch(attachTo.lattice, wf.lattice);
+      if (!attachTo) {
+        console.warn('WAVECAR: no structure was loaded; falling back to its own cell.');
+      }
+    }
   }
 
   // When attaching to a structure whose cell differs, that structure's cell is
@@ -426,6 +533,7 @@ export async function parseWavecarFile(source, fileName) {
     const owner = containerForStructure(attachTo);
     if (owner) {
       console.log(`WAVECAR opened and attached to the selected structure — ${wf.describe()}`);
+      announceWavecarLoaded(fileName, structureDisplayName(attachTo), wf);
       return owner;
     }
     // The selected structure is not in the file browser's registry — it was
@@ -439,7 +547,31 @@ export async function parseWavecarFile(source, fileName) {
   result.structure.volumetricFields = container;
   const structureContainer = initializeWithPOSCAR(result.structure, fileName);
   console.log(`WAVECAR opened as its own structure — ${wf.describe()}`);
+  announceWavecarLoaded(fileName, `${fileName} (its own cell, no atoms)`, wf);
   return structureContainer;
+}
+
+/**
+ * Tell the user the file is in, and where.
+ *
+ * A WAVECAR shows nothing until a band is expanded, so a successful open looks
+ * identical to nothing having happened — and the structure it landed on is
+ * whatever happened to be selected, which is exactly what a user loading a
+ * second file tends to have lost track of. Naming both, and offering the way
+ * out, is cheaper than letting them discover the mistake three clicks later.
+ *
+ * Deliberately not awaited by the caller: the load is finished either way, and
+ * blocking it would hold up the file browser behind a dialog.
+ *
+ * @param {string} fileName
+ * @param {string} structureName
+ * @param {import('../model/WavefunctionSource.js').WavefunctionSource} wf
+ */
+function announceWavecarLoaded(fileName, structureName, wf) {
+  noticeDialog(
+    `The ${fileName} file has been loaded into ${structureName} correctly, and its data can be `
+    + 'toggled under the "Volumetric Field" panel.',
+    { title: 'WAVECAR loaded', detail: wf.describe() });
 }
 
 // End of file

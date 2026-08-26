@@ -50,7 +50,7 @@ import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
 import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
 
-import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField } from '../render/index.js';
+import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
 
 // .........................................................................................................
@@ -392,6 +392,11 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     if (!structureContainer) throw new Error('Structure loader returned no structure container');
 
    revealFeaturePanels();
+
+    // A file that carried volumetric data is opened for that data, so bring the
+    // Volumetric Field window up rather than leaving it collapsed in the dock.
+    // No-op for a plain structure file.
+    revealFieldPanelForCurrentStructure();
 
     createShareButton();
     // NOTE: do not call updateVisualization() here. Every load path above funnels

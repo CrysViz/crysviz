@@ -2,7 +2,7 @@
 //import * as GPUMarchCubes from '../external/GPU/marching_cubes.js';
 
 // uncomment for WASM-centric marching cubes
-import MarchCubes from '../external/marching_cubes_wasm/MarchCubes.js';
+import MarchCubes from '../compiled/MarchCubes.js';
 var MarchingCubesModule = await MarchCubes();
 
 // uncomment for Three.js built-in marching cubes
@@ -88,6 +88,21 @@ class MarchingCubesWrapper {
             console.log("Using Three.js built-in Marching Cubes");
         }
         this.marchingCubes = backend_MC;
+    }
+
+    /**
+     * A starting isosurface level: the magnitude exceeded by `fraction` of the
+     * grid points. The field is already in this module's memory, so the WASM
+     * backend answers from a single pass over it with no copy and no sort.
+     *
+     * @param {number} [fraction] target fraction of the cell inside the surface
+     * @returns {number | null} null when the backend cannot compute it, so the
+     *   caller can fall back to model/CompositeField.js defaultIsoValue()
+     */
+    defaultIsoValue(fraction = 0.05) {
+        if (this.backend !== MarchingCubesBackend.WASM) return null;
+        const level = this.marchingCubes.defaultIsoValue(fraction);
+        return Number.isFinite(level) && level > 0 ? level : null;
     }
 
     updateMesh(isoValue) {

@@ -26,13 +26,23 @@ WAVE_EXPORTED_FUNCTIONS := \
 WAVE_EXPORTED_RUNTIME := \
 	["ccall","cwrap","HEAPF64","HEAPF32","HEAP32"]
 
-.PHONY: all wasm wasm-wave clean
+# Marching-cubes isosurface extraction (Paul Bourke's polygonisation) plus the
+# default-isovalue histogram the field panel starts from. Uses embind rather
+# than plain exported functions -- it hands JS a class, not a function table --
+# so its flags look different from the two C modules above.
+MC_SRC := marching_cubes.cpp
+MC_JS_OUT := MarchCubes.js
+MC_WASM_OUT := MarchCubes.wasm
 
-all: wasm wasm-wave
+.PHONY: all wasm wasm-wave wasm-marching-cubes clean
+
+all: wasm wasm-wave wasm-marching-cubes
 
 wasm: $(JS_OUT)
 
 wasm-wave: $(WAVE_JS_OUT)
+
+wasm-marching-cubes: $(MC_JS_OUT)
 
 $(JS_OUT): $(SRC)
 	$(EMCC) $(CFLAGS) $(SRC) \
@@ -45,7 +55,7 @@ $(JS_OUT): $(SRC)
 		-s EXPORTED_RUNTIME_METHODS='$(EXPORTED_RUNTIME)' \
 		-o $(JS_OUT)
 
-# MAXIMUM_MEMORY matches external/marching_cubes_wasm: a large FFT box plus its
+# MAXIMUM_MEMORY matches the marching-cubes build below: a large FFT box plus its
 # reduced field can run to a few hundred MB, and the default 2GB cap is the
 # first thing a big cell would hit.
 $(WAVE_JS_OUT): $(WAVE_SRC)
@@ -61,5 +71,21 @@ $(WAVE_JS_OUT): $(WAVE_SRC)
 		-s EXPORTED_RUNTIME_METHODS='$(WAVE_EXPORTED_RUNTIME)' \
 		-o $(WAVE_JS_OUT)
 
+# -Os and --closure 1, unlike the -O3 above: this module is loaded on every
+# page view (model/MarchingCubesWrapper.js imports it at module scope), so its
+# glue size is worth more than the last few percent of speed.
+$(MC_JS_OUT): $(MC_SRC)
+	$(EMCC) -Os $(MC_SRC) \
+		-lembind \
+		-s FILESYSTEM=0 \
+		--closure 1 \
+		-s ALLOW_MEMORY_GROWTH=1 \
+		-s MODULARIZE=1 \
+		-s EXPORT_ES6=1 \
+		-s EXPORT_NAME=MarchCubes \
+		-s EXPORTED_RUNTIME_METHODS=HEAPF32 \
+		-s MAXIMUM_MEMORY=4294967296 \
+		-o $(MC_JS_OUT)
+
 clean:
-	rm -f $(JS_OUT) $(WASM_OUT) $(WAVE_JS_OUT) $(WAVE_WASM_OUT)
+	rm -f $(JS_OUT) $(WASM_OUT) $(WAVE_JS_OUT) $(WAVE_WASM_OUT) $(MC_JS_OUT) $(MC_WASM_OUT)

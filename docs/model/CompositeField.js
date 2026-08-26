@@ -58,6 +58,91 @@ export function computeFieldStats(values) {
   return { minValue, maxValue, absMinValue, absMaxValue };
 }
 
+/**
+ * A stride for walking `count` points that visits every one of them before
+ * repeating — i.e. one coprime with `count`.
+ *
+ * Sampling every k-th point of a 3D grid laid out x-fastest means a stride
+ * sharing a factor with nx keeps landing on the same lattice planes, so the
+ * "sample" describes a slice rather than the cell. Any stride coprime with the
+ * total point count cycles through all of them instead, which also rules out
+ * the degenerate case (a stride that divides the count visits a handful of
+ * indices over and over).
+ *
+ * @param {number} count
+ * @returns {number}
+ */
+function coprimeStride(count) {
+  const gcd = (a, b) => (b === 0 ? a : gcd(b, a % b));
+  let stride = (1000003 % count) || 1;
+  // Coprimality is dense, so this walks at most a few steps.
+  while (stride < count && gcd(stride, count) !== 1) stride++;
+  return stride < count ? stride : 1;
+}
+
+/**
+ * A first isosurface level that actually shows something.
+ *
+ * The old rule — halfway between the field's minimum and maximum — assumes the
+ * values are spread evenly over their range. ELF is like that (bounded, broad),
+ * which is why the midpoint looked fine there: on a real ELFCAR it encloses
+ * about a quarter of the cell. Nothing else is. A charge density's maximum is a
+ * rare spike at a nucleus, so on a real CHGCAR the midpoint encloses 0.15% of
+ * the cell — a few specks — and a wavefunction is worse still, because |psi|^2
+ * concentrates in a handful of lobes with a long, near-empty tail.
+ *
+ * So pick the level by *how much of the cell it encloses* instead: the value
+ * exceeded by `volumeFraction` of the grid points. That is scale-free (it does
+ * not care whether the numbers are 1e-3 or 1e3), it can never produce an empty
+ * surface or one that swallows the box, and on the cases that already worked it
+ * lands where a user would have dragged the slider anyway — 0.71 for ELF, right
+ * in the 0.7-0.85 range that shows bonds and lone pairs.
+ *
+ * Magnitudes are used, so a signed field (Re psi, a difference of two
+ * densities) gets one level for the pair of +/- surfaces the renderer draws.
+ *
+ * @param {Field} field
+ * @param {{volumeFraction?: number, samples?: number}} [options]
+ *   volumeFraction - target fraction of the cell inside the surface (default 5%)
+ *   samples - how many grid points to look at (default 100k)
+ * @returns {number} an iso value > 0, or 0 for an empty/degenerate field
+ */
+export function defaultIsoValue(field, { volumeFraction = 0.05, samples = 100000 } = {}) {
+  const values = field?.values;
+  const count = values?.length ?? 0;
+  if (!count) return 0;
+
+  // Sampling, not a full sort: these arrays run to millions of entries and this
+  // is called on every field selection. The stride is a prime walk rather than
+  // `every k-th`, because a stride sharing a factor with nx would keep landing
+  // on the same lattice planes and describe a slice of the cell instead of the
+  // cell.
+  const wanted = Math.min(count, Math.max(1, Math.floor(samples)));
+  const sample = new Float64Array(wanted);
+  const step = count <= wanted ? 1 : coprimeStride(count);
+  let index = 0;
+  let written = 0;
+  for (let i = 0; i < wanted; i++) {
+    const v = values[index];
+    sample[written++] = Number.isFinite(v) ? Math.abs(v) : 0;
+    index += step;
+    if (index >= count) index -= count;
+  }
+
+  sample.sort();
+
+  // The level exceeded by `volumeFraction` of the points. Clamped so a request
+  // for 0% or 100% still returns a real sample rather than running off the end.
+  const fraction = Math.min(0.999, Math.max(0.001, volumeFraction));
+  const cut = Math.min(written - 1, Math.max(0, Math.floor((1 - fraction) * written)));
+  const level = sample[cut];
+
+  // A field that is flat, or whose top few percent are all zero, has no
+  // meaningful percentile; fall back to something that at least renders.
+  if (!(level > 0)) return Number.isFinite(field.absMaxValue) ? field.absMaxValue / 2 : 0;
+  return level;
+}
+
 /** Format one term for the auto-generated label: 1 -> "A", -1 -> "A", 0.5 -> "0.5×A". */
 function formatTerm(weight, label, isFirst) {
   const magnitude = Math.abs(weight);
