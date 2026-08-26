@@ -9,7 +9,8 @@ import {
 } from '../model/index.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import { createMaterialEditor, MATERIAL_TYPES } from './StructureInfoPanel/components/MaterialEditor.js';
-import { createFieldCatalogWidget } from './FieldCatalogWidget.js';
+import { createFieldCatalogWidget, fieldSelectionInfoDoc } from './FieldCatalogWidget.js';
+import { createInfoButton } from './InfoPanel.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 
@@ -277,7 +278,10 @@ export function addFieldPanel(target = "cvPanelBody-field") {
     </div>
 
     <div class="control-group">
-      <label>Field Selection:</label>
+      <div class="field-label-row">
+        <label>Field Selection:</label>
+        <span id="fieldSelectionInfoMount"></span>
+      </div>
       <div id="fieldCatalogMount"></div>
       <p id="fieldCatalogError" class="field-catalog-error" role="alert"></p>
     </div>
@@ -318,6 +322,16 @@ export function addFieldPanel(target = "cvPanelBody-field") {
   // Wire up the isovalue slider, colour pickers and material editor first, so
   // the widget's onSelect callback can drive them.
   const controls = setupFieldControlEvents(container);
+
+  // What the entries in the list mean depends entirely on the file behind them,
+  // so the button resolves its document from the live catalog rather than being
+  // baked to one text — see fieldSelectionInfoDoc().
+  const infoMount = document.getElementById('fieldSelectionInfoMount');
+  if (infoMount) {
+    infoMount.appendChild(createInfoButton(
+      () => fieldSelectionInfoDoc(fieldBrowser.catalog),
+      'About the field list'));
+  }
 
   // The field selector. One widget covers a flat list of already-loaded fields
   // and a lazily-loaded spin/k-point/band tree — see ui/FieldCatalogWidget.js.

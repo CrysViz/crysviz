@@ -23,7 +23,7 @@ You should have received a copy of the GNU Affero General Public License along w
 
 ## Contributors
 - **[Rickard Armiento](https://github.com/rartino)** - I/O (CIF), rendering (depth peeling, WBOIT, ray/path tracing), dockable window GUI, polyhedra, camera controls, bond styling, standalone app with Python API, PNG export, dev tooling/CI/browser tests.
-- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)** - Vector Field Visualisation (ELF, Charge)
+- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)** - Vector Field Visualisation (ELF, Charge densities, Wavefunctions)
 
 ## Key Features
 - No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser. 
@@ -41,7 +41,7 @@ You should have received a copy of the GNU Affero General Public License along w
 ## Work in progress... (already partially available)
 - Crystal structure comparison via structure overlay; Lattice difference analysis in radar plot.
 - Wyckoff Mode: all structure manipulation, relaxation and even molecular dynamics are in symmetry.
-- Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved). High memory requirements for large files.
+- Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved). Also (collinear) WAVECAR loading and wavefunction/partial density visualization. Possible high memory requirements for large files.
 - Share links that contain the structure, view angle, colors and measurements (currently selected structure in trajectory only).
 - Bond color maps.
 - Use (i) buttons to get more information about features; A detailed documentation of all features is comming soon!

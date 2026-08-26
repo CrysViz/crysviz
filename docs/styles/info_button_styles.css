@@ -21,6 +21,16 @@
   box-shadow: 0 0 4px var(--danger); /* Light white shadow on hover */
 }
 
+/* The 18px base is sized for a standalone corner badge; sitting beside a
+   control's label it has to match the label's line, not tower over it. */
+.info-button-inline {
+  width: calc(14px * var(--cv-font-scale, 1));
+  height: calc(14px * var(--cv-font-scale, 1));
+  font-size: calc(9px * var(--cv-font-scale, 1));
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 
 
 .info-panel-overlay {
@@ -84,4 +94,34 @@
 
 .info-panel-content {
   margin-bottom: 30px;
+}
+
+/* Blocks emitted by the markdown renderer in ui/InfoPanel.js. */
+.info-panel-content p,
+.info-panel-content ul,
+.info-panel-content ol {
+  margin: 0 0 var(--sp-3);
+  line-height: 1.5;
+}
+
+.info-panel-content ul,
+.info-panel-content ol {
+  padding-left: var(--sp-5);
+}
+
+/* A nested list belongs to the item above it — no extra gap between them. */
+.info-panel-content li > ul,
+.info-panel-content li > ol {
+  margin-bottom: 0;
+}
+
+.info-panel-content li {
+  margin-bottom: var(--sp-1);
+}
+
+.info-panel-content blockquote {
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--panel-border, var(--wash-4));
+  opacity: 0.85;
 }

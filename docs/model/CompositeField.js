@@ -70,7 +70,7 @@ function formatTerm(weight, label, isFirst) {
 }
 
 /**
- * Build a label like "0.5×Charge Density − 0.5×Spin Density".
+ * Build a label like "0.5×Charge Density − 0.5×Magnetization Density".
  * @param {Array<{field: Field, weight: number}>} terms
  */
 export function describeCombination(terms) {

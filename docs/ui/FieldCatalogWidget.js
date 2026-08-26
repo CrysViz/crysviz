@@ -1,6 +1,7 @@
 import { NodeKind } from '../model/FieldCatalog.js';
 import { combineFields } from '../model/CompositeField.js';
 import { WAVE_QUANTITY_LABELS } from '../math/wave-backend-wasm.js';
+import { createInfoButton } from './InfoPanel.js';
 
 /**
  * The field selector.
@@ -22,6 +23,34 @@ import { WAVE_QUANTITY_LABELS } from '../math/wave-backend-wasm.js';
  * k-points × 200 bands would otherwise put 20 000 rows in the DOM before the
  * user has clicked anything.
  */
+
+/**
+ * What the list's "i" button explains depends on the file behind it: a WAVECAR's
+ * entries are unloaded bands under spin/k-point groups, a CHGCAR's are charge and
+ * spin blocks that are all in memory already, and an ELF grid is neither. One
+ * generic document would have to hedge on all three, so each format gets its own
+ * and unknown sources fall back to the generic one.
+ */
+const FIELD_SELECTION_DOCS = {
+  CHGCAR: './data/fieldSelectionChgcarInfo.md',
+  ELFCAR: './data/fieldSelectionElfcarInfo.md',
+  WAVECAR: './data/fieldSelectionWavecarInfo.md',
+};
+
+/**
+ * Pick the field-list document for a catalog.
+ *
+ * Keyed off `wavefunction` first rather than `source` alone: a WAVECAR-backed
+ * catalog is the one shape whose UI (groups, Load buttons, the quantity
+ * dropdown) is genuinely different, whatever the file was called.
+ *
+ * @param {import('../model/FieldCatalog.js').FieldCatalog | null} catalog
+ * @returns {string}
+ */
+export function fieldSelectionInfoDoc(catalog) {
+  if (catalog?.wavefunction) return FIELD_SELECTION_DOCS.WAVECAR;
+  return FIELD_SELECTION_DOCS[catalog?.source] || './data/fieldSelectionInfo.md';
+}
 
 /** The "−4.82 eV · occ 1.00" suffix on a band row. */
 function formatLeafMeta(meta) {
@@ -333,6 +362,7 @@ export function createFieldCatalogWidget({ container, catalog, selectedField, on
     const heading = document.createElement('h4');
     heading.className = 'field-catalog-derived-title';
     heading.textContent = 'Combine fields';
+    heading.appendChild(createInfoButton('./data/fieldCombineInfo.md', 'About combining fields'));
     derivedEl.appendChild(heading);
 
     const hint = document.createElement('p');
