@@ -627,6 +627,7 @@ justify it and adopted them; the rest stayed literal. 21 sites moved.
 | `--shortcuts-danger-rgb` | `220 53 53` | 10 | shortcuts-help destructive actions (clear/reset/conflict) — all in `styles.css`, a different hue from the orange `--danger` |
 | `--vacancy-amber-rgb` | `255 210 120` | 2 | disordered-site species/vacancy text tint — thin but real, same call as `--ok-tint`'s 2-site precedent |
 | `--active-green-rgb` | `125 206 160` | 5 | "active/applied" state accent (atom-editor button, coord-axis slider, new-row separator) — checked against `--ok-bright-rgb` (`126 226 168`) and kept separate: the call sites had already flagged it "not an exact match," and the roles here (border/ring/accent-color) don't match the anneal badge's fill+text pairing |
+| `--hydrogen-bond-rgb` | `51 214 214` | 1 | fixed chemistry-data colour shared conceptually with the hydrogen-bond geometry; the range indicator composes its own alpha |
 | `--chrome-1-9` | `rgba(25, 25, 25, 0.9)` | 4 (3 near-dupes: `17/17/17`@.9, `22/22/22`@.88, `26/26/26`@.95) | near-opaque near-black fills above `--chrome-1`'s 0.8 alpha — `.backend-error-panel`, `.backend-potential-toggle`, `.atomistic-grid input`, and a dead `.control-panel` rule (tokenised anyway for consistency) |
 
 **Left literal — below the ~3-site bar, or ruled out by the foreground/fill

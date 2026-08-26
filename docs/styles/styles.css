@@ -718,7 +718,7 @@ body.panel-hidden #axesLegend {
 }
 
 .share-pw-error {
-  color: var(--danger, #d9534f);
+  color: var(--danger-bright);
 }
 
 .share-pw-error[hidden] {

@@ -381,7 +381,7 @@
    control and what it draws read as one thing (distinct from the covalent
    slider's green). */
 .hbond-range-slider .range-track {
-  background: rgba(51, 214, 214, 0.85);
+  background: rgb(var(--hydrogen-bond-rgb) / 0.85);
 }
 
 /* ---- reset row (Add Custom Bond) ---- */

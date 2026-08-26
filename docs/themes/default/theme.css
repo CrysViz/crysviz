@@ -97,6 +97,7 @@
   --shortcuts-danger-rgb: 220 53 53;  /* shortcuts-help destructive-action red (clear/reset buttons, key-conflict flag) — 10 sites in styles.css, a different hue from the orange --danger */
   --vacancy-amber-rgb: 255 210 120;   /* disordered-site species/vacancy text tint, 2 sites (structureInfoPanel.css) — thin but real, same call as --ok-tint's 2-site precedent above */
   --active-green-rgb: 125 206 160;    /* "active/applied" state accent (atom-editor button, coord-axis slider, new-row separator), 5 sites — checked against --ok-bright-rgb (126 226 168) and kept separate: the existing call sites already flagged it as "not an exact match", and the roles here are border/ring/accent-color, not the anneal badge's fill+text pairing */
+  --hydrogen-bond-rgb: 51 214 214;    /* hydrogen-bond geometry and range indicator */
 
   --radius: 8px;
   --radius-sm: 6px;
