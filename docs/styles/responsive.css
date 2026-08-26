@@ -576,6 +576,23 @@
     inset: -10px;
   }
 
+  /* ---- panelWindow.css: the hidden title bar's handle ----
+     The strip is 8px tall (2px with "Always show small drag handles") — far
+     under a fingertip, and it is the only way back to a hidden title bar
+     (long press or tap, see PanelWindow.js). Same invisible ::after overlay
+     as the buttons above; the strip must keep its exact drawn size. Not
+     while compact: there the titlebar is the round launcher icon, whose
+     overflow: hidden is a deliberate circular clip. */
+  .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-panel-titlebar {
+    position: relative;
+    overflow: visible; /* the strip's own clip would cut the overlay off */
+  }
+  .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-panel-titlebar::after {
+    content: "";
+    position: absolute;
+    inset: -14px -12px;
+  }
+
   /* ---- sideDock.css: per-tab window-menu dot + the fullscreen close btn ---- */
   .split-pane-tab-menu {
     position: relative;

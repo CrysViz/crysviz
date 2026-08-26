@@ -9,7 +9,7 @@ import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
 import { applySceneFromCSS } from './ThemeManager.js';
 import { createColorPicker } from './ColorPickerModule.js';
-import { updateLattice } from '../render/index.js';
+import { updateLattice, setCelOutlineColor } from '../render/index.js';
 import { captureAnchor, clampToScene, getViewRect, positionFromAnchor } from './GizmoLayout.js';
 import { wireLockedWidgetForwarding } from './GizmoPointerForward.js';
 import { wireLongPress } from '../utils/index.js';
@@ -79,6 +79,9 @@ function openBackgroundColorPicker(dot) {
     general.currentLatticeColor = contrastColor;
     updateLattice(contrastColor);
     if (app?.scene) app.scene.background = new THREE.Color(hex);
+    // Keep an 'auto' cel outline (hull mode) contrasting against the new
+    // background; the screen-space pass re-resolves it live each frame.
+    setCelOutlineColor();
     // Mirror the change onto the Visual swatch regardless of which dot opened
     // the picker (canvas dot or the swatch itself).
     syncBackgroundSwatch();
@@ -125,6 +128,7 @@ function openBackgroundColorPicker(dot) {
     e.stopPropagation();
     dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
     if (app?.scene) app.scene.background = new THREE.Color(selectedHex);
+    setCelOutlineColor();
     syncBackgroundSwatch();
     closePicker();
   });

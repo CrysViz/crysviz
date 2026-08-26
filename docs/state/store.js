@@ -114,6 +114,10 @@ export const groups = {
   activeField: null,
   isosurfaceGroup: null,
   groundMesh: null, // persistent raster ground-plane disc (render/GroundPlaneModule.js); a scene fixture drawn by every raster/preview frame, visually matched to the tracers' analytic disc
+  // Dashed D-H...A hydrogen-bond lines (render/HydrogenBondModule.js). A single
+  // THREE.Group of short cylinder dashes, rebuilt from the current structure on
+  // every updateVisualization when any eligible pair is enabled.
+  hydrogenBondsGroup: null,
 };
 
 
@@ -155,6 +159,11 @@ export const RENDERING_DEFAULTS = {
   celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)
   celHullPolyWidth: 0.025, // hull outline width in world units, polyhedra
+  // Cel outline color, shared by both outline modes. 'auto' picks black or
+  // white for maximum contrast against the scene background; 'black'/'white'
+  // are fixed; 'custom' uses celOutlineColor.
+  celOutlineColorMode: 'auto', // 'auto' | 'black' | 'white' | 'custom'
+  celOutlineColor: '#000000', // custom outline color (used when mode === 'custom')
 };
 
 export const general = {
@@ -195,6 +204,18 @@ export const general = {
   bondLengths:{},
   defaultBondLengths:{},
   bondVisibility:{},
+  // Hydrogen bonds (render/HydrogenBondModule.js). Per eligible "H-X" pair
+  // (X electronegative: N/O/F/Cl/S/Br/I) an H...A distance range and an on/off
+  // flag, surfaced as a second slider in the Bonds tab next to the covalent
+  // one. hydrogenBondMinAngle is a shared D-H...A angle floor (degrees).
+  hydrogenBondLengths:{},
+  defaultHydrogenBondLengths:{},
+  hydrogenBondVisibility:{},
+  hydrogenBondMinAngle:120,
+  // Global default dashed-line colour; per-pair overrides live in
+  // hydrogenBondColors (pair -> hex), picked via the small dot in the Bonds tab.
+  hydrogenBondColor:'#33d6d6',
+  hydrogenBondColors:{},
   // Per-element atom visibility (Atoms tab header checkbox): element -> bool;
   // undefined/true = shown. Hidden elements are zero-scaled (also unpickable).
   atomVisibility:{},

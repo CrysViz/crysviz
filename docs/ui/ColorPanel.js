@@ -6,7 +6,7 @@ import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getVi
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
-import { updatePolyhedra, updatePolyhedraColors, setCelHullWidth, setCelHullPolyWidth } from '../render/index.js'
+import { updatePolyhedra, updatePolyhedraColors, setCelHullWidth, setCelHullPolyWidth, setCelOutlineColor } from '../render/index.js'
 import { listPipelines, setActivePipeline, isPngCaptureInProgress, requestRender } from '../render/index.js'
 import { updateGroundPlane } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
@@ -807,6 +807,60 @@ export function addColorPanel(target = "colorContainer") {
 
   outlineBlock.appendChild(hullControls);
 
+  // Outline color: applies to BOTH modes. 'Auto' picks black or white for
+  // maximum contrast against the scene background (screen space re-resolves it
+  // live each frame; hull mode is refreshed via setCelOutlineColor). Black and
+  // White are fixed; Custom reveals a color picker.
+  const outlineColorMenu = createDropdown("celOutlineColorMenu", "Outline Color", [
+    { value: "auto", text: "Auto (contrast)", selected: general.celOutlineColorMode === "auto" },
+    { value: "black", text: "Black", selected: general.celOutlineColorMode === "black" },
+    { value: "white", text: "White", selected: general.celOutlineColorMode === "white" },
+    { value: "custom", text: "Custom", selected: general.celOutlineColorMode === "custom" },
+  ], () => {
+    general.celOutlineColorMode = outlineColorMenu.querySelector("select").value;
+    customColorBlock.style.display = general.celOutlineColorMode === "custom" ? "block" : "none";
+    setCelOutlineColor();
+    requestRender();
+  });
+  outlineBlock.appendChild(outlineColorMenu);
+
+  // Custom color: a small swatch box that toggles the app's inline HSV picker
+  // (not the OS color input) — shown only in 'custom' mode. The box has a thin
+  // border, unlike the chunky OS color input it replaces.
+  const customColorBlock = createElement("div", { id: "celOutlineCustomColorBlock" },
+    { display: general.celOutlineColorMode === "custom" ? "block" : "none", marginTop: "6px" });
+
+  const swatchRow = createElement("div", { class: "control-row" });
+  swatchRow.appendChild(createElement("label", { for: "celOutlineColorSwatch" }, {}, "Custom Color"));
+  const swatchBox = createElement("button",
+    { type: "button", id: "celOutlineColorSwatch", title: "Pick outline color" },
+    {
+      width: "28px", height: "20px", borderRadius: "4px", padding: "0",
+      border: "1px solid var(--line-3)", cursor: "pointer", flex: "none",
+      background: general.celOutlineColor || "#000000",
+    });
+  swatchRow.appendChild(swatchBox);
+  customColorBlock.appendChild(swatchRow);
+
+  // The picker is revealed below the swatch on click (starts closed).
+  const pickerContainer = createElement("div", {}, { display: "none", marginTop: "6px" });
+  const outlineCustomPicker = createColorPicker(general.celOutlineColor || "#000000", (hex) => {
+    general.celOutlineColor = hex;
+    swatchBox.style.background = hex;
+    setCelOutlineColor();
+    requestRender();
+  });
+  pickerContainer.appendChild(outlineCustomPicker.element);
+  customColorBlock.appendChild(pickerContainer);
+
+  swatchBox.addEventListener("click", () => {
+    pickerContainer.style.display = pickerContainer.style.display === "none" ? "block" : "none";
+  });
+
+  // Expose a setter so a restored shared view can sync picker + swatch.
+  customColorBlock.setHex = (hex) => { outlineCustomPicker.setHex(hex); swatchBox.style.background = hex; };
+  outlineBlock.appendChild(customColorBlock);
+
   content.appendChild(outlineBlock);
 
   // Ground plane block: always visible (all pipelines), after the cel-outline
@@ -838,10 +892,12 @@ export function addColorPanel(target = "colorContainer") {
     if (general.renderPipeline !== D.renderPipeline) fire('renderPipelineMenu', D.renderPipeline, 'change');
     if (general.renderStyle !== D.renderStyle) fire('renderStyleMenu', D.renderStyle, 'change');
     if (general.celOutlineMode !== D.celOutlineMode) fire('celOutlineModeMenu', D.celOutlineMode, 'change');
+    if (general.celOutlineColorMode !== D.celOutlineColorMode) fire('celOutlineColorMenu', D.celOutlineColorMode, 'change');
     fire('depthPeelLayersSlider', D.depthPeelLayers, 'input');
     fire('celOutlineWidth', Math.sqrt(D.celOutlineWidth / CEL_OUTLINE_MAX), 'input'); // quadratic slider
     fire('celHullWidth', D.celHullWidth, 'input');
     fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
+    outlineCustomPicker.setHex(D.celOutlineColor); // fires onChange → state + render
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
     fireCheck('rtTiledToggle', D.rtTiledRender);
     fireCheck('rtPreviewToggle', D.rtRasterPreview);

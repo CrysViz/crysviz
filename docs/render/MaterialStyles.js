@@ -15,11 +15,35 @@
 // pixel-width lines and clean shared contours.
 
 import * as THREE from '../external/three/three.module.js';
-import { general, groups } from '../state/store.js';
+import { app, general, groups } from '../state/store.js';
 
 // Cut-plane uniform array size, shared with the mesh shaders that declare the
 // same uniforms (see AtomsFracUpdateModule.js, which imports it from here).
 export const MAX_CUT_PLANES = 8;
+
+/**
+ * Resolve the configured cel-outline color to a '#rrggbb' string. 'auto' picks
+ * black or white for maximum contrast against the current scene background
+ * (same luminance test the lattice/border uses); the fixed modes return their
+ * color and 'custom' the user-picked hex. Shared by the hull materials here and
+ * the screen-space pass (CelOutlinePass.js), so both modes stay in sync.
+ */
+export function resolveCelOutlineColor() {
+  switch (general.celOutlineColorMode) {
+    case 'black': return '#000000';
+    case 'white': return '#ffffff';
+    case 'custom': return general.celOutlineColor || '#000000';
+    default: { // 'auto' — highest contrast against the scene background
+      const bg = app?.scene?.background;
+      const hex = bg ? '#' + bg.getHexString() : '#000000';
+      const r = parseInt(hex.slice(1, 3), 16) / 255;
+      const g = parseInt(hex.slice(3, 5), 16) / 255;
+      const b = parseInt(hex.slice(5, 7), 16) / 255;
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      return lum > 0.5 ? '#000000' : '#ffffff';
+    }
+  }
+}
 
 let toonGradientMap = null;
 
@@ -89,7 +113,7 @@ let plainOutlineMaterial = null; // comparison atoms (no instanceOpacity attribu
 
 /** @param {{opacityDiscard?: boolean, cutPlanes?: boolean, onCompiled?: (material: any) => void}} [opts] */
 function makeOutlineMaterial({ opacityDiscard = false, cutPlanes = false, onCompiled } = {}) {
-  const material = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
+  const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(resolveCelOutlineColor()), side: THREE.BackSide });
   // Three keys custom shader programs by onBeforeCompile.toString(); the
   // variants share that source text (the flags are closed-over, invisible to
   // toString), so without a distinct key a variant silently reuses another's
@@ -229,7 +253,7 @@ export function addCelOutline(mesh, { cutPlanes = false, opacityDiscard = false,
 let polyOutlineMaterial = null;
 
 function makePolyOutlineMaterial() {
-  const material = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.BackSide });
+  const material = new THREE.MeshBasicMaterial({ color: new THREE.Color(resolveCelOutlineColor()), side: THREE.BackSide });
   material.customProgramCacheKey = () => 'cv-cel-outline-poly';
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uOutlineWidth = { value: general.celHullPolyWidth };
@@ -325,5 +349,17 @@ export function setCelHullPolyWidth(width) {
         obj.visible = width > 0 && (obj.parent?.material?.opacity ?? 1) >= 0.999;
       }
     });
+  }
+}
+
+/** Live-update the cel hull outline color for all hull materials (atoms,
+ *  bonds, comparison atoms, polyhedra) from the current color mode. The
+ *  screen-space pass reads the color live each frame, so it needs no
+ *  equivalent. Call after changing celOutlineColorMode/celOutlineColor, and
+ *  (for 'auto') whenever the scene background changes. */
+export function setCelOutlineColor() {
+  const hex = resolveCelOutlineColor();
+  for (const material of [atomsOutlineMaterial, bondsOutlineMaterial, plainOutlineMaterial, polyOutlineMaterial]) {
+    if (material) material.color.set(hex);
   }
 }

@@ -159,8 +159,9 @@
 }
 
 /* ---- hidden title bar: the ― button shrinks the bar to a short, centered
-   accent strip (a "handle"); double-clicking (or, on touch, a single tap -
-   see PanelWindow.js's _onTitlebarPointerDown) restores the bar. ---- */
+   accent strip (a "handle"); double-clicking, a long press, or (on touch) a
+   single tap - see PanelWindow.js's _onTitlebarPointerDown - restores the
+   bar. ---- */
 .cv-panel.cv-bar-collapsed > .cv-panel-titlebar {
   height: 8px;
   min-height: 8px;
@@ -186,6 +187,15 @@
 
 .cv-panel.cv-bar-collapsed > .cv-panel-titlebar > * {
   display: none;
+}
+
+/* A press being held on the handle (PanelWindow.js's long-press-to-restore):
+   light the strip up so the gesture is visibly registered before it fires.
+   Carries .cv-bar-collapsed too, purely to outspecify the desktop hover rule
+   in responsive.css (opacity: 0), which loads after this sheet. */
+.cv-panel.cv-bar-collapsed.cv-bar-longpress > .cv-panel-titlebar {
+  opacity: 1;
+  filter: brightness(1.25);
 }
 
 /* With only the handle above it, the body is a free-standing box again:
