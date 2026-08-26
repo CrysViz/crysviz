@@ -86,6 +86,7 @@ const SVG_OUT = path.join(__dirname, 'artifacts', 'svgvector.svg');
       parseError: celDoc.querySelector('parsererror') ? 'parsererror' : '',
       gradients: celDoc.querySelectorAll('radialGradient').length,
       outlined: celCircles.filter((c) => c.getAttribute('stroke')).length,
+      bondOutlines: celDoc.querySelectorAll('line.bond-outline').length,
       circles: celCircles.length,
     };
 
@@ -108,8 +109,16 @@ const SVG_OUT = path.join(__dirname, 'artifacts', 'svgvector.svg');
     }
 
     const circles = [...doc.querySelectorAll('circle')];
+    const bondOwnerPairs = [];
+    for (const line of doc.querySelectorAll('line.bond')) {
+      const owner = line.getAttribute('data-owner-atom');
+      if (owner) bondOwnerPairs.push([line.id, owner]);
+    }
     const ids = [...doc.querySelectorAll('[id]')].map((el) => el.getAttribute('id'));
     const uniqueIds = new Set(ids).size;
+    const documentOrder = new Map(ids.map((id, index) => [id, index]));
+    const bondOwnerOrderBreaks = bondOwnerPairs.filter(([bond, atom]) =>
+      documentOrder.get(bond) >= documentOrder.get(atom)).length;
 
     // Painter's order: walk the atom circles in document order and re-project
     // each one. Depth must never increase (farther first, nearer last).
@@ -292,6 +301,8 @@ const SVG_OUT = path.join(__dirname, 'artifacts', 'svgvector.svg');
       circles: circles.length,
       cellLines: doc.querySelectorAll('line.cell-edge').length,
       bondLines: doc.querySelectorAll('line.bond').length,
+      bondOwnerOrderBreaks,
+      bondOwnerOrderChecked: bondOwnerPairs.length,
       polygons: doc.querySelectorAll('polygon').length,
       gradients: doc.querySelectorAll('defs radialGradient').length,
       idCount: ids.length,
@@ -310,6 +321,9 @@ const SVG_OUT = path.join(__dirname, 'artifacts', 'svgvector.svg');
     `circles=${res.circles} visibleAtoms=${res.visibleAtoms}`);
   H.check('unit cell drawn as >= 12 edge lines', res.cellLines >= 12, `cellLines=${res.cellLines}`);
   H.check('bonds drawn as lines', res.bondLines > 0, `bondLines=${res.bondLines}`);
+  H.check('owning atoms paint over their buried bond caps',
+    res.bondOwnerOrderChecked > 0 && res.bondOwnerOrderBreaks === 0,
+    `breaks=${res.bondOwnerOrderBreaks} of ${res.bondOwnerOrderChecked}`);
   H.check('polyhedra faces drawn as polygons', res.polygons > 0, `polygons=${res.polygons}`);
   H.check('one sphere gradient per distinct atom colour',
     res.gradients > 0 && res.gradients < res.circles,
@@ -332,7 +346,8 @@ const SVG_OUT = path.join(__dirname, 'artifacts', 'svgvector.svg');
 
   H.check('cel style: flat fills with dark outlines, no gradients',
     res.cel.parseError === '' && res.cel.gradients === 0
-      && res.cel.circles > 0 && res.cel.outlined === res.cel.circles,
+      && res.cel.circles > 0 && res.cel.outlined === res.cel.circles
+      && res.cel.bondOutlines > 0,
     JSON.stringify(res.cel));
 
   const sum = Object.values(res.counts).reduce((a, b) => a + b, 0);

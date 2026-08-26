@@ -51,7 +51,6 @@ const MAX_SEGMENT_PIECES = 64;
 // with the structure, and a bond half is at most an atom or two long, so a few
 // pieces already put the residual sort error well under an atom radius.
 const MAX_BOND_PIECES = 4;
-
 /** @typedef {{x:number, y:number, depth:number}} ProjectedPoint */
 /**
  * @typedef {{
@@ -546,13 +545,21 @@ export function buildVectorStructure(ctx) {
     if (!onPage(Math.min(p1.x, p2.x) - w, Math.min(p1.y, p2.y) - w,
       Math.max(p1.x, p2.x) + w, Math.max(p1.y, p2.y) + w)) return false;
     const translucent = seg.alpha < 0.999;
-    const alpha = translucent ? ` stroke-opacity="${fmt(seg.alpha)}"` : '';
+    const owner = seg.ownerAtomId
+      ? ` data-owner-atom="${esc(seg.ownerAtomId)}"` : '';
+    const alpha = (translucent ? ` stroke-opacity="${fmt(seg.alpha)}"` : '') + owner;
     const line = (a, b, wa, wb, pieceId, cap2) => {
+      const x1 = fmt(a.x), y1 = fmt(a.y), x2 = fmt(b.x), y2 = fmt(b.y);
+      const widthPx = wa + wb;
+      const outline = cel && cls === 'bond'
+        ? `<line class="bond-outline" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"`
+          + ` stroke="${mixHex(seg.hex, -0.72)}" stroke-width="${fmt(widthPx * 1.18)}"`
+          + ` stroke-linecap="${cap2}"${alpha}/>` : '';
       prims.push({
-        depth: (a.depth + b.depth) / 2,
-        svg: `<line id="${pieceId}" class="${cls}" inkscape:label="${esc(label)}"`
-          + ` x1="${fmt(a.x)}" y1="${fmt(a.y)}" x2="${fmt(b.x)}" y2="${fmt(b.y)}"`
-          + ` stroke="${seg.hex}" stroke-width="${fmt(wa + wb)}"`
+        depth: Math.max((a.depth + b.depth) / 2, seg.depthFloor ?? -Infinity),
+        svg: outline + `<line id="${pieceId}" class="${cls}" inkscape:label="${esc(label)}"`
+          + ` x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"`
+          + ` stroke="${seg.hex}" stroke-width="${fmt(widthPx)}"`
           + ` stroke-linecap="${cap2}"${alpha}/>`,
       });
     };
@@ -563,8 +570,9 @@ export function buildVectorStructure(ctx) {
     }
     const pieceCap = translucent ? 'butt' : linecap;
     const lenPx = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const overlapPx = cls === 'bond' ? 2 : 0.75;
     const pad = (!translucent && lenPx > 1)
-      ? Math.min(0.75 / lenPx, 0.25 / pieces) : 0;
+      ? Math.min(overlapPx / lenPx, 0.25 / pieces) : 0;
     const at = (t) => {
       const x = seg.x1 + (seg.x2 - seg.x1) * t;
       const y = seg.y1 + (seg.y2 - seg.y1) * t;
@@ -620,6 +628,8 @@ export function buildVectorStructure(ctx) {
       let dx = h.mx - atom.x, dy = h.my - atom.y, dz = h.mz - atom.z;
       const d = Math.hypot(dx, dy, dz);
       if (!(d > atom.r)) continue; // the sphere swallows the whole half
+      const centre = project(atom.x, atom.y, atom.z);
+      if (!centre) continue;
       dx /= d; dy /= d; dz /= d;
       const sx = atom.x + dx * atom.r, sy = atom.y + dy * atom.r, sz = atom.z + dz * atom.r;
       const bond = bondModel?.[Math.floor(h.i / 2)];
@@ -630,6 +640,10 @@ export function buildVectorStructure(ctx) {
       const seg = {
         x1: sx, y1: sy, z1: sz, x2: h.mx, y2: h.my, z2: h.mz,
         radius: h.radius, hex: h.hex, alpha: h.alpha,
+        ownerAtomId: `${prefix}${idKind.replace(/bond$/, 'atom')}-${atom.i}`,
+        // SVG circles have no depth buffer. Keep the connected atom above its
+        // whole half-bond so the deliberately buried butt cap stays hidden.
+        depthFloor: centre.depth + 1e-6,
       };
       if (pushSegment(seg, id, 'bond', label, 'butt', MAX_BOND_PIECES)) counts.bondHalves++;
     }
