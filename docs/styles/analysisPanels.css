@@ -1106,6 +1106,14 @@
   opacity: 0.7;
 }
 
+/* Eigenvalue and occupation on a group header. Only a band that holds several
+   entries (a non-collinear spinor) is a group and carries these; a k-point or
+   spin header has no such numbers and renders no span at all. */
+.fc-group-meta {
+  font-size: var(--fs-xs);
+  opacity: 0.7;
+}
+
 .fc-leaf {
   display: flex;
   align-items: center;

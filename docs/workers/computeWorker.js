@@ -73,6 +73,17 @@ const handlers = {
     const result = transformToRealSpace(module, payload);
     return { result, transfer: [result.values.buffer] };
   },
+
+  // The same for one component of a non-collinear band. Kept as its own task
+  // rather than a flag on the one above because it runs two FFTs and holds two
+  // complex boxes at once, which is the sizing the pool has to reason about.
+  wavefunctionSpinorRealSpace: async (payload) => {
+    const { getWaveBackend, transformSpinorToRealSpace } =
+      await import('../math/wave-backend-wasm.js');
+    const module = await getWaveBackend();
+    const result = transformSpinorToRealSpace(module, payload);
+    return { result, transfer: [result.values.buffer] };
+  },
 };
 
 self.onmessage = async (e) => {

@@ -1,4 +1,8 @@
-import { WaveQuantity } from '../math/wave-backend-wasm.js';
+import {
+  SPINOR_COMPONENT_LABELS,
+  SpinorComponent,
+  WaveQuantity,
+} from '../math/wave-backend-wasm.js';
 
 /**
  * The tree of fields a file offers, and which of them are actually loaded.
@@ -12,7 +16,9 @@ import { WaveQuantity } from '../math/wave-backend-wasm.js';
  * `FieldCatalog` covers both. A flat catalog has one level of leaves that are
  * already loaded, so it renders as exactly the table it always was. A
  * wavefunction catalog nests spin → k-point → band, and its leaves carry a
- * `load()` that expands the band on demand.
+ * `load()` that expands the band on demand. A non-collinear WAVECAR goes one
+ * level further — band → spinor component — because there a band is a spinor
+ * and offers several fields rather than one.
  *
  * The distinction the rest of the app cares about is `loadedFields()`: only
  * fields that have actually been realised. `ui/FieldPanel.js` exposes that as
@@ -38,6 +44,8 @@ export class FieldCatalogNode {
    * @param {(() => Promise<import('./Field.js').Field>)} [init.load] for a lazy leaf
    * @param {(() => import('./Field.js').Field | null)} [init.peek] cheap "is it loaded?"
    * @param {boolean} [init.collapsed]
+   * @param {(() => boolean)} [init.available] whether the entry is offered at all
+   *   right now — see the `available` accessor
    */
   constructor(init) {
     this.id = init.id;
@@ -50,12 +58,24 @@ export class FieldCatalogNode {
     this._field = init.field || null;
     this._load = init.load || null;
     this._peek = init.peek || null;
+    this._available = init.available || null;
     /** @type {Promise<import('./Field.js').Field> | null} in-flight load, so a
      * double click does not start the transform twice */
     this._pending = null;
   }
 
   get isGroup() { return this.kind === NodeKind.GROUP; }
+
+  /**
+   * Whether this entry is worth offering under the catalog's current settings.
+   *
+   * Almost every node is unconditionally available. The exception is a leaf
+   * that would duplicate another one in some modes and not others: the down ×
+   * up element of a non-collinear band's density matrix is the conjugate of up
+   * × down, so it reduces to the very same grid unless the quantity is Im.
+   * Listing it anyway would put an identical field in the list twice.
+   */
+  get available() { return this._available ? this._available() : true; }
 
   /**
    * The realised field, or null. Cheap — never triggers a load.
@@ -255,6 +275,11 @@ export class FieldCatalog {
    * the WASM transform. Single-spin files skip the spin level rather than
    * showing a group of one.
    *
+   * A non-collinear file gets one level more. Its band is not a single
+   * wavefunction but a two-component spinor, so the band becomes a group and
+   * its entries are the two components the file stores plus the elements of the
+   * band's density matrix built from them — see `spinorLeaves` below.
+   *
    * @param {import('./WavefunctionSource.js').WavefunctionSource} wf
    * @param {{quantity?: number, source?: string}} [options]
    * @returns {FieldCatalog}
@@ -266,22 +291,60 @@ export class FieldCatalog {
     /** @type {{value: number}} */
     const quantityRef = { value: options.quantity ?? WaveQuantity.DENSITY };
 
-    const bandNode = (spin, kpt, band) => new FieldCatalogNode({
-      id: `wf:${spin}:${kpt}:${band}`,
-      label: `Band ${band}`,
-      meta: {
-        eigenvalue: wf.eigenvalues?.[spin - 1]?.[kpt - 1]?.[band - 1],
-        occupation: wf.occupations?.[spin - 1]?.[kpt - 1]?.[band - 1],
-        spin,
-        kpt,
-        band,
-      },
-      // `quantityRef` is read at call time so switching the quantity dropdown
-      // re-points every leaf at the right cache entry without rebuilding the
-      // tree (and without losing which groups the user had expanded).
-      load: () => wf.getField(spin, kpt, band, quantityRef.value),
-      peek: () => wf.peekField(spin, kpt, band, quantityRef.value),
+    const bandMeta = (spin, kpt, band) => ({
+      eigenvalue: wf.eigenvalues?.[spin - 1]?.[kpt - 1]?.[band - 1],
+      occupation: wf.occupations?.[spin - 1]?.[kpt - 1]?.[band - 1],
+      spin,
+      kpt,
+      band,
     });
+
+    /**
+     * The entries one non-collinear band offers.
+     *
+     * The file stores psi_up and psi_down over the same G-vectors, so both are
+     * listed directly. On top of them come the elements of that band's density
+     * matrix rho_ab = conj(psi_a) psi_b: the diagonal is the density each
+     * component carries, and the off-diagonal is the transverse part.
+     *
+     * Only one off-diagonal is listed while the two are indistinguishable. rho
+     * is Hermitian for a single band, so rho_du = conj(rho_ud), and every
+     * reduction except Im collapses them onto the same grid; `available` puts
+     * down × up back in the list exactly when Im is what is being drawn.
+     */
+    const spinorLeaves = (spin, kpt, band) => SPINOR_COMPONENT_LABELS.map(
+      ({ value: spinor, label }) => new FieldCatalogNode({
+        id: `wf:${spin}:${kpt}:${band}:${spinor}`,
+        label,
+        // No eigenvalue or occupation here: those belong to the band, which is
+        // now the group above, and repeating them on all five component rows
+        // would say the same number five times.
+        meta: { spin, kpt, band, spinor },
+        available: spinor === SpinorComponent.DOWN_UP
+          ? () => wf.offDiagonalsDiffer(quantityRef.value)
+          : undefined,
+        load: () => wf.getField(spin, kpt, band, quantityRef.value, spinor),
+        peek: () => wf.peekField(spin, kpt, band, quantityRef.value, spinor),
+      }));
+
+    const bandNode = (spin, kpt, band) => (wf.noncollinear
+      ? new FieldCatalogNode({
+        id: `wf:${spin}:${kpt}:${band}`,
+        label: `Band ${band}`,
+        kind: NodeKind.GROUP,
+        meta: bandMeta(spin, kpt, band),
+        children: spinorLeaves(spin, kpt, band),
+      })
+      : new FieldCatalogNode({
+        id: `wf:${spin}:${kpt}:${band}`,
+        label: `Band ${band}`,
+        meta: bandMeta(spin, kpt, band),
+        // `quantityRef` is read at call time so switching the quantity dropdown
+        // re-points every leaf at the right cache entry without rebuilding the
+        // tree (and without losing which groups the user had expanded).
+        load: () => wf.getField(spin, kpt, band, quantityRef.value),
+        peek: () => wf.peekField(spin, kpt, band, quantityRef.value),
+      }));
 
     const kpointNode = (spin, kpt) => {
       const k = wf.kpoints[kpt - 1];

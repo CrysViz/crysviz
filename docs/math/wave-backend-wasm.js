@@ -44,6 +44,43 @@ export const WaveQuantity = Object.freeze({
   SIGNED: 3,    // |psi| carrying sign(Re psi)
 });
 
+/** Which piece of a two-component spinor to reduce, matching the WF_SPINOR_*
+ *  enum in the C. NONE is a JS-only sentinel for a collinear band, which has no
+ *  spinor structure at all and goes through `transformToRealSpace` instead.
+ *  @type {{NONE: number, UP: number, DOWN: number, UP_UP: number,
+ *          UP_DOWN: number, DOWN_UP: number, DOWN_DOWN: number}} */
+export const SpinorComponent = Object.freeze({
+  NONE: -1,
+  UP: 0,          // psi_up
+  DOWN: 1,        // psi_down
+  UP_UP: 2,       // rho_uu = conj(psi_up) psi_up
+  UP_DOWN: 3,     // rho_ud = conj(psi_up) psi_down
+  DOWN_UP: 4,     // rho_du = conj(psi_down) psi_up
+  DOWN_DOWN: 5,   // rho_dd = conj(psi_down) psi_down
+});
+
+/**
+ * Labels for the entries a non-collinear band offers, in the order the field
+ * list shows them.
+ *
+ * Written with Unicode arrows and subscripts rather than markup: field labels
+ * are rendered as plain text in the catalog list and in every field dropdown,
+ * so LaTeX or markdown shorthand would show up literally.
+ */
+export const SPINOR_COMPONENT_LABELS = Object.freeze([
+  { value: SpinorComponent.UP, label: 'ψ↑ (spinor up)' },
+  { value: SpinorComponent.DOWN, label: 'ψ↓ (spinor down)' },
+  { value: SpinorComponent.UP_UP, label: 'ρ↑↑ (up × up)' },
+  { value: SpinorComponent.UP_DOWN, label: 'ρ↑↓ (up × down)' },
+  { value: SpinorComponent.DOWN_UP, label: 'ρ↓↑ (down × up)' },
+  { value: SpinorComponent.DOWN_DOWN, label: 'ρ↓↓ (down × down)' },
+]);
+
+/** True for the four density-matrix elements (as opposed to a raw amplitude). */
+export function isDensityMatrixComponent(spinor) {
+  return spinor >= SpinorComponent.UP_UP && spinor <= SpinorComponent.DOWN_DOWN;
+}
+
 /** Human-readable labels for the quantity dropdown in the field UI. */
 export const WAVE_QUANTITY_LABELS = Object.freeze([
   { value: WaveQuantity.DENSITY, label: '|ψ|² (density)' },
@@ -267,6 +304,89 @@ export function transformToRealSpace(module, spec) {
     const dv = cellVolume / points;
     status = module._wf_reduce_scalar(boxPtr, points, quantity, dv, outPtr, statsPtr);
     if (status !== 0) throw new Error(`wf_reduce_scalar failed with status ${status}`);
+
+    const stats = f64(module, statsPtr, 4);
+    return {
+      values: new Float32Array(f32(module, outPtr, points)),
+      minValue: stats[0],
+      maxValue: stats[1],
+      absMinValue: stats[2],
+      absMaxValue: stats[3],
+    };
+  });
+}
+
+/**
+ * The same chain for a non-collinear band, whose stored wavefunction is a
+ * two-component spinor.
+ *
+ * A LNONCOLLINEAR WAVECAR writes 2*nplw coefficients per band: psi_up over the
+ * k-point's G-vectors, then psi_down over the same G-vectors. Each half is
+ * scattered and inverse-transformed into its own box, and `wf_reduce_spinor`
+ * then picks either one amplitude or one element of the band's density matrix
+ * rho_ab = conj(psi_a) psi_b.
+ *
+ * Two boxes instead of one doubles the transient allocation, which for a large
+ * cell is the dominant cost of the whole operation. It is unavoidable: every
+ * density-matrix element is a pointwise product of the two real-space
+ * components, so both have to exist at the same time.
+ *
+ * @param {any} module
+ * @param {object} spec
+ * @param {Float64Array} spec.coeffs the full spinor, interleaved re/im, up half first
+ * @param {Int32Array} spec.gvecs 3 per PLANE WAVE — half as many as `coeffs` holds pairs
+ * @param {number[]} spec.dims FFT box size (already 5-smooth)
+ * @param {number} spec.gamma GammaMode (always NONE in practice: vasp_ncl has no gamma build)
+ * @param {number} spec.quantity WaveQuantity
+ * @param {number} spec.spinor SpinorComponent
+ * @param {number} spec.cellVolume in Angstrom^3
+ * @returns {{values: Float32Array, minValue: number, maxValue: number,
+ *            absMinValue: number, absMaxValue: number}}
+ */
+export function transformSpinorToRealSpace(module, spec) {
+  const { coeffs, gvecs, dims, gamma, quantity, spinor, cellVolume } = spec;
+  const points = dims[0] * dims[1] * dims[2];
+  const count = gvecs.length / 3;
+
+  if (coeffs.length < count * 4) {
+    throw new Error(`transformSpinorToRealSpace: ${count} G-vectors need ${count * 4} spinor `
+      + `coefficient components, got ${coeffs.length}`);
+  }
+  if (spinor < SpinorComponent.UP || spinor > SpinorComponent.DOWN_DOWN) {
+    throw new Error(`transformSpinorToRealSpace: unknown spinor component ${spinor}`);
+  }
+
+  const sizes = [
+    3 * 4,                 // dims
+    points * 2 * 8,        // psi_up box
+    points * 2 * 8,        // psi_down box
+    count * 3 * 4,         // gvecs
+    count * 2 * 8,         // one half of the coefficients at a time
+    points * 4,            // float32 output
+    4 * 8,                 // stats
+  ];
+
+  return withMemory(module, sizes, (pointers) => {
+    const [dimsPtr, upPtr, downPtr, gvecPtr, coeffPtr, outPtr, statsPtr] = pointers;
+    i32(module, dimsPtr, 3).set(dims);
+    i32(module, gvecPtr, count * 3).set(gvecs);
+
+    // Both boxes must start zeroed: wf_scatter only writes occupied G-vectors.
+    // The coefficient buffer is reused for the second half, which is safe
+    // because wf_scatter has already copied what it needs into the box.
+    for (const [boxPtr, offset] of [[upPtr, 0], [downPtr, count * 2]]) {
+      f64(module, boxPtr, points * 2).fill(0);
+      f64(module, coeffPtr, count * 2).set(coeffs.subarray(offset, offset + count * 2));
+      let status = module._wf_scatter(boxPtr, dimsPtr, coeffPtr, gvecPtr, count, gamma);
+      if (status !== 0) throw new Error(`wf_scatter failed with status ${status}`);
+      status = module._wf_ifft3(boxPtr, dimsPtr, 1);
+      if (status !== 0) throw new Error(`wf_ifft3 failed with status ${status}`);
+    }
+
+    const dv = cellVolume / points;
+    const status = module._wf_reduce_spinor(
+      upPtr, downPtr, points, spinor, quantity, dv, outPtr, statsPtr);
+    if (status !== 0) throw new Error(`wf_reduce_spinor failed with status ${status}`);
 
     const stats = f64(module, statsPtr, 4);
     return {

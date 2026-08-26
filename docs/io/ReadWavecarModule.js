@@ -26,6 +26,13 @@ import { FileSource } from './FileSource.js';
  *
  * `recl` is read from the file rather than assumed, because it varies between
  * VASP builds and configurations.
+ *
+ * A non-collinear (LNONCOLLINEAR) run fits this layout unchanged: it declares
+ * nspin = 1 and writes 2 × nplw coefficients per band, the up component of the
+ * spinor followed by the down component over the same G-vectors. Nothing here
+ * has to know that — the doubled count is noticed against the cutoff sphere in
+ * `WavefunctionSource.init()`, which is the only place that can tell the
+ * difference.
  */
 
 /** Bytes per float64 in the header records. */

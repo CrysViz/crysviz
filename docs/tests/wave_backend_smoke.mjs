@@ -102,5 +102,40 @@ for (let i = 0; i < npts; i++) sum += out[i] * dv;
 ok(Math.abs(sum - 1) < 1e-5, `sum |psi|^2 dV == 1 (got ${sum})`);
 ok(stats[1] > 0 && stats[0] >= 0, 'density stats are sane');
 
+// ---- wf_reduce_spinor: the non-collinear reduction ----
+// A second box standing in for psi_down, so the same points can be reduced as a
+// spinor. Only the entry point is under test here — the numerics are pinned
+// natively in docs/tests/wave_backend_test.c.
+console.log('wf_reduce_spinor');
+const downPtr = m._malloc(npts * 2 * 8);
+new Float64Array(m.HEAPF64.buffer, downPtr, npts * 2).fill(0);
+// Half the up box, so the down component is real, non-zero and the minority one.
+{
+  const up = new Float64Array(m.HEAPF64.buffer, boxPtr, npts * 2);
+  const down = new Float64Array(m.HEAPF64.buffer, downPtr, npts * 2);
+  for (let i = 0; i < npts * 2; i++) down[i] = up[i] * 0.5;
+}
+
+const reduceSpinor = m.cwrap('wf_reduce_spinor', 'number',
+  ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']);
+
+const WF_SPINOR_UP_UP = 2, WF_SPINOR_DOWN_DOWN = 5;
+const integrate = () => {
+  const values = new Float32Array(m.HEAPF32.buffer, outPtr, npts);
+  let total = 0;
+  for (let i = 0; i < npts; i++) total += values[i] * dv;
+  return total;
+};
+
+ok(reduceSpinor(boxPtr, downPtr, npts, WF_SPINOR_UP_UP, 0, dv, outPtr, statsPtr) === 0,
+  'wf_reduce_spinor returns WF_OK for up*up');
+const upWeight = integrate();
+ok(reduceSpinor(boxPtr, downPtr, npts, WF_SPINOR_DOWN_DOWN, 0, dv, outPtr, statsPtr) === 0,
+  'wf_reduce_spinor returns WF_OK for down*down');
+const downWeight = integrate();
+ok(Math.abs(upWeight + downWeight - 1) < 1e-5,
+  `the density matrix trace integrates to 1 (got ${upWeight + downWeight})`);
+ok(upWeight > downWeight, 'the spinor is normalised as a whole, not component by component');
+
 console.log(`\n${failures ? 'FAILED' : 'ALL PASSED'} (${failures} failure${failures === 1 ? '' : 's'})`);
 process.exit(failures ? 1 : 0);

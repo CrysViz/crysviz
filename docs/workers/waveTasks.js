@@ -1,5 +1,9 @@
 import * as workerPool from './workerPool.js';
-import { getWaveBackend, transformToRealSpace } from '../math/wave-backend-wasm.js';
+import {
+  getWaveBackend,
+  transformToRealSpace,
+  transformSpinorToRealSpace,
+} from '../math/wave-backend-wasm.js';
 
 /**
  * Dispatch for the wavefunction transform: worker when possible, main thread
@@ -21,12 +25,17 @@ import { getWaveBackend, transformToRealSpace } from '../math/wave-backend-wasm.
 /**
  * Run scatter -> inverse FFT -> reduce for one wavefunction.
  *
+ * A `spinor` in the spec routes to the non-collinear path: the coefficients are
+ * a two-component spinor, two boxes are transformed, and `spinor` selects the
+ * amplitude or density-matrix element to reduce. Collinear bands leave it out.
+ *
  * @param {object} spec
  * @param {Float64Array} spec.coeffs interleaved re/im plane-wave coefficients
- * @param {Int32Array} spec.gvecs 3 per coefficient, in VASP's order
+ * @param {Int32Array} spec.gvecs 3 per plane wave, in VASP's order
  * @param {number[]} spec.dims real-space FFT box
  * @param {number} spec.gamma GammaMode
  * @param {number} spec.quantity WaveQuantity
+ * @param {number} [spec.spinor] SpinorComponent, for a non-collinear band only
  * @param {number} spec.cellVolume Angstrom^3
  * @returns {Promise<{values: Float32Array, minValue: number, maxValue: number,
  *                    absMinValue: number, absMaxValue: number}>}
@@ -46,6 +55,11 @@ export async function runWavefunctionTransform(spec) {
   return runOnMainThread(spec);
 }
 
+/** Whether a spec describes one component of a non-collinear (spinor) band. */
+function isSpinor(spec) {
+  return Number.isFinite(spec.spinor) && spec.spinor >= 0;
+}
+
 /** @param {object} spec */
 async function runInWorker(spec) {
   // Copy the views into standalone buffers before transferring: the originals
@@ -60,14 +74,18 @@ async function runInWorker(spec) {
     dims: spec.dims,
     gamma: spec.gamma,
     quantity: spec.quantity,
+    spinor: spec.spinor,
     cellVolume: spec.cellVolume,
   };
 
-  return workerPool.run('wavefunctionRealSpace', payload, [coeffs.buffer, gvecs.buffer]);
+  const task = isSpinor(spec) ? 'wavefunctionSpinorRealSpace' : 'wavefunctionRealSpace';
+  return workerPool.run(task, payload, [coeffs.buffer, gvecs.buffer]);
 }
 
 /** @param {object} spec */
 async function runOnMainThread(spec) {
   const module = await getWaveBackend();
-  return transformToRealSpace(module, spec);
+  return isSpinor(spec)
+    ? transformSpinorToRealSpace(module, spec)
+    : transformToRealSpace(module, spec);
 }

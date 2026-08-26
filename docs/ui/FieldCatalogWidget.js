@@ -15,7 +15,8 @@ import { createInfoButton } from './InfoPanel.js';
  *
  *  - a FLAT catalog renders exactly the old table, one radio per field, and no
  *    toolbar. Nothing about the cube/CHGCAR experience changes.
- *  - a HIERARCHICAL catalog renders collapsible groups (spin → k-point → band)
+ *  - a HIERARCHICAL catalog renders collapsible groups (spin → k-point → band,
+ *    and on a non-collinear file one more level for the spinor components)
  *    whose leaves carry a Load button, the band's eigenvalue and occupation, and
  *    a spinner while the transform runs.
  *
@@ -177,12 +178,25 @@ export function createFieldCatalogWidget({ container, catalog, selectedField, on
     return bar;
   }
 
-  /** Whether a node (or any descendant) survives the current filters. */
-  function nodeVisible(node) {
-    if (node.isGroup) return node.children.some(nodeVisible);
+  /** Whether the node's own label satisfies the text filter. */
+  function labelMatches(node) {
+    return !filterText || node.label.toLowerCase().includes(filterText);
+  }
+
+  /**
+   * Whether a node (or any descendant) survives the current filters.
+   *
+   * A match on a group's own label carries down to its children:
+   * `inheritedMatch` is what makes filtering for "Band 12" work on a
+   * non-collinear file, where band 12 is a group and its rows are named after
+   * spinor components rather than after the band.
+   */
+  function nodeVisible(node, inheritedMatch = false) {
+    if (!node.available) return false;
+    const matched = inheritedMatch || labelMatches(node);
+    if (node.isGroup) return node.children.some((child) => nodeVisible(child, matched));
     if (loadedOnly && !node.loaded) return false;
-    if (filterText && !node.label.toLowerCase().includes(filterText)) return false;
-    return true;
+    return matched;
   }
 
   function renderTree() {
@@ -192,7 +206,11 @@ export function createFieldCatalogWidget({ container, catalog, selectedField, on
     // of k-points throws away the user's place just as their click lands.
     const previousScroll = treeEl.scrollTop;
     treeEl.innerHTML = '';
-    const visible = catalog.nodes.filter(nodeVisible);
+    // Wrapped rather than passed by reference: Array.filter would hand the
+    // element's index in as `inheritedMatch`, which is truthy from the second
+    // node on and would silently disable the text filter for everything but the
+    // first entry.
+    const visible = catalog.nodes.filter((node) => nodeVisible(node));
     if (visible.length === 0) {
       const empty = document.createElement('p');
       empty.className = 'field-catalog-empty';
@@ -202,15 +220,18 @@ export function createFieldCatalogWidget({ container, catalog, selectedField, on
       treeEl.appendChild(empty);
       return;
     }
-    for (const node of visible) treeEl.appendChild(renderNode(node, 0));
+    for (const node of visible) treeEl.appendChild(renderNode(node, 0, false));
     treeEl.scrollTop = previousScroll;
   }
 
-  function renderNode(node, depth) {
-    return node.isGroup ? renderGroup(node, depth) : renderLeaf(node, depth);
+  function renderNode(node, depth, inheritedMatch) {
+    return node.isGroup
+      ? renderGroup(node, depth, inheritedMatch)
+      : renderLeaf(node, depth);
   }
 
-  function renderGroup(node, depth) {
+  function renderGroup(node, depth, inheritedMatch) {
+    const matched = inheritedMatch || labelMatches(node);
     const wrapper = document.createElement('div');
     wrapper.className = 'fc-group';
 
@@ -219,7 +240,8 @@ export function createFieldCatalogWidget({ container, catalog, selectedField, on
     toggle.className = 'fc-group-toggle';
     // Indentation is expressed as a bounded data attribute rather than an inline
     // style, so the ladder lives in the stylesheet with everything else. The tree
-    // is at most spin > k-point > band deep.
+    // is at most three group levels deep: spin > k-point > band on a collinear
+    // file, k-point > band > component on a non-collinear one.
     toggle.dataset.depth = String(Math.min(depth, 2));
     toggle.setAttribute('aria-expanded', String(!node.collapsed));
 
@@ -232,6 +254,17 @@ export function createFieldCatalogWidget({ container, catalog, selectedField, on
     label.className = 'fc-group-label';
     label.textContent = node.label;
     toggle.appendChild(label);
+
+    // A band that holds several entries (a non-collinear spinor) is a group,
+    // and its eigenvalue and occupation belong on the header rather than being
+    // repeated on every component row underneath it.
+    const metaText = formatLeafMeta(node.meta);
+    if (metaText) {
+      const meta = document.createElement('span');
+      meta.className = 'fc-group-meta';
+      meta.textContent = metaText;
+      toggle.appendChild(meta);
+    }
 
     const count = document.createElement('span');
     count.className = 'fc-group-count';
@@ -247,8 +280,8 @@ export function createFieldCatalogWidget({ container, catalog, selectedField, on
     const buildChildren = () => {
       children.innerHTML = '';
       for (const child of node.children) {
-        if (!nodeVisible(child)) continue;
-        children.appendChild(renderNode(child, depth + 1));
+        if (!nodeVisible(child, matched)) continue;
+        children.appendChild(renderNode(child, depth + 1, matched));
       }
     };
 

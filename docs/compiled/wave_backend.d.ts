@@ -51,6 +51,14 @@ export interface WaveBackendModule {
     out: number, stats: number,
   ): number;
 
+  /** The same for a non-collinear band: two transformed boxes in, one
+   *  WF_SPINOR_* component (amplitude or density-matrix element) out, with a
+   *  single normalisation shared by both spinor components. */
+  _wf_reduce_spinor(
+    boxUp: number, boxDown: number, count: number, component: number,
+    mode: number, dv: number, out: number, stats: number,
+  ): number;
+
   // Heap views. These are re-read after every allocation on the JS side, because
   // ALLOW_MEMORY_GROWTH can detach the underlying ArrayBuffer.
   HEAPF64: Float64Array;

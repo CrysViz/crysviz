@@ -413,9 +413,10 @@ function promptForStructureFile() {
  * @returns {Promise<import('../model/index.js').StructureContainer | null>} null if cancelled
  */
 export async function parseWavecarFile(source, fileName) {
-  // Header decode only. Throws (with a specific message) for a non-collinear
-  // file, an unknown RTAG, or a plane-wave count that cannot be reconciled with
-  // the cutoff — all of which are better surfaced now than on the first click.
+  // Header decode only. Throws (with a specific message) for an unknown RTAG or
+  // a plane-wave count that cannot be reconciled with the cutoff — both better
+  // surfaced now than on the first click. A non-collinear file is recognised
+  // here too, and comes back with its bands split into spinor components.
   const result = await readWAVECAR(source, fileName);
   const wf = result.source;
 

@@ -156,7 +156,7 @@ export const fieldBrowser = {
     if (previous === next) return;
     const pin = (field, pinned) => {
       const w = field?.wavefunction;
-      if (w) w.source.pinField(w.spin, w.kpt, w.band, w.quantity, pinned);
+      if (w) w.source.pinField(w.spin, w.kpt, w.band, w.quantity, pinned, w.spinor);
     };
     pin(previous, false);
     pin(next, true);

@@ -2,10 +2,12 @@ import { Field } from './Field.js';
 import { LruByteCache, DEFAULT_CACHE_BUDGET_BYTES } from './LruByteCache.js';
 import {
   GammaMode,
+  SpinorComponent,
   WaveQuantity,
   getWaveBackend,
   countGvecs,
   generateGvecs,
+  isDensityMatrixComponent,
   kgridSizeFor,
   reciprocalTimes2Pi,
   smoothDims,
@@ -32,6 +34,12 @@ import { runWavefunctionTransform } from '../workers/waveTasks.js';
  * worker is available. The result is an ordinary `model/Field.js`, so nothing
  * downstream — marching cubes, cut planes, either tracer — knows a wavefunction
  * is involved.
+ *
+ * A non-collinear file adds one branch to that. Its band is a two-component
+ * spinor rather than a single wavefunction, so both halves are transformed and
+ * `getField` takes a `SpinorComponent` saying which piece is wanted: one of the
+ * amplitudes, or one element of the band's density matrix. Everything else —
+ * the caching, the record layout, the G-vectors — is identical.
  *
  * Both the raw coefficients and the expanded fields are cached under one shared
  * byte budget (`model/LruByteCache.js`), because they differ in size by orders
@@ -84,6 +92,12 @@ export class WavefunctionSource {
 
     /** @type {number} WF_GAMMA_*, resolved by init() */
     this.gammaMode = GammaMode.NONE;
+    /**
+     * @type {boolean} whether this is a non-collinear (LNONCOLLINEAR) file,
+     * resolved by init(). Such a file declares nspin = 1 and then stores two
+     * plane-wave components per band — see the detection in init().
+     */
+    this.noncollinear = false;
     /** @type {number[] | null} reciprocal ladder extent, resolved by init() */
     this.kgridSize = null;
     /** @type {number[] | null} real-space FFT box, resolved by init() */
@@ -177,13 +191,23 @@ export class WavefunctionSource {
       this.gammaMode = GammaMode.X;
     } else if (countGvecs(module, { ...spec, gamma: GammaMode.Z }) === expected) {
       this.gammaMode = GammaMode.Z;
+    } else if (standard * 2 === expected && this.nspin === 1) {
+      // Non-collinear (LNONCOLLINEAR). VASP writes such a run with nspin = 1 —
+      // there is one set of bands, not two channels — and stores a two-component
+      // spinor per band: psi_up over the cutoff G-vectors, then psi_down over
+      // the same ones. Those two facts together are the whole tell, and they are
+      // unambiguous: no gamma layout produces twice the standard count, and a
+      // genuinely spin-polarised file declares nspin = 2.
+      this.noncollinear = true;
+      // vasp_ncl has no gamma-only build, so a spinor file is never compressed.
+      this.gammaMode = GammaMode.NONE;
     } else if (standard * 2 === expected) {
-      // Non-collinear runs store a two-component spinor per plane wave. Reading
-      // it as a scalar would silently render the wrong thing, so refuse.
+      // Twice the coefficients but two spin channels as well: that combination
+      // is not something VASP writes, and guessing would scramble every band.
       throw new Error(
-        `${this.fileName}: this looks like a non-collinear (LNONCOLLINEAR) WAVECAR — `
-        + `${expected} coefficients is exactly twice the ${standard} G-vectors in the cutoff. `
-        + 'Spinor wavefunctions are not supported yet.');
+        `${this.fileName}: the file stores ${expected} coefficients — twice the ${standard} `
+        + `G-vectors in the cutoff — but also reports ${this.nspin} spin channels. A spinor `
+        + 'WAVECAR declares one. The header is not being read correctly.');
     } else {
       throw new Error(
         `${this.fileName}: could not match the plane-wave count. The file reports `
@@ -209,12 +233,27 @@ export class WavefunctionSource {
     return this.doublePrecision ? 16 : 8;
   }
 
+  /** Number of G-vectors per band at a k-point.
+   *
+   * Not the same as the file's plane-wave count for a spinor: a non-collinear
+   * band stores two coefficients per G-vector, so the cutoff sphere it was
+   * generated from is half the size the record header advertises.
+   * @param {number} kpt 1-indexed
+   */
+  gvecCountFor(kpt) {
+    const stored = this.nplws[kpt - 1];
+    return this.noncollinear ? stored / 2 : stored;
+  }
+
   /** Human-readable summary for the field panel header. */
   describe() {
     const gamma = this.gammaMode === GammaMode.NONE
       ? 'standard'
       : `gamma-compressed (${this.gammaMode === GammaMode.X ? 'x' : 'z'})`;
-    return `${this.nspin} spin × ${this.nkpts} k-points × ${this.nbands} bands, `
+    const spin = this.noncollinear
+      ? 'non-collinear (2-component spinor)'
+      : `${this.nspin} spin`;
+    return `${spin} × ${this.nkpts} k-points × ${this.nbands} bands, `
       + `ENCUT ${this.encut.toFixed(0)} eV, ${gamma}`;
   }
 
@@ -238,7 +277,9 @@ export class WavefunctionSource {
    * Plane-wave coefficients for one band, as interleaved re/im float64.
    *
    * Exactly `nplw * bytesPerCoefficient` bytes are read at the band's record
-   * offset — one ranged slice, never the whole file.
+   * offset — one ranged slice, never the whole file. For a non-collinear band
+   * that record holds the whole spinor, psi_up followed by psi_down over the
+   * same G-vectors, and is returned whole: splitting it is the transform's job.
    *
    * @param {number} spin 1-indexed
    * @param {number} kpt 1-indexed
@@ -297,14 +338,17 @@ export class WavefunctionSource {
     });
 
     const count = gvecs.length / 3;
-    const expected = this.nplws[kpt - 1];
+    const expected = this.gvecCountFor(kpt);
     if (count !== expected) {
       // A mismatch here means the cutoff sphere was reconstructed differently
       // from VASP's, and every coefficient would land on the wrong G. Refusing
       // is the only safe response: the render would look plausible and be wrong.
+      const stored = this.noncollinear
+        ? `${this.nplws[kpt - 1]} spinor coefficients (${expected} per component)`
+        : `${expected} coefficients`;
       throw new Error(
         `${this.fileName}: generated ${count} G-vectors for k-point ${kpt} but the file `
-        + `stores ${expected} coefficients. Refusing to render a scrambled wavefunction.`);
+        + `stores ${stored}. Refusing to render a scrambled wavefunction.`);
     }
 
     this.gvecCache.set(kpt, gvecs);
@@ -312,24 +356,31 @@ export class WavefunctionSource {
   }
 
   /** Cache key for a realised field. */
-  static fieldKey(spin, kpt, band, quantity) {
-    return `f:${quantity}:${spin}:${kpt}:${band}`;
+  static fieldKey(spin, kpt, band, quantity, spinor = SpinorComponent.NONE) {
+    return `f:${quantity}:${spin}:${kpt}:${band}:${spinor}`;
   }
 
   /**
    * The real-space scalar field for one band, ready to hand to the isosurface.
    *
+   * For a non-collinear file `spinor` chooses which piece of the band's spinor
+   * is wanted — one of the two amplitudes, or one element of its density matrix
+   * — and every one of them is a separate grid with its own cache entry. It is
+   * ignored for a collinear file, which has no spinor structure to select from.
+   *
    * @param {number} spin 1-indexed
    * @param {number} kpt 1-indexed
    * @param {number} band 1-indexed
    * @param {number} [quantity] WaveQuantity
+   * @param {number} [spinor] SpinorComponent; defaults to psi_up on a spinor file
    * @returns {Promise<Field>}
    */
-  async getField(spin, kpt, band, quantity = WaveQuantity.DENSITY) {
+  async getField(spin, kpt, band, quantity = WaveQuantity.DENSITY, spinor = undefined) {
     this._assertIndices(spin, kpt, band);
     await this.init();
 
-    const key = WavefunctionSource.fieldKey(spin, kpt, band, quantity);
+    const component = this.resolveSpinor(spinor);
+    const key = WavefunctionSource.fieldKey(spin, kpt, band, quantity, component);
     const cached = this.cache.get(key);
     if (cached) return cached;
 
@@ -344,6 +395,9 @@ export class WavefunctionSource {
       dims: this.fftDims,
       gamma: this.gammaMode,
       quantity,
+      // Left undefined for a collinear band, which is what routes the spec to
+      // the single-box transform in workers/waveTasks.js.
+      spinor: this.noncollinear ? component : undefined,
       cellVolume: this.cellVolume,
     });
 
@@ -360,7 +414,7 @@ export class WavefunctionSource {
       ],
       values: result.values,
       component: 0,
-      label: this.labelFor(spin, kpt, band, quantity),
+      label: this.labelFor(spin, kpt, band, quantity, component),
       minValue: result.minValue,
       maxValue: result.maxValue,
       absMinValue: result.absMinValue,
@@ -368,33 +422,74 @@ export class WavefunctionSource {
       // |psi|^2 is non-negative, so the signed treatment would waste half the
       // isovalue slider on an empty negative surface. The amplitude modes do
       // straddle zero and want it.
-      useAbsoluteIsoValue: quantity === WaveQuantity.DENSITY ? false : null,
+      useAbsoluteIsoValue: isNonNegative(quantity, component) ? false : null,
     });
 
     // Provenance, so the catalog can find its way back to the source entry and
     // the panel can show the eigenvalue alongside the isosurface controls.
-    field.wavefunction = { source: this, spin, kpt, band, quantity };
+    field.wavefunction = { source: this, spin, kpt, band, quantity, spinor: component };
 
     this.cache.set(key, field, result.values.byteLength);
     return field;
   }
 
+  /**
+   * Normalise a spinor selector against what the file actually holds.
+   *
+   * A collinear file has no spinor structure, so anything asked for there is
+   * NONE. A spinor file defaults to psi_up rather than throwing, because every
+   * caller that predates non-collinear support omits the argument entirely.
+   * @param {number} [spinor]
+   * @returns {number}
+   */
+  resolveSpinor(spinor) {
+    if (!this.noncollinear) return SpinorComponent.NONE;
+    if (spinor === undefined || spinor === null || spinor === SpinorComponent.NONE) {
+      return SpinorComponent.UP;
+    }
+    if (spinor < SpinorComponent.UP || spinor > SpinorComponent.DOWN_DOWN) {
+      throw new RangeError(`unknown spinor component ${spinor}`);
+    }
+    return spinor;
+  }
+
+  /**
+   * Whether the two off-diagonal density-matrix elements are distinguishable
+   * once reduced to the given scalar.
+   *
+   * For one band rho is Hermitian by construction — rho_du = conj(rho_ud) —
+   * so |rho|, Re rho and signed |rho| are identical between the two and only
+   * Im rho differs, by a sign. The catalog uses this to decide whether listing
+   * down × up would add a field or just a duplicate.
+   * @param {number} quantity WaveQuantity
+   */
+  offDiagonalsDiffer(quantity) {
+    return quantity === WaveQuantity.IMAG;
+  }
+
   /** @returns {string} e.g. "s1 k3 b12  (−4.82 eV, occ 1.00)" */
-  labelFor(spin, kpt, band, quantity) {
+  labelFor(spin, kpt, band, quantity, spinor = SpinorComponent.NONE) {
     const eig = this.eigenvalues?.[spin - 1]?.[kpt - 1]?.[band - 1];
     const energy = Number.isFinite(eig) ? `, ${eig.toFixed(2)} eV` : '';
     const spinPart = this.nspin > 1 ? `spin ${spin} ` : '';
-    const quantityPart = quantity === WaveQuantity.DENSITY ? '' : ` [${quantityName(quantity)}]`;
-    return `${spinPart}k${kpt} band ${band}${energy}${quantityPart}`;
+    const spinorPart = spinor === SpinorComponent.NONE ? '' : ` ${spinorSymbol(spinor)}`;
+    // A density-matrix element is already a density, so tagging it with the
+    // quantity that produced it matters even in the default mode: |rho| and
+    // Re rho are different fields and would otherwise share a label.
+    const showQuantity = quantity !== WaveQuantity.DENSITY
+      || isDensityMatrixComponent(spinor);
+    const quantityPart = showQuantity ? ` [${quantityName(quantity, spinor)}]` : '';
+    return `${spinPart}k${kpt} band ${band}${spinorPart}${energy}${quantityPart}`;
   }
 
   /**
    * Keep a field alive across evictions while it is on screen.
    * @param {number} spin @param {number} kpt @param {number} band @param {number} quantity
-   * @param {boolean} [pinned]
+   * @param {boolean} [pinned] @param {number} [spinor]
    */
-  pinField(spin, kpt, band, quantity, pinned = true) {
-    this.cache.pin(WavefunctionSource.fieldKey(spin, kpt, band, quantity), pinned);
+  pinField(spin, kpt, band, quantity, pinned = true, spinor = undefined) {
+    const component = this.resolveSpinor(spinor);
+    this.cache.pin(WavefunctionSource.fieldKey(spin, kpt, band, quantity, component), pinned);
   }
 
   /**
@@ -402,13 +497,17 @@ export class WavefunctionSource {
    * never touches the file, so the catalog can call it while painting rows.
    * @returns {Field | null}
    */
-  peekField(spin, kpt, band, quantity = WaveQuantity.DENSITY) {
-    return this.cache.get(WavefunctionSource.fieldKey(spin, kpt, band, quantity)) || null;
+  peekField(spin, kpt, band, quantity = WaveQuantity.DENSITY, spinor = undefined) {
+    const component = this.resolveSpinor(spinor);
+    return this.cache.get(
+      WavefunctionSource.fieldKey(spin, kpt, band, quantity, component)) || null;
   }
 
   /** True when this band's field is already realised (drives the catalog UI). */
-  isFieldLoaded(spin, kpt, band, quantity = WaveQuantity.DENSITY) {
-    return this.cache.has(WavefunctionSource.fieldKey(spin, kpt, band, quantity));
+  isFieldLoaded(spin, kpt, band, quantity = WaveQuantity.DENSITY, spinor = undefined) {
+    const component = this.resolveSpinor(spinor);
+    return this.cache.has(
+      WavefunctionSource.fieldKey(spin, kpt, band, quantity, component));
   }
 
   /** Every realised field, newest last. Backs `fieldBrowser.availableFields`. */
@@ -435,14 +534,54 @@ export class WavefunctionSource {
   }
 }
 
-/** @param {number} quantity */
-function quantityName(quantity) {
+/**
+ * What the reduction produced, for a field label.
+ *
+ * The symbol depends on what was reduced: an amplitude psi gives |psi|^2 under
+ * the density mode, whereas a density-matrix element rho is already a density
+ * and gives |rho|.
+ * @param {number} quantity @param {number} [spinor]
+ */
+function quantityName(quantity, spinor = SpinorComponent.NONE) {
+  const symbol = isDensityMatrixComponent(spinor) ? 'ρ' : 'ψ';
   switch (quantity) {
-    case WaveQuantity.REAL: return 'Re ψ';
-    case WaveQuantity.IMAG: return 'Im ψ';
-    case WaveQuantity.SIGNED: return 'signed |ψ|';
-    default: return '|ψ|²';
+    case WaveQuantity.REAL: return `Re ${symbol}`;
+    case WaveQuantity.IMAG: return `Im ${symbol}`;
+    case WaveQuantity.SIGNED: return `signed |${symbol}|`;
+    default: return isDensityMatrixComponent(spinor) ? '|ρ|' : '|ψ|²';
   }
+}
+
+/**
+ * The short symbol for a spinor selector, for a field label. Unicode rather
+ * than markup, because labels are drawn as plain text everywhere they appear.
+ * @param {number} spinor
+ */
+function spinorSymbol(spinor) {
+  switch (spinor) {
+    case SpinorComponent.UP: return 'ψ↑';
+    case SpinorComponent.DOWN: return 'ψ↓';
+    case SpinorComponent.UP_UP: return 'ρ↑↑';
+    case SpinorComponent.UP_DOWN: return 'ρ↑↓';
+    case SpinorComponent.DOWN_UP: return 'ρ↓↑';
+    case SpinorComponent.DOWN_DOWN: return 'ρ↓↓';
+    default: return '';
+  }
+}
+
+/**
+ * Whether the reduced field can never go negative, which is what decides
+ * against the signed isovalue slider.
+ *
+ * |psi|^2 and |rho| are non-negative by construction, and so is a diagonal
+ * density-matrix element under any mode that is not Im (which is identically
+ * zero there, but a flat field costs nothing to treat as signed).
+ * @param {number} quantity @param {number} spinor
+ */
+function isNonNegative(quantity, spinor) {
+  if (quantity === WaveQuantity.DENSITY) return true;
+  const diagonal = spinor === SpinorComponent.UP_UP || spinor === SpinorComponent.DOWN_DOWN;
+  return diagonal && (quantity === WaveQuantity.REAL || quantity === WaveQuantity.SIGNED);
 }
 
 /** Signed cell volume from lattice rows. */
@@ -453,4 +592,4 @@ function tripleProduct(lattice) {
        + a[2] * (b[0] * c[1] - b[1] * c[0]);
 }
 
-export { GammaMode, WaveQuantity, transformToRealSpace };
+export { GammaMode, SpinorComponent, WaveQuantity, transformToRealSpace };

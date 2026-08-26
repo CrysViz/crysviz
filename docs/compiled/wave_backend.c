@@ -60,6 +60,28 @@ enum {
   WF_MODE_SIGNED = 3     /* |psi| carrying the sign of Re    */
 };
 
+/*
+ * Which piece of a two-component spinor wf_reduce_spinor should return.
+ *
+ * A non-collinear (LNONCOLLINEAR) WAVECAR stores 2*nplw coefficients per band:
+ * the up component first, then the down component, both on the same G-vectors.
+ * The first two entries here are those amplitudes; the remaining four are the
+ * elements of that band's contribution to the density matrix,
+ *
+ *   rho_ab(r) = conj(psi_a(r)) * psi_b(r),
+ *
+ * whose diagonal is the spin-resolved density and whose off-diagonal carries
+ * the transverse magnetisation (m_x = 2 Re rho_ud, m_y = -2 Im rho_ud).
+ */
+enum {
+  WF_SPINOR_UP = 0,
+  WF_SPINOR_DOWN = 1,
+  WF_SPINOR_UP_UP = 2,
+  WF_SPINOR_UP_DOWN = 3,
+  WF_SPINOR_DOWN_UP = 4,
+  WF_SPINOR_DOWN_DOWN = 5
+};
+
 /* Largest prime factor the mixed-radix FFT will handle in one butterfly. The
  * JS side always rounds the box up to a 5-smooth size, so this is only a
  * backstop against a caller that does not. */
@@ -438,6 +460,80 @@ int wf_ifft3(double* box, const int* dims, int sign) {
  * ------------------------------------------------------------------ */
 
 /*
+ * Reduce one complex value to the requested scalar.
+ *
+ * `squared` picks the WF_MODE_DENSITY convention. An amplitude psi reduces to
+ * |psi|^2, because that is the density it represents; a density-matrix element
+ * rho is already a density, so it reduces to |rho| and squaring it again would
+ * be meaningless. The other three modes are the same for both.
+ */
+static double reduce_value(double re, double im, int mode, int squared) {
+  switch (mode) {
+    case WF_MODE_REAL:
+      return re;
+    case WF_MODE_IMAG:
+      return im;
+    case WF_MODE_SIGNED: {
+      const double magnitude = sqrt(re * re + im * im);
+      return (re < 0.0) ? -magnitude : magnitude;
+    }
+    case WF_MODE_DENSITY:
+    default:
+      return squared ? (re * re + im * im) : sqrt(re * re + im * im);
+  }
+}
+
+/*
+ * Running [min, max, absMin, absMax] over the samples actually stored.
+ *
+ * The stats are accumulated from the float32 that was written, not from the
+ * double it came from. The isovalue slider in ui/FieldPanel.js maps its range
+ * onto [minValue, maxValue], so a max that no stored sample can reach leaves
+ * the top of the slider producing an empty surface. The CHGCAR/cube readers
+ * derive their stats from the Float32Array for the same reason.
+ */
+typedef struct {
+  double min_v;
+  double max_v;
+  double abs_min;
+  double abs_max;
+  int seen;
+} wf_stats;
+
+static void stats_init(wf_stats* s) {
+  s->min_v = 0.0;
+  s->max_v = 0.0;
+  s->abs_min = 0.0;
+  s->abs_max = 0.0;
+  s->seen = 0;
+}
+
+static void stats_add(wf_stats* s, float stored) {
+  const double v = (double)stored;
+  const double av = fabs(v);
+
+  if (!s->seen) {
+    s->min_v = v;
+    s->max_v = v;
+    s->abs_min = av;
+    s->abs_max = av;
+    s->seen = 1;
+    return;
+  }
+  if (v < s->min_v) s->min_v = v;
+  if (v > s->max_v) s->max_v = v;
+  if (av < s->abs_min) s->abs_min = av;
+  if (av > s->abs_max) s->abs_max = av;
+}
+
+static void stats_write(const wf_stats* s, double* out) {
+  out[0] = s->min_v;
+  out[1] = s->max_v;
+  out[2] = s->abs_min;
+  out[3] = s->abs_max;
+}
+
+/*
  * Normalise the wavefunction to sum |psi|^2 dV = 1 and write the requested
  * scalar out as float32, reporting min/max/absMin/absMax in the same pass.
  *
@@ -453,11 +549,8 @@ EMSCRIPTEN_KEEPALIVE
 int wf_reduce_scalar(const double* box, int count, int mode, double dv,
                      float* out, double* stats) {
   double total = 0.0;
-  double scale, scale2;
-  double min_v = 0.0;
-  double max_v = 0.0;
-  double abs_min = 0.0;
-  double abs_max = 0.0;
+  double scale;
+  wf_stats acc;
   int i;
 
   if (box == NULL || out == NULL || stats == NULL) return WF_ERR_BAD_INPUT;
@@ -470,60 +563,104 @@ int wf_reduce_scalar(const double* box, int count, int mode, double dv,
   }
 
   scale = (total > 0.0) ? (1.0 / sqrt(total)) : 1.0;
-  scale2 = scale * scale;
 
+  stats_init(&acc);
   for (i = 0; i < count; i++) {
     const double re = box[i * 2] * scale;
     const double im = box[i * 2 + 1] * scale;
-    double v;
-    double av;
 
-    switch (mode) {
-      case WF_MODE_REAL:
-        v = re;
-        break;
-      case WF_MODE_IMAG:
-        v = im;
-        break;
-      case WF_MODE_SIGNED:
-        v = sqrt(re * re + im * im);
-        if (re < 0.0) v = -v;
-        break;
-      case WF_MODE_DENSITY:
-      default:
-        /* re/im are already scaled, so this is |psi|^2 * scale^2 either way;
-         * written via the raw values to keep the one multiply. */
-        v = (box[i * 2] * box[i * 2] + box[i * 2 + 1] * box[i * 2 + 1]) * scale2;
-        break;
-    }
-
-    out[i] = (float)v;
-
-    /* Read the stats back out of the float32 that was actually stored rather
-     * than from the double. The isovalue slider in ui/FieldPanel.js maps its
-     * range onto [minValue, maxValue], so a max that no stored sample can
-     * reach leaves the top of the slider producing an empty surface. The
-     * CHGCAR/cube readers derive their stats from the Float32Array for the
-     * same reason. */
-    v = (double)out[i];
-    av = fabs(v);
-
-    if (i == 0) {
-      min_v = v;
-      max_v = v;
-      abs_min = av;
-      abs_max = av;
-    } else {
-      if (v < min_v) min_v = v;
-      if (v > max_v) max_v = v;
-      if (av < abs_min) abs_min = av;
-      if (av > abs_max) abs_max = av;
-    }
+    out[i] = (float)reduce_value(re, im, mode, 1);
+    stats_add(&acc, out[i]);
   }
 
-  stats[0] = min_v;
-  stats[1] = max_v;
-  stats[2] = abs_min;
-  stats[3] = abs_max;
+  stats_write(&acc, stats);
+  return WF_OK;
+}
+
+/*
+ * The same reduction for a non-collinear band, whose wavefunction is the
+ * two-component spinor (psi_up, psi_down) held in two separately-transformed
+ * boxes of the same shape.
+ *
+ * `component` is a WF_SPINOR_* selector: either one of the two amplitudes, or
+ * one element of rho_ab = conj(psi_a) psi_b. `mode` then reduces whatever that
+ * picks to a real scalar, exactly as wf_reduce_scalar does for a collinear
+ * band.
+ *
+ * The normalisation is the important difference from calling wf_reduce_scalar
+ * twice. A spinor is normalised as a whole,
+ *
+ *   sum (|psi_up|^2 + |psi_down|^2) dV = 1,
+ *
+ * so the same scale factor is applied to both components. Normalising each one
+ * on its own would rescale a nearly-empty minority component up to the same
+ * weight as the majority one and erase the spin texture, which is the entire
+ * content of a non-collinear calculation.
+ */
+EMSCRIPTEN_KEEPALIVE
+int wf_reduce_spinor(const double* box_up, const double* box_down, int count,
+                     int component, int mode, double dv,
+                     float* out, double* stats) {
+  double total = 0.0;
+  double scale;
+  wf_stats acc;
+  int i;
+
+  if (box_up == NULL || box_down == NULL || out == NULL || stats == NULL) {
+    return WF_ERR_BAD_INPUT;
+  }
+  if (count <= 0) return WF_ERR_BAD_INPUT;
+  if (component < WF_SPINOR_UP || component > WF_SPINOR_DOWN_DOWN) return WF_ERR_BAD_INPUT;
+
+  for (i = 0; i < count; i++) {
+    const double ur = box_up[i * 2];
+    const double ui = box_up[i * 2 + 1];
+    const double dr = box_down[i * 2];
+    const double di = box_down[i * 2 + 1];
+    total += (ur * ur + ui * ui + dr * dr + di * di) * dv;
+  }
+
+  scale = (total > 0.0) ? (1.0 / sqrt(total)) : 1.0;
+
+  stats_init(&acc);
+  for (i = 0; i < count; i++) {
+    const double ur = box_up[i * 2] * scale;
+    const double ui = box_up[i * 2 + 1] * scale;
+    const double dr = box_down[i * 2] * scale;
+    const double di = box_down[i * 2 + 1] * scale;
+    /* An amplitude squares under WF_MODE_DENSITY; a rho element does not. */
+    int squared = 0;
+    double zr;
+    double zi;
+
+    switch (component) {
+      case WF_SPINOR_UP:
+        zr = ur; zi = ui; squared = 1;
+        break;
+      case WF_SPINOR_DOWN:
+        zr = dr; zi = di; squared = 1;
+        break;
+      case WF_SPINOR_UP_UP:
+        zr = ur * ur + ui * ui; zi = 0.0;
+        break;
+      case WF_SPINOR_DOWN_DOWN:
+        zr = dr * dr + di * di; zi = 0.0;
+        break;
+      case WF_SPINOR_UP_DOWN:
+        /* conj(psi_up) * psi_down */
+        zr = ur * dr + ui * di; zi = ur * di - ui * dr;
+        break;
+      case WF_SPINOR_DOWN_UP:
+      default:
+        /* conj(psi_down) * psi_up, i.e. the conjugate of the entry above */
+        zr = dr * ur + di * ui; zi = dr * ui - di * ur;
+        break;
+    }
+
+    out[i] = (float)reduce_value(zr, zi, mode, squared);
+    stats_add(&acc, out[i]);
+  }
+
+  stats_write(&acc, stats);
   return WF_OK;
 }

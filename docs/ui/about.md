@@ -41,7 +41,7 @@ You should have received a copy of the GNU Affero General Public License along w
 ## Work in progress... (already partially available)
 - Crystal structure comparison via structure overlay; Lattice difference analysis in radar plot.
 - Wyckoff Mode: all structure manipulation, relaxation and even molecular dynamics are in symmetry.
-- Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved). Also (collinear) WAVECAR loading and wavefunction/partial density visualization. Possible high memory requirements for large files.
+- Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved). Also WAVECAR loading and wavefunction/partial density visualization, collinear and non-collinear — a spinor band offers its two components and the elements of its partial density matrix. Possible high memory requirements for large files.
 - Share links that contain the structure, view angle, colors and measurements (currently selected structure in trajectory only).
 - Bond color maps.
 - Use (i) buttons to get more information about features; A detailed documentation of all features is comming soon!

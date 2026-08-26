@@ -19,7 +19,7 @@ WAVE_JS_OUT := wave_backend.js
 WAVE_WASM_OUT := wave_backend.wasm
 
 WAVE_EXPORTED_FUNCTIONS := \
-	["_malloc","_free","_wf_next_smooth","_wf_gen_gvecs","_wf_scatter","_wf_ifft3","_wf_reduce_scalar"]
+	["_malloc","_free","_wf_next_smooth","_wf_gen_gvecs","_wf_scatter","_wf_ifft3","_wf_reduce_scalar","_wf_reduce_spinor"]
 
 # HEAP32/HEAPF32 are needed on top of HEAPF64: G-vectors are int32 and the
 # reduced field is float32 (what model/Field.js stores).

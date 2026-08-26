@@ -4,6 +4,8 @@ Each entry is the orbital for a single **band**, grouped by spin and k-points.
 A spin-polarised file shows **Spin up** /
 **Spin down** at the top level.
 Each k-point is labelled with its fractional coordinates.
+In a non-collinear file a band is not one orbital but a spinor, so the band itself becomes a group —
+see **Non-collinear files** below.
 
 Unlike a CHGCAR or a cube file, **nothing is loaded when the file is opened**. A WAVECAR stores
 plane-wave coefficients, and is normally too large to load into memory all at once. So each band to visualize needs to be **Loaded**.
@@ -23,6 +25,34 @@ The **Quantity** dropdown at the top chooses what is computed from the WAVECAR c
 - **Re ψ** and **Im ψ** – the raw real and imaginary parts.
 
 These are also used as categories for field selection. The field selection and combination is specific for **one** quantity.
+
+## Non-collinear files
+
+A non-collinear (`LNONCOLLINEAR`) run stores a **two-component spinor** per band rather than a single
+wavefunction, and reports one spin channel while writing twice as many plane-wave coefficients.
+CrysViz detects that and gives such a band its own group, holding:
+
+- **ψ↑** and **ψ↓** – the two components as the file stores them, each a wavefunction in its own
+  right that the Quantity dropdown applies to as usual.
+- **ρ↑↑**, **ρ↑↓** and **ρ↓↓** – the elements of that band's contribution to the density matrix,
+  ρ_ab = ψ_a\* ψ_b. The diagonal is the density each component carries, and the off-diagonal is the
+  transverse part: its real and imaginary parts are the in-plane magnetisation
+  (m_x = 2 Re ρ↑↓, m_y = −2 Im ρ↑↓), while m_z is ρ↑↑ − ρ↓↓.
+
+**ρ↓↑** is listed only under **Im ψ**. The density matrix of a single band is Hermitian, so
+ρ↓↑ is the complex conjugate of ρ↑↓ and reduces to exactly the same grid under every quantity
+except Im, where it is the same grid negated — the other three would simply be duplicates.
+
+For a density-matrix element the Quantity dropdown reads slightly differently, because ρ is already
+a density rather than an amplitude: **|ψ|² (density)** gives the magnitude |ρ| instead of squaring
+it again, while **Re**, **Im** and **signed** behave as their names say. The label of a loaded field
+records which was used.
+
+The whole spinor is normalised together, so ρ↑↑ and ρ↓↓ integrate over the cell to the fraction of
+the band held by each component and add up to one. Comparing them is therefore meaningful: a band
+sitting mostly in the down component shows a visibly smaller ρ↑↑ isosurface at the same isovalue.
+Combining them (**ρ↑↑ + ρ↓↓** with weights 1 and 1 in **Combine fields**) gives the band's total
+density, and subtracting them gives m_z.
 
 ## Filtering and memory
 

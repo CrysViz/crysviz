@@ -276,6 +276,70 @@ static void test_reduce_scalar(void) {
   check(stats[0] < 0.0 && stats[1] > 0.0, "real mode spans negative and positive");
 }
 
+
+/*
+ * The non-collinear reduction. The two boxes below are deliberately unequal in
+ * weight, because the thing most easily got wrong is normalising each spinor
+ * component on its own: that would make up*up and down*down integrate to the
+ * same number and hide which component the band actually lives in.
+ */
+static void test_reduce_spinor(void) {
+  const int count = 4;
+  /* psi_up carries most of the weight; psi_down is the minority component. */
+  double box_up[8] = {3.0, 4.0,  -1.0, 0.0,   0.0, 2.0,   0.5, 0.5};
+  double box_dn[8] = {0.5, 0.0,   0.0, 1.0,  -0.5, 0.25,  1.0, -1.0};
+  float out[4];
+  float other[4];
+  double stats[4];
+  const double dv = 0.25;
+  double trace_sum = 0.0;
+  double up_sum = 0.0;
+  double down_sum = 0.0;
+  int i;
+
+  printf("wf_reduce_spinor\n");
+
+  check(wf_reduce_spinor(box_up, box_dn, count, WF_SPINOR_UP_UP,
+                         WF_MODE_DENSITY, dv, out, stats) == WF_OK, "up*up returns WF_OK");
+  for (i = 0; i < count; i++) up_sum += out[i] * dv;
+  check(stats[0] >= 0.0, "up*up is non-negative");
+
+  check(wf_reduce_spinor(box_up, box_dn, count, WF_SPINOR_DOWN_DOWN,
+                         WF_MODE_DENSITY, dv, out, stats) == WF_OK, "down*down returns WF_OK");
+  for (i = 0; i < count; i++) down_sum += out[i] * dv;
+
+  trace_sum = up_sum + down_sum;
+  check_close(trace_sum, 1.0, 1e-6, "the trace of the density matrix integrates to 1");
+  check(up_sum > down_sum, "the majority component keeps the larger weight");
+
+  /* WF_SPINOR_UP reduced as a density must agree with the diagonal element:
+   * |psi_up|^2 and conj(psi_up)*psi_up are the same field. */
+  check(wf_reduce_spinor(box_up, box_dn, count, WF_SPINOR_UP,
+                         WF_MODE_DENSITY, dv, out, stats) == WF_OK, "up amplitude returns WF_OK");
+  check(wf_reduce_spinor(box_up, box_dn, count, WF_SPINOR_UP_UP,
+                         WF_MODE_DENSITY, dv, other, stats) == WF_OK, "up*up returns WF_OK again");
+  for (i = 0; i < count; i++) check_close(out[i], other[i], 1e-6, "|psi_up|^2 == rho_uu");
+
+  /* The two off-diagonals are conjugates of one another, which is why only one
+   * of them is offered in the field list: they differ in Im and nowhere else. */
+  check(wf_reduce_spinor(box_up, box_dn, count, WF_SPINOR_UP_DOWN,
+                         WF_MODE_REAL, dv, out, stats) == WF_OK, "up*down Re returns WF_OK");
+  check(wf_reduce_spinor(box_up, box_dn, count, WF_SPINOR_DOWN_UP,
+                         WF_MODE_REAL, dv, other, stats) == WF_OK, "down*up Re returns WF_OK");
+  for (i = 0; i < count; i++) check_close(out[i], other[i], 0.0, "Re rho_ud == Re rho_du");
+
+  check(wf_reduce_spinor(box_up, box_dn, count, WF_SPINOR_UP_DOWN,
+                         WF_MODE_IMAG, dv, out, stats) == WF_OK, "up*down Im returns WF_OK");
+  check(wf_reduce_spinor(box_up, box_dn, count, WF_SPINOR_DOWN_UP,
+                         WF_MODE_IMAG, dv, other, stats) == WF_OK, "down*up Im returns WF_OK");
+  for (i = 0; i < count; i++) check_close(out[i], -other[i], 0.0, "Im rho_ud == -Im rho_du");
+  check(stats[0] < 0.0 || stats[1] > 0.0, "the off-diagonal is not identically zero");
+
+  check(wf_reduce_spinor(box_up, box_dn, count, 99,
+                         WF_MODE_DENSITY, dv, out, stats) == WF_ERR_BAD_INPUT,
+        "an unknown component is rejected");
+}
+
 int main(void) {
   test_next_smooth();
   test_fft_against_naive();
@@ -283,6 +347,7 @@ int main(void) {
   test_gvec_order_and_gamma();
   test_scatter_gamma_gives_real();
   test_reduce_scalar();
+  test_reduce_spinor();
 
   printf("\n%s (%d failure%s)\n", failures ? "FAILED" : "ALL PASSED",
          failures, failures == 1 ? "" : "s");
