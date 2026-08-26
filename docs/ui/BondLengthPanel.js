@@ -1,6 +1,6 @@
 import { fileBrowser, general, groups } from '../state/store.js';
 
-import {getElementRadius} from '../defaults/radii_defaults.js'
+import {getDefaultBondCutoff} from '../defaults/radii_defaults.js'
 
 
 
@@ -23,6 +23,7 @@ import {
   updateHydrogenBonds, initHydrogenBondPairs, hydrogenBondAcceptorOf,
   resetHydrogenBondLengths, hydrogenBondColorFor,
 } from '../render/index.js';
+import { showInfoPanel } from './InfoPanel.js';
 
 // The slider container is fluid (flex:1, see .bond-range-slider in
 // styles/bondLengthHistogram.css) so it shrinks to fit the Structure Info
@@ -106,6 +107,17 @@ function createHydrogenBondControl(pair) {
   valueSpan.className = 'hbond-value';
   valueSpan.textContent = `${range.min.toFixed(2)} - ${range.max.toFixed(2)} Å`;
 
+  // Little "i" button explaining the hydrogen-bond distance/angle criteria.
+  const infoBtn = document.createElement('button');
+  infoBtn.type = 'button';
+  infoBtn.className = 'info-button hbond-info';
+  infoBtn.textContent = 'i';
+  infoBtn.title = 'About hydrogen bonds';
+  infoBtn.onclick = (e) => {
+    e.stopPropagation();
+    showInfoPanel('./data/hydrogenBondInfo.md');
+  };
+
   header.appendChild(toggleWrap);
   header.appendChild(dot);
   header.appendChild(label);
@@ -185,7 +197,9 @@ function createHydrogenBondControl(pair) {
   redrawTrackFill();
   applyEnabled(enabled);
 
+  // The "i" sits after the slider (the bar's flex:1 shrinks to make room).
   controlsRow.appendChild(sliderContainer);
+  controlsRow.appendChild(infoBtn);
   wrap.appendChild(header);
   wrap.appendChild(colorEditor);
   wrap.appendChild(controlsRow);
@@ -325,8 +339,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
         return;
       }
       const [el1, el2] = pair.split('-');
-      const defaultRadius = getElementRadius(el1) + getElementRadius(el2);
-      const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+      const defaultValue = getDefaultBondCutoff(el1, el2);
       general.bondLengths[pair] = { min: 0, max: defaultValue };
       general.defaultBondLengths[pair] = { min: 0, max: defaultValue };
       general.bondVisibility[pair] = true;
@@ -358,8 +371,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
-        const defaultRadius = getElementRadius(uniqueElements[i]) + getElementRadius(uniqueElements[j]);
-        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        const defaultValue = getDefaultBondCutoff(uniqueElements[i], uniqueElements[j]);
         general.bondLengths[pair] = { min: 0.0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default
       }

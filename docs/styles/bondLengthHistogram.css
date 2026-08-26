@@ -361,6 +361,15 @@
   flex: 0 0 auto;
 }
 
+/* Slightly smaller than the standalone corner "i" badge so it sits neatly
+   inline in the compact H-bond header. */
+.hbond-info {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  font-size: var(--fs-sm);
+}
+
 .hbond-color-editor {
   margin: var(--sp-2) 0;
 }

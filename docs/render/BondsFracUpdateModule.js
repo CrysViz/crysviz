@@ -1,7 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import {bondLengths, coordinationNumbers, app, groups,fileBrowser, general, highlightHover} from '../state/store.js';
-import {getElementRadius} from '../defaults/radii_defaults.js'
+import {getDefaultBondCutoff} from '../defaults/radii_defaults.js'
 import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors,getJetColors} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
@@ -56,8 +56,7 @@ export function initBondsLengths(){
         // Bond Length panel can still raise it by hand for whoever actually
         // wants to visualize distance-to-nearest-vacancy.
         const isVacancyPair = uniqueElements[i] === 'Va' || uniqueElements[j] === 'Va';
-        const defaultRadius = getElementRadius(uniqueElements[i]) + getElementRadius(uniqueElements[j]);
-        const defaultValue = isVacancyPair ? 0.0 : Math.min(defaultRadius * 1.0, 6.0);
+        const defaultValue = isVacancyPair ? 0.0 : getDefaultBondCutoff(uniqueElements[i], uniqueElements[j]);
         general.bondLengths[pair] = { min: 0.0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default
       }

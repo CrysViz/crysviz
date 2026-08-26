@@ -1,5 +1,5 @@
 import {general} from '../state/store.js';
-import {atomicRadii} from '../defaults/radii_defaults.js'
+import {getElementRadius} from '../defaults/radii_defaults.js'
 import {defaultColorMap} from '../defaults/color_texture_defaults.js'
 
 import * as THREE from '../external/three/three.module.js';
@@ -122,7 +122,12 @@ export class Bond {
   }
 }
 
-// Helper outside class
+// Helper outside class. Uses getElementRadius (not the raw atomicRadii table)
+// so a user-defined radius override (general.customAtomicRadii, set in the
+// Custom User Settings panel) feeds the clipped bond geometry too — otherwise
+// the atom sphere resizes (AtomsFracUpdateModule sizes it via getElementRadius)
+// but the bonds keep clipping to the built-in radius, leaving a gap or overlap
+// at the atom surface.
 function getAtomRadius(element) {
-  return (atomicRadii[element] || 1.0) * general.atomSize;
+  return getElementRadius(element) * general.atomSize;
 }

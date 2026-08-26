@@ -30,7 +30,7 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { openSwatchColorPicker } from './SwatchColorPicker.js';
 import { colorHexToCss } from '../utils/ColorModule.js';
 import { getElementDefaultColor } from '../defaults/color_texture_defaults.js';
-import { getElementRadius } from '../defaults/radii_defaults.js';
+import { getElementRadius, getDefaultBondCutoff } from '../defaults/radii_defaults.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
 import { syncElementColorMapDropdown } from './ColorPanel.js';
 import { elementData, tableLayout, lanthanides, actinides, borderColors, hexToRgb } from './PeriodicTablePickerCore.js';
@@ -670,12 +670,12 @@ function openRadiusPeriodicTable(onChange) {
 // seen in a loaded structure) with directly-typable min/max fields.
 // ---------------------------------------------------------------------------
 
-// Same default a loaded structure's bonds get seeded with (radius sum,
-// capped at 6 A) - used here so a pair with no override yet still starts
-// from a sensible value instead of an arbitrary placeholder.
+// Same default a loaded structure's bonds get seeded with (scaled radius
+// sum, capped at 6 A - see getDefaultBondCutoff) - used here so a pair with
+// no override yet still starts from a sensible value instead of an arbitrary
+// placeholder.
 function computeDefaultBondEntry(elA, elB) {
-  const max = Math.min(getElementRadius(elA) + getElementRadius(elB), 6.0);
-  return { min: 0.0, max };
+  return { min: 0.0, max: getDefaultBondCutoff(elA, elB) };
 }
 
 function openBondPairPicker(onChange) {
