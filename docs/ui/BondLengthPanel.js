@@ -5,7 +5,7 @@ import {getElementRadius} from '../defaults/radii_defaults.js'
 
 
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { createPieDot, colorHexToCss } from '../utils/ColorModule.js';
+import { createPieDot, updatePieDot, colorHexToCss } from '../utils/ColorModule.js';
 import {clearAllHighlights} from './SelectAndHighlightModule.js';
 import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
 import { createColorPicker } from './ColorPickerModule.js';
@@ -18,6 +18,10 @@ import {
 import {
   bondGroupKey, bondKey, updateSingleBondColor, updateSingleBondOpacity,
   updateSingleBondDiameter,
+} from '../render/index.js';
+import {
+  updateHydrogenBonds, initHydrogenBondPairs, hydrogenBondAcceptorOf,
+  resetHydrogenBondLengths, hydrogenBondColorFor,
 } from '../render/index.js';
 
 // The slider container is fluid (flex:1, see .bond-range-slider in
@@ -42,6 +46,150 @@ const BOND_SLIDER_THUMB = 16;
 function bondSliderThumbPos(v, max, width = BOND_SLIDER_WIDTH) {
   const inset = BOND_SLIDER_THUMB / 2;
   return inset + (v / max) * (width - 2 * inset);
+}
+
+// Hydrogen-bond distance sliders span a wider window than covalent bonds
+// (weak H...A contacts reach ~3.5 A), so the second slider uses its own max.
+const HBOND_SLIDER_MAX = 4;
+
+/** Build the "H-bond" sub-control (on/off toggle + H...A distance range
+ *  slider) for a hydrogen-bond-eligible pair like "H-O". Returns the row
+ *  element. Edits update general.hydrogenBondLengths / hydrogenBondVisibility
+ *  and redraw the dashed lines directly (no bonds rebuild needed). */
+function createHydrogenBondControl(pair) {
+  const acceptor = hydrogenBondAcceptorOf(pair);
+  const wrap = document.createElement('div');
+  wrap.className = 'hbond-control';
+  wrap.dataset.pair = pair;
+
+  // Defensive: initHydrogenBondPairs() runs before this for every eligible
+  // pair, but never let a missing range take down the whole Bonds panel.
+  const range = general.hydrogenBondLengths[pair]
+    ?? (general.hydrogenBondLengths[pair] = { min: 1.5, max: 2.6 });
+  const enabled = general.hydrogenBondVisibility[pair] !== false;
+
+  // Header: toggle + colour dot + label + live value readout.
+  const header = document.createElement('div');
+  header.className = 'hbond-header';
+
+  const { wrapper: toggleWrap, input: toggle } = createMiniToggleSwitch(
+    `Show/hide ${pair} hydrogen bonds`);
+  toggle.checked = enabled;
+
+  // Colour editor (a single colour picker), toggled by the dot — same
+  // pattern as the covalent category dot's editor above.
+  const colorEditor = document.createElement('div');
+  colorEditor.className = 'hbond-color-editor';
+  colorEditor.style.display = 'none';
+  const colorPicker = createColorPicker(hydrogenBondColorFor(pair), (hex) => {
+    general.hydrogenBondColors[pair] = hex;
+    updatePieDot(dot, [hex]);
+    updateHydrogenBonds(fileBrowser.selectedStructure);
+  });
+  colorEditor.appendChild(colorPicker.element);
+
+  // Small round colour swatch matching the covalent bonds' category dot.
+  const dot = createPieDot([hydrogenBondColorFor(pair)], 20);
+  dot.classList.add('dot', 'bond-cat-dot', 'hbond-dot');
+  dot.title = `Choose the ${pair} hydrogen-bond colour`;
+  dot.onclick = (e) => {
+    e.stopPropagation();
+    colorEditor.style.display = colorEditor.style.display === 'none' ? 'block' : 'none';
+  };
+
+  const label = document.createElement('span');
+  label.className = 'hbond-label';
+  label.textContent = 'H-bond';
+  label.title = `${acceptor}···H hydrogen-bond distance range (dashed lines)`;
+
+  const valueSpan = document.createElement('span');
+  valueSpan.className = 'hbond-value';
+  valueSpan.textContent = `${range.min.toFixed(2)} - ${range.max.toFixed(2)} Å`;
+
+  header.appendChild(toggleWrap);
+  header.appendChild(dot);
+  header.appendChild(label);
+  header.appendChild(valueSpan);
+
+  // Double slider (same construction as the covalent bond slider, own accent).
+  const controlsRow = document.createElement('div');
+  controlsRow.className = 'bond-controls-row';
+
+  const sliderContainer = document.createElement('div');
+  sliderContainer.className = 'bond-range-slider hbond-range-slider';
+
+  const backgroundTrack = document.createElement('div');
+  backgroundTrack.className = 'background-track';
+  sliderContainer.appendChild(backgroundTrack);
+
+  const track = document.createElement('div');
+  track.className = 'range-track';
+  sliderContainer.appendChild(track);
+
+  const minSlider = /** @type {any} */ (document.createElement('input'));
+  minSlider.type = 'range';
+  minSlider.min = '0';
+  minSlider.max = String(HBOND_SLIDER_MAX);
+  minSlider.step = '0.05';
+  minSlider.value = range.min;
+  minSlider.className = 'bond-range-min';
+  sliderContainer.appendChild(minSlider);
+
+  const maxSlider = /** @type {any} */ (document.createElement('input'));
+  maxSlider.type = 'range';
+  maxSlider.min = '0';
+  maxSlider.max = String(HBOND_SLIDER_MAX);
+  maxSlider.step = '0.05';
+  maxSlider.value = range.max;
+  maxSlider.className = 'bond-range-max';
+  sliderContainer.appendChild(maxSlider);
+
+  function redrawTrackFill() {
+    const width = sliderContainer.clientWidth || BOND_SLIDER_WIDTH;
+    const minPx = bondSliderThumbPos(parseFloat(minSlider.value), HBOND_SLIDER_MAX, width);
+    const maxPx = bondSliderThumbPos(parseFloat(maxSlider.value), HBOND_SLIDER_MAX, width);
+    track.style.left = `${minPx}px`;
+    track.style.width = `${maxPx - minPx}px`;
+  }
+  new ResizeObserver(redrawTrackFill).observe(sliderContainer);
+
+  function updateRange() {
+    let minVal = parseFloat(minSlider.value);
+    let maxVal = parseFloat(maxSlider.value);
+    if (maxVal - minVal < 0.1) {
+      if (this === minSlider) { minVal = maxVal - 0.1; minSlider.value = minVal; }
+      else { maxVal = minVal + 0.1; maxSlider.value = maxVal; }
+    }
+    if (minVal > maxVal) {
+      if (this === minSlider) { minVal = maxVal; minSlider.value = maxVal; }
+      else { maxVal = minVal; maxSlider.value = minVal; }
+    }
+    redrawTrackFill();
+    valueSpan.textContent = `${minVal.toFixed(2)} - ${maxVal.toFixed(2)} Å`;
+    general.hydrogenBondLengths[pair].min = minVal;
+    general.hydrogenBondLengths[pair].max = maxVal;
+    updateHydrogenBonds(fileBrowser.selectedStructure);
+  }
+  minSlider.oninput = updateRange;
+  maxSlider.oninput = updateRange;
+
+  function applyEnabled(on) {
+    general.hydrogenBondVisibility[pair] = on;
+    sliderContainer.style.opacity = on ? '' : '0.4';
+    minSlider.disabled = !on;
+    maxSlider.disabled = !on;
+    updateHydrogenBonds(fileBrowser.selectedStructure);
+  }
+  toggle.onchange = (e) => applyEnabled(/** @type {any} */ (e.target).checked);
+
+  redrawTrackFill();
+  applyEnabled(enabled);
+
+  controlsRow.appendChild(sliderContainer);
+  wrap.appendChild(header);
+  wrap.appendChild(colorEditor);
+  wrap.appendChild(controlsRow);
+  return wrap;
 }
 
 function safeColor(color) {
@@ -96,6 +244,9 @@ export function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
     general.bondLengths[pair] = { ...general.defaultBondLengths[pair] };
   }
+  // Reset the hydrogen-bond ranges alongside the covalent ones — they share
+  // the same "Reset Bond Lengths" button and the same Bonds-tab rows.
+  resetHydrogenBondLengths();
   // createBondLengthControls() never clears its target container first (it's
   // an append-only builder, unlike e.g. createPolyhedraListControls) — its
   // only safe caller is renderComposition(), which always hands it a freshly
@@ -137,6 +288,10 @@ export function createBondLengthControls(targetPanel='bondControls') {
   if (!bondControls) return;
 
   if (!fileBrowser.selectedStructure) return;
+
+  // Seed per-pair hydrogen-bond ranges/visibility so the second sliders below
+  // have values to bind to (idempotent — existing user edits are kept).
+  initHydrogenBondPairs(fileBrowser.selectedStructure);
 
     // --- Reset wrapper (Add Custom Bond only now — Reset Bond Lengths moved
     // to the bottom, next to Reset Colors) ---
@@ -701,6 +856,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
     div.appendChild(catEditor);
     div.appendChild(label);
     div.appendChild(controlsRow);
+    // Second slider for hydrogen-bond-capable pairs (H + electronegative
+    // acceptor, e.g. O-H): controls the dashed D-H...A contact distance range.
+    if (hydrogenBondAcceptorOf(pair)) {
+      div.appendChild(createHydrogenBondControl(pair));
+    }
     div.appendChild(bondsContainer);
     bondControls.appendChild(div);
   });

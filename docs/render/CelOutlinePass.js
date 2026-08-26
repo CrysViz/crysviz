@@ -25,6 +25,7 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
+import { resolveCelOutlineColor } from './MaterialStyles.js';
 
 export const CEL_OUTLINE_LAYER = 3;
 
@@ -60,6 +61,7 @@ const EDGE_FRAGMENT = /* glsl */`
   uniform float uFar;
   uniform float uOrtho;     // 1.0 for an orthographic camera
   uniform float uThreshold; // relative depth-discontinuity threshold
+  uniform vec3 uColor;      // outline color (resolved from the color mode)
   varying vec2 vUv;
 
   float viewDist(vec2 uv) {
@@ -83,7 +85,7 @@ const EDGE_FRAGMENT = /* glsl */`
     float t = uThreshold * min(dc, uFar * 0.5);
     float edge = smoothstep(t, 2.0 * t, lap);
     if (edge <= 0.0) discard;
-    gl_FragColor = vec4(0.0, 0.0, 0.0, edge);
+    gl_FragColor = vec4(uColor, edge);
   }
 `;
 
@@ -110,6 +112,7 @@ function ensureResources(renderer) {
         uFar: { value: 1000 },
         uOrtho: { value: 0 },
         uThreshold: { value: 0.02 },
+        uColor: { value: new THREE.Color(0, 0, 0) },
       },
       transparent: true,
       depthTest: false,
@@ -166,6 +169,16 @@ export function renderCelOutlinePass(renderer, scene, camera) {
   u.uNear.value = camera.near;
   u.uFar.value = camera.far;
   u.uOrtho.value = camera.isOrthographicCamera ? 1 : 0;
+  // Resolve the outline color live each frame (so 'auto' tracks background
+  // changes). The pass writes gl_FragColor directly into the sRGB canvas with
+  // no colorspace conversion, so feed the sRGB components raw rather than the
+  // color-managed (linearized) channels.
+  const hex = resolveCelOutlineColor();
+  u.uColor.value.setRGB(
+    parseInt(hex.slice(1, 3), 16) / 255,
+    parseInt(hex.slice(3, 5), 16) / 255,
+    parseInt(hex.slice(5, 7), 16) / 255,
+  );
   renderer.setRenderTarget(null);
   renderer.autoClear = false;
   renderer.render(quadScene, quadCamera);

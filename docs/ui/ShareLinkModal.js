@@ -38,6 +38,19 @@ let qrNote = null;
 let copyBtn = null;
 let qrActions = null;
 let previousFocus = null;
+let lockRow = null;
+let passwordField = null;
+let lockNote = null;
+
+// Set each showing: the plaintext ?state=/?z= link, and a closure that turns a
+// password into the encrypted ?e= link (null when the origin can't do crypto,
+// which hides the password field). See ShareModule.shareStructure.
+let plainURL = '';
+let encryptURL = null;
+// Bumped on every password change so a slow PBKDF2 encrypt from a stale
+// keystroke can't overwrite the field after a newer one has resolved.
+let encryptSeq = 0;
+let encryptDebounce = 0;
 
 // The symbol currently on screen, kept so the PNG export can rasterise from the
 // module grid rather than re-encoding or scraping the rendered SVG. Null while
@@ -58,6 +71,12 @@ const MODAL_HTML = `
     </div>
     <p class="png-note" id="shareLinkQrNote">Generating QR code…</p>
     <textarea class="share-link-url" id="shareLinkUrl" readonly rows="3" aria-label="Share URL"></textarea>
+    <div class="share-link-lock" id="shareLinkLock" hidden>
+      <label for="shareLinkPassword">Password (optional)</label>
+      <input type="password" id="shareLinkPassword" autocomplete="new-password"
+             placeholder="Leave empty for an unprotected link">
+      <p class="png-note" id="shareLinkLockNote"></p>
+    </div>
     <div class="paste-modal-actions">
       <button type="button" class="png-primary" id="shareLinkCopy">Copy link</button>
       <button type="button" id="shareLinkClose">Close</button>
@@ -79,6 +98,11 @@ function initShareLinkModal() {
   qrNote = document.getElementById('shareLinkQrNote');
   copyBtn = document.getElementById('shareLinkCopy');
   qrActions = document.getElementById('shareLinkQrActions');
+  lockRow = document.getElementById('shareLinkLock');
+  passwordField = /** @type {HTMLInputElement} */ (document.getElementById('shareLinkPassword'));
+  lockNote = document.getElementById('shareLinkLockNote');
+
+  passwordField.addEventListener('input', onPasswordInput);
 
   copyBtn.addEventListener('click', copyLink);
   document.getElementById('shareLinkQrPng').addEventListener('click', downloadQRPNG);
@@ -91,15 +115,57 @@ function initShareLinkModal() {
   urlField.addEventListener('focus', () => urlField.select());
 }
 
-/** Open the dialog on `url` and kick off QR generation. */
-export function showShareLink(url) {
+/**
+ * Open the dialog on `url` and kick off QR generation.
+ * @param {string} url the plaintext share URL
+ * @param {{ encryptURL?: ((password: string) => Promise<string>) | null }} [opts]
+ *   encryptURL turns a password into the encrypted variant; when present the
+ *   dialog shows an optional password field. Omitted/null hides it.
+ */
+export function showShareLink(url, { encryptURL: enc = null } = {}) {
   initShareLinkModal();
+  plainURL = url;
+  encryptURL = enc;
+  encryptSeq++;                 // invalidate any in-flight encrypt from last showing
+  clearTimeout(encryptDebounce);
+  passwordField.value = '';
+  lockNote.textContent = '';
+  lockRow.hidden = !enc;        // no crypto (insecure origin) -> no field
   urlField.value = url;
   previousFocus = document.activeElement;
   modal.hidden = false;
   copyBtn.textContent = 'Copy link';
   renderQR(url);
   setTimeout(() => { copyBtn.focus({ preventScroll: true }); }, 0);
+}
+
+/** Password field changed: debounce (PBKDF2 is deliberately slow), then swap
+ *  the URL/QR between the plaintext and encrypted forms. */
+function onPasswordInput() {
+  clearTimeout(encryptDebounce);
+  const seq = ++encryptSeq;
+  const password = passwordField.value;
+  if (!password || !encryptURL) {
+    // Back to the unprotected link, immediately.
+    lockNote.textContent = '';
+    urlField.value = plainURL;
+    renderQR(plainURL);
+    return;
+  }
+  lockNote.textContent = 'Encrypting…';
+  encryptDebounce = setTimeout(async () => {
+    try {
+      const url = await encryptURL(password);
+      if (seq !== encryptSeq) return; // a newer keystroke won
+      urlField.value = url;
+      lockNote.textContent = 'Encrypted — recipients need this password to open the link. Share it separately.';
+      renderQR(url);
+    } catch (e) {
+      if (seq !== encryptSeq) return;
+      console.error('Failed to encrypt share link:', e);
+      lockNote.textContent = 'Could not encrypt the link.';
+    }
+  }, 300);
 }
 
 function close() {
@@ -215,4 +281,76 @@ function qrSVG(qr) {
     + `shape-rendering="crispEdges" role="img" aria-label="QR code for the share link">`
     + `<rect width="${span}" height="${span}" fill="#ffffff"/>`
     + `<path d="${d}" fill="#000000"/></svg>`;
+}
+
+
+// ---------------------------------------------------------------------------
+// Password prompt (opening an encrypted ?e= link)
+// ---------------------------------------------------------------------------
+// A styled replacement for prompt(): built lazily, resolves to the entered
+// password or null if the user cancels. ShareModule loops on it, passing
+// retry:true after a wrong password.
+
+let promptModal = null;
+let promptInput = null;
+let promptError = null;
+let promptResolve = null;
+let promptPrevFocus = null;
+
+const PROMPT_HTML = `
+  <div class="share-link-modal png-export-modal" role="dialog" aria-modal="true" aria-labelledby="sharePwTitle">
+    <h3 id="sharePwTitle">Password required</h3>
+    <p class="png-note" id="sharePwIntro">This shared link is password-protected. Enter the password to open it.</p>
+    <input type="password" id="sharePwInput" autocomplete="current-password" aria-label="Password">
+    <p class="png-note share-pw-error" id="sharePwError" hidden>Wrong password \u2014 try again.</p>
+    <div class="paste-modal-actions">
+      <button type="button" class="png-primary" id="sharePwOpen">Open</button>
+      <button type="button" id="sharePwCancel">Cancel</button>
+    </div>
+  </div>
+`;
+
+function initPromptModal() {
+  if (promptModal) return;
+  promptModal = document.createElement('div');
+  promptModal.id = 'sharePasswordModal';
+  promptModal.hidden = true;
+  promptModal.innerHTML = PROMPT_HTML;
+  document.body.appendChild(promptModal);
+
+  promptInput = /** @type {HTMLInputElement} */ (document.getElementById('sharePwInput'));
+  promptError = document.getElementById('sharePwError');
+
+  document.getElementById('sharePwOpen').addEventListener('click', () => settlePrompt(promptInput.value));
+  document.getElementById('sharePwCancel').addEventListener('click', () => settlePrompt(null));
+  promptModal.addEventListener('click', (e) => { if (e.target === promptModal) settlePrompt(null); });
+  promptModal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') settlePrompt(null);
+    else if (e.key === 'Enter') { e.preventDefault(); settlePrompt(promptInput.value); }
+  });
+}
+
+/** Show the prompt and resolve with the password, or null if cancelled.
+ *  @param {{ retry?: boolean }} [opts] retry:true shows the wrong-password note. */
+export function promptSharePassword({ retry = false } = {}) {
+  initPromptModal();
+  promptError.hidden = !retry;
+  promptInput.value = '';
+  promptPrevFocus = document.activeElement;
+  promptModal.hidden = false;
+  setTimeout(() => promptInput.focus({ preventScroll: true }), 0);
+  return new Promise((resolve) => { promptResolve = resolve; });
+}
+
+function settlePrompt(value) {
+  if (!promptResolve) return;
+  const resolve = promptResolve;
+  promptResolve = null;
+  promptModal.hidden = true;
+  const target = promptPrevFocus;
+  promptPrevFocus = null;
+  if (target && typeof target.focus === 'function') {
+    setTimeout(() => target.focus({ preventScroll: true }), 0);
+  }
+  resolve(value);
 }

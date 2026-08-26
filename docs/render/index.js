@@ -45,6 +45,12 @@ export {
 
 export { removeForces, updateForces, computeForceColor } from './ForceModule.js';
 
+export {
+  updateHydrogenBonds, clearHydrogenBonds, initHydrogenBondPairs,
+  resetHydrogenBondLengths, getEligibleHydrogenBondPairs, hydrogenBondAcceptorOf,
+  hydrogenBondColorFor,
+} from './HydrogenBondModule.js';
+
 export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail } from './FastFrameModule.js';
 
 export { updateGroundPlane } from './GroundPlaneModule.js';
@@ -71,7 +77,7 @@ export {
   setupAxisControls, setupAxisLongPress, setAxisStepButtonsMode, applyRotationFromUI,
 } from './cameraAngleControl.js';
 
-export { setCelHullWidth, setCelHullPolyWidth } from './MaterialStyles.js';
+export { setCelHullWidth, setCelHullPolyWidth, setCelOutlineColor } from './MaterialStyles.js';
 
 export { captureSceneToPng, computeContentScreenBox, isPngCaptureInProgress };
 

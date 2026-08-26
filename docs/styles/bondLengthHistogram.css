@@ -335,6 +335,55 @@
   min-width: 0; /* lets the flex:1 slider actually shrink instead of overflowing the row */
 }
 
+/* ---- hydrogen-bond sub-control (second slider on H-X pairs) ---- */
+/* Indented and set off from the covalent slider above it so it reads as a
+   secondary control belonging to the same pair row. */
+.hbond-control {
+  margin: var(--sp-2) 0 var(--sp-1) var(--sp-4);
+  padding-left: var(--sp-3);
+  border-left: 2px solid var(--track-bg-strong);
+}
+
+.hbond-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* A bit of breathing room between the header/colour dot and the double
+   slider, so the H-bond slider doesn't crowd its label row. */
+.hbond-control .bond-controls-row {
+  margin-top: var(--sp-3);
+}
+
+.hbond-dot {
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.hbond-color-editor {
+  margin: var(--sp-2) 0;
+}
+
+.hbond-label {
+  font-size: var(--fs-base); /* 12px */
+  opacity: 0.85;
+}
+
+.hbond-value {
+  margin-left: auto;
+  font-size: var(--fs-base);
+  opacity: 0.7;
+}
+
+/* The dashed hydrogen bonds render cyan in 3D (general.hydrogenBondColor,
+   #33d6d6) — pin the slider's selected-range fill to the same colour so the
+   control and what it draws read as one thing (distinct from the covalent
+   slider's green). */
+.hbond-range-slider .range-track {
+  background: rgba(51, 214, 214, 0.85);
+}
+
 /* ---- reset row (Add Custom Bond) ---- */
 .buttonWrapper {
   display: flex;
