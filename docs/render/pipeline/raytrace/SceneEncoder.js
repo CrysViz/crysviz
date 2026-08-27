@@ -1206,9 +1206,11 @@ export class SceneEncoder {
           shaftColors[i * 6 + 2]];
         const style = arrowStyle(fileBrowser.selectedStructure, kind,
           srcByInstance.get(i), fallbackColor, arrowMap?.get(i));
+        const shaftFocusAlpha = shaft.geometry?.attributes?.instanceOpacity?.getX(i * 2) ?? 1;
         result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
           r: style.color[0], g: style.color[1], b: style.color[2],
-          a: shaft.material?.opacity ?? 1, matTexel: materialTexel(style.material),
+          a: (shaft.material?.opacity ?? 1) * shaftFocusAlpha,
+          matTexel: materialTexel(style.material),
           shape: { rTop: 1 } });
 
         tip.getMatrixAt(i, _m);
@@ -1222,9 +1224,11 @@ export class SceneEncoder {
         const tipStyle = arrowStyle(fileBrowser.selectedStructure, kind,
           srcByInstance.get(i), tipFallback, arrowMap?.get(i));
         const tipColor = tipStyle.color ?? tipFallback;
+        const tipFocusAlpha = tip.geometry?.attributes?.instanceOpacity?.getX(i) ?? 1;
         result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
           r: tipColor[0], g: tipColor[1], b: tipColor[2],
-          a: tip.material?.opacity ?? 1, matTexel: materialTexel(tipStyle.material),
+          a: (tip.material?.opacity ?? 1) * tipFocusAlpha,
+          matTexel: materialTexel(tipStyle.material),
           shape: { rTop: 0 } });
       }
     };

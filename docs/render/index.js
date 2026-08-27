@@ -59,7 +59,8 @@ export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail } from './FastF
 export {
   DEFAULT_FOCUS_REGION, focusOpacityAt, combinedFocusOpacity, getFocusRegions,
   getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion, removeFocusRegion,
-  clearFocusRegions, applyFocusRegions,
+  clearFocusRegions, applyFocusRegions, setFocusRegionCenterFractional, resetFocusRegionCenter,
+  applyFocusToArrows,
 } from './FocusRegionModule.js';
 
 export { updateGroundPlane } from './GroundPlaneModule.js';

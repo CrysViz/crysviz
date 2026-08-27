@@ -3,8 +3,10 @@
 // restore the authored appearance exactly.
 
 import { fileBrowser, groups, general } from '../state/store.js';
+import { cartToFrac, fracToCart } from '../math/index.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { requestRender } from './AnimateModule.js';
+import { syncArrowTransparency } from './ArrowMaterial.js';
 
 export const DEFAULT_FOCUS_REGION = Object.freeze({
   enabled: true,
@@ -13,6 +15,7 @@ export const DEFAULT_FOCUS_REGION = Object.freeze({
   innerOpacity: 1,
   outerOpacity: 0.15,
   excludedSourceIndices: [],
+  centerOffsetFrac: [0, 0, 0],
 });
 
 function clamp01(value) {
@@ -72,9 +75,37 @@ export function prepareFocusRegions(structure = fileBrowser.selectedStructure) {
     const indices = (region.centerImageKeys ?? []).map((key) =>
       structure.atomImageKeys?.indexOf(key)).filter((index) => index >= 0);
     if (!indices.length) continue;
-    region.center = [0, 1, 2].map((axis) =>
+    const anchor = [0, 1, 2].map((axis) =>
       indices.reduce((sum, index) => sum + wrapped.cart[index][axis], 0) / indices.length);
+    region.anchorCenterFrac = cartToFrac(anchor, structure.lattice);
+    const offset = region.centerOffsetFrac?.length === 3 ? region.centerOffsetFrac : [0, 0, 0];
+    region.centerFractional = region.anchorCenterFrac.map((value, axis) => value + Number(offset[axis] || 0));
+    region.center = fracToCart([region.centerFractional], structure.lattice)[0];
   }
+}
+
+/** Move a region center in fractional coordinates while keeping it attached
+ * to the selected atom-image centroid through subsequent frame updates. */
+export function setFocusRegionCenterFractional(region, fractional,
+  structure = fileBrowser.selectedStructure) {
+  if (!region || !structure?.lattice || fractional?.length !== 3) return false;
+  prepareFocusRegions(structure);
+  const next = fractional.map(Number);
+  if (!next.every(Number.isFinite)) return false;
+  const anchor = region.anchorCenterFrac?.length === 3
+    ? region.anchorCenterFrac : cartToFrac(region.center, structure.lattice);
+  region.centerOffsetFrac = next.map((value, axis) => value - anchor[axis]);
+  region.centerFractional = next;
+  region.center = fracToCart([next], structure.lattice)[0];
+  applyFocusRegions(structure);
+  return true;
+}
+
+export function resetFocusRegionCenter(region, structure = fileBrowser.selectedStructure) {
+  if (!region) return;
+  region.centerOffsetFrac = [0, 0, 0];
+  prepareFocusRegions(structure);
+  applyFocusRegions(structure);
 }
 
 export function getFocusOpacityForInstance(instanceIndex, structure = fileBrowser.selectedStructure) {
@@ -100,6 +131,8 @@ export function createFocusRegion(centerAtoms, structure = fileBrowser.selectedS
     ...DEFAULT_FOCUS_REGION,
     id: `focus-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     center,
+    centerFractional: cartToFrac(center, structure.lattice),
+    centerOffsetFrac: [0, 0, 0],
     centerSourceIndices: [...new Set(centerAtoms.map((atom) => atom.sourceIndex)
       .filter(Number.isInteger))],
     centerImageKeys: [...new Set(centerAtoms.map((atom) =>
@@ -126,23 +159,25 @@ export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
   const mesh = groups.atomsMesh;
   const wrapped = structure?.periodic?.visibleWrapped;
   const opacityAttr = mesh?.geometry?.attributes?.instanceOpacity;
-  if (!mesh || !wrapped || !opacityAttr) return;
+  if (!wrapped) return;
   prepareFocusRegions(structure);
-  let hasTransparency = general.mainOpacity < 0.999;
-  for (let i = 0; i < wrapped.cart.length; i++) {
-    const src = wrapped.srcIndex?.[i] ?? i;
-    const atom = structure.atoms[src];
-    const imageAlpha = structure.atomImageStyles?.[structure.atomImageKeys?.[i]]?.alpha;
-    const authored = imageAlpha ?? atom?.getOpacity?.() ?? atom?.opacity ?? 1;
-    const opacity = clamp01(authored) * getFocusOpacityForInstance(i, structure);
-    opacityAttr.setX(i, opacity);
-    if (opacity < 0.999) hasTransparency = true;
+  if (mesh && opacityAttr) {
+    let hasTransparency = general.mainOpacity < 0.999;
+    for (let i = 0; i < wrapped.cart.length; i++) {
+      const src = wrapped.srcIndex?.[i] ?? i;
+      const atom = structure.atoms[src];
+      const imageAlpha = structure.atomImageStyles?.[structure.atomImageKeys?.[i]]?.alpha;
+      const authored = imageAlpha ?? atom?.getOpacity?.() ?? atom?.opacity ?? 1;
+      const opacity = clamp01(authored) * getFocusOpacityForInstance(i, structure);
+      opacityAttr.setX(i, opacity);
+      if (opacity < 0.999) hasTransparency = true;
+    }
+    opacityAttr.needsUpdate = true;
+    applyTransparency(mesh.material, {
+      kind: 'atoms', opacity: general.mainOpacity, needsTransparency: hasTransparency,
+      perInstanceOpacity: true, mesh,
+    });
   }
-  opacityAttr.needsUpdate = true;
-  applyTransparency(mesh.material, {
-    kind: 'atoms', opacity: general.mainOpacity, needsTransparency: hasTransparency,
-    perInstanceOpacity: true, mesh,
-  });
   const bondMesh = groups.bondsMesh;
   if (bondMesh && structure.bonds?.length) {
     const bondOpacity = bondMesh.geometry?.attributes?.instanceOpacity;
@@ -164,5 +199,31 @@ export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
       perInstanceOpacity: true, mesh: bondMesh,
     });
   }
+  applyFocusToArrows(structure, 'forces');
+  applyFocusToArrows(structure, 'spins');
   requestRender();
+}
+
+export function applyFocusToArrows(structure = fileBrowser.selectedStructure, kind) {
+  const prefix = kind === 'forces' ? 'forces' : 'spin';
+  const map = groups[`${kind}InstanceBySrcIndex`];
+  const shaft = groups[`${prefix}ShaftMesh`];
+  const tip = groups[`${prefix}TipMesh`];
+  if (!map || !shaft || !tip) return;
+  const wrapped = structure.periodic?.visibleWrapped;
+  const firstInstance = new Map();
+  wrapped?.srcIndex?.forEach((src, index) => { if (!firstInstance.has(src)) firstInstance.set(src, index); });
+  let transparent = false;
+  for (const [src, arrowIndex] of map) {
+    const instance = firstInstance.get(src);
+    const opacity = instance == null ? 1 : getFocusOpacityForInstance(instance, structure);
+    shaft.geometry.attributes.instanceOpacity?.setX(arrowIndex * 2, opacity);
+    shaft.geometry.attributes.instanceOpacity?.setX(arrowIndex * 2 + 1, opacity);
+    tip.geometry.attributes.instanceOpacity?.setX(arrowIndex, opacity);
+    if (opacity < 0.999) transparent = true;
+  }
+  if (shaft.geometry.attributes.instanceOpacity) shaft.geometry.attributes.instanceOpacity.needsUpdate = true;
+  if (tip.geometry.attributes.instanceOpacity) tip.geometry.attributes.instanceOpacity.needsUpdate = true;
+  syncArrowTransparency(shaft, transparent);
+  syncArrowTransparency(tip, transparent);
 }

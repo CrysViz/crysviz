@@ -56,6 +56,22 @@
   font-size: var(--fs-xs);
 }
 
+.focus-regions-center {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.focus-regions-center-coordinates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 0.3rem;
+}
+
+.focus-regions-center-coordinates input {
+  min-width: 0;
+  width: 100%;
+}
+
 .focus-regions-range {
   display: grid;
   gap: var(--sp-1);

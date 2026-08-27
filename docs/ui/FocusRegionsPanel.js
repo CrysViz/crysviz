@@ -1,6 +1,7 @@
 import { fileBrowser } from '../state/store.js';
 import {
-  applyFocusRegions, createFocusRegion, getFocusRegions, removeFocusRegion,
+  applyFocusRegions, createFocusRegion, getFocusRegions, prepareFocusRegions,
+  removeFocusRegion, resetFocusRegionCenter, setFocusRegionCenterFractional,
 } from '../render/index.js';
 import { getSelectedAtoms, subscribeToAtomSelection } from './SelectAndHighlightModule.js';
 import { createToggleRow } from './ToggleSwitch.js';
@@ -50,6 +51,35 @@ function describeSources(indices, structure) {
   return indices.map((index) => `${structure.elements?.[index] ?? '?'} ${index + 1}`).join(', ');
 }
 
+function centerEditor(region, rerender) {
+  const wrap = document.createElement('div');
+  wrap.className = 'focus-regions-center';
+  const label = document.createElement('span');
+  label.textContent = 'Center (fractional)';
+  const coordinates = document.createElement('div');
+  coordinates.className = 'focus-regions-center-coordinates';
+  const values = region.centerFractional ?? [0, 0, 0];
+  const inputs = ['x', 'y', 'z'].map((axis, index) => {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.step = '0.001';
+    input.value = Number(values[index] ?? 0).toFixed(5);
+    input.setAttribute('aria-label', `Center ${axis} fractional coordinate`);
+    input.addEventListener('change', () => {
+      const next = inputs.map((entry) => Number(entry.value));
+      if (!setFocusRegionCenterFractional(region, next)) rerender();
+    });
+    return input;
+  });
+  const reset = button('Reset', 'btn-mini', () => {
+    resetFocusRegionCenter(region);
+    rerender();
+  });
+  coordinates.append(...inputs, reset);
+  wrap.append(label, coordinates);
+  return wrap;
+}
+
 function renderRegionCard(region, index, rerender) {
   const structure = fileBrowser.selectedStructure;
   const card = document.createElement('section');
@@ -86,6 +116,8 @@ function renderRegionCard(region, index, rerender) {
   });
   card.appendChild(innerToggle.row);
   if (region.innerEnabled !== false) {
+    prepareFocusRegions(structure);
+    card.appendChild(centerEditor(region, rerender));
     card.appendChild(rangeRow('Inner radius', region.innerRadius, 0, 20, 0.1, (value) => {
       region.innerRadius = value;
       applyFocusRegions();

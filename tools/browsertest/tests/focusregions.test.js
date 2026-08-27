@@ -67,6 +67,9 @@ const H = require('../harness');
     }]);
     second.innerEnabled = false;
     second.outerOpacity = 0.1;
+    const originalCenterFrac = [...first.centerFractional];
+    const adjustedCenterFrac = originalCenterFrac.map((value, axis) => value + (axis + 1) * 0.01);
+    focus.setFocusRegionCenterFractional(first, adjustedCenterFrac);
     focus.applyFocusRegions();
     panels.getPanel('focusRegions').expand();
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -76,6 +79,22 @@ const H = require('../harness');
       && !centerSources.has(wrapped.srcIndex[index])
       && Math.hypot(p[0] - first.center[0], p[1] - first.center[1], p[2] - first.center[2]) > first.innerRadius
       && Math.hypot(p[0] - second.center[0], p[1] - second.center[1], p[2] - second.center[2]) > second.innerRadius);
+    const { Force, Spin } = await import('./model/index.js');
+    const { updateForces, updateSpins } = await import('./render/index.js');
+    structure.forces = structure.atoms.map(() => new Force({ vector: [1, 0, 0] }));
+    structure.spins = structure.atoms.map(() => new Spin({ vector: [0, 0, 1] }));
+    const spinVis = document.createElement('div');
+    spinVis.id = 'speciesVisibilityContainer';
+    [...new Set(structure.elements)].forEach((element) => {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox'; checkbox.id = `species-${element}`; checkbox.checked = true;
+      spinVis.appendChild(checkbox);
+    });
+    document.body.appendChild(spinVis);
+    updateForces(); updateSpins();
+    const farSource = farIndex >= 0 ? wrapped.srcIndex[farIndex] : -1;
+    const forceArrow = groups.forcesInstanceBySrcIndex?.get(farSource);
+    const spinArrow = groups.spinsInstanceBySrcIndex?.get(farSource);
     return {
       atomCount: structure.atoms.length,
       regionCount: structure.focusRegions.length,
@@ -83,10 +102,19 @@ const H = require('../harness');
       innerToggles: document.querySelectorAll('#cvPanelBody-focusRegions [id^="focusInner-"]').length,
       labels: [...document.querySelectorAll('#cvPanelBody-focusRegions .focus-regions-range-heading > span:first-child')]
         .map((label) => label.textContent),
+      centerInputs: document.querySelectorAll('.focus-regions-center-coordinates input').length,
+      originalCenterFrac,
+      adjustedCenterFrac,
+      actualCenterFrac: [...first.centerFractional],
+      centerOffsetFrac: [...first.centerOffsetFrac],
       authoredOpacity: atom0.getOpacity(),
       centerDisplayOpacity: attr.getX(0),
       farDisplayOpacity: farIndex >= 0 ? attr.getX(farIndex) : null,
       farIndex,
+      forceArrowOpacity: forceArrow == null ? null
+        : groups.forcesShaftMesh.geometry.attributes.instanceOpacity.getX(forceArrow * 2),
+      spinArrowOpacity: spinArrow == null ? null
+        : groups.spinShaftMesh.geometry.attributes.instanceOpacity.getX(spinArrow * 2),
     };
   });
   H.check('the supplied defect structure loads as a genuinely large atom set',
@@ -97,11 +125,19 @@ const H = require('../harness');
     result.labels.includes('Inner radius') && result.labels.includes('Inner opacity')
       && result.labels.includes('Outer opacity') && !result.labels.includes('Outer radius')
       && !result.labels.includes('Beyond opacity'), JSON.stringify(result.labels));
+  H.check('the active inner region exposes editable fractional center coordinates',
+    result.centerInputs === 3
+      && result.actualCenterFrac.every((value, axis) => Math.abs(value - result.adjustedCenterFrac[axis]) < 1e-9)
+      && result.centerOffsetFrac.every((value, axis) => Math.abs(value - (axis + 1) * 0.01) < 1e-9),
+    JSON.stringify(result));
   H.check('focus keeps the center visible without overwriting authored alpha',
     Math.abs(result.authoredOpacity - 0.6) < 1e-6
       && Math.abs(result.centerDisplayOpacity - 0.6) < 1e-5, JSON.stringify(result));
   H.check('atoms outside every region are aggressively reduced',
     result.farIndex >= 0 && result.farDisplayOpacity <= 0.1001, JSON.stringify(result));
+  H.check('force and spin arrows follow their atom focus opacity',
+    result.forceArrowOpacity <= 0.1001 && result.spinArrowOpacity <= 0.1001,
+    JSON.stringify(result));
 
   const reversible = await page.evaluate(async (farIndex) => {
     const { fileBrowser, groups } = await import('./state/store.js');
