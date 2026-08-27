@@ -1,3 +1,4 @@
+
 <img src="docs/data/CrysViz_logo_clear_back.png" width="400">
 
 # CrysViz - Crystal Structure Visualisation & Analysis
@@ -5,6 +6,8 @@
 ## Light-weight browser-based crystal structure visualisation and analysis with on-device rendering.
 
 Version 0.9.10 Beta 2026-08-28
+
+<img width="600" alt="Screenshot_crysviz" src="https://github.com/user-attachments/assets/08bc3c31-c14b-4c22-a6b3-f6602dbe896c" />
 
 Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
 
@@ -25,6 +28,8 @@ You should have received a copy of the GNU Affero General Public License along w
 - **[Rickard Armiento](https://github.com/rartino)**
 - **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)**
 - **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
+
+
 
 ## Key Features
 - No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser. 
