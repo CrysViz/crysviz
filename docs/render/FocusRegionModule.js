@@ -11,9 +11,7 @@ export const DEFAULT_FOCUS_REGION = Object.freeze({
   innerEnabled: true,
   innerRadius: 3.5,
   innerOpacity: 1,
-  outerRadius: 8,
   outerOpacity: 0.15,
-  beyondOpacity: 0,
   excludedSourceIndices: [],
 });
 
@@ -32,10 +30,8 @@ export function focusOpacityAt(point, region, sourceIndex = -1) {
   const dz = point[2] - region.center[2];
   const distance = Math.hypot(dx, dy, dz);
   const innerRadius = Math.max(0, Number(region.innerRadius) || 0);
-  const outerRadius = Math.max(innerRadius, Number(region.outerRadius) || 0);
   if (region.innerEnabled && distance <= innerRadius) return clamp01(region.innerOpacity);
-  if (distance <= outerRadius) return clamp01(region.outerOpacity);
-  return clamp01(region.beyondOpacity);
+  return clamp01(region.outerOpacity);
 }
 
 /** Multiple regions combine by maximum visibility: importance in one region
@@ -43,13 +39,28 @@ export function focusOpacityAt(point, region, sourceIndex = -1) {
 export function combinedFocusOpacity(point, sourceIndex, regions) {
   const enabled = (regions ?? []).filter((region) => region?.enabled && region.center?.length);
   if (!enabled.length) return 1;
+  // Focus atoms are global exceptions. Without this explicit union, a newly
+  // added region could dim an earlier focus when region state is restored from
+  // an older share or temporarily lacks a resolved center position.
+  if (enabled.some((region) => region.centerSourceIndices?.includes(sourceIndex)
+      || region.excludedSourceIndices?.includes(sourceIndex))) return 1;
   let opacity = 0;
   for (const region of enabled) opacity = Math.max(opacity, focusOpacityAt(point, region, sourceIndex));
   return opacity;
 }
 
 export function getFocusRegions(structure = fileBrowser.selectedStructure) {
-  return structure?.focusRegions ?? [];
+  const regions = structure?.focusRegions ?? [];
+  for (const region of regions) {
+    // One-development-version migration: the former three-zone model called
+    // the true outside value `beyondOpacity` and used outerOpacity for a shell.
+    if (Object.hasOwn(region, 'beyondOpacity')) {
+      region.outerOpacity = clamp01(region.beyondOpacity);
+      delete region.beyondOpacity;
+      delete region.outerRadius;
+    }
+  }
+  return regions;
 }
 
 /** Keep centers attached to their chosen periodic atom copies as coordinates

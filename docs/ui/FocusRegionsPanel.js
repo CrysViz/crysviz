@@ -87,7 +87,7 @@ function renderRegionCard(region, index, rerender) {
   card.appendChild(innerToggle.row);
   if (region.innerEnabled !== false) {
     card.appendChild(rangeRow('Inner radius', region.innerRadius, 0, 20, 0.1, (value) => {
-      region.innerRadius = Math.min(value, region.outerRadius);
+      region.innerRadius = value;
       applyFocusRegions();
     }));
     card.appendChild(rangeRow('Inner opacity', region.innerOpacity, 0, 1, 0.01, (value) => {
@@ -95,16 +95,8 @@ function renderRegionCard(region, index, rerender) {
       applyFocusRegions();
     }));
   }
-  card.appendChild(rangeRow('Outer radius', region.outerRadius, 0.1, 40, 0.1, (value) => {
-    region.outerRadius = Math.max(value, region.innerEnabled ? region.innerRadius : 0);
-    applyFocusRegions();
-  }));
   card.appendChild(rangeRow('Outer opacity', region.outerOpacity, 0, 1, 0.01, (value) => {
     region.outerOpacity = value;
-    applyFocusRegions();
-  }));
-  card.appendChild(rangeRow('Beyond opacity', region.beyondOpacity, 0, 1, 0.01, (value) => {
-    region.beyondOpacity = value;
     applyFocusRegions();
   }));
 

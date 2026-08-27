@@ -1,7 +1,7 @@
 // Focus Regions are a reversible viewing aid for defects and molecules in
 // large cells. These checks intentionally assert the scientific interaction
 // semantics, not implementation details or screenshots:
-// - spatial bands classify in Cartesian Å;
+// - the inner sphere and outer environment classify in Cartesian Å;
 // - overlapping regions preserve anything important to either region;
 // - centers/exceptions remain visible;
 // - focus alpha composes with, and never overwrites, authored atom alpha;
@@ -18,25 +18,27 @@ const H = require('../harness');
     const { focusOpacityAt, combinedFocusOpacity } = await import('./render/FocusRegionModule.js');
     const region = {
       enabled: true, center: [0, 0, 0], centerSourceIndices: [7], excludedSourceIndices: [9],
-      innerEnabled: true, innerRadius: 2, innerOpacity: 0.8,
-      outerRadius: 5, outerOpacity: 0.2, beyondOpacity: 0,
+      innerEnabled: true, innerRadius: 2, innerOpacity: 0.8, outerOpacity: 0.2,
     };
     const second = { ...region, center: [10, 0, 0], centerSourceIndices: [] };
     return {
       inner: focusOpacityAt([1, 0, 0], region, 1),
-      shell: focusOpacityAt([3, 0, 0], region, 1),
-      beyond: focusOpacityAt([6, 0, 0], region, 1),
+      outerNear: focusOpacityAt([3, 0, 0], region, 1),
+      outerFar: focusOpacityAt([60, 0, 0], region, 1),
       center: focusOpacityAt([20, 0, 0], region, 7),
       excluded: focusOpacityAt([20, 0, 0], region, 9),
       overlap: combinedFocusOpacity([9, 0, 0], 1, [region, second]),
+      earlierFocus: combinedFocusOpacity([0, 0, 0], 7, [region, second]),
       noInner: focusOpacityAt([1, 0, 0], { ...region, innerEnabled: false }, 1),
     };
   });
-  H.check('inner, outer, and beyond bands use their intended opacity',
-    math.inner === 0.8 && math.shell === 0.2 && math.beyond === 0, JSON.stringify(math));
+  H.check('inner sphere and all outer distances use their intended opacity',
+    math.inner === 0.8 && math.outerNear === 0.2 && math.outerFar === 0.2, JSON.stringify(math));
   H.check('focus atoms and explicit exceptions remain unchanged',
     math.center === 1 && math.excluded === 1, JSON.stringify(math));
   H.check('overlapping regions choose maximum visibility', math.overlap === 0.8, JSON.stringify(math));
+  H.check('adding another region cannot dim an earlier focus atom',
+    math.earlierFocus === 1, JSON.stringify(math));
   H.check('disabling the inner region applies the outer rule near a molecule',
     math.noInner === 0.2, JSON.stringify(math));
 
@@ -59,14 +61,12 @@ const H = require('../harness');
       sourceIndex: wrapped.srcIndex[0], element: wrapped.elements[0], position: wrapped.cart[0],
     }]);
     first.innerRadius = 0.1;
-    first.outerRadius = 0.2;
-    first.outerOpacity = 0.25;
-    first.beyondOpacity = 0.1;
+    first.outerOpacity = 0.1;
     const second = focus.createFocusRegion([{
       sourceIndex: wrapped.srcIndex[1], element: wrapped.elements[1], position: wrapped.cart[1],
     }]);
     second.innerEnabled = false;
-    second.outerRadius = 3;
+    second.outerOpacity = 0.1;
     focus.applyFocusRegions();
     panels.getPanel('focusRegions').expand();
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -74,13 +74,15 @@ const H = require('../harness');
     const centerSources = new Set([...first.centerSourceIndices, ...second.centerSourceIndices]);
     const farIndex = wrapped.cart.findIndex((p, index) => index > 1
       && !centerSources.has(wrapped.srcIndex[index])
-      && Math.hypot(p[0] - first.center[0], p[1] - first.center[1], p[2] - first.center[2]) > 0.2
-      && Math.hypot(p[0] - second.center[0], p[1] - second.center[1], p[2] - second.center[2]) > 3);
+      && Math.hypot(p[0] - first.center[0], p[1] - first.center[1], p[2] - first.center[2]) > first.innerRadius
+      && Math.hypot(p[0] - second.center[0], p[1] - second.center[1], p[2] - second.center[2]) > second.innerRadius);
     return {
       atomCount: structure.atoms.length,
       regionCount: structure.focusRegions.length,
       cards: document.querySelectorAll('#cvPanelBody-focusRegions .focus-regions-card').length,
       innerToggles: document.querySelectorAll('#cvPanelBody-focusRegions [id^="focusInner-"]').length,
+      labels: [...document.querySelectorAll('#cvPanelBody-focusRegions .focus-regions-range-heading > span:first-child')]
+        .map((label) => label.textContent),
       authoredOpacity: atom0.getOpacity(),
       centerDisplayOpacity: attr.getX(0),
       farDisplayOpacity: farIndex >= 0 ? attr.getX(farIndex) : null,
@@ -91,6 +93,10 @@ const H = require('../harness');
     result.atomCount > 100, JSON.stringify(result));
   H.check('multiple regions have independent cards and inner-region controls',
     result.regionCount === 2 && result.cards === 2 && result.innerToggles === 2, JSON.stringify(result));
+  H.check('the panel exposes only inner radius, inner opacity, and outer opacity',
+    result.labels.includes('Inner radius') && result.labels.includes('Inner opacity')
+      && result.labels.includes('Outer opacity') && !result.labels.includes('Outer radius')
+      && !result.labels.includes('Beyond opacity'), JSON.stringify(result.labels));
   H.check('focus keeps the center visible without overwriting authored alpha',
     Math.abs(result.authoredOpacity - 0.6) < 1e-6
       && Math.abs(result.centerDisplayOpacity - 0.6) < 1e-5, JSON.stringify(result));
