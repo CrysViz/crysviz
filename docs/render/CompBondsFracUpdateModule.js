@@ -1,7 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import { app, groups,fileBrowser, general} from '../state/store.js';
-import {getElementRadius} from '../defaults/radii_defaults.js'
+import {getDefaultBondCutoff} from '../defaults/radii_defaults.js'
 
 import {Bond} from '../model/index.js';
 
@@ -40,8 +40,7 @@ export function initBondsLengths(){
       pairs.push(pair);
 
       if (!general.bondLengths[pair]) {
-        const defaultRadius = getElementRadius(uniqueElements[i]) + getElementRadius(uniqueElements[j]);
-        const defaultValue = Math.min(defaultRadius * 1.0, 6.0);
+        const defaultValue = getDefaultBondCutoff(uniqueElements[i], uniqueElements[j]);
         general.bondLengths[pair] = { min: 0.0, max: defaultValue };
         general.defaultBondLengths[pair] = { min: 0.0, max: defaultValue }; // Store default
       }
