@@ -428,14 +428,6 @@ export async function parseWavecarFile(source, fileName) {
     attachTo = selected;
   } else {
     const choices = [];
-    if (selected) {
-      choices.push({
-        value: 'attach',
-        label: `Add to the loaded structure (${selected.uniqueElements.join('') || 'current cell'})`,
-        description: 'Use the loaded structure and its cell for the grid geometry, ignoring the '
-          + "WAVECAR's own cell. The mismatch stays flagged in the field panel.",
-      });
-    }
     choices.push({
       value: 'open',
       label: 'Open a different structure…',
@@ -448,6 +440,14 @@ export async function parseWavecarFile(source, fileName) {
       description: "Use the WAVECAR's cell, with no atoms — the isosurface is shown in an "
         + 'empty box.',
     });
+    if (selected) {
+      choices.push({
+        value: 'attach',
+        label: `Add to the loaded structure (${selected.uniqueElements.join('') || 'current cell'})`,
+        description: 'Use the loaded structure and its cell for the grid geometry, ignoring the '
+          + "WAVECAR's own cell. The mismatch stays flagged in the field panel.",
+      });
+    }
     choices.push({ value: 'cancel', label: 'Cancel', description: 'Do not load the file.' });
 
     const message = selected
