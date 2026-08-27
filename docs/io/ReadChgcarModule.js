@@ -1,8 +1,179 @@
 import { Field } from '../model/index.js'; // Adjust path as needed
 import { FieldContainer } from '../model/index.js'; // Adjust path as needed
+import { combineFields, magnitudeField, computeFieldStats } from '../model/index.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
+import { latticeVolume } from '../math/index.js';
 
 
+
+/**
+ * One parsed data block as a Field.
+ *
+ * The two call sites below (a new grid header, and end-of-file) used to hold
+ * byte-identical copies of this, each running four separate `reduce` passes over
+ * the values — eight full walks of a multi-million-entry array per file.
+ * `computeFieldStats` does it in one.
+ *
+ * Blocks are left unlabelled here and named by `labelFields` once the file has
+ * been read: what a block *is* depends on the format and on how many blocks
+ * turned up, neither of which is known while one is being parsed.
+ *
+ * @param {Float32Array} values
+ * @param {number} nx @param {number} ny @param {number} nz
+ * @param {number} index position in the file
+ * @param {number} [scale] factor applied while copying, for the density
+ *   normalisation below; 1 leaves the file's numbers as they are
+ * @returns {Field}
+ */
+function makeComponentField(values, nx, ny, nz, index, scale = 1) {
+  // Scaling here rather than in a pass of its own: the copy into the field's
+  // own buffer has to happen anyway, and computeFieldStats then sees the values
+  // the panel will actually show.
+  const scaled = new Float32Array(values.length);
+  if (scale === 1) {
+    scaled.set(values);
+  } else {
+    for (let i = 0; i < values.length; i++) scaled[i] = values[i] * scale;
+  }
+
+  return new Field({
+    nx,
+    ny,
+    nz,
+    origin: [0, 0, 0],
+    voxel: null, // will set later
+    values: scaled,
+    component: index,
+    label: `Block ${index + 1}`, // replaced by labelFields()
+    ...computeFieldStats(scaled),
+  });
+}
+
+/**
+ * The factor that turns a file's raw numbers into the quantity we want to show.
+ *
+ * VASP writes a CHGCAR as the charge density multiplied by the cell volume, so
+ * the numbers in the file are electrons, not a density, and their magnitude
+ * scales with the cell: the same physical density in a doubled cell prints
+ * doubled numbers. Dividing by the volume gives e/Å³, which means the same
+ * thing in every file. (Equivalently, in grid terms: a value divided by the
+ * NGX·NGY·NGZ grid points is the charge in one voxel, and dividing that by the
+ * voxel volume V/N is the same division by V.)
+ *
+ * The check that fixes the convention: summing a CHGCAR's values and dividing
+ * by the number of grid points returns the electron count exactly, which only
+ * holds if each value is ρ·V.
+ *
+ * ELF is dimensionless and bounded by 1 — it is not multiplied by anything and
+ * must be left alone.
+ *
+ * @param {string} source
+ * @param {number[][]} lattice
+ * @returns {number}
+ */
+function densityScale(source, lattice) {
+  if (source === 'ELFCAR') return 1;
+  const volume = latticeVolume(lattice);
+  // A degenerate cell would turn every value into Infinity or NaN; showing the
+  // file's raw numbers is the better failure.
+  return Number.isFinite(volume) && volume > 0 ? 1 / volume : 1;
+}
+
+/**
+ * Name the parsed blocks for the format they came from.
+ *
+ * This parser serves both CHGCAR and ELFCAR because the file layout is the
+ * same, but the quantities are not: a CHGCAR's blocks are a charge density
+ * followed by its magnetization, while an ELFCAR's two blocks are the
+ * localization function of each spin channel. Naming from the block index
+ * alone (as this did) labelled every ELF grid "Charge Density".
+ *
+ * @param {Field[]} fields blocks in file order
+ * @param {string} source the format the reader was handed ('CHGCAR', 'ELFCAR', …)
+ */
+function labelFields(fields, source) {
+  if (source === 'ELFCAR') {
+    // A non-spin-polarised run writes one ELF grid; ISPIN = 2 writes one per
+    // spin channel, up first.
+    if (fields.length === 1) {
+      fields[0].label = 'ELF';
+      return;
+    }
+    const spinLabels = ['ELF-up', 'ELF-down'];
+    fields.forEach((field, i) => {
+      field.label = spinLabels[i] || `ELF block ${i + 1}`;
+    });
+    return;
+  }
+
+  // CHGCAR, and anything else routed through this parser.
+  fields.forEach((field, i) => {
+    if (i === 0) {
+      field.label = 'Charge Density';
+    } else if (fields.length === 4) {
+      // A noncollinear run writes three magnetization components after the
+      // density, one per Pauli matrix in the spin-quantization frame; calling
+      // all three "Magnetization Density" made them indistinguishable. The
+      // subscripts are Unicode rather than markup because these labels are
+      // rendered as plain text (the catalog list, the cut-plane dropdown).
+      field.label = `Magnetization along σ${['₁', '₂', '₃'][i - 1]}`;
+    } else {
+      field.label = fields.length > 2 ? `Magnetization Density ${i}` : 'Magnetization Density';
+    }
+  });
+}
+
+/**
+ * The fields a file gets derived for it on load.
+ *
+ * The rule is that a derivation is offered only when the result is a quantity
+ * in its own right. A spin-polarised CHGCAR qualifies twice over; an ELFCAR
+ * qualifies not at all, because no sum or difference of two localization
+ * functions is itself a localization function, and anyone who wants one can
+ * build it in the panel's "Combine fields" section.
+ *
+ * @param {Field[]} fields blocks in file order, already labelled
+ * @param {string} source
+ * @returns {Field[]} the derived fields, in the order they should be listed
+ */
+function deriveCombinations(fields, source) {
+  if (source === 'ELFCAR') return [];
+
+  /** @param {number} offset position among the derived fields */
+  const at = (offset) => fields.length + offset;
+
+  if (fields.length === 2) {
+    // A spin-polarised CHGCAR stores (rho, s); the separately-visualisable spin
+    // channels are the two halves of that sum, which is exactly what the panel's
+    // "Combine fields" section builds by hand — so it goes through the same
+    // helper rather than open-coding the arithmetic.
+    const [first, second] = fields;
+    return [
+      combineFields([{ field: first, weight: 0.5 }, { field: second, weight: 0.5 }],
+        { label: 'Spin Up Density', component: at(0) }),
+      combineFields([{ field: first, weight: 0.5 }, { field: second, weight: -0.5 }],
+        { label: 'Spin Down Density', component: at(1) }),
+    ];
+  }
+
+  if (fields.length === 4) {
+    // A noncollinear CHGCAR stores (rho, m₁, m₂, m₃). There is no global spin
+    // axis to split the density along, so the collinear up/down pair has no
+    // counterpart here — but |m| does, and it is the field that answers "where
+    // is this cell magnetic at all", which none of the three components does on
+    // its own (a moment lying in the σ₁σ₂ plane is invisible in σ₃).
+    //
+    // It is derived rather than left to the user because "Combine fields" sums
+    // weighted terms and no weighting of m₁, m₂ and m₃ is their magnitude —
+    // this is the one quantity of the file that cannot be built by hand.
+    return [
+      magnitudeField(fields.slice(1),
+        { label: 'Magnetization Magnitude', component: at(0) }),
+    ];
+  }
+
+  return [];
+}
 
 //------------------------------------------------------------
 //  readCHGCAR(url) → { lattice, positions_cart, field }
@@ -15,6 +186,11 @@ export function readCHGCAR(text, fileName, source = 'CHGCAR') {
   const textBeforeEmpty = firstEmptyIndex !== -1 ? text.substring(0, firstEmptyIndex) : '';
 
   const lines = textAfterEmpty.trim().split(/\n/);
+
+  // The structure half is parsed first because the density normalisation needs
+  // the cell volume, and blocks are scaled as they are copied into their field.
+  const structure_with_field = readPOSCAR(textBeforeEmpty, fileName);
+  const scale = densityScale(source, structure_with_field.lattice);
 
   // Grid dimensions line (nx ny nz)
   let nx, ny, nz;
@@ -76,24 +252,7 @@ export function readCHGCAR(text, fileName, source = 'CHGCAR') {
     if (tokens.length === 3 && tokens.every(t => /^\d+$/.test(t))) {
       // Save current field if we have data
       if (currentValues && currentValues.length > 0) {
-        const absMinValue = currentValues.reduce((m, v) => Math.min(Math.abs(m), Math.abs(v)), Infinity);
-        const absMaxValue = currentValues.reduce((m, v) => Math.max(Math.abs(m), Math.abs(v)), 0);
-        const minValue = currentValues.reduce((m, v) => Math.min(m, v), Infinity);
-        const maxValue = currentValues.reduce((m, v) => Math.max(m, v), -Infinity);
-        fields.push(new Field({
-          nx,
-          ny,
-          nz,
-          origin: [0, 0, 0],
-          voxel: null, // will set later
-          values: new Float32Array(currentValues),
-          component: fields.length, // 0 for charge density, 1+ for spin components
-          label: fields.length == 0 ? 'Charge Density' : `Spin Density`,
-          minValue: minValue,
-          maxValue: maxValue,
-          absMinValue: absMinValue,
-          absMaxValue: absMaxValue
-        })); 
+        fields.push(makeComponentField(currentValues, nx, ny, nz, fields.length, scale));
       }
       fill_ind = 0;
       [nx, ny, nz] = tokens.map(Number);
@@ -117,75 +276,14 @@ export function readCHGCAR(text, fileName, source = 'CHGCAR') {
 
   // Push final field
   if (currentValues && currentValues.length > 0) {
-    const absMinValue = currentValues.reduce((m, v) => Math.min(Math.abs(m), Math.abs(v)), Infinity);
-    const absMaxValue = currentValues.reduce((m, v) => Math.max(Math.abs(m), Math.abs(v)), 0);
-    const minValue = currentValues.reduce((m, v) => Math.min(m, v), Infinity);
-    const maxValue = currentValues.reduce((m, v) => Math.max(m, v), -Infinity);
-    fields.push(new Field({
-      nx,
-      ny,
-      nz,
-      origin: [0, 0, 0],
-      voxel: null, // will set later
-      values: new Float32Array(currentValues),
-      component: fields.length, // 0 for charge density, 1+ for spin components
-      label: fields.length == 0 ? 'Charge Density' : `Spin Density`,
-      minValue: minValue,
-      maxValue: maxValue,
-      absMinValue: absMinValue,
-      absMaxValue: absMaxValue
-    }));
+    fields.push(makeComponentField(currentValues, nx, ny, nz, fields.length, scale));
   }
 
-  // if it is a chgcar with spin density, form the spin up and spin down densities separately for visualization
-  if (fields.length == 2 && fields[0].label === 'Charge Density' && fields[1].label === 'Spin Density') {
-    const chargeField = fields[0];
-    const spinField = fields[1];
-    const spinUpValues = new Float32Array(chargeField.values.length);
-    const spinDownValues = new Float32Array(chargeField.values.length);
-    for (let i = 0; i < chargeField.values.length; i++) {
-      spinUpValues[i] = 0.5 * (chargeField.values[i] + spinField.values[i]);
-      spinDownValues[i] = 0.5 * (chargeField.values[i] - spinField.values[i]);
-    }
-    // min max value calculation
-    const spinUpMax = spinUpValues.reduce((m, v) => Math.max(m, v), -Infinity);
-    const spinDownMax = spinDownValues.reduce((m, v) => Math.max(m, v), -Infinity);
-    const spinUpMin = spinUpValues.reduce((m, v) => Math.min(m, v), Infinity);
-    const spinDownMin = spinDownValues.reduce((m, v) => Math.min(m, v), Infinity);
-    const spinUpAbsMax = spinUpValues.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-    const spinDownAbsMax = spinDownValues.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-    const spinUpAbsMin = spinUpValues.reduce((m, v) => Math.min(m, Math.abs(v)), Infinity);
-    const spinDownAbsMin = spinDownValues.reduce((m, v) => Math.min(m, Math.abs(v)), Infinity);
-
-    fields.push(new Field({
-      nx: chargeField.nx,
-      ny: chargeField.ny,
-      nz: chargeField.nz,
-      origin: [0, 0, 0],
-      voxel: null, // will set later
-      values: spinUpValues,
-      component: fields.length, // 0 for charge density, 1+ for spin components
-      label: 'Spin Up Density',
-      minValue: spinUpMin,
-      maxValue: spinUpMax,
-      absMinValue: spinUpAbsMin,
-      absMaxValue: spinUpAbsMax
-    }));
-    fields.push(new Field({
-      nx: chargeField.nx,
-      ny: chargeField.ny,
-      nz: chargeField.nz,
-      origin: [0, 0, 0],
-      voxel: null, // will set later
-      values: spinDownValues,
-      component: fields.length, // 0 for charge density, 1+ for spin components
-      label: 'Spin Down Density',
-      minValue: spinDownMin,
-      maxValue: spinDownMax,
-      absMinValue: spinDownAbsMin,
-      absMaxValue: spinDownAbsMax
-    }));
-  }
+  // Naming is deferred to here because it depends on the format and on how many
+  // blocks the file actually held — and the derived combinations below are named
+  // after the fields they are built from, so they must come second.
+  labelFields(fields, source);
+  fields.push(...deriveCombinations(fields, source));
 
   // Create volumetric field container with metadata
   const fieldContainer = new FieldContainer({
@@ -195,8 +293,6 @@ export function readCHGCAR(text, fileName, source = 'CHGCAR') {
     fields: fields
   });
 
-  // Parse structure with volumetric fields included
-  const structure_with_field = readPOSCAR(textBeforeEmpty, fileName);
   structure_with_field.volumetricFields = fieldContainer;
 
   // Update voxel field for each component based on structure lattice

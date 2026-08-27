@@ -1,5 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
-// import { MarchCubes } from '../external/marching_cubes_wasm/MarchCubes.js';
+// import { MarchCubes } from '../compiled/MarchCubes.js';
 
 import { groups } from '../state/store.js';
 
@@ -290,6 +290,17 @@ export class Isosurface extends THREE.Group{
             this.meshes.negative.needsUpdate = true;
             this.add(this.meshes.negative);
         }
+    }
+
+    /**
+     * A representative first isosurface level for this field, computed by the
+     * marching-cubes backend from the values it already holds.
+     *
+     * @param {number} [fraction] target fraction of the cell inside the surface
+     * @returns {number | null} null if the backend cannot supply one
+     */
+    defaultIsoValue(fraction = 0.05) {
+        return this.marchingCubes ? this.marchingCubes.defaultIsoValue(fraction) : null;
     }
 
     updateMesh(isoValue = this.field.isovalue, useAbsoluteIsoValue = false) {

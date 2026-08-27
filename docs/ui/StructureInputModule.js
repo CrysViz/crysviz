@@ -1,6 +1,7 @@
 
 import { StructureContainer } from '../model/index.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
+import { FileSource } from '../io/FileSource.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
@@ -118,20 +119,18 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
 
     for (const file of files) {
       setStatus(`Loading ${file.name} (${++loadedCount}/${files.length})...`);
-      const reader = new FileReader();
-      await new Promise((resolve, reject) => {
-        reader.onload = (event) => {
-          Promise.resolve(onLoadStructure(event.target.result, file.name)).then(resolve, reject);
-        };
-        reader.onerror = (error) => reject(error);
-        // ASE .traj files are binary ULM; read them as an ArrayBuffer so the
-        // raw float64 data survives. Everything else is text.
-        if (file.name.toLowerCase().endsWith('.traj')) {
-          reader.readAsArrayBuffer(file);
-        } else {
-          reader.readAsText(file);
-        }
-      });
+      // Hand over a lazy handle rather than the file's contents.
+      //
+      // This used to be a FileReader that read the whole file up front — as text,
+      // or as an ArrayBuffer for the one binary format it knew about (.traj).
+      // That forced a decision about how to read the file before anything had
+      // decided what the file *was*, and it made a multi-GB WAVECAR impossible
+      // to open at all.
+      //
+      // loadStructure now identifies the format first (io/formats.js) and reads
+      // only what that format needs (io/formats.js `materialize`). Text formats
+      // still get the entire file as a string, so nothing changes for them.
+      await onLoadStructure(FileSource.fromFile(file), file.name);
     }
     setStatus(`${files.length} structure(s) loaded!`);
   }

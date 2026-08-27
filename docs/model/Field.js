@@ -18,7 +18,7 @@ export class Field {
     absMaxValue = null, // maximum field value (can be computed from values)
     minValue = null, // minimum field value (can be computed from values)
     maxValue = null, // maximum field value (can be computed from values)
-    label = "", // optional label for the field (e.g., "Charge Density", "Spin Density X", etc.)
+    label = "", // optional label for the field (e.g., "Charge Density", "Magnetization Density", etc.)
     useAbsoluteIsoValue = null, // whether to use absolute values when determining isovalue
     isVisible = true // whether this field should be rendered (can be toggled by user)
   } = {}) {
@@ -37,6 +37,24 @@ export class Field {
     this.label = label;
     this.useAbsoluteIsoValue = useAbsoluteIsoValue;
     this.isVisible = isVisible;
+
+    // Set by model/WavefunctionSource.js when this field is one band of a
+    // WAVECAR, so the UI can trace a field back to its (spin, k-point, band)
+    // and to the proxy that produced it. Null for every other field source.
+    /** @type {{source: any, spin: number, kpt: number, band: number, quantity: number,
+     *           spinor?: number} | null} */
+    this.wavefunction = null;
+
+    // Set by model/CompositeField.js on a derived field: the terms it was built
+    // from, so it can be rebuilt when one of them is reloaded.
+    /** @type {Array<{field: Field, weight: number}> | null} */
+    this.derivedFrom = null;
+
+    // How those terms were combined — 'sum' for a weighted combination,
+    // 'magnitude' for sqrt(sum of squares). Read by `recomputeComposite`, which
+    // cannot tell the two apart from the term list alone.
+    /** @type {string | null} */
+    this.derivedOp = null;
   }
 
   getValueAt(i, j, k) {

@@ -22,6 +22,17 @@ export { parseXYZFile } from "./ReadeXYZModule.js";
 export { parseASETrajectory } from "./ReadASETrajectoryModule.js";
 export { readCHGCAR } from "./ReadChgcarModule.js";
 export { readCubeFile } from "./ReadCubeModule.js";
+export { readWAVECAR, isLikelyWAVECARContent } from "./ReadWavecarModule.js";
+
+// Lazy byte access + the format registry. FileSource is what lets a reader ask
+// for a byte range instead of being handed the whole file as a string; formats
+// is the single table that decides which reader a file goes to (and carries the
+// reserved hooks for future content-based detection).
+export { FileSource } from "./FileSource.js";
+export {
+  FORMATS, POSCAR_FORMAT, SourceKind, HandledBy,
+  detectFormat, formatById, materialize,
+} from "./formats.js";
 
 // File/URL loader:
 export { loadFromFilePath } from "./FileURLLoader.js";

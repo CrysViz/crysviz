@@ -9,6 +9,7 @@ import { parseXYZFile } from './ReadeXYZModule.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
 import { parseASETrajectory } from './ReadASETrajectoryModule.js';
 import {generateID} from '../utils/index.js'
+import { detectFormat } from './formats.js';
 
 /*
  * The idea is that parse_any will eventually take over all parsing
@@ -16,84 +17,67 @@ import {generateID} from '../utils/index.js'
  */
 export async function parse_any(content, fileName = '', isDefault = false) {
 
-  const lower = (fileName || '').toLowerCase();
   const contentString = typeof content === 'string' ? content : '';
-  const treatAsCIF = lower.endsWith('.cif') ||
-        lower.includes('.cif') ||
-    /(^|\W)cif(\W|$)/.test(lower) ||
-        isLikelyCIFContent(contentString);
-  const treatAsmagCIF = lower.endsWith('.mcif') ||
-        lower.includes('.mcif') ||
-    /(^|\W)mcif(\W|$)/.test(lower) ||
-        isLikelymagCIFContent(contentString);
 
-  const treatAsOUTCAR = lower.endsWith('.vasp.out') ||
-        lower.includes('.vasp.out') ||
-        lower.includes('outcar');
+  // Which format this is, is decided in one place (io/formats.js) rather than
+  // by a chain of booleans here. The registry is name-based today; the content
+  // sniffers below are the exception, and are the first thing that will move
+  // onto the registry when detection switches to inspecting file contents.
+  let formatId = detectFormat({ fileName }).id;
 
-  const treatAsPWSCFout = lower.endsWith(".scf.out") ||
-        lower.endsWith(".scf.in.out") ||
-        lower.endsWith(".vcrx.out") ||
-        lower.endsWith(".vcrx.in.out") ||
-        lower.includes('.scf.out') ||
-        lower.includes('.scf.in.out') ||
-        lower.includes(".vcrx.out") ||
-        lower.includes(".vcrx.in.out");
-
-
-  const treatAsPWSCFin = lower.endsWith(".scf.in") ||
-        lower.endsWith(".vcrx.in");
-
-  const treatAsEXZY = lower.endsWith(".xyz") ||
-        lower.endsWith(".exyz");
-
-  // ASE ULM trajectories are binary; `content` arrives as an ArrayBuffer here
-  // (the loader reads .traj with readAsArrayBuffer).
-  const treatAsTraj = lower.endsWith(".traj");
-
-
-  if (treatAsTraj) {
-    console.log("This is probably an ASE trajectory file");
-    return parseASETrajectory(content, fileName);
+  // CIF content sniffing outranks every name-based match except .traj. That is
+  // the precedence the original boolean chain had (treatAsCIF and treatAsmagCIF
+  // were tested before the QE / OUTCAR / XYZ names, and both ORed the content
+  // sniffer into the name test), and CIFs do arrive under uninformative names
+  // often enough that dropping it would be a regression.
+  //
+  // Order between the two matters: isLikelymagCIFContent also returns true for
+  // the generic `data_` / `_cell_length_` markers every CIF has, so testing it
+  // first would route ordinary CIFs into the magnetic parser. Testing plain CIF
+  // first works because it explicitly bails out on the magnetic markers.
+  if (formatId !== 'traj' && formatId !== 'cif' && formatId !== 'mcif') {
+    if (isLikelyCIFContent(contentString)) formatId = 'cif';
+    else if (isLikelymagCIFContent(contentString)) formatId = 'mcif';
   }
 
-  if (treatAsCIF) {
-    console.log("This is probably a CIF file")
-    return parse_cif(content, fileName, false)
-  }
+  switch (formatId) {
+    case 'traj':
+      // ASE ULM trajectories are binary; `content` arrives as an ArrayBuffer.
+      console.log("This is probably an ASE trajectory file");
+      return parseASETrajectory(content, fileName);
 
-  if (treatAsmagCIF) {
-    console.log("This is probably an magCIF file")
-    return parse_cif(content, fileName, true)
-  }
+    case 'cif':
+      console.log("This is probably a CIF file")
+      return parse_cif(content, fileName, false)
 
-  else if (treatAsPWSCFin) {
-    console.log("This is probably a QE input file");
-    return parsePWSCFin(content, fileName);
-  }
+    case 'mcif':
+      console.log("This is probably an magCIF file")
+      return parse_cif(content, fileName, true)
 
-  else if (treatAsPWSCFout) {
-    console.log("This is probably a QE output file");
-    return parsePWSCFout(content, fileName);
-  }
+    case 'pwscf-in':
+      console.log("This is probably a QE input file");
+      return parsePWSCFin(content, fileName);
 
-  else if (treatAsOUTCAR){
-    console.log("This is probably an OUTCAR file");
-    return parseOUTCAR(content, fileName);
-  }
+    case 'pwscf-out':
+      console.log("This is probably a QE output file");
+      return parsePWSCFout(content, fileName);
 
-  else if (treatAsEXZY) {
-    console.log("This is probably an (e)XYZ file");
-    return parseXYZFile(content, fileName);
-  }
+    case 'outcar':
+      console.log("This is probably an OUTCAR file");
+      return parseOUTCAR(content, fileName);
 
-  else {
-    console.log("This is probably a POSCAR file")
-    const structure = readPOSCAR(content, fileName);
-    return new StructureContainer({
-      fileName,
-      structures: [structure],
-    });
+    case 'xyz':
+      console.log("This is probably an (e)XYZ file");
+      return parseXYZFile(content, fileName);
+
+    default: {
+      console.log("This is probably a POSCAR file")
+      const structure = readPOSCAR(content, fileName);
+      return new StructureContainer({
+        fileName,
+        structures: [structure],
+      });
+    }
   }
 }
 

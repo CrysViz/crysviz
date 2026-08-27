@@ -898,7 +898,7 @@ function applyArrows(saved, structure) {
 
 /** Rebuild volumetric fields embedded in a .crysviz and re-attach them to the
  *  loaded structure, replicating the CHGCAR/cube reader's post-attach sequence
- *  (fieldBrowser.setAvailableFields -> setSelectedField -> setActiveField ->
+ *  (fieldBrowser.setCatalog -> setSelectedField -> setActiveField ->
  *  updateField) plus the isosurface material restore. Synchronous, like the
  *  rest of the state restore. A field saved hidden stays hidden (updateField
  *  early-returns on !isVisible). */
@@ -927,9 +927,12 @@ function restoreFields(fieldState, structure) {
 
   const selectedIndex = Math.min(Math.max(fieldState.selectedIndex ?? 0, 0), fields.length - 1);
 
-  // Clear any prior selection so setAvailableFields re-selects for this structure.
-  fieldBrowser.selectedField = null;
-  fieldBrowser.setAvailableFields(fields);
+  // Drive the browser from the container's own catalog rather than a separate
+  // flat list, so the panel and the saved structure agree on one source of
+  // truth. A .crysviz session only ever stores fully-materialised fields, so
+  // this catalog is flat and every entry is loaded — setCatalog re-selects
+  // index 0 and the saved index is applied straight after.
+  fieldBrowser.setCatalog(structure.volumetricFields.catalog);
   fieldBrowser.setSelectedField(selectedIndex);
   const selected = fieldBrowser.selectedField;
   if (!selected) return;

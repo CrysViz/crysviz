@@ -496,7 +496,12 @@ export function registerDefaultPanels() {
     hiddenUntilStructure: true,
     infoMd: './data/fieldInfo.md',
     available() {
-      return (fileBrowser.selectedStructure?.volumetricFields?.fields?.length ?? 0) > 0
+      // Gate on the CATALOG having entries, not on `fields` being non-empty.
+      // A WAVECAR's `fields` array is empty by design — its bands exist but none
+      // is expanded until the user asks — and gating on it would hide the only
+      // panel from which a band can be loaded.
+      const container = fileBrowser.selectedStructure?.volumetricFields;
+      return (container?.catalog?.nodes?.length ?? 0) > 0
         && general.fieldActive !== false;
     },
     // Field meshes are managed by the Features "Show Volumetric Field" toggle

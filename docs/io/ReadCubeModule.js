@@ -7,6 +7,7 @@ import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from '
 import { runPeriodicWrapped } from '../render/index.js';
 import { Field } from '../model/index.js';
 import { FieldContainer } from '../model/index.js';
+import { computeFieldStats } from '../model/index.js';
 import { Atom } from '../model/index.js';
 import { generateID } from '../utils/index.js';
 
@@ -102,10 +103,6 @@ export function readCubeFile(content,fileName) {
     }
   }
 
-  const MaxValue = field_values.reduce((max, val) => Math.max(max, val), -Infinity);
-  const MinValue = field_values.reduce((min, val) => Math.min(min, val), Infinity);
-  const AbsMaxValue = field_values.reduce((max, val) => Math.max(max, Math.abs(val)), 0);
-  const AbsMinValue = field_values.reduce((min, val) => Math.min(min, Math.abs(val)), Infinity);
   let fields = [];
   fields.push(new Field({
       nx: grid[0],
@@ -116,10 +113,9 @@ export function readCubeFile(content,fileName) {
       values: field_values,
       component: 0, 
       label: label,
-      minValue: MinValue,
-      maxValue: MaxValue,
-      absMinValue: AbsMinValue,
-      absMaxValue: AbsMaxValue
+      // One pass instead of the four separate `reduce` walks this used to do
+      // over an array that runs to millions of entries.
+      ...computeFieldStats(field_values),
   }));
 
   const container = new FieldContainer({
