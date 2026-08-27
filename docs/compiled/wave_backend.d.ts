@@ -6,10 +6,10 @@
  *
  * `docs/compiled/**` is excluded from tsconfig.json, but `tsc` still follows the
  * import in `docs/math/wave-backend-wasm.js` into the generated glue and type-checks
- * it, which fails: the module is built with `ENVIRONMENT=web,worker,node` (so the
- * Node harness in `docs/tests/wave_backend_smoke.mjs` can load it), and the Node
- * branch references `node:module`, `node:fs` and `process`, none of which this
- * project has types for.
+ * it, which fails: the module is built with `ENVIRONMENT=web,worker,node` and the
+ * Node branch references `node:module`, `node:fs` and `process`, none of which
+ * this project has types for. (Nothing loads the module under Node today; the
+ * `node` environment is still in the build flags in `Makefile`.)
  *
  * Declaring the shape here makes `tsc` prefer this file over the generated .js,
  * which is the same arrangement `periodic_wasm.d.ts` provides for the wasm-bindgen

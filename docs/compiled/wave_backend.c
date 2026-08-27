@@ -167,8 +167,10 @@ static int freq_at(int i, int n) {
  * emits, which httk reproduces with meshgrid(fz, fy, fx, indexing='ij')
  * followed by a column reorder: z is the slowest axis and x the fastest. Emit
  * them in any other order and the wavefunction is silently scrambled rather
- * than visibly broken, so docs/tests/wave_backend_test.c pins both the ordering
- * and the resulting count.
+ * than visibly broken. There is no test covering that any more, so the only
+ * thing standing between a reordering here and a plausible-looking wrong
+ * isosurface is the count check in model/WavefunctionSource.js getGvecs(),
+ * which catches a changed *number* of G-vectors but not a changed order.
  */
 EMSCRIPTEN_KEEPALIVE
 int wf_gen_gvecs(const int* kgrid, const double* kvec, const double* recip,
