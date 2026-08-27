@@ -3,7 +3,9 @@ import {
   applyFocusRegions, createFocusRegion, getFocusRegions, prepareFocusRegions,
   removeFocusRegion, resetFocusRegionCenter, setFocusRegionCenterFractional,
 } from '../render/index.js';
-import { getSelectedAtoms, subscribeToAtomSelection } from './SelectAndHighlightModule.js';
+import {
+  getSelectedAtoms, selectAtomsByInstances, subscribeToAtomSelection,
+} from './SelectAndHighlightModule.js';
 import { createToggleRow } from './ToggleSwitch.js';
 
 let unsubscribeSelection = null;
@@ -112,6 +114,9 @@ function renderRegionCard(region, index, rerender) {
     id: `focusInner-${region.id}`,
     label: 'Inner region',
     checked: region.innerEnabled !== false,
+    small: true,
+    rowClass: 'toggle_row focus-regions-inner-toggle',
+    textClass: 'toggle_text focus-regions-inner-toggle-text',
     onChange(on) { region.innerEnabled = on; rerender(); applyFocusRegions(); },
   });
   card.appendChild(innerToggle.row);
@@ -131,6 +136,24 @@ function renderRegionCard(region, index, rerender) {
     region.outerOpacity = value;
     applyFocusRegions();
   }));
+
+  const selectInner = button('Select inner atoms', 'btn-mini focus-regions-select', () => {
+    prepareFocusRegions(structure);
+    const wrapped = structure.periodic?.visibleWrapped;
+    const radius = Math.max(0, Number(region.innerRadius) || 0);
+    const exceptions = new Set(region.excludedSourceIndices ?? []);
+    const instanceIds = [];
+    wrapped?.cart?.forEach((point, instanceId) => {
+      const sourceIndex = wrapped.srcIndex?.[instanceId] ?? instanceId;
+      const distance = Math.hypot(
+        point[0] - region.center[0], point[1] - region.center[1], point[2] - region.center[2],
+      );
+      if (distance <= radius || exceptions.has(sourceIndex)) instanceIds.push(instanceId);
+    });
+    selectAtomsByInstances(instanceIds, { reason: 'focus-region', revealPanel: true });
+  });
+  selectInner.title = 'Replace the selection with atoms inside this sphere and all exceptions';
+  if (region.innerEnabled !== false) card.appendChild(selectInner);
 
   const exceptions = document.createElement('div');
   exceptions.className = 'focus-regions-exceptions';

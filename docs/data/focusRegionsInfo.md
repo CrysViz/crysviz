@@ -17,3 +17,7 @@ opacity without changing it. Overlapping regions keep the most visible result.
 Bond, force, and spin visibility follows the same region.
 Use **Exclude selection** to keep additional atoms unchanged. Every focus atom
 is preserved globally, so adding another region never dims an earlier focus.
+
+**Select inner atoms** replaces the current selection with atoms inside the
+sphere plus all exceptions. The Structure panel can then show and copy their
+fractional and Cartesian coordinates from its **Coordinates** action.

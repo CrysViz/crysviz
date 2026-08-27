@@ -33,6 +33,7 @@ import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
 import { clampOpacity, clampRadiusScale } from './components/utils.js';
 
 const BAR_ID = 'selectionActionBar';
+let coordinatesExpanded = false;
 
 // Fired after a bulk alpha/size (or reset) edit so any open individual-atom
 // rows re-read their alpha/size controls from the model — the counterpart of
@@ -91,6 +92,79 @@ function selectionSummary(selected) {
   });
   const parts = Object.keys(counts).sort().map((el) => (counts[el] > 1 ? `${el}×${counts[el]}` : el));
   return `${selected.length} selected · ${parts.join(', ')}`;
+}
+
+function selectedCoordinateRows(selected) {
+  const structure = fileBrowser.selectedStructure;
+  const wrapped = structure?.periodic?.visibleWrapped;
+  return selected.map((atom) => {
+    const instanceId = atom.instanceId;
+    const fractional = wrapped?.frac?.[instanceId] ?? structure?.atoms?.[atom.sourceIndex]?.position;
+    const p = atom.position;
+    const cartesian = wrapped?.cart?.[instanceId]
+      ?? (p && [p.x, p.y, p.z].every(Number.isFinite) ? [p.x, p.y, p.z] : null);
+    return {
+      label: `${atom.element ?? '?'} ${Number(atom.sourceIndex) + 1}`,
+      fractional,
+      cartesian,
+    };
+  });
+}
+
+function coordinateText(rows, key) {
+  const lines = rows.map((row) => {
+    const values = row[key];
+    return `${row.label}\t${values?.map((value) => Number(value).toFixed(8)).join('\t') ?? 'unavailable'}`;
+  });
+  return ['Atom\tx\ty\tz', ...lines].join('\n');
+}
+
+function copyText(text, button) {
+  const copied = () => {
+    const original = button.textContent;
+    button.textContent = 'Copied';
+    setTimeout(() => { button.textContent = original; }, 1200);
+  };
+  const fallback = () => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    document.body.appendChild(textarea);
+    textarea.select();
+    if (document.execCommand('copy')) copied();
+    textarea.remove();
+  };
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(copied, fallback);
+  else fallback();
+}
+
+function buildCoordinateViewer(selected) {
+  const rows = selectedCoordinateRows(selected);
+  const viewer = document.createElement('div');
+  viewer.className = 'si-selbar-coordinates';
+  const addBlock = (title, key, unit = '') => {
+    const block = document.createElement('section');
+    const heading = document.createElement('div');
+    heading.className = 'si-selbar-coordinate-heading';
+    const label = document.createElement('strong');
+    label.textContent = `${title}${unit ? ` (${unit})` : ''}`;
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.className = 'btn-mini si-selbar-copy';
+    copy.textContent = 'Copy';
+    const text = coordinateText(rows, key);
+    copy.onclick = () => copyText(text, copy);
+    heading.append(label, copy);
+    const output = document.createElement('textarea');
+    output.readOnly = true;
+    output.rows = Math.min(8, Math.max(2, rows.length + 1));
+    output.value = text;
+    output.setAttribute('aria-label', `${title} coordinates of selected atoms`);
+    block.append(heading, output);
+    viewer.appendChild(block);
+  };
+  addBlock('Fractional', 'fractional');
+  addBlock('Cartesian', 'cartesian', 'Å');
+  return viewer;
 }
 
 // ---- bulk visual edits (fan one change out over every selected atom) --------
@@ -307,9 +381,22 @@ function refreshSelectionActionBar() {
   clearBtn.textContent = 'Clear';
   clearBtn.title = 'Deselect all';
   clearBtn.onclick = () => clearSelectedAtoms({ reason: 'selection-bar-clear' });
+  const coordinatesBtn = document.createElement('button');
+  coordinatesBtn.className = 'btn-mini si-selbar-coordinates-toggle';
+  coordinatesBtn.textContent = 'Coordinates';
+  coordinatesBtn.setAttribute('aria-expanded', String(coordinatesExpanded));
+  coordinatesBtn.onclick = () => {
+    coordinatesExpanded = !coordinatesExpanded;
+    refreshSelectionActionBar();
+  };
+  const headerActions = document.createElement('div');
+  headerActions.className = 'si-selbar-header-actions';
+  headerActions.append(coordinatesBtn, clearBtn);
   header.appendChild(summary);
-  header.appendChild(clearBtn);
+  header.appendChild(headerActions);
   container.appendChild(header);
+
+  if (coordinatesExpanded) container.appendChild(buildCoordinateViewer(selected));
 
   // Color row: a round color dot (bulk color picker) + Reset. The dot uses the
   // same pie-dot language as the atom/composition rows — one solid dot for a

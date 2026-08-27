@@ -139,6 +139,32 @@ const H = require('../harness');
     result.forceArrowOpacity <= 0.1001 && result.spinArrowOpacity <= 0.1001,
     JSON.stringify(result));
 
+  const regionSelection = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { getSelectedAtoms } = await import('./ui/SelectAndHighlightModule.js');
+    const structure = fileBrowser.selectedStructure;
+    const region = structure.focusRegions[0];
+    region.innerRadius = 2;
+    region.excludedSourceIndices = [structure.periodic.visibleWrapped.srcIndex.at(-1)];
+    document.querySelector('.focus-regions-card .focus-regions-select')?.click();
+    document.querySelector('#selectionActionBar .si-selbar-coordinates-toggle')?.click();
+    const selected = getSelectedAtoms();
+    return {
+      selectedCount: selected.length,
+      exceptionSelected: selected.some((atom) => atom.sourceIndex === region.excludedSourceIndices[0]),
+      coordinateAreas: document.querySelectorAll('#selectionActionBar .si-selbar-coordinates textarea').length,
+      fractionalText: document.querySelector('#selectionActionBar .si-selbar-coordinates textarea')?.value ?? '',
+      cartesianText: document.querySelectorAll('#selectionActionBar .si-selbar-coordinates textarea')[1]?.value ?? '',
+      copyButtons: document.querySelectorAll('#selectionActionBar .si-selbar-copy').length,
+    };
+  });
+  H.check('the region action selects inner atoms and explicit exceptions',
+    regionSelection.selectedCount > 1 && regionSelection.exceptionSelected, JSON.stringify(regionSelection));
+  H.check('the selection bar exposes copyable fractional and Cartesian coordinates',
+    regionSelection.coordinateAreas === 2 && regionSelection.copyButtons === 2
+      && regionSelection.fractionalText.includes('\t') && regionSelection.cartesianText.includes('\t'),
+    JSON.stringify(regionSelection));
+
   const reversible = await page.evaluate(async (farIndex) => {
     const { fileBrowser, groups } = await import('./state/store.js');
     const { captureState } = await import('./ui/ShareModule.js');
