@@ -18,7 +18,8 @@ export { FieldContainer } from './FieldContainer.js';
 
 // Volumetric-field composition and the tree view over a file's fields:
 export {
-  combineFields, recomputeComposite, computeFieldStats, describeCombination, defaultIsoValue,
+  combineFields, magnitudeField, recomputeComposite, computeFieldStats, describeCombination,
+  defaultIsoValue,
 } from './CompositeField.js';
 export { FieldCatalog, FieldCatalogNode, NodeKind } from './FieldCatalog.js';
 

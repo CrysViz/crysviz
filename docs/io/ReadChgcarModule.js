@@ -1,6 +1,6 @@
 import { Field } from '../model/index.js'; // Adjust path as needed
 import { FieldContainer } from '../model/index.js'; // Adjust path as needed
-import { combineFields, computeFieldStats } from '../model/index.js';
+import { combineFields, magnitudeField, computeFieldStats } from '../model/index.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
 import { latticeVolume } from '../math/index.js';
 
@@ -124,38 +124,55 @@ function labelFields(fields, source) {
 }
 
 /**
- * The weighted combinations a two-block file gets for free.
+ * The fields a file gets derived for it on load.
  *
- * Both formats write two grids that are more useful recombined than as read,
- * and both recombinations are exactly what the panel's "Combine fields" section
- * builds by hand — so they go through the same helper rather than open-coding
- * the arithmetic.
+ * The rule is that a derivation is offered only when the result is a quantity
+ * in its own right. A spin-polarised CHGCAR qualifies twice over; an ELFCAR
+ * qualifies not at all, because no sum or difference of two localization
+ * functions is itself a localization function, and anyone who wants one can
+ * build it in the panel's "Combine fields" section.
  *
  * @param {Field[]} fields blocks in file order, already labelled
  * @param {string} source
  * @returns {Field[]} the derived fields, in the order they should be listed
  */
 function deriveCombinations(fields, source) {
-  if (fields.length !== 2) return [];
-
-  // An ELFCAR's two blocks are the localization function of each spin channel,
-  // and ELF does not add the way a density does — no sum or difference of them
-  // is a quantity worth putting in the list unasked. Anyone who wants one can
-  // build it in the panel's "Combine fields" section.
   if (source === 'ELFCAR') return [];
 
-  const [first, second] = fields;
   /** @param {number} offset position among the derived fields */
   const at = (offset) => fields.length + offset;
 
-  // A spin-polarised CHGCAR stores (rho, s); the separately-visualisable spin
-  // channels are the two halves of that sum.
-  return [
-    combineFields([{ field: first, weight: 0.5 }, { field: second, weight: 0.5 }],
-      { label: 'Spin Up Density', component: at(0) }),
-    combineFields([{ field: first, weight: 0.5 }, { field: second, weight: -0.5 }],
-      { label: 'Spin Down Density', component: at(1) }),
-  ];
+  if (fields.length === 2) {
+    // A spin-polarised CHGCAR stores (rho, s); the separately-visualisable spin
+    // channels are the two halves of that sum, which is exactly what the panel's
+    // "Combine fields" section builds by hand — so it goes through the same
+    // helper rather than open-coding the arithmetic.
+    const [first, second] = fields;
+    return [
+      combineFields([{ field: first, weight: 0.5 }, { field: second, weight: 0.5 }],
+        { label: 'Spin Up Density', component: at(0) }),
+      combineFields([{ field: first, weight: 0.5 }, { field: second, weight: -0.5 }],
+        { label: 'Spin Down Density', component: at(1) }),
+    ];
+  }
+
+  if (fields.length === 4) {
+    // A noncollinear CHGCAR stores (rho, m₁, m₂, m₃). There is no global spin
+    // axis to split the density along, so the collinear up/down pair has no
+    // counterpart here — but |m| does, and it is the field that answers "where
+    // is this cell magnetic at all", which none of the three components does on
+    // its own (a moment lying in the σ₁σ₂ plane is invisible in σ₃).
+    //
+    // It is derived rather than left to the user because "Combine fields" sums
+    // weighted terms and no weighting of m₁, m₂ and m₃ is their magnitude —
+    // this is the one quantity of the file that cannot be built by hand.
+    return [
+      magnitudeField(fields.slice(1),
+        { label: 'Magnetization Magnitude', component: at(0) }),
+    ];
+  }
+
+  return [];
 }
 
 //------------------------------------------------------------

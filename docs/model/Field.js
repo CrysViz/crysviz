@@ -41,13 +41,20 @@ export class Field {
     // Set by model/WavefunctionSource.js when this field is one band of a
     // WAVECAR, so the UI can trace a field back to its (spin, k-point, band)
     // and to the proxy that produced it. Null for every other field source.
-    /** @type {{source: any, spin: number, kpt: number, band: number, quantity: number} | null} */
+    /** @type {{source: any, spin: number, kpt: number, band: number, quantity: number,
+     *           spinor?: number} | null} */
     this.wavefunction = null;
 
-    // Set by model/CompositeField.js on a weighted combination: the recipe it
-    // was built from, so it can be rebuilt when a term is reloaded.
+    // Set by model/CompositeField.js on a derived field: the terms it was built
+    // from, so it can be rebuilt when one of them is reloaded.
     /** @type {Array<{field: Field, weight: number}> | null} */
     this.derivedFrom = null;
+
+    // How those terms were combined — 'sum' for a weighted combination,
+    // 'magnitude' for sqrt(sum of squares). Read by `recomputeComposite`, which
+    // cannot tell the two apart from the term list alone.
+    /** @type {string | null} */
+    this.derivedOp = null;
   }
 
   getValueAt(i, j, k) {

@@ -12,11 +12,14 @@ import { Field } from './Field.js';
  *  - `combineFields` is sum(w_i * field_i). It backs the derived-field UI, and
  *    it also expresses the spin up/down split CHGCAR already did by hand:
  *    up = 0.5*rho + 0.5*s, down = 0.5*rho - 0.5*s.
+ *  - `magnitudeField` is sqrt(sum f_i^2), the one derivation a noncollinear
+ *    CHGCAR needs that a weighted sum cannot express.
  *
  * A composite is an ordinary `Field` — same class, same `values` — so
  * isosurfaces, cut planes and both tracer pipelines consume it with no special
- * casing. The only addition is `derivedFrom`, which records the recipe so the
- * field can be rebuilt if a term changes.
+ * casing. The only additions are `derivedFrom`, which records the terms so the
+ * field can be rebuilt if one of them changes, and `derivedOp`, which says how
+ * they were combined.
  */
 
 /**
@@ -233,6 +236,81 @@ export function combineFields(terms, options = {}) {
   // held by reference; a term whose values were evicted makes `recomputeComposite`
   // fail loudly rather than produce a silently wrong sum.
   field.derivedFrom = usable.map(({ field: source, weight }) => ({ field: source, weight }));
+  field.derivedOp = 'sum';
+
+  return field;
+}
+
+/**
+ * The Euclidean magnitude of a set of fields, sqrt(sum f_i^2).
+ *
+ * This exists for one case: the three magnetization blocks of a noncollinear
+ * CHGCAR. |m| is what tells a user where the cell is magnetic at all, and it is
+ * the only genuinely physical quantity of that file that the panel's "Combine
+ * fields" section cannot produce — that section sums weighted terms, and no
+ * weighting of m₁, m₂ and m₃ is their magnitude. The collinear case does not
+ * need it, because there the magnetization is a single signed block and its
+ * magnitude is just its absolute value.
+ *
+ * Same grid rules as `combineFields`, for the same reason.
+ *
+ * @param {Field[]} fields the components to square and sum
+ * @param {{label?: string, component?: number}} [options]
+ * @returns {Field}
+ */
+export function magnitudeField(fields, options = {}) {
+  const usable = (fields || []).filter(Boolean);
+  if (usable.length === 0) {
+    throw new Error('magnitudeField requires at least one field');
+  }
+
+  const first = usable[0];
+  const { nx, ny, nz } = first;
+  const expected = nx * ny * nz;
+
+  for (const field of usable) {
+    if (field.nx !== nx || field.ny !== ny || field.nz !== nz) {
+      throw new Error(
+        `magnitudeField: grid mismatch — "${field.label}" is ${field.nx}×${field.ny}×${field.nz}, `
+        + `expected ${nx}×${ny}×${nz}`);
+    }
+    if (!field.values || field.values.length < expected) {
+      throw new Error(`magnitudeField: "${field.label}" does not hold ${expected} values`);
+    }
+    if (!voxelsMatch(field.voxel, first.voxel)) {
+      console.warn(`magnitudeField: voxel vectors of "${field.label}" differ from `
+        + `"${first.label}"; using the first field's geometry.`);
+    }
+  }
+
+  // Squares accumulated in a float64 scratch and rooted at the end: summing
+  // three squared densities in float32 loses precision exactly where the field
+  // is largest, which is where the isosurface is.
+  const squares = new Float64Array(expected);
+  for (const field of usable) {
+    const source = field.values;
+    for (let i = 0; i < expected; i++) squares[i] += source[i] * source[i];
+  }
+  const values = new Float32Array(expected);
+  for (let i = 0; i < expected; i++) values[i] = Math.sqrt(squares[i]);
+
+  const field = new Field({
+    nx,
+    ny,
+    nz,
+    origin: first.origin,
+    voxel: first.voxel,
+    values,
+    component: options.component ?? 0,
+    label: options.label || `|${usable.map((f) => f.label || 'field').join(', ')}|`,
+    // A magnitude is non-negative, so the signed treatment would spend half the
+    // isovalue slider on a surface that can never exist.
+    useAbsoluteIsoValue: false,
+    ...computeFieldStats(values),
+  });
+
+  field.derivedFrom = usable.map((source) => ({ field: source, weight: 1 }));
+  field.derivedOp = 'magnitude';
 
   return field;
 }
@@ -243,7 +321,7 @@ export function combineFields(terms, options = {}) {
  * Used when a term's data was reloaded (a WAVECAR band re-expanded after
  * eviction) and the derived field must follow.
  *
- * @param {Field} composite a field produced by combineFields
+ * @param {Field} composite a field produced by combineFields or magnitudeField
  * @returns {Field} the same object, with fresh values and stats
  */
 export function recomputeComposite(composite) {
@@ -251,11 +329,19 @@ export function recomputeComposite(composite) {
     throw new Error('recomputeComposite: field carries no derivedFrom recipe');
   }
 
-  const rebuilt = combineFields(composite.derivedFrom, {
-    label: composite.label,
-    component: composite.component,
-    useAbsoluteIsoValue: composite.useAbsoluteIsoValue,
-  });
+  // `derivedOp` rather than inferring from the weights: a magnitude records its
+  // terms with weight 1 so anything walking the dependency list still sees
+  // them, and rebuilding it as a plain sum would be silently wrong.
+  const rebuilt = composite.derivedOp === 'magnitude'
+    ? magnitudeField(composite.derivedFrom.map((term) => term.field), {
+      label: composite.label,
+      component: composite.component,
+    })
+    : combineFields(composite.derivedFrom, {
+      label: composite.label,
+      component: composite.component,
+      useAbsoluteIsoValue: composite.useAbsoluteIsoValue,
+    });
 
   composite.values = rebuilt.values;
   composite.minValue = rebuilt.minValue;

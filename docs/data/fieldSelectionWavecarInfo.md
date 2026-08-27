@@ -7,7 +7,7 @@ Each k-point is labelled with its fractional coordinates.
 In a non-collinear file a band is not one orbital but a spinor, so the band itself becomes a group —
 see **Non-collinear files** below.
 
-Unlike a CHGCAR or a cube file, **nothing is loaded when the file is opened**. A WAVECAR stores
+**Nothing is loaded when the file is opened**. A WAVECAR stores
 plane-wave coefficients, and is normally too large to load into memory all at once. So each band to visualize needs to be **Loaded**.
 
 ## Reading a band row
@@ -39,20 +39,9 @@ CrysViz detects that and gives such a band its own group, holding:
   transverse part: its real and imaginary parts are the in-plane magnetisation
   (m_x = 2 Re ρ↑↓, m_y = −2 Im ρ↑↓), while m_z is ρ↑↑ − ρ↓↓.
 
-**ρ↓↑** is listed only under **Im ψ**. The density matrix of a single band is Hermitian, so
-ρ↓↑ is the complex conjugate of ρ↑↓ and reduces to exactly the same grid under every quantity
-except Im, where it is the same grid negated — the other three would simply be duplicates.
-
-For a density-matrix element the Quantity dropdown reads slightly differently, because ρ is already
-a density rather than an amplitude: **|ψ|² (density)** gives the magnitude |ρ| instead of squaring
-it again, while **Re**, **Im** and **signed** behave as their names say. The label of a loaded field
-records which was used.
 
 The whole spinor is normalised together, so ρ↑↑ and ρ↓↓ integrate over the cell to the fraction of
-the band held by each component and add up to one. Comparing them is therefore meaningful: a band
-sitting mostly in the down component shows a visibly smaller ρ↑↑ isosurface at the same isovalue.
-Combining them (**ρ↑↑ + ρ↓↓** with weights 1 and 1 in **Combine fields**) gives the band's total
-density, and subtracting them gives m_z.
+the band held by each component and add up to one. 
 
 ## Filtering and memory
 
