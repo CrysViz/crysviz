@@ -13,6 +13,12 @@ import {
   latticeFromCell,
   cartToFractional,
 } from '../math/index.js';
+import {
+  fetchAlexandriaStructure,
+  fetchOptimadeStructure,
+  isOptimadeStructureUrl,
+  normalizeAlexandriaId,
+} from '../io/OptimadeModule.js';
 
 export {
   transpose3x3,
@@ -50,12 +56,6 @@ export function initializeWithPOSCAR(structure, fileName) {
 //   return result;
 // }
 //
-
-
-
-
-// Direct fetch of optimade fails due to cors. Not sure what or why.
-
 
 
 
@@ -164,7 +164,7 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   pasteModal.hidden = true;
   pasteModal.innerHTML = `
     <div class="paste-modal" role="dialog" aria-modal="true" aria-label="Paste structure text">
-      <textarea id="structureText" placeholder="Paste POSCAR/CIF content, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id"></textarea>
+      <textarea id="structureText" placeholder="Paste POSCAR/CIF content, an OPTIMADE structure URL, or an Alexandria agm-id"></textarea>
       <div class="paste-modal-actions">
         <button type="button" id="loadTextButton">Load Structure</button>
         <button type="button" id="cancelTextButton">Cancel</button>
@@ -175,6 +175,32 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   const structureText = /** @type {HTMLTextAreaElement} */ (pasteModal.querySelector('#structureText'));
   const loadTextButton = pasteModal.querySelector('#loadTextButton');
   const cancelTextButton = pasteModal.querySelector('#cancelTextButton');
+
+  const optimadeWarningDialog = document.createElement('dialog');
+  optimadeWarningDialog.id = 'optimadeWarningDialog';
+  optimadeWarningDialog.setAttribute('aria-labelledby', 'optimadeWarningTitle');
+  optimadeWarningDialog.innerHTML = `
+    <h2 id="optimadeWarningTitle">Structure could not be loaded</h2>
+    <p>The provider's CORS policy blocks browser access. Download the structure and use Upload instead.</p>
+    <button type="button" id="optimadeWarningClose">OK</button>
+  `;
+  document.body.appendChild(optimadeWarningDialog);
+  const optimadeWarningClose = optimadeWarningDialog.querySelector('#optimadeWarningClose');
+  let optimadeWarningTimer = null;
+
+  function closeOptimadeWarning() {
+    if (optimadeWarningTimer !== null) clearTimeout(optimadeWarningTimer);
+    optimadeWarningTimer = null;
+    if (optimadeWarningDialog.open) optimadeWarningDialog.close();
+  }
+
+  function showOptimadeWarning() {
+    closeOptimadeWarning();
+    optimadeWarningDialog.showModal();
+    optimadeWarningTimer = setTimeout(closeOptimadeWarning, 5000);
+  }
+
+  optimadeWarningClose?.addEventListener('click', closeOptimadeWarning);
 
   function openPasteModal() {
     pasteModal.hidden = false;
@@ -188,13 +214,32 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   async function loadStructureFromText() {
     const raw = structureText.value.trim();
     if (!raw) {
-      setStatus('Paste POSCAR, CIF, OPTIMADE URL, Materials Project mp-id, or Alexandria agm-id before loading.');
+      setStatus('Paste POSCAR, CIF, an OPTIMADE structure URL, or an Alexandria agm-id before loading.');
       structureText.focus({ preventScroll: true });
       return;
     }
     closePasteModal();
-    await onLoadStructure(raw, 'pasted');
-    structureText.value = '';
+    try {
+      if (isOptimadeStructureUrl(raw)) {
+        setStatus('Fetching structure from OPTIMADE...');
+        const result = await fetchOptimadeStructure(raw);
+        await onLoadStructure(result.content, result.fileName);
+      } else if (normalizeAlexandriaId(raw)) {
+        setStatus('Fetching structure from Alexandria...');
+        const result = await fetchAlexandriaStructure(raw);
+        await onLoadStructure(result.content, result.fileName);
+      } else {
+        await onLoadStructure(raw, 'pasted');
+      }
+      structureText.value = '';
+    } catch (error) {
+      console.warn('Could not load pasted structure:', error);
+      if (error?.code === 'OPTIMADE_CORS_OR_NETWORK') {
+        showOptimadeWarning();
+      } else {
+        setStatus(`Error: ${error.message}`);
+      }
+    }
   }
 
   if (pasteTextButton) pasteTextButton.addEventListener('click', openPasteModal);
