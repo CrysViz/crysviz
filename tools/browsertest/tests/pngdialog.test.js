@@ -10,7 +10,7 @@ const H = require('../harness');
 const near = (a, b, tol = 2) => Math.abs(a - b) <= tol;
 
 async function openDialog(page) {
-  await page.evaluate(() => document.getElementById('savePngButton').click());
+  await page.evaluate(() => document.getElementById('saveImageButton').click());
 }
 
 async function cropRect(page) {

@@ -77,7 +77,7 @@ function orangeFraction(png) {
   // Open the export modal via the real UI, set a small size, click Download, and
   // poll the button text for a "/ 64" progress pattern while it renders.
   await page.evaluate(() => {
-    document.getElementById('savePngButton').click();
+    document.getElementById('saveImageButton').click();
     document.getElementById('pngWidth').value = '400';
     document.getElementById('pngHeight').value = '300';
     // Ensure the strip exists so its computed z-index can be read.

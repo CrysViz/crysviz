@@ -7,7 +7,17 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-if [ ! -d env/node_modules/playwright-core ] || [ ! -x env/xvfb-root/usr/bin/Xvfb ]; then
+# Xvfb comes from the Ubuntu package setup.sh vendors into env/ — the system
+# one is a fallback for machines where `apt-get download` does not exist, so an
+# apt machine keeps using the vendored binary exactly as before.
+if [ -x env/xvfb-root/usr/bin/Xvfb ]; then
+  XVFB_BIN="env/xvfb-root/usr/bin/Xvfb"
+elif command -v Xvfb >/dev/null 2>&1; then
+  XVFB_BIN="$(command -v Xvfb)"
+else
+  XVFB_BIN=""
+fi
+if [ ! -d env/node_modules/playwright-core ] || [ -z "$XVFB_BIN" ]; then
   echo "browsertest env missing — run 'make browsertest-setup' first" >&2
   exit 1
 fi
@@ -40,7 +50,7 @@ done
 # none, so Firefox can execute the PREVIOUS version of a just-edited module.
 python3 ../devserver.py "$PORT" --bind 127.0.0.1 --directory ../../docs >/dev/null 2>&1 &
 SERVER_PID=$!
-env/xvfb-root/usr/bin/Xvfb ":$DISPLAY_NUM" -screen 0 1400x900x24 -nolisten tcp >/dev/null 2>&1 &
+"$XVFB_BIN" ":$DISPLAY_NUM" -screen 0 1400x900x24 -nolisten tcp >/dev/null 2>&1 &
 XVFB_PID=$!
 trap 'kill "$SERVER_PID" "$XVFB_PID" 2>/dev/null || true' EXIT
 sleep 1.5
@@ -54,6 +64,28 @@ export CRYSVIZ_URL="http://localhost:$PORT/index.html"
 export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1
 export MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1
 export LIBGL_ALWAYS_SOFTWARE=1
+# On a Wayland desktop (and inside a toolbox/podman container on one, where the
+# compositor socket is passed through), GTK prefers Wayland over $DISPLAY: the
+# browser would connect to the REAL session and pop a visible window on the
+# user's screen, ignoring the private Xvfb entirely. Pin it to X11 so the run
+# stays invisible and self-contained.
+#
+# Unconditional on purpose — do NOT make this depend on the distro or on
+# WAYLAND_DISPLAY being set. It is safe everywhere because this script just
+# started its own X server above, so an X display always exists to pin to; and
+# it is needed everywhere, because the trigger is a Wayland session, which any
+# distro can have. Keying off WAYLAND_DISPLAY would also miss an environment
+# that sets GDK_BACKEND=wayland on its own.
+export GDK_BACKEND=x11
+export MOZ_ENABLE_WAYLAND=0
+unset WAYLAND_DISPLAY
+# Playwright's pre-launch host check names the apt packages it wants: right on
+# a Debian machine, and wrong everywhere else — it aborts on Fedora even when
+# every library is present. Leave it on where it means something; setup.sh's
+# ldd check covers the machines where it is skipped.
+if ! command -v apt-get >/dev/null 2>&1; then
+  export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
+fi
 
 if ! curl -sf -o /dev/null "$CRYSVIZ_URL"; then
   echo "app server failed to start on port $PORT" >&2

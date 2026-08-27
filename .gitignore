@@ -28,3 +28,4 @@ rust-env/
 # `make browsertest-setup`) and test screenshots.
 tools/browsertest/env/
 tools/browsertest/artifacts/
+tools/browsertest/tests/artifacts/

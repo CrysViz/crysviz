@@ -197,7 +197,7 @@ const H = require('../harness');
 
   // Open the modal, set a size, click Download → opens the crop overlay.
   await page.evaluate(() => {
-    document.getElementById('savePngButton').click();
+    document.getElementById('saveImageButton').click();
     document.getElementById('pngWidth').value = '400';
     document.getElementById('pngHeight').value = '300';
     document.getElementById('pngDownloadBtn').click();

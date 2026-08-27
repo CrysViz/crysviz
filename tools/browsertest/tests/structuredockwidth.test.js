@@ -61,6 +61,19 @@ async function widths(page, id) {
   H.check('side dock: Structure body fills the pane width',
     w.pane > 320 && Math.abs(w.body - w.pane) < 8, JSON.stringify(w));
 
+  // Files used to inherit its foreground from #ui. Once adopted into the
+  // side dock that ancestor disappears and native table text fell back black.
+  await moveTo(page, 'files', 'right');
+  const fileColors = await page.evaluate(() => {
+    const panel = document.querySelector('.cv-panel[data-panel-id="files"]');
+    return {
+      body: getComputedStyle(panel.querySelector('.cv-panel-body')).color,
+      table: getComputedStyle(document.getElementById('objectTable')).color,
+    };
+  });
+  H.check('side dock: Files table inherits the panel foreground',
+    fileColors.body === fileColors.table, JSON.stringify(fileColors));
+
   // Back to floating: the fixed width returns (no sticky dock styling).
   await moveTo(page, PANEL, 'float');
   w = await widths(page, PANEL);

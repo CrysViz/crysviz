@@ -11,6 +11,11 @@ environments without root and without a display:
   playwright's Firefox runs **non-headless against a private Xvfb** with Mesa
   software GL. The `MOZ_DISABLE_*_SANDBOX` env vars are required (content
   processes segfault otherwise); `run.sh` sets all of this up.
+- **Non-headless does not mean visible.** The browser is pinned to the private
+  Xvfb with `GDK_BACKEND=x11` + an unset `WAYLAND_DISPLAY`. Without that, on a
+  Wayland desktop — including inside a toolbox/podman container on one, which
+  passes the compositor socket through — GTK prefers Wayland over `$DISPLAY`
+  and the browser pops a real window on the user's screen mid-run.
 
 ## Usage
 
@@ -20,6 +25,23 @@ make browsertest         # run all tests/*.test.js
 tools/browsertest/run.sh tests/celoutline.test.js   # run one test
 tools/browsertest/run.sh tests/tracerbench.bench.js # tracer micro-benchmark (opt-in)
 ```
+
+`setup.sh` installs everything it can without root, but it cannot supply the
+two things that need a package manager: **Xvfb**, and the **GTK3 desktop stack
+playwright's Firefox is linked against** (a minimal container has neither, and
+the failure is a bare `XPCOMGlueLoad error ... libgtk-3.so.0`). It checks for
+both at the end and names the fix. On Fedora that is one command:
+
+```bash
+sudo dnf install -y xorg-x11-server-Xvfb gtk3 alsa-lib dbus-libs \
+     mesa-libGL mesa-libEGL mesa-dri-drivers dejavu-sans-fonts
+```
+
+On Debian/Ubuntu, `sudo npx playwright install-deps firefox` covers the
+libraries and `setup.sh` vendors Xvfb from the `xvfb` package by itself.
+Playwright's own pre-launch host check hard-codes Debian package names, so it
+reports a perfectly good Fedora machine as broken — `run.sh` and `setup.sh` set
+`PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` and check with `ldd` instead.
 
 The `.bench.js` suffix keeps a file OUT of the default `tests/*.test.js` glob,
 so it never runs under `make browsertest` — pass it to `run.sh` by hand. The one

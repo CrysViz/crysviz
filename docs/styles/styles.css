@@ -233,19 +233,27 @@ body.panel-hidden #axesLegend {
 }
 
 /* File actions row (Files window): Upload / Paste Text / Download (+ Share,
-   added once a structure loads — the columns adapt to the button count). */
+   added once a structure loads). A wrapping flex row, not an equal-column
+   grid: with a larger font scale or a narrow panel the four nowrap labels
+   summed to more than the row, and equal tracks just let the labels run into
+   each other (and Share past the edge). Buttons keep their natural width,
+   share the leftover space, and drop onto a second line when they must. */
 .file-actions {
-  display: grid;
-  grid-auto-flow: column;
-  /* minmax(0, 1fr), not 1fr: a bare 1fr track floors at min-content, and with
-     nowrap labels that summed to more than a phone-width sheet, so Share ran
-     off the right edge. The labels wrap instead (see below). */
-  grid-auto-columns: minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   gap: clamp(4px, 1.1111vw, var(--sp-3));
   margin-bottom: var(--sp-5);
   background: var(--wash-1);
   padding: var(--sp-2);
   border-radius: var(--radius-md);
+}
+
+.file-actions > * {
+  flex: 1 0 auto;
+}
+
+.file-actions > .file-action-btn {
+  width: auto; /* the base rule's 100% would be the flex basis — one per line */
 }
 
 .file-action-btn {
@@ -420,6 +428,18 @@ body.panel-hidden #axesLegend {
   gap: var(--sp-3);
 }
 
+/* [hidden] alone loses to .png-row's display:flex — the SVG-only "Structure
+   as" row needs this to actually disappear in PNG mode. */
+.png-row[hidden] {
+  display: none;
+}
+
+/* Rows holding one full-width control (Format, Structure as): keep the
+   control the same width as one column of the two-up rows above it. */
+.png-row-single > label {
+  flex: 0 1 100%;
+}
+
 .png-row input[type="number"],
 .png-row select {
   width: 100%;
@@ -449,8 +469,8 @@ body.panel-hidden #axesLegend {
   flex: 1;
   margin-top: var(--sp-1);
   padding: var(--sp-4) var(--sp-5);
-  background: var(--highlight-color);
-  color: var(--fg-1); /* same text color as the theme's other green buttons */
+  background: var(--bg-color); /* same fill as the toolbar buttons; the glow is the hover */
+  color: var(--fg-1);
   border: none;
   border-radius: var(--radius);
   font-size: var(--fs-lg);
@@ -698,7 +718,7 @@ body.panel-hidden #axesLegend {
 }
 
 .share-pw-error {
-  color: var(--danger, #d9534f);
+  color: var(--danger-bright);
 }
 
 .share-pw-error[hidden] {

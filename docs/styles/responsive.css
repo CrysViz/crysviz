@@ -231,8 +231,11 @@
      needed three lines and pushed its row off a phone-width panel.
      .lsc-panel-btn (Cell & Supercell / Transform "Apply") is likewise a dense
      panel button with its own fixed 32px height and --fs-sm sizing; the big-tap
-     rung zoomed its font to --fs-xl and stretched it, offsetting it in its row. */
-  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn) {
+     rung zoomed its font to --fs-xl and stretched it, offsetting it in its row.
+     .bond-cat-btn (per-pair Reset/Apply in the bond-length panel) is the same
+     case again: a 32px x 50px box sized to its row, so the --fs-xl rung spilled
+     both labels straight out of their borders. */
+  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn):not(.bond-cat-btn) {
     padding: var(--sp-4) var(--sp-5);
     font-size: var(--fs-xl);
     align-self: stretch;
@@ -309,16 +312,6 @@
      edge instead, same idea as the gizmo's mobile override below. */
   :root {
     --popup-left: max(var(--sp-3), env(safe-area-inset-left));
-  }
-
-  /* ---- styles.css: file-actions row ----
-     Last resort if the fluid shrink still isn't enough for a label: wrap it
-     onto a second line rather than let it spill out of the sheet. Kept out of
-     the base rule because at desktop width there is room, and wrapping there
-     would change a row nothing was wrong with. */
-  .file-actions .file-action-btn {
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
 
   /* ---- styles.css: scene toolbars at touch size ----

@@ -183,14 +183,14 @@ const H = require('../harness');
   // Settings persistence: tweak the modal, close it, reopen it, and the
   // choices must be restored (from localStorage).
   const prefs = await page.evaluate(() => {
-    document.getElementById('savePngButton').click(); // open
+    document.getElementById('saveImageButton').click(); // open
     const aspect = document.getElementById('pngAspect');
     aspect.value = '1:1';
     aspect.dispatchEvent(new Event('change'));
     document.getElementById('pngTransparent').checked = true;
     document.getElementById('pngCancelBtn').click();  // close -> saves prefs
 
-    document.getElementById('savePngButton').click(); // reopen -> loads prefs
+    document.getElementById('saveImageButton').click(); // reopen -> loads prefs
     const out = {
       aspect: document.getElementById('pngAspect').value,
       transparent: document.getElementById('pngTransparent').checked,

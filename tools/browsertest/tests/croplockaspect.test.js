@@ -48,7 +48,7 @@ async function dragHandleTo(page, corner, x, y) {
   await H.loadDefaultStructure(page); // YBCO
 
   // Open the export dialog; note its dims and (default-checked) lock state.
-  await page.evaluate(() => document.getElementById('savePngButton').click());
+  await page.evaluate(() => document.getElementById('saveImageButton').click());
   const dialog = await page.evaluate(() => ({
     width: Number(document.getElementById('pngWidth').value),
     height: Number(document.getElementById('pngHeight').value),
