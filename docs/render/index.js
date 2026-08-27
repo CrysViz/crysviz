@@ -56,6 +56,12 @@ export {
 
 export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail } from './FastFrameModule.js';
 
+export {
+  DEFAULT_FOCUS_REGION, focusOpacityAt, combinedFocusOpacity, getFocusRegions,
+  getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion, removeFocusRegion,
+  clearFocusRegions, applyFocusRegions,
+} from './FocusRegionModule.js';
+
 export { updateGroundPlane } from './GroundPlaneModule.js';
 
 export {

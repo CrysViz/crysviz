@@ -371,6 +371,7 @@ export class SceneEncoder {
     if (structure) {
       parts.push('ms',
         JSON.stringify(structure.atomImageStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.focusRegions ?? {}),
         JSON.stringify(structure.bondCategoryStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.bondUserStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}, dropMaterialKey),

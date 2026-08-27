@@ -155,6 +155,9 @@ export class Structure {
     // Atoms tab when "Link periodic copies" is off. SURVIVES atom rebuilds;
     // stale keys (changed wrapped set) are ignored via the element check.
     this.atomImageStyles = {};
+    // Non-destructive local-view filters. Unlike atomImageStyles, these do not
+    // author atom appearance; the renderer composes them over existing alpha.
+    this.focusRegions = [];
     this.periodic = periodic;     // Initialize periodic
     this.atomImages = {};
     this.planes = planes;
