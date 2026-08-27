@@ -2,67 +2,44 @@
 
 # CrysViz - Crystal Structure Visualisation & Analysis
 
-[![Checks](https://github.com/ftrybel/CrysViz_hot_develop/actions/workflows/check.yml/badge.svg)](https://github.com/ftrybel/CrysViz_hot_develop/actions/workflows/check.yml)
+## Light-weight browser-based crystal structure visualisation and analysis with on-device rendering.
 
-## Light-weight browser-based crystal structure visualisation with on-device rendering.
+Version 0.9.10 Beta 2026-08-28
+
+Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
-Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, and Rickard Armiento 
+CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/OUTCAR/CIF snippet, drop a local file (POSCAR, OUTCAR, CIF or QE input/output), or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). Your crystal structures will NOT leave your device!
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as published
-by the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
 
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
+You should have received a copy of the GNU Affero General Public License along with this program. If not, see https://www.gnu.org/licenses/.
 
-Source code: https://github.com/ftrybel/CrysViz_hot_develop
 
 ## Maintainers
-- **[Florian Trybel](https://github.com/ftrybel)** - Project lead, core development, and design.
-- **[Abhijith S Parackal](https://github.com/Abhivega)** - Core development, and design
-
-## Contributors
-- **[Rickard Armiento](https://github.com/rartino)** - I/O (CIF), rendering (depth peeling, WBOIT, ray/path tracing), dockable window GUI, polyhedra, camera controls, bond styling, standalone app with Python API, PNG export, dev tooling/CI/browser tests.
-- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)** - Vector Field Visualisation (ELF, Charge)
+- **[Florian Trybel](https://github.com/ftrybel)** - Project lead
+- **[Abhijith S Parackal](https://github.com/Abhivega)**
+- **[Rickard Armiento](https://github.com/rartino)**
+- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)**
+- **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
 
 ## Key Features
-- No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser.
-- Visualise Input and output files from VASP and Quantum Espress as well as CIFs.
+- No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser. 
+- Visualise Input and output from VASP, Quantum Espresso, and CIF files.
 - Measure distances and angles.
 - Use custom bond lengths with the optional ability to display atoms outside the unit cell that are bonded neighbours.
-- Customizable color schemes can be choosen for any individual atoms
+- Customizable color schemes can be choosen for any individual atoms 
 - Forces and spin visualisation. Dynamically for relaxaton or MD trajectories
-- Trajectory player. Load OUTCARs and pwscf vc-relax output files directly and visualise the trajectories. Long MD trajecetories might be beyond your browsers memory limits.
+- Trajectory player. Load VASP OUTCARs and Quantum Espresso vc-relax output files directly and visualise the trajectories. Long MD trajecetories might be beyond your browsers memory limits.
 - Symmetry anlysis and structure refinement (powered by Moyo WASM)
-- Relxations and molecular dynamics simulations directly on your device with NEP potentials with upt to several hundred atoms.
-- Possibility to activate a calculation backend. This allow structural relaxations with any ASE compatible calculater, e.g. MACE, UPET; trajectory is added and can be played using the trajectory player
-- Bond length histogram (angles and coordiantion numbers are comming)
+- Relxations and molecular dynamics simulations directly on your device with NEP potentials with upt to several hundred atoms. 
+- Possibility to activate a calculation backend. This allows structural relaxations with any ASE compatible calculater, e.g., MACE, UPET, VASP, QE; trajectory is added and can be played using the trajectory player.
+- Bond length histogram (angles and coordiantion numbers are comming soon).
+- and many more...
 
-## Work in progress... (already available)
-- Crystal structures structure comparison via structure overlay; Lattice difference analysis inradar plot
-- Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved). High memory requirements for large files.
-- Share links that contain the structure, view angle, colors and measurements (currently selected structure in trajectory only)
-
-## Comming soon...
-- Stress visualisation
-- Updated trajectory player for larger and longer trajectories
-- Structures manipulation under symmetry constraints
-- Add atoms and vaccuum
-- eXYZ reader for trajectories or sets of files.
-
-## Using CrysViz
-
-The easiest way to use CrysViz is to simply visit our hosted CrysViz here:
-
-* <URL to be added>
 
 ### Local in-browser installation and use
 
@@ -75,8 +52,8 @@ If you do not want to use CrysViz over the Internet, you can run it via a webser
    ```bash
    make serve
    ```
-
 * Visit the URL shown.
+
 
 ### Run CrysViz as a stand-alone application
 
