@@ -1,6 +1,23 @@
 EMCC ?= emcc
 CFLAGS ?= -O3
 
+# tsc follows the imports in docs/ into this directory's generated glue and
+# type-checks it, even though tsconfig.json excludes docs/compiled: `exclude`
+# only governs the root file set, not what the root files import. Emscripten's
+# Node branch references node:module, node:fs and process, none of which this
+# project has types for, so an unbannered module is ~10 errors in `make
+# typecheck` — which is a zero-error CI gate.
+#
+# Stamping the banner here rather than adding it by hand is the point: it was
+# added by hand once, and a later rebuild silently dropped it. wave_backend.js
+# is the exception and carries no banner — wave_backend.d.ts shadows it with
+# real signatures, which is better than switching the checking off.
+TS_NOCHECK := // @ts-nocheck -- Emscripten-generated; not type-checked
+
+define stamp_nocheck
+@printf '%s\n' '$(TS_NOCHECK)' | cat - $(1) > $(1).stamped && mv $(1).stamped $(1)
+endef
+
 SRC := math_backend.c
 JS_OUT := math_backend.js
 WASM_OUT := math_backend.wasm
@@ -54,6 +71,7 @@ $(JS_OUT): $(SRC)
 		-s EXPORTED_FUNCTIONS='$(EXPORTED_FUNCTIONS)' \
 		-s EXPORTED_RUNTIME_METHODS='$(EXPORTED_RUNTIME)' \
 		-o $(JS_OUT)
+	$(call stamp_nocheck,$(JS_OUT))
 
 # MAXIMUM_MEMORY matches the marching-cubes build below: a large FFT box plus its
 # reduced field can run to a few hundred MB, and the default 2GB cap is the
@@ -86,6 +104,8 @@ $(MC_JS_OUT): $(MC_SRC)
 		-s EXPORTED_RUNTIME_METHODS=HEAPF32 \
 		-s MAXIMUM_MEMORY=4294967296 \
 		-o $(MC_JS_OUT)
+	$(call stamp_nocheck,$(MC_JS_OUT))
 
 clean:
 	rm -f $(JS_OUT) $(WASM_OUT) $(WAVE_JS_OUT) $(WAVE_WASM_OUT) $(MC_JS_OUT) $(MC_WASM_OUT)
+	rm -f $(JS_OUT).stamped $(MC_JS_OUT).stamped
