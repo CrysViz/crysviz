@@ -9,26 +9,10 @@ Version 0.9.10 Beta 2026-08-28
 
 <img width="600" alt="Screenshot_crysviz" src="https://github.com/user-attachments/assets/08bc3c31-c14b-4c22-a6b3-f6602dbe896c" />
 
-Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
-
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
 CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/OUTCAR/CIF snippet, drop a local file (POSCAR, OUTCAR, CIF or QE input/output), or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). Your crystal structures will NOT leave your device!
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License along with this program. If not, see https://www.gnu.org/licenses/.
-
-
-## Maintainers
-- **[Florian Trybel](https://github.com/ftrybel)** - Project lead
-- **[Abhijith S Parackal](https://github.com/Abhivega)**
-- **[Rickard Armiento](https://github.com/rartino)**
-- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)**
-- **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
-
+Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
 
 
 ## Key Features
@@ -44,6 +28,18 @@ You should have received a copy of the GNU Affero General Public License along w
 - Possibility to activate a calculation backend. This allows structural relaxations with any ASE compatible calculater, e.g., MACE, UPET, VASP, QE; trajectory is added and can be played using the trajectory player.
 - Bond length histogram (angles and coordiantion numbers are comming soon).
 - and many more...
+
+
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have received a copy of the GNU Affero General Public License along with this program. If not, see https://www.gnu.org/licenses/.
+
+
+## Maintainer
+- **[Florian Trybel](https://github.com/ftrybel)** - Project lead
+- **[Abhijith S Parackal](https://github.com/Abhivega)**
+- **[Rickard Armiento](https://github.com/rartino)**
+- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)**
+- **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
 
 
 ### Local in-browser installation and use
