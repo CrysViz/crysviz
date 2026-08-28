@@ -106,7 +106,7 @@ with Viewer([payload]) as viewer:
 viewer = show(["structure.cif"])
 ```
 
-For more, see [examples](examples/).
+For more, see [examples](https://github.com/CrysViz/crysviz/tree/deploy/examples).
 
 ## Third-Party Libraries
 
