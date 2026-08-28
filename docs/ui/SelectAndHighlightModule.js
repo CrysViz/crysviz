@@ -145,8 +145,8 @@ function sourceIndicesForInstances(instanceIds) {
 // Glows an arrow instance the same way a selected atom/bond glows — sets
 // instanceEmissive/instanceEmissiveIntensity only, leaving instanceColor (and
 // so the arrow's real colormap-driven or userColor color) untouched.
-function setArrowEmissiveGlow(shaftMesh, tipMesh, arrowIndex) {
-  if (arrowIndex == null || !shaftMesh || !tipMesh) return;
+function setArrowEmissiveGlow(shaftMesh, tipMesh, arrowIndices) {
+  if (arrowIndices == null || !shaftMesh || !tipMesh) return;
   const shaftEmissive = shaftMesh.geometry.attributes.instanceEmissive;
   const shaftIntensity = shaftMesh.geometry.attributes.instanceEmissiveIntensity;
   const tipEmissive = tipMesh.geometry.attributes.instanceEmissive;
@@ -154,12 +154,16 @@ function setArrowEmissiveGlow(shaftMesh, tipMesh, arrowIndex) {
   if (!shaftEmissive || !shaftIntensity || !tipEmissive || !tipIntensity) return;
 
   const { r, g, b } = HIGHLIGHT_EMISSIVE;
-  shaftEmissive.setXYZ(arrowIndex * 2, r, g, b);
-  shaftEmissive.setXYZ(arrowIndex * 2 + 1, r, g, b);
-  shaftIntensity.setX(arrowIndex * 2, HIGHLIGHT_EMISSIVE_INTENSITY);
-  shaftIntensity.setX(arrowIndex * 2 + 1, HIGHLIGHT_EMISSIVE_INTENSITY);
-  tipEmissive.setXYZ(arrowIndex, r, g, b);
-  tipIntensity.setX(arrowIndex, HIGHLIGHT_EMISSIVE_INTENSITY);
+  // One atom owns one arrow per periodic image it is drawn at (SpinModule.js /
+  // ForceModule.js keep the list), so every copy lights up together.
+  for (const arrowIndex of (Array.isArray(arrowIndices) ? arrowIndices : [arrowIndices])) {
+    shaftEmissive.setXYZ(arrowIndex * 2, r, g, b);
+    shaftEmissive.setXYZ(arrowIndex * 2 + 1, r, g, b);
+    shaftIntensity.setX(arrowIndex * 2, HIGHLIGHT_EMISSIVE_INTENSITY);
+    shaftIntensity.setX(arrowIndex * 2 + 1, HIGHLIGHT_EMISSIVE_INTENSITY);
+    tipEmissive.setXYZ(arrowIndex, r, g, b);
+    tipIntensity.setX(arrowIndex, HIGHLIGHT_EMISSIVE_INTENSITY);
+  }
 
   shaftEmissive.needsUpdate = true;
   shaftIntensity.needsUpdate = true;
@@ -197,9 +201,10 @@ function reapplyCurrentSelectionHighlight() {
 }
 
 /**
- * Highlights the ONE arrow the current override targets, if any of the given
- * ATOM INSTANCE ids resolve to its source atom — the arrow counterpart of
- * applyAtomHighlightIndices's own atom glow, called right alongside it.
+ * Highlights the arrows the current override targets — one per periodic image
+ * the atom is drawn at — if any of the given ATOM INSTANCE ids resolve to its
+ * source atom. The arrow counterpart of applyAtomHighlightIndices's own atom
+ * glow, called right alongside it.
  */
 function applyForceSpinHighlightForInstances(instanceIds) {
   if (!arrowHighlightOverride) return;
@@ -207,9 +212,9 @@ function applyForceSpinHighlightForInstances(instanceIds) {
   if (!sourceIndicesForInstances(instanceIds).includes(atomIndex)) return;
 
   if (kind === 'force') {
-    setArrowEmissiveGlow(groups.forcesShaftMesh, groups.forcesTipMesh, groups.forcesInstanceBySrcIndex?.get(atomIndex));
+    setArrowEmissiveGlow(groups.forcesShaftMesh, groups.forcesTipMesh, groups.forcesInstancesBySrcIndex?.get(atomIndex));
   } else {
-    setArrowEmissiveGlow(groups.spinShaftMesh, groups.spinTipMesh, groups.spinsInstanceBySrcIndex?.get(atomIndex));
+    setArrowEmissiveGlow(groups.spinShaftMesh, groups.spinTipMesh, groups.spinsInstancesBySrcIndex?.get(atomIndex));
   }
 }
 

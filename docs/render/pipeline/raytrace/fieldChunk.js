@@ -31,6 +31,13 @@ uniform bool uFieldEnabled;
 uniform highp sampler3D uFieldTex;
 uniform mat4 uFieldWorldToFrac; // world -> fractional [0,1]^3 cube
 uniform ivec3 uFieldDims;
+// Periodic display boundary (general.periodicBounds) in that fractional space.
+// [0,1] is the plain unit cell; wider bounds march the neighbouring cells too
+// and uFieldWrap makes the sample coordinate periodic, which is the tracer's
+// equivalent of the raster pipelines' translated + clipped mesh copies.
+uniform vec3 uFieldBoundsMin;
+uniform vec3 uFieldBoundsMax;
+uniform bool uFieldWrap;
 uniform float uFieldIso;
 uniform bool uFieldAbsMode; // true: two lobes at +/-|iso| (pos/neg colours)
 uniform vec3 uFieldPosColor;
@@ -44,7 +51,11 @@ uniform vec4 uFieldMaterial; // encoded tracer material texel (type, roughness, 
 float sampleField(vec3 frac)
 {
 	ivec3 maxIdx = uFieldDims - ivec3(1);
-	vec3 g = clamp(frac, 0.0, 1.0) * vec3(maxIdx);
+	// Outside the unit cell the field simply repeats (that is what makes the
+	// display boundary meaningful for it), so fold the coordinate back in.
+	// Guarded by uFieldWrap so the in-cell case keeps the exact clamp above.
+	vec3 fw = uFieldWrap ? frac - floor(frac) : frac;
+	vec3 g = clamp(fw, 0.0, 1.0) * vec3(maxIdx);
 	ivec3 i0 = ivec3(floor(g));
 	vec3 f = g - vec3(i0);
 	i0 = clamp(i0, ivec3(0), maxIdx);
@@ -76,10 +87,10 @@ bool intersectField(vec3 ro, vec3 rd, float bestT, out float outT, out vec3 outN
 	vec3 fo = (uFieldWorldToFrac * vec4(ro, 1.0)).xyz;
 	vec3 fd = (uFieldWorldToFrac * vec4(rd, 0.0)).xyz;
 
-	// slab-test the unit cube [0,1]^3
+	// slab-test the display-boundary box (the unit cube [0,1]^3 by default)
 	vec3 invD = 1.0 / fd;
-	vec3 tA = (vec3(0.0) - fo) * invD;
-	vec3 tB = (vec3(1.0) - fo) * invD;
+	vec3 tA = (uFieldBoundsMin - fo) * invD;
+	vec3 tB = (uFieldBoundsMax - fo) * invD;
 	vec3 tsm = min(tA, tB);
 	vec3 tbg = max(tA, tB);
 	float tNear = max(max(tsm.x, tsm.y), tsm.z);
@@ -89,7 +100,12 @@ bool intersectField(vec3 ro, vec3 rd, float bestT, out float outT, out vec3 outN
 	if (tFar <= tNear) return false;
 
 	float A = abs(uFieldIso);
-	int steps = int(clamp(1.5 * float(max(max(uFieldDims.x, uFieldDims.y), uFieldDims.z)), 64.0, 384.0));
+	// Step count follows the grid resolution AND how many cells the display
+	// boundary spans, so a widened boundary is marched as finely as one cell
+	// (still capped by the loop bound below).
+	vec3 span = uFieldBoundsMax - uFieldBoundsMin;
+	float cells = max(max(max(span.x, span.y), span.z), 1.0);
+	int steps = int(clamp(1.5 * float(max(max(uFieldDims.x, uFieldDims.y), uFieldDims.z)) * cells, 64.0, 384.0));
 	float dt = (tFar - tNear) / float(steps);
 
 	float tPrev = tNear;
