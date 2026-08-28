@@ -1,5 +1,5 @@
 
-<img src="docs/data/CrysViz_logo_clear_back.png" width="400">
+<img src="https://raw.githubusercontent.com/CrysViz/crysviz/main/docs/data/CrysViz_logo_clear_back.png" width="400">
 
 # CrysViz - Crystal Structure Visualisation & Analysis
 
@@ -7,7 +7,7 @@
 
 Version 0.9.10 Beta 2026-08-28
 
-<img width="600" alt="Screenshot_crysviz" src="https://github.com/user-attachments/assets/08bc3c31-c14b-4c22-a6b3-f6602dbe896c" />
+<img width="600" alt="Screenshot_crysviz" src="https://raw.githubusercontent.com/CrysViz/crysviz/main/docs/data/CrysViz_screenshot.png" />
 
 
 CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/OUTCAR/CIF snippet, drop a local file (POSCAR, OUTCAR, CIF or QE input/output), or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). Your crystal structures will NOT leave your device!
