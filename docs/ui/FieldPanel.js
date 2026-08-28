@@ -287,9 +287,13 @@ export function addFieldPanel(target = "cvPanelBody-field") {
     </div>
 
     <div class="control-group">
-      <label>Isosurface Value:</label>
-      <input type="range" id="isoSlider" min="0" max="100" step="1" value="${sliderVal}">
-      <span id="isoValue">${isoValue.toExponential(3)}</span>
+      <label for="isoValue">Isosurface Value:</label>
+      <div class="field-iso-row">
+        <input type="range" id="isoSlider" min="0" max="100" step="1" value="${sliderVal}">
+        <input type="text" id="isoValue" class="field-iso-input" value="${isoValue.toExponential(3)}"
+               placeholder="&mdash;" autocomplete="off" spellcheck="false"
+               title="Type an exact value (e.g. 2.5e-3), then press Enter">
+      </div>
     </div>
 
     <div id="fieldColorToggle" class="spin-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="fieldColorContent">
@@ -415,7 +419,7 @@ export function removeFieldPanel(target = "cvPanelBody-field") {
  */
 function setupFieldControlEvents(container) {
   const slider = document.getElementById('isoSlider');
-  const valueDisplay = document.getElementById('isoValue');
+  const isoInput = /** @type {HTMLInputElement} */ (document.getElementById('isoValue'));
   const absoluteValueCheckbox = document.getElementById('FieldAbsoluteValueToggle');
   const logScaleCheckbox = document.getElementById('LogSliderScaleToggle');
   const triangleSortCheckbox = document.getElementById('FieldTriangleSortToggle');
@@ -540,6 +544,16 @@ function setupFieldControlEvents(container) {
 
   // Event listeners
 
+  /** Show an iso value in the readout box, in the panel's canonical format.
+   *  The box is an editable input, so a write from anywhere BUT the box's own
+   *  commit is skipped while it has focus — otherwise a rebuild triggered
+   *  elsewhere would overwrite half-typed text. `force` is for the commit
+   *  itself, which reformats the number the user just entered. */
+  function setIsoReadout(value, force = false) {
+    if (!force && document.activeElement === isoInput) return;
+    isoInput.value = Number(value).toExponential(3);
+  }
+
   // Live isosurface updates while DRAGGING the iso slider: rebuilds are
   // COALESCED to at most one marching-cubes pass per animation frame (the
   // pending callback reads the field's CURRENT isoValue, so rapid drag events
@@ -574,7 +588,7 @@ function setupFieldControlEvents(container) {
     const isoValue = sliderToIsoValue(sliderValue, fieldBrowser.selectedField);
 
     // 1. Update the displayed value
-    valueDisplay.textContent = isoValue.toExponential(3);
+    setIsoReadout(isoValue);
 
     // 2. Store the iso value on the selected field for bookkeeping
     fieldBrowser.selectedField.isoValue = isoValue;
@@ -595,9 +609,58 @@ function setupFieldControlEvents(container) {
     const isoValue = sliderToIsoValue(sliderValue, fieldBrowser.selectedField);
 
     // Update the displayed value
-    valueDisplay.textContent = isoValue.toExponential(3);
+    setIsoReadout(isoValue);
     fieldBrowser.selectedField.isoValue = isoValue; // Update the isoValue on the selected field for memory
     scheduleLiveIsoUpdate();
+  });
+
+  // Typed iso value: the readout is an INPUT, so the value can also be set
+  // exactly instead of only through the slider — whose 100 steps are far too
+  // coarse for a field whose interesting levels sit orders of magnitude below
+  // its maximum. Accepts anything parseFloat does, including the exponential
+  // form the readout itself prints (2.500e-3).
+  //
+  // The typed number is authoritative: the handle is moved to the nearest
+  // slider position but the value is NOT round-tripped back through
+  // sliderToIsoValue, which would quantize it to the same 1-in-100 grid the
+  // box exists to escape. (The next drag re-derives from the handle, as
+  // before.)
+  function commitTypedIsoValue() {
+    const field = fieldBrowser.selectedField;
+    if (!field) return;
+
+    const typed = parseFloat(isoInput.value);
+    if (!Number.isFinite(typed)) {
+      setIsoReadout(field.isoValue, true); // unparseable: put the live value back
+      return;
+    }
+    // Clamp to the data's own range — an iso level outside it has no surface
+    // to draw, and the slider could not represent it either.
+    const lo = Number.isFinite(field.minValue) ? field.minValue : -Infinity;
+    const hi = Number.isFinite(field.maxValue) ? field.maxValue : Infinity;
+    const isoValue = Math.min(Math.max(typed, lo), hi);
+
+    field.isoValue = isoValue;
+    setIsoReadout(isoValue, true);    // echo back canonical formatting + any clamp
+    slider.value = String(isoValueToSlider(isoValue, field));
+
+    const structure = fileBrowser.selectedStructure;
+    if (structure && structure.volumetricFields && isoValue !== lastBuiltIso) {
+      lastBuiltIso = isoValue;
+      updateField(isoValue);
+      requestRender();
+    }
+  }
+
+  // 'change' already covers both commit gestures (blur and Enter) whenever the
+  // text differs from what the box was given; the explicit Enter handler makes
+  // the key commit even when it doesn't — retyping the same number then still
+  // reformats and re-seats the handle rather than doing nothing visible.
+  isoInput.addEventListener('change', commitTypedIsoValue);
+  isoInput.addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    commitTypedIsoValue();
   });
 
   absoluteValueCheckbox.addEventListener('change', function () {
@@ -629,7 +692,7 @@ function setupFieldControlEvents(container) {
     const isoValue = field.isoValue || suggestIsoValue(field);
     field.isoValue = isoValue;
     slider.value = String(isoValueToSlider(isoValue, field));
-    valueDisplay.textContent = isoValue.toExponential(3);
+    setIsoReadout(isoValue);
     // The slider's ends mean different values under the two mappings, so a
     // drag must not be diffed against a position from the old scale.
     lastBuiltIso = null;
@@ -668,17 +731,18 @@ function setupFieldControlEvents(container) {
     const enabled = Boolean(field);
 
     slider.disabled = !enabled;
+    isoInput.disabled = !enabled;
     absoluteValueCheckbox.disabled = !enabled;
 
     if (!field) {
-      valueDisplay.textContent = '—';
+      isoInput.value = ''; // the placeholder shows the em dash
       return;
     }
 
     const isoValue = field.isoValue || suggestIsoValue(field);
     field.isoValue = isoValue;
     slider.value = String(isoValueToSlider(isoValue, field));
-    valueDisplay.textContent = isoValue.toExponential(3);
+    setIsoReadout(isoValue, true); // a new selection outranks whatever is typed
     // Track the newly selected field's own absolute-value preference.
     absoluteValueCheckbox.checked = Boolean(field.useAbsoluteIsoValue);
     lastBuiltIso = null; // a different field: force the next rebuild through

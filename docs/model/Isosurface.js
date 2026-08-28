@@ -60,7 +60,13 @@ export function setIsosurfaceTriangleSortingEnabled(enabled) {
 
 export function getIsosurfaceTriangleSortingEnabled() {
     // return isosurfaceTriangleSortingEnabled;
-    return false; // Disabled as rendering engine fixes artifacts this was meant to solve
+    // Disabled as the rendering engine fixes the artifacts this was meant to
+    // solve: below alpha 1 the order-independent pipelines (depth peeling /
+    // WBOIT) blend the surface correctly, and AT alpha 1 the transparency
+    // policy now marks it genuinely opaque (depth writes on, see
+    // render/pipeline/ForwardPipeline.js 'isosurface'), so the depth buffer —
+    // not the marching-cubes vertex order — decides what is in front.
+    return false;
 }
 
 export function applyIsosurfaceMaterialSettings(isosurface, settings = {}) {
