@@ -1,3 +1,4 @@
+import { saveAtomColors } from '../utils/ColorModule.js';
 import init, { analyze_cell } from '../external/moyo-test/moyo_wasm.js';
 import { fileBrowser, general, structureShip } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
@@ -644,6 +645,7 @@ export function setWyckoffOrbitColor(orbitId, hex, structure = fileBrowser.selec
     structure.atoms[atomIndex].userColor = hex;
     structure.atoms[atomIndex].setColor(hex);
   });
+  saveAtomColors(structure); // keep the overrides for the next session
   // Nothing moved, so bonds and the cell are left alone.
   updateVisualization({
     reRenderAtoms: true,

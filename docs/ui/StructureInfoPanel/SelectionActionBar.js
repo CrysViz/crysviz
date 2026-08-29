@@ -13,7 +13,7 @@
 // or changes what is selected (except its own Clear button).
 
 import { fileBrowser, groups, mode, general } from '../../state/store.js';
-import { getAtomColor, setAtomColor, colorHexToCss, createPieDot, updatePieDot } from '../../utils/ColorModule.js';
+import { getAtomColor, setAtomColor, colorHexToCss, createPieDot, updatePieDot, saveAtomColors, scheduleAtomColorSave } from '../../utils/ColorModule.js';
 import {
   updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter,
   clearAtomImageStylesForAtom, setAtomImageStyle, clearAtomImageStyle,
@@ -121,6 +121,7 @@ function applyBulkColor(selected, hex) {
         updateSingleAtomColor(idx, imgIndex, structure.elements[idx], hex, hex);
       });
     });
+    scheduleAtomColorSave(structure); // keep the overrides for the next session
     if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, hex); // broadcasts crysviz:colors-changed
   } else {
     // Only the selected on-screen copies — persist per-image and paint those
@@ -209,6 +210,7 @@ function resetBulkStyle(selected) {
         updateSingleAtomDiameter(imgIndex, structure.elements[idx], atom.getRadiusScale?.() ?? 1);
       });
     });
+    saveAtomColors(structure); // drops the cleared overrides from storage too
     if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, null);
   } else {
     // Drop only the selected copies' per-image overrides and repaint them from
