@@ -95,7 +95,7 @@ function openCombineNamePopup(onConfirm) {
  * Structures are cloned the same way the row "copy" action does, so the new
  * row doesn't share mutable state with the originals.
  */
-function combineCheckedRows(name) {
+async function combineCheckedRows(name) {
   const tbody = document.querySelector('#objectTable tbody');
   const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
   const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
@@ -106,7 +106,12 @@ function combineCheckedRows(name) {
     const idx = rows.indexOf(r);
     const container = structureShip.container[idx];
     if (!container) continue;
-    for (const structure of container.structures) combinedStructures.push(cloneStructure(structure));
+    // framesSlice materialises store-backed trajectories (and may resolve
+    // asynchronously when frames come from disk); the combined container is a
+    // plain eager one either way — combining is an explicit request for
+    // independent copies.
+    const frames = await Promise.resolve(container.framesSlice());
+    for (const structure of frames) combinedStructures.push(cloneStructure(structure));
   }
   if (!combinedStructures.length) return;
 
@@ -316,11 +321,14 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     e.stopPropagation();
     e.preventDefault();
 
-    // Copy current step, no popup.
+    // Copy current step, no popup. framesSlice materialises the frame for a
+    // store-backed trajectory and may resolve asynchronously.
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
     const currentStep = parseInt(row.querySelector('input[type="number"]').value, 10) - 1;
-    insertCopyRow(row, [cloneStructure(container.structures[currentStep])]);
+    Promise.resolve(container.framesSlice(currentStep, currentStep + 1)).then((frames) => {
+      if (frames.length) insertCopyRow(row, frames.map(cloneStructure));
+    });
     return;
   }
 
@@ -443,21 +451,23 @@ row.querySelector(".copy").addEventListener("click", (e) => {
   }, 0);
 
   // Handle confirmation
-  confirmButton.onclick = () => {
+  confirmButton.onclick = async () => {
     const option = select.value;
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     const container = structureShip.container[rowIndex];
     const stepInput = row.querySelector('input[type="number"]');
     const currentStep = parseInt(stepInput.value, 10);
+    // framesSlice materialises store-backed trajectories (possibly
+    // asynchronously); copies are explicit requests for independent frames.
     let frames;
     if (option === 'all') {
-      frames = container.structures;
+      frames = await Promise.resolve(container.framesSlice());
     } else if (option === 'range') {
       const startStep = parseInt(startStepInput.value, 10) - 1;
       const endStep = parseInt(endStepInput.value, 10) - 1;
-      frames = container.structures.slice(startStep, endStep + 1);
+      frames = await Promise.resolve(container.framesSlice(startStep, endStep + 1));
     } else {
-      frames = [container.structures[currentStep - 1]];
+      frames = await Promise.resolve(container.framesSlice(currentStep - 1, currentStep));
     }
     closePopup();
     // "All" reopens on the source's current frame; the others start at 1.
@@ -597,16 +607,39 @@ function addOverlayEntryForRow(row, defaultOpacity) {
   if (!container || step < 0 || step >= container.structures.length) return;
 
   if (!row.dataset.overlayKey) row.dataset.overlayKey = generateID(['overlay']);
-  fileBrowser.overlayEntries.push({
-    key: row.dataset.overlayKey,
-    row,
-    structure: container.structures[step],
-    opacity: defaultOpacity,
-    // Comparison mode has exactly one entry, so its "Show Comparison Bonds"
-    // toggle default (general.showSecondBond) applies directly; Overlay mode
-    // always starts with bonds shown (each row has its own toggle to turn off).
-    showBonds: general.compareModeOn ? general.showSecondBond : true,
-  });
+  const overlayKey = row.dataset.overlayKey;
+  // frameAtDetached: an independent Structure for the second rendering, so a
+  // container that materialises frames (or renders all steps through one
+  // Structure) can overlay two steps of the same trajectory. May resolve
+  // asynchronously for a disk-backed trajectory — the entry is then pushed on
+  // arrival and its meshes rendered right after.
+  const pushEntry = (structure, rerenderNow) => {
+    if (!structure) return;
+    fileBrowser.overlayEntries.push({
+      key: overlayKey,
+      row,
+      structure,
+      opacity: defaultOpacity,
+      // Comparison mode has exactly one entry, so its "Show Comparison Bonds"
+      // toggle default (general.showSecondBond) applies directly; Overlay mode
+      // always starts with bonds shown (each row has its own toggle to turn off).
+      showBonds: general.compareModeOn ? general.showSecondBond : true,
+    });
+    if (rerenderNow) {
+      updateVisualization({
+        atomsUpdate: false,
+        bondsUpdate: false,
+        SecondAtomsUpdate: false,
+        SecondReRenderAtoms: true,
+        SecondBondsUpdate: false,
+        SecondReRenderBonds: true,
+      });
+      refreshOverlayLatticePlots();
+    }
+  };
+  const frameRef = container.frameAtDetached(step);
+  if (frameRef && typeof frameRef.then === 'function') frameRef.then((s) => pushEntry(s, true));
+  else pushEntry(frameRef, false);
 
   // Wire the step-input listener once per row (not once per check) — stacking
   // a new listener on every checkbox toggle would fire the update N times.
@@ -619,16 +652,24 @@ function addOverlayEntryForRow(row, defaultOpacity) {
       const cont = structureShip.container[idx];
       const newStep = parseInt(stepInput.value, 10) - 1;
       if (!cont || newStep < 0 || newStep >= cont.structures.length) return;
-      entry.structure = cont.structures[newStep];
-      updateVisualization({
-        atomsUpdate: false,
-        bondsUpdate: false,
-        SecondAtomsUpdate: false,
-        SecondReRenderAtoms: true,
-        SecondBondsUpdate: false,
-        SecondReRenderBonds: true,
-      });
-      refreshOverlayLatticePlots();
+      // Same detached-frame contract (and possible asynchrony) as when the
+      // entry was created.
+      const applyFrame = (structure) => {
+        if (!structure) return;
+        entry.structure = structure;
+        updateVisualization({
+          atomsUpdate: false,
+          bondsUpdate: false,
+          SecondAtomsUpdate: false,
+          SecondReRenderAtoms: true,
+          SecondBondsUpdate: false,
+          SecondReRenderBonds: true,
+        });
+        refreshOverlayLatticePlots();
+      };
+      const nextFrame = cont.frameAtDetached(newStep);
+      if (nextFrame && typeof nextFrame.then === 'function') nextFrame.then(applyFrame);
+      else applyFrame(nextFrame);
     });
   }
 }
@@ -805,7 +846,34 @@ function updateStructureFromRowAndStep(rowIndex) {
     if (general.featuresLocked === false) lastActiveContainer.featureSnapshot = snapshotFeatureToggles();
   }
 
-  fileBrowser.selectedStructure = container.structures[step];
+  // The frame may need materialising (store-backed trajectory) and can even
+  // arrive asynchronously (frames read back from the file on disk). Rapid
+  // scrubbing overlaps resolutions, so only the newest request may finish
+  // the switch.
+  const frameRef = container.frameAt(step);
+  if (frameRef && typeof frameRef.then === 'function') {
+    const token = ++frameSwitchToken;
+    frameRef.then((resolved) => {
+      if (token !== frameSwitchToken || !resolved) return;
+      finishFrameSwitch(container, step, resolved, rowChanged);
+    });
+    return;
+  }
+  if (!frameRef) return;
+  frameSwitchToken++; // a sync switch supersedes any in-flight async one
+  finishFrameSwitch(container, step, frameRef, rowChanged);
+}
+
+// Lets a late async frame resolution detect that a newer selection has
+// superseded it (see updateStructureFromRowAndStep).
+let frameSwitchToken = 0;
+
+// The tail of a frame switch, once the frame exists as a Structure.
+function finishFrameSwitch(container, step, structure, rowChanged) {
+  void step;
+  fileBrowser.selectedStructure = structure;
+  // Containers that materialise/recycle frames must pin the on-screen one.
+  container.setDisplayedFrame(structure);
   syncPlanesForSelectedStructure();
   refreshBackendTheme();
   let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
