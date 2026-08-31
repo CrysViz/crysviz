@@ -5,6 +5,7 @@ import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Stress } from "../model/index.js";
 import {generateID} from '../utils/index.js'
+import { FileSource } from './FileSource.js';
 // From the concrete JS backend, not the math/index.js facade: the facade's
 // exports are thin wrappers delegating to a module-scope `activeMathBackend`
 // variable at call time (so a WASM backend can be swapped in later), but
@@ -22,20 +23,32 @@ import {
 // moments the worker returns into global Cartesian.
 import { saxisToMatrix, parseSaxis } from '../utils/spinFrame.js';
 
-// VASP reports the on-site magnetisation (magnetization (x)/(y)/(z) blocks) in
-// the frame whose z-axis is SAXIS, not the global Cartesian frame. Read the
-// SAXIS the run used from the INCAR echo near the top of the OUTCAR; absent
-// (the common case) it defaults to (0,0,1) and the rotation is the identity.
-function findSaxis(lines) {
-  for (const line of lines) {
-    const m = line.match(/\bSAXIS\b\s*=\s*(.+)$/i);
-    if (m) {
-      const s = parseSaxis(m[1]);
-      if (s) return s;
-    }
-  }
-  return [0, 0, 1];
-}
+/*
+ * An MD OUTCAR is routinely hundreds of MB of plain text, so this reader never
+ * materialises it as a string. The main thread hands the parse worker a Blob —
+ * structured-cloning a Blob copies a REFERENCE, not the bytes — and the worker
+ * reads it in fixed-size chunks, keeping only a bounded sliding window of
+ * decoded lines alive at any moment.
+ *
+ * The previous implementation read the whole file as one string, split it into
+ * a line array on the main thread (just to find SAXIS and count POSITION
+ * blocks), cloned the entire string into the worker, and split it again there —
+ * a transient peak of roughly 4-5x the file size. All of that pre-scanning now
+ * happens inside the single streaming pass: SAXIS candidates are collected as
+ * they stream by, and progress is reported by bytes consumed instead of a
+ * pre-counted block total.
+ *
+ * The parsed frames themselves are still built eagerly — every ionic step
+ * becomes a Structure as soon as the worker finishes. That retained cost is a
+ * separate concern from the transient one this module addresses.
+ */
+
+// Above this the progress overlay is shown. Size stands in for the old
+// "more than 100 POSITION blocks" rule, which required splitting the whole
+// file into lines up front just to count them: a static-relaxation OUTCAR is a
+// few MB at most, while any MD run long enough to have tripped the old rule is
+// comfortably past this.
+const LARGE_FILE_BYTES = 8 * 1024 * 1024;
 
 // Function to show progress bar
 function showProgressBar() {
@@ -100,36 +113,42 @@ function hideProgressBar() {
   }
 }
 
-// Main exported function
+/**
+ * Parse a VASP OUTCAR (possibly an MD trajectory) into a StructureContainer.
+ *
+ * `content` is normally the FileSource that io/formats.js passes through for a
+ * random-access format; a plain string is still accepted for callers that hold
+ * the text already (ui/AddonAPI.js hands parse_any decoded addon text).
+ *
+ * @param {import('./FileSource.js').FileSource | string} content
+ * @param {string} fileName
+ * @returns {Promise<StructureContainer>}
+ */
 export function parseOUTCAR(content, fileName) {
   return new Promise((resolve, reject) => {
-    if (!content || typeof content !== "string") {
-      reject(new Error("OUTCAR: content must be a non-empty string"));
+    let blob;
+    if (content instanceof FileSource) {
+      // For a file on disk this is the file handle itself — nothing is read
+      // here, and nothing ever reads it in full.
+      blob = content.asBlob();
+    } else if (typeof content === "string" && content.length > 0) {
+      blob = new Blob([content]);
+    } else {
+      reject(new Error("OUTCAR: content must be a FileSource or a non-empty string"));
+      return;
+    }
+    if (blob.size === 0) {
+      reject(new Error("OUTCAR: file is empty"));
       return;
     }
 
-    // Count the number of POSITION blocks to estimate steps
-    const lines = content.split(/\r?\n/);
-    // SAXIS the run used (default (0,0,1)) and the matching global<-SAXIS
-    // rotation, applied to each spin's raw moments once the worker returns.
-    const saxis = findSaxis(lines);
-    const saxisMatrix = saxisToMatrix(saxis);
-    let positionBlocks = 0;
-    for (const line of lines) {
-      if (/^\s*POSITION\s+TOTAL-FORCE/i.test(line)) {
-        positionBlocks++;
-      }
-    }
-
-    // Show progress bar if more than 100 steps are expected
-    if (positionBlocks > 100) {
+    if (blob.size > LARGE_FILE_BYTES) {
       showProgressBar();
     }
 
-    // Create a Web Worker
-    const worker = new Worker(URL.createObjectURL(new Blob([`
-      ${findLastIonsPerType.toString()}
-      ${findUniqueElements.toString()}
+    // Create a Web Worker. The parser state machine runs there; the helper
+    // functions below are stringified into its source.
+    const workerUrl = URL.createObjectURL(new Blob([`
       ${expandElements.toString()}
       ${parseFloats.toString()}
       ${readPositionsForcesBlock.toString()}
@@ -139,53 +158,119 @@ export function parseOUTCAR(content, fileName) {
       ${multiplyMatVec.toString()}
       ${invert3x3.toString()}
 
-      self.onmessage = function(event) {
-        const { content, fileName } = event.data;
-        const lines = content.split(/\\r?\\n/);
+      self.onmessage = async function(event) {
+        // onmessage is async, and a rejected promise inside it does NOT reach
+        // worker.onerror on the parent — report failures as a message instead.
+        try {
+          await parse(event.data);
+        } catch (err) {
+          self.postMessage({ type: 'error', message: String((err && err.message) || err) });
+        }
+      };
 
-        // Find ions per type
-        const ionsPerType = findLastIonsPerType(lines);
-        const uniqueElements = findUniqueElements(lines);
-        const elements = expandElements(uniqueElements, ionsPerType);
-        const natoms = elements.length;
+      async function parse({ blob, fileName }) {
+        // ---- chunked line supply -----------------------------------------
+        //
+        // The file is read CHUNK_BYTES at a time; \`lines\` holds only the
+        // not-yet-consumed tail of the decoded text, so memory stays bounded
+        // by the chunk size plus the parser's lookahead regardless of file
+        // size. \`carry\` is the partial last line of the previous chunk and
+        // the streaming TextDecoder holds any split multi-byte sequence, so
+        // chunk boundaries are invisible to the parser.
+        const CHUNK_BYTES = 4 * 1024 * 1024;
+        const totalBytes = blob.size;
+        const decoder = new TextDecoder();
+        let lines = [];
+        let i = 0;                    // cursor into the window
+        let offset = 0;               // bytes handed to the decoder so far
+        let carry = '';
+        let done = totalBytes === 0;
 
-        // Count the number of POSITION blocks to estimate steps
-        let positionBlocks = 0;
-        for (const line of lines) {
-          if (/^\\s*POSITION\\s+TOTAL-FORCE/i.test(line)) {
-            positionBlocks++;
+        async function refill() {
+          const buf = await blob.slice(offset, offset + CHUNK_BYTES).arrayBuffer();
+          offset += buf.byteLength;
+          let text = carry + decoder.decode(buf, { stream: true });
+          if (offset >= totalBytes) {
+            text += decoder.decode();
+            done = true;
+          }
+          const parts = text.split(/\\r?\\n/);
+          // The last segment may continue in the next chunk; hold it back.
+          // At EOF it is the (possibly newline-less) final line and stays in.
+          carry = done ? '' : parts.pop();
+          if (i > 0) { lines = lines.slice(i); i = 0; }
+          for (const part of parts) lines.push(part);
+          self.postMessage({ type: 'progress', progress: (offset / totalBytes) * 100 });
+        }
+
+        // ---- header state, accumulated as lines stream past --------------
+        //
+        // "ions per type" and the POTCAR element lines appear in the header,
+        // well before the first POSITION block, so natoms is known by the
+        // time any block reader needs it. Latest-seen wins for ions per type,
+        // matching the old whole-file scan that kept the last occurrence.
+        let ionsPerType = [];
+        const uniqueElements = [];
+        let elements = [];
+        let natoms = 0;
+        function refreshElements() {
+          if (uniqueElements.length && ionsPerType.length) {
+            elements = expandElements(uniqueElements, ionsPerType);
+            natoms = elements.length;
           }
         }
 
+        // SAXIS lines from the INCAR echo, raw. The main thread owns
+        // parseSaxis and tries these in order, mirroring the old first-parse
+        // -wins scan over the whole file.
+        const saxisCandidates = [];
+
         const steps = [];
         let currentLattice = null;
-        let currentPositions = [];
-        let currentForces = [];
-        let currentSpins = new Array(natoms).fill([0, 0, 0]);
         let spinX = null, spinY = null, spinZ = null;
-        let currentEnergy = null;
 
-        for (let i = 0; i < lines.length; i++) {
+        while (true) {
+          // Keep enough lookahead in the window that every block reader
+          // below can index forward without falling off the end: a
+          // POSITION/TOTAL-FORCE or magnetization block is natoms lines
+          // plus a small frame.
+          const lookahead = natoms + 64;
+          while (!done && lines.length - i <= lookahead) await refill();
+          if (i >= lines.length) break;
           const line = lines[i];
+
+          let m;
+          if ((m = line.match(/ions\\s+per\\s+type\\s*=\\s*(.+)$/i))) {
+            ionsPerType = m[1].trim().split(/\\s+/).map(Number);
+            refreshElements();
+          }
+          if ((m = line.match(/POTCAR:\\s+[A-Za-z0-9_]+\\s+([A-Za-z]{1,2})\\s*.*/i))) {
+            if (m[1] && !uniqueElements.includes(m[1])) {
+              uniqueElements.push(m[1]);
+              refreshElements();
+            }
+          }
+          if ((m = line.match(/\\bSAXIS\\b\\s*=\\s*(.+)$/i))) {
+            saxisCandidates.push(m[1]);
+          }
 
           if (/^\\s*direct\\s+lattice\\s+vectors/i.test(line)) {
             currentLattice = [
-              parseFloats(lines[i + 1]),
-              parseFloats(lines[i + 2]),
-              parseFloats(lines[i + 3]),
+              parseFloats(lines[i + 1] || ''),
+              parseFloats(lines[i + 2] || ''),
+              parseFloats(lines[i + 3] || ''),
             ].map(v => v.slice(0, 3));
           }
 
-          if (/^\\s*POSITION/i.test(line) && (i + 2 < lines.length)) {
+          if (natoms > 0 && /^\\s*POSITION/i.test(line) && (i + 2 < lines.length)) {
             const nextLine = lines[i + 2];
             if (parseFloats(nextLine).length >= 6) {
               const { positions, forces } = readPositionsForcesBlock(lines, i, natoms);
-              currentPositions = positions;
-              currentForces = forces;
 
-              if (currentLattice && currentPositions.length === natoms) {
+              if (currentLattice && positions.length === natoms) {
                 // These moments are in VASP's SAXIS-local frame; the main
                 // thread rotates them into global Cartesian afterwards.
+                let currentSpins;
                 if (spinX && spinY && spinZ) {
                   // Non-collinear: full (mx,my,mz) in the SAXIS frame.
                   currentSpins = spinX.map((_, idx) => [spinX[idx], spinY[idx], spinZ[idx]]);
@@ -196,15 +281,15 @@ export function parseOUTCAR(content, fileName) {
                   // the main-thread SAXIS rotation then points it correctly in
                   // global Cartesian. (The old code put it on x, drawing every
                   // collinear moment 90 degrees off along global +x.)
-                  currentSpins = spinX.map(m => [0, 0, m]);
+                  currentSpins = spinX.map(mom => [0, 0, mom]);
                 } else {
                   currentSpins = new Array(natoms).fill([0, 0, 0]);
                 }
 
                 steps.push({
                   lattice: currentLattice,
-                  positions: currentPositions,
-                  forces: currentForces,
+                  positions,
+                  forces,
                   spins: currentSpins,
                   energy: null,
                   stress: null,
@@ -218,21 +303,17 @@ export function parseOUTCAR(content, fileName) {
                 // prints no block of its own must not silently inherit this
                 // step's moments, which is what happened without this reset.
                 spinX = null; spinY = null; spinZ = null;
-
-                // Update progress
-                const progress = (i / lines.length) * 100;
-                self.postMessage({ type: 'progress', progress });
               }
             }
           }
 
-          if (/^\\s*magnetization\\s*\\(x\\)/i.test(line)) {
+          if (natoms > 0 && /^\\s*magnetization\\s*\\(x\\)/i.test(line)) {
             spinX = readSpinComponent(lines, i, natoms, /^\\s*magnetization\\s*\\(x\\)/i);
           }
-          if (/^\\s*magnetization\\s*\\(y\\)/i.test(line)) {
+          if (natoms > 0 && /^\\s*magnetization\\s*\\(y\\)/i.test(line)) {
             spinY = readSpinComponent(lines, i, natoms, /^\\s*magnetization\\s*\\(y\\)/i);
           }
-          if (/^\\s*magnetization\\s*\\(z\\)/i.test(line)) {
+          if (natoms > 0 && /^\\s*magnetization\\s*\\(z\\)/i.test(line)) {
             spinZ = readSpinComponent(lines, i, natoms, /^\\s*magnetization\\s*\\(z\\)/i);
           }
 
@@ -244,13 +325,11 @@ export function parseOUTCAR(content, fileName) {
           // it prints after TOTEN for the same step, overwrites it below.
           const totenMatch = line.match(/free\\s+energy\\s+TOTEN\\s*=\\s*(-?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)/i);
           if (totenMatch && steps.length > 0) {
-            currentEnergy = parseFloat(totenMatch[1]);
-            steps[steps.length - 1].energy = currentEnergy;
+            steps[steps.length - 1].energy = parseFloat(totenMatch[1]);
           }
           const sigmaMatch = line.match(/energy\\(sigma->0\\)\\s*=\\s*(-?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)/i);
           if (sigmaMatch && steps.length > 0) {
-            currentEnergy = parseFloat(sigmaMatch[1]);
-            steps[steps.length - 1].energy = currentEnergy;
+            steps[steps.length - 1].energy = parseFloat(sigmaMatch[1]);
           }
 
           // Stress: the "in kB" line gives the Voigt stress (XX YY ZZ XY YZ ZX)
@@ -264,15 +343,17 @@ export function parseOUTCAR(content, fileName) {
               steps[steps.length - 1].stress = [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]];
             }
           }
+
+          i++;
         }
 
         // Build structures
         const structures = steps.map(step => {
           const frac = convertCartesianToFractional(step.positions, step.lattice);
-          const atoms = frac.map((pos, i) => ({ position: pos, element: elements[i] }));
+          const atoms = frac.map((pos, idx) => ({ position: pos, element: elements[idx] }));
           // rawVector is in the SAXIS-local frame; the main thread rotates it
           // into the rendered global-Cartesian vector below.
-          const spins = step.spins.map(rawVector => ({ rawVector, scaling: 1.0, color:"#008080" }));
+          const spins = step.spins.map(rawVector => ({ rawVector, scaling: 1.0, color: "#008080" }));
           const forces = step.forces.map(vector => ({ vector, scaling: 1.0 }));
 
           return {
@@ -288,19 +369,44 @@ export function parseOUTCAR(content, fileName) {
         });
 
         // Send results back to the main thread
-        self.postMessage({ type: 'complete', structures, fileName });
-      };
-    `], { type: 'application/javascript' })));
+        self.postMessage({ type: 'complete', structures, fileName, saxisCandidates });
+      }
+    `], { type: 'application/javascript' }));
+    const worker = new Worker(workerUrl);
 
-    // Send data to the worker
-    worker.postMessage({ content, fileName });
+    // The worker holds a Blob reference and (transiently) the parsed step
+    // data; tear it down as soon as it has answered so neither outlives the
+    // load. The old code leaked both the worker and the object URL per load.
+    const cleanup = () => {
+      worker.terminate();
+      URL.revokeObjectURL(workerUrl);
+      hideProgressBar();
+    };
+
+    // A Blob structured-clones by reference: the worker gets a handle to the
+    // same bytes, not a copy, so this line costs nothing even for a huge file.
+    worker.postMessage({ blob, fileName });
 
     // Handle messages from the worker
     worker.onmessage = (event) => {
       if (event.data.type === 'progress') {
         updateProgressBar(event.data.progress);
+      } else if (event.data.type === 'error') {
+        cleanup();
+        reject(new Error(`OUTCAR: ${event.data.message}`));
       } else if (event.data.type === 'complete') {
-        const { structures, fileName } = event.data;
+        const { structures, fileName, saxisCandidates } = event.data;
+
+        // SAXIS the run used (default (0,0,1)) and the matching global<-SAXIS
+        // rotation, applied to each spin's raw moments below. The worker only
+        // collects candidate lines; parsing them stays here with the rest of
+        // the spin-frame logic.
+        let saxis = [0, 0, 1];
+        for (const raw of saxisCandidates || []) {
+          const s = parseSaxis(raw);
+          if (s) { saxis = s; break; }
+        }
+        const saxisMatrix = saxisToMatrix(saxis);
 
         // Build Structure objects
         const structureObjects = structures.map(structureData => {
@@ -329,42 +435,17 @@ export function parseOUTCAR(content, fileName) {
 
         const container = new StructureContainer({ fileName, structures: structureObjects });
 
-        // Hide progress bar once parsing is complete
-        hideProgressBar();
+        cleanup();
         resolve(container);
       }
     };
 
     worker.onerror = (error) => {
       console.error("Worker error:", error);
-      hideProgressBar();
+      cleanup();
       reject(error);
     };
   });
-}
-
-function findLastIonsPerType(lines) {
-  const re = /ions\s+per\s+type\s*=\s*(.+)$/i;
-  let out = [];
-  for (const line of lines) {
-    const m = line.match(re);
-    if (m) out = m[1].trim().split(/\s+/).map(Number);
-  }
-  return out;
-}
-
-function findUniqueElements(lines) {
-  const out = [];
-  const re = /POTCAR:\s+[A-Za-z0-9_]+\s+([A-Za-z]{1,2})\s*.*/i;
-  for (const line of lines) {
-    const m = line.match(re);
-    if (m && m[1] && !out.includes(m[1])) {
-      console.log(m)
-      out.push(m[1]);
-    }
-  }
-  console.log(out)
-  return out;
 }
 
 function expandElements(els, counts) {
