@@ -9,12 +9,14 @@ import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Spin } from "../model/index.js";
-// From the concrete JS backend, not the math/index.js facade — see
-// ReadOutcarModule.js's identical import for why: the facade's exports
-// delegate to a module-scope `activeMathBackend` variable that doesn't
+// From the concrete JS backend, not the math/index.js facade: the facade's
+// exports delegate to a module-scope `activeMathBackend` variable that doesn't
 // survive being stringified via .toString() into this file's own worker
 // below (only reached when the file has no Lattice= line, so this path is
 // easy to miss testing against extxyz files that always specify one).
+// ReadOutcarModule.js used to share this constraint; its parser now runs on
+// the shared pool (io/outcarParse.js) — the pattern to follow if this worker
+// is ever reworked.
 import { transpose3x3, multiplyMatVec, invert3x3 } from '../math/backend-js.js';
 
 

@@ -59,11 +59,22 @@ export function warmUp() {
   for (const w of p.workers) w.postMessage({ reqId: -1, task: 'warmup', payload: null });
 }
 
-/** Resolve once for a single worker message matching `reqId`. */
-function awaitWorker(w, reqId) {
+/**
+ * Resolve once for a single worker message matching `reqId`. Interim
+ * `{reqId, progress}` messages (posted by handlers that report progress) are
+ * routed to `onProgress` without settling the promise.
+ * @param {Worker} w
+ * @param {number} reqId
+ * @param {(progress: number) => void} [onProgress]
+ */
+function awaitWorker(w, reqId, onProgress) {
   return new Promise((resolve, reject) => {
     const onMsg = (e) => {
       if (e.data.reqId !== reqId) return;
+      if ('progress' in e.data) {
+        if (onProgress) onProgress(e.data.progress);
+        return;
+      }
       cleanup();
       if (e.data.error) reject(new Error(e.data.error));
       else resolve(e.data.result);
@@ -101,17 +112,23 @@ export function runOnAll(task, payloads) {
 
 /**
  * Run a single `task` on the next worker (round-robin). For future point tasks.
+ *
+ * `onProgress` receives the 0-100 values a long-running handler chooses to
+ * report (see computeWorker.js — the handler is handed a `progress` callback);
+ * handlers that never report simply never call it.
+ *
  * @param {string} task
  * @param {any} payload
  * @param {Transferable[]} [transfer]
+ * @param {(progress: number) => void} [onProgress]
  * @returns {Promise<any>}
  */
-export function run(task, payload, transfer) {
+export function run(task, payload, transfer, onProgress) {
   const p = getPool();
   if (!p) return Promise.reject(new Error('workers unavailable'));
   const w = p.workers[rr++ % p.n];
   const reqId = ++reqCounter;
-  const done = awaitWorker(w, reqId);
+  const done = awaitWorker(w, reqId, onProgress);
   w.postMessage({ reqId, task, payload }, transfer || []);
   return done;
 }

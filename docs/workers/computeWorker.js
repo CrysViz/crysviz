@@ -10,6 +10,8 @@
  * Message in:  { reqId, task, payload }
  * Message out: { reqId, result }                  (result's ArrayBuffers transferred)
  *          or: { reqId, error }
+ * Interim:     { reqId, progress }                (0-100; only from handlers that
+ *                                                  call their `progress` callback)
  */
 
 import init, { compute_candidates } from '../compiled/periodic_wasm.js';
@@ -20,7 +22,9 @@ const ready = init(new URL('../compiled/periodic_wasm_bg.wasm', import.meta.url)
 
 /**
  * Each handler returns `{ result, transfer }`. `result` is posted back; `transfer` lists
- * its ArrayBuffers to hand over zero-copy.
+ * its ArrayBuffers to hand over zero-copy. Handlers also receive a `progress(0-100)`
+ * callback as their second argument; long-running parses report through it and the pool
+ * routes the values to the caller's onProgress (workerPool.run).
  */
 const handlers = {
   // Forces wasm instantiation in the background (the onmessage `await ready` does it).
@@ -84,6 +88,18 @@ const handlers = {
     const result = transformSpinorToRealSpace(module, payload);
     return { result, transfer: [result.values.buffer] };
   },
+
+  // Stream-parse a VASP OUTCAR trajectory. The payload's Blob arrived by
+  // reference (structured-cloning a Blob copies a handle, not the bytes), so
+  // this worker reads the file in chunks off the main thread and only the
+  // parsed per-step data goes back. Imported lazily like the wave module:
+  // most sessions never load an OUTCAR, and the pool's workers should not all
+  // pay for the import at spawn.
+  outcarParse: async (payload, progress) => {
+    const { parseOutcarBlob } = await import('../io/outcarParse.js');
+    const result = await parseOutcarBlob(payload.blob, progress);
+    return { result, transfer: [] };
+  },
 };
 
 self.onmessage = async (e) => {
@@ -92,7 +108,8 @@ self.onmessage = async (e) => {
     await ready;
     const handler = handlers[task];
     if (!handler) throw new Error(`unknown worker task: ${task}`);
-    const { result, transfer } = await handler(payload);
+    const { result, transfer } = await handler(
+      payload, (progress) => self.postMessage({ reqId, progress }));
     self.postMessage({ reqId, result }, transfer || []);
   } catch (err) {
     self.postMessage({ reqId, error: String((err && err.message) || err) });
