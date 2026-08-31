@@ -22,6 +22,9 @@ export {
   defaultIsoValue,
 } from './CompositeField.js';
 export { FieldCatalog, FieldCatalogNode, NodeKind } from './FieldCatalog.js';
+export { TrajectoryFrameStore } from './TrajectoryFrameStore.js';
+export { TrajectoryContainer } from './TrajectoryContainer.js';
+export { materializeFrame, frameMatchesPristine } from './materializeFrame.js';
 
 // Lazily-read plane-wave wavefunctions (WAVECAR) and the byte-budgeted cache
 // that keeps them inside the browser's memory limits:
