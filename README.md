@@ -108,6 +108,55 @@ viewer = show(["structure.cif"])
 
 For more, see [examples](https://github.com/CrysViz/crysviz/tree/deploy/examples).
 
+## Widget mode / embedding
+
+CrysViz can be embedded in another site as a compact interactive viewer with
+`?widget=1`. Widget mode shows only the 3D structure view (with spin arrows), a
+locked composition legend, a small CrysViz logo (top-left) that opens the full
+UI in a new tab, and a settings menu (top-right) for the cell choice
+(As loaded / Conventional / Primitive) and rendering style
+(Normal / Cel shading / Ray tracing / Path tracing).
+
+**URL contract** — the embedder points an `<iframe>` at:
+
+```
+https://crysviz.org/index.html?widget=1#load-file=<urlenc name>.crysviz|<urlenc base64 JSON>
+```
+
+The fragment is the existing `#load-file=` loader: `filename|content`, each part
+URL-encoded, the content being base64-encoded UTF-8 of a frames-style `.crysviz`
+session (the "CrysViz" download format). The minimal session is a single frame
+with `spins` and the display toggle on:
+
+```json
+{
+  "format": "crysviz",
+  "version": "2.16",
+  "frames": [{
+    "elements": ["Fe", "Fe", "O", "O"],
+    "lattice": [[a,0,0],[0,a,0],[0,0,c]],
+    "positions": [[0,0,0], ...],
+    "spins": [{ "vector": [0,0,2] }, ...]
+  }],
+  "selectedFrameIndex": 0,
+  "display": { "spinsActive": true }
+}
+```
+
+Spin vectors are Cartesian magnetic moments, index-aligned to `positions`. The
+Conventional/Primitive options symmetrise the cell (via moyo) and remap the
+moments onto the new cell; a magnetic order that the smaller cell cannot carry
+(a magnetic supercell) leaves that option greyed out. The top-left logo links
+back to the same structure in the full UI (the same URL minus `widget=1`).
+
+**Sandboxing** — the iframe does **not** need `allow-same-origin`: widget mode
+runs correctly in an opaque origin where browser storage is unavailable
+(theme/font preferences silently fall back to defaults). An opaque-origin embed
+does, however, require the CrysViz host to serve CORS headers
+(`Access-Control-Allow-Origin`) for its ES-module and WASM fetches — true on
+GitHub Pages (where crysviz.org is served), and something self-hosters must
+configure.
+
 ## Third-Party Libraries
 
 1. THREE.js

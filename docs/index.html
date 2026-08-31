@@ -42,6 +42,9 @@
          component styles so it wins cascade ties, but still before the
          active theme so a theme can still override it if it ever needs to. -->
     <link rel="stylesheet" href="./styles/responsive.css">
+    <!-- Widget mode (?widget=1) chrome hiding + logo/settings control. All
+         rules scoped to body.widget-mode (ui/WidgetMode.js). -->
+    <link rel="stylesheet" href="./styles/widgetMode.css">
     <!-- Active theme override — keep last so theme rules win the cascade. -->
     <link rel="stylesheet" id="theme-active">
 

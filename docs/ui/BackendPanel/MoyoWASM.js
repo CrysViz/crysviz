@@ -70,6 +70,48 @@ async function initMoyo() {
   const _wasmReady = await init(); // no-arg: moyo_wasm.js resolves the .wasm via import.meta.url
 }
 
+/** Ensure the Moyo WASM module is initialised. Idempotent (moyo's init caches
+ *  its instance), so callers outside the Symmetry panel (e.g. ui/WidgetMode.js)
+ *  can await it before calling moyoDataset/callMoyo. */
+export async function ensureMoyoReady() {
+  await initMoyo();
+}
+
+/**
+ * Run moyo on a structure and return the RAW dataset plus the visible-atom
+ * element list it was computed from (index-aligned to dataset.orbits/wyckoffs).
+ * The raw dataset carries the full standardisation record — std_cell,
+ * prim_std_cell, std_rotation_matrix, mapping_std_prim, … — that callMoyo only
+ * partly surfaces and that cell/spin remapping (ui/WidgetMode.js) needs.
+ *
+ * @param {any} structure
+ * @param {number} [tolerance] symprec in Å
+ * @returns {{dataset:any, elements:string[]}}
+ */
+export function moyoDataset(structure, tolerance = defaultSymprec()) {
+  // Hidden atoms are excluded from symmetry detection entirely — filtered
+  // together (elements/positions in lockstep) before anything is indexed, so
+  // dataset.wyckoffs/dataset.orbits (one entry per surviving atom, in this same
+  // order) stay aligned with `elements` below.
+  const visibleIndices = structure.atoms
+    .map((/** @type {any} */ atom, /** @type {number} */ i) => (atom.hidden ? -1 : i))
+    .filter((/** @type {number} */ i) => i !== -1);
+  const elements = visibleIndices.map((/** @type {number} */ i) => structure.elements[i]);
+  const numbers = elements.map((/** @type {string} */ el) => {
+    const n = PT_INVERTED[el];
+    if (n === undefined) {
+      throw new Error(`Moyo: unknown element symbol "${el}" (not found in periodic table map). ` +
+        `Check that the structure's species were parsed as clean chemical symbols.`);
+    }
+    return n;
+  });
+  const positions = visibleIndices.map((/** @type {number} */ i) => structure.atoms[i].position);
+  const lattice = structure.lattice.map((/** @type {number[]} */ r) => [...r]);
+  const struct = { positions, lattice: { basis: lattice.flat() }, numbers };
+  const dataset = analyze_cell(JSON.stringify(struct), tolerance, 'Standard');
+  return { dataset, elements };
+}
+
 // Builds the Moyo symmetry tools into the given container (the unified
 // "Symmetry" panel window's body).
 export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
@@ -307,34 +349,12 @@ function renderSymmetryResult(result) {
   box.hidden = false;
 }
 
-function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec()) {
-  const structure = fileBrowser.selectedStructure;
-  // Hidden atoms are excluded from symmetry detection entirely — filtered
-  // together (elements/positions in lockstep) before anything is indexed, so
-  // result.wyckoffs/result.orbits (one entry per surviving atom, in this same
-  // order) stay aligned with `elements` below for the protostructure label.
-  // Safe here specifically
-  // because this function's outputs are either display-only strings or a
-  // freshly-computed primitive/conventional cell with no back-reference to
-  // original atom indices — unlike SymmetryEditModule.js's Wyckoff editing,
-  // which mutates structure.atoms by raw index and is NOT filtered this way.
-  const visibleIndices = structure.atoms
-    .map((atom, i) => (atom.hidden ? -1 : i))
-    .filter((i) => i !== -1);
-  let elements = visibleIndices.map(i => structure.elements[i]);
-  const numbers = elements.map(el => {
-    const n = PT_INVERTED[el];
-    if (n === undefined) {
-      throw new Error(`Moyo: unknown element symbol "${el}" (not found in periodic table map). ` +
-        `Check that the structure's species were parsed as clean chemical symbols.`);
-    }
-    return n;
-  });
-  let positions = visibleIndices.map(i => structure.atoms[i].position)
-  let lattice = structure.lattice.map(r => [...r]);
-  const struct = { positions: positions, lattice:{basis:lattice.flat()}, numbers: numbers }
-
-  const result = analyze_cell(JSON.stringify(struct), tolerance, 'Standard');
+function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec(), structure = fileBrowser.selectedStructure) {
+  // Display-only strings or a freshly-computed primitive/conventional cell with
+  // no back-reference to original atom indices — unlike SymmetryEditModule.js's
+  // Wyckoff editing, which mutates structure.atoms by raw index. The hidden-atom
+  // filtering and moyo call live in moyoDataset().
+  const { dataset: result, elements } = moyoDataset(structure, tolerance);
   const protostructure = buildProtostructureLabel(result, elements);
   const info = {
     spg_symbol: result.hm_symbol,
@@ -366,10 +386,21 @@ function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec()) {
 
 
 
-function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
-  const fileName = `sym_${primConv}_${structureShip.container[fileBrowser.selectedRowIndex].fileName}`;
-  let atoms = [];
-  const container = new StructureContainer({fileName:fileName})
+/**
+ * Build a StructureContainer for a symmetrised (primitive/conventional) cell,
+ * WITHOUT registering it in the file browser. The caller owns registration
+ * (a Files-table row + structureShip push) or, for widget mode, attaches
+ * remapped spins first. Positions are wrapped into [0,1) here.
+ *
+ * @param {string} fileName
+ * @param {number[][]} positions fractional
+ * @param {number[][]} lattice rows a,b,c (Cartesian)
+ * @param {string[]} elements per-atom
+ * @returns {any} StructureContainer with one structure
+ */
+export function buildSymmetrisedContainer(fileName, positions, lattice, elements) {
+  const atoms = [];
+  const container = new StructureContainer({ fileName });
   const normPositions = positions.map(p => p.map(normalizeFractional));
   normPositions.forEach((pos, i) => {
     atoms.push(new Atom({
@@ -378,15 +409,21 @@ function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
       uuid: generateID([elements[i]])
     }));
   });
-  let periodic = runPeriodicWrapped({ hash: "None", wrapped: {} }, normPositions, elements, lattice);
-  let structure = new Structure({
-         elements:elements,
-         uniqueElements: [...new Set(elements)],
-         lattice:lattice,
-         atoms:atoms,
-         periodic: periodic,
-     });
+  const periodic = runPeriodicWrapped({ hash: "None", wrapped: {} }, normPositions, elements, lattice);
+  const structure = new Structure({
+    elements: elements,
+    uniqueElements: [...new Set(elements)],
+    lattice: lattice,
+    atoms: atoms,
+    periodic: periodic,
+  });
   container.structures.push(structure);
+  return container;
+}
+
+function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
+  const fileName = `sym_${primConv}_${structureShip.container[fileBrowser.selectedRowIndex].fileName}`;
+  const container = buildSymmetrisedContainer(fileName, positions, lattice, elements);
   structureShip.container.push(container)
   const row = createRow({ name: fileName, traj: container.structures.length, step: container.structures.length });
   document.querySelector("#objectTable tbody").appendChild(row);

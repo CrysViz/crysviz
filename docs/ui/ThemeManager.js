@@ -169,8 +169,12 @@ export function applyTheme(paletteId, modeId) {
   currentMode = mode;
 
   applyConcreteVisuals(palette.modes[eff]);
-  localStorage.setItem(PALETTE_KEY, palette.id);
-  localStorage.setItem(MODE_KEY, mode);
+  // Opaque-origin iframe (sandbox without allow-same-origin) throws on any
+  // localStorage access — persist best-effort, never let it kill boot.
+  try {
+    localStorage.setItem(PALETTE_KEY, palette.id);
+    localStorage.setItem(MODE_KEY, mode);
+  } catch { /* storage unavailable */ }
   // data-theme stays the effective MODE so addons and any existing selector
   // keep working; the palette is a second attribute rather than a renaming.
   document.documentElement.setAttribute('data-theme', eff);
@@ -180,8 +184,11 @@ export function applyTheme(paletteId, modeId) {
 }
 
 function resolveInitialSelection() {
-  const savedPalette = localStorage.getItem(PALETTE_KEY);
-  const savedMode = localStorage.getItem(MODE_KEY);
+  let savedPalette = null, savedMode = null;
+  try {
+    savedPalette = localStorage.getItem(PALETTE_KEY);
+    savedMode = localStorage.getItem(MODE_KEY);
+  } catch { /* opaque-origin iframe: no storage → defaults below */ }
   const palette = manifest.palettes.some(p => p.id === savedPalette)
     ? savedPalette
     : manifest.palettes[0].id;

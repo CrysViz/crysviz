@@ -601,7 +601,10 @@ async function initUIPanels() {
   initModifyStructureButton();
   initAddStructureButton();
   initCombineTrajectoriesButton();
-  initKeyboardShortcuts();
+  // Widget mode has no keyboard: it is an embed with no focusable app chrome,
+  // and its global key handlers (delete-atom, arrow-step, …) would fire against
+  // the host page's own shortcuts.
+  if (!document.body.classList.contains('widget-mode')) initKeyboardShortcuts();
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

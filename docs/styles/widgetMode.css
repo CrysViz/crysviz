@@ -1,0 +1,161 @@
+/* Widget mode (?widget=1) — see docs/ui/WidgetMode.js. Every rule is scoped to
+   body.widget-mode so nothing here affects the full app. Chrome hiding rides on
+   top of the existing body.panel-hidden / #ui.panel-hidden fullscreen state
+   (styles.css); this file removes the floating scene furniture that panel-hidden
+   leaves behind and adds the widget's own logo + settings control.
+
+   Tokens only (no colour/font literals) per the CSS invariants (STYLE.md). */
+
+/* Scene furniture and floating chrome that survive panel-hidden. The floating
+   panel windows (.cv-panel) and non-legend colour bars re-parent to <body>, so
+   they need their own hide rules. The composition legend is kept: it is the one
+   floating widget widget mode shows. */
+body.widget-mode #mobileMenuToggle,
+body.widget-mode #mobileOverlay,
+body.widget-mode #backgroundDot,
+body.widget-mode #measurementTools,
+body.widget-mode #cameraTools,
+body.widget-mode #structureInfoContent,
+body.widget-mode #axesGizmo,
+body.widget-mode #axesLegend,
+body.widget-mode #aboutOverlay,
+body.widget-mode #raytraceWarningModal,
+body.widget-mode #splitPane,
+body.widget-mode #splitPaneTabs,
+body.widget-mode #splitHandle,
+body.widget-mode #sideDockDropHint,
+body.widget-mode .cv-panel,
+body.widget-mode .cv-warning-banner,
+body.widget-mode .cv-colorbar-floating:not(.comp-legend-widget) {
+  display: none !important;
+}
+
+/* Top-left logo: opens the same structure in the full UI (new tab). */
+body.widget-mode #widgetLogo {
+  position: fixed;
+  top: var(--sp-3);
+  left: var(--sp-3);
+  z-index: var(--z-overlay-widget);
+  line-height: 0;
+}
+body.widget-mode #widgetLogo img {
+  width: 40px;
+  height: 40px;
+  display: block;
+  border-radius: var(--radius-sm);
+  opacity: 0.9;
+  transition: opacity 0.15s ease;
+}
+body.widget-mode #widgetLogo:hover img {
+  opacity: 1;
+}
+
+/* Top-right settings control. */
+body.widget-mode #widgetSettings {
+  position: fixed;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: var(--z-overlay-widget);
+}
+
+body.widget-mode .widget-settings-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  font-size: var(--fs-lg);
+  color: var(--fg-1);
+  background: var(--menu-bg);
+  border: 1px solid var(--popup-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(var(--panel-blur));
+  cursor: pointer;
+}
+body.widget-mode .widget-settings-btn:hover {
+  background: var(--hover-color);
+}
+
+body.widget-mode .widget-settings-menu {
+  position: absolute;
+  top: calc(36px + var(--sp-2));
+  right: 0;
+  min-width: 180px;
+  padding: var(--sp-2) 0;
+  background: var(--menu-bg);
+  border: 1px solid var(--popup-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(var(--panel-blur));
+}
+
+body.widget-mode .widget-menu-group-label {
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-3);
+}
+
+body.widget-mode .widget-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+}
+body.widget-mode .widget-menu-item:hover {
+  background: var(--hover-color);
+}
+body.widget-mode .widget-menu-item[aria-disabled="true"] {
+  color: var(--fg-3);
+  cursor: default;
+}
+body.widget-mode .widget-menu-item[aria-disabled="true"]:hover {
+  background: transparent;
+}
+
+/* Check column: reserve width so labels align whether or not the item is the
+   current selection. The tick is shown only on the checked item. */
+body.widget-mode .widget-menu-check {
+  flex: 0 0 auto;
+  width: 1em;
+  color: var(--accent-fg);
+  visibility: hidden;
+}
+body.widget-mode .widget-menu-item[aria-checked="true"] .widget-menu-check {
+  visibility: visible;
+}
+
+body.widget-mode .widget-menu-sep {
+  height: 1px;
+  margin: var(--sp-2) 0;
+  background: var(--line-1);
+}
+
+/* Boot-failure notice (host/early.js catch): the embed hides all chrome, so a
+   crash would otherwise be a blank iframe. Centred plain-text message. */
+body.widget-mode .widget-boot-error {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 80%;
+  padding: var(--sp-3) var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+  background: var(--menu-bg);
+  border: 1px solid var(--popup-border);
+  border-radius: var(--radius-md);
+  text-align: center;
+  z-index: var(--z-overlay-widget);
+}
