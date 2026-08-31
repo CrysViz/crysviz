@@ -100,6 +100,15 @@ const handlers = {
     const result = await parseOutcarBlob(payload.blob, progress);
     return { result, transfer: [] };
   },
+
+  // The streaming variant: same sweep, but only frame byte offsets and
+  // per-frame scalars come back — the atom data never leaves the file until
+  // a frame is actually viewed (io/StreamingOutcarSource.js).
+  outcarIndex: async (payload, progress) => {
+    const { parseOutcarBlob } = await import('../io/outcarParse.js');
+    const result = await parseOutcarBlob(payload.blob, progress, { mode: 'index' });
+    return { result, transfer: [] };
+  },
 };
 
 self.onmessage = async (e) => {

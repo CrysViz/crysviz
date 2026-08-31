@@ -4,10 +4,11 @@ import { Spin } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Stress } from "../model/index.js";
-import { TrajectoryFrameStore, TrajectoryContainer } from "../model/index.js";
+import { TrajectoryContainer } from "../model/index.js";
 import {generateID} from '../utils/index.js'
 import { FileSource } from './FileSource.js';
 import { parseOutcarBlob } from './outcarParse.js';
+import { StreamingOutcarSource } from './StreamingOutcarSource.js';
 import * as workerPool from '../workers/workerPool.js';
 // Rotate the SAXIS-frame moments the parser returns into global Cartesian.
 import { multiplyMatVec } from '../math/backend-js.js';
@@ -108,7 +109,7 @@ function hideProgressBar() {
  * worker unsupported, blocked by a CSP) must not take OUTCAR loading down with
  * it, so fall back rather than failing the load.
  * @param {Blob} blob
- * @returns {Promise<{structures: Array<object>, saxisCandidates: string[]}>}
+ * @returns {Promise<any>} `{structures, saxisCandidates}` (steps mode)
  */
 async function runParse(blob) {
   if (workerPool.available()) {
@@ -120,6 +121,25 @@ async function runParse(blob) {
     }
   }
   return parseOutcarBlob(blob, updateProgressBar);
+}
+
+/**
+ * The index pass for streaming trajectories: same single sweep over the file,
+ * but it returns only per-frame byte offsets and scalars (plus the header
+ * identity), never the atom data. Pool-dispatched like runParse.
+ * @param {Blob} blob
+ * @returns {Promise<any>}
+ */
+async function runIndex(blob) {
+  if (workerPool.available()) {
+    try {
+      return await workerPool.run('outcarIndex', { blob }, undefined, updateProgressBar);
+    } catch (error) {
+      console.warn('OUTCAR indexing failed in a pool worker; falling back to the '
+        + 'main thread. The UI will block while it runs.', error);
+    }
+  }
+  return parseOutcarBlob(blob, updateProgressBar, { mode: 'index' });
 }
 
 /**
@@ -153,12 +173,20 @@ export async function parseOUTCAR(content, fileName) {
   }
 
   try {
-    const { structures, saxisCandidates } = await runParse(blob);
+    // Index first, parse later: one sweep records each frame's byte offset
+    // and scalars, and the trajectory then STREAMS — a frame's atom data is
+    // re-read from the file (StreamingOutcarSource) only when that frame is
+    // viewed. Retained memory is a few hundred bytes per frame regardless of
+    // file size. The accepted trade-off: the browser holds the File handle,
+    // so the OUTCAR must not be modified or removed on disk while loaded —
+    // a later read of a changed file fails (Chromium: ERR_UPLOAD_FILE_CHANGED)
+    // with an error naming this cause.
+    const { index, saxisCandidates } = await runIndex(blob);
 
     // SAXIS the run used (default (0,0,1)) and the matching global<-SAXIS
-    // rotation, applied to each spin's raw moments below. The parser only
-    // collects candidate lines from the INCAR echo; parsing them stays here
-    // with the rest of the spin-frame logic.
+    // rotation, applied to each spin's raw moments when frames are read. The
+    // parser only collects candidate lines from the INCAR echo; parsing them
+    // stays here with the rest of the spin-frame logic.
     let saxis = [0, 0, 1];
     for (const raw of saxisCandidates || []) {
       const s = parseSaxis(raw);
@@ -166,23 +194,14 @@ export async function parseOUTCAR(content, fileName) {
     }
     const saxisMatrix = saxisToMatrix(saxis);
 
-    // A multi-frame trajectory is NOT built into per-frame Structures any
-    // more: the physics is packed into flat typed arrays (~76 MB for a
-    // 110 MB / 1790-frame MD OUTCAR, where eager Structures measured
-    // ~1.8 GB) and frames materialise on demand as they are viewed —
-    // model/TrajectoryContainer.js owns that life cycle, including keeping
-    // any frame the user styles or edits. Single-frame files keep the eager
-    // path: they are cheap and are the ones that get edited heavily.
-    if (structures.length > 1) {
-      const store = TrajectoryFrameStore.fromParsedSteps(structures, {
-        elements: structures[0].elements,
-        uniqueElements: structures[0].uniqueElements,
-        saxisMatrix,
-        saxis,
-      });
-      return new TrajectoryContainer({ fileName, store });
+    if (index.frames.length > 1) {
+      const source = new StreamingOutcarSource({ blob, index, saxisMatrix, saxis });
+      return new TrajectoryContainer({ fileName, store: source });
     }
 
+    // Single-frame files: parse fully and keep the eager Structure — they are
+    // small, and they are the ones that get edited heavily.
+    const { structures } = await runParse(blob);
     const structureObjects = structures.map(structureData => {
       const atoms = structureData.atoms.map(atomData => new Atom({...atomData, uuid: generateID([atomData.element])}));
       // Rotate each spin's SAXIS-frame raw moments into global Cartesian

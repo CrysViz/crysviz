@@ -22,7 +22,9 @@ import { Stress } from './Stress.js';
 import { generateID } from '../utils/UUIDModule.js';
 
 /**
- * @param {import('./TrajectoryFrameStore.js').TrajectoryFrameStore} store
+ * @param {{elements: string[], uniqueElements: string[],
+ *          spinFrame: {fileSaxis: number[]}}} store the frame source's shared
+ *   identity (a TrajectoryFrameStore or any duck-compatible source)
  * @param {import('./TrajectoryFrameStore.js').FramePhysics} ph one frame's
  *   physics (already resolved — pass store.getFramePhysics(i), awaited if the
  *   source is asynchronous)

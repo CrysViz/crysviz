@@ -32,6 +32,22 @@ import { materializeFrame, frameMatchesPristine } from './materializeFrame.js';
 /** @typedef {import('./TrajectoryFrameStore.js').FramePhysics} FramePhysics */
 
 /**
+ * What a container needs from a frame source — TrajectoryFrameStore satisfies
+ * it in RAM; io/StreamingOutcarSource.js satisfies it from the file on disk
+ * (async getFramePhysics, sync peek over its recent-window cache).
+ * @typedef {{
+ *   frameCount: number, natoms: number,
+ *   elements: string[], uniqueElements: string[],
+ *   spinFrame: {fileSaxis: number[]},
+ *   hasSpins: boolean, hasForces: boolean,
+ *   forces: Float64Array | null, stresses: Float64Array | null,
+ *   getFramePhysics: (i: number) => FramePhysics | Promise<FramePhysics>,
+ *   peekFramePhysics?: (i: number) => FramePhysics | null,
+ *   energySeries: () => number[],
+ * }} FrameSource
+ */
+
+/**
  * Duck-typed asynchrony test with narrowing: a frame source backed by the
  * file on disk returns Promises where the RAM store returns values.
  * @param {any} value
@@ -48,7 +64,7 @@ const DEFAULT_FRAME_CACHE_LIMIT = 24;
 export class TrajectoryContainer extends StructureContainer {
   /**
    * @param {{fileName?: string,
-   *          store: import('./TrajectoryFrameStore.js').TrajectoryFrameStore,
+   *          store: FrameSource,
    *          cacheLimit?: number}} init
    */
   constructor({ fileName = null, store, cacheLimit = DEFAULT_FRAME_CACHE_LIMIT }) {
@@ -96,10 +112,15 @@ export class TrajectoryContainer extends StructureContainer {
       const frame = this.structures[step];
       if (!frame) { this._lru.splice(i, 1); cached--; continue; }
       if (frame === this._displayed) { i++; continue; }
-      const physics = this.store.getFramePhysics(step);
-      // A synchronous store is required for eviction checks; an async source
-      // simply skips eviction here and relies on its own cache policy.
-      if (isPending(physics)) return;
+      // The pristine comparison needs the physics synchronously. An async
+      // source (frames read from the file on disk) offers peekFramePhysics —
+      // its recently-fetched cache — instead; on a miss the frame cannot be
+      // verified, so it stays resident (it may hold user edits) and the scan
+      // moves on. Losing an eviction is recoverable; losing an edit is not.
+      const physics = this.store.peekFramePhysics
+        ? this.store.peekFramePhysics(step)
+        : this.store.getFramePhysics(step);
+      if (!physics || isPending(physics)) { i++; continue; }
       if (frameMatchesPristine(frame, materializeFrame(this.store, physics))) {
         delete this.structures[step];
       }

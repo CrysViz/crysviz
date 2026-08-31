@@ -43,11 +43,39 @@ import {
  * right-hand sides of any SAXIS lines from the INCAR echo, in file order; the
  * caller owns parsing them (utils/spinFrame.js is main-thread code).
  *
+ * Two option modes serve trajectory streaming (io/StreamingOutcarSource.js):
+ *
+ * `options.mode: 'index'` runs the same single pass but keeps no atom data at
+ * all — it returns, per frame, the BYTE OFFSET of its POSITION/TOTAL-FORCE
+ * line plus its small per-frame scalars (lattice, energy, stress), and the
+ * header identity (elements, ions per type). Byte offsets are exact because an
+ * OUTCAR is ASCII with uniform line endings (VASP writes both); the newline
+ * width is detected from the first chunk.
+ *
+ * `options.seed: {elements, ionsPerType, lattice}` pre-loads the header state
+ * so a WINDOW of the file (a Blob slice around one frame, cut at POSITION
+ * offsets from the index) parses correctly even though it contains no header:
+ * the caller takes the LAST step of the result (a window deliberately starts
+ * at the previous frame's POSITION line so the wanted frame's preceding
+ * magnetization block is inside it; the leading partial frame is discarded).
+ *
  * @param {Blob} blob
  * @param {(progress: number) => void} [onProgress]
- * @returns {Promise<{structures: Array<object>, saxisCandidates: string[]}>}
+ * @param {{mode?: 'steps' | 'index',
+ *          seed?: {elements: string[], ionsPerType: number[],
+ *                  lattice: number[][] | null} | null}} [options]
+ * @returns {Promise<{structures?: Array<object>,
+ *                    index?: {frames: Array<{offsetBytes: number,
+ *                                            lattice: number[][],
+ *                                            energy: number | null,
+ *                                            stress: number[][] | null}>,
+ *                             elements: string[], uniqueElements: string[],
+ *                             ionsPerType: number[], natoms: number},
+ *                    saxisCandidates: string[]}>}
  */
-export async function parseOutcarBlob(blob, onProgress) {
+export async function parseOutcarBlob(blob, onProgress, options = {}) {
+  const { mode = 'steps', seed = null } = options;
+  const indexMode = mode === 'index';
   // ---- chunked line supply -------------------------------------------------
   const CHUNK_BYTES = 4 * 1024 * 1024;
   const totalBytes = blob.size;
@@ -57,6 +85,11 @@ export async function parseOutcarBlob(blob, onProgress) {
   let offset = 0;               // bytes handed to the decoder so far
   let carry = '';
   let done = totalBytes === 0;
+  // Byte offset of the line at the cursor. Exact under the OUTCAR reality
+  // that the file is ASCII (line.length == encoded bytes) with one newline
+  // convention throughout; nlBytes is measured from the first chunk.
+  let byteCursor = 0;
+  let nlBytes = 0;
 
   async function refill() {
     const buf = await blob.slice(offset, offset + CHUNK_BYTES).arrayBuffer();
@@ -65,6 +98,9 @@ export async function parseOutcarBlob(blob, onProgress) {
     if (offset >= totalBytes) {
       text += decoder.decode();
       done = true;
+    }
+    if (nlBytes === 0 && (text.includes('\n') || done)) {
+      nlBytes = text.includes('\r\n') ? 2 : 1;
     }
     const parts = text.split(/\r?\n/);
     // The last segment may continue in the next chunk; hold it back. At EOF it
@@ -81,10 +117,10 @@ export async function parseOutcarBlob(blob, onProgress) {
   // before the first POSITION block, so natoms is known by the time any block
   // reader needs it. Latest-seen wins for ions per type, matching the old
   // whole-file scan that kept the last occurrence.
-  let ionsPerType = [];
-  const uniqueElements = [];
-  let elements = [];
-  let natoms = 0;
+  let ionsPerType = seed?.ionsPerType ? [...seed.ionsPerType] : [];
+  const uniqueElements = seed?.elements ? [...new Set(seed.elements)] : [];
+  let elements = seed?.elements ? [...seed.elements] : [];
+  let natoms = elements.length;
   function refreshElements() {
     if (uniqueElements.length && ionsPerType.length) {
       elements = expandElements(uniqueElements, ionsPerType);
@@ -96,7 +132,12 @@ export async function parseOutcarBlob(blob, onProgress) {
   const saxisCandidates = [];
 
   const steps = [];
-  let currentLattice = null;
+  /** Index-mode frame records; energy/stress attach exactly like steps'. */
+  const indexFrames = [];
+  // Energy/stress lines attach to the most recent frame in whichever list
+  // this pass is building.
+  const sink = indexMode ? indexFrames : steps;
+  let currentLattice = seed?.lattice ? seed.lattice.map(r => [...r]) : null;
   let spinX = null, spinY = null, spinZ = null;
 
   while (true) {
@@ -136,7 +177,17 @@ export async function parseOutcarBlob(blob, onProgress) {
       if (parseFloats(nextLine).length >= 6) {
         const { positions, forces } = readPositionsForcesBlock(lines, i, natoms);
 
-        if (currentLattice && positions.length === natoms) {
+        if (indexMode && currentLattice && positions.length === natoms) {
+          // Same validation as a full parse, but keep only the frame's byte
+          // offset and small scalars; the atom data just parsed is dropped.
+          indexFrames.push({
+            offsetBytes: byteCursor,
+            lattice: currentLattice.map(r => [...r]),
+            energy: null,
+            stress: null,
+          });
+          spinX = null; spinY = null; spinZ = null;
+        } else if (currentLattice && positions.length === natoms) {
           // These moments are in VASP's SAXIS-local frame; the main thread
           // rotates them into global Cartesian afterwards.
           let currentSpins;
@@ -176,13 +227,14 @@ export async function parseOutcarBlob(blob, onProgress) {
       }
     }
 
-    if (natoms > 0 && /^\s*magnetization\s*\(x\)/i.test(line)) {
+    // The index pass keeps no per-atom data, so it skips extracting moments.
+    if (!indexMode && natoms > 0 && /^\s*magnetization\s*\(x\)/i.test(line)) {
       spinX = readSpinComponent(lines, i, natoms, /^\s*magnetization\s*\(x\)/i);
     }
-    if (natoms > 0 && /^\s*magnetization\s*\(y\)/i.test(line)) {
+    if (!indexMode && natoms > 0 && /^\s*magnetization\s*\(y\)/i.test(line)) {
       spinY = readSpinComponent(lines, i, natoms, /^\s*magnetization\s*\(y\)/i);
     }
-    if (natoms > 0 && /^\s*magnetization\s*\(z\)/i.test(line)) {
+    if (!indexMode && natoms > 0 && /^\s*magnetization\s*\(z\)/i.test(line)) {
       spinZ = readSpinComponent(lines, i, natoms, /^\s*magnetization\s*\(z\)/i);
     }
 
@@ -193,27 +245,41 @@ export async function parseOutcarBlob(blob, onProgress) {
     // fallback; energy(sigma->0) is preferred and, since it prints after TOTEN
     // for the same step, overwrites it below.
     const totenMatch = line.match(/free\s+energy\s+TOTEN\s*=\s*(-?\d+\.?\d*(?:[eE][+-]?\d+)?)/i);
-    if (totenMatch && steps.length > 0) {
-      steps[steps.length - 1].energy = parseFloat(totenMatch[1]);
+    if (totenMatch && sink.length > 0) {
+      sink[sink.length - 1].energy = parseFloat(totenMatch[1]);
     }
     const sigmaMatch = line.match(/energy\(sigma->0\)\s*=\s*(-?\d+\.?\d*(?:[eE][+-]?\d+)?)/i);
-    if (sigmaMatch && steps.length > 0) {
-      steps[steps.length - 1].energy = parseFloat(sigmaMatch[1]);
+    if (sigmaMatch && sink.length > 0) {
+      sink[sink.length - 1].energy = parseFloat(sigmaMatch[1]);
     }
 
     // Stress: the "in kB" line gives the Voigt stress (XX YY ZZ XY YZ ZX) and
     // prints after the POSITION block for the step, so attach it to the
     // most-recently pushed step. Build a symmetric 3x3 tensor.
     const kbMatch = line.match(/^\s*in kB\s+(.*)$/i);
-    if (kbMatch && steps.length > 0) {
+    if (kbMatch && sink.length > 0) {
       const sv = parseFloats(kbMatch[1]);
       if (sv.length >= 6) {
         const xx = sv[0], yy = sv[1], zz = sv[2], xy = sv[3], yz = sv[4], zx = sv[5];
-        steps[steps.length - 1].stress = [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]];
+        sink[sink.length - 1].stress = [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]];
       }
     }
 
+    byteCursor += line.length + nlBytes;
     i++;
+  }
+
+  if (indexMode) {
+    return {
+      index: {
+        frames: indexFrames,
+        elements: [...elements],
+        uniqueElements: [...uniqueElements],
+        ionsPerType: [...ionsPerType],
+        natoms,
+      },
+      saxisCandidates,
+    };
   }
 
   const structures = steps.map(step => {
