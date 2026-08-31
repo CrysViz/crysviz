@@ -24,6 +24,7 @@ export {
 export { FieldCatalog, FieldCatalogNode, NodeKind } from './FieldCatalog.js';
 export { TrajectoryFrameStore } from './TrajectoryFrameStore.js';
 export { TrajectoryContainer } from './TrajectoryContainer.js';
+export { UnifiedTrajectoryContainer } from './UnifiedTrajectoryContainer.js';
 export { materializeFrame, frameMatchesPristine } from './materializeFrame.js';
 
 // Lazily-read plane-wave wavefunctions (WAVECAR) and the byte-budgeted cache

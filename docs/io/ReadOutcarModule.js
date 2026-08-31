@@ -4,6 +4,7 @@ import { Spin } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Stress } from "../model/index.js";
+import { TrajectoryFrameStore, UnifiedTrajectoryContainer } from "../model/index.js";
 import {generateID} from '../utils/index.js'
 import { FileSource } from './FileSource.js';
 import { parseOutcarBlob } from './outcarParse.js';
@@ -164,6 +165,23 @@ export async function parseOUTCAR(content, fileName) {
       if (s) { saxis = s; break; }
     }
     const saxisMatrix = saxisToMatrix(saxis);
+
+    // A multi-frame trajectory is rendered through ONE Structure: the physics
+    // is packed into flat typed arrays (~76 MB for a 110 MB / 1790-frame MD
+    // OUTCAR, where eager per-frame Structures measured ~1.8 GB) and frame
+    // switches write positions/moments/forces into the same live objects, so
+    // styling persists while scrubbing — model/UnifiedTrajectoryContainer.js
+    // owns that life cycle. Single-frame files keep the eager path: they are
+    // cheap and are the ones that get edited heavily.
+    if (structures.length > 1) {
+      const store = TrajectoryFrameStore.fromParsedSteps(structures, {
+        elements: structures[0].elements,
+        uniqueElements: structures[0].uniqueElements,
+        saxisMatrix,
+        saxis,
+      });
+      return new UnifiedTrajectoryContainer({ fileName, store });
+    }
 
     const structureObjects = structures.map(structureData => {
       const atoms = structureData.atoms.map(atomData => new Atom({...atomData, uuid: generateID([atomData.element])}));

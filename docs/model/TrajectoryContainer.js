@@ -33,11 +33,12 @@ import { materializeFrame, frameMatchesPristine } from './materializeFrame.js';
 
 /**
  * Duck-typed asynchrony test with narrowing: a frame source backed by the
- * file on disk returns Promises where the RAM store returns values.
+ * file on disk returns Promises where the RAM store returns values. Exported
+ * for the container subclasses that face the same duality.
  * @param {any} value
  * @returns {value is Promise<any>}
  */
-function isPending(value) {
+export function isPending(value) {
   return !!value && typeof value.then === 'function';
 }
 
@@ -183,6 +184,7 @@ export class TrajectoryContainer extends StructureContainer {
    * Returns a Promise when the source is asynchronous.
    * @param {(frame: Structure, index: number) => void} fn
    * @param {{skip?: Structure}} [opts]
+   * @returns {Promise<void> | void}
    */
   forEachFrameMaterialized(fn, opts = {}) {
     /** @type {Promise<void> | null} */
