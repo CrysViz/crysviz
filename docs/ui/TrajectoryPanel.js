@@ -365,7 +365,6 @@ function updateStructureFromFrame(frame, container) {
 
 function applyFrameStructure(structure, frame, container) {
   fileBrowser.selectedStructure = structure;
-  container.setDisplayedFrame(structure);
   fileBrowser.stepInput = frame;
   syncPlanesForSelectedStructure();
 

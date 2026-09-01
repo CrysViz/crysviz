@@ -872,8 +872,6 @@ let frameSwitchToken = 0;
 function finishFrameSwitch(container, step, structure, rowChanged) {
   void step;
   fileBrowser.selectedStructure = structure;
-  // Containers that materialise/recycle frames must pin the on-screen one.
-  container.setDisplayedFrame(structure);
   syncPlanesForSelectedStructure();
   refreshBackendTheme();
   let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;

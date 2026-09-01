@@ -1,35 +1,38 @@
 /**
- * A StructureContainer whose frames live compactly in a TrajectoryFrameStore
- * and become full Structures only on demand.
+ * A StructureContainer that renders a whole trajectory through ONE Structure.
  *
- * `structures` is kept as a SPARSE array of frameCount slots — a hole means
- * "not materialised right now". That single invariant is what keeps the rest
- * of the app working unaudited: every length-only consumer
- * (`structures.length`, slider maxima, `available()` predicates) and every
- * identity consumer (`structures.includes(...)` for structure->container
- * lookups) reads correct values for free, while the sites that index or
- * iterate frames go through the frame seam on StructureContainer.
+ * Frame physics lives compactly in a TrajectoryFrameStore (flat typed arrays,
+ * ~76 MB for a 110 MB / 1790-frame MD OUTCAR where eager per-frame Structures
+ * measured ~1.8 GB). Exactly one live Structure exists for rendering; showing
+ * another frame PARKS the current one — its user deviations are extracted
+ * into a sparse per-frame style record (model/materializeFrame.js) — then
+ * writes the new frame's physics into the same objects and re-applies that
+ * frame's stored record. Per-frame styling therefore survives with no frame
+ * kept resident and no frame-to-frame comparison anywhere; an untouched
+ * frame stores nothing at all.
  *
- * Materialised frames are cached in those slots under an LRU cap. Eviction is
- * guarded by frameMatchesPristine: a frame is only dropped if it still equals
- * a fresh materialisation — user-styled or user-edited frames (and anything
- * carrying attached state like a volumetric field) stay resident, so scrubbing
- * through a long MD run costs a bounded number of clean frames while every
- * deliberate per-frame change survives. Memory pathology therefore degrades
- * toward today's behaviour (frames the user touched exist in full), never
- * toward data loss.
+ * `structures` is kept as a SPARSE array of frameCount slots whose single
+ * occupied slot is the live Structure at its current step. That invariant is
+ * what keeps the rest of the app working unaudited: length-only consumers
+ * (slider maxima, `available()` predicates) and identity consumers
+ * (`structures.includes(...)` for structure->container lookups) read correct
+ * values for free, while the sites that index or iterate frames go through
+ * the frame seam on StructureContainer.
  *
- * The frame source is duck-typed: this class works with any object exposing
- * the TrajectoryFrameStore accessor surface. A source whose getFramePhysics
- * returns a Promise (frames read from the file on disk) makes frameAt and
- * friends return Promises too — the callers were rewired to tolerate that.
+ * The frame source is duck-typed: any object exposing the
+ * TrajectoryFrameStore accessor surface works. A source whose
+ * getFramePhysics returns a Promise (frames read from the file on disk)
+ * makes frameAt and friends return Promises too — the callers tolerate that.
  */
 
 import { StructureContainer } from './StructureContainer.js';
-import { materializeFrame, frameMatchesPristine } from './materializeFrame.js';
+import {
+  materializeFrame, applyFramePhysics, extractFrameStyles, applyFrameStyles,
+} from './materializeFrame.js';
 
 /** @typedef {import('./Structure.js').Structure} Structure */
 /** @typedef {import('./TrajectoryFrameStore.js').FramePhysics} FramePhysics */
+/** @typedef {import('./materializeFrame.js').FrameStyleRecord} FrameStyleRecord */
 
 /**
  * Duck-typed asynchrony test with narrowing: a frame source backed by the
@@ -41,76 +44,97 @@ function isPending(value) {
   return !!value && typeof value.then === 'function';
 }
 
-/** Materialised frames kept per trajectory before clean ones are recycled.
- *  ~2.5 ms + ~1 MB each at 440 atoms; 24 covers scrubbing comfortably. */
-const DEFAULT_FRAME_CACHE_LIMIT = 24;
-
 export class TrajectoryContainer extends StructureContainer {
   /**
    * @param {{fileName?: string,
-   *          store: import('./TrajectoryFrameStore.js').TrajectoryFrameStore,
-   *          cacheLimit?: number}} init
+   *          store: import('./TrajectoryFrameStore.js').TrajectoryFrameStore}} init
    */
-  constructor({ fileName = null, store, cacheLimit = DEFAULT_FRAME_CACHE_LIMIT }) {
+  constructor({ fileName = null, store }) {
     super({ fileName, structures: [] });
     this.store = store;
-    /** Sparse materialisation cache; holes = frames existing only as physics. */
+    /** Sparse: one occupied slot — the live Structure at its current step. */
     this.structures = new Array(store.frameCount);
-    /** @type {number[]} step indices, least-recently-used first */
-    this._lru = [];
-    this._cacheLimit = Math.max(2, cacheLimit);
-    /** @type {Structure | null} the on-screen frame; never evicted. */
-    this._displayed = null;
-  }
-
-  /**
-   * Pin the frame currently on screen. Called from the frame-switch path;
-   * identity lookups (ownsStructure, frameIndexOf) and eviction both depend
-   * on the displayed frame staying in its slot.
-   * @param {Structure | null} structure
-   */
-  setDisplayedFrame(structure) {
-    this._displayed = structure;
+    /** @type {Structure | null} the one Structure used for rendering */
+    this._live = null;
+    this._liveStep = -1;
+    /** @type {Map<number, FrameStyleRecord>} step -> that frame's deviations */
+    this._frameStyles = new Map();
   }
 
   get frameCount() {
     return this.store.frameCount;
   }
 
-  /** @param {number} step */
-  _touch(step) {
-    const at = this._lru.indexOf(step);
-    if (at !== -1) this._lru.splice(at, 1);
-    this._lru.push(step);
+  /**
+   * Extract the live frame's deviations into its sparse record (or clear the
+   * record if it has none). Called before the live Structure moves on and
+   * before anything reads per-frame data of the shown frame from records.
+   * @param {FramePhysics} ph the LIVE step's physics
+   */
+  _parkLive(ph) {
+    if (!this._live || this._liveStep < 0) return;
+    const rec = extractFrameStyles(this._live, ph);
+    if (rec) this._frameStyles.set(this._liveStep, rec);
+    else this._frameStyles.delete(this._liveStep);
   }
 
   /**
-   * Recycle least-recently-used clean frames down to the cache limit. A frame
-   * that no longer matches its pristine rebuild is left alone (and taken out
-   * of LRU consideration) — it holds user state that must not be lost.
+   * @param {number} step
+   * @param {FramePhysics} ph
+   * @returns {Structure}
    */
-  _evictOverflow() {
-    let cached = this._lru.length;
-    for (let i = 0; i < this._lru.length && cached > this._cacheLimit;) {
-      const step = this._lru[i];
-      const frame = this.structures[step];
-      if (!frame) { this._lru.splice(i, 1); cached--; continue; }
-      if (frame === this._displayed) { i++; continue; }
-      const physics = this.store.getFramePhysics(step);
-      // A synchronous store is required for eviction checks; an async source
-      // simply skips eviction here and relies on its own cache policy.
-      if (isPending(physics)) return;
-      // Direct comparison against the physics — no pristine Structure is
-      // built, so an eviction check costs ~0.2 ms instead of another full
-      // materialisation on every playback step.
-      if (frameMatchesPristine(frame, this.store, physics)) {
-        delete this.structures[step];
+  _showFrame(step, ph) {
+    if (this._live && this._liveStep >= 0 && this._liveStep !== step) {
+      const livePh = this.store.getFramePhysics(this._liveStep);
+      // A sync source (the RAM store) always parks; an async source that
+      // cannot provide the outgoing physics synchronously cannot detect
+      // position edits at park time — style deviations still park fine.
+      if (!isPending(livePh)) this._parkLive(/** @type {FramePhysics} */(livePh));
+    }
+    if (!this._live || this._live.atoms.length !== this.store.natoms) {
+      if (this._live) {
+        console.warn('Trajectory: the structure was edited structurally (atom count '
+          + 'changed); switching frames rebuilds it and the edit is dropped.');
       }
-      // Either recycled, or dirty and therefore pinned: in both cases the
-      // step leaves LRU consideration (a pinned frame keeps its slot — it IS
-      // the user's data now).
-      this._lru.splice(i, 1);
-      cached--;
+      this._live = materializeFrame(this.store, ph);
+    } else {
+      applyFramePhysics(this._live, ph);
+    }
+    applyFrameStyles(this._live, this._frameStyles.get(step) ?? null);
+    this._installLazyAsLoaded(this._live, step);
+
+    if (this._liveStep >= 0) delete this.structures[this._liveStep];
+    this.structures[step] = this._live;
+    this._liveStep = step;
+    return this._live;
+  }
+
+  /**
+   * `original`/`originalSpins` must reflect the SHOWN frame's as-loaded
+   * state (every reset path reads them), but most frame switches never touch
+   * them — so they are lazy: first access materialises a pristine copy of
+   * this frame from the store (correct regardless of any edits made since
+   * the switch) and caches its snapshots until the next switch.
+   * @param {Structure} live @param {number} step
+   */
+  _installLazyAsLoaded(live, step) {
+    const store = this.store;
+    for (const name of ['original', 'originalSpins']) {
+      Object.defineProperty(live, name, {
+        configurable: true,
+        enumerable: true,
+        get() {
+          const pristine = materializeFrame(store,
+            /** @type {FramePhysics} */(store.getFramePhysics(step)));
+          Object.defineProperty(live, 'original', {
+            value: pristine.original, configurable: true, enumerable: true, writable: true,
+          });
+          Object.defineProperty(live, 'originalSpins', {
+            value: pristine.originalSpins, configurable: true, enumerable: true, writable: true,
+          });
+          return name === 'original' ? pristine.original : pristine.originalSpins;
+        },
+      });
     }
   }
 
@@ -120,99 +144,116 @@ export class TrajectoryContainer extends StructureContainer {
    */
   frameAt(step) {
     if (!(step >= 0 && step < this.frameCount)) return undefined;
-    const cached = this.structures[step];
-    if (cached) {
-      this._touch(step);
-      return cached;
-    }
+    if (step === this._liveStep && this._live) return this._live;
     const physics = this.store.getFramePhysics(step);
     if (isPending(physics)) {
-      return physics.then(ph => {
-        // Another caller may have won the race while we read.
-        if (this.structures[step]) return this.structures[step];
-        const frame = materializeFrame(this.store, ph);
-        this.structures[step] = frame;
-        this._touch(step);
-        this._evictOverflow();
-        return frame;
-      });
+      return physics.then(ph => this._showFrame(step, ph));
     }
-    const frame = materializeFrame(this.store, physics);
-    this.structures[step] = frame;
-    this._touch(step);
-    this._evictOverflow();
-    return frame;
+    return this._showFrame(step, physics);
   }
 
   /**
-   * An independent Structure for overlay/comparison rendering — never the
-   * cached object, so styling the overlaid copy cannot leak into the main
-   * view of the same step, and never cached, so it lives exactly as long as
-   * the overlay entry holding it.
+   * An independent Structure for overlay/comparison rendering or copying —
+   * a fresh materialisation carrying that frame's stored styles, so what the
+   * user styled on the frame is what gets overlaid/copied. Never the live
+   * object, never retained here.
    * @param {number} step
+   * @returns {Structure | Promise<Structure> | undefined}
    */
   frameAtDetached(step) {
     if (!(step >= 0 && step < this.frameCount)) return undefined;
-    const physics = this.store.getFramePhysics(step);
-    if (isPending(physics)) {
-      return physics.then(ph => materializeFrame(this.store, ph));
+    if (step === this._liveStep && this._live) {
+      // The live frame's record may be stale relative to on-screen edits.
+      const livePh = this.store.getFramePhysics(step);
+      if (!isPending(livePh)) this._parkLive(/** @type {FramePhysics} */(livePh));
     }
-    return materializeFrame(this.store, physics);
+    const physics = this.store.getFramePhysics(step);
+    const build = (/** @type {FramePhysics} */ ph) => {
+      const frame = materializeFrame(this.store, ph);
+      applyFrameStyles(frame, this._frameStyles.get(step) ?? null);
+      return frame;
+    };
+    return isPending(physics) ? physics.then(build) : build(physics);
   }
 
   /**
-   * Full Structures for [start, end) — clone/combine operations. Cached
-   * (possibly user-styled) frames are handed out where they exist so copies
-   * carry the user's styling, exactly as cloning did on eager containers;
-   * holes are materialised fresh without entering the cache.
+   * Full Structures for [start, end) — clone/combine operations, each an
+   * independent copy carrying its frame's stored styles.
    * @param {number} [start] @param {number} [end]
+   * @returns {Structure[] | Promise<Structure[]>}
    */
   framesSlice(start = 0, end = this.frameCount) {
     const s = Math.max(0, start), e = Math.min(this.frameCount, end);
     const out = [];
     let async = false;
     for (let i = s; i < e; i++) {
-      const frame = this.structures[i] ?? this.frameAtDetached(i);
+      const frame = this.frameAtDetached(i);
       if (isPending(frame)) async = true;
       out.push(frame);
     }
-    return async ? Promise.all(out) : out;
+    return async ? Promise.all(out) : /** @type {Structure[]} */ (out);
   }
 
   /**
-   * Materialise-and-visit every frame. Used by the trajectory-wide style
-   * actions; each visited frame lands in the cache, and _evictOverflow's
-   * pristine comparison afterwards keeps only the ones `fn` actually changed.
-   * Returns a Promise when the source is asynchronous.
+   * Visit every frame as a mutable Structure — the propagation primitive
+   * behind "apply/reset whole trajectory". Non-shown frames are reproduced
+   * from their records, mutated by `fn`, and re-parked; only the deviations
+   * `fn` actually created are kept.
    * @param {(frame: Structure, index: number) => void} fn
    * @param {{skip?: Structure}} [opts]
+   * @returns {Promise<void> | void}
    */
   forEachFrameMaterialized(fn, opts = {}) {
     /** @type {Promise<void> | null} */
     let chain = null;
-    for (let i = 0; i < this.frameCount; i++) {
-      const frame = this.frameAt(i);
-      if (isPending(frame)) {
-        const step = i;
-        chain = (chain ?? Promise.resolve()).then(() => frame).then(f => {
-          if (f && f !== opts.skip) fn(f, step);
-        });
-      } else if (frame && frame !== opts.skip) {
-        fn(frame, i);
+    for (let step = 0; step < this.frameCount; step++) {
+      const stepNow = step;
+      const visit = (/** @type {FramePhysics} */ ph) => {
+        if (stepNow === this._liveStep && this._live) {
+          if (this._live !== opts.skip) fn(this._live, stepNow);
+          return;
+        }
+        const frame = materializeFrame(this.store, ph);
+        applyFrameStyles(frame, this._frameStyles.get(stepNow) ?? null);
+        fn(frame, stepNow);
+        const rec = extractFrameStyles(frame, ph);
+        if (rec) this._frameStyles.set(stepNow, rec);
+        else this._frameStyles.delete(stepNow);
+      };
+      const physics = this.store.getFramePhysics(stepNow);
+      if (isPending(physics)) {
+        chain = (chain ?? Promise.resolve()).then(() => physics).then(visit);
+      } else {
+        visit(physics);
       }
     }
-    if (chain) return chain.then(() => this._evictOverflow());
-    this._evictOverflow();
+    if (chain) return chain.then(() => undefined);
+  }
+
+  frameIndexOf(structure) {
+    return structure === this._live ? this._liveStep : -1;
+  }
+
+  ownsStructure(structure) {
+    return structure === this._live;
   }
 
   energySeries() {
     return this.store.energySeries();
   }
 
+  hasSpins() {
+    return this.store.hasSpins;
+  }
+
+  hasForces() {
+    return this.store.hasForces;
+  }
+
   /**
    * Per-frame {etotEv, meanForce, pressure} series straight from the typed
    * arrays — the store-backed answer to the Trajectory panel's "Compute step
-   * stats", without materialising a single frame. Formulas match the panel's
+   * stats", without building a single frame. Formulas match the panel's
    * eager path: mean per-atom |F|, and stress trace / 3 (relaxer.stressMean).
    * @returns {{etotEv: number[], meanForce: number[] | null, pressure: number[] | null}}
    */
@@ -245,39 +286,23 @@ export class TrajectoryContainer extends StructureContainer {
     return { etotEv, meanForce, pressure };
   }
 
-  hasSpins() {
-    return this.store.hasSpins;
-  }
-
-  hasForces() {
-    return this.store.hasForces;
-  }
-
   /**
-   * Serialisation reads physics straight from the store — no frame needs to
-   * exist as a Structure for a session save. Cached (possibly edited) frames
-   * take precedence so a user's positional edits serialise faithfully.
+   * Serialisation reads physics straight from the store; a frame's stored
+   * position/lattice edits (and the live frame's current state, parked
+   * first) take precedence so a user's edits serialise faithfully.
    */
   framePhysicsList() {
+    if (this._live && this._liveStep >= 0) {
+      const livePh = this.store.getFramePhysics(this._liveStep);
+      if (!isPending(livePh)) this._parkLive(/** @type {FramePhysics} */(livePh));
+    }
     const out = [];
     for (let i = 0; i < this.frameCount; i++) {
-      const cached = this.structures[i];
-      if (cached) {
-        out.push({
-          elements: [...cached.elements],
-          lattice: cached.lattice.map(r => [...r]),
-          positions: cached.atoms.map(a => [...a.position]),
-          forces: cached.forces?.length ? cached.forces : null,
-          spins: cached.spins?.length ? cached.spins : null,
-        });
-        continue;
-      }
       const ph = this.store.getFramePhysics(i);
       if (isPending(ph)) {
-        // An async source resolves the remainder as a Promise of the list.
         return this._framePhysicsListAsync(out, i);
       }
-      out.push(this._physicsEntry(ph));
+      out.push(this._physicsEntry(i, ph));
     }
     return out;
   }
@@ -286,49 +311,48 @@ export class TrajectoryContainer extends StructureContainer {
   async _framePhysicsListAsync(head, from) {
     const out = head;
     for (let i = from; i < this.frameCount; i++) {
-      const cached = this.structures[i];
-      if (cached) {
-        out.push({
-          elements: [...cached.elements],
-          lattice: cached.lattice.map(r => [...r]),
-          positions: cached.atoms.map(a => [...a.position]),
-          forces: cached.forces?.length ? cached.forces : null,
-          spins: cached.spins?.length ? cached.spins : null,
-        });
-      } else {
-        out.push(this._physicsEntry(await this.store.getFramePhysics(i)));
-      }
+      out.push(this._physicsEntry(i, await this.store.getFramePhysics(i)));
     }
     return out;
   }
 
-  /** @param {import('./TrajectoryFrameStore.js').FramePhysics} ph */
-  _physicsEntry(ph) {
+  /** @param {number} step @param {FramePhysics} ph */
+  _physicsEntry(step, ph) {
     const n = this.store.natoms;
+    const rec = this._frameStyles.get(step);
     const positions = [];
     for (let a = 0; a < n; a++) {
-      positions.push([ph.positions[a * 3], ph.positions[a * 3 + 1], ph.positions[a * 3 + 2]]);
+      const override = /** @type {any} */ (rec?.atoms?.get(a))?.position;
+      positions.push(override
+        ? [...override]
+        : [ph.positions[a * 3], ph.positions[a * 3 + 1], ph.positions[a * 3 + 2]]);
     }
-    const arrows = (flat, extra) => {
+    const arrows = (/** @type {Float64Array | null} */ flat,
+      /** @type {Map<number, any> | undefined} */ m,
+      /** @type {boolean} */ isSpin) => {
       if (!flat) return null;
       const list = [];
       for (let a = 0; a < n; a++) {
-        list.push({ vector: [flat[a * 3], flat[a * 3 + 1], flat[a * 3 + 2]], scaling: 1.0, ...extra });
+        const d = m?.get(a);
+        list.push({
+          vector: [flat[a * 3], flat[a * 3 + 1], flat[a * 3 + 2]],
+          scaling: 1.0,
+          userColor: d?.userColor ?? null,
+          userMaterial: d?.userMaterial ?? null,
+          hidden: d?.hidden ?? false,
+          ...(isSpin ? {
+            rawVector: [ph.spinRaw[a * 3], ph.spinRaw[a * 3 + 1], ph.spinRaw[a * 3 + 2]],
+          } : {}),
+        });
       }
       return list;
     };
     return {
       elements: [...this.store.elements],
-      lattice: ph.lattice.map(r => [...r]),
+      lattice: (rec?.lattice ?? ph.lattice).map(r => [...r]),
       positions,
-      forces: arrows(ph.forces, {}),
-      spins: ph.spinRaw
-        ? Array.from({ length: n }, (_, a) => ({
-          vector: [ph.spinVectors[a * 3], ph.spinVectors[a * 3 + 1], ph.spinVectors[a * 3 + 2]],
-          rawVector: [ph.spinRaw[a * 3], ph.spinRaw[a * 3 + 1], ph.spinRaw[a * 3 + 2]],
-          scaling: 1.0,
-        }))
-        : null,
+      forces: arrows(ph.forces, rec?.forces, false),
+      spins: ph.spinRaw ? arrows(ph.spinVectors, rec?.spins, true) : null,
     };
   }
 }

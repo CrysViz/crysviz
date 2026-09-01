@@ -56,13 +56,6 @@ export class StructureContainer {
   }
 
   /**
-   * Told by the frame-switch path which frame is now on screen. The eager
-   * container has no use for it; trajectory subclasses pin that frame.
-   * @param {Structure | null} _structure
-   */
-  setDisplayedFrame(_structure) {}
-
-  /**
    * The frame to display for `step`. May return a Promise in subclasses.
    * @param {number} step
    * @returns {Structure | Promise<Structure> | undefined}
