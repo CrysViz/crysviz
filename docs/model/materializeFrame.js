@@ -87,21 +87,23 @@ function emptyDict(d) {
   return !d || Object.keys(d).length === 0;
 }
 
-/** THREE.Color instances compare by channels; everything else by identity-ish. */
-function sameColor(a, b) {
-  if (a === b) return true;
-  if (a && b && typeof a === 'object' && typeof b === 'object'
-      && 'r' in a && 'r' in b) {
-    return a.r === b.r && a.g === b.g && a.b === b.b;
-  }
-  return false;
-}
-
 /**
  * Whether a materialised frame is still exactly what materialisation would
  * rebuild — no styling, no edits, nothing attached. Conservative by design:
- * any difference (or anything it does not model, like an attached volumetric
- * field) returns false and the frame stays resident.
+ * any USER difference (or anything it does not model, like an attached
+ * volumetric field) returns false and the frame stays resident.
+ *
+ * Deliberately IGNORED, because merely displaying a frame writes it and a
+ * re-display recomputes it identically — treating it as dirt would pin every
+ * frame the trajectory player ever showed and grow memory on plain playback:
+ *  - `bonds` and `polyhedra`: rebuilt from scratch on every render; the
+ *    user's bond/polyhedra styling persists in the style-store dicts, which
+ *    ARE compared;
+ *  - spin/force `.color`: colormap-driven at render time (Spin/ForceModule's
+ *    updateColor); a user's explicit pick lands in `userColor`, which IS
+ *    compared;
+ *  - `atomImages`, `bondMapping`/`bondObjectMapping`, `periodic.wrapped`,
+ *    `coordination`, `wyckoff`/`hash`: render/analysis caches.
  *
  * @param {Structure} frame the possibly-touched materialised frame
  * @param {Structure} pristine a freshly materialised copy of the same frame
@@ -115,10 +117,13 @@ export function frameMatchesPristine(frame, pristine) {
     if (!sameMat3(frame.lattice, pristine.lattice)) return false;
     if (frame.energy !== pristine.energy && !(frame.energy == null && pristine.energy == null)) return false;
 
-    // Anything attached to or computed on the frame pins it.
-    if (frame.volumetricFields || frame.symmetry || frame.polyhedra) return false;
-    if (frame.planes?.length || frame.bonds?.length) return false;
+    // Attached or user-configured state pins the frame. (`polyhedra` — the
+    // computed model — is derived and ignored; the SETTINGS are the user's.)
+    if (frame.volumetricFields || frame.symmetry) return false;
+    if (frame.planes?.length) return false;
     if (frame.velocities) return false;
+    if (frame.polyhedraSettings?.useChemicalFilter !== pristine.polyhedraSettings?.useChemicalFilter
+      || frame.polyhedraSettings?.detectCages !== pristine.polyhedraSettings?.detectCages) return false;
     for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles',
       'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials',
       'spinCategoryStyles', 'forceCategoryStyles', 'atomImageStyles']) {
@@ -144,14 +149,12 @@ export function frameMatchesPristine(frame, pristine) {
       const s = frame.spins[i], p = pristine.spins[i];
       if (!sameVec3(s.vector, p.vector) || !sameVec3(s.rawVector, p.rawVector)) return false;
       if (s.userColor !== null || s.userMaterial !== null || s.hidden) return false;
-      if (!sameColor(s.color, p.color)) return false;
       if (s.scaling !== p.scaling) return false;
     }
     for (let i = 0; i < frame.forces.length; i++) {
       const f = frame.forces[i], p = pristine.forces[i];
       if (!sameVec3(f.vector, p.vector)) return false;
       if (f.userColor !== null || f.userMaterial !== null || f.hidden) return false;
-      if (!sameColor(f.color, p.color)) return false;
       if (f.scaling !== p.scaling) return false;
     }
     return true;
