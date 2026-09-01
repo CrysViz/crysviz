@@ -10,6 +10,7 @@ import { setActivePipelineFromController } from './ColorPanel.js';
 import { updateSpins } from '../render/index.js';
 import { recenterCamera } from './WindowAndSceneControls.js';
 import { selectStructure, createRow } from './FileBrowswerPanel.js';
+import { showTrajectoryFrame } from './TrajectoryPanel.js';
 import { toggleCompositionLegend, isCompositionLegendOpen } from './CompositionLegendWidget.js';
 import { ensureMoyoReady, moyoDataset, buildSymmetrisedContainer, PT } from './BackendPanel/MoyoWASM.js';
 import { Spin } from '../model/index.js';
@@ -31,6 +32,20 @@ const variantRow = { conv: null, prim: null };
  *  instead of racing across the ensureMoyoReady() await and duplicating rows. */
 let buildPromise = null;
 
+/** Frames mode: the database precomputed the cells and shipped them as frames
+ *  of a multi-frame session (top-level `frameKinds`, stashed on the container
+ *  by ShareModule). When active, the Cell menu selects frames instead of
+ *  building variants with moyo — the moyo path (buildVariants/WidgetSpinRemap)
+ *  is never invoked. null = not in frames mode (fall back to moyo). */
+/** @type {import('../model/StructureContainer.js').StructureContainer|null} */
+let framesContainer = null;
+/** Cell-menu value → frame index in framesContainer.structures (-1 = kind not
+ *  provided by the database → that entry is disabled). */
+const frameForCell = { loaded: -1, conv: -1, prim: -1 };
+
+/** The frameKinds string each Cell-menu value maps to. */
+const CELL_TO_KIND = { loaded: 'loaded', conv: 'conventional', prim: 'primitive' };
+
 /**
  * Initialise widget-mode UI. Runs once, after the authoritative bootstrap has
  * loaded the structure (so the composition legend and spin arrows have data).
@@ -48,10 +63,29 @@ export function initWidgetMode(opts) {
   // FEATURE_TOGGLE_DEFAULTS turns showSpinsToggle off and erases the arrows.
   general.featuresLocked = true;
 
+  setupFramesMode();
   buildLogo(opts?.href ?? '');
   buildSettings();
   ensureSpinsRendered();
   openLockedLegend();
+}
+
+/**
+ * If the loaded container carries valid frameKinds (a database-precomputed
+ * multi-frame session), enter frames mode: map each Cell-menu value to its
+ * frame index. Kinds the database did not ship stay at -1 and get disabled in
+ * buildSettings. Absent/invalid frameKinds leaves framesContainer null → the
+ * moyo build path stays as the fallback.
+ */
+function setupFramesMode() {
+  const container = structureShip.container[fileBrowser.selectedRowIndex];
+  const kinds = container?.frameKinds;
+  if (!Array.isArray(kinds) || kinds.length !== container.structures.length) return;
+  framesContainer = container;
+  frameForCell.loaded = kinds.indexOf(CELL_TO_KIND.loaded);
+  if (frameForCell.loaded < 0) frameForCell.loaded = 0; // fallback: frame 0 is "as loaded"
+  frameForCell.conv = kinds.indexOf(CELL_TO_KIND.conv);
+  frameForCell.prim = kinds.indexOf(CELL_TO_KIND.prim);
 }
 
 // ── Logo ─────────────────────────────────────────────────────────────────
@@ -131,6 +165,12 @@ function buildSettings() {
   menuEl = menu;
 
   renderGroup(menu, CELL_GROUP);
+  // Frames mode: disable cell kinds the database did not ship.
+  if (framesContainer) {
+    for (const kind of ['conv', 'prim']) {
+      if (frameForCell[kind] < 0) disableCellRow(kind, 'not provided by the database');
+    }
+  }
   const sep = document.createElement('div');
   sep.className = 'widget-menu-sep';
   menu.appendChild(sep);
@@ -200,6 +240,12 @@ function syncGroupChecks(groupKey) {
  *  that kind), with a tooltip explaining why. */
 function disableCellVariant(kind, reason) {
   variantRow[kind] = -1;
+  disableCellRow(kind, reason);
+}
+
+/** Grey out one Cell-menu entry with a tooltip (no variantRow bookkeeping — used
+ *  by both the moyo-refusal path and frames mode). */
+function disableCellRow(kind, reason) {
   const row = menuEl?.querySelector(`.widget-menu-item[data-group="cell"][data-value="${kind}"]`);
   if (row) {
     row.setAttribute('aria-disabled', 'true');
@@ -297,6 +343,10 @@ function restyleAtomsBonds() {
  * @returns {Promise<boolean>}
  */
 async function applyCell(value) {
+  // Frames mode: the database precomputed the cells. Select the matching frame
+  // instead of building anything with moyo.
+  if (framesContainer) return applyCellFrame(value);
+
   if (value === 'loaded') {
     selectStructure(loadedRowIndex);
     recenterCamera();
@@ -326,6 +376,37 @@ async function applyCell(value) {
   selectStructure(rowIndex);
   recenterCamera();
   return true;
+}
+
+/**
+ * Frames-mode cell swap: select the precomputed frame for this cell kind.
+ * Recenters only when the cell dimensions change (loaded↔conventional may be
+ * identical), mirroring the moyo path's post-swap recenter.
+ *
+ * @param {string} value 'loaded' | 'conv' | 'prim'
+ * @returns {boolean}
+ */
+function applyCellFrame(value) {
+  if (!framesContainer) return false;
+  const index = frameForCell[value];
+  if (index == null || index < 0) return false; // kind not provided by the database
+  const before = fileBrowser.selectedStructure?.lattice;
+  const after = framesContainer.structures[index]?.lattice;
+  showTrajectoryFrame(index, framesContainer);
+  if (latticeChanged(before, after)) recenterCamera();
+  return true;
+}
+
+/** True if two 3×3 lattices differ beyond a tiny numeric tolerance (either
+ *  missing → treat as changed). */
+function latticeChanged(a, b) {
+  if (!a || !b) return true;
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < 3; j++) {
+      if (Math.abs((a[i]?.[j] ?? 0) - (b[i]?.[j] ?? 0)) > 1e-6) return true;
+    }
+  }
+  return false;
 }
 
 /**

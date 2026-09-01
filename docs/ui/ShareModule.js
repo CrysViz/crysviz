@@ -1242,6 +1242,15 @@ export function applySharedState(state, fileName = 'shared.vasp') {
         return s;
       });
       trajectoryContainer = new StructureContainer({ fileName, structures });
+      // Optional per-frame cell-kind labels (altermagnets DB precomputes
+      // loaded/conventional/primitive as frames). Order-aligned with `frames`;
+      // stashed for widget mode to read. Ignored everywhere else. Validate
+      // strictly (array of strings, one per frame) or drop it.
+      if (Array.isArray(state.frameKinds)
+        && state.frameKinds.length === frames.length
+        && state.frameKinds.every((k) => typeof k === 'string')) {
+        trajectoryContainer.frameKinds = state.frameKinds.slice();
+      }
       initializeUIOnLoad(trajectoryContainer);
       // Land on the frame the user was viewing before colors/fields are applied,
       // so `structure` below is that frame (also draws its arrows via the gated

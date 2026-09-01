@@ -149,6 +149,32 @@ moments onto the new cell; a magnetic order that the smaller cell cannot carry
 (a magnetic supercell) leaves that option greyed out. The top-left logo links
 back to the same structure in the full UI (the same URL minus `widget=1`).
 
+**Precomputed cells (`frameKinds`)** — a database that already knows the
+conventional and primitive cells can ship them as extra frames instead of
+paying for the in-browser symmetrisation. Send a multi-frame session whose
+`frames` are `[as-loaded, conventional?, primitive?]` and add a top-level
+`frameKinds` array, order-aligned with `frames`, labelling each with
+`"loaded"`, `"conventional"`, or `"primitive"` (kinds after the first are
+optional):
+
+```json
+{
+  "format": "crysviz",
+  "version": "2.16",
+  "frames": [ { …loaded… }, { …conventional… }, { …primitive… } ],
+  "frameKinds": ["loaded", "conventional", "primitive"],
+  "selectedFrameIndex": 0,
+  "display": { "spinsActive": true }
+}
+```
+
+When `frameKinds` is present the widget's Cell menu simply **selects the
+matching frame** — no moyo runs and no in-browser spin remapping happens; a
+cell kind not listed is greyed out ("not provided by the database"). When
+`frameKinds` is absent the menu falls back to the moyo build path above. The
+key is widget-only: the full app ignores `frameKinds` entirely (a session with
+it loads as an ordinary multi-frame trajectory).
+
 **Sandboxing** — the iframe does **not** need `allow-same-origin`: widget mode
 runs correctly in an opaque origin where browser storage is unavailable
 (theme/font preferences silently fall back to defaults). An opaque-origin embed

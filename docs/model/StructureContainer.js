@@ -19,6 +19,12 @@ export class StructureContainer {
     // is off — see FileBrowswerPanel.js's updateStructureFromRowAndStep.
     this.cameraSnapshot = null;
     this.featureSnapshot = null;
+    // Optional per-frame "cell kind" labels ("loaded"/"conventional"/"primitive"),
+    // order-aligned with `structures`. Set by the .crysviz loader from the
+    // session's top-level `frameKinds` and read ONLY by widget mode (ui/WidgetMode.js)
+    // to map its Cell menu to frame selection. The full app ignores it.
+    /** @type {string[] | null} */
+    this.frameKinds = null;
   }
 
   _ensureListOfClass(input, ClassType) {
