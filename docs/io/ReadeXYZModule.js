@@ -4,7 +4,7 @@
  */
 
 import { generateID } from '../utils/index.js';
-import { StructureContainer } from "../model/index.js";
+import { StructureContainer, TrajectoryContainer } from "../model/index.js";
 import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
@@ -375,7 +375,13 @@ export function parseXYZFile(content, fileName) {
           });
         });
 
-        const container = new StructureContainer({ fileName, structures: structureObjects });
+        // Multi-frame files become store-backed trajectories: physics packed
+        // per frame (frames may differ in composition), user deviations as
+        // sparse records, one live Structure for rendering. Single frames
+        // stay eager — they are the ones that get edited heavily.
+        const container = structureObjects.length > 1
+          ? TrajectoryContainer.fromStructures(fileName, structureObjects)
+          : new StructureContainer({ fileName, structures: structureObjects });
 
         hideProgressBar();
         resolve(container);

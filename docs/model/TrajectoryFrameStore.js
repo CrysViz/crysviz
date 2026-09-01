@@ -1,23 +1,30 @@
 /**
- * Compact storage for the physics of an MD/relaxation trajectory.
+ * Compact storage for the physics of a trajectory — one self-describing
+ * record per frame.
  *
- * A trajectory used to be stored as one fully-materialised Structure per frame
- * — measured on a 110 MB / 1790-frame OUTCAR that is ~1.8 GB of heap, of which
- * only ~57 MB is actual physics (positions, forces, moments as doubles). This
- * class keeps exactly that 57 MB: flat Float64Arrays over all frames, plus the
- * per-frame scalars (energy, stress, lattice) and the trajectory-wide
- * identity (elements, spin frame) that every frame shares.
+ * A trajectory used to be stored as one fully-materialised Structure per
+ * frame — measured on a 110 MB / 1790-frame OUTCAR that is ~1.8 GB of heap,
+ * of which only ~76 MB is actual physics. This class keeps exactly that
+ * physics: per frame, the element list, a packed Float64Array each for
+ * positions / forces / moments, and the small scalars (lattice, energy,
+ * stress, spin frame).
  *
- * It stores no model objects and no styles. Frames become Structures on
- * demand through model/materializeFrame.js, and which frames exist as
- * Structures at any moment is the containing TrajectoryContainer's business.
+ * The layout is deliberately PER FRAME rather than one flat array with a
+ * global stride: frames of one trajectory may differ in composition (a
+ * combined trajectory, a multi-frame XYZ), and per-frame records support
+ * that for a few hundred bytes of extra overhead per frame. Frames with
+ * identical composition share their `elements` array by reference (the
+ * builders intern it), so the common fixed-composition case pays nothing.
  *
- * The accessor contract is deliberately duck-typed: `getFramePhysics(i)`
- * returns the FramePhysics record synchronously here, but a source that reads
- * frames from disk may return a Promise of one instead — callers that can meet
- * both go through TrajectoryContainer, which handles either.
+ * It stores no model objects and no styles. Frames become Structures through
+ * model/materializeFrame.js; users' per-frame changes live as sparse records
+ * in TrajectoryContainer. Everything reproducible from physics + defaults
+ * (default atom colors, arrow colors, bonds, ...) is NOT stored anywhere —
+ * it is recomputed when the live rendering Structure changes frame.
  *
  * @typedef {{
+ *   elements: string[],
+ *   spinFrame: {fileSaxis: number[]},
  *   lattice: number[][],
  *   positions: Float64Array,
  *   forces: Float64Array | null,
@@ -29,205 +36,153 @@
  */
 
 // Plain JS backend on purpose: these run during load (possibly in a worker
-// with its own module graph) and are trivial; the math/index.js facade's
-// backend indirection buys nothing here.
+// with its own module graph) and are trivial.
 import { multiplyMatVec } from '../math/backend-js.js';
 
 export class TrajectoryFrameStore {
-  /**
-   * Prefer `fromParsedSteps`; this constructor takes already-packed arrays.
-   * @param {{
-   *   natoms: number,
-   *   frameCount: number,
-   *   elements: string[],
-   *   uniqueElements: string[],
-   *   spinFrame: {fileSaxis: number[]},
-   *   positions: Float64Array,
-   *   forces?: Float64Array | null,
-   *   spinVectors?: Float64Array | null,
-   *   spinRaw?: Float64Array | null,
-   *   lattices: Float64Array,
-   *   energies: Float64Array,
-   *   stresses?: Float64Array | null,
-   * }} init
-   */
-  constructor(init) {
-    this.natoms = init.natoms;
-    this.frameCount = init.frameCount;
-    /** Shared across frames — a trajectory cannot change composition. */
-    this.elements = init.elements;
-    this.uniqueElements = init.uniqueElements;
-    this.spinFrame = init.spinFrame;
-
-    const per = this.natoms * 3;
-    const expect = (arr, len, name) => {
-      if (arr && arr.length !== len) {
-        throw new Error(`TrajectoryFrameStore: ${name} has length ${arr.length}, expected ${len}`);
-      }
-    };
-    expect(init.positions, per * this.frameCount, 'positions');
-    expect(init.forces, per * this.frameCount, 'forces');
-    expect(init.spinVectors, per * this.frameCount, 'spinVectors');
-    expect(init.spinRaw, per * this.frameCount, 'spinRaw');
-    expect(init.lattices, 9 * this.frameCount, 'lattices');
-    expect(init.energies, this.frameCount, 'energies');
-    expect(init.stresses, 9 * this.frameCount, 'stresses');
-
-    /** @type {Float64Array} frameCount*natoms*3, fractional */
-    this.positions = init.positions;
-    /** @type {Float64Array | null} frameCount*natoms*3, eV/A cartesian */
-    this.forces = init.forces ?? null;
-    /** @type {Float64Array | null} frameCount*natoms*3, global cartesian */
-    this.spinVectors = init.spinVectors ?? null;
-    /** @type {Float64Array | null} frameCount*natoms*3, file (SAXIS) frame */
-    this.spinRaw = init.spinRaw ?? null;
-    /** @type {Float64Array} frameCount*9, row-major 3x3 per frame */
-    this.lattices = init.lattices;
-    /** @type {Float64Array} frameCount; NaN = unknown */
-    this.energies = init.energies;
-    /** @type {Float64Array | null} frameCount*9; all-NaN row = none */
-    this.stresses = init.stresses ?? null;
+  /** @param {{frames: FramePhysics[]}} init */
+  constructor({ frames }) {
+    /** @type {FramePhysics[]} */
+    this.frames = frames;
   }
 
-  get hasSpins() { return this.spinRaw !== null; }
-  get hasForces() { return this.forces !== null; }
+  get frameCount() {
+    return this.frames.length;
+  }
 
   /**
-   * The physics of one frame, as zero-copy views into the flat arrays plus
-   * small fresh objects for the 3x3s. Callers must not mutate the views.
+   * One frame's physics record. Callers read it and must not mutate it —
+   * the same record backs every rebuild of that frame.
    * @param {number} i
    * @returns {FramePhysics}
    */
   getFramePhysics(i) {
-    if (!(i >= 0 && i < this.frameCount)) {
+    const frame = this.frames[i];
+    if (!frame) {
       throw new Error(`TrajectoryFrameStore: frame ${i} out of range 0..${this.frameCount - 1}`);
     }
-    const per = this.natoms * 3;
-    const a = i * per, b = a + per;
-    const L = this.lattices.subarray(i * 9, i * 9 + 9);
-    const lattice = [[L[0], L[1], L[2]], [L[3], L[4], L[5]], [L[6], L[7], L[8]]];
-    let stress = null;
-    if (this.stresses) {
-      const S = this.stresses.subarray(i * 9, i * 9 + 9);
-      if (Number.isFinite(S[0])) {
-        stress = [[S[0], S[1], S[2]], [S[3], S[4], S[5]], [S[6], S[7], S[8]]];
-      }
-    }
-    const e = this.energies[i];
-    return {
-      lattice,
-      positions: this.positions.subarray(a, b),
-      forces: this.forces ? this.forces.subarray(a, b) : null,
-      spinVectors: this.spinVectors ? this.spinVectors.subarray(a, b) : null,
-      spinRaw: this.spinRaw ? this.spinRaw.subarray(a, b) : null,
-      energy: Number.isFinite(e) ? e : null,
-      stress,
-    };
+    return frame;
   }
 
-  /** Per-frame energies for plots; NaN where the file gave none. */
+  /** Per-frame energies for plots; NaN where the source gave none. */
   energySeries() {
-    return Array.from(this.energies);
+    return this.frames.map(f => (Number.isFinite(f.energy) ? /** @type {number} */ (f.energy) : NaN));
+  }
+
+  get hasSpins() {
+    return this.frames.some(f => f.spinRaw !== null);
+  }
+
+  get hasForces() {
+    return this.frames.some(f => f.forces !== null);
+  }
+
+  /** @param {FramePhysics} frame */
+  append(frame) {
+    this.frames.push(frame);
   }
 
   /**
-   * A new store over frames [start, end) — used by "copy trajectory rows".
-   * The arrays are subarray views, so a slice costs nothing; the source store
-   * stays alive as long as any slice of it does.
-   * @param {number} start @param {number} end
+   * Pack one ready Structure's physics into a frame record. Only physics —
+   * user styling is extracted separately (materializeFrame's
+   * extractFrameStyles) into the container's sparse per-frame records.
+   * @param {import('./Structure.js').Structure} structure
+   * @returns {FramePhysics}
    */
-  slice(start, end) {
-    const s = Math.max(0, start), e = Math.min(this.frameCount, end);
-    const per = this.natoms * 3;
-    const cut = (arr, w) => (arr ? arr.subarray(s * w, e * w) : null);
-    return new TrajectoryFrameStore({
-      natoms: this.natoms,
-      frameCount: Math.max(0, e - s),
-      elements: this.elements,
-      uniqueElements: this.uniqueElements,
-      spinFrame: { fileSaxis: [...this.spinFrame.fileSaxis] },
-      positions: cut(this.positions, per),
-      forces: cut(this.forces, per),
-      spinVectors: cut(this.spinVectors, per),
-      spinRaw: cut(this.spinRaw, per),
-      lattices: cut(this.lattices, 9),
-      energies: cut(this.energies, 1),
-      stresses: cut(this.stresses, 9),
-    });
+  static packStructure(structure) {
+    const n = structure.atoms.length;
+    const positions = new Float64Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const p = structure.atoms[i].position;
+      positions[i * 3] = p[0]; positions[i * 3 + 1] = p[1]; positions[i * 3 + 2] = p[2];
+    }
+    let forces = null;
+    if (structure.forces?.length === n && n > 0) {
+      forces = new Float64Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const v = structure.forces[i].vector ?? [0, 0, 0];
+        forces[i * 3] = v[0]; forces[i * 3 + 1] = v[1]; forces[i * 3 + 2] = v[2];
+      }
+    }
+    let spinVectors = null, spinRaw = null;
+    if (structure.spins?.length === n && n > 0) {
+      spinVectors = new Float64Array(n * 3);
+      spinRaw = new Float64Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const s = structure.spins[i];
+        const v = s.vector ?? [0, 0, 0];
+        const r = s.rawVector ?? v;
+        spinVectors[i * 3] = v[0]; spinVectors[i * 3 + 1] = v[1]; spinVectors[i * 3 + 2] = v[2];
+        spinRaw[i * 3] = r[0]; spinRaw[i * 3 + 1] = r[1]; spinRaw[i * 3 + 2] = r[2];
+      }
+    }
+    return {
+      elements: [...structure.elements],
+      spinFrame: { fileSaxis: [...(structure.spinFrame?.fileSaxis ?? [0, 0, 1])] },
+      lattice: structure.lattice.map(row => [...row]),
+      positions,
+      forces,
+      spinVectors,
+      spinRaw,
+      energy: Number.isFinite(structure.energy) ? structure.energy : null,
+      stress: structure.stress?.tensor ? structure.stress.tensor.map(row => [...row]) : null,
+    };
   }
 
   /**
    * Pack the plain per-step records a trajectory parser produces (the shape
    * io/outcarParse.js returns: atoms as {position}, spins as {rawVector},
-   * forces as {vector}) into one store. The global-Cartesian spin vectors are
-   * computed here from the raw file-frame moments, exactly as the eager
-   * loading path does per Spin.
+   * forces as {vector}) into one store. The global-Cartesian spin vectors
+   * are computed here from the raw file-frame moments. All steps of one
+   * parsed file share composition, so every frame shares the one `elements`
+   * array by reference.
    *
    * @param {Array<{lattice: number[][], atoms: {position: number[]}[],
    *                spins: {rawVector: number[]}[], forces: {vector: number[]}[],
    *                energy: number | null, stress: number[][] | null}>} steps
-   * @param {{elements: string[], uniqueElements: string[],
-   *          saxisMatrix: number[][], saxis: number[]}} meta
+   * @param {{elements: string[], saxisMatrix: number[][], saxis: number[]}} meta
    * @returns {TrajectoryFrameStore}
    */
-  static fromParsedSteps(steps, { elements, uniqueElements, saxisMatrix, saxis }) {
-    const frameCount = steps.length;
+  static fromParsedSteps(steps, { elements, saxisMatrix, saxis }) {
     const natoms = elements.length;
-    const per = natoms * 3;
-    const positions = new Float64Array(frameCount * per);
-    const hasForces = steps.some(s => s.forces && s.forces.length);
-    const hasSpins = steps.some(s => s.spins && s.spins.length);
-    const forces = hasForces ? new Float64Array(frameCount * per) : null;
-    const spinVectors = hasSpins ? new Float64Array(frameCount * per) : null;
-    const spinRaw = hasSpins ? new Float64Array(frameCount * per) : null;
-    const lattices = new Float64Array(frameCount * 9);
-    const energies = new Float64Array(frameCount).fill(NaN);
-    const hasStress = steps.some(s => s.stress);
-    const stresses = hasStress ? new Float64Array(frameCount * 9).fill(NaN) : null;
-
-    steps.forEach((step, f) => {
-      const base = f * per;
+    const sharedElements = [...elements];
+    const frames = steps.map((step) => {
+      const positions = new Float64Array(natoms * 3);
       step.atoms.forEach((a, i) => {
-        positions[base + i * 3] = a.position[0];
-        positions[base + i * 3 + 1] = a.position[1];
-        positions[base + i * 3 + 2] = a.position[2];
+        positions[i * 3] = a.position[0];
+        positions[i * 3 + 1] = a.position[1];
+        positions[i * 3 + 2] = a.position[2];
       });
-      if (forces) {
+      let forces = null;
+      if (step.forces?.length === natoms && natoms > 0) {
+        forces = new Float64Array(natoms * 3);
         step.forces.forEach((fo, i) => {
-          forces[base + i * 3] = fo.vector[0];
-          forces[base + i * 3 + 1] = fo.vector[1];
-          forces[base + i * 3 + 2] = fo.vector[2];
+          forces[i * 3] = fo.vector[0]; forces[i * 3 + 1] = fo.vector[1]; forces[i * 3 + 2] = fo.vector[2];
         });
       }
-      if (spinRaw) {
+      let spinVectors = null, spinRaw = null;
+      if (step.spins?.length === natoms && natoms > 0) {
+        spinVectors = new Float64Array(natoms * 3);
+        spinRaw = new Float64Array(natoms * 3);
         step.spins.forEach((sp, i) => {
           const raw = sp.rawVector;
-          spinRaw[base + i * 3] = raw[0];
-          spinRaw[base + i * 3 + 1] = raw[1];
-          spinRaw[base + i * 3 + 2] = raw[2];
+          spinRaw[i * 3] = raw[0]; spinRaw[i * 3 + 1] = raw[1]; spinRaw[i * 3 + 2] = raw[2];
           const v = multiplyMatVec(saxisMatrix, raw);
-          spinVectors[base + i * 3] = v[0];
-          spinVectors[base + i * 3 + 1] = v[1];
-          spinVectors[base + i * 3 + 2] = v[2];
+          spinVectors[i * 3] = v[0]; spinVectors[i * 3 + 1] = v[1]; spinVectors[i * 3 + 2] = v[2];
         });
       }
-      for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
-        lattices[f * 9 + r * 3 + c] = step.lattice[r][c];
-      }
-      if (Number.isFinite(step.energy)) energies[f] = step.energy;
-      if (stresses && step.stress) {
-        for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) {
-          stresses[f * 9 + r * 3 + c] = step.stress[r][c];
-        }
-      }
+      return {
+        elements: sharedElements,
+        spinFrame: { fileSaxis: [...saxis] },
+        lattice: step.lattice.map(row => [...row]),
+        positions,
+        forces,
+        spinVectors,
+        spinRaw,
+        energy: Number.isFinite(step.energy) ? step.energy : null,
+        stress: step.stress ? step.stress.map(row => [...row]) : null,
+      };
     });
-
-    return new TrajectoryFrameStore({
-      natoms, frameCount,
-      elements: [...elements],
-      uniqueElements: [...uniqueElements],
-      spinFrame: { fileSaxis: [...saxis] },
-      positions, forces, spinVectors, spinRaw, lattices, energies, stresses,
-    });
+    return new TrajectoryFrameStore({ frames });
   }
 }

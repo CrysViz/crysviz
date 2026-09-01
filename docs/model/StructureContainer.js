@@ -56,6 +56,19 @@ export class StructureContainer {
   }
 
   /**
+   * Append one frame to the trajectory. Every code path that grows a
+   * trajectory (an MD/relax step, a symmetrised variant) goes through this
+   * rather than pushing into `structures` directly, so a store-backed
+   * container can pack the frame compactly instead of retaining it.
+   * @param {Structure} structure
+   * @returns {number} the new frame's index
+   */
+  appendFrame(structure) {
+    this.structures.push(structure instanceof Structure ? structure : new Structure(structure));
+    return this.structures.length - 1;
+  }
+
+  /**
    * The frame to display for `step`. May return a Promise in subclasses.
    * @param {number} step
    * @returns {Structure | Promise<Structure> | undefined}

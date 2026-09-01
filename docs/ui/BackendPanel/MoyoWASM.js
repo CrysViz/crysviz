@@ -386,7 +386,7 @@ function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
          atoms:atoms,
          periodic: periodic,
      });
-  container.structures.push(structure);
+  container.appendFrame(structure);
   structureShip.container.push(container)
   const row = createRow({ name: fileName, traj: container.structures.length, step: container.structures.length });
   document.querySelector("#objectTable tbody").appendChild(row);

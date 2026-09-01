@@ -176,7 +176,6 @@ export async function parseOUTCAR(content, fileName) {
     if (structures.length > 1) {
       const store = TrajectoryFrameStore.fromParsedSteps(structures, {
         elements: structures[0].elements,
-        uniqueElements: structures[0].uniqueElements,
         saxisMatrix,
         saxis,
       });

@@ -52,15 +52,14 @@ function uuidBaseFor(store) {
 }
 
 /**
- * @param {{elements: string[], uniqueElements: string[],
- *          spinFrame: {fileSaxis: number[]}}} store the frame source's shared
- *   identity (a TrajectoryFrameStore or any duck-compatible source)
+ * @param {object} store the frame source (identifies the trajectory for
+ *   stable uuids; the frame record itself is self-describing)
  * @param {FramePhysics} ph one frame's physics (already resolved — pass
  *   store.getFramePhysics(i), awaited if the source is asynchronous)
  * @returns {Structure}
  */
 export function materializeFrame(store, ph) {
-  const { elements, uniqueElements, spinFrame } = store;
+  const { elements, spinFrame } = ph;
   const uuidBase = uuidBaseFor(store);
   const atoms = elements.map((element, i) => new Atom({
     position: [ph.positions[i * 3], ph.positions[i * 3 + 1], ph.positions[i * 3 + 2]],
@@ -86,8 +85,8 @@ export function materializeFrame(store, ph) {
     : [];
 
   return new Structure({
-    elements: store.elements,
-    uniqueElements: [...uniqueElements],
+    elements,
+    uniqueElements: [...new Set(elements)],
     lattice: ph.lattice.map(row => [...row]),
     atoms,
     spins,
