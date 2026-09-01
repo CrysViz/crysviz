@@ -87,12 +87,6 @@ export function materializeFrame(store, ph) {
 
 const nearlyEqual = (a, b) => a === b || Math.abs(a - b) < 1e-12;
 
-function sameVec3(a, b) {
-  if (!a && !b) return true;
-  if (!a || !b) return false;
-  return nearlyEqual(a[0], b[0]) && nearlyEqual(a[1], b[1]) && nearlyEqual(a[2], b[2]);
-}
-
 function sameMat3(a, b) {
   if (!a && !b) return true;
   if (!a || !b) return false;
@@ -124,57 +118,81 @@ function emptyDict(d) {
  *  - `atomImages`, `bondMapping`/`bondObjectMapping`, `periodic.wrapped`,
  *    `coordination`, `wyckoff`/`hash`: render/analysis caches.
  *
+ * Compares the frame DIRECTLY against the store's physics and the model
+ * classes' construction defaults — no pristine Structure is built. The
+ * pristine rebuild used to cost as much as materialisation itself (~2.2 ms
+ * per eviction check), which playback pays on every frame switch; the direct
+ * comparison is ~10x cheaper for identical semantics.
+ *
  * @param {Structure} frame the possibly-touched materialised frame
- * @param {Structure} pristine a freshly materialised copy of the same frame
+ * @param {{elements: string[], natoms?: number}} store the frame's source
+ * @param {import('./TrajectoryFrameStore.js').FramePhysics} ph that frame's
+ *   physics (must be synchronously available — see the caller)
  * @returns {boolean}
  */
-export function frameMatchesPristine(frame, pristine) {
+export function frameMatchesPristine(frame, store, ph) {
   try {
-    if (frame.atoms.length !== pristine.atoms.length) return false;
-    if (frame.spins.length !== pristine.spins.length) return false;
-    if (frame.forces.length !== pristine.forces.length) return false;
-    if (!sameMat3(frame.lattice, pristine.lattice)) return false;
-    if (frame.energy !== pristine.energy && !(frame.energy == null && pristine.energy == null)) return false;
+    const n = store.natoms ?? store.elements.length;
+    if (frame.atoms.length !== n) return false;
+    if (frame.spins.length !== (ph.spinRaw ? n : 0)) return false;
+    if (frame.forces.length !== (ph.forces ? n : 0)) return false;
+    if (!sameMat3(frame.lattice, ph.lattice)) return false;
+    if (frame.energy !== ph.energy && !(frame.energy == null && ph.energy == null)) return false;
+    const t = frame.stress?.tensor ?? null;
+    if (!!t !== !!ph.stress || (t && !sameMat3(t, ph.stress))) return false;
 
     // Attached or user-configured state pins the frame. (`polyhedra` — the
     // computed model — is derived and ignored; the SETTINGS are the user's.)
     if (frame.volumetricFields || frame.symmetry) return false;
     if (frame.planes?.length) return false;
     if (frame.velocities) return false;
-    if (frame.polyhedraSettings?.useChemicalFilter !== pristine.polyhedraSettings?.useChemicalFilter
-      || frame.polyhedraSettings?.detectCages !== pristine.polyhedraSettings?.detectCages) return false;
+    if (frame.polyhedraSettings?.useChemicalFilter !== true
+      || frame.polyhedraSettings?.detectCages !== true) return false;
     for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles',
       'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials',
       'spinCategoryStyles', 'forceCategoryStyles', 'atomImageStyles']) {
       if (!emptyDict(frame[k])) return false;
     }
 
-    for (let i = 0; i < frame.atoms.length; i++) {
-      const a = frame.atoms[i], p = pristine.atoms[i];
-      if (!sameVec3(a.position, p.position)) return false;
-      if (a.element !== p.element) return false;
+    for (let i = 0; i < n; i++) {
+      const a = frame.atoms[i];
+      const p = a.position;
+      if (!nearlyEqual(p[0], ph.positions[i * 3])
+        || !nearlyEqual(p[1], ph.positions[i * 3 + 1])
+        || !nearlyEqual(p[2], ph.positions[i * 3 + 2])) return false;
       if (a.userColor !== null || a.hidden || a.cutPlaneImmune) return false;
-      if (a.color !== p.color || a.elementColor !== p.elementColor) return false;
-      if (a.opacity !== p.opacity || a.elementOpacity !== p.elementOpacity) return false;
-      if (a.radiusScale !== p.radiusScale) return false;
-      if (a.species.length !== p.species.length) return false;
-      for (let s = 0; s < a.species.length; s++) {
-        const as = a.species[s], ps = p.species[s];
-        if (as.element !== ps.element || as.occupancy !== ps.occupancy
-          || as.oxidationState !== ps.oxidationState || as.color !== ps.color) return false;
-      }
+      // As constructed, color and elementColor both resolve to the element's
+      // captured default; any deviation is a user recolor.
+      if (a.color !== a.defaultColor || a.elementColor !== a.defaultColor) return false;
+      if (a.opacity !== 1 || a.elementOpacity !== 1) return false;
+      if (a.radiusScale !== 1) return false;
+      // Pristine species: the single fully-occupied entry normalizeSpecies
+      // builds for a plain element.
+      const sp = a.species;
+      if (sp.length !== 1) return false;
+      if (sp[0].element !== store.elements[i] || sp[0].occupancy !== 1
+        || sp[0].oxidationState !== null || sp[0].color !== null) return false;
     }
     for (let i = 0; i < frame.spins.length; i++) {
-      const s = frame.spins[i], p = pristine.spins[i];
-      if (!sameVec3(s.vector, p.vector) || !sameVec3(s.rawVector, p.rawVector)) return false;
+      const s = frame.spins[i];
+      const v = s.vector, r = s.rawVector;
+      if (!nearlyEqual(v[0], ph.spinVectors[i * 3])
+        || !nearlyEqual(v[1], ph.spinVectors[i * 3 + 1])
+        || !nearlyEqual(v[2], ph.spinVectors[i * 3 + 2])) return false;
+      if (!nearlyEqual(r[0], ph.spinRaw[i * 3])
+        || !nearlyEqual(r[1], ph.spinRaw[i * 3 + 1])
+        || !nearlyEqual(r[2], ph.spinRaw[i * 3 + 2])) return false;
       if (s.userColor !== null || s.userMaterial !== null || s.hidden) return false;
-      if (s.scaling !== p.scaling) return false;
+      if (s.scaling !== 1.0) return false;
     }
     for (let i = 0; i < frame.forces.length; i++) {
-      const f = frame.forces[i], p = pristine.forces[i];
-      if (!sameVec3(f.vector, p.vector)) return false;
+      const f = frame.forces[i];
+      const v = f.vector;
+      if (!nearlyEqual(v[0], ph.forces[i * 3])
+        || !nearlyEqual(v[1], ph.forces[i * 3 + 1])
+        || !nearlyEqual(v[2], ph.forces[i * 3 + 2])) return false;
       if (f.userColor !== null || f.userMaterial !== null || f.hidden) return false;
-      if (f.scaling !== p.scaling) return false;
+      if (f.scaling !== 1.0) return false;
     }
     return true;
   } catch {
