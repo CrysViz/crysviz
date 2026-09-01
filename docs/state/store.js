@@ -235,7 +235,7 @@ export const general = {
   forceScale: 1.0,
   forceRadius: 0.08,
   spinScale: 1.0,
-  spinRadius: 0.08,
+  spinRadius: 0.05,
   // Spin colormap range (Spins panel min/max inputs; read with ||-defaults).
   spinMin: 0,
   spinMax: 2,
@@ -457,6 +457,10 @@ export const general = {
   // idle (stats computation isn't free, hence opt-in).
   forceStatsLive: false,
   spinsActive: false, // "Show Spins" toggle draws spin arrows
+  // Draw a spin arrow on every periodic-image copy of an atom too, not
+  // just the primary (Spins panel toggle, default off). Only physically
+  // meaningful when the cell is a magnetic unit cell — see the panel (i).
+  showSpinsOnCopies: false,
   fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
   comparisonActive: false, // "Show Lattice Comparison" keeps the lattice popup synced (shared by both panels below)
   // Master "Enable Comparison" toggle (classic Comparison panel, ui/ComparisonPanel.js):

@@ -499,6 +499,11 @@
   /* ---- Extra opaque surfaces ---------------------------------------------- */
   --textarea-bg: rgba(16, 16, 16, 0.8);
   --float-panel-bg: rgba(26, 26, 26, 0.8);  /* floating scene widgets */
+  /* Widget-mode composition legend: a very light gray, the same in every
+     palette (the embed deliberately wants this look). Used only by
+     body.widget-mode in docs/styles/widgetMode.css. */
+  --comp-legend-widget-bg: #f2f2f2;
+  --comp-legend-widget-fg: #222222; /* fixed dark ink for text on that light bg */
   --popup-bg-deep: rgba(13, 13, 13, 0.95);
 
   /* ---- Lattice axis legend ------------------------------------------------

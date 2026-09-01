@@ -220,10 +220,16 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     speciesVisibility[element] = /** @type {HTMLInputElement} */ (checkbox).checked;
   });
 
+  // With general.showSpinsOnCopies on, draw an arrow at EVERY wrapped image of
+  // an atom (same vector/colour); off (default), only the primary — the `seen`
+  // set skips the periodic copies. Widget mode forces it on for magnetic cells.
+  const showCopies = general.showSpinsOnCopies === true;
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    if (seen.has(srcIdx)) continue;
-    seen.add(srcIdx);
+    if (!showCopies) {
+      if (seen.has(srcIdx)) continue;
+      seen.add(srcIdx);
+    }
 
     const spin = useManualSpins ? spins.find(s => s.atomIndex === srcIdx) : spins[srcIdx];
     if (!spin?.vector) continue;

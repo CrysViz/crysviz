@@ -99,16 +99,31 @@ function fixtureJson() {
 
   // --- Spins ----------------------------------------------------------------
   const spins0 = await page.evaluate(async () => {
-    const { groups, fileBrowser } = await import('./state/store.js');
+    const { groups, fileBrowser, general, app } = await import('./state/store.js');
+    const s = fileBrowser.selectedStructure;
+    const L = s.lattice;
+    const center = [0, 1, 2].map((k) => 0.5 * (L[0][k] + L[1][k] + L[2][k]));
+    const t = app.controls.target;
     return {
       shaft: groups.spinShaftMesh ? groups.spinShaftMesh.count : 0,
       tip: groups.spinTipMesh ? groups.spinTipMesh.count : 0,
-      atoms: fileBrowser.selectedStructure.atoms.length,
-      spinCount: fileBrowser.selectedStructure.spins?.length ?? 0,
+      atoms: s.atoms.length,
+      spinCount: s.spins?.length ?? 0,
+      copiesOn: general.showSpinsOnCopies,
+      target: [t.x, t.y, t.z],
+      center,
+      targetErr: Math.hypot(t.x - center[0], t.y - center[1], t.z - center[2]),
     };
   });
-  H.check('spin meshes present (4 Fe arrows)', spins0.shaft > 0 && spins0.tip > 0, JSON.stringify(spins0));
+  H.check('spin meshes present', spins0.shaft > 0 && spins0.tip > 0, JSON.stringify(spins0));
   H.check('loaded structure is the 8-atom conventional cell', spins0.atoms === 8, JSON.stringify(spins0));
+  // Item 1: initial load centers the orbit target on the structure (not a corner).
+  H.check('initial camera target is the structure center (not a cell corner)',
+    spins0.targetErr < 0.05, JSON.stringify({ target: spins0.target, center: spins0.center }));
+  // Item 3: widget forces spins on periodic copies, so a corner atom (Fe at
+  // 0,0,0) yields extra arrow instances beyond the 4 primary Fe (shaft = 2/arrow).
+  H.check('widget forces spins on periodic copies (extra arrow instances)',
+    spins0.copiesOn === true && spins0.shaft > 8, JSON.stringify(spins0));
 
   // --- Logo -----------------------------------------------------------------
   const logo = await page.evaluate(() => {

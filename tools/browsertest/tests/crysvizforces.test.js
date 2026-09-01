@@ -113,6 +113,21 @@ const H = require('../harness');
   H.check('reload redraws the force AND spin arrows on screen',
     restored.forceArrows > 0 && restored.spinArrows > 0, JSON.stringify(restored));
 
+  // Full-app default of the new "Show spins on periodic copies" toggle: OFF,
+  // and the checkbox is built unchecked.
+  const copies = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const { addSpinPanel } = await import('./ui/SpinPanel.js');
+    const host = document.createElement('div');
+    host.id = 'cvPanelBody-spins-test';
+    document.body.appendChild(host);
+    addSpinPanel('cvPanelBody-spins-test');
+    const cb = document.getElementById('spinShowCopiesCheckbox');
+    return { flag: general.showSpinsOnCopies, exists: !!cb, checked: cb ? cb.checked : null };
+  });
+  H.check('full app: Show-spins-on-copies toggle exists and defaults off',
+    copies.flag === false && copies.exists === true && copies.checked === false, JSON.stringify(copies));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

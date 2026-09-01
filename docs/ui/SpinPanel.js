@@ -170,6 +170,32 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   sizeWrapper.appendChild(sizeSlider);
   content.appendChild(sizeWrapper);
 
+  // --- Show spins on periodic copies -----------------------------------
+  const copiesWrapper = document.createElement("div");
+  copiesWrapper.className = "cv-force-row";
+  const copiesLabel = document.createElement("label");
+  copiesLabel.className = "cv-force-check";
+  const copiesCheckbox = document.createElement("input");
+  copiesCheckbox.type = "checkbox";
+  copiesCheckbox.id = "spinShowCopiesCheckbox";
+  copiesCheckbox.checked = general.showSpinsOnCopies === true;
+  copiesLabel.appendChild(copiesCheckbox);
+  copiesLabel.appendChild(document.createTextNode("Show spins on periodic copies"));
+  // (i) affordance: same title-tooltip pattern as the SAXIS input above.
+  const copiesInfo = document.createElement("span");
+  copiesInfo.className = "cv-info-marker";
+  copiesInfo.textContent = "\u24D8"; // circled i
+  copiesInfo.title = "Periodic copies are only guaranteed correct when the cell "
+    + "is a magnetic unit cell. Spins inscribed onto a non-magnetic cell may "
+    + "differ between equivalent sites.";
+  copiesLabel.appendChild(copiesInfo);
+  copiesWrapper.appendChild(copiesLabel);
+  content.appendChild(copiesWrapper);
+  copiesCheckbox.addEventListener("change", () => {
+    general.showSpinsOnCopies = copiesCheckbox.checked;
+    if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+  });
+
   // --- Spin Reference Frame + Visual Rotation ---------------------------
   // A moment is a Cartesian vector, but VASP reports it in the SAXIS-local
   // frame, so a non-default SAXIS needs re-projecting; and for collinear /

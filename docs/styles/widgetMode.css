@@ -159,3 +159,31 @@ body.widget-mode .widget-boot-error {
   text-align: center;
   z-index: var(--z-overlay-widget);
 }
+
+/* Composition legend, widget-mode only: moderately smaller and on a fixed very
+   light-gray surface (--comp-legend-widget-bg) with fixed dark text
+   (--comp-legend-widget-fg), so the embed reads the same in every theme. The
+   px bases below stay multiplied by --legend-scale so the box still scales as
+   one; only the base sizes shrink. */
+body.widget-mode .comp-legend-body {
+  padding: var(--sp-2);
+  background: var(--comp-legend-widget-bg);
+}
+body.widget-mode .comp-legend-list {
+  gap: calc(4px * var(--legend-scale));
+}
+body.widget-mode .comp-legend-row {
+  gap: calc(7px * var(--legend-scale));
+}
+body.widget-mode .comp-legend-swatch {
+  width: calc(22px * var(--legend-scale));
+  height: calc(22px * var(--legend-scale));
+}
+body.widget-mode .comp-legend-label {
+  font-size: calc(13px * var(--legend-scale));
+  color: var(--comp-legend-widget-fg);
+}
+body.widget-mode .comp-legend-sub {
+  font-size: calc(9px * var(--legend-scale));
+  color: var(--comp-legend-widget-fg);
+}

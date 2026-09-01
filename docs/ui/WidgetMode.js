@@ -62,12 +62,21 @@ export function initWidgetMode(opts) {
   // updateStructureFromRowAndStep would run applyDefaultFeatureToggles —
   // FEATURE_TOGGLE_DEFAULTS turns showSpinsToggle off and erases the arrows.
   general.featuresLocked = true;
+  // Magnetic unit cells from the database: show a spin arrow on every periodic
+  // image, not just the primary atom (see general.showSpinsOnCopies).
+  general.showSpinsOnCopies = true;
 
   setupFramesMode();
   buildLogo(opts?.href ?? '');
   buildSettings();
   ensureSpinsRendered();
   openLockedLegend();
+  // A widget .crysviz carries no camera pose, so loadStructure's crysviz branch
+  // skipped its fit and left the orbit target at the OrbitControls default
+  // (0,0,0 = a cell corner). Re-center on the structure like a cell swap does.
+  // (initWidgetMode runs only in widget mode, so full-app restored-camera
+  // sessions are never touched.)
+  recenterCamera();
 }
 
 /**
