@@ -17,9 +17,27 @@ import { Atom } from './Atom.js';
 import { Spin } from './Spin.js';
 import { Force } from './Force.js';
 import { Stress } from './Stress.js';
-// Direct module, not the utils barrel: materialisation should drag in nothing
-// beyond what it uses (the barrel reaches font/DOM helpers).
-import { generateID } from '../utils/UUIDModule.js';
+
+/**
+ * Per-trajectory uuid base, minted once per frame source and NOT registered
+ * anywhere. Deliberately not utils' generateID: that routes every id through
+ * the global `usedIDs` Set, which is never pruned — and frames here are
+ * materialised over and over (every view, plus a pristine copy per eviction
+ * check), so playback was pumping ~900 never-released strings into that Set
+ * per frame shown. Atom uuids derive as `${element}-${base}-a${index}`:
+ * stable across rematerialisations (the same physical atom keeps its id),
+ * unique within any structure by index, unique across coexisting structures
+ * by base, and — with dashes stripped — within the 16-byte cap the GPU
+ * picking attribute encodes (render/AtomsFracUpdateModule.js).
+ * @param {object} store
+ * @returns {string}
+ */
+function uuidBaseFor(store) {
+  if (!store._frameUuidBase) {
+    store._frameUuidBase = Math.random().toString(36).slice(2, 8).padEnd(6, '0');
+  }
+  return store._frameUuidBase;
+}
 
 /**
  * @param {import('./TrajectoryFrameStore.js').TrajectoryFrameStore} store
@@ -30,10 +48,11 @@ import { generateID } from '../utils/UUIDModule.js';
  */
 export function materializeFrame(store, ph) {
   const { elements, uniqueElements, spinFrame } = store;
+  const uuidBase = uuidBaseFor(store);
   const atoms = elements.map((element, i) => new Atom({
     position: [ph.positions[i * 3], ph.positions[i * 3 + 1], ph.positions[i * 3 + 2]],
     element,
-    uuid: generateID([element]),
+    uuid: `${element}-${uuidBase}-a${i}`,
   }));
   // Spin/Force construction mirrors io/ReadOutcarModule.js's eager path: the
   // teal default color, scaling 1.0, vector already rotated into global
