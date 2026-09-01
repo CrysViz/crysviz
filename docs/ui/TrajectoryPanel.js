@@ -507,12 +507,15 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   if (!container || container.structures.length === 0) return;
 
   trajectoryPlayerElements.frameSlider.max = container.structures.length - 1;
-  // Clamp a frame index carried over from a previous (longer) trajectory.
-  currentFrame = Math.min(currentFrame, Math.max(0, container.structures.length - 1));
-  // Don't re-render the scene on build while a live run owns it, or for a
-  // single-frame container (avoids a redundant re-render of the source structure).
-  const renderOnBuild = !liveActive && container.structures.length > 1;
-  updateFrame(currentFrame, container, { render: renderOnBuild });
+  // The transport follows the CURRENT selection: the frame this row is
+  // showing (fileBrowser.stepInput, set by every selection path before the
+  // panel rebuilds) — never the module-level frame index left over from a
+  // previously viewed trajectory, which used to hijack the newly selected
+  // row's own step on rebuild.
+  currentFrame = Math.max(0, Math.min(container.structures.length - 1, fileBrowser.stepInput ?? 0));
+  // That frame is already rendered by the selection path, so the build only
+  // syncs the transport UI — no scene re-render.
+  updateFrame(currentFrame, container, { render: false });
   refreshPlotFromContainer(container);
   updateComputeStepStatsBtnVisibility(container);
 
