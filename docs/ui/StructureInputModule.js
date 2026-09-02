@@ -5,6 +5,7 @@ import { FileSource } from '../io/FileSource.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
+import { restoreAtomColors } from '../utils/ColorModule.js';
 import {
   transpose3x3,
   invert3x3,
@@ -26,19 +27,19 @@ export {
 
 
 
-export  function parsePOSCAR(content, fileName) {
+export  function parsePOSCAR(content, fileName, options = undefined) {
    console.log(content)
   const structure = readPOSCAR(content, fileName);
-  return initializeWithPOSCAR(structure, fileName);
+  return initializeWithPOSCAR(structure, fileName, options);
 }
 
-export function initializeWithPOSCAR(structure, fileName) {
+export function initializeWithPOSCAR(structure, fileName, options = undefined) {
   const container = new StructureContainer({
     fileName: fileName,
     structures: [structure],
   });
 
-  return initializeUIOnLoad(container);
+  return initializeUIOnLoad(container, options);
 }
 
 
@@ -79,7 +80,17 @@ export function isLikelyOUTCARContent(content) {
   return false;
 }
 
-export function initializeUIOnLoad(structureContainer) {
+/**
+ * Register a loaded container with the file browser and select it — every
+ * load path funnels through here.
+ * @param {any} structureContainer
+ * @param {{ restoreStoredColors?: boolean }} [options] restoreStoredColors
+ *   (default true) re-applies the per-atom user colours saved for this same
+ *   file in an earlier session (utils/ColorModule.js). A share-URL / .crysviz
+ *   load passes false: that state is a complete snapshot of the colours and
+ *   must not have stored overrides mixed in underneath it.
+ */
+export function initializeUIOnLoad(structureContainer, { restoreStoredColors = true } = {}) {
   console.log(structureContainer);
   const fileName = structureContainer.fileName;
   const structures = structureContainer.structures;
@@ -89,6 +100,10 @@ export function initializeUIOnLoad(structureContainer) {
   const row = createRow({ name: fileName, traj, step });
   tableBody.appendChild(row);
   fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
+
+  // Before the row is selected (and rendered) below, so the first rebuild
+  // already paints the restored colours.
+  if (restoreStoredColors) restoreAtomColors(structureContainer);
 
   structureShip.container.push(structureContainer);
   selectLastAddedRow();

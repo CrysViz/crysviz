@@ -1,5 +1,5 @@
 import { fileBrowser, groups, general, structureShip, mode } from '../../../state/store.js';
-import { colorHexToCss, getAtomColor, setAtomColor } from '../../../utils/ColorModule.js';
+import { colorHexToCss, getAtomColor, setAtomColor, saveAtomColors, scheduleAtomColorSave } from '../../../utils/ColorModule.js';
 import { clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom, refreshAtomWedgeTexture } from '../../../render/AtomsFracUpdateModule.js';
 import { isVacancy } from '../../../render/VacancyMarkerModule.js';
@@ -52,6 +52,9 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
         updateSingleAtomColor(atomIndex, imageIndex, el, hex, hex);
       });
     });
+    // Keep the overrides for the next session (debounced — this fires on
+    // every pointer move while dragging in the picker).
+    scheduleAtomColorSave(structure);
 
     groups.atomsMesh.instanceColor.needsUpdate = true;
     if (groups.bondsMesh) {
@@ -253,6 +256,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     const currentMode = general.atomsColor; // current color mode
 
     resetElementColorData(structure, currentMode);
+    saveAtomColors(structure); // drops the cleared overrides from storage too
 
     atomIndices.forEach((atomIndex) => {
       const atom = structure.atoms[atomIndex];
