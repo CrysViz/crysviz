@@ -31,6 +31,7 @@ import { makeSectionHeadline } from './sectionHeadline.js';
 import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
 import { createFeatureLockSwitch } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
+import { addFocusRegionsPanel, removeFocusRegionsPanel } from '../FocusRegionsPanel.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -569,6 +570,18 @@ export function registerDefaultPanels() {
     // async builder: fills the body once the Moyo WASM module is ready.
     buildContent(body) { addMoyoPanel(body.id); },
     defaults: { dock: 'left', order: 85, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'focusRegions',
+    title: 'Focus Regions',
+    lifecycle: 'rebuild',
+    hiddenUntilStructure: true,
+    infoMd: './data/focusRegionsInfo.md',
+    available() { return !!fileBrowser.selectedStructure; },
+    buildContent(body) { addFocusRegionsPanel(body.id); },
+    onDestroyContent() { removeFocusRegionsPanel(); },
+    defaults: { dock: 'left', order: 87, collapsed: true },
   });
 
   registerPanel({

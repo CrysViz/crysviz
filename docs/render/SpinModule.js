@@ -2,6 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { app, fileBrowser, groups, general } from '../state/store.js';
 import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
 import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
+import { applyFocusToArrows } from './FocusRegionModule.js';
 
 
 
@@ -364,4 +365,5 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
   groups.spinTipMesh.instanceColor.needsUpdate = true;
   groups.spinTipMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.spinTipMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  applyFocusToArrows(structure, 'spins');
 }

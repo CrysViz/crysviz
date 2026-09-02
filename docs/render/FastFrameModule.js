@@ -3,6 +3,7 @@ import * as THREE from '../external/three/three.module.js';
 import { groups, general } from '../state/store.js';
 import { updateLattice } from './LatticeModule.js';
 import { deriveVisibleWrapped } from './AtomsFracUpdateModule.js';
+import { applyFocusRegions } from './FocusRegionModule.js';
 import { updateForces } from './ForceModule.js';
 import { getActiveCutPlanes, isBondCutByPlanes, hideSingleBond } from './BondsFracUpdateModule.js';
 import { requestRender } from './AnimateModule.js';
@@ -280,6 +281,7 @@ export function applyFrameFast(structure) {
   // path here — but it must still run each frame to keep .visibleWrapped's
   // positions from going stale relative to the cart update just committed.
   deriveVisibleWrapped(structure);
+  applyFocusRegions(structure);
 
   // ---- Lattice: only rebuild the cell box when the cell actually changes ----
   if (cellChangedEnough(lattice, _prevCell)) {

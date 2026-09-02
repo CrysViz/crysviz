@@ -75,6 +75,10 @@ export class ForwardPipeline {
         material.transparent = !!spec.needsTransparency;
         material.depthWrite = true;
         break;
+      case 'arrows':
+        material.transparent = !!spec.needsTransparency;
+        material.depthWrite = !spec.needsTransparency;
+        break;
       case 'compAtoms': {
         // Comparison ghost atoms: uniform opacity only.
         const isTransparent = opacity !== 1;

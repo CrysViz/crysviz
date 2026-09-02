@@ -10,6 +10,7 @@ import {getAtomImageStyle} from './AtomsFracUpdateModule.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { requestRender } from './AnimateModule.js';
+import { getFocusOpacityForInstance } from './FocusRegionModule.js';
 
 
 
@@ -916,7 +917,9 @@ function syncBondMaterialTransparency(baseOpacity = 1.0) {
   if (!mesh?.material) return;
   const hasTransparentInstances = fileBrowser.selectedStructure?.bonds?.some((bond) =>
     (bond.alpha ?? 1) < 0.999) ?? false;
-  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
+  const hasFocusTransparency = (fileBrowser.selectedStructure?.focusRegions ?? [])
+    .some((region) => region.enabled !== false && region.center?.length);
+  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances || hasFocusTransparency;
   applyTransparency(mesh.material, {
     kind: 'bonds', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
   });
@@ -995,8 +998,12 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   // Carries the half's own instance id so the shader can look up that
   // endpoint's species in the wedge texture (was an unused constant 0).
   mesh.geometry.attributes.instanceElementIndex.setX(index*2, index*2);
+  const focusOpacity = Math.min(
+    getFocusOpacityForInstance(bond.indices[0]),
+    getFocusOpacityForInstance(bond.indices[1]),
+  );
   mesh.geometry.attributes.instanceOpacity.setX(index*2,
-    Math.max(0, Math.min(1, bond.alpha ?? 1)));
+    Math.max(0, Math.min(1, bond.alpha ?? 1)) * focusOpacity);
 
   // ---- second half ----
   _bondDummy.position.copy(bond.center2);
@@ -1011,7 +1018,7 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2 + 1, 0);
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, index*2 + 1);
   mesh.geometry.attributes.instanceOpacity.setX(index*2 + 1,
-    Math.max(0, Math.min(1, bond.alpha ?? 1)));
+    Math.max(0, Math.min(1, bond.alpha ?? 1)) * focusOpacity);
 }
 
 export function hideSingleBond(index) {

@@ -1061,6 +1061,35 @@ export function addAtomsToSelectionByInstances(instanceIds, options = {}) {
   );
 }
 
+/** Replace the current atom selection with a set of visible mesh instances.
+ * Used by region-based tools that define a complete selection in one action. */
+export function selectAtomsByInstances(instanceIds, options = {}) {
+  if (!groups.atomsMesh) return snapshotSelectedAtoms();
+  const previousSelection = snapshotSelectedAtoms();
+  const nextSelection = [];
+  for (const instanceId of instanceIds ?? []) {
+    const selectionAtom = buildSelectionAtomFromHit({ instanceId, object: groups.atomsMesh });
+    if (!selectionAtom || nextSelection.some((atom) => sameSelectionAtom(atom, selectionAtom))) continue;
+    nextSelection.push(selectionAtom);
+  }
+  const removedAtoms = previousSelection
+    .filter((atom) => !nextSelection.some((next) => sameSelectionAtom(atom, next)))
+    .map(cloneSelectionAtom);
+  const addedAtoms = nextSelection
+    .filter((atom) => !previousSelection.some((previous) => sameSelectionAtom(atom, previous)))
+    .map(cloneSelectionAtom);
+  return commitSelection(reindexSelection(nextSelection), {
+    action: previousSelection.length ? 'replaced' : 'selected',
+    atom: null,
+    atoms: [...addedAtoms, ...removedAtoms],
+    addedAtoms,
+    removedAtoms,
+    modifiers: getEventModifiers(options.sourceEvent),
+    sourceEvent: options.sourceEvent ?? null,
+    reason: options.reason ?? 'batch',
+  }, { scrollToLast: false, revealPanel: options.revealPanel ?? false });
+}
+
 /**
  * Panel→3D: select an atom from a click on its row in the Atoms/Wyckoff tab.
  * Runs through the same selection machinery as double-clicking the atom in the

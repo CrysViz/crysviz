@@ -1,0 +1,192 @@
+// Focus Regions are a reversible viewing aid for defects and molecules in
+// large cells. These checks intentionally assert the scientific interaction
+// semantics, not implementation details or screenshots:
+// - the inner sphere and outer environment classify in Cartesian Å;
+// - overlapping regions preserve anything important to either region;
+// - centers/exceptions remain visible;
+// - focus alpha composes with, and never overwrites, authored atom alpha;
+// - the real defect CONTCAR can create and edit more than one region.
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const H = require('../harness');
+
+(async () => {
+  const { browser, page, errors } = await H.launchApp();
+
+  const math = await page.evaluate(async () => {
+    const { focusOpacityAt, combinedFocusOpacity } = await import('./render/FocusRegionModule.js');
+    const region = {
+      enabled: true, center: [0, 0, 0], centerSourceIndices: [7], excludedSourceIndices: [9],
+      innerEnabled: true, innerRadius: 2, innerOpacity: 0.8, outerOpacity: 0.2,
+    };
+    const second = { ...region, center: [10, 0, 0], centerSourceIndices: [] };
+    return {
+      inner: focusOpacityAt([1, 0, 0], region, 1),
+      outerNear: focusOpacityAt([3, 0, 0], region, 1),
+      outerFar: focusOpacityAt([60, 0, 0], region, 1),
+      center: focusOpacityAt([20, 0, 0], region, 7),
+      excluded: focusOpacityAt([20, 0, 0], region, 9),
+      overlap: combinedFocusOpacity([9, 0, 0], 1, [region, second]),
+      earlierFocus: combinedFocusOpacity([0, 0, 0], 7, [region, second]),
+      noInner: focusOpacityAt([1, 0, 0], { ...region, innerEnabled: false }, 1),
+    };
+  });
+  H.check('inner sphere and all outer distances use their intended opacity',
+    math.inner === 0.8 && math.outerNear === 0.2 && math.outerFar === 0.2, JSON.stringify(math));
+  H.check('focus atoms and explicit exceptions remain unchanged',
+    math.center === 1 && math.excluded === 1, JSON.stringify(math));
+  H.check('overlapping regions choose maximum visibility', math.overlap === 0.8, JSON.stringify(math));
+  H.check('adding another region cannot dim an earlier focus atom',
+    math.earlierFocus === 1, JSON.stringify(math));
+  H.check('disabling the inner region applies the outer rule near a molecule',
+    math.noInner === 0.2, JSON.stringify(math));
+
+  const contcar = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'tests', 'wav_dat', 'CONTCAR'), 'utf8');
+  await page.evaluate(async (source) => {
+    const cv = await import('./core/crystal-viewer.js');
+    await cv.loadStructure(source, 'defect-CONTCAR');
+  }, contcar);
+  await page.waitForTimeout(1500);
+
+  const result = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const focus = await import('./render/FocusRegionModule.js');
+    const panels = await import('./ui/panels/PanelManager.js');
+    const structure = fileBrowser.selectedStructure;
+    const wrapped = structure.periodic.visibleWrapped;
+    const atom0 = structure.atoms[wrapped.srcIndex[0]];
+    atom0.setOpacity(0.6);
+    const first = focus.createFocusRegion([{
+      sourceIndex: wrapped.srcIndex[0], element: wrapped.elements[0], position: wrapped.cart[0],
+    }]);
+    first.innerRadius = 0.1;
+    first.outerOpacity = 0.1;
+    const second = focus.createFocusRegion([{
+      sourceIndex: wrapped.srcIndex[1], element: wrapped.elements[1], position: wrapped.cart[1],
+    }]);
+    second.innerEnabled = false;
+    second.outerOpacity = 0.1;
+    const originalCenterFrac = [...first.centerFractional];
+    const adjustedCenterFrac = originalCenterFrac.map((value, axis) => value + (axis + 1) * 0.01);
+    focus.setFocusRegionCenterFractional(first, adjustedCenterFrac);
+    focus.applyFocusRegions();
+    panels.getPanel('focusRegions').expand();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const attr = groups.atomsMesh.geometry.attributes.instanceOpacity;
+    const centerSources = new Set([...first.centerSourceIndices, ...second.centerSourceIndices]);
+    const farIndex = wrapped.cart.findIndex((p, index) => index > 1
+      && !centerSources.has(wrapped.srcIndex[index])
+      && Math.hypot(p[0] - first.center[0], p[1] - first.center[1], p[2] - first.center[2]) > first.innerRadius
+      && Math.hypot(p[0] - second.center[0], p[1] - second.center[1], p[2] - second.center[2]) > second.innerRadius);
+    const { Force, Spin } = await import('./model/index.js');
+    const { updateForces, updateSpins } = await import('./render/index.js');
+    structure.forces = structure.atoms.map(() => new Force({ vector: [1, 0, 0] }));
+    structure.spins = structure.atoms.map(() => new Spin({ vector: [0, 0, 1] }));
+    const spinVis = document.createElement('div');
+    spinVis.id = 'speciesVisibilityContainer';
+    [...new Set(structure.elements)].forEach((element) => {
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox'; checkbox.id = `species-${element}`; checkbox.checked = true;
+      spinVis.appendChild(checkbox);
+    });
+    document.body.appendChild(spinVis);
+    updateForces(); updateSpins();
+    const farSource = farIndex >= 0 ? wrapped.srcIndex[farIndex] : -1;
+    const forceArrow = groups.forcesInstanceBySrcIndex?.get(farSource);
+    const spinArrow = groups.spinsInstanceBySrcIndex?.get(farSource);
+    return {
+      atomCount: structure.atoms.length,
+      regionCount: structure.focusRegions.length,
+      cards: document.querySelectorAll('#cvPanelBody-focusRegions .focus-regions-card').length,
+      innerToggles: document.querySelectorAll('#cvPanelBody-focusRegions [id^="focusInner-"]').length,
+      labels: [...document.querySelectorAll('#cvPanelBody-focusRegions .focus-regions-range-heading > span:first-child')]
+        .map((label) => label.textContent),
+      centerInputs: document.querySelectorAll('.focus-regions-center-coordinates input').length,
+      originalCenterFrac,
+      adjustedCenterFrac,
+      actualCenterFrac: [...first.centerFractional],
+      centerOffsetFrac: [...first.centerOffsetFrac],
+      authoredOpacity: atom0.getOpacity(),
+      centerDisplayOpacity: attr.getX(0),
+      farDisplayOpacity: farIndex >= 0 ? attr.getX(farIndex) : null,
+      farIndex,
+      forceArrowOpacity: forceArrow == null ? null
+        : groups.forcesShaftMesh.geometry.attributes.instanceOpacity.getX(forceArrow * 2),
+      spinArrowOpacity: spinArrow == null ? null
+        : groups.spinShaftMesh.geometry.attributes.instanceOpacity.getX(spinArrow * 2),
+    };
+  });
+  H.check('the supplied defect structure loads as a genuinely large atom set',
+    result.atomCount > 100, JSON.stringify(result));
+  H.check('multiple regions have independent cards and inner-region controls',
+    result.regionCount === 2 && result.cards === 2 && result.innerToggles === 2, JSON.stringify(result));
+  H.check('the panel exposes only inner radius, inner opacity, and outer opacity',
+    result.labels.includes('Inner radius') && result.labels.includes('Inner opacity')
+      && result.labels.includes('Outer opacity') && !result.labels.includes('Outer radius')
+      && !result.labels.includes('Beyond opacity'), JSON.stringify(result.labels));
+  H.check('the active inner region exposes editable fractional center coordinates',
+    result.centerInputs === 3
+      && result.actualCenterFrac.every((value, axis) => Math.abs(value - result.adjustedCenterFrac[axis]) < 1e-9)
+      && result.centerOffsetFrac.every((value, axis) => Math.abs(value - (axis + 1) * 0.01) < 1e-9),
+    JSON.stringify(result));
+  H.check('focus keeps the center visible without overwriting authored alpha',
+    Math.abs(result.authoredOpacity - 0.6) < 1e-6
+      && Math.abs(result.centerDisplayOpacity - 0.6) < 1e-5, JSON.stringify(result));
+  H.check('atoms outside every region are aggressively reduced',
+    result.farIndex >= 0 && result.farDisplayOpacity <= 0.1001, JSON.stringify(result));
+  H.check('force and spin arrows follow their atom focus opacity',
+    result.forceArrowOpacity <= 0.1001 && result.spinArrowOpacity <= 0.1001,
+    JSON.stringify(result));
+
+  const regionSelection = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { getSelectedAtoms } = await import('./ui/SelectAndHighlightModule.js');
+    const structure = fileBrowser.selectedStructure;
+    const region = structure.focusRegions[0];
+    region.innerRadius = 2;
+    region.excludedSourceIndices = [structure.periodic.visibleWrapped.srcIndex.at(-1)];
+    document.querySelector('.focus-regions-card .focus-regions-select')?.click();
+    document.querySelector('#selectionActionBar .si-selbar-coordinates-toggle')?.click();
+    const selected = getSelectedAtoms();
+    return {
+      selectedCount: selected.length,
+      exceptionSelected: selected.some((atom) => atom.sourceIndex === region.excludedSourceIndices[0]),
+      coordinateAreas: document.querySelectorAll('#selectionActionBar .si-selbar-coordinates textarea').length,
+      fractionalText: document.querySelector('#selectionActionBar .si-selbar-coordinates textarea')?.value ?? '',
+      cartesianText: document.querySelectorAll('#selectionActionBar .si-selbar-coordinates textarea')[1]?.value ?? '',
+      copyButtons: document.querySelectorAll('#selectionActionBar .si-selbar-copy').length,
+    };
+  });
+  H.check('the region action selects inner atoms and explicit exceptions',
+    regionSelection.selectedCount > 1 && regionSelection.exceptionSelected, JSON.stringify(regionSelection));
+  H.check('the selection bar exposes copyable fractional and Cartesian coordinates',
+    regionSelection.coordinateAreas === 2 && regionSelection.copyButtons === 2
+      && regionSelection.fractionalText.includes('\t') && regionSelection.cartesianText.includes('\t'),
+    JSON.stringify(regionSelection));
+
+  const reversible = await page.evaluate(async (farIndex) => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const { captureState } = await import('./ui/ShareModule.js');
+    const { clearFocusRegions } = await import('./render/FocusRegionModule.js');
+    const captured = captureState();
+    clearFocusRegions();
+    const source = fileBrowser.selectedStructure.periodic.visibleWrapped.srcIndex[farIndex];
+    const authored = fileBrowser.selectedStructure.atoms[source].getOpacity();
+    return {
+      savedRegions: captured.display.focusRegions?.length,
+      restoredDisplay: groups.atomsMesh.geometry.attributes.instanceOpacity.getX(farIndex),
+      authored,
+    };
+  }, result.farIndex);
+  H.check('shared views retain focus-region definitions', reversible.savedRegions === 2,
+    JSON.stringify(reversible));
+  H.check('clearing every region restores the atom’s authored appearance',
+    Math.abs(reversible.restoredDisplay - reversible.authored) < 1e-5, JSON.stringify(reversible));
+
+  H.check('no page errors', errors.length === 0, errors.join(' | '));
+  await H.finish(browser);
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

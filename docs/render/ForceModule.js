@@ -3,6 +3,7 @@ import { app, fileBrowser, groups, general } from '../state/store.js';
 import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
 import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
 import { refreshForceHistogram } from '../ui/AnalysisPanels/ForceHistogram.js';
+import { applyFocusToArrows } from './FocusRegionModule.js';
 
 const SHAFT_SEGS = 20;
 const TIP_SEGS = 20;
@@ -351,4 +352,5 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   groups.forcesTipMesh.instanceColor.needsUpdate = true;
   groups.forcesTipMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.forcesTipMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  applyFocusToArrows(structure, 'forces');
 }

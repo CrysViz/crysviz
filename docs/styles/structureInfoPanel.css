@@ -1075,11 +1075,41 @@
    secondary actions on the bar rather than primary buttons. Scoped through
    .si-selection-bar to out-rank .cv-panel-body button's font-size (panelWindow.css). */
 .si-selection-bar .si-selbar-clear,
-.si-selection-bar .si-selbar-reset {
+.si-selection-bar .si-selbar-reset,
+.si-selection-bar .si-selbar-coordinates-toggle,
+.si-selection-bar .si-selbar-copy {
   flex: none;
   padding: 1px var(--sp-2);
   font-size: var(--fs-xs);
   line-height: 1.4;
+}
+.si-selbar-header-actions,
+.si-selbar-coordinate-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.si-selbar-coordinates {
+  display: grid;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  background: var(--group-bg);
+}
+.si-selbar-coordinate-heading {
+  justify-content: space-between;
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-xs);
+}
+.si-selbar-coordinates textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  padding: var(--sp-1) var(--sp-2);
+  font: var(--fs-xs)/1.45 var(--font-mono, monospace);
+  white-space: pre;
 }
 .si-selbar-color-row {
   display: flex;

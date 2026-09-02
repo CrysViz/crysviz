@@ -1,0 +1,129 @@
+.focus-regions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.focus-regions-hint,
+.focus-regions-empty {
+  margin: 0;
+  color: var(--fg-75);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.focus-regions-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.focus-regions-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.focus-regions-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1-5, 6px);
+  padding: var(--sp-2);
+  border: 1px solid var(--line-1);
+  border-left: 3px solid var(--accent-fg);
+  border-radius: var(--radius-sm);
+  background: var(--group-bg);
+}
+
+.focus-regions-card-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.focus-regions-card-header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+
+.focus-regions-delete {
+  min-width: var(--control-h);
+}
+
+.focus-regions-summary {
+  color: var(--fg-75);
+  font-size: var(--fs-xs);
+}
+
+.focus-regions-center {
+  display: grid;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+}
+
+.focus-regions-center-coordinates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 0.3rem;
+}
+
+.focus-regions-center-coordinates input {
+  min-width: 0;
+  width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-sm);
+}
+
+.focus-regions-inner-toggle {
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-1) 0 0;
+}
+
+.focus-regions-inner-toggle-text {
+  font-size: var(--fs-sm);
+}
+
+.focus-regions-range {
+  display: grid;
+  gap: var(--sp-1);
+}
+
+.focus-regions-range-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  color: var(--fg-85);
+  font-size: var(--fs-xs);
+}
+
+.focus-regions-range-heading output {
+  color: var(--accent-fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.focus-regions-range input {
+  width: 100%;
+}
+
+.focus-regions-exceptions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  padding-top: var(--sp-1);
+  border-top: 1px solid var(--line-1);
+  font-size: var(--fs-xs);
+}
+
+.focus-regions-select {
+  align-self: flex-start;
+  font-size: var(--fs-xs);
+}
+
+.focus-regions-exceptions > span {
+  flex: 1 1 100%;
+  color: var(--fg-75);
+}
