@@ -422,6 +422,11 @@ export const general = {
   // (corner/edge/face atoms duplicated onto all their images); widening e.g.
   // xmax to 1.2 reveals atoms up to 0.2 of a cell past the boundary. Applied
   // in render/LatticeModule.js periodicWrapped (JS + WASM parity).
+  // Everything else drawn per image follows the same region: one force/spin
+  // arrow per drawn atom (render/ForceModule.js, render/SpinModule.js) and the
+  // volumetric field, which is repeated into every cell the region reaches and
+  // clipped to it (model/Isosurface.js setPeriodicBounds; the tracers march the
+  // same box, render/pipeline/raytrace/fieldChunk.js).
   periodicBounds:{ xmin:0, xmax:1, ymin:0, ymax:1, zmin:0, zmax:1 },
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   completePolyhedra:false, // Show the out-of-cell atoms needed to complete the polyhedra

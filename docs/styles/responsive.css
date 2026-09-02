@@ -555,6 +555,7 @@
   /* ---- backendPanel.css / controlPanel.css: every --control-h consumer ---- */
   .calcButton,
   .planes-num-input,
+  .field-iso-input,
   .atomistic-input-sm,
   .atomistic-rattle-action .calcButton {
     min-height: var(--control-h-touch);

@@ -53,6 +53,7 @@ import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
+import { applyFieldPeriodicBounds, updateForces, updateSpins } from '../render/index.js';
 
 // .........................................................................................................
 // Import Panels
@@ -158,6 +159,16 @@ export function updateVisualization(options = {}) {
     // and rely on polyhedra refreshing.
     reRenderPolyhedra = true,
 
+    // The periodic IMAGE SET itself changed — "Show Periodic Images", the
+    // Cell & Supercell panel's display boundary (general.periodicBounds), PBC
+    // bonds. Atoms and bonds are rebuilt from it by the flags above; the other
+    // things drawn per image (force/spin arrows, the volumetric field) are
+    // refreshed by this one, since nothing else in the app watches the
+    // boundary. Off by default: the hot paths (MD/relax frames, trajectory
+    // playback) move atoms within a FIXED image set and refresh their own
+    // arrows.
+    reRenderPeriodic = false,
+
     mOpacity = general.mainOpacity,
     reRenderField = false
   } = options;
@@ -197,6 +208,21 @@ export function updateVisualization(options = {}) {
   if (!reRenderBonds && bondsUpdate && general.showBonds) {
     console.warn("Calling updateBonds")
     updateBonds(mOpacity)
+  }
+
+  // Everything else that is drawn once per periodic image: one arrow per drawn
+  // atom (render/SpinModule.js, render/ForceModule.js) and the volumetric
+  // field repeated into the cells the boundary reaches (render/
+  // Render3DFieldModule.js). Rebuilt, not moved — the image COUNT changed.
+  // (Like ShareModule.js and SelectAndHighlightModule.js, this refresh always
+  // draws the structure's own spins: SpinPanel.js's separate "manual spins"
+  // textarea mode lives in that panel's DOM, so a boundary edit made while
+  // manual spins are showing reverts to the structure's until the next manual
+  // redraw.)
+  if (reRenderPeriodic) {
+    if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
+    if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
+    applyFieldPeriodicBounds();
   }
 
   // Overlay structures — one rebuild/update pass per fileBrowser.overlayEntries

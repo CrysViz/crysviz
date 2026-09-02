@@ -348,7 +348,8 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
     await nextFrame();
     await nextFrame();
     const after = { verts: verts(), iso: fieldBrowser.selectedField?.isoValue };
-    const readout = document.querySelector('#cvPanelBody-field #isoValue')?.textContent;
+    const readout = /** @type {HTMLInputElement} */ (
+      document.querySelector('#cvPanelBody-field #isoValue'))?.value;
     // Release: 'change' at the same value must not error (skip-if-built path).
     slider.dispatchEvent(new Event('change', { bubbles: true }));
     await nextFrame();

@@ -18,6 +18,7 @@ import * as THREE from '../../../external/three/three.module.js';
 import { ConvexHull } from '../../../external/three/ConvexHull.js';
 import { groups, fileBrowser, general, app, measurements } from '../../../state/store.js';
 import { bondKey } from '../../BondsFracUpdateModule.js';
+import { normalizePeriodicBounds } from '../../LatticeModule.js';
 import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
 import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
 import { getCutPlaneMaskSign, Plane } from '../../../model/index.js';
@@ -273,6 +274,13 @@ export class SceneEncoder {
   fieldEnabled = false;
   fieldWorldToFrac = new THREE.Matrix4();
   fieldDims = [1, 1, 1];
+  // The periodic display boundary in fractional field coordinates: the region
+  // the ray march covers. [0,1] is the plain unit cell; wider values repeat
+  // the field into the neighbouring cells, exactly like the raster pipelines'
+  // translated + clipped copies (model/Isosurface.js setPeriodicBounds).
+  fieldBoundsMin = new THREE.Vector3(0, 0, 0);
+  fieldBoundsMax = new THREE.Vector3(1, 1, 1);
+  fieldWrap = false; // sample periodically (only needed outside the unit cell)
   fieldIso = 0;
   fieldAbsMode = false;
   fieldPosColor = new THREE.Color(0x33aaff);
@@ -393,8 +401,9 @@ export class SceneEncoder {
     if (field) {
       const iso = groups.isosurfaceGroup;
       const vals = field.values;
+      const fb = this._fieldBounds();
       parts.push('f', field.nx, field.ny, field.nz, field.isoValue,
-        field.useAbsoluteIsoValue ? 1 : 0,
+        field.useAbsoluteIsoValue ? 1 : 0, fb.join(','),
         iso.meshes?.positive?.material?.color?.getHexString(),
         iso.meshes?.negative?.material?.color?.getHexString(),
         iso.meshes?.positive?.material?.opacity,
@@ -471,6 +480,15 @@ export class SceneEncoder {
   /** The live volumetric field to trace, or null. Same source as the raster
    *  isosurface: the isosurfaceGroup, in the scene (clearField removes it) and
    *  not hidden, carrying a field with values. */
+  /** The periodic display boundary as a flat [xLo,xHi,yLo,yHi,zLo,zHi], or the
+   *  plain unit cell when periodic images are off (no boundary is in force for
+   *  the atoms either then). */
+  _fieldBounds() {
+    if (!general.showPeriodic) return [0, 1, 0, 1, 0, 1];
+    const b = normalizePeriodicBounds(general.periodicBounds);
+    return [b[0][0], b[0][1], b[1][0], b[1][1], b[2][0], b[2][1]];
+  }
+
   _activeField() {
     const iso = groups.isosurfaceGroup;
     const field = iso?.field;
@@ -707,8 +725,12 @@ export class SceneEncoder {
       }
     }
     if (this.fieldEnabled && this._fieldForward) {
+      // Corners of the DISPLAY BOUNDARY box, not of the unit cell: a widened
+      // boundary draws the field past the cell, and the grid the tracer builds
+      // has to contain it.
+      const lo = this.fieldBoundsMin, hi = this.fieldBoundsMax;
       for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < 2; k++) {
-        _pos.set(i, j, k).applyMatrix4(this._fieldForward);
+        _pos.set(i ? hi.x : lo.x, j ? hi.y : lo.y, k ? hi.z : lo.z).applyMatrix4(this._fieldForward);
         fold(_pos.x, _pos.y, _pos.z);
       }
     }
@@ -1173,12 +1195,14 @@ export class SceneEncoder {
       tip.updateWorldMatrix(true, false);
       const count = Math.min(tip.count, Math.floor(shaft.count / 2));
       const instanceMap = (kind === 'forces'
-        ? groups.forcesInstanceBySrcIndex : groups.spinsInstanceBySrcIndex) ?? new Map();
+        ? groups.forcesInstancesBySrcIndex : groups.spinsInstancesBySrcIndex) ?? new Map();
       const arrowMap = kind === 'forces'
         ? (shaft.userData?.arrowStylesByInstance ?? groups.forcesArrowByInstance)
         : (shaft.userData?.arrowStylesByInstance ?? groups.spinsArrowByInstance);
+      // srcIdx -> instance LIST (one arrow per periodic image of the atom),
+      // inverted here to instance -> srcIdx.
       const srcByInstance = new Map([...instanceMap]
-        .map(([srcIdx, instanceIndex]) => [instanceIndex, srcIdx]));
+        .flatMap(([srcIdx, list]) => list.map((instanceIndex) => [instanceIndex, srcIdx])));
       for (let i = 0; i < count; i++) {
         const shaftColors = shaft.instanceColor?.array;
         const tipColors = tip.instanceColor?.array;
@@ -1368,6 +1392,14 @@ export class SceneEncoder {
     _m.scale(_scale.set(field.nx, field.ny, field.nz));
     this.fieldWorldToFrac.copy(_m).invert();
     this._fieldForward = _m.clone(); // frac [0,1]^3 -> world (scene-bounds corners)
+
+    // The display boundary, in the same fractional space: the tracer marches
+    // the widened box and wraps the sample coordinate where the raster
+    // pipelines translate a copy of the mesh and clip it.
+    const [bxLo, bxHi, byLo, byHi, bzLo, bzHi] = this._fieldBounds();
+    this.fieldBoundsMin.set(bxLo, byLo, bzLo);
+    this.fieldBoundsMax.set(bxHi, byHi, bzHi);
+    this.fieldWrap = bxLo < 0 || bxHi > 1 || byLo < 0 || byHi > 1 || bzLo < 0 || bzHi > 1;
 
     this.fieldIso = Number.isFinite(field.isoValue) ? field.isoValue : 0;
     this.fieldAbsMode = !!field.useAbsoluteIsoValue;

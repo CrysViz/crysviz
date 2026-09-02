@@ -397,6 +397,10 @@ export class RayTracingPipeline extends ForwardPipeline {
       uFieldTex: { value: this._encoder.fieldTexture },
       uFieldWorldToFrac: { value: new THREE.Matrix4() },
       uFieldDims: { value: new THREE.Vector3(1, 1, 1) }, // ivec3 in the shader
+      // periodic display boundary (general.periodicBounds), fractional
+      uFieldBoundsMin: { value: new THREE.Vector3(0, 0, 0) },
+      uFieldBoundsMax: { value: new THREE.Vector3(1, 1, 1) },
+      uFieldWrap: { value: false },
       uFieldIso: { value: 0 },
       uFieldAbsMode: { value: false },
       uFieldPosColor: { value: new THREE.Color(0x33aaff) },
@@ -973,6 +977,9 @@ export class RayTracingPipeline extends ForwardPipeline {
       u.uFieldWorldToFrac.value.copy(this._encoder.fieldWorldToFrac);
       u.uFieldDims.value.set(
         this._encoder.fieldDims[0], this._encoder.fieldDims[1], this._encoder.fieldDims[2]);
+      u.uFieldBoundsMin.value.copy(this._encoder.fieldBoundsMin);
+      u.uFieldBoundsMax.value.copy(this._encoder.fieldBoundsMax);
+      u.uFieldWrap.value = this._encoder.fieldWrap;
       u.uFieldIso.value = this._encoder.fieldIso;
       u.uFieldAbsMode.value = this._encoder.fieldAbsMode;
       u.uFieldPosColor.value.copy(this._encoder.fieldPosColor);

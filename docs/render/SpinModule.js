@@ -30,7 +30,7 @@ function disposeSpinMeshes() {
       groups[key] = null;
     }
   }
-  groups.spinsInstanceBySrcIndex = null;
+  groups.spinsInstancesBySrcIndex = null;
   groups.spinsArrowByInstance = null;
 }
 
@@ -210,7 +210,20 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
 
   // --- Prepare arrows for rendering ---
   const arrows = [];
-  const seen = new Set();
+  // ONE ARROW PER DRAWN ATOM IMAGE, not per source atom. The wrapped set is
+  // the atom images actually on screen — periodic face mirrors, the display
+  // boundary's extra cells (general.periodicBounds), PBC-bond ghosts,
+  // polyhedra-completing atoms — and every one of them is the same atom, so
+  // every one carries the same spin vector. Keeping only the first left every
+  // other copy of an atom bare next to its drawn sphere, and the arrows stopped
+  // following the boundary entirely once it widened past the unit cell.
+  //
+  // Dedupe by (source atom, rounded position) like render/ChargeBadgeModule.js
+  // does for its badges: near-coincident mirror copies of the same atom (a
+  // corner atom can mirror onto positions a fraction of an Angstrom apart)
+  // would otherwise stack two arrows in the same place, which reads as one
+  // arrow drawn too thick.
+  const seenAt = new Set();
 
   // Get species visibility
   const speciesVisibility = {};
@@ -222,8 +235,10 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
 
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    if (seen.has(srcIdx)) continue;
-    seen.add(srcIdx);
+    const c = wrapped.cart[i];
+    const posKey = `${srcIdx}:${c[0].toFixed(2)},${c[1].toFixed(2)},${c[2].toFixed(2)}`;
+    if (seenAt.has(posKey)) continue;
+    seenAt.add(posKey);
 
     const spin = useManualSpins ? spins.find(s => s.atomIndex === srcIdx) : spins[srcIdx];
     if (!spin?.vector) continue;
@@ -284,19 +299,23 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     app.scene.add(groups.spinTipMesh);
   }
 
-  // Which arrow-instance index (shaft i*2/i*2+1, tip i) belongs to which
+  // Which arrow-instance indices (shaft i*2/i*2+1, tip i) belong to which
   // atom (structure.atoms order) — SelectAndHighlightModule.js uses this to
-  // highlight a selected atom's own spin arrow along with the atom itself.
+  // highlight a selected atom's own spin arrows along with the atom itself.
+  // A LIST per atom, not a single index: one atom is drawn once per periodic
+  // image inside the display boundary and each image carries its own arrow, so
+  // selecting the atom has to light all of them.
   // AFTER the mesh-rebuild block above, not before: disposeSpinMeshes()
   // (called from inside it, on a rebuild) unconditionally nulls this out —
   // setting it earlier would just have it wiped again immediately.
-  const instanceBySrcIndex = new Map();
+  const instancesBySrcIndex = new Map();
   const arrowByInstance = new Map();
   arrows.forEach(({ srcIdx }, i) => {
-    instanceBySrcIndex.set(srcIdx, i);
+    const list = instancesBySrcIndex.get(srcIdx);
+    if (list) list.push(i); else instancesBySrcIndex.set(srcIdx, [i]);
     arrowByInstance.set(i, useManualSpins ? structure.spins[srcIdx] : spins[srcIdx]);
   });
-  groups.spinsInstanceBySrcIndex = instanceBySrcIndex;
+  groups.spinsInstancesBySrcIndex = instancesBySrcIndex;
   groups.spinsArrowByInstance = arrowByInstance;
   groups.spinShaftMesh.userData.arrowStylesByInstance = arrowByInstance;
 

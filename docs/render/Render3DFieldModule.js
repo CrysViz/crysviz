@@ -6,7 +6,8 @@ import * as THREE from "../external/three/three.module.js";
 
 import { initializeWithPOSCAR } from '../ui/StructureInputModule.js';
 import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";
-import { app, groups, fileBrowser, structureShip } from '../state/store.js';
+import { app, groups, fileBrowser, general, structureShip } from '../state/store.js';
+import { normalizePeriodicBounds } from './LatticeModule.js';
 import { readCHGCAR } from "../io/ReadChgcarModule.js";
 import { readCubeFile } from "../io/ReadCubeModule.js";
 import { readWAVECAR } from "../io/ReadWavecarModule.js";
@@ -200,6 +201,25 @@ export function toggleFieldVisibility(visible) {
   }
 }
 
+/**
+ * Point the live isosurface at the periodic display boundary
+ * (general.periodicBounds, the Cell & Supercell panel's "Active Cell
+ * Boundary"), the same region that decides which periodic atom images are
+ * drawn: the field is repeated into every cell the boundary reaches and cut
+ * off where the boundary stops part-way through one.
+ *
+ * With "Show Periodic Images" off there is no boundary in force for the atoms
+ * either, so the field falls back to the plain unit cell.
+ *
+ * Cheap (no marching-cubes rerun) — call it whenever the boundary changes.
+ */
+export function applyFieldPeriodicBounds() {
+  const isosurface = groups.isosurfaceGroup;
+  if (!isosurface?.setPeriodicBounds) return;
+  isosurface.setPeriodicBounds(
+    general.showPeriodic ? normalizePeriodicBounds(general.periodicBounds) : undefined);
+}
+
 export function updateField(iso = null) {
   if (!groups.activeField || !groups.isosurfaceGroup) {
     console.warn("No active field to update");
@@ -230,6 +250,10 @@ export function updateField(iso = null) {
   //  Build marching cubes isosurface in voxel space
   //--------------------------------------------------------
   updateIsosurface(iso, field.useAbsoluteIsoValue);
+
+  // The rebuild replaced the surface geometry, so re-seat the boundary copies
+  // (and their clipping) on it before it goes back into the scene.
+  applyFieldPeriodicBounds();
 
   //--------------------------------------------------------
   //  Add to scene if not already there
