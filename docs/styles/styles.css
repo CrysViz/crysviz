@@ -2141,6 +2141,40 @@ justify-content: center;
   border: 1px solid var(--line-1);
 }
 
+#optimadeWarningDialog {
+  box-sizing: border-box;
+  width: min(440px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: var(--sp-5);
+  border: 1px solid var(--danger-bright);
+  border-radius: 16px;
+  background: var(--float-panel-bg);
+  color: var(--fg-1);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+#optimadeWarningDialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#optimadeWarningDialog h2 {
+  margin: 0 0 var(--sp-3);
+  color: var(--danger-bright);
+  font-size: var(--fs-xl);
+}
+
+#optimadeWarningDialog p {
+  margin: 0 0 var(--sp-5);
+  line-height: 1.45;
+}
+
+#optimadeWarningClose {
+  min-width: 88px;
+  min-height: 40px;
+}
+
 /* compositions and clicked element (content lives inside the unified
    "Structure" panel window, which provides the chrome/positioning) */
 
