@@ -1,4 +1,5 @@
-<img src="docs/data/CrysViz_logo_clear_back.png" width="400">
+
+<img src="https://raw.githubusercontent.com/CrysViz/crysviz/main/docs/data/CrysViz_logo_clear_back.png" width="400">
 
 # CrysViz - Crystal Structure Visualisation & Analysis
 
@@ -6,25 +7,13 @@
 
 Version 0.9.10 Beta 2026-08-28
 
-Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
+<img width="600" alt="Screenshot_crysviz" src="https://raw.githubusercontent.com/CrysViz/crysviz/deploy/docs/data/CrysViz_screenshot.png" />
 
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
 CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/OUTCAR/CIF snippet, drop a local file (POSCAR, OUTCAR, CIF or QE input/output), or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). Your crystal structures will NOT leave your device!
 
-This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
 
-This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License along with this program. If not, see https://www.gnu.org/licenses/.
-
-
-## Maintainers
-- **[Florian Trybel](https://github.com/ftrybel)** - Project lead
-- **[Abhijith S Parackal](https://github.com/Abhivega)**
-- **[Rickard Armiento](https://github.com/rartino)**
-- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)**
-- **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
 
 ## Key Features
 - No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser. 
@@ -39,6 +28,18 @@ You should have received a copy of the GNU Affero General Public License along w
 - Possibility to activate a calculation backend. This allows structural relaxations with any ASE compatible calculater, e.g., MACE, UPET, VASP, QE; trajectory is added and can be played using the trajectory player.
 - Bond length histogram (angles and coordiantion numbers are comming soon).
 - and many more...
+
+
+This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for more details. You should have received a copy of the GNU Affero General Public License along with this program. If not, see https://www.gnu.org/licenses/.
+
+
+## Maintainer
+- **[Florian Trybel](https://github.com/ftrybel)** - Project lead
+- **[Abhijith S Parackal](https://github.com/Abhivega)**
+- **[Rickard Armiento](https://github.com/rartino)**
+- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)**
+- **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
 
 
 ### Local in-browser installation and use
@@ -105,7 +106,7 @@ with Viewer([payload]) as viewer:
 viewer = show(["structure.cif"])
 ```
 
-For more, see [examples](examples/).
+For more, see [examples](https://github.com/CrysViz/crysviz/tree/deploy/examples).
 
 ## Third-Party Libraries
 

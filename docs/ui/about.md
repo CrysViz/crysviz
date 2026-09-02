@@ -2,9 +2,9 @@
 
 ## Light-weight browser-based crystal structure visualisation and analysis with on-device rendering.
 
-Version 0.9 Beta 2026-03-21
+Version 0.9.10 Beta 2026-08-28
 
-Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, and Rickard Armiento
+Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
 
@@ -18,12 +18,13 @@ You should have received a copy of the GNU Affero General Public License along w
 
 
 ## Maintainers
-- **[Florian Trybel](https://github.com/ftrybel)** - Project lead, core development, and design.
-- **[Abhijith S Parackal](https://github.com/Abhivega)** - Core development, and design
+- **[Florian Trybel](https://github.com/ftrybel)** - Project lead
+- **[Abhijith S Parackal](https://github.com/Abhivega)**
+- **[Rickard Armiento](https://github.com/rartino)**
+- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)**
+- **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
 
-## Contributors
-- **[Rickard Armiento](https://github.com/rartino)** - I/O (CIF), rendering (depth peeling, WBOIT, ray/path tracing), dockable window GUI, polyhedra, camera controls, bond styling, standalone app with Python API, PNG export, dev tooling/CI/browser tests.
-- **[Oscar Bulancea-Lindvall](https://github.com/oscarlindbul)** - Vector Field Visualisation (ELF, Charge densities, Wavefunctions)
+
 
 ## Key Features
 - No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser. 
@@ -37,22 +38,7 @@ You should have received a copy of the GNU Affero General Public License along w
 - Relxations and molecular dynamics simulations directly on your device with NEP potentials with upt to several hundred atoms. 
 - Possibility to activate a calculation backend. This allows structural relaxations with any ASE compatible calculater, e.g., MACE, UPET, VASP, QE; trajectory is added and can be played using the trajectory player.
 - Bond length histogram (angles and coordiantion numbers are comming soon).
-
-## Work in progress... (already partially available)
-- Crystal structure comparison via structure overlay; Lattice difference analysis in radar plot.
-- Wyckoff Mode: all structure manipulation, relaxation and even molecular dynamics are in symmetry.
-- Charge density and electron localisation functions viewer (CHGCAR/ELFCAR or .cube files spin resolved). Also WAVECAR loading and wavefunction/partial density visualization, collinear and non-collinear. Possible high memory requirements for large files.
-- Share links that contain the structure, view angle, colors and measurements (currently selected structure in trajectory only).
-- Bond color maps.
-- Use (i) buttons to get more information about features; A detailed documentation of all features is comming soon!
-- Semi-permanent storage in browser cache (still fully on your device) to allow reload without loosing any modification to structure or trajectories. 
-
-## Comming soon...
-- Stress Visualisation.
-- Updated Trajectory Player for larger and longer trajectories.
-- Add atoms and vaccuum.
-- eXYZ reader for trajectories or sets of files. 
-- Castep file reader.
+- and many more...
 
 
 ## Notes
