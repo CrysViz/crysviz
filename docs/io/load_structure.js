@@ -6,6 +6,11 @@ import { parsePWSCFin } from './ReadPWSCFinModule.js';
 import { parsePWSCFout } from './ReadPWSCFoutModule.js';
 import { parseOUTCAR } from './ReadOutcarModule.js';
 import { parseXYZFile } from './ReadeXYZModule.js';
+import { parseResFile } from './ReadResModule.js';
+import { parseCastepCell } from './ReadCastepCellModule.js';
+import { parseCastepGeom } from './ReadCastepGeomModule.js';
+import { parseAimsGeometry } from './ReadAimsGeometryModule.js';
+import { parseAimsOut } from './ReadAimsOutModule.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
 import { parseASETrajectory } from './ReadASETrajectoryModule.js';
 import {generateID} from '../utils/index.js'
@@ -35,7 +40,13 @@ export async function parse_any(content, fileName = '', isDefault = false) {
   // the generic `data_` / `_cell_length_` markers every CIF has, so testing it
   // first would route ordinary CIFs into the magnetic parser. Testing plain CIF
   // first works because it explicitly bails out on the magnetic markers.
-  if (formatId !== 'traj' && formatId !== 'cif' && formatId !== 'mcif') {
+  // `.res` and `.cell` carry distinctive extensions and their own block markers,
+  // so a positive name match is authoritative — don't let the CIF sniffers
+  // reroute them on an incidental `data_`/`_cell_` token in a comment.
+  const nameAuthoritative = formatId === 'traj' || formatId === 'cif'
+    || formatId === 'mcif' || formatId === 'res' || formatId === 'castep-cell'
+    || formatId === 'castep-geom' || formatId === 'aims-geometry' || formatId === 'aims-out';
+  if (!nameAuthoritative) {
     if (isLikelyCIFContent(contentString)) formatId = 'cif';
     else if (isLikelymagCIFContent(contentString)) formatId = 'mcif';
   }
@@ -69,6 +80,26 @@ export async function parse_any(content, fileName = '', isDefault = false) {
     case 'xyz':
       console.log("This is probably an (e)XYZ file");
       return parseXYZFile(content, fileName);
+
+    case 'res':
+      console.log("This is probably a SHELX/AIRSS .res file");
+      return parseResFile(content, fileName);
+
+    case 'castep-cell':
+      console.log("This is probably a CASTEP .cell file");
+      return parseCastepCell(content, fileName);
+
+    case 'castep-geom':
+      console.log("This is probably a CASTEP .geom/.md/.ts trajectory");
+      return parseCastepGeom(content, fileName);
+
+    case 'aims-geometry':
+      console.log("This is probably an FHI-aims geometry.in file");
+      return parseAimsGeometry(content, fileName);
+
+    case 'aims-out':
+      console.log("This is probably an FHI-aims output file");
+      return parseAimsOut(content, fileName);
 
     default: {
       console.log("This is probably a POSCAR file")

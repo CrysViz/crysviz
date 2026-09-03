@@ -19,6 +19,13 @@ export class StructureContainer {
     // is off — see FileBrowswerPanel.js's updateStructureFromRowAndStep.
     this.cameraSnapshot = null;
     this.featureSnapshot = null;
+    // Soft, non-fatal load warnings a reader attaches for data it could NOT
+    // read even though the structure loaded (e.g. an FHI-aims run that is
+    // spin-polarised but whose per-atom moments were in an unparsed format).
+    // core/crystal-viewer.js surfaces these in the load-warning modal. null
+    // when the load was clean.
+    /** @type {string[] | null} */
+    this.loadWarnings = null;
   }
 
   _ensureListOfClass(input, ClassType) {

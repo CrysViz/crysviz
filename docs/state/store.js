@@ -169,6 +169,10 @@ export const RENDERING_DEFAULTS = {
 export const general = {
   ...RENDERING_DEFAULTS,
   polyEdgeWidth: 1, // polyhedra edge line thickness in pixels (fat lines; 1 = classic hairline)
+  // Multiplier on mouse/touch rotate + pan sensitivity (Visual ▸ Camera slider).
+  // 1 = the tuned default; <1 slower, >1 faster. Persisted via the panelPref of
+  // the same name; applied to controls.rotateSpeed and the GestureArbiter pan.
+  cameraSpeedFactor: 1,
   ForceMin:1e-4,
   ForceMax:2.5,
   BondMin:1.1,

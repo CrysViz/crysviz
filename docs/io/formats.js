@@ -177,6 +177,50 @@ export const FORMATS = [
     matchesName: (lower) => lower.endsWith('.xyz') || lower.endsWith('.exyz'),
     sniff: null,
   },
+  {
+    id: 'res',
+    label: 'SHELX/AIRSS res',
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.PARSE_ANY,
+    matchesName: (lower) => lower.endsWith('.res'),
+    sniff: null,
+  },
+  {
+    id: 'castep-cell',
+    label: 'CASTEP cell',
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.PARSE_ANY,
+    matchesName: (lower) => lower.endsWith('.cell'),
+    sniff: null,
+  },
+  {
+    id: 'castep-geom',
+    label: 'CASTEP trajectory',
+    // .geom (geometry opt), .md (molecular dynamics) and .ts (transition-state
+    // search) share one tagged block format and one reader.
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.PARSE_ANY,
+    matchesName: (lower) => lower.endsWith('.geom') || lower.endsWith('.md') || lower.endsWith('.ts'),
+    sniff: null,
+  },
+  {
+    id: 'aims-out',
+    label: 'FHI-aims output',
+    // Checked before the geometry input so an "aims.out" name never falls into
+    // the geometry.in matcher.
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.PARSE_ANY,
+    matchesName: (lower) => lower.includes('aims.out') || lower.endsWith('.aims'),
+    sniff: null,
+  },
+  {
+    id: 'aims-geometry',
+    label: 'FHI-aims geometry',
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.PARSE_ANY,
+    matchesName: (lower) => lower.includes('geometry.in'),
+    sniff: null,
+  },
 ];
 
 /** The fallback when nothing matches: a POSCAR has no distinguishing marks. */

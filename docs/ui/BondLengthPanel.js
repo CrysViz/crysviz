@@ -273,8 +273,10 @@ export function resetBondLengths() {
   // refresh this same UI. reRenderBonds:true is still needed alongside it so
   // the 3D bond SET (which pairs qualify at the just-reset min/max) actually
   // recomputes — bondsUpdate (the default) only repaints existing bonds, it
-  // doesn't re-filter by length range.
-  updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  // doesn't re-filter by length range. reRenderAtoms recomputes the periodic
+  // neighbour (PBC-ghost) atom set when Neighbour Bonds is on, since the reset
+  // cutoffs change which cross-cell neighbours exist.
+  updateVisualization({ reRenderAtoms: !!general.showPBCBonds, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
 }
 
 /** Reset every bond COLOR customization (category + individual) on one
@@ -348,6 +350,9 @@ export function createBondLengthControls(targetPanel='bondControls') {
       // - it's an append-only builder, safe only via renderComposition's
       // freshly emptied container). Go through reRenderComposition instead.
       updateVisualization({
+        // A new pair cutoff can pull in periodic neighbour (PBC-ghost) atoms,
+        // so recompute the atom set when Neighbour Bonds is on.
+        reRenderAtoms: !!general.showPBCBonds,
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: "open",
@@ -397,6 +402,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
     checkbox.onchange = (e) => {
       general.bondVisibility[pair] = /** @type {any} */ (e.target).checked;
       updateVisualization({
+        // With "Neighbour Bonds" on, the periodic neighbour (PBC-ghost) atom
+        // set depends on which pairs are visible, so it must be recomputed
+        // (rebuildAtoms → runPeriodicWrapped) — reRenderBonds alone rebuilds
+        // bonds against a stale ghost set.
+        reRenderAtoms: !!general.showPBCBonds,
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: false,
@@ -846,6 +856,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
       general.bondLengths[pair].max = maxVal;
 
       updateVisualization({
+        // Neighbour Bonds on: the cutoff drives which periodic neighbour
+        // (PBC-ghost) atoms exist, so recompute the atom set on the fly rather
+        // than rebuilding bonds against a stale one (see the visibility toggle
+        // above for the same reasoning).
+        reRenderAtoms: !!general.showPBCBonds,
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: false,

@@ -30,7 +30,7 @@ export async function initPeriodicWasm(init, periodic_wrapped_fn, wasmUrl) {
 // ---------------------------------------------------------------------------
 // Bond-table helper
 // ---------------------------------------------------------------------------
-export function buildBondTable(elements, bondLengths) {
+export function buildBondTable(elements, bondLengths, bondVisibility) {
   const seen = new Map();
   for (const el of elements) {
     if (!seen.has(el)) seen.set(el, seen.size);
@@ -42,6 +42,9 @@ export function buildBondTable(elements, bondLengths) {
   if (bondLengths) {
     for (const [key, cutoff] of Object.entries(bondLengths)) {
       if (typeof key === 'string' && key.includes('-')) {
+        // A pair whose Bonds-tab checkbox is off draws no bond, so it must not
+        // pull in neighbour (PBC-ghost) atoms either — treat it as cutoff 0.
+        if (bondVisibility && bondVisibility[key] === false) continue;
         const [a, b] = key.split('-');
         const ia = seen.get(a);
         const ib = seen.get(b);
@@ -89,7 +92,8 @@ export function periodicWrapped(general, frac, elements, lattice) {
 
   const { table: bondTable, nElem, elementToIdx } = buildBondTable(
     elements,
-    general.bondLengths
+    general.bondLengths,
+    general.bondVisibility
   );
 
   const elemIdx = new Uint32Array(n);

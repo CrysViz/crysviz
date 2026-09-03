@@ -304,12 +304,21 @@ body.panel-hidden #axesLegend {
 }
 
 .download-menu {
+  /* Default anchoring; StructureInputModule portals the menu to <body> and
+     switches to position:fixed on open (see below). */
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  min-width: 100%;
-  z-index: 20;
+  min-width: 160px;
+  /* Body-portaled dropdown band. The menu is moved out of the Files dock panel
+     on open — inside it, sibling dock panels (also at --z-dock 1200, later in
+     the DOM) painted over the lower entries no matter the menu's own z-index.
+     Literal fallback because --z-menu is only defined in the default theme. */
+  z-index: var(--z-menu, 3000);
   background: var(--menu-bg);
+  /* --menu-bg is only ~95% opaque in the default theme; the blur makes it read
+     solid over the scene/panels so the entries aren't see-through. */
+  backdrop-filter: blur(12px);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius);
   padding: var(--sp-1);
@@ -509,6 +518,98 @@ body.panel-hidden #axesLegend {
   align-items: center;
   justify-content: center;
   background: var(--overlay);
+}
+
+/* "Quantum ESPRESSO input" copy dialog (reuses the .png-export-modal card).
+ * A note plus a read-only monospace textarea of the structural cards. */
+#qeInputModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+#qeInputModal[hidden] {
+  display: none;
+}
+
+.qe-input-modal {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.qe-input-modal .qe-input-note {
+  margin: 0 0 var(--sp-4) 0;
+  font-size: var(--fs-sm);
+  opacity: 0.8;
+  line-height: var(--lh-normal);
+}
+
+.qe-input-modal .qe-input-note code {
+  font-size: var(--fs-xs);
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-3);
+  background: var(--overlay-20);
+}
+
+.qe-input-modal .qe-input-text {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 var(--sp-4) 0;
+  padding: var(--sp-3) var(--sp-3-5);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--ink-6);
+  background: var(--overlay-20);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  white-space: pre;
+  overflow: auto;
+  resize: vertical;
+}
+
+/* General "file could not be loaded" warning (reuses the .png-export-modal
+ * card). Shown for any failed structure load, whatever the format. */
+#loadErrorModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+#loadErrorModal[hidden] {
+  display: none;
+}
+
+.load-error-modal .load-error-message {
+  margin: 0 0 var(--sp-4) 0;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+}
+
+/* The technical reason: muted, monospace-ish, and wrapped so a long parser
+   message never overflows the card. */
+.load-error-modal .load-error-detail {
+  margin: 0 0 var(--sp-4) 0;
+  padding: var(--sp-3) var(--sp-3-5);
+  font-size: var(--fs-sm);
+  opacity: 0.75;
+  line-height: var(--lh-normal);
+  background: var(--overlay-20);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+
+/* Warning tone (load-succeeded-with-a-caveat): a softer accent bar on the card
+   so it reads as a notice rather than a hard failure. */
+#loadErrorModal.load-modal-warning .load-error-modal {
+  border-left: 3px solid var(--warn, var(--highlight-color));
 }
 
 #raytraceWarningModal[hidden] {

@@ -269,16 +269,33 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   //      by ui/SavePanel.js) ----
 
   if (downloadButton && downloadMenu) {
+    // Portal the menu to <body> and pin it under the button (position:fixed).
+    // Left in the Files dock panel it can't escape that panel's stacking
+    // context, so sibling dock panels painted over its lower entries.
+    const openDownloadMenu = () => {
+      if (downloadMenu.parentElement !== document.body) document.body.appendChild(downloadMenu);
+      const r = downloadButton.getBoundingClientRect();
+      downloadMenu.style.position = 'fixed';
+      downloadMenu.style.top = `${Math.round(r.bottom + 4)}px`;
+      downloadMenu.style.left = 'auto';
+      downloadMenu.style.right = `${Math.round(window.innerWidth - r.right)}px`;
+      downloadMenu.hidden = false;
+    };
+    const closeDownloadMenu = () => { downloadMenu.hidden = true; };
+
     downloadButton.addEventListener('click', (e) => {
       e.stopPropagation();
-      downloadMenu.hidden = !downloadMenu.hidden;
+      if (downloadMenu.hidden) openDownloadMenu(); else closeDownloadMenu();
     });
-    downloadMenu.addEventListener('click', () => { downloadMenu.hidden = true; });
+    downloadMenu.addEventListener('click', closeDownloadMenu);
     document.addEventListener('click', (e) => {
-      if (!downloadMenu.hidden && !downloadButton.contains(/** @type {Node} */ (e.target))) {
-        downloadMenu.hidden = true;
+      const target = /** @type {Node} */ (e.target);
+      if (!downloadMenu.hidden && !downloadButton.contains(target) && !downloadMenu.contains(target)) {
+        closeDownloadMenu();
       }
     });
+    // A fixed-position menu can't track the button — close it if the layout moves.
+    window.addEventListener('resize', closeDownloadMenu);
   }
 
   // ---- Drag & drop: the Files window and the 3D view are drop targets ----

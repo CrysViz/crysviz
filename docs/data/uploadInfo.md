@@ -17,6 +17,15 @@ Currently it is possible to view the following file types:
 
 - **CIF**: CrysViz provides a CIF reader.
 
+- **CASTEP**:
+    - `.cell` input file: structure only (reads `LATTICE_CART`/`LATTICE_ABC` and `POSITIONS_FRAC`/`POSITIONS_ABS`). An AIRSS `buildcell` seed with absolute positions and no lattice loads as a molecule in a centered box.
+    - `.geom` (geometry optimization), `.md` (molecular dynamics) and `.ts` (transition-state search): the full trajectory with per-frame energy, forces and stress (pressure).
+    - The `.param` file holds run settings only and carries no structure.
+
+- **SHELX / AIRSS `.res`**: structure only. A single `.res` may hold many structures back to back (e.g. an AIRSS search dump); they load as a stepped set you can page through, with each candidate's enthalpy shown as its energy.
+
 - **.xyz and .exzy format**: Currently under implementation
 
-- **FHI-AIMS**: geometry.in files are under development. Output files will be readible in the future depending on demand. 
+- **FHI-aims**:
+    - `geometry.in`: structure and magnetism (`initial_moment`, collinear or non-collinear). A non-periodic geometry loads as a molecule in a centered box.
+    - `aims.out` output: the full relaxation/MD trajectory with per-frame energy and forces, plus per-atom spin moments when the Mulliken analysis is present.

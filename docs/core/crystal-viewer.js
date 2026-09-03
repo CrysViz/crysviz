@@ -11,6 +11,7 @@ import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
+import { showLoadErrorModal, showLoadWarningModal } from '../ui/LoadErrorModal.js';
 // Side-effect import: AboutPanel wires the "about" trigger at module load.
 // (Its named exports are unused, so keep it as a bare import.)
 import '../ui/AboutPanel.js';
@@ -384,7 +385,14 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         // The parser filename may carry a format suffix, but the browser must
         // display the manifest/addon supplied name verbatim.
         if (structureContainer) structureContainer.fileName = fileName;
-        if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
+        // A parser that returns an empty container (no structures, or a
+        // structure with no atoms) "loaded" nothing — treat it as a failure so
+        // it reaches the warning modal instead of silently doing nothing.
+        if (!structureContainer?.structures?.length
+            || !structureContainer.structures.some((s) => s?.atoms?.length)) {
+          throw new Error('No atoms or structures were found in this file.');
+        }
+        initializeUIOnLoad(structureContainer);
         break;
     }
 
@@ -427,10 +435,22 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     }
     resizeRenderer(app.orthographicFrustumSize);
 
+    // Soft warnings a parser attached for data it loaded WITHOUT (e.g. an
+    // aims.out that is spin-polarised but whose per-atom moments we couldn't
+    // read). The structure loaded fine; this just tells the user what dropped.
+    const warnings = structureContainer.loadWarnings;
+    if (Array.isArray(warnings) && warnings.length) {
+      showLoadWarningModal({ fileName, message: warnings[0] });
+    }
+
     return { ok: true, container: structureContainer, name: fileName, format: format || undefined };
   } catch (error) {
+    // Single choke point for every load path and every format: surface a
+    // visible warning instead of failing silently. The status line is kept as
+    // a secondary, non-blocking trace.
     setStatus(`Error: ${error.message}`);
     console.error(error);
+    showLoadErrorModal({ fileName, message: error?.message });
     throw error;
   }
 }
