@@ -84,6 +84,14 @@ function ensurePlotsWindowOpen() {
 
 async function redraw(plotId) {
   const isExpanded = isPlotExpanded(plotId);
+  // A fit is not enough — the plots need the data it was fitted to. resetFit
+  // clears the two in sequence and several callers (safeRedraw off the
+  // resize/expand handlers, the reference-divisor input) fire independently of
+  // whatever redraw is already in flight, so there is a window where a result
+  // survives its own volumes. plotPV spreads them on its first line, so the
+  // symptom was an intermittent TypeError out of an async catch rather than a
+  // plot that simply had nothing to draw.
+  if (!state.volumes?.length) return;
   if (plotId === 'ev-plot' && state.evResult) {
     await plotEV('ev-plot', { volumes: state.volumes, energies: state.energies, evParams: state.evResult.params }, isExpanded);
   } else if (plotId === 'pv-plot' && state.pvResult) {
