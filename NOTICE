@@ -90,3 +90,13 @@ Third-Party Libraries and Attribution:
    - License: SIL Open Font License 1.1
    - See docs/fonts/OFL.txt, docs/fonts/OFL-math.txt, docs/fonts/OFL-symbols.txt,
      docs/fonts/OFL-symbols2.txt, and docs/fonts/OFL-emoji.txt for the license texts.
+
+10. httk data-generators
+   - Repository: https://github.com/httk/data-generator
+   - License: CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)
+   - Copyright: Rickard Armiento
+   - Generated with cctbx (https://cctbx.github.io/) and spglib
+     (https://spglib.readthedocs.io/).
+   - Space-group settings, symmetry operations, Wyckoff positions and
+     asymmetric units. The dataset carries its own license and provenance
+     metadata; both live in docs/data/symmetry_basics.json.

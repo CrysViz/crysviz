@@ -188,6 +188,16 @@ For more, see [examples](https://github.com/CrysViz/crysviz/tree/deploy/examples
    - Loaded on demand from jsDelivr (npm `nayuki-qr-code-generator`) to draw the
      QR code in the share-link dialog.
 
+10. httk data-generators
+   - Repository: https://github.com/httk/data-generator
+   - License: CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)
+   - Copyright: Rickard Armiento
+   - Generated with cctbx (https://cctbx.github.io/) and spglib
+     (https://spglib.readthedocs.io/).
+   - Space-group settings, symmetry operations, Wyckoff positions and
+     asymmetric units. The dataset carries its own license and provenance
+     metadata; both live in docs/data/symmetry_basics.json.
+
 ## Other Attributions
 
 - CrysViz uses some color maps from the [Scientific colour maps by Fabio Crameri](https://doi.org/10.5281/zenodo.1243862) (Version 8)
