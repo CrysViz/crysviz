@@ -60,25 +60,6 @@ export function initializeWithPOSCAR(structure, fileName) {
 
 
 
-export function isLikelyCIFContent(content) {
-  if (!content || typeof content !== 'string') return false;
-  const trimmed = content.trim();
-  if (!trimmed) return false;
-  if (/^\s*data_/i.test(trimmed)) return true;
-  if (/_cell_(length|angle)_[abc]/i.test(trimmed)) return true;
-  if (/_symmetry_space_group_name_h-m/i.test(trimmed)) return true;
-  return false;
-}
-
-export function isLikelyOUTCARContent(content) {
-  if (!content || typeof content !== 'string') return false;
-  const trimmed = content.trim();
-  if (!trimmed) return false;
-  if (/Startparameter/i.test(trimmed)) return true;
-  if (/Iteration:/i.test(trimmed)) return true;
-  return false;
-}
-
 export function initializeUIOnLoad(structureContainer) {
   console.log(structureContainer);
   const fileName = structureContainer.fileName;

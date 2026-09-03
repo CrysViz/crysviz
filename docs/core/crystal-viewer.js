@@ -85,7 +85,7 @@ import {initRaytraceWarningModal} from '../ui/RaytraceWarningModal.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any } from '../io/index.js';
-import { FileSource, detectFormat, materialize } from '../io/index.js';
+import { FileSource, detectFormat, materialize, HEAD_BYTES } from '../io/index.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
@@ -338,11 +338,10 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // WAVECAR can be opened at all.
     const source = FileSource.from(content);
 
-    // Format detection lives in io/formats.js, which is also where the
-    // (currently unused) content-sniffing hooks are declared. `head` is read for
-    // every file so that switching detection over to inspecting contents needs
-    // no change here.
-    const head = await source.readHead();
+    // Format detection lives in io/formats.js and goes by the file's contents
+    // first: the first HEAD_BYTES are read for every file (one cheap slice,
+    // even for a multi-GB WAVECAR) and the name is only the tiebreak/fallback.
+    const head = await source.readHead(HEAD_BYTES);
     const descriptor = detectFormat({ fileName: parserFileName, head });
 
     // Text formats get the whole file as a string exactly as before; .traj gets

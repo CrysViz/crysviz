@@ -14,7 +14,7 @@ import { parseAimsOut } from './ReadAimsOutModule.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
 import { parseASETrajectory } from './ReadASETrajectoryModule.js';
 import {generateID} from '../utils/index.js'
-import { detectFormat } from './formats.js';
+import { detectFormat, headOf, looksLike } from './formats.js';
 
 /*
  * The idea is that parse_any will eventually take over all parsing
@@ -22,34 +22,13 @@ import { detectFormat } from './formats.js';
  */
 export async function parse_any(content, fileName = '', isDefault = false) {
 
-  const contentString = typeof content === 'string' ? content : '';
-
-  // Which format this is, is decided in one place (io/formats.js) rather than
-  // by a chain of booleans here. The registry is name-based today; the content
-  // sniffers below are the exception, and are the first thing that will move
-  // onto the registry when detection switches to inspecting file contents.
-  let formatId = detectFormat({ fileName }).id;
-
-  // CIF content sniffing outranks every name-based match except .traj. That is
-  // the precedence the original boolean chain had (treatAsCIF and treatAsmagCIF
-  // were tested before the QE / OUTCAR / XYZ names, and both ORed the content
-  // sniffer into the name test), and CIFs do arrive under uninformative names
-  // often enough that dropping it would be a regression.
-  //
-  // Order between the two matters: isLikelymagCIFContent also returns true for
-  // the generic `data_` / `_cell_length_` markers every CIF has, so testing it
-  // first would route ordinary CIFs into the magnetic parser. Testing plain CIF
-  // first works because it explicitly bails out on the magnetic markers.
-  // `.res` and `.cell` carry distinctive extensions and their own block markers,
-  // so a positive name match is authoritative — don't let the CIF sniffers
-  // reroute them on an incidental `data_`/`_cell_` token in a comment.
-  const nameAuthoritative = formatId === 'traj' || formatId === 'cif'
-    || formatId === 'mcif' || formatId === 'res' || formatId === 'castep-cell'
-    || formatId === 'castep-geom' || formatId === 'aims-geometry' || formatId === 'aims-out';
-  if (!nameAuthoritative) {
-    if (isLikelyCIFContent(contentString)) formatId = 'cif';
-    else if (isLikelymagCIFContent(contentString)) formatId = 'mcif';
-  }
+  // Which format this is, is decided in one place (io/formats.js): by the
+  // file's contents first and by its name only as the tiebreak/fallback. The
+  // CIF sniffers that used to be special-cased here now live on the registry
+  // alongside a sniffer for every other format, so a QE run saved as
+  // `relax.out`, an aims.out called `Si.scf.out`, or a CIF called `download`
+  // all reach the right reader.
+  const formatId = detectFormat({ fileName, head: headOf(content) }).id;
 
   switch (formatId) {
     case 'traj':
@@ -113,49 +92,22 @@ export async function parse_any(content, fileName = '', isDefault = false) {
 }
 
 // ----------------- Sniffers ------------------------
+//
+// Kept for API compatibility (they are re-exported from io/index.js). The
+// actual rules live on the descriptors in io/formats.js, next to the sniffers
+// for every other format, so there is exactly one definition of "looks like a
+// CIF" and it is the one `detectFormat` uses.
 
 export function isLikelyCIFContent(content) {
-  if (!content || typeof content !== 'string') return false;
-  const trimmed = content.trim();
-  if (!trimmed) return false;
-  const firstLine = content.split(/\r?\n/).find(line => line.trim().length > 0);
-  if (firstLine === "##CIF_2.0") return false; // We cannot parse CIF2.0 as non-magCIF, so we'll always defer them there
-  const t = trimmed.toLowerCase();
-  // Defer if there are any magCIF keys
-  if (t.includes("_space_group_symop_magn_operation") ||
-      t.includes("_space_group_magn_number_bns") ||
-      t.includes("_space_group_magn.number_bns") ||
-      t.includes("_parent_space_group")) return false;
-  if (/^\s*data_/i.test(t)) return true;
-  if (/_cell_(length|angle)_[abc]/i.test(t)) return true;
-  if (/_symmetry_space_group_name_h-m/i.test(t)) return true;
-  return false;
+  return looksLike('cif', content);
 }
 
 export function isLikelymagCIFContent(content) {
-  if (!content || typeof content !== 'string') return false;
-  const trimmed = content.trim();
-  if (!trimmed) return false;
-  const firstLine = content.split(/\r?\n/).find(line => line.trim().length > 0);
-  if (firstLine === "##CIF_2.0") return true;
-  const t = trimmed.toLowerCase();
-  if (t.includes("_space_group_symop_magn_operation") ||
-      t.includes("_space_group_magn_number_bns") ||
-      t.includes("_space_group_magn.number_bns") ||
-      t.includes("_parent_space_group")) return true;
-  if (/^\s*data_/i.test(t)) return true;
-  if (/_cell_(length|angle)_[abc]/i.test(t)) return true;
-  if (/_symmetry_space_group_name_h-m/i.test(t)) return true;
-  return false;
+  return looksLike('mcif', content);
 }
 
 export function isLikelyOUTCARContent(content) {
-  if (!content || typeof content !== 'string') return false;
-  const trimmed = content.trim();
-  if (!trimmed) return false;
-  if (/Startparameter/i.test(trimmed)) return true;
-  if (/Iteration:/i.test(trimmed)) return true;
-  return false;
+  return looksLike('outcar', content);
 }
 
 // ---------------- Parsers ---------------
