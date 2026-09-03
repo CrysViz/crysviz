@@ -496,6 +496,76 @@ async function waitForWedge(page, wanted) {
     `${highlighted.haloAt.map((v) => v.toFixed(2))} -> `
     + `${afterMove.haloAt.map((v) => v.toFixed(2))}`);
 
+  // The Wyckoff editor moves atoms without touching the cell, so it redraws
+  // with reRenderLattice: false. The wedge geometry rightly does not rebuild
+  // there — but the membership must still be re-asked, or the rings sit where
+  // the atoms used to be and newly-entered atoms are never picked up.
+  //
+  // Compared against an independent recomputation rather than against "the
+  // rings moved": on a structure this symmetric a shift can land a DIFFERENT
+  // atom exactly where the old one was, so a stale highlight can look correct
+  // by coincidence. The check also asserts the expected answer actually
+  // differs from the pre-move one, so it reports itself inconclusive rather
+  // than passing vacuously.
+  const lattUntouched = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const cv = await import('./core/crystal-viewer.js');
+    const math = await import('./math/index.js');
+    const geom = await import('./ui/BackendPanel/asuGeometry.js');
+    const wyck = await import('./ui/addToStructureModule/WyckoffProjector.js');
+
+    const halo = () => {
+      const mesh = groups.asuHaloMesh;
+      if (!mesh) return [];
+      const out = [];
+      for (let i = 0; i < mesh.count; i += 1) {
+        out.push(Array.from(mesh.instanceMatrix.array.slice(i * 16 + 12, i * 16 + 15))
+          .map((v) => +v.toFixed(4)).join(','));
+      }
+      return out.sort();
+    };
+
+    const before = halo();
+
+    const structure = fileBrowser.selectedStructure;
+    for (const atom of structure.atoms) {
+      atom.position = [(atom.position[0] + 0.25) % 1, atom.position[1], atom.position[2]];
+    }
+    // Exactly the flags applyWyckoffOrbitPosition uses (SymmetryEditModule.js).
+    cv.updateVisualization({
+      reRenderAtoms: true, reRenderBonds: true, reRenderLattice: false,
+    });
+
+    const hall = Number(document.getElementById('asuResult').dataset.hallNumber);
+    const halfSpaces = geom.halfSpacesFromCuts(
+      wyck.getSpaceGroupEntryByHallNumber(hall).asu.shape_only_cuts
+    );
+    const cart = structure.periodic.visibleWrapped.cart;
+    const toFrac = math.invert3x3(math.transpose3x3(structure.lattice));
+    const expected = [];
+    for (let i = 0; i < cart.length; i += 1) {
+      const f = math.multiplyMatVec(toFrac, cart[i]);
+      let inside = false;
+      for (let tx = -2; tx <= 2 && !inside; tx += 1) {
+        for (let ty = -2; ty <= 2 && !inside; ty += 1) {
+          for (let tz = -2; tz <= 2 && !inside; tz += 1) {
+            inside = geom.containsFractional(halfSpaces, f[0] + tx, f[1] + ty, f[2] + tz);
+          }
+        }
+      }
+      if (inside) expected.push(cart[i].map((v) => +v.toFixed(4)).join(','));
+    }
+    return { before, after: halo(), expected: expected.sort() };
+  });
+
+  H.check('the move actually changes which atoms the wedge holds (else inconclusive)',
+    JSON.stringify(lattUntouched.expected) !== JSON.stringify(lattUntouched.before),
+    `before ${JSON.stringify(lattUntouched.before)} expected ${JSON.stringify(lattUntouched.expected)}`);
+  H.check('an atom move that leaves the cell alone still re-asks the membership',
+    JSON.stringify(lattUntouched.after) === JSON.stringify(lattUntouched.expected),
+    `rings ${JSON.stringify(lattUntouched.after)} vs `
+    + `independent ${JSON.stringify(lattUntouched.expected)}`);
+
   // Hiding the wedge must take the halo with it — there is nothing to be
   // inside of any more.
   const afterHide = await page.evaluate(async () => {

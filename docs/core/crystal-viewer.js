@@ -35,7 +35,7 @@ import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateOverlayBonds,rebuildOverlayBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
-import { updateAsymmetricUnit } from '../render/index.js'
+import { updateAsymmetricUnit, updateAsuAtomHighlight } from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
 import {rebuildAtoms,updateAtoms,deriveVisibleWrapped} from '../render/index.js';
 import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
@@ -243,6 +243,13 @@ export function updateVisualization(options = {}) {
   // longer selected (render/AsymmetricUnitModule.js). Gating it on a "wedge
   // on" flag would leave that stale wedge in the scene.
   if (reRenderLattice) updateAsymmetricUnit();
+  // Which atoms fall INSIDE that wedge is a question about the atoms, not the
+  // cell, so it cannot ride on reRenderLattice the way the geometry above
+  // does. The Wyckoff editor moves atoms with reRenderLattice: false — the
+  // cell genuinely has not changed — and the rings stayed where they were.
+  // Cheap enough to run every pass: it returns at its first line while the
+  // highlight is off, which is the normal case.
+  updateAsuAtomHighlight();
   console.timeEnd("uv:updateLattice");
   console.time("uv:updateOther");
   if (reRenderOther) updateOther();

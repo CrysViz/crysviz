@@ -238,7 +238,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--sp-3-5);
+  /* Column gap well clear of the --sp-2 that separates each label from its own
+     control: at the 10px they were both, "Colour [swatch] Opacity [slider]"
+     read as one run-on group rather than two. Row gap is for a dock narrow
+     enough to wrap them onto separate lines. */
+  gap: var(--sp-2) var(--sp-6);
   flex-wrap: wrap;
 }
 
@@ -246,6 +250,14 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
+  /* One of these groups is a <label> and so picks up the global label margins;
+     the other is a <span> and does not. A flex line centres each item's MARGIN
+     box, so an asymmetric 16px/8px pair sat the slider 4px below the swatch and
+     stretched the row to 39px for a 25px control. */
+  margin: 0;
+  /* Both groups occupy the swatch's height whatever is inside them, so the two
+     share a centre line instead of each finding its own. */
+  min-height: 24px;
 }
 
 .sym-asu-control-label {
@@ -259,6 +271,11 @@
 .sym-asu-control input[type="range"] {
   width: 92px;
   max-width: 100%;
+  /* The shared control styling leaves the track 6px tall with a 2px margin,
+     which reads as a hairline next to a 24px swatch and gives the thumb almost
+     no grab area. */
+  height: 18px;
+  margin: 0;
   accent-color: var(--accent-fg, var(--info-bright));
   cursor: pointer;
 }
@@ -267,6 +284,9 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
+  /* Same global label margins as above — the card's spacing is the row gap's
+     job, not an inherited one. */
+  margin: 0;
   font-size: var(--fs-md);
   color: var(--fg-85);
   cursor: pointer;
