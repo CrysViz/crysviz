@@ -231,3 +231,51 @@
   font-size: var(--fs-sm);
   color: var(--fg-50);
 }
+
+/* Wedge appearance controls: colour swatch + opacity slider, side by side on
+   one row so the card stays compact. */
+.sym-row.sym-asu-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3-5);
+  flex-wrap: wrap;
+}
+
+.sym-asu-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.sym-asu-control-label {
+  color: var(--fg-50);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* The slider is the widest control here; let it take the slack rather than
+   forcing the row to wrap on a narrow dock. */
+.sym-asu-control input[type="range"] {
+  width: 92px;
+  max-width: 100%;
+  accent-color: var(--accent-fg, var(--info-bright));
+  cursor: pointer;
+}
+
+.sym-asu-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-md);
+  color: var(--fg-85);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.sym-asu-check input[type="checkbox"] {
+  accent-color: var(--accent-fg, var(--info-bright));
+  cursor: pointer;
+  margin: 0;
+}

@@ -275,6 +275,243 @@ async function waitForWedge(page, wanted) {
   H.check('and the second time says nothing about symmetrising',
     !/symmetris/i.test(twice.status), twice.status);
 
+  // --- colour picker and opacity slider ---------------------------------
+  // Both must repaint what is already drawn rather than rebuild it: a slider
+  // drag emits a change per pixel of travel.
+  const painted = await page.evaluate(async () => {
+    const { groups, general } = await import('./state/store.js');
+    const render = await import('./render/index.js');
+
+    const hull = () => {
+      let mesh = null;
+      groups.asuGroup?.traverse((o) => {
+        if (o.isMesh && o.material?.type === 'MeshStandardMaterial' && !mesh) mesh = o;
+      });
+      return mesh;
+    };
+    const before = { group: groups.asuGroup, geometry: hull()?.geometry };
+
+    general.asuColor = '#22cc88';
+    general.asuColorUserSet = true;
+    general.asuOpacity = 0.7;
+    render.refreshAsuAppearance();
+
+    const after = hull();
+    // Every part of the wedge takes the colour, not just the hull.
+    let allTinted = true;
+    groups.asuGroup?.traverse((o) => {
+      if (o.isMesh && '#' + o.material.color.getHexString() !== '#22cc88') allTinted = false;
+    });
+
+    return {
+      hullHex: '#' + after.material.color.getHexString(),
+      hullOpacity: after.material.opacity,
+      transparent: after.material.transparent,
+      allTinted,
+      sameGroup: groups.asuGroup === before.group,
+      sameGeometry: after.geometry === before.geometry,
+    };
+  });
+  H.check('the colour picker repaints the whole wedge',
+    painted.hullHex === '#22cc88' && painted.allTinted,
+    `${painted.hullHex} allTinted=${painted.allTinted}`);
+  H.check('the opacity slider reaches the hull material through the pipeline policy',
+    painted.hullOpacity === 0.7 && painted.transparent === true,
+    `opacity=${painted.hullOpacity} transparent=${painted.transparent}`);
+  H.check('neither rebuilds geometry',
+    painted.sameGroup && painted.sameGeometry,
+    `group=${painted.sameGroup} geometry=${painted.sameGeometry}`);
+
+  // A hand-picked colour must outrank the palette's on a theme change.
+  const themed = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const tm = await import('./ui/ThemeManager.js');
+    tm.applySceneFromCSS();
+    const pinned = general.asuColor;
+    general.asuColorUserSet = false;   // what the picker's Reset does
+    tm.applySceneFromCSS();
+    return { pinned, released: general.asuColor };
+  });
+  H.check('a hand-picked wedge colour survives a theme re-read',
+    themed.pinned === '#22cc88', themed.pinned);
+  H.check('and Reset hands it back to the palette',
+    themed.released === '#a05cd6', themed.released);
+
+  // --- highlighting the atoms inside the wedge --------------------------
+  const offState = await page.evaluate(async () => {
+    const { groups } = await import('./state/store.js');
+    const render = await import('./render/index.js');
+    return {
+      on: render.isAsuAtomHighlightOn(),
+      mesh: !!groups.asuHaloMesh,
+      counts: render.asuAtomsInside(),
+    };
+  });
+  H.check('the highlight is off by default and computes nothing',
+    !offState.on && !offState.mesh && offState.counts.instances === 0,
+    JSON.stringify(offState));
+
+  const highlighted = await page.evaluate(async () => {
+    const { groups, fileBrowser } = await import('./state/store.js');
+    const math = await import('./math/index.js');
+    const geom = await import('./ui/BackendPanel/asuGeometry.js');
+    const wyck = await import('./ui/addToStructureModule/WyckoffProjector.js');
+    const render = await import('./render/index.js');
+
+    document.getElementById('asuHighlightChk').click();
+
+    const structure = fileBrowser.selectedStructure;
+    const cart = structure.periodic.visibleWrapped.cart;
+
+    // Independent recomputation, from the dataset rather than from anything
+    // the module cached: this is what checks the plumbing between the wedge's
+    // inequalities, the conventional lattice and the drawn instances. The
+    // Hall number is read back from the panel rather than assumed — Fd-3m has
+    // two origin choices with genuinely different wedges (525 wants y<=1/8,
+    // 526 wants y<=0), and picking the wrong one silently tests nothing.
+    const hall = Number(document.getElementById('asuResult').dataset.hallNumber);
+    const entry = wyck.getSpaceGroupEntryByHallNumber(hall);
+    const halfSpaces = geom.halfSpacesFromCuts(entry.asu.shape_only_cuts);
+    const toFrac = math.invert3x3(math.transpose3x3(structure.lattice));
+
+    // Same lattice-translation search the module does: this wedge lies at
+    // y <= 0 while the atoms are wrapped into [0,1), so a literal test finds
+    // nothing and the feature would look broken.
+    let expected = 0;
+    const sources = new Set();
+    let literal = 0;
+    for (let i = 0; i < cart.length; i += 1) {
+      const f = math.multiplyMatVec(toFrac, cart[i]);
+      if (geom.containsFractional(halfSpaces, f[0], f[1], f[2])) literal += 1;
+      let inside = false;
+      for (let tx = -2; tx <= 2 && !inside; tx += 1) {
+        for (let ty = -2; ty <= 2 && !inside; ty += 1) {
+          for (let tz = -2; tz <= 2 && !inside; tz += 1) {
+            inside = geom.containsFractional(halfSpaces, f[0] + tx, f[1] + ty, f[2] + tz);
+          }
+        }
+      }
+      if (!inside) continue;
+      expected += 1;
+      sources.add(structure.periodic.visibleWrapped.srcIndex?.[i] ?? i);
+    }
+
+    return {
+      hall,
+      counts: render.asuAtomsInside(),
+      expectedInstances: expected,
+      expectedAtoms: sources.size,
+      literal,
+      meshCount: groups.asuHaloMesh?.count ?? -1,
+      backSide: groups.asuHaloMesh?.material?.side === 1, // THREE.BackSide
+      haloAt: Array.from(groups.asuHaloMesh.instanceMatrix.array.slice(12, 15)),
+      status: document.getElementById('calcResult').textContent.trim(),
+      totalInstances: cart.length,
+    };
+  });
+  H.check('turning it on rings exactly the instances the inequalities select',
+    highlighted.counts.instances === highlighted.expectedInstances
+    && highlighted.meshCount === highlighted.expectedInstances
+    && highlighted.expectedInstances > 0,
+    `mesh=${highlighted.meshCount} module=${highlighted.counts.instances} `
+    + `independent=${highlighted.expectedInstances} of ${highlighted.totalInstances}`);
+  // Fd-3m's origin-choice-2 wedge sits entirely at y <= 0 while these atoms
+  // are wrapped into [0,1), so a literal test finds nothing. This is the case
+  // that proves membership is tested modulo lattice translation — without it
+  // the highlight would come up empty here and for ~40% of all settings.
+  H.check('a wedge outside the [0,1) box still finds its atoms',
+    highlighted.literal === 0 && highlighted.counts.instances > 0,
+    `literal=${highlighted.literal} with-translation=${highlighted.counts.instances}`);
+  // Si is one orbit on a special position, so its atom sits exactly ON the
+  // wedge boundary — the case where an unpadded translation search rounds the
+  // only matching translation away and silently finds nothing.
+  H.check('Si diamond has exactly one atom in its asymmetric unit',
+    highlighted.counts.atoms === 1, `${highlighted.counts.atoms} atoms`);
+  H.check('and counts distinct atoms, not their periodic images',
+    highlighted.counts.atoms === highlighted.expectedAtoms
+    && highlighted.counts.atoms <= highlighted.counts.instances,
+    `${highlighted.counts.atoms} atoms / ${highlighted.counts.instances} instances`);
+  H.check('the halo is a back-faced shell, so it reads as a ring not a bag',
+    highlighted.backSide === true);
+  H.check('the panel reports how many atoms are inside',
+    /\d+ atoms? inside the wedge/.test(highlighted.status), highlighted.status);
+
+  // Atom positions change — under MD, or an edit. The wedge stays put and the
+  // membership has to follow it.
+  const afterMove = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    const cv = await import('./core/crystal-viewer.js');
+    const math = await import('./math/index.js');
+    const geom = await import('./ui/BackendPanel/asuGeometry.js');
+    const wyck = await import('./ui/addToStructureModule/WyckoffProjector.js');
+    const render = await import('./render/index.js');
+
+    // Shift every atom along x by a half cell. Deliberately NOT one of the
+    // fcc centring translations ((0,1/2,1/2) and friends): those map diamond
+    // onto itself, so the membership would rightly not budge and the check
+    // would prove nothing.
+    // Replace the array rather than writing into it: Structure.js deep-freezes
+    // the snapshot it takes of the atoms, and its shallow copy shares each
+    // atom's `position` array, so an in-place element write silently no-ops.
+    const structure = fileBrowser.selectedStructure;
+    for (const atom of structure.atoms) {
+      atom.position = [(atom.position[0] + 0.5) % 1, atom.position[1], atom.position[2]];
+    }
+    cv.updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+
+    const hall = Number(document.getElementById('asuResult').dataset.hallNumber);
+    const halfSpaces = geom.halfSpacesFromCuts(
+      wyck.getSpaceGroupEntryByHallNumber(hall).asu.shape_only_cuts
+    );
+    const cart = structure.periodic.visibleWrapped.cart;
+    const toFrac = math.invert3x3(math.transpose3x3(structure.lattice));
+    let expected = 0;
+    for (let i = 0; i < cart.length; i += 1) {
+      const f = math.multiplyMatVec(toFrac, cart[i]);
+      let inside = false;
+      for (let tx = -2; tx <= 2 && !inside; tx += 1) {
+        for (let ty = -2; ty <= 2 && !inside; ty += 1) {
+          for (let tz = -2; tz <= 2 && !inside; tz += 1) {
+            inside = geom.containsFractional(halfSpaces, f[0] + tx, f[1] + ty, f[2] + tz);
+          }
+        }
+      }
+      if (inside) expected += 1;
+    }
+    return {
+      counts: render.asuAtomsInside(),
+      meshCount: groups.asuHaloMesh?.count ?? -1,
+      expected,
+      haloAt: Array.from(groups.asuHaloMesh.instanceMatrix.array.slice(12, 15)),
+    };
+  });
+  H.check('membership still matches the inequalities once the atoms have moved',
+    afterMove.counts.instances === afterMove.expected
+    && afterMove.meshCount === afterMove.expected,
+    `module ${afterMove.counts.instances} / independent ${afterMove.expected}`);
+  // The count can legitimately come out the same — what proves the highlight
+  // tracked the move is that the ring is drawn somewhere else.
+  H.check('and the rings moved with them',
+    afterMove.haloAt.some((v, i) => Math.abs(v - highlighted.haloAt[i]) > 1e-6),
+    `${highlighted.haloAt.map((v) => v.toFixed(2))} -> `
+    + `${afterMove.haloAt.map((v) => v.toFixed(2))}`);
+
+  // Hiding the wedge must take the halo with it — there is nothing to be
+  // inside of any more.
+  const afterHide = await page.evaluate(async () => {
+    document.getElementById('showAsuBtn').click();
+    const { groups } = await import('./state/store.js');
+    const render = await import('./render/index.js');
+    return {
+      mesh: !!groups.asuHaloMesh,
+      counts: render.asuAtomsInside(),
+      stillOn: render.isAsuAtomHighlightOn(),
+    };
+  });
+  H.check('hiding the wedge drops the halo but remembers the toggle',
+    !afterHide.mesh && afterHide.counts.instances === 0 && afterHide.stillOn,
+    JSON.stringify(afterHide));
+
   // --- every space-group setting, four invariants ------------------------
   const sweep = await page.evaluate(async () => {
     const geom = await import('./ui/BackendPanel/asuGeometry.js');

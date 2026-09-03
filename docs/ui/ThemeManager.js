@@ -33,7 +33,7 @@
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
 import {
-  updateLattice, requestRender, setCelOutlineColor, updateAsymmetricUnit,
+  updateLattice, requestRender, setCelOutlineColor, refreshAsuAppearance,
 } from '../render/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 
@@ -118,11 +118,15 @@ export function applySceneFromCSS() {
     if (dot) dot.style.border = `2px solid ${latticeColor}`;
     updateLattice();
   }
-  if (asuColor) {
+  // A hand-picked wedge colour outranks the palette's: the user chose it
+  // against this scene, and a theme switch retinting it under them would look
+  // like the picker had failed. The picker's Reset clears the flag and hands
+  // control back here.
+  if (asuColor && !general.asuColorUserSet) {
     general.asuColor = asuColor;
     // No-op unless the asymmetric-unit wedge is currently drawn, in which case
-    // it is rebuilt in the new palette's colour.
-    updateAsymmetricUnit();
+    // it repaints in the new palette's colour.
+    refreshAsuAppearance();
   }
   // Theme CSS loads async, so this can run after the triggering click's frame.
   requestRender();

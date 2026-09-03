@@ -9,9 +9,9 @@
 // ui/BackendPanel/asuGeometry.js) are fractional coordinates of the
 // conventional setting, so the same numbers against a primitive or a rotated
 // cell would describe a different, meaningless region. The Symmetry panel
-// therefore hands this module moyo's standardized cell rather than whatever
-// cell is on screen, and when the two differ the conventional cell box is
-// drawn alongside the wedge so it is visible which frame the wedge belongs to.
+// symmetrises to the conventional cell before asking for a wedge, so the two
+// are normally the same frame; the conventional cell box below is the fallback
+// for when they are not.
 //
 // The panel owns the crystallography and this module owns the geometry: what
 // arrives here is a finished polyhedron in fractional coordinates plus the
@@ -29,13 +29,16 @@ import * as THREE from '../external/three/three.module.js';
 import { app, groups, fileBrowser, general } from '../state/store.js';
 import { disposeGroup } from '../ui/WindowAndSceneControls.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
-import { fracToCartPoint } from '../math/index.js';
+import { containsFractional, CONTAINS_TOLERANCE } from '../ui/BackendPanel/asuGeometry.js';
+import {
+  fracToCartPoint, invert3x3, transpose3x3, multiplyMatVec,
+} from '../math/index.js';
 
-/** Face opacity of the wedge hull. Low enough to read the atoms through it. */
-const FACE_OPACITY = 0.22;
+/** Wedge face opacity when `general.asuOpacity` is unset or nonsense. */
+const DEFAULT_OPACITY = 0.22;
 
 /** Wedge outline radius in world units (A). Deliberately a shade THICKER than
- *  the cell lines' 0.015 default: at 22% alpha the hull alone barely registers
+ *  the cell lines' 0.015 default: at low alpha the hull barely registers
  *  against a dense structure, and the outline is what carries the shape. */
 const EDGE_RADIUS = 0.02;
 
@@ -45,8 +48,14 @@ const CELL_RADIUS = 0.01;
 /** Opacity of that context box. */
 const CELL_OPACITY = 0.5;
 
+/** Halo shell radius as a multiple of the atom's own drawn radius. */
+const HALO_SCALE = 1.22;
+
+/** Halo opacity. Near-opaque: it is a ring, not a veil. */
+const HALO_OPACITY = 0.85;
+
 /** Fallback if a theme somehow supplies no --asu-color. */
-const FALLBACK_COLOR = 0xa05cd6;
+const FALLBACK_COLOR = '#a05cd6';
 
 /** Per-component lattice agreement below which two cells count as the same. */
 const LATTICE_TOL = 1e-6;
@@ -61,9 +70,27 @@ const LATTICE_TOL = 1e-6;
 // rather than leave a wedge from the previous cell floating in the scene.
 let wedge = null;
 
-function resolveColor() {
-  const color = general.asuColor;
-  return color ? new THREE.Color(color) : new THREE.Color(FALLBACK_COLOR);
+// The hull, kept to hand so a slider drag can retint or re-alpha it without
+// rebuilding any geometry.
+let hullMesh = null;
+
+// Atom highlight state. Off by default and never computed while off — see
+// updateAsuAtomHighlight.
+let highlightAtoms = false;
+let inWedgeAtoms = 0;
+let inWedgeInstances = 0;
+
+// Reusable "have I already counted this source atom" flags, so counting
+// distinct atoms across periodic images costs no allocation per frame.
+let seenSource = new Uint8Array(0);
+
+function colorValue() {
+  return general.asuColor || FALLBACK_COLOR;
+}
+
+function opacityValue() {
+  const value = Number(general.asuOpacity);
+  return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : DEFAULT_OPACITY;
 }
 
 /**
@@ -126,7 +153,8 @@ function addCellBox(group, lattice, radius, material) {
 function buildWedgeGroup() {
   const { polyhedron, lattice, showCellBox } = wedge;
   const group = new THREE.Group();
-  const color = resolveColor();
+  const color = new THREE.Color(colorValue());
+  const opacity = opacityValue();
 
   // Fractional -> Cartesian happens once, here. Everything upstream
   // (asuGeometry.js) works in fractional coordinates on purpose.
@@ -153,7 +181,7 @@ function buildWedgeGroup() {
 
   const faceMaterial = new THREE.MeshStandardMaterial({
     color,
-    opacity: FACE_OPACITY,
+    opacity,
     // A wedge on a cell face is coplanar with atoms and bonds sitting exactly
     // on that face, and DoubleSide keeps the inward faces blending too — the
     // camera is inside the wedge as often as not.
@@ -161,15 +189,16 @@ function buildWedgeGroup() {
     roughness: 0.55,
     metalness: 0,
   });
-  const mesh = new THREE.Mesh(geometry, faceMaterial);
+  hullMesh = new THREE.Mesh(geometry, faceMaterial);
   // Never set transparency flags here: intent is declared, and the active
   // pipeline decides the flags (utils/TransparencyPolicy.js).
-  applyTransparency(faceMaterial, { kind: 'asuFace', opacity: FACE_OPACITY, mesh });
-  group.add(mesh);
+  applyTransparency(faceMaterial, { kind: 'asuFace', opacity, mesh: hullMesh });
+  group.add(hullMesh);
 
   // --- outline ------------------------------------------------------------
-  // The hull alone is ambiguous at 22% alpha; the outline is what makes the
-  // wedge's shape readable, and it is the part that survives a screenshot.
+  // The hull alone is ambiguous at low alpha; the outline is what makes the
+  // wedge's shape readable, and it is what survives the opacity slider going
+  // to zero.
   const edgeMaterial = new THREE.MeshBasicMaterial({ color });
   applyTransparency(edgeMaterial, { kind: 'asuEdge', opacity: 1 });
   for (const [a, b] of polyhedron.edges) {
@@ -183,8 +212,9 @@ function buildWedgeGroup() {
   }
 
   // --- conventional cell, when it is not the cell on screen ---------------
-  // Without this the wedge would be a shape floating in a cell it does not
-  // belong to, with nothing on screen to say so.
+  // The panel symmetrises first, so this is a fallback rather than the normal
+  // path: without it a wedge drawn against some other cell would look
+  // misplaced instead of merely elsewhere.
   if (showCellBox) {
     const cellMaterial = new THREE.MeshBasicMaterial({
       color,
@@ -203,14 +233,31 @@ function buildWedgeGroup() {
  * @param {object} options
  * @param {{vertices: number[][], triangles: number[][], edges: number[][]}}
  *   options.polyhedron wedge in fractional coordinates (asuGeometry.js)
+ * @param {Array<{normal: number[], offset: number}>} options.halfSpaces the
+ *   same wedge as inequalities, used to test whether an atom is inside it
  * @param {number[][]} options.lattice row-major conventional lattice, the one
  *   the polyhedron's fractional coordinates are expressed in
  * @param {object} options.structure the structure this wedge was computed for;
  *   the wedge is dropped once that is no longer the selected structure
  */
-export function showAsymmetricUnit({ polyhedron, lattice, structure }) {
+export function showAsymmetricUnit({ polyhedron, halfSpaces, lattice, structure }) {
+  // Fractional bounding box, used to bound the lattice-translation search in
+  // updateAsuAtomHighlight. Cheap to keep, and it makes that search exact
+  // rather than a guessed +/-1 shell.
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
+  for (const vertex of polyhedron.vertices) {
+    for (let axis = 0; axis < 3; axis += 1) {
+      if (vertex[axis] < lo[axis]) lo[axis] = vertex[axis];
+      if (vertex[axis] > hi[axis]) hi[axis] = vertex[axis];
+    }
+  }
+
   wedge = {
     polyhedron,
+    halfSpaces,
+    lo,
+    hi,
     lattice: lattice.map((row) => [...row]),
     structure,
     // Answered once, at the moment the user asked for the wedge, against the
@@ -240,6 +287,220 @@ export function asymmetricUnitNeedsCellBox() {
 }
 
 /**
+ * Re-apply colour and opacity to what is already drawn, without rebuilding any
+ * geometry. This is the path a colour-picker change or an opacity-slider drag
+ * takes: the shape has not moved, only its paint, and a drag emits a change
+ * per pixel of travel.
+ */
+export function refreshAsuAppearance() {
+  const color = colorValue();
+  if (groups.asuGroup) {
+    groups.asuGroup.traverse((object) => {
+      if (object.material?.color) object.material.color.set(color);
+    });
+  }
+  if (hullMesh) {
+    const opacity = opacityValue();
+    hullMesh.material.opacity = opacity;
+    applyTransparency(hullMesh.material, { kind: 'asuFace', opacity, mesh: hullMesh });
+  }
+  if (groups.asuHaloMesh) groups.asuHaloMesh.material.color.set(color);
+}
+
+// ---------------------------------------------------------------------------
+// Atoms inside the wedge
+// ---------------------------------------------------------------------------
+
+/** Turn the in-wedge atom highlight on or off. */
+export function setAsuAtomHighlight(on) {
+  highlightAtoms = !!on;
+  updateAsuAtomHighlight();
+}
+
+/** Whether the in-wedge atom highlight is on. */
+export function isAsuAtomHighlightOn() {
+  return highlightAtoms;
+}
+
+/**
+ * How many atoms the last highlight pass found inside the wedge.
+ * `atoms` counts distinct atoms, `instances` counts the drawn copies of them
+ * (an atom on a cell face is drawn several times, once per periodic image).
+ */
+export function asuAtomsInside() {
+  return { atoms: inWedgeAtoms, instances: inWedgeInstances };
+}
+
+function clearHalo() {
+  inWedgeAtoms = 0;
+  inWedgeInstances = 0;
+  const mesh = groups.asuHaloMesh;
+  if (!mesh) return;
+  app?.scene?.remove(mesh);
+  mesh.geometry?.dispose();
+  mesh.material?.dispose();
+  groups.asuHaloMesh = null;
+}
+
+// Reused across frames and only reallocated when it has to grow: MD playback
+// refreshes the highlight every frame, and a fresh InstancedMesh per frame
+// would be a fresh Float32Array per frame.
+function ensureHalo(capacity) {
+  const existing = groups.asuHaloMesh;
+  if (existing && existing.userData.capacity >= capacity) {
+    existing.material.color.set(colorValue());
+    return existing;
+  }
+  clearHalo();
+
+  const material = new THREE.MeshBasicMaterial({
+    color: colorValue(),
+    // BackSide culls the near half of the shell, leaving the far half — which
+    // the atom itself hides except around its silhouette. What is left reads
+    // as a ring around the atom rather than a bag over it, and it stays
+    // legible whatever colour the atom is.
+    side: THREE.BackSide,
+    opacity: HALO_OPACITY,
+  });
+  const mesh = new THREE.InstancedMesh(
+    new THREE.SphereGeometry(1, 16, 12), material, capacity
+  );
+  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  mesh.userData.capacity = capacity;
+  // `count` is rewritten every pass and the instances move with the atoms, so
+  // a bounding sphere computed once would be wrong immediately.
+  mesh.frustumCulled = false;
+  applyTransparency(material, { kind: 'asuFace', opacity: HALO_OPACITY, mesh });
+
+  groups.asuHaloMesh = mesh;
+  app.scene.add(mesh);
+  return mesh;
+}
+
+/**
+ * Ring the atoms that belong to the wedge.
+ *
+ * Membership is tested MODULO LATTICE TRANSLATION, and that is not a detail:
+ * 205 of the 527 tabulated settings have an asymmetric unit that reaches
+ * outside the [0,1) box atoms are wrapped into — Fd-3m's origin-choice-2
+ * wedge is entirely at y <= 0, for one — so a literal "is this atom's drawn
+ * position inside the polyhedron" test would highlight nothing at all for
+ * nearly half of all structures. A lattice translation is a symmetry of the
+ * crystal, so an atom at y = 0.875 is the same atom as one at y = -0.125, and
+ * asking whether ANY of its lattice images lands in the wedge is the question
+ * that means something: it identifies the symmetry-independent atoms.
+ *
+ * The halo is drawn on the atom itself, never on the image that satisfied the
+ * test — a ring around an atom says something, a ring around empty space does
+ * not.
+ *
+ * Called from updateVisualization (structure edits, frame changes) and from
+ * FastFrameModule (MD/relax playback, which bypasses updateVisualization) so
+ * the highlight tracks atoms as they move. Both call it unconditionally: when
+ * the toggle is off this returns at the first line, which is the point of
+ * having a toggle at all.
+ *
+ * The work when it IS on is one matrix-vector product per drawn instance plus
+ * a handful of dot products per candidate translation — the bounding box keeps
+ * that to a couple of translations per axis, and a point-in-wedge test is a
+ * question for the inequalities rather than for the mesh, so a cell with
+ * thousands of atoms costs well under a millisecond.
+ */
+export function updateAsuAtomHighlight() {
+  if (!highlightAtoms || !isAsymmetricUnitVisible()) {
+    clearHalo();
+    return;
+  }
+
+  const structure = fileBrowser.selectedStructure;
+  // The array the renderer itself draws from, so every drawn copy is covered
+  // and each is ringed where it stands.
+  const cart = structure?.periodic?.visibleWrapped?.cart;
+  const atomsMesh = groups.atomsMesh;
+  if (!cart?.length || !atomsMesh || !app?.scene) {
+    clearHalo();
+    return;
+  }
+
+  const toFractional = invert3x3(transpose3x3(wedge.lattice));
+  const source = atomsMesh.instanceMatrix.array;
+  const srcIndex = structure.periodic.visibleWrapped.srcIndex;
+  const mesh = ensureHalo(cart.length);
+  const target = mesh.instanceMatrix.array;
+
+  const atomCount = structure.atoms?.length ?? 0;
+  if (seenSource.length < atomCount) seenSource = new Uint8Array(atomCount);
+  else seenSource.fill(0, 0, atomCount);
+
+  let drawn = 0;
+  let distinct = 0;
+
+  const { lo, hi, halfSpaces } = wedge;
+
+  for (let i = 0; i < cart.length; i += 1) {
+    const point = cart[i];
+    const frac = multiplyMatVec(toFractional, point);
+
+    // Only the translations that could possibly land this atom in the wedge:
+    // t must satisfy lo <= frac + t <= hi on every axis.
+    //
+    // Widened by the tolerance containsFractional itself allows, and that is
+    // load-bearing rather than defensive. An atom on a special position sits
+    // exactly ON a wedge boundary — that is what makes the position special —
+    // so lo - frac lands exactly on an integer, where a float a hair either
+    // side of it sends Math.ceil to the neighbouring one and drops the only
+    // translation that would have matched. Silently, and for exactly the
+    // atoms that matter most.
+    let inside = false;
+    const txEnd = Math.floor(hi[0] - frac[0] + CONTAINS_TOLERANCE);
+    const tyEnd = Math.floor(hi[1] - frac[1] + CONTAINS_TOLERANCE);
+    const tzEnd = Math.floor(hi[2] - frac[2] + CONTAINS_TOLERANCE);
+    for (let tx = Math.ceil(lo[0] - frac[0] - CONTAINS_TOLERANCE); tx <= txEnd && !inside; tx += 1) {
+      for (let ty = Math.ceil(lo[1] - frac[1] - CONTAINS_TOLERANCE); ty <= tyEnd && !inside; ty += 1) {
+        for (let tz = Math.ceil(lo[2] - frac[2] - CONTAINS_TOLERANCE); tz <= tzEnd && !inside; tz += 1) {
+          inside = containsFractional(
+            halfSpaces, frac[0] + tx, frac[1] + ty, frac[2] + tz
+          );
+        }
+      }
+    }
+    if (!inside) continue;
+
+    // The atom's own drawn radius, straight off its instance matrix, so a halo
+    // tracks the size slider and any per-atom scaling for free. Zero means the
+    // element is hidden — AtomsFracUpdateModule zero-scales those — and there
+    // is nothing there to ring.
+    const radius = source[i * 16];
+    if (!(radius > 0)) continue;
+
+    const offset = drawn * 16;
+    // Pure scale + translation. Every other slot of a fresh InstancedMesh's
+    // matrix array is already zero and nothing here ever writes one, so the
+    // six touched below are the whole matrix.
+    target[offset] = radius * HALO_SCALE;
+    target[offset + 5] = radius * HALO_SCALE;
+    target[offset + 10] = radius * HALO_SCALE;
+    target[offset + 12] = point[0];
+    target[offset + 13] = point[1];
+    target[offset + 14] = point[2];
+    target[offset + 15] = 1;
+    drawn += 1;
+
+    const src = srcIndex ? srcIndex[i] : i;
+    if (src < atomCount && !seenSource[src]) {
+      seenSource[src] = 1;
+      distinct += 1;
+    }
+  }
+
+  mesh.count = drawn;
+  mesh.visible = drawn > 0;
+  mesh.instanceMatrix.needsUpdate = true;
+  inWedgeInstances = drawn;
+  inWedgeAtoms = distinct;
+}
+
+/**
  * Rebuild the wedge group from the stored state. Called from
  * updateVisualization (so the wedge survives every redraw) and on theme change
  * (so it picks up a new --asu-color).
@@ -247,13 +508,19 @@ export function asymmetricUnitNeedsCellBox() {
 export function updateAsymmetricUnit() {
   disposeGroup(groups.asuGroup);
   groups.asuGroup = null;
+  hullMesh = null;
 
   // A wedge describes one structure's space group in one cell. Once the
   // selection has moved on it is not "out of date", it is wrong — so it goes,
   // rather than being redrawn against a cell it was never computed for.
   if (wedge && wedge.structure !== fileBrowser.selectedStructure) wedge = null;
-  if (!wedge || !app?.scene) return;
+  if (!wedge || !app?.scene) {
+    clearHalo();
+    return;
+  }
 
   groups.asuGroup = buildWedgeGroup();
   app.scene.add(groups.asuGroup);
+  updateAsuAtomHighlight();
 }
+

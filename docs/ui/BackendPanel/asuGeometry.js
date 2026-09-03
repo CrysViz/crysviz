@@ -269,6 +269,43 @@ export function polyhedronVolume(polyhedron) {
 }
 
 /**
+ * Slack allowed by containsFractional, in fractional units.
+ *
+ * Exported because anything that PRE-FILTERS candidate points before calling
+ * it has to allow at least as much, or the filter throws away points the
+ * predicate would have accepted. That is not hypothetical: atoms on special
+ * positions sit exactly on wedge boundaries by construction, so they land on
+ * the filter's edge every time.
+ */
+export const CONTAINS_TOLERANCE = 1e-6;
+
+/**
+ * Whether a fractional point lies in the wedge.
+ *
+ * Asked of the HALF-SPACES rather than the mesh, which makes it both exact and
+ * cheap: a handful of dot products with no ray casting and no triangle walk.
+ * That is why `halfSpaces` is handed out alongside the polyhedron.
+ *
+ * The tolerance is positive, so a point exactly on a face counts as inside.
+ * An atom sitting on a wedge boundary is the normal case, not the edge case -
+ * boundaries of the asymmetric unit are where special positions live.
+ *
+ * @param {Array<{normal: number[], offset: number}>} halfSpaces
+ * @param {number} x fractional coordinates in the conventional cell
+ * @param {number} y
+ * @param {number} z
+ * @param {number} [tolerance] slack in fractional units
+ * @returns {boolean}
+ */
+export function containsFractional(halfSpaces, x, y, z, tolerance = CONTAINS_TOLERANCE) {
+  for (const h of halfSpaces) {
+    const n = h.normal;
+    if (n[0] * x + n[1] * y + n[2] * z + h.offset < -tolerance) return false;
+  }
+  return true;
+}
+
+/**
  * The asymmetric unit of one Hall setting, as geometry plus the text that
  * describes it.
  *
@@ -276,21 +313,25 @@ export function polyhedronVolume(polyhedron) {
  * the 8.9 MB dataset is fetched lazily and this reads it synchronously.
  *
  * @param {number} hallNumber spglib Hall number, 1-530 (moyo's `hall_number`)
- * @returns {?{polyhedron: object, volumeFraction: number, symopCount: number,
- *             conditions: string, shapeConditions: string, hm: string, itNumber: number}}
+ * @returns {?{polyhedron: object, halfSpaces: object[], volumeFraction: number,
+ *             symopCount: number, conditions: string, shapeConditions: string,
+ *             hm: string, itNumber: number}}
  *   null when the Hall number is out of range or the row carries no ASU.
+ *   `halfSpaces` comes back alongside the polyhedron because testing whether a
+ *   point is in the wedge is a question for the inequalities, not the mesh:
+ *   see containsFractional().
  */
 export function asymmetricUnitForHallNumber(hallNumber) {
   const entry = getSpaceGroupEntryByHallNumber(hallNumber);
   if (!entry?.asu?.shape_only_cuts) return null;
 
-  const polyhedron = polyhedronFromHalfSpaces(
-    halfSpacesFromCuts(entry.asu.shape_only_cuts)
-  );
+  const halfSpaces = halfSpacesFromCuts(entry.asu.shape_only_cuts);
+  const polyhedron = polyhedronFromHalfSpaces(halfSpaces);
   if (!polyhedron.vertices.length) return null;
 
   return {
     polyhedron,
+    halfSpaces,
     volumeFraction: polyhedronVolume(polyhedron),
     symopCount: Number(entry.n_symops),
     conditions: String(entry.asu_str ?? ''),

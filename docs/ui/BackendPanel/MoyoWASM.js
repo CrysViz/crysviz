@@ -17,7 +17,10 @@ import { loadSymmetryData } from '../addToStructureModule/WyckoffProjector.js';
 import {
   showAsymmetricUnit, hideAsymmetricUnit, isAsymmetricUnitVisible,
   asymmetricUnitNeedsCellBox, latticesMatch, requestRender,
+  refreshAsuAppearance, setAsuAtomHighlight, isAsuAtomHighlightOn,
+  asuAtomsInside,
 } from '../../render/index.js';
+import { openSwatchColorPicker } from '../SwatchColorPicker.js';
 
 
 
@@ -116,6 +119,22 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         <div class="sym-card-title">Asymmetric unit</div>
         <div class="sym-row">
           <button class="calcButton sym-wide" id="showAsuBtn">Show Asymmetric Unit</button>
+        </div>
+        <div class="sym-row sym-asu-controls">
+          <span class="sym-asu-control">
+            <span class="sym-asu-control-label">Colour</span>
+            <span id="asuColorSlot"></span>
+          </span>
+          <label class="sym-asu-control" for="asuOpacityInput">
+            <span class="sym-asu-control-label">Opacity</span>
+            <input type="range" id="asuOpacityInput" min="0" max="1" step="0.01">
+          </label>
+        </div>
+        <div class="sym-row">
+          <label class="sym-asu-check" for="asuHighlightChk">
+            <input type="checkbox" id="asuHighlightChk">
+            Highlight atoms inside
+          </label>
         </div>
         <div class="sym-result" id="asuResult" hidden></div>
       </div>
@@ -301,12 +320,13 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         }
         showAsymmetricUnit({
           polyhedron: asu.polyhedron,
+          halfSpaces: asu.halfSpaces,
           lattice: result.lattice,
           structure,
         });
         requestRender();
         renderSymmetryResult(result);
-        renderAsuResult(asu);
+        renderAsuResult(asu, result.hall_number);
         setStatus(symmetrised
           ? 'Symmetrised to the conventional cell — the wedge is drawn in it'
           : '');
@@ -318,6 +338,77 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         syncAsuButton();
       }
     };
+
+    // --- wedge appearance: colour swatch + opacity slider ----------------
+    // Both repaint in place (refreshAsuAppearance) rather than rebuilding the
+    // wedge: the shape has not moved, and a slider drag emits a change per
+    // pixel of travel.
+    const themeAsuColor = () => getComputedStyle(document.documentElement)
+      .getPropertyValue('--asu-color').trim();
+
+    const swatch = document.createElement('button');
+    swatch.type = 'button';
+    swatch.className = 'color-swatch-btn';
+    swatch.title = 'Wedge colour';
+    const paintSwatch = (hex) => {
+      // The swatch's own fill IS the value it represents, so it stays inline
+      // — same call the shared picker makes (ui/SwatchColorPicker.js).
+      swatch.style.background = hex;
+      swatch.dataset.hex = hex;
+    };
+    paintSwatch(general.asuColor || themeAsuColor());
+
+    swatch.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openSwatchColorPicker(swatch, swatch.dataset.hex, (hex) => {
+        general.asuColor = hex;
+        // Pins the choice against the next theme switch (ui/ThemeManager.js).
+        general.asuColorUserSet = true;
+        refreshAsuAppearance();
+        requestRender();
+      }, {
+        onReset: () => {
+          // Back to the palette's own --asu-color, and back under the theme's
+          // control for the next palette switch.
+          general.asuColorUserSet = false;
+          general.asuColor = themeAsuColor();
+          paintSwatch(general.asuColor);
+          refreshAsuAppearance();
+          requestRender();
+        },
+      });
+    });
+    document.getElementById('asuColorSlot').appendChild(swatch);
+
+    const opacityInput = document.getElementById('asuOpacityInput');
+    opacityInput.value = String(general.asuOpacity);
+    opacityInput.addEventListener('input', () => {
+      general.asuOpacity = parseFloat(opacityInput.value);
+      refreshAsuAppearance();
+      requestRender();
+    });
+
+    // --- highlight the atoms inside the wedge ----------------------------
+    const highlightChk = document.getElementById('asuHighlightChk');
+    highlightChk.checked = isAsuAtomHighlightOn();
+    highlightChk.addEventListener('change', () => {
+      setAsuAtomHighlight(highlightChk.checked);
+      requestRender();
+      if (!highlightChk.checked) {
+        setStatus();
+        return;
+      }
+      if (!isAsymmetricUnitVisible()) {
+        setStatus('Show the asymmetric unit first — nothing to be inside of yet');
+        return;
+      }
+      // Distinct atoms, not drawn copies: an atom on a wedge face is drawn
+      // once per periodic image, and all of them are ringed, but the count
+      // that means something is how many atoms the wedge actually holds.
+      const { atoms, instances } = asuAtomsInside();
+      setStatus(`${atoms} atom${atoms === 1 ? '' : 's'} inside the wedge`
+        + (instances > atoms ? ` (${instances} images ringed)` : ''));
+    });
 
     syncAsuButton();
 }
@@ -456,9 +547,15 @@ function escapeHtml(text) {
 // two condition strings behind it — the full asymmetric unit, and the
 // shape-only one that is what actually gets drawn (see asuGeometry.js for why
 // they differ and why only the second is drawable).
-function renderAsuResult(asu) {
+function renderAsuResult(asu, hallNumber) {
   const box = document.getElementById('asuResult');
   if (!box) return;
+
+  // Which of the 530 settings this wedge came from. Recorded because the
+  // setting is what decides the wedge and it is not otherwise recoverable
+  // from the panel: Fd-3m's two origin choices give genuinely different
+  // asymmetric units (525 wants y<=1/8, 526 wants y<=0).
+  box.dataset.hallNumber = String(hallNumber);
 
   // Taken from the polyhedron that was just built, not from the dataset's
   // symop count, so the number describes the shape on screen. That the two
