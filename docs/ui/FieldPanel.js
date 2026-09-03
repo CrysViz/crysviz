@@ -2,7 +2,6 @@ import { fileBrowser, app, groups } from '../state/store.js';
 import { updateField, setActiveField, requestRender, suggestIsoValue } from '../render/index.js';
 import {
   getIsosurfaceMaterialSettings,
-  getIsosurfaceTriangleSortingEnabled,
   setIsosurfaceMaterialSettings,
   setIsosurfaceTriangleSortingEnabled,
   applyMaterialSettingsToStoredIsosurfaces,
