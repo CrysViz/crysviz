@@ -188,3 +188,46 @@
 }
 
 .sym-status:empty { display: none; }
+
+/* Asymmetric unit ------------------------------------------------------- */
+
+/* Active state for a card's toggle button (the asymmetric-unit wedge). The
+   Wyckoff button next to it still sets the same look through inline styles;
+   this is the class version, and that one should move here too. */
+.sym-card .calcButton.sym-btn-active {
+  background: linear-gradient(
+    135deg,
+    rgb(var(--blue-accent-rgb) / 0.75),
+    rgb(var(--blue-accent-rgb))
+  );
+  color: var(--fg-1);
+  box-shadow: 0 0 0 1px rgb(var(--blue-accent-rgb) / 0.45);
+}
+
+.sym-asu-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
+.sym-asu-label {
+  color: var(--fg-50);
+  font-size: var(--fs-sm);
+}
+
+/* The inequality list is the widest thing in the panel and the one part that
+   must stay readable verbatim, so it wraps rather than being clipped. */
+.sym-asu-conditions {
+  text-align: center;
+  color: var(--fg-1);
+  overflow-wrap: anywhere;
+}
+
+.sym-asu-note {
+  margin: 0;
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--fg-50);
+}

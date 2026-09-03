@@ -103,6 +103,21 @@ export class ForwardPipeline {
         // Same: fully opaque edges depth-test/write like opaque geometry.
         material.transparent = opacity < 1;
         break;
+      case 'asuFace':
+        // The asymmetric-unit wedge (render/AsymmetricUnitModule.js) is a hull
+        // drawn AROUND part of the structure, so unlike a polyhedron it must
+        // never occlude what it contains: no depth write, and drawn after the
+        // opaque structure the way the isosurface is.
+        material.transparent = opacity < 1;
+        material.depthWrite = false;
+        if (spec.mesh) spec.mesh.renderOrder = 1;
+        break;
+      case 'asuEdge':
+        // The wedge outline reads as structure rather than as a translucent
+        // skin, so it keeps opaque geometry's flags — same as the cell lines
+        // it is drawn alongside.
+        material.transparent = opacity < 1;
+        break;
       case 'planeBorder':
         material.transparent = true;
         break;

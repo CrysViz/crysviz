@@ -148,6 +148,39 @@ function getSpaceGroupEntry(spaceGroupNumber) {
   return entry;
 }
 
+// Index from spglib Hall number to dataset row, built once on first use.
+// The 527 rows carry `spglib_hall_numbers` (a row can cover more than one Hall
+// number), and between them they cover all 530 with no gaps.
+let hallNumberIndex = null;
+
+/**
+ * Dataset row for a spglib Hall number, or null when out of range.
+ *
+ * Unlike getSpaceGroupEntry above, this pins down the exact SETTING rather
+ * than falling back to the reference one - which matters for anything read off
+ * the row that is setting-dependent, the asymmetric unit included (see
+ * BackendPanel/asuGeometry.js). moyo hands out `hall_number` directly, so this
+ * is the lookup to prefer whenever a moyo result is in hand.
+ *
+ * @param {number} hallNumber 1-530
+ * @returns {?object}
+ */
+export function getSpaceGroupEntryByHallNumber(hallNumber) {
+  const number = Number(hallNumber);
+  if (!Number.isInteger(number) || number < 1 || number > 530) return null;
+
+  if (!hallNumberIndex) {
+    hallNumberIndex = new Map();
+    for (const spaceGroup of requireData().spacegroups ?? []) {
+      for (const hall of spaceGroup.spglib_hall_numbers ?? []) {
+        if (!hallNumberIndex.has(Number(hall))) hallNumberIndex.set(Number(hall), spaceGroup);
+      }
+    }
+  }
+
+  return hallNumberIndex.get(number) ?? null;
+}
+
 function getWyckoffEntry(spaceGroupNumber, wyckoffLetter) {
   const spaceGroup = getSpaceGroupEntry(spaceGroupNumber);
   const letter = String(wyckoffLetter).trim().toLowerCase();

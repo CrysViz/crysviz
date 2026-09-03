@@ -35,6 +35,7 @@ import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateOverlayBonds,rebuildOverlayBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
+import { updateAsymmetricUnit } from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
 import {rebuildAtoms,updateAtoms,deriveVisibleWrapped} from '../render/index.js';
 import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
@@ -236,6 +237,12 @@ export function updateVisualization(options = {}) {
   }
   console.time("uv:updateLattice");
   if (reRenderLattice) updateLattice(general.currentLatticeColor);
+  // The asymmetric-unit wedge is rebuilt on the same trigger as the cell it
+  // sits in, and unconditionally: the call is a no-op when no wedge is shown,
+  // and when one IS shown it is also what drops a wedge whose structure is no
+  // longer selected (render/AsymmetricUnitModule.js). Gating it on a "wedge
+  // on" flag would leave that stale wedge in the scene.
+  if (reRenderLattice) updateAsymmetricUnit();
   console.timeEnd("uv:updateLattice");
   console.time("uv:updateOther");
   if (reRenderOther) updateOther();

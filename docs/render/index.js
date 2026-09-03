@@ -64,6 +64,11 @@ export {
 } from './LatticeModule.js';
 
 export {
+  showAsymmetricUnit, hideAsymmetricUnit, updateAsymmetricUnit,
+  isAsymmetricUnitVisible, asymmetricUnitNeedsCellBox,
+} from './AsymmetricUnitModule.js';
+
+export {
   updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
   resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
   polyhedronFaceColor,

@@ -32,7 +32,9 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
-import { updateLattice, requestRender, setCelOutlineColor } from '../render/index.js';
+import {
+  updateLattice, requestRender, setCelOutlineColor, updateAsymmetricUnit,
+} from '../render/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 
 const THEMES_DIR = './themes/';
@@ -99,6 +101,7 @@ export function applySceneFromCSS() {
   const root = getComputedStyle(document.documentElement);
   const sceneBg = root.getPropertyValue('--scene-bg').trim();
   const latticeColor = root.getPropertyValue('--lattice-color').trim();
+  const asuColor = root.getPropertyValue('--asu-color').trim();
 
   if (sceneBg && app?.scene) {
     app.scene.background = new THREE.Color(sceneBg);
@@ -114,6 +117,12 @@ export function applySceneFromCSS() {
     const dot = document.getElementById('backgroundDot');
     if (dot) dot.style.border = `2px solid ${latticeColor}`;
     updateLattice();
+  }
+  if (asuColor) {
+    general.asuColor = asuColor;
+    // No-op unless the asymmetric-unit wedge is currently drawn, in which case
+    // it is rebuilt in the new palette's colour.
+    updateAsymmetricUnit();
   }
   // Theme CSS loads async, so this can run after the triggering click's frame.
   requestRender();

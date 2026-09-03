@@ -12,6 +12,12 @@ import { refreshBackendTheme } from './BackendTheme.js';
 import { normalizeFractional } from "../../math/index.js";
 import { runPeriodicWrapped } from "../../render/index.js";
 import { hallEntry, symdataHallUrl } from './hallSymbols.js';
+import { asymmetricUnitForHallNumber } from './asuGeometry.js';
+import { loadSymmetryData } from '../addToStructureModule/WyckoffProjector.js';
+import {
+  showAsymmetricUnit, hideAsymmetricUnit, isAsymmetricUnitVisible,
+  asymmetricUnitNeedsCellBox, requestRender,
+} from '../../render/index.js';
 
 
 
@@ -104,6 +110,14 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
           <button class="calcButton" id="getPrimBtn">Prim. Cell</button>
           <button class="calcButton" id="getConvBtn">Conv. Cell</button>
         </div>
+      </div>
+
+      <div class="sym-card">
+        <div class="sym-card-title">Asymmetric unit</div>
+        <div class="sym-row">
+          <button class="calcButton sym-wide" id="showAsuBtn">Show Asymmetric Unit</button>
+        </div>
+        <div class="sym-result" id="asuResult" hidden></div>
       </div>
 
       <div class="sym-card">
@@ -216,6 +230,76 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
     };
 
     syncWyckoffButton();
+
+    // --- asymmetric unit ("irreducible wedge") ---------------------------
+    const asuBtn = document.getElementById("showAsuBtn");
+
+    const syncAsuButton = () => {
+      const shown = isAsymmetricUnitVisible();
+      asuBtn.textContent = shown ? 'Hide Asymmetric Unit' : 'Show Asymmetric Unit';
+      asuBtn.classList.toggle('sym-btn-active', shown);
+      const box = document.getElementById('asuResult');
+      if (box && !shown) {
+        box.hidden = true;
+        box.innerHTML = '';
+      }
+    };
+
+    asuBtn.onclick = async () => {
+      if (isAsymmetricUnitVisible()) {
+        hideAsymmetricUnit();
+        requestRender();
+        syncAsuButton();
+        setStatus();
+        return;
+      }
+
+      // Captured before the awaits below: the wedge belongs to the structure
+      // that was selected when it was asked for, and the render module drops
+      // it if the selection has moved on by the time it is drawn.
+      const structure = fileBrowser.selectedStructure;
+
+      // The two failure modes want different words, so they get different
+      // try blocks: moyo's are tolerance problems (describeMoyoFailure knows
+      // how to phrase those), while the dataset's are a failed 8.9 MB fetch.
+      let result;
+      try {
+        // getConvUnit rather than getSymmetryInfo: the wedge is only defined
+        // in the conventional cell, and this hands over that cell's lattice
+        // and the Hall number from one analysis. The conventional cell is NOT
+        // committed as a new structure here - only its lattice is borrowed.
+        result = callMoyo("getConvUnit", getTol());
+      } catch (error) {
+        setStatus(describeMoyoFailure(error, getTol()));
+        return;
+      }
+
+      asuBtn.disabled = true;
+      try {
+        await loadSymmetryData();
+        const asu = asymmetricUnitForHallNumber(result.hall_number);
+        if (!asu) {
+          throw new Error(`no asymmetric unit tabulated for Hall number ${result.hall_number}`);
+        }
+        showAsymmetricUnit({
+          polyhedron: asu.polyhedron,
+          lattice: result.lattice,
+          structure,
+        });
+        requestRender();
+        renderSymmetryResult(result);
+        renderAsuResult(asu);
+        setStatus();
+      } catch (error) {
+        hideAsymmetricUnit();
+        setStatus(`Could not build the asymmetric unit: ${error?.message ?? error}`);
+      } finally {
+        asuBtn.disabled = false;
+        syncAsuButton();
+      }
+    };
+
+    syncAsuButton();
 }
 
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
@@ -304,6 +388,52 @@ function renderSymmetryResult(result) {
       <span class="sym-proto-label">Protostructure</span>
       <span class="sym-mono sym-proto-value">${result.protostructure}</span>
     </div>`;
+  box.hidden = false;
+}
+
+// The asymmetric-unit conditions are inequalities, so the strings genuinely
+// contain "<" and ">" ("x<=1/2 [y<=0]") and cannot go near innerHTML unescaped.
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Fill the asymmetric-unit block: how much of the cell the wedge is, and the
+// two condition strings behind it — the full asymmetric unit, and the
+// shape-only one that is what actually gets drawn (see asuGeometry.js for why
+// they differ and why only the second is drawable).
+function renderAsuResult(asu) {
+  const box = document.getElementById('asuResult');
+  if (!box) return;
+
+  // Taken from the polyhedron that was just built, not from the dataset's
+  // symop count, so the number describes the shape on screen. That the two
+  // always agree is the invariant checked across all 530 settings by
+  // tools/browsertest/tests/asymmetricunit.test.js.
+  const denominator = Math.round(1 / asu.volumeFraction);
+
+  const note = asymmetricUnitNeedsCellBox()
+    ? `<p class="sym-asu-note">Drawn in the conventional cell, which is not the
+         cell on screen — the thin outline is that conventional cell. Use
+         Conv. Cell above to line the two up.</p>`
+    : '';
+
+  box.innerHTML = `
+    <dl class="sym-kv">
+      <dt>Volume</dt><dd class="sym-mono">1/${denominator} of the cell</dd>
+      <dt>Faces</dt><dd class="sym-mono">${asu.polyhedron.faces.length}</dd>
+    </dl>
+    <div class="sym-asu-block">
+      <span class="sym-asu-label">Asymmetric unit</span>
+      <span class="sym-mono sym-asu-conditions">${escapeHtml(asu.conditions)}</span>
+    </div>
+    <div class="sym-asu-block">
+      <span class="sym-asu-label">Shape only (drawn)</span>
+      <span class="sym-mono sym-asu-conditions">${escapeHtml(asu.shapeConditions)}</span>
+    </div>
+    ${note}`;
   box.hidden = false;
 }
 

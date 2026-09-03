@@ -118,6 +118,11 @@ export const groups = {
   // THREE.Group of short cylinder dashes, rebuilt from the current structure on
   // every updateVisualization when any eligible pair is enabled.
   hydrogenBondsGroup: null,
+  // Real-space asymmetric unit ("irreducible wedge") of the detected space
+  // group (render/AsymmetricUnitModule.js). A THREE.Group holding the wedge
+  // hull, its outline, and — only when the displayed cell is not the
+  // conventional one — the conventional cell box the wedge is defined in.
+  asuGroup: null,
 };
 
 
@@ -181,6 +186,10 @@ export const general = {
   symmetryTolerance: 0.01,
   powerMode: true,
   currentLatticeColor:null,
+  // Asymmetric-unit wedge colour. Mirrored from --asu-color by
+  // ui/ThemeManager.js the same way currentLatticeColor mirrors
+  // --lattice-color, so a palette can retint the wedge.
+  asuColor:null,
   defaultBackgroundColor:null,
   useDefaultColors:true,
   // "Element Materials Map" (Visual → Colors): per-species tracer-material
