@@ -66,8 +66,19 @@ function resolveColor() {
   return color ? new THREE.Color(color) : new THREE.Color(FALLBACK_COLOR);
 }
 
-/** Whether two row-major 3x3 lattices agree component-wise. */
-function latticesMatch(a, b) {
+/**
+ * Whether two row-major 3x3 lattices agree component-wise.
+ *
+ * Exported because the panel has to ask the same question before it draws:
+ * a conventional cell that is not the cell on screen means the structure
+ * needs symmetrising first (see MoyoWASM.js), and both sides of that decision
+ * must use one tolerance.
+ *
+ * @param {number[][]} a
+ * @param {number[][]} b
+ * @returns {boolean}
+ */
+export function latticesMatch(a, b) {
   if (!a || !b) return false;
   for (let i = 0; i < 3; i += 1) {
     for (let j = 0; j < 3; j += 1) {

@@ -16,7 +16,7 @@ import { asymmetricUnitForHallNumber } from './asuGeometry.js';
 import { loadSymmetryData } from '../addToStructureModule/WyckoffProjector.js';
 import {
   showAsymmetricUnit, hideAsymmetricUnit, isAsymmetricUnitVisible,
-  asymmetricUnitNeedsCellBox, requestRender,
+  asymmetricUnitNeedsCellBox, latticesMatch, requestRender,
 } from '../../render/index.js';
 
 
@@ -254,24 +254,42 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         return;
       }
 
-      // Captured before the awaits below: the wedge belongs to the structure
-      // that was selected when it was asked for, and the render module drops
-      // it if the selection has moved on by the time it is drawn.
-      const structure = fileBrowser.selectedStructure;
-
       // The two failure modes want different words, so they get different
       // try blocks: moyo's are tolerance problems (describeMoyoFailure knows
       // how to phrase those), while the dataset's are a failed 8.9 MB fetch.
       let result;
       try {
         // getConvUnit rather than getSymmetryInfo: the wedge is only defined
-        // in the conventional cell, and this hands over that cell's lattice
-        // and the Hall number from one analysis. The conventional cell is NOT
-        // committed as a new structure here - only its lattice is borrowed.
+        // in the conventional cell, so this is the analysis that produces both
+        // that cell and the Hall number to look the wedge up by.
         result = callMoyo("getConvUnit", getTol());
       } catch (error) {
         setStatus(describeMoyoFailure(error, getTol()));
         return;
+      }
+
+      // Symmetrise to the conventional cell FIRST, and draw the wedge onto
+      // the result.
+      //
+      // A conventional cell is in general rotated and axis-permuted relative
+      // to the cell that was loaded — moyo reorders Pmmm's axes so that
+      // a <= b <= c, and a primitive cell is a different cell entirely — so a
+      // wedge drawn against the cell on screen sits at the wrong orientation
+      // even though its shape is right. Transforming the structure into the
+      // frame the wedge is defined in is what makes the two agree, and it is
+      // the same transform the Conv. Cell button applies, committed as its own
+      // structure so it is visible in the Files list rather than happening
+      // invisibly under the user.
+      let structure = fileBrowser.selectedStructure;
+      let symmetrised = false;
+      if (!isConventionalCellDisplayed(result, structure)) {
+        newContainerFromSymmetrisation(
+          "conv", result.positions, result.lattice, result.elements
+        );
+        // Row selection sets this synchronously, so the wedge below is
+        // attached to the conventional cell rather than the one it replaced.
+        structure = fileBrowser.selectedStructure;
+        symmetrised = true;
       }
 
       asuBtn.disabled = true;
@@ -289,7 +307,9 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         requestRender();
         renderSymmetryResult(result);
         renderAsuResult(asu);
-        setStatus();
+        setStatus(symmetrised
+          ? 'Symmetrised to the conventional cell — the wedge is drawn in it'
+          : '');
       } catch (error) {
         hideAsymmetricUnit();
         setStatus(`Could not build the asymmetric unit: ${error?.message ?? error}`);
@@ -391,6 +411,38 @@ function renderSymmetryResult(result) {
   box.hidden = false;
 }
 
+// Whether the selected structure already IS moyo's conventional cell, in which
+// case the wedge can be drawn straight onto it.
+//
+// Checked on the SITES as well as the lattice. An origin shift leaves the
+// lattice identical while moving every atom, and the asymmetric unit is
+// defined relative to the conventional cell's own origin — so a lattice-only
+// test would pass a structure whose wedge lands in the right box against the
+// wrong atoms, which is exactly the kind of quietly-wrong picture this
+// feature must not produce.
+//
+// Deliberately errs towards saying "no": a false negative costs one extra
+// symmetrised structure, which is visible and harmless, while a false
+// positive is a misplaced wedge.
+function isConventionalCellDisplayed(result, structure) {
+  if (!structure || !latticesMatch(result.lattice, structure.lattice)) return false;
+
+  const sites = structure.atoms ?? [];
+  if (sites.length !== result.positions.length) return false;
+
+  // moyo is free to hand back the sites in a different order, so this compares
+  // them as a set rather than pairwise.
+  return result.positions.every((position, i) => sites.some((atom, j) => {
+    if (result.elements[i] !== structure.elements[j]) return false;
+    for (let axis = 0; axis < 3; axis += 1) {
+      let delta = position[axis] - atom.position[axis];
+      delta -= Math.round(delta); // fractional coordinates: compare modulo 1
+      if (Math.abs(delta) > 1e-6) return false;
+    }
+    return true;
+  }));
+}
+
 // The asymmetric-unit conditions are inequalities, so the strings genuinely
 // contain "<" and ">" ("x<=1/2 [y<=0]") and cannot go near innerHTML unescaped.
 function escapeHtml(text) {
@@ -414,10 +466,15 @@ function renderAsuResult(asu) {
   // tools/browsertest/tests/asymmetricunit.test.js.
   const denominator = Math.round(1 / asu.volumeFraction);
 
+  // A fallback, not the normal path: the button symmetrises to the
+  // conventional cell before drawing, so the wedge and the cell on screen are
+  // normally the same frame and no box is needed. This covers the case where
+  // that transform did not take — the wedge is then still correct, but it is
+  // correct about a cell that is not the one on screen, and saying nothing
+  // would make it look misplaced instead of merely elsewhere.
   const note = asymmetricUnitNeedsCellBox()
     ? `<p class="sym-asu-note">Drawn in the conventional cell, which is not the
-         cell on screen — the thin outline is that conventional cell. Use
-         Conv. Cell above to line the two up.</p>`
+         cell on screen — the thin outline is that conventional cell.</p>`
     : '';
 
   box.innerHTML = `

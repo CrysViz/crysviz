@@ -65,7 +65,7 @@ export {
 
 export {
   showAsymmetricUnit, hideAsymmetricUnit, updateAsymmetricUnit,
-  isAsymmetricUnitVisible, asymmetricUnitNeedsCellBox,
+  isAsymmetricUnitVisible, asymmetricUnitNeedsCellBox, latticesMatch,
 } from './AsymmetricUnitModule.js';
 
 export {

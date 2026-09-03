@@ -17,6 +17,13 @@
 //                          check alone can miss.
 //   outward winding        every triangle's normal points away from the body,
 //                          so the hull shades as a solid rather than inside-out.
+//
+// The other half is the symmetrise-first rule: a conventional cell is in
+// general rotated and axis-permuted relative to the loaded one, so the button
+// transforms the structure into the conventional cell BEFORE drawing. The
+// wedge must therefore always end up in the same frame as the cell on screen
+// (no context box, no note), and asking for it twice must not pile up
+// duplicate structures.
 'use strict';
 const H = require('../harness');
 
@@ -106,6 +113,8 @@ async function waitForWedge(page, wanted) {
         return hex;
       })(),
       hasNote: !!box.querySelector('.sym-asu-note'),
+      status: document.getElementById('calcResult').textContent.trim(),
+      rows: document.querySelectorAll('#objectTable tbody tr').length,
     };
   });
 
@@ -135,6 +144,14 @@ async function waitForWedge(page, wanted) {
   H.check('the conventional-cell note appears exactly when the cell box does',
     shown.hasNote === shown.needsCellBox,
     `note=${shown.hasNote} cellBox=${shown.needsCellBox}`);
+  // YBCO's conventional cell has a and b swapped (moyo sorts Pmmm's axes), so
+  // this is a structure that DID need transforming — and having been
+  // transformed, it must need no context box at all.
+  H.check('YBCO is symmetrised first, so the wedge shares the frame on screen',
+    shown.needsCellBox === false && shown.hasNote === false,
+    `cellBox=${shown.needsCellBox} note=${shown.hasNote}`);
+  H.check('and the status line says the structure was symmetrised',
+    /symmetris/i.test(shown.status), shown.status);
 
   // --- it actually changes pixels ---------------------------------------
   const withWedge = await H.shotCanvas(page, 'asu_on');
@@ -175,10 +192,21 @@ async function waitForWedge(page, wanted) {
   H.check('loading another structure drops the previous structure\'s wedge',
     !afterSwitch.group && !afterSwitch.visible, JSON.stringify(afterSwitch));
 
-  // --- a primitive cell: the wedge belongs to the CONVENTIONAL cell ------
-  // Si diamond primitive is the case the decision "conventional cell always"
-  // exists for — its own cell is not the cell the wedge is defined in, so the
-  // wedge has to bring that conventional cell along and say so.
+  // --- a primitive cell: symmetrised, then the wedge --------------------
+  // Si diamond primitive is the case the symmetrise-first rule exists for.
+  // Its own cell is not the cell the wedge is defined in, and the difference
+  // is not a subtle one: the conventional cell is a 5.43 A cube holding 8
+  // atoms, the primitive one a rhombohedron holding 2.
+  const beforeRows = await page.evaluate(
+    () => document.querySelectorAll('#objectTable tbody tr').length
+  );
+  const primitiveAtoms = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    return fileBrowser.selectedStructure.atoms.length;
+  });
+  H.check('the loaded Si cell is the primitive one (2 atoms)',
+    primitiveAtoms === 2, `${primitiveAtoms} atoms`);
+
   await H.clickById(page, 'showAsuBtn');
   await waitForWedge(page, true);
   const primitive = await page.evaluate(async () => {
@@ -189,26 +217,63 @@ async function waitForWedge(page, wanted) {
       if (o.isMesh && o.geometry?.type === 'CylinderGeometry') cylinders += 1;
     });
     const box = document.getElementById('asuResult');
+    const s = fileBrowser.selectedStructure;
     return {
       needsCellBox: render.asymmetricUnitNeedsCellBox(),
       hasNote: !!box.querySelector('.sym-asu-note'),
       cylinders,
-      atoms: fileBrowser.selectedStructure.atoms.length,
+      atoms: s.atoms.length,
+      // The conventional Si cell is cubic with a = 5.43; the primitive one has
+      // no zero off-diagonal at all, so this tells them apart outright.
+      lattice: s.lattice.map((r) => r.map((v) => +v.toFixed(3))),
+      rows: document.querySelectorAll('#objectTable tbody tr').length,
+      name: fileBrowser.fileData[fileBrowser.selectedRowIndex]?.name ?? '',
+      status: document.getElementById('calcResult').textContent.trim(),
       text: box.textContent.replace(/\s+/g, ' ').trim(),
     };
   });
-  H.check('a primitive cell is recognised as not the conventional cell',
-    primitive.needsCellBox === true && primitive.atoms === 2,
-    `needsCellBox=${primitive.needsCellBox} atoms=${primitive.atoms}`);
-  H.check('so the conventional cell box is drawn (12 extra cylinders) '
-    + 'and the panel explains it',
-    primitive.cylinders >= 12 + 6 && primitive.hasNote,
-    `${primitive.cylinders} cylinders, note=${primitive.hasNote}`);
-  // Fd-3m has 192 operations in its conventional cell; the primitive cell on
-  // screen has 2 atoms. Reporting 1/192 rather than 1/48 is the load-bearing
-  // consequence of using the conventional cell.
+
+  H.check('asking for the wedge symmetrises the primitive cell first',
+    primitive.atoms === 8 && primitive.rows === beforeRows + 1,
+    `${primitive.atoms} atoms, ${beforeRows} -> ${primitive.rows} rows`);
+  H.check('the new structure is the conventional 5.43 A cube',
+    JSON.stringify(primitive.lattice)
+      === JSON.stringify([[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]),
+    JSON.stringify(primitive.lattice));
+  H.check('it is committed under a visible sym_conv_ name, not swapped in silently',
+    primitive.name.startsWith('sym_conv_'), primitive.name);
+  H.check('and the status line says so', /symmetris/i.test(primitive.status),
+    primitive.status);
+  // The whole point of transforming: the wedge and the cell on screen are now
+  // the same frame, so there is nothing to disambiguate.
+  H.check('the wedge needs no context box once the frames agree',
+    primitive.needsCellBox === false && primitive.hasNote === false
+    && primitive.cylinders < 12,
+    `cellBox=${primitive.needsCellBox} note=${primitive.hasNote} `
+    + `cylinders=${primitive.cylinders}`);
+  // Fd-3m has 192 operations in its conventional cell. Reporting 1/192 rather
+  // than 1/48 is the load-bearing consequence of using the conventional cell.
   H.check('the wedge is 1/192 of the conventional cell, not of the primitive one',
     primitive.text.includes('1/192 of the cell'), primitive.text.slice(0, 160));
+
+  // --- asking twice must not pile up structures -------------------------
+  await H.clickById(page, 'showAsuBtn');   // hide
+  await waitForWedge(page, false);
+  await H.clickById(page, 'showAsuBtn');   // show again
+  await waitForWedge(page, true);
+  const twice = await page.evaluate(async () => {
+    const render = await import('./render/index.js');
+    return {
+      rows: document.querySelectorAll('#objectTable tbody tr').length,
+      visible: render.isAsymmetricUnitVisible(),
+      status: document.getElementById('calcResult').textContent.trim(),
+    };
+  });
+  H.check('a structure that is already conventional is not symmetrised again',
+    twice.rows === primitive.rows && twice.visible,
+    `${primitive.rows} -> ${twice.rows} rows, visible=${twice.visible}`);
+  H.check('and the second time says nothing about symmetrising',
+    !/symmetris/i.test(twice.status), twice.status);
 
   // --- every space-group setting, four invariants ------------------------
   const sweep = await page.evaluate(async () => {
