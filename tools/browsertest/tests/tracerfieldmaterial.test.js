@@ -252,8 +252,11 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
       label: 'test', isoValue: 0.5, minValue: 0, maxValue: 1, useAbsoluteIsoValue: false });
     structure.volumetricFields = new FieldContainer({
       fileName: 'test', source: 'Cube', fields: [field], fieldCount: 1 });
-    fieldBrowser.setAvailableFields([field]);
-    fieldBrowser.setSelectedField(0);
+    // fieldBrowser.availableFields is derived from a FieldCatalog now, not a
+    // stored array — setAvailableFields is gone. FieldContainer synthesises a
+    // flat catalog from its fields on demand, and setCatalog selects the first
+    // one, so this is the whole of the old two-call setup.
+    fieldBrowser.setCatalog(structure.volumetricFields.catalog);
     // Ensure a panel-body container exists, then build the Field panel into it.
     let body = document.getElementById('cvPanelBody-field');
     if (!body) {
@@ -330,8 +333,11 @@ const CONVERGED = 56; // pixel shots are taken at convergence (Monte-Carlo avera
     blob.isVisible = true;
     structure.volumetricFields = new FieldContainer({
       fileName: 'liveblob', source: 'Cube', fields: [blob], fieldCount: 1 });
-    fieldBrowser.setAvailableFields([blob]);
-    fieldBrowser.setSelectedField(0);
+    // fieldBrowser.availableFields is derived from a FieldCatalog now, not a
+    // stored array — setAvailableFields is gone. FieldContainer synthesises a
+    // flat catalog from its fields on demand, and setCatalog selects the first
+    // one, so this is the whole of the old two-call setup.
+    fieldBrowser.setCatalog(structure.volumetricFields.catalog);
     addFieldPanel('cvPanelBody-field'); // rebuild so the slider drives THIS field
     const slider = /** @type {HTMLInputElement} */ (document.querySelector('#cvPanelBody-field #isoSlider'));
     setActiveField(blob, false);

@@ -58,9 +58,11 @@ const H = require('../harness');
       useAbsoluteIsoValue: false, isVisible: true,
     });
     structure.volumetricFields = new FieldContainer({ fileName: 'blob.cube', source: 'Cube', fields: [field] });
-    fieldBrowser.selectedField = null;
-    fieldBrowser.setAvailableFields([field]);
-    fieldBrowser.setSelectedField(0);
+    // fieldBrowser.availableFields is derived from a FieldCatalog now, not a
+    // stored array — setAvailableFields is gone. FieldContainer synthesises a
+    // flat catalog from its fields on demand, and setCatalog selects the first
+    // one, so this is the whole of the old two-call setup.
+    fieldBrowser.setCatalog(structure.volumetricFields.catalog);
     setActiveField(field, false);
     updateField(0.5);
 

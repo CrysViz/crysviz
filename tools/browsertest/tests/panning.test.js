@@ -50,7 +50,12 @@ async function waitForQuiescence(page, timeout = 10000) {
 }
 
 async function drag(page, button, dx, dy = 0) {
-  const box = await page.locator('canvas').first().boundingBox();
+  // The 3D canvas, scoped to #view. A bare 'canvas' selector is wrong here:
+  // several widgets (colour pickers, text measurement) keep detached 0x0
+  // canvases that sit ahead of it in document order, so the bare selector
+  // resolves to one of those — no bounding box, and dispatched pointer
+  // events land on nothing.
+  const box = await page.locator('#view canvas').first().boundingBox();
   if (!box) throw new Error('3D canvas has no bounding box');
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
@@ -62,7 +67,7 @@ async function drag(page, button, dx, dy = 0) {
 
 async function dispatchSyntheticPointerEvents(page, events, yieldAfterPointerId = null) {
   await page.evaluate(async ({ events, yieldAfterPointerId }) => {
-    const canvas = document.querySelector('canvas');
+    const canvas = document.querySelector('#view canvas');
     const setPointerCapture = canvas.setPointerCapture;
     const releasePointerCapture = canvas.releasePointerCapture;
     // Synthetic PointerEvents are not backed by OS pointers, so Firefox would

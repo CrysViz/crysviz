@@ -33,7 +33,7 @@ async function waitForQuiescence(page, timeout = 10000) {
 
 async function canvasCenter(page) {
   return page.evaluate(() => {
-    const rect = document.querySelector('canvas').getBoundingClientRect();
+    const rect = document.querySelector('#view canvas').getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
   });
 }
@@ -99,7 +99,7 @@ async function quaternion(page) {
 
 async function dispatchSyntheticPointerEvents(page, events, yieldAfterPointerId = null) {
   await page.evaluate(async ({ events, yieldAfterPointerId }) => {
-    const canvas = document.querySelector('canvas');
+    const canvas = document.querySelector('#view canvas');
     const setPointerCapture = canvas.setPointerCapture;
     const releasePointerCapture = canvas.releasePointerCapture;
     canvas.setPointerCapture = () => {};
