@@ -387,8 +387,12 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         // A parser that returns an empty container (no structures, or a
         // structure with no atoms) "loaded" nothing — treat it as a failure so
         // it reaches the warning modal instead of silently doing nothing.
-        if (!structureContainer?.structures?.length
-            || !structureContainer.structures.some((s) => s?.atoms?.length)) {
+        // Through the frame seam, not `structures` directly: a multi-frame
+        // file comes back as a TrajectoryContainer whose `structures` is a
+        // sparse array with no slot occupied until a frame is shown, and
+        // `.some()` skips holes — indexing it here rejected every good
+        // multi-step OUTCAR/XYZ/pw.x trajectory as "no atoms found".
+        if (!structureContainer?.frameCount || !structureContainer.hasAtoms()) {
           throw new Error('No atoms or structures were found in this file.');
         }
         initializeUIOnLoad(structureContainer);

@@ -137,6 +137,17 @@ export class StructureContainer {
     return this.structures.map(s => (Number.isFinite(s?.energy) ? s.energy : NaN));
   }
 
+  /**
+   * Whether any frame has at least one atom. This is the "did the file load
+   * anything" test the load path runs, so it must go through the seam: a
+   * store-backed subclass keeps `structures` sparse (no slot is populated
+   * until a frame is first shown) and `structures.some(...)` skips holes,
+   * which would report a perfectly good trajectory as empty.
+   */
+  hasAtoms() {
+    return this.structures.some(s => Array.isArray(s?.atoms) && s.atoms.length > 0);
+  }
+
   /** Whether any frame carries spin data. */
   hasSpins() {
     return this.structures.some(s => Array.isArray(s?.spins) && s.spins.length > 0);
