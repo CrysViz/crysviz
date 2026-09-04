@@ -19,6 +19,13 @@ export class StructureContainer {
     // is off — see FileBrowswerPanel.js's updateStructureFromRowAndStep.
     this.cameraSnapshot = null;
     this.featureSnapshot = null;
+    // Soft, non-fatal load warnings a reader attaches for data it could NOT
+    // read even though the structure loaded (e.g. an FHI-aims run that is
+    // spin-polarised but whose per-atom moments were in an unparsed format).
+    // core/crystal-viewer.js surfaces these in the load-warning modal. null
+    // when the load was clean.
+    /** @type {string[] | null} */
+    this.loadWarnings = null;
   }
 
   _ensureListOfClass(input, ClassType) {
@@ -128,6 +135,17 @@ export class StructureContainer {
   /** Per-frame energies for plots; NaN where unknown. */
   energySeries() {
     return this.structures.map(s => (Number.isFinite(s?.energy) ? s.energy : NaN));
+  }
+
+  /**
+   * Whether any frame has at least one atom. This is the "did the file load
+   * anything" test the load path runs, so it must go through the seam: a
+   * store-backed subclass keeps `structures` sparse (no slot is populated
+   * until a frame is first shown) and `structures.some(...)` skips holes,
+   * which would report a perfectly good trajectory as empty.
+   */
+  hasAtoms() {
+    return this.structures.some(s => Array.isArray(s?.atoms) && s.atoms.length > 0);
   }
 
   /** Whether any frame carries spin data. */

@@ -286,6 +286,32 @@
     overflow: visible;
   }
 
+  /* ---- styles.css: "Export CIF with symmetry" dialog ----
+     The card fills the phone width; the four tolerance rungs go two by two
+     (four abreast leaves ~80px each, too narrow for "P6_3/mmc (194)"); the
+     action row stacks so Export keeps a full-width, thumb-sized target with
+     "P1 instead" / Cancel sharing the line below. */
+  .cif-export-modal {
+    width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
+  }
+
+  .cif-export-modal .cif-export-ladder {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cif-export-modal .paste-modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .cif-export-modal .paste-modal-actions .png-primary {
+    flex-basis: 100%;
+  }
+
+  .cif-export-modal .paste-modal-actions button:not(.png-primary) {
+    flex: 1 1 0;
+  }
+
   /* ---- controlPanel.css: Planes field/colormap picker ----
      Folded from a standalone max-width:640px breakpoint (nearest rung is
      mobile/720). Real change: the colormap grid now collapses to a single

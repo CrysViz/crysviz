@@ -131,8 +131,9 @@ export class FileSource {
   /**
    * First `n` bytes plus a lossy text decode of them, for format detection.
    *
-   * Cheap for every source kind, which is what lets `io/formats.js` pass a head
-   * to every descriptor without caring whether content sniffing is switched on.
+   * Cheap for every source kind, which is what lets `io/formats.js` sniff the
+   * contents of every file before it looks at the name. `loadStructure` passes
+   * `HEAD_BYTES` from `io/formats.js`; the default here is only a floor.
    *
    * @param {number} [n]
    * @returns {Promise<{bytes: Uint8Array, text: string}>}

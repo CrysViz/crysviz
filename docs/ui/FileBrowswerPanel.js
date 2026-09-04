@@ -282,7 +282,7 @@ export function createRow(obj) {
       stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
     } else {
       stepInput.setCustomValidity("");
-      updateStructureFromRowAndStep(strucIndex);
+      applyRowStepChange(strucIndex);
     }
   });
 
@@ -796,7 +796,7 @@ export function updateRow(row, obj) {
       stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
     } else {
       stepInput.setCustomValidity("");
-      updateStructureFromRowAndStep(strucIndex);
+      applyRowStepChange(strucIndex);
     }
   }
   function checkboxLimitLogic() {
@@ -815,6 +815,24 @@ export function updateRow(row, obj) {
 // save the outgoing camera/feature snapshot onto. Stays null until the first
 // switch actually happens.
 let lastActiveContainer = null;
+
+// A frame typed or spin-clicked into a row's step box is a deliberate settle
+// jump, exactly like the Trajectory player's own step buttons: the frame is
+// properly loaded and the view re-centres on it. When the player is built it
+// owns that jump (so its scrubber, frame label and plot cursor follow too) —
+// it registers itself here, which also avoids importing TrajectoryPanel from
+// this module (TrajectoryPanel already imports selectStructure from here).
+// Without a player the box drives the frame change itself and re-centres.
+let rowStepJumpHandler = null;
+export function setRowStepJumpHandler(fn) {
+  rowStepJumpHandler = typeof fn === 'function' ? fn : null;
+}
+
+function applyRowStepChange(rowIndex) {
+  if (rowStepJumpHandler && rowStepJumpHandler(rowIndex) === true) return;
+  updateStructureFromRowAndStep(rowIndex);
+  recenterCamera(); // keep the user's rotation/zoom; only re-centre on the new frame
+}
 
 // Function to update structure data from a row and its step input
 function updateStructureFromRowAndStep(rowIndex) {

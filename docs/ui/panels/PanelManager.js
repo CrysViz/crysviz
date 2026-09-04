@@ -104,6 +104,14 @@ const panelPrefDefaults = {
   // window size. Independent of the phone workflow — it never sends the
   // Structure window to its bottom-sheet home.
   forceCompactIcons: false,
+  // Visual ▸ Camera ▸ "Rotate & pan speed" slider. Multiplier on mouse/touch
+  // rotate + pan sensitivity; 1 = the tuned default, <1 slower, >1 faster.
+  cameraSpeedFactor: 1,
+  // Trajectory player ▸ "Recenter each step": re-center the camera on the
+  // (possibly drifting) structure on every frame change. Off by default — a
+  // fixed-cell MD doesn't need it; a relaxation/optimization that translates
+  // the structure does.
+  trajRecenterEachStep: false,
 };
 const panelPrefs = { ...panelPrefDefaults };
 
@@ -314,6 +322,15 @@ function dockPanelAtDefaultOrder(panel) {
 }
 
 /** Restore every window to its defaults and forget the remembered layout. */
+// Reset UI deliberately keeps most panelPrefs (layout conveniences that should
+// survive it), but a few settings — e.g. the Camera rotate/pan speed — read to
+// users as ordinary settings they expect Reset UI to restore. Owners register a
+// callback here instead of PanelManager reaching into their modules.
+const panelsResetHooks = [];
+export function onPanelsReset(fn) {
+  if (typeof fn === 'function') panelsResetHooks.push(fn);
+}
+
 export function resetAllPanels() {
   stored = { dockOrder: [], panels: {}, rightDock: defaultSideDockLayout() };
   removedPanelLayouts.clear();
@@ -329,6 +346,9 @@ export function resetAllPanels() {
     if (panel.def.defaults?.closed) closePanel(panel.id);
   }
   refreshCompactFloatingPanels();
+  for (const fn of panelsResetHooks) {
+    try { fn(); } catch (e) { console.warn('panels reset hook failed', e); }
+  }
   saveLayout();
 }
 

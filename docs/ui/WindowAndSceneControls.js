@@ -9,6 +9,7 @@ import { createLockToggleButton } from './LockToggleButton.js';
 import { installGestureArbiter } from './GestureArbiter.js';
 import { loadCrysVizFonts } from '../utils/index.js';
 import { configureGizmoCameraProjection, GIZMO_FOV, GIZMO_ORTHO_HALF_HEIGHT } from './GizmoLayout.js';
+import { getPanelPref } from './panels/PanelManager.js';
 
 const cameraPanRight = new THREE.Vector3();
 const cameraPanUp = new THREE.Vector3();
@@ -329,15 +330,34 @@ export function initLabelRenderer() {
 }
 
 
+// Tuned base sensitivities. The Visual ▸ Camera "Rotate & pan speed" slider
+// scales both of these by general.cameraSpeedFactor (1 = these values); the
+// factor also multiplies the custom pan in GestureArbiter.applyPanDelta.
+export const BASE_ROTATE_SPEED = 1.5;
+export const BASE_PAN_SPEED = 0.8;
+
+/** Apply a rotate/pan speed multiplier. Updates the shared runtime factor
+ *  (read by GestureArbiter's pan) and the live TrackballControls rotate speed.
+ *  Safe to call before initControls — it just records the factor. */
+export function setCameraSpeedFactor(factor) {
+  const f = Number.isFinite(factor) && factor > 0 ? factor : 1;
+  general.cameraSpeedFactor = f;
+  if (app.controls) {
+    app.controls.rotateSpeed = BASE_ROTATE_SPEED * f;
+    app.controls.panSpeed = BASE_PAN_SPEED * f;
+  }
+}
+
 export function initControls(){
 
   app.controls = new TrackballControls(app.camera, app.renderer.domElement);
   app.controls.dynamicDampingFactor=0.2;
-  app.controls.rotateSpeed=1.5;
   app.controls.enableKeys = false; // Disable keyboard controls to avoid conflicts
   app.controls.noPan = true; // mouse and touch pan directly; trackball keeps rotate + zoom
   app.controls.noRotate= false;
-  app.controls.panSpeed = 0.8;
+  // rotateSpeed / panSpeed are set from the persisted speed factor (default 1,
+  // i.e. the tuned BASE_* values above).
+  setCameraSpeedFactor(getPanelPref('cameraSpeedFactor'));
 
   app.controls.mouseButtons = {
     LEFT: THREE.MOUSE.ROTATE,

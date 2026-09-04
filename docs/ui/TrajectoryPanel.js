@@ -5,7 +5,9 @@ import { updateSpins, removeSpins } from '../render/index.js';
 import { updateForces, removeForces } from '../render/index.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import { createTrajectoryPlot } from './TrajectoryPlot.js';
-import { openPanel, refreshPanelAvailability } from './panels/PanelManager.js';
+import { openPanel, refreshPanelAvailability, getPanelPref, setPanelPref } from './panels/PanelManager.js';
+import { recenterCamera } from './WindowAndSceneControls.js';
+import { selectStructure, setRowStepJumpHandler } from './FileBrowswerPanel.js';
 import { stressMean } from '../atomistic/relaxer.js';
 // Mean force magnitude over a frame's per-atom force vectors (eV/Å). Kept local
 // so the panel does not depend on the Forces-panel/histogram machinery.
@@ -199,7 +201,9 @@ function ensurePlot() {
     playing = false;
     if (trajectoryPlayerElements.playPauseBtn) trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.max(0, Math.min(container.structures.length - 1, f));
-    updateFrame(currentFrame, container);
+    // Clicking a point in the MD plot is a deliberate landing → proper load,
+    // and always reframe the structure.
+    updateFrame(currentFrame, container, { full: true, forceRecenter: true });
   });
   // "Compute step stats" lives in the plot's own toolbar now; run it against
   // whichever container is selected at click time.
@@ -399,10 +403,31 @@ function syncRowStepInput(frame) {
   if (input && input.value !== String(frame + 1)) input.value = String(frame + 1);
 }
 
+/** Fully load one frame — parity with clicking the structure's file-browser
+ *  row at this step: rebuilds the Structure Info / Cell / Polyhedra panels,
+ *  refreshes the field browser, and fires the active-structure-change
+ *  notification, so the frame is "properly loaded". Used when the user settles
+ *  on a frame (pause, slider release, a step button, an MD-plot click), not on
+ *  every scrub/playback tick — that path stays on the light
+ *  updateStructureFromFrame. Same-row selection, so the camera is untouched. */
+function properLoadFrame(frame, container) {
+  if (!container || frame < 0 || frame >= container.structures.length) return;
+  selectStructure(fileBrowser.selectedRowIndex, frame);
+}
+
 // --- Update UI and scene ---
 // opts.render=false updates only the label/slider/cursor without re-rendering
-// the 3D viewer — used while a live MD/relax run owns the scene, or for a
-// single-frame container where there is nothing to scrub.
+//   the 3D viewer — used while a live MD/relax run owns the scene, or for a
+//   single-frame container where there is nothing to scrub.
+// opts.full=true does a proper load (properLoadFrame) instead of the fast scene
+//   update — for the settle points listed above.
+// opts.recenter=false suppresses the "Recenter each step" follow for this call
+//   — used while actively dragging the scrubber, where a camera that jumps to
+//   each frame's center fights the scrub.
+// opts.forceRecenter=true recenters regardless of the toggle — used for every
+//   deliberate settle jump (pause, slider release, MD-plot click, the step
+//   buttons), which should always reframe the structure. The "Recenter each
+//   step" toggle then only governs continuous playback (autoplay ticks).
 function updateFrame(frame, container, opts = {}) {
   if (!container) return;
   const numFrames = container.structures.length;
@@ -415,9 +440,39 @@ function updateFrame(frame, container, opts = {}) {
   if (trajectoryPlayerElements.frameSlider) trajectoryPlayerElements.frameSlider.value = frame;
   syncRowStepInput(frame);
 
-  if (opts.render !== false) updateStructureFromFrame(frame, container);
+  if (opts.render !== false) {
+    if (opts.full) properLoadFrame(frame, container);
+    else updateStructureFromFrame(frame, container);
+    const wantRecenter = opts.forceRecenter === true
+      || (opts.recenter !== false && getPanelPref('trajRecenterEachStep'));
+    if (wantRecenter) recenterCamera();
+  }
 
   if (trajPlot) trajPlot.setCursor(frame);
+}
+
+/** The file browser's per-row step box changed (typed or spin-clicked) for
+ *  the row this player is showing. Treat it as a deliberate settle jump — the
+ *  same as the player's own step buttons: stop playback, proper load, always
+ *  recenter, and bring the scrubber / frame label / plot cursor along. Returns
+ *  false to let the file browser handle the change itself when the player is
+ *  not built, shows a different row, or a live run owns the scene. */
+function jumpToRowStep(rowIndex) {
+  if (!trajectoryPlayerElements.trajControlPanel || liveActive) return false;
+  if (rowIndex !== fileBrowser.selectedRowIndex) return false;
+  const container = structureShip.container[rowIndex];
+  const input = fileBrowser.selectedRow?.querySelector('input[type="number"]');
+  const frame = input ? parseInt(input.value, 10) - 1 : NaN;
+  if (!container || !Number.isFinite(frame) || frame < 0 || frame >= container.structures.length) return false;
+  // The player was built for the selected row's container; a stale player
+  // (row switched without a rebuild) has a scrubber sized for another one.
+  if (parseInt(trajectoryPlayerElements.frameSlider?.max, 10) !== container.structures.length - 1) return false;
+  stopAutoPlay();
+  playing = false;
+  if (trajectoryPlayerElements.playPauseBtn) trajectoryPlayerElements.playPauseBtn.textContent = '▶';
+  currentFrame = frame;
+  updateFrame(currentFrame, container, { full: true, forceRecenter: true });
+  return true;
 }
 
 /** Jump the trajectory to a specific frame. Used by the .crysviz loader to
@@ -426,7 +481,8 @@ function updateFrame(frame, container, opts = {}) {
 export function showTrajectoryFrame(frame, container) {
   if (!container?.structures?.length) return;
   currentFrame = Math.max(0, Math.min(container.structures.length - 1, frame));
-  updateFrame(currentFrame, container);
+  // Restoring a saved view should land properly loaded, like a real selection.
+  updateFrame(currentFrame, container, { full: true });
 }
 
 // --- Auto-play control ---
@@ -485,6 +541,10 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
         <label class="trajOpt">Step
           <input type="number" id="frameStepInput" min="1" value="1" />
         </label>
+        <label class="trajOpt trajOptCheck" title="Re-center the view on the structure at every frame (keeps your rotation and zoom)">
+          <input type="checkbox" id="recenterEachStep" />
+          Recenter each step
+        </label>
       </div>
       <div id="trajPlotHost" style="display:none;"></div>
     </div>
@@ -501,7 +561,26 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
     frameStepInput: trajControlPanel.querySelector('#frameStepInput'),
     frameSlider: trajControlPanel.querySelector('#frameSlider'),
     frameIndicator: trajControlPanel.querySelector('#frameIndicator'),
+    recenterCheckbox: trajControlPanel.querySelector('#recenterEachStep'),
   };
+
+  // Reflect the persisted choice; the toggle just stores the pref, read live by
+  // updateStructureFromFrame on each frame change.
+  if (trajectoryPlayerElements.recenterCheckbox) {
+    trajectoryPlayerElements.recenterCheckbox.checked = !!getPanelPref('trajRecenterEachStep');
+    trajectoryPlayerElements.recenterCheckbox.onchange = (e) => {
+      setPanelPref('trajRecenterEachStep', e.target.checked);
+      // Apply immediately to the frame on screen so the effect is visible now,
+      // not only on the next step.
+      if (e.target.checked) recenterCamera();
+    };
+  }
+
+  // Let the file browser's step box drive this player (see jumpToRowStep).
+  // Registered here, at runtime, rather than at module load: a module-load
+  // call would be order-sensitive in the FileBrowswerPanel <-> panels import
+  // graph, and a player that isn't built just declines the jump anyway.
+  setRowStepJumpHandler(jumpToRowStep);
 
   const container = structureShip.container[fileBrowser.selectedRowIndex];
   if (!container || container.structures.length === 0) return;
@@ -528,29 +607,42 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   trajectoryPlayerElements.playPauseBtn.onclick = () => {
     playing = !playing;
     trajectoryPlayerElements.playPauseBtn.textContent = playing ? '⏸' : '▶';
-    if (playing) startAutoPlay(container, parseInt(trajectoryPlayerElements.speedSelect.value));
-    else stopAutoPlay();
+    if (playing) {
+      startAutoPlay(container, parseInt(trajectoryPlayerElements.speedSelect.value));
+    } else {
+      // Pausing settles on the current frame — load it properly and reframe.
+      stopAutoPlay();
+      updateFrame(currentFrame, container, { full: true, forceRecenter: true });
+    }
   };
 
+  // A single deliberate step is a settle point → proper load + always reframe.
   trajectoryPlayerElements.stepBackBtn.onclick = () => {
     playing = false;
     trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.max(0, currentFrame - frameStep);
-    updateFrame(currentFrame, container);
+    updateFrame(currentFrame, container, { full: true, forceRecenter: true });
   };
 
   trajectoryPlayerElements.stepFwdBtn.onclick = () => {
     playing = false;
     trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.min(container.structures.length - 1, currentFrame + frameStep);
-    updateFrame(currentFrame, container);
+    updateFrame(currentFrame, container, { full: true, forceRecenter: true });
   };
 
+  // Dragging the scrubber does fast light updates and holds the camera still;
+  // releasing it (change) settles on the frame with a proper load + recenter.
   trajectoryPlayerElements.frameSlider.oninput = () => {
     playing = false;
     trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = parseInt(trajectoryPlayerElements.frameSlider.value);
-    updateFrame(currentFrame, container);
+    updateFrame(currentFrame, container, { recenter: false });
+  };
+
+  trajectoryPlayerElements.frameSlider.onchange = () => {
+    currentFrame = parseInt(trajectoryPlayerElements.frameSlider.value);
+    updateFrame(currentFrame, container, { full: true, forceRecenter: true });
   };
 
   trajectoryPlayerElements.speedSelect.onchange = () => {

@@ -19,6 +19,11 @@ export { parseOUTCAR } from "./ReadOutcarModule.js";
 export { parsePWSCFout } from "./ReadPWSCFoutModule.js";
 export { parsePWSCFin } from "./ReadPWSCFinModule.js";
 export { parseXYZFile } from "./ReadeXYZModule.js";
+export { parseResFile } from "./ReadResModule.js";
+export { parseCastepCell } from "./ReadCastepCellModule.js";
+export { parseCastepGeom } from "./ReadCastepGeomModule.js";
+export { parseAimsGeometry } from "./ReadAimsGeometryModule.js";
+export { parseAimsOut } from "./ReadAimsOutModule.js";
 export { parseASETrajectory } from "./ReadASETrajectoryModule.js";
 export { readCHGCAR } from "./ReadChgcarModule.js";
 export { readCubeFile } from "./ReadCubeModule.js";
@@ -26,12 +31,12 @@ export { readWAVECAR, isLikelyWAVECARContent } from "./ReadWavecarModule.js";
 
 // Lazy byte access + the format registry. FileSource is what lets a reader ask
 // for a byte range instead of being handed the whole file as a string; formats
-// is the single table that decides which reader a file goes to (and carries the
-// reserved hooks for future content-based detection).
+// is the single table that decides which reader a file goes to, by sniffing
+// the first HEAD_BYTES of content and falling back to the file name.
 export { FileSource } from "./FileSource.js";
 export {
-  FORMATS, POSCAR_FORMAT, SourceKind, HandledBy,
-  detectFormat, formatById, materialize,
+  FORMATS, POSCAR_FORMAT, SourceKind, HandledBy, HEAD_BYTES,
+  detectFormat, formatById, materialize, headOf, prepareHead, looksLike,
 } from "./formats.js";
 
 // File/URL loader:

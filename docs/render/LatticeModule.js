@@ -190,7 +190,13 @@ function periodicWrappedJS(general, frac, elements, lattice) {
   }
 
   if (general.showPBCBonds) {
-    const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
+    // A pair whose Bonds-tab checkbox is off contributes no bond, so it must
+    // not size the neighbour (PBC-ghost) search either — skip hidden pairs.
+    // (The per-atom test below uses getBondCutoff, which already returns 0 for
+    // hidden pairs; this keeps the search shell/grid consistent with that.)
+    const maxCutoff = Math.max(0.0, ...Object.entries(general.bondLengths || {})
+      .filter(([pair]) => general.bondVisibility?.[pair] !== false)
+      .map(([, v]) => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
     if (maxCutoff > 1e-6) {
       const latticeInverse = invert3x3(transpose3x3(lattice));
       // Wrapped atoms already have their Cartesian coords in newCcrds (flat
@@ -322,7 +328,8 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
     let inputHash = hashInputFast(
       frac, elements, lattice, bondLenghts,
-      showPeriodic, showPBCBonds, general.completePolyhedra, faceTol, bounds
+      showPeriodic, showPBCBonds, general.completePolyhedra, faceTol, bounds,
+      general.bondVisibility
     )
 
     if (periodic.hash != inputHash){
@@ -369,7 +376,7 @@ function hashString(h, s) {
   return (Math.imul(h, 33) ^ 0x1f) >>> 0;
 }
 
-function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol, bounds) {
+function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol, bounds, bondVisibility) {
   let h = 5381 >>> 0;
   h = (Math.imul(h, 33) ^ (showPeriodic ? 1 : 0)) >>> 0;
   h = (Math.imul(h, 33) ^ (showPBCBonds ? 1 : 0)) >>> 0;
@@ -396,6 +403,11 @@ function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showP
 
   // bondLengths: object keyed by "El-El" -> {min, max} (or a bare number). Hash in
   // sorted-key order so it is deterministic regardless of insertion order.
+  // Each pair's per-pair visibility is folded in alongside its cutoff: a hidden
+  // pair contributes cutoff 0 to the neighbour (PBC-ghost) search (getBondCutoff
+  // returns 0 for it), so toggling a pair's Bonds-tab checkbox must invalidate
+  // the cached wrapped set the same way editing its cutoff does — otherwise
+  // runPeriodicWrapped's hash guard would reuse a stale ghost set.
   const bl = bondLengths || {};
   const keys = Object.keys(bl).sort();
   for (let k = 0; k < keys.length; k++) {
@@ -408,6 +420,7 @@ function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showP
       h = hashFloat(h, v?.min ?? 0);
       h = hashFloat(h, v?.max ?? 0);
     }
+    h = (Math.imul(h, 33) ^ (bondVisibility?.[key] === false ? 1 : 0)) >>> 0;
   }
   return h >>> 0;
 }
