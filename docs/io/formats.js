@@ -458,7 +458,12 @@ export const FORMATS = [
   {
     id: 'outcar',
     label: 'VASP OUTCAR',
-    kind: SourceKind.TEXT,
+    // An MD OUTCAR is routinely hundreds of MB of text. Reading it in full made
+    // the load path hold ~4-5x the file size at once (the string, two line-array
+    // splits and a structured clone into the parse worker), so the reader takes
+    // the FileSource, hands its Blob to the worker by reference and parses it in
+    // bounded chunks. See io/ReadOutcarModule.js.
+    kind: SourceKind.RANDOM_ACCESS,
     handledBy: HandledBy.PARSE_ANY,
     matchesName: (lower) => lower.includes('outcar') || lower.includes('.vasp.out'),
     sniff: sniffOUTCAR,

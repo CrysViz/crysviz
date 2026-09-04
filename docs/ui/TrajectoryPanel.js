@@ -47,9 +47,9 @@ let liveActive = false;
 function hasPlottableData(container) {
   if (liveActive) return true;
   if (!container?.structures?.length) return false;
-  return container.structures.some(
-    (s) => Number.isFinite(s?.energy) || (s?.forces && s.forces.length > 0)
-  );
+  // Container seam rather than iterating structures: a store-backed
+  // trajectory answers from its typed arrays without materialising frames.
+  return container.energySeries().some(Number.isFinite) || container.hasForces();
 }
 
 function setPlotVisible(visible) {
@@ -67,9 +67,8 @@ function updateComputeStepStatsBtnVisibility(container) {
   // would wipe it).
   if (!trajPlot) return;
   const alreadyPlotted = !!(container?.plotSeries && Object.keys(container.plotSeries).length);
-  const hasData = !!container?.structures?.some(
-    (s) => Number.isFinite(s?.energy) || (s?.forces && s.forces.length > 0)
-  );
+  const hasData = !!container?.structures?.length
+    && (container.energySeries().some(Number.isFinite) || container.hasForces());
   trajPlot.setComputeStatsAvailable(!liveActive && hasData && !alreadyPlotted);
 }
 
@@ -91,6 +90,29 @@ function computeStepStats(container) {
   // Hide the in-plot action while the compute runs (and it stays hidden after,
   // since a series will now exist — see updateComputeStepStatsBtnVisibility).
   if (trajPlot) trajPlot.setComputeStatsAvailable(false);
+
+  // A store-backed trajectory computes all three series straight from its
+  // typed arrays — no frames materialised, no chunking needed.
+  if (typeof container.stepStatsSeries === 'function' && container.store) {
+    const stats = container.stepStatsSeries();
+    const seriesObj = container.plotSeries ? { ...container.plotSeries } : {};
+    if (stats.etotEv.some(Number.isFinite) && !Array.isArray(seriesObj.etotEv)) {
+      seriesObj.etotEv = stats.etotEv;
+    }
+    if (stats.meanForce?.some(Number.isFinite)) seriesObj.meanForce = stats.meanForce;
+    if (stats.pressure?.some(Number.isFinite)) seriesObj.pressure = stats.pressure;
+    if (Object.keys(seriesObj).length) {
+      container.plotSeries = seriesObj;
+      const plot = ensurePlot();
+      if (plot) {
+        plot.setSeries(seriesObj);
+        setPlotVisible(true);
+        plot.setCursor(currentFrame);
+      }
+    }
+    computingStats = false;
+    return;
+  }
 
   const etotEv = new Array(structures.length);
   const meanForce = new Array(structures.length);
@@ -219,9 +241,10 @@ function refreshPlotFromContainer(container) {
     setPlotVisible(false);
     return;
   }
-  const hasEnergy = container.structures.some((s) => Number.isFinite(s?.energy));
+  const energySeries = container.energySeries();
+  const hasEnergy = energySeries.some(Number.isFinite);
   if (hasEnergy) {
-    const etotEv = container.structures.map((s) => (Number.isFinite(s?.energy) ? s.energy : NaN));
+    const etotEv = energySeries.map((e) => (Number.isFinite(e) ? e : NaN));
     plot.setSeries({ etotEv });
     setPlotVisible(true);
     plot.setCursor(currentFrame);
@@ -322,15 +345,30 @@ export function endLiveFeed() {
   updateComputeStepStatsBtnVisibility(structureShip.container[fileBrowser.selectedRowIndex]);
 }
 
-// --- Fast scene update for a frame (scrubbing / playback) ---
-// Deliberately light: atoms, bonds and force/spin arrows only, so dragging the
-// scrubber and autoplay stay responsive. The heavier per-frame refresh (the
-// Structure Info / Cell / Polyhedra panels) is done by properLoadFrame() when
-// the user settles on a frame — see updateFrame().
+// --- Update scene from a specific frame ---
+// Lets a late async frame resolution detect that playback/scrubbing has moved
+// on (frames of a disk-backed trajectory arrive asynchronously).
+let frameFetchToken = 0;
 function updateStructureFromFrame(frame, container) {
   if (!container || frame < 0 || frame >= container.structures.length) return;
 
-  fileBrowser.selectedStructure = container.structures[frame];
+  // Materialise through the container seam; only the newest request renders.
+  const frameRef = container.frameAt(frame);
+  if (frameRef && typeof frameRef.then === 'function') {
+    const token = ++frameFetchToken;
+    frameRef.then((resolved) => {
+      if (token !== frameFetchToken || !resolved) return;
+      applyFrameStructure(resolved, frame, container);
+    });
+    return;
+  }
+  if (!frameRef) return;
+  frameFetchToken++;
+  applyFrameStructure(frameRef, frame, container);
+}
+
+function applyFrameStructure(structure, frame, container) {
+  fileBrowser.selectedStructure = structure;
   fileBrowser.stepInput = frame;
   syncPlanesForSelectedStructure();
 
@@ -338,9 +376,8 @@ function updateStructureFromFrame(frame, container) {
 
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
 
-  // Forces and spins must be updated AFTER updateVisualization so periodic.wrapped is ready
-  const structure = fileBrowser.selectedStructure;
-
+  // Forces and spins must be updated AFTER updateVisualization so
+  // periodic.wrapped is ready; `structure` is the frame applied above.
   if (general.forcesActive && structure.forces?.length > 0) {
     updateForces(general.forceScale ?? 1.0);
   } else {
@@ -549,12 +586,15 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   if (!container || container.structures.length === 0) return;
 
   trajectoryPlayerElements.frameSlider.max = container.structures.length - 1;
-  // Clamp a frame index carried over from a previous (longer) trajectory.
-  currentFrame = Math.min(currentFrame, Math.max(0, container.structures.length - 1));
-  // Don't re-render the scene on build while a live run owns it, or for a
-  // single-frame container (avoids a redundant re-render of the source structure).
-  const renderOnBuild = !liveActive && container.structures.length > 1;
-  updateFrame(currentFrame, container, { render: renderOnBuild });
+  // The transport follows the CURRENT selection: the frame this row is
+  // showing (fileBrowser.stepInput, set by every selection path before the
+  // panel rebuilds) — never the module-level frame index left over from a
+  // previously viewed trajectory, which used to hijack the newly selected
+  // row's own step on rebuild.
+  currentFrame = Math.max(0, Math.min(container.structures.length - 1, fileBrowser.stepInput ?? 0));
+  // That frame is already rendered by the selection path, so the build only
+  // syncs the transport UI — no scene re-render.
+  updateFrame(currentFrame, container, { render: false });
   refreshPlotFromContainer(container);
   updateComputeStepStatsBtnVisibility(container);
 

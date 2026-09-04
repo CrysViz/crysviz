@@ -39,7 +39,7 @@ import {
   symmetrizeCartesianVectors,
   symmetrizeCartesianStrain,
 } from '../SymmetryEditModule.js';
-import { StructureContainer } from '../../model/index.js';
+import { StructureContainer, TrajectoryContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
 import { Stress } from '../../model/index.js';
@@ -945,7 +945,8 @@ async function runLocalRelax(shell, params, potential) {
   // Relax animates this structure in place; keep the reference to restore it.
   const originalStructure = fileBrowser.selectedStructure;
   const relaxLabel = `relax_${potential}_${srcContainer?.fileName ?? 'run'}`;
-  const relaxContainer = new StructureContainer({ fileName: relaxLabel, structures: [snapshotCurrentStructure()] });
+  // Store-backed: frames pack into the trajectory store as the run saves them.
+  const relaxContainer = TrajectoryContainer.fromStructures(relaxLabel, [snapshotCurrentStructure()]);
   // Persisted plot series (energy / mean force / pressure), 1:1 with frames.
   // `step` records the real relax step per saved frame so the plot's x-axis
   // reads steps (a multiple of the save stride); seed frame = step 0.
@@ -1008,7 +1009,7 @@ async function runLocalRelax(shell, params, potential) {
           pressure: pressureGPaFromStress(out.stress?.matrix3x3),
         };
         if (shouldSave) {
-          relaxContainer.structures.push(snapshotCurrentStructure());
+          relaxContainer.appendFrame(snapshotCurrentStructure());
           lastSavedStep = step;
           feedLiveStep(lastMetrics);
           pushRelaxSeries(lastMetrics);
@@ -1033,7 +1034,7 @@ async function runLocalRelax(shell, params, potential) {
 
     // Always keep the final state in the trajectory, even off-stride.
     if (relaxed.steps !== lastSavedStep) {
-      relaxContainer.structures.push(snapshotCurrentStructure());
+      relaxContainer.appendFrame(snapshotCurrentStructure());
       if (lastMetrics) {
         feedLiveStep({ ...lastMetrics, step: relaxed.steps });
         pushRelaxSeries(lastMetrics);
@@ -1054,7 +1055,7 @@ async function runLocalRelax(shell, params, potential) {
     // Separate try/catch so a restore hiccup can't block switching to the
     // recorded relaxation trajectory (see the MD path for the rationale).
     try {
-      restoreStructureInPlace(originalStructure, relaxContainer.structures[0]);
+      restoreStructureInPlace(originalStructure, relaxContainer.frameAtDetached(0));
     } catch { /* safety net only */ }
     try {
       selectLastAddedRow();
@@ -1285,7 +1286,8 @@ function bindMDBody(panel, shell, potential) {
         mdRow = fileBrowser.selectedRow;
       } else {
         seedFrame = snapshotCurrentStructure();
-        mdContainer = new StructureContainer({ fileName: mdLabel, structures: [seedFrame] });
+        // Store-backed: frames pack into the trajectory store as the run saves them.
+        mdContainer = TrajectoryContainer.fromStructures(mdLabel, [seedFrame]);
         // Persist the plotted series on the container so the trajectory plot can be
         // rebuilt (e.g. after a panel rebuild from a structure-table interaction)
         // long after the live run's in-memory plot was torn down. Seed one NaN gap
@@ -1405,7 +1407,7 @@ function bindMDBody(panel, shell, potential) {
             mdProfileMeasure('saveMs', () => {
               const frame = snapshotCurrentStructure();
               frame.energy = epotEv;
-              mdContainer.structures.push(frame);
+              mdContainer.appendFrame(frame);
               lastSavedStep = step;
             });
             // Feed the plot exactly once per SAVED trajectory frame so the plot's
@@ -1442,7 +1444,7 @@ function bindMDBody(panel, shell, potential) {
       if (state.step !== lastSavedStep) {
         const frame = snapshotCurrentStructure();
         frame.energy = state.potentialEnergyEv;
-        mdContainer.structures.push(frame);
+        mdContainer.appendFrame(frame);
         // Keep the plot 1:1 with frames: feed this final frame too, reusing the
         // last step's computed metrics (state carries no temperature/KE fields).
         if (lastStepMetrics) {

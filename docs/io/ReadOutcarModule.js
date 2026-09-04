@@ -4,38 +4,40 @@ import { Spin } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Stress } from "../model/index.js";
+import { TrajectoryFrameStore, TrajectoryContainer } from "../model/index.js";
 import {generateID} from '../utils/index.js'
-// From the concrete JS backend, not the math/index.js facade: the facade's
-// exports are thin wrappers delegating to a module-scope `activeMathBackend`
-// variable at call time (so a WASM backend can be swapped in later), but
-// stringifying a wrapper via .toString() into the worker below carries none
-// of that surrounding module state with it — the worker throws
-// "activeMathBackend is not defined" the moment it's actually called. These
-// backend-js.js implementations are plain, self-contained functions with no
-// such dependency, so they survive being stringified.
-import {
-  transpose3x3,
-  multiplyMatVec,
-  invert3x3,
-} from '../math/backend-js.js';
-// Main-thread only (NOT stringified into the worker): rotate the SAXIS-frame
-// moments the worker returns into global Cartesian.
+import { FileSource } from './FileSource.js';
+import { parseOutcarBlob } from './outcarParse.js';
+import * as workerPool from '../workers/workerPool.js';
+// Rotate the SAXIS-frame moments the parser returns into global Cartesian.
+import { multiplyMatVec } from '../math/backend-js.js';
 import { saxisToMatrix, parseSaxis } from '../utils/spinFrame.js';
 
-// VASP reports the on-site magnetisation (magnetization (x)/(y)/(z) blocks) in
-// the frame whose z-axis is SAXIS, not the global Cartesian frame. Read the
-// SAXIS the run used from the INCAR echo near the top of the OUTCAR; absent
-// (the common case) it defaults to (0,0,1) and the rotation is the identity.
-function findSaxis(lines) {
-  for (const line of lines) {
-    const m = line.match(/\bSAXIS\b\s*=\s*(.+)$/i);
-    if (m) {
-      const s = parseSaxis(m[1]);
-      if (s) return s;
-    }
-  }
-  return [0, 0, 1];
-}
+/*
+ * OUTCAR loading, main-thread half: progress UI, dispatch, and turning the
+ * parsed per-step data into Structure objects (including the SAXIS-frame
+ * rotation of the magnetic moments).
+ *
+ * The parsing itself lives in `io/outcarParse.js` and runs on the shared
+ * worker pool (`workers/workerPool.js`, task 'outcarParse') — not in an ad-hoc
+ * worker assembled from stringified functions, which is what this module used
+ * to spin up (and leak) per load. The worker receives the file as a Blob;
+ * structured-cloning a Blob copies a reference, not the bytes, so handing a
+ * multi-hundred-MB MD OUTCAR to the pool is free and the file is never
+ * materialised as a string on any thread — the parser streams it in bounded
+ * chunks.
+ *
+ * The parsed frames are still built eagerly — every ionic step becomes a
+ * Structure as soon as the parser finishes. That retained cost is a separate
+ * concern from the transient one this design addresses.
+ */
+
+// Above this the progress overlay is shown. Size stands in for the old
+// "more than 100 POSITION blocks" rule, which required splitting the whole
+// file into lines up front just to count them: a static-relaxation OUTCAR is a
+// few MB at most, while any MD run long enough to have tripped the old rule is
+// comfortably past this.
+const LARGE_FILE_BYTES = 8 * 1024 * 1024;
 
 // Function to show progress bar
 function showProgressBar() {
@@ -100,321 +102,112 @@ function hideProgressBar() {
   }
 }
 
-// Main exported function
-export function parseOUTCAR(content, fileName) {
-  return new Promise((resolve, reject) => {
-    if (!content || typeof content !== "string") {
-      reject(new Error("OUTCAR: content must be a non-empty string"));
-      return;
+/**
+ * Parse on the pool when possible, on the main thread when not — the same
+ * dispatch shape as workers/waveTasks.js: a pool that cannot start (module
+ * worker unsupported, blocked by a CSP) must not take OUTCAR loading down with
+ * it, so fall back rather than failing the load.
+ * @param {Blob} blob
+ * @returns {Promise<{structures: Array<object>, saxisCandidates: string[]}>}
+ */
+async function runParse(blob) {
+  if (workerPool.available()) {
+    try {
+      return await workerPool.run('outcarParse', { blob }, undefined, updateProgressBar);
+    } catch (error) {
+      console.warn('OUTCAR parse failed in a pool worker; falling back to the '
+        + 'main thread. The UI will block while it runs.', error);
     }
+  }
+  return parseOutcarBlob(blob, updateProgressBar);
+}
 
-    // Count the number of POSITION blocks to estimate steps
-    const lines = content.split(/\r?\n/);
+/**
+ * Parse a VASP OUTCAR (possibly an MD trajectory) into a StructureContainer.
+ *
+ * `content` is normally the FileSource that io/formats.js passes through for a
+ * random-access format; a plain string is still accepted for callers that hold
+ * the text already (ui/AddonAPI.js hands parse_any decoded addon text).
+ *
+ * @param {import('./FileSource.js').FileSource | string} content
+ * @param {string} fileName
+ * @returns {Promise<StructureContainer>}
+ */
+export async function parseOUTCAR(content, fileName) {
+  let blob;
+  if (content instanceof FileSource) {
+    // For a file on disk this is the file handle itself — nothing is read
+    // here, and nothing ever reads it in full.
+    blob = content.asBlob();
+  } else if (typeof content === "string" && content.length > 0) {
+    blob = new Blob([content]);
+  } else {
+    throw new Error("OUTCAR: content must be a FileSource or a non-empty string");
+  }
+  if (blob.size === 0) {
+    throw new Error("OUTCAR: file is empty");
+  }
+
+  if (blob.size > LARGE_FILE_BYTES) {
+    showProgressBar();
+  }
+
+  try {
+    const { structures, saxisCandidates } = await runParse(blob);
+
     // SAXIS the run used (default (0,0,1)) and the matching global<-SAXIS
-    // rotation, applied to each spin's raw moments once the worker returns.
-    const saxis = findSaxis(lines);
+    // rotation, applied to each spin's raw moments below. The parser only
+    // collects candidate lines from the INCAR echo; parsing them stays here
+    // with the rest of the spin-frame logic.
+    let saxis = [0, 0, 1];
+    for (const raw of saxisCandidates || []) {
+      const s = parseSaxis(raw);
+      if (s) { saxis = s; break; }
+    }
     const saxisMatrix = saxisToMatrix(saxis);
-    let positionBlocks = 0;
-    for (const line of lines) {
-      if (/^\s*POSITION\s+TOTAL-FORCE/i.test(line)) {
-        positionBlocks++;
-      }
+
+    // A multi-frame trajectory is NOT built into per-frame Structures any
+    // more: the physics is packed into flat typed arrays (~76 MB for a
+    // 110 MB / 1790-frame MD OUTCAR, where eager Structures measured
+    // ~1.8 GB) and frames materialise on demand as they are viewed —
+    // model/TrajectoryContainer.js owns that life cycle, including keeping
+    // any frame the user styles or edits. Single-frame files keep the eager
+    // path: they are cheap and are the ones that get edited heavily.
+    if (structures.length > 1) {
+      const store = TrajectoryFrameStore.fromParsedSteps(structures, {
+        elements: structures[0].elements,
+        saxisMatrix,
+        saxis,
+      });
+      return new TrajectoryContainer({ fileName, store });
     }
 
-    // Show progress bar if more than 100 steps are expected
-    if (positionBlocks > 100) {
-      showProgressBar();
-    }
+    const structureObjects = structures.map(structureData => {
+      const atoms = structureData.atoms.map(atomData => new Atom({...atomData, uuid: generateID([atomData.element])}));
+      // Rotate each spin's SAXIS-frame raw moments into global Cartesian
+      // for the rendered vector; keep the raw components on the Spin so the
+      // Spins panel can re-project to another frame later.
+      const spins = structureData.spins.map(spinData => new Spin({
+        ...spinData,
+        vector: multiplyMatVec(saxisMatrix, spinData.rawVector),
+      }));
+      const forces = structureData.forces.map(forceData => new Force(forceData));
 
-    // Create a Web Worker
-    const worker = new Worker(URL.createObjectURL(new Blob([`
-      ${findLastIonsPerType.toString()}
-      ${findUniqueElements.toString()}
-      ${expandElements.toString()}
-      ${parseFloats.toString()}
-      ${readPositionsForcesBlock.toString()}
-      ${readSpinComponent.toString()}
-      ${convertCartesianToFractional.toString()}
-      ${transpose3x3.toString()}
-      ${multiplyMatVec.toString()}
-      ${invert3x3.toString()}
+      return new Structure({
+        elements: structureData.elements,
+        uniqueElements: structureData.uniqueElements,
+        lattice: structureData.lattice,
+        atoms,
+        spins,
+        spinFrame: { fileSaxis: saxis },
+        forces,
+        energy: structureData.energy,
+        stress: structureData.stress ? new Stress({ tensor: structureData.stress }) : null,
+      });
+    });
 
-      self.onmessage = function(event) {
-        const { content, fileName } = event.data;
-        const lines = content.split(/\\r?\\n/);
-
-        // Find ions per type
-        const ionsPerType = findLastIonsPerType(lines);
-        const uniqueElements = findUniqueElements(lines);
-        const elements = expandElements(uniqueElements, ionsPerType);
-        const natoms = elements.length;
-
-        // Count the number of POSITION blocks to estimate steps
-        let positionBlocks = 0;
-        for (const line of lines) {
-          if (/^\\s*POSITION\\s+TOTAL-FORCE/i.test(line)) {
-            positionBlocks++;
-          }
-        }
-
-        const steps = [];
-        let currentLattice = null;
-        let currentPositions = [];
-        let currentForces = [];
-        let currentSpins = new Array(natoms).fill([0, 0, 0]);
-        let spinX = null, spinY = null, spinZ = null;
-        let currentEnergy = null;
-
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-
-          if (/^\\s*direct\\s+lattice\\s+vectors/i.test(line)) {
-            currentLattice = [
-              parseFloats(lines[i + 1]),
-              parseFloats(lines[i + 2]),
-              parseFloats(lines[i + 3]),
-            ].map(v => v.slice(0, 3));
-          }
-
-          if (/^\\s*POSITION/i.test(line) && (i + 2 < lines.length)) {
-            const nextLine = lines[i + 2];
-            if (parseFloats(nextLine).length >= 6) {
-              const { positions, forces } = readPositionsForcesBlock(lines, i, natoms);
-              currentPositions = positions;
-              currentForces = forces;
-
-              if (currentLattice && currentPositions.length === natoms) {
-                // These moments are in VASP's SAXIS-local frame; the main
-                // thread rotates them into global Cartesian afterwards.
-                if (spinX && spinY && spinZ) {
-                  // Non-collinear: full (mx,my,mz) in the SAXIS frame.
-                  currentSpins = spinX.map((_, idx) => [spinX[idx], spinY[idx], spinZ[idx]]);
-                } else if (spinX) {
-                  // Collinear (ISPIN=2): a single scalar moment per atom that
-                  // lies along the spin-quantisation axis, i.e. SAXIS. In the
-                  // SAXIS-local frame that axis IS z, so place it on z (not x);
-                  // the main-thread SAXIS rotation then points it correctly in
-                  // global Cartesian. (The old code put it on x, drawing every
-                  // collinear moment 90 degrees off along global +x.)
-                  currentSpins = spinX.map(m => [0, 0, m]);
-                } else {
-                  currentSpins = new Array(natoms).fill([0, 0, 0]);
-                }
-
-                steps.push({
-                  lattice: currentLattice,
-                  positions: currentPositions,
-                  forces: currentForces,
-                  spins: currentSpins,
-                  energy: null,
-                  stress: null,
-                });
-
-                // Reset per-step so the NEXT ionic step only picks up the
-                // magnetization block(s) printed within its own window. VASP
-                // may print several magnetization blocks per step (e.g. high
-                // NWRITE) -- those all precede this POSITION line, so spinX/Y/Z
-                // already hold the last (converged) one. But a later step that
-                // prints no block of its own must not silently inherit this
-                // step's moments, which is what happened without this reset.
-                spinX = null; spinY = null; spinZ = null;
-
-                // Update progress
-                const progress = (i / lines.length) * 100;
-                self.postMessage({ type: 'progress', progress });
-              }
-            }
-          }
-
-          if (/^\\s*magnetization\\s*\\(x\\)/i.test(line)) {
-            spinX = readSpinComponent(lines, i, natoms, /^\\s*magnetization\\s*\\(x\\)/i);
-          }
-          if (/^\\s*magnetization\\s*\\(y\\)/i.test(line)) {
-            spinY = readSpinComponent(lines, i, natoms, /^\\s*magnetization\\s*\\(y\\)/i);
-          }
-          if (/^\\s*magnetization\\s*\\(z\\)/i.test(line)) {
-            spinZ = readSpinComponent(lines, i, natoms, /^\\s*magnetization\\s*\\(z\\)/i);
-          }
-
-          // Energy lines print AFTER the POSITION/TOTAL-FORCE block for the
-          // same ionic step, so by the time we see them the step is already
-          // pushed onto steps above -- attach to the most-recently pushed
-          // step (steps[steps.length - 1]) rather than the next one.
-          // TOTEN is the fallback; energy(sigma->0) is preferred and, since
-          // it prints after TOTEN for the same step, overwrites it below.
-          const totenMatch = line.match(/free\\s+energy\\s+TOTEN\\s*=\\s*(-?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)/i);
-          if (totenMatch && steps.length > 0) {
-            currentEnergy = parseFloat(totenMatch[1]);
-            steps[steps.length - 1].energy = currentEnergy;
-          }
-          const sigmaMatch = line.match(/energy\\(sigma->0\\)\\s*=\\s*(-?\\d+\\.?\\d*(?:[eE][+-]?\\d+)?)/i);
-          if (sigmaMatch && steps.length > 0) {
-            currentEnergy = parseFloat(sigmaMatch[1]);
-            steps[steps.length - 1].energy = currentEnergy;
-          }
-
-          // Stress: the "in kB" line gives the Voigt stress (XX YY ZZ XY YZ ZX)
-          // and prints after the POSITION block for the step, so attach it to the
-          // most-recently pushed step. Build a symmetric 3x3 tensor.
-          const kbMatch = line.match(/^\\s*in kB\\s+(.*)$/i);
-          if (kbMatch && steps.length > 0) {
-            const sv = parseFloats(kbMatch[1]);
-            if (sv.length >= 6) {
-              const xx = sv[0], yy = sv[1], zz = sv[2], xy = sv[3], yz = sv[4], zx = sv[5];
-              steps[steps.length - 1].stress = [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]];
-            }
-          }
-        }
-
-        // Build structures
-        const structures = steps.map(step => {
-          const frac = convertCartesianToFractional(step.positions, step.lattice);
-          const atoms = frac.map((pos, i) => ({ position: pos, element: elements[i] }));
-          // rawVector is in the SAXIS-local frame; the main thread rotates it
-          // into the rendered global-Cartesian vector below.
-          const spins = step.spins.map(rawVector => ({ rawVector, scaling: 1.0, color:"#008080" }));
-          const forces = step.forces.map(vector => ({ vector, scaling: 1.0 }));
-
-          return {
-            elements,
-            uniqueElements,
-            lattice: step.lattice,
-            atoms,
-            spins,
-            forces,
-            energy: step.energy,
-            stress: step.stress,
-          };
-        });
-
-        // Send results back to the main thread
-        self.postMessage({ type: 'complete', structures, fileName });
-      };
-    `], { type: 'application/javascript' })));
-
-    // Send data to the worker
-    worker.postMessage({ content, fileName });
-
-    // Handle messages from the worker
-    worker.onmessage = (event) => {
-      if (event.data.type === 'progress') {
-        updateProgressBar(event.data.progress);
-      } else if (event.data.type === 'complete') {
-        const { structures, fileName } = event.data;
-
-        // Build Structure objects
-        const structureObjects = structures.map(structureData => {
-          const atoms = structureData.atoms.map(atomData => new Atom({...atomData, uuid: generateID([atomData.element])}));
-          // Rotate each spin's SAXIS-frame raw moments into global Cartesian
-          // for the rendered vector; keep the raw components on the Spin so the
-          // Spins panel can re-project to another frame later.
-          const spins = structureData.spins.map(spinData => new Spin({
-            ...spinData,
-            vector: multiplyMatVec(saxisMatrix, spinData.rawVector),
-          }));
-          const forces = structureData.forces.map(forceData => new Force(forceData));
-
-          return new Structure({
-            elements: structureData.elements,
-            uniqueElements: structureData.uniqueElements,
-            lattice: structureData.lattice,
-            atoms,
-            spins,
-            spinFrame: { fileSaxis: saxis },
-            forces,
-            energy: structureData.energy,
-            stress: structureData.stress ? new Stress({ tensor: structureData.stress }) : null,
-          });
-        });
-
-        const container = new StructureContainer({ fileName, structures: structureObjects });
-
-        // Hide progress bar once parsing is complete
-        hideProgressBar();
-        resolve(container);
-      }
-    };
-
-    worker.onerror = (error) => {
-      console.error("Worker error:", error);
-      hideProgressBar();
-      reject(error);
-    };
-  });
-}
-
-function findLastIonsPerType(lines) {
-  const re = /ions\s+per\s+type\s*=\s*(.+)$/i;
-  let out = [];
-  for (const line of lines) {
-    const m = line.match(re);
-    if (m) out = m[1].trim().split(/\s+/).map(Number);
+    return new StructureContainer({ fileName, structures: structureObjects });
+  } finally {
+    hideProgressBar();
   }
-  return out;
-}
-
-function findUniqueElements(lines) {
-  const out = [];
-  const re = /POTCAR:\s+[A-Za-z0-9_]+\s+([A-Za-z]{1,2})\s*.*/i;
-  for (const line of lines) {
-    const m = line.match(re);
-    if (m && m[1] && !out.includes(m[1])) {
-      console.log(m)
-      out.push(m[1]);
-    }
-  }
-  console.log(out)
-  return out;
-}
-
-function expandElements(els, counts) {
-  const out = [];
-  for (let i = 0; i < els.length; i++) {
-    for (let k = 0; k < counts[i]; k++) out.push(els[i]);
-  }
-  return out;
-}
-
-function parseFloats(line) {
-  return line.trim().split(/\s+/).map(parseFloat).filter(Number.isFinite);
-}
-
-function readPositionsForcesBlock(lines, idx, natoms) {
-  const positions = [];
-  const forces = [];
-  let i = idx + 2;
-  for (let n = 0; n < natoms; n++, i++) {
-    const toks = parseFloats(lines[i]);
-    if (toks.length < 6) break;
-    const x = toks[0], y = toks[1], z = toks[2];
-    const fx = toks[3], fy = toks[4], fz = toks[5];
-    positions.push([x, y, z]);
-    forces.push([fx, fy, fz]);
-  }
-  return { positions, forces };
-}
-
-function readSpinComponent(lines, startIdx, natoms, regex) {
-  const out = new Array(natoms).fill(0);
-  let i = startIdx + 2;
-  let count = 0;
-  while (i < lines.length && count < natoms) {
-    const line = lines[i];
-    if (/^\s*tot/i.test(line) || /^\s*$/i.test(line) || /^\s*magnetization/i.test(line)) break;
-    const toks = parseFloats(line);
-    const idxAtom = toks[0] - 1;
-    const value = toks[toks.length - 1];
-    if (idxAtom >= 0 && idxAtom < natoms) {
-      out[idxAtom] = value;
-      count++;
-    }
-    i++;
-  }
-  return out;
-}
-
-function convertCartesianToFractional(cart, lattice) {
-  const LT = transpose3x3(lattice);
-  const inv = invert3x3(LT, 1e-14);
-  return cart.map(v => multiplyMatVec(inv, v).map(x => ((x % 1) + 1) % 1));
 }

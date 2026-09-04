@@ -53,6 +53,10 @@ export async function parse_any(content, fileName = '', isDefault = false) {
       return parsePWSCFout(content, fileName);
 
     case 'outcar':
+      // OUTCAR is a random-access format: `content` is normally the FileSource
+      // itself (an MD OUTCAR is far too large to hold as a string), which the
+      // reader streams in chunks inside a worker. A plain string still works
+      // for callers that hold the text already (ui/AddonAPI.js).
       console.log("This is probably an OUTCAR file");
       return parseOUTCAR(content, fileName);
 
