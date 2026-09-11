@@ -3,7 +3,7 @@ import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Spin } from "../model/index.js";
 import { Stress } from "../model/index.js";
-import { StructureContainer } from "../model/index.js";
+import { StructureContainer, TrajectoryContainer } from "../model/index.js";
 import { cartToFractional } from "../math/index.js";
 import { generateID } from '../utils/index.js'
 
@@ -182,7 +182,12 @@ export function parsePWSCFout(content, fileName) {
     });
   });
 
-  return new StructureContainer({ fileName, structures });
+  // Multi-frame relax/vc-relax outputs become store-backed trajectories
+  // (physics packed per frame, one live Structure for rendering); single
+  // frames stay eager.
+  return structures.length > 1
+    ? TrajectoryContainer.fromStructures(fileName, structures)
+    : new StructureContainer({ fileName, structures });
 }
 
 // "crystal axes: (cart. coord. in units of alat)" followed by a(1)..a(3).

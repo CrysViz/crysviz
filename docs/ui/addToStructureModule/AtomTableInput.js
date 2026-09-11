@@ -76,6 +76,12 @@ export function createAtomTableEditor(container, {
 
   container.innerHTML = `
     <div class="atom-table-wrap">
+      ${highlightable ? `
+      <div class="atom-table-filter-row">
+        <button type="button" id="onlySelectedToggle" class="btn-mini atom-table-filter-btn"
+          title="Show only the atoms selected in the 3D view. Click atoms in the view (shift-click to add) to build the selection.">&#9678; Only selected</button>
+        <span id="onlySelectedHint" class="atom-table-filter-hint"></span>
+      </div>` : ''}
       <div id="atomsTableScroll" class="atoms-table-scroll">
         <table id="atomsTable" class="addstructure-table">
           <thead>
@@ -129,12 +135,106 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
 
   let activeUuid = null;
 
+  // "Only selected": a big structure's table is hundreds of rows deep, and the
+  // atoms someone actually wants to edit are usually the handful they just
+  // clicked in the 3D view. The filter is purely presentational — hidden rows
+  // stay in the DOM and so stay in getAtoms(), because the Modify editor
+  // rebuilds the whole structure from this table on every keystroke and a row
+  // dropping out of that list would delete the atom.
+  let onlySelected = false;
+  /** @type {Set<string>} Base uuids of the atoms selected in the 3D view. */
+  let selectedUuids = new Set();
+
+  // A disordered site is one row per species, the rows after the first
+  // carrying "<base>#k" (see StructureEditorPanel.structureToTableAtoms). The
+  // selection only ever names the base atom, so every species row of a
+  // selected site has to resolve to the same key or a mixed site would show
+  // only its first row.
+  const baseUuidOf = (uuid) => String(uuid || '').split('#')[0];
+
+  function applyRowFilter() {
+    const rows = [...tbody.querySelectorAll('tr')];
+    // With nothing selected the filter would blank the table, which reads as
+    // "the editor broke" rather than "nothing is selected" — show everything
+    // and say so in the hint instead.
+    const active = onlySelected && selectedUuids.size > 0;
+    let shown = 0;
+    let extras = 0;
+    for (const row of rows) {
+      // Exactly one kind of row is allowed to stay visible without being
+      // selected: one the user is in the middle of adding here (a fresh
+      // "+ Add New Atom" row, a restored deletion, a bulk-pasted line), which
+      // would otherwise appear to do nothing while the filter is on. That
+      // exemption is deliberately short-lived - switching the filter on clears
+      // it (see the toggle handler) - because a row that stays visible for a
+      // reason the user can no longer remember reads as the filter being
+      // broken. Nothing else is exempt: a row flagged by the collision check
+      // is named in the warning banner, which is the surface for it.
+      const exempt = row.dataset.unfiltered === '1';
+      const hide = active && !exempt && !selectedUuids.has(baseUuidOf(row.dataset.uuid));
+      row.classList.toggle('atom-row-filtered', hide);
+      if (hide) continue;
+      shown += 1;
+      if (active && exempt) extras += 1;
+    }
+    const toggle = container.querySelector('#onlySelectedToggle');
+    const hint = container.querySelector('#onlySelectedHint');
+    toggle?.classList.toggle('is-active', onlySelected);
+    if (hint) {
+      // Atoms and rows are counted separately on purpose: a site with several
+      // species is ONE atom shown as one row per species, so "1 selected" can
+      // legitimately leave more than one row on screen, and a count of rows
+      // alone makes that look like the filter let extra atoms through.
+      const added = extras ? `, ${extras} added here` : '';
+      hint.textContent = !onlySelected
+        ? ''
+        : (selectedUuids.size
+          ? `${selectedUuids.size} selected \u00b7 ${shown} of ${rows.length} rows${added}`
+          : 'nothing selected in the 3D view — showing all');
+      hint.title = selectedUuids.size
+        ? 'Rows shown = the selected atoms (a site with several species is one '
+          + 'atom with one row per species) plus any row added here since the '
+          + 'filter was switched on.'
+        : '';
+    }
+  }
+
+  // Bring a row into view inside the table's own scroller.
+  //
+  // Same feel as the Structure Info panel's atom rows, which centre the
+  // selected row with a smooth scroll (SelectAndHighlightModule's
+  // syncSelectedAtomRows / highlightAtomInStructurePanel): the movement is
+  // what shows you WHERE in the list the atom is, and a row that lands mid-
+  // table is one you can then read up and down from. What is not borrowed is
+  // scrollIntoView itself - it walks every scrollable ancestor, so in a
+  // floating/docked panel it drags the panel body (and on a phone the page)
+  // around too. scrollTo on the one element does the same job locally.
+  //
+  // The sticky header (position:sticky thead) overlays the top of the
+  // scroller, so the strip a row can actually be centred in starts below it.
+  function scrollRowIntoView(row) {
+    const scroller = container.querySelector('#atomsTableScroll');
+    if (!scroller || !row || row.classList.contains('atom-row-filtered')) return;
+    const header = scroller.querySelector('thead');
+    const headerHeight = header ? header.getBoundingClientRect().height : 0;
+    const box = scroller.getBoundingClientRect();
+    const rect = row.getBoundingClientRect();
+    // Row position in the scroller's own content coordinates, measured from
+    // the top of the strip below the header.
+    const rowTop = (rect.top - box.top) + scroller.scrollTop - headerHeight;
+    const strip = box.height - headerHeight;
+    const target = rowTop - Math.max(0, (strip - rect.height) / 2);
+    // Browsers clamp the far end; only the near end needs guarding.
+    scroller.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+  }
+
   function notifyChange() {
     // Re-evaluate site grouping on every change, not just on load: editing a
     // coordinate can move a row on or off another site's position, and the
     // synced/disabled state of a mixed site's follower rows has to track that
     // live rather than only being right immediately after (re)load.
     groupSiteRows();
+    applyRowFilter();
     onChange?.();
   }
 
@@ -170,6 +270,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
       btn?.classList.toggle('is-active', isActive);
     });
     groupSiteRows();
+    applyRowFilter();
   }
 
   // A disordered site is one row per species, so several rows sharing a
@@ -280,6 +381,10 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     // position, 0,0,0 or not, so it starts eligible for clustering; only a
     // truly blank new row waits until its own X/Y/Z is actually typed into.
     newRow.dataset.positionDirty = atom == null ? '' : '1';
+    // See applyRowFilter(): a row that arrived without a uuid is one the user
+    // is adding here rather than one of the loaded structure's atoms, and
+    // stays visible whatever the filter says.
+    newRow.dataset.unfiltered = uuid ? '' : '1';
 
     newRow.innerHTML = `
       ${highlightable ? `<td class="addstructure-cell addstructure-col-icon"><button type="button" class="atom-row-highlight addstructure-highlight-btn" title="Highlight this atom in the 3D view">◎</button></td>` : ''}
@@ -362,7 +467,8 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
 
     if (onRowActivate) {
       const activate = () => {
-        setActiveUuid(newRow.dataset.uuid === activeUuid ? null : newRow.dataset.uuid || null);
+        setActiveUuid(newRow.dataset.uuid === activeUuid ? null : newRow.dataset.uuid || null,
+          { scroll: false });
         onRowActivate(activeUuid);
       };
       // The dedicated button is the reliable target; a click anywhere on the
@@ -415,6 +521,10 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     if (index === -1) return false;
     const entry = deleted.splice(index, 1)[0];
     const row = buildRow(entry);
+    // Putting an atom back is a deliberate action with a visible result; the
+    // restored row is not part of the 3D selection, so it is exempt from the
+    // "Only selected" filter until that filter is switched on again.
+    row.dataset.unfiltered = '1';
     const siblings = [...tbody.querySelectorAll('tr')];
     const before = siblings[entry.position];
     if (before) tbody.insertBefore(row, before);
@@ -439,14 +549,59 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     }
   }
 
-  function setActiveUuid(uuid) {
+  /**
+   * Mark a row active, and (unless told otherwise) scroll it into view.
+   *
+   * Selecting an atom in the 3D view used to highlight its row and leave it
+   * wherever it happened to sit in a several-hundred-row table, which for
+   * anything but a tiny structure meant the highlight was off screen.
+   *
+   * `scroll: false` is for a click on the row itself - the user is already
+   * looking at it, and moving it out from under the cursor on click is the
+   * same misbehaviour selectAtomFromRow avoids with scrollToSelection: false.
+   *
+   * @param {string|null} uuid
+   * @param {{scroll?: boolean}} [options]
+   */
+  function setActiveUuid(uuid, { scroll = true } = {}) {
     activeUuid = uuid;
     paintRows();
+    if (uuid && scroll) scrollRowIntoView(tbody.querySelector(`tr[data-uuid="${uuid}"]`));
+  }
+
+  /**
+   * The atoms currently selected in the 3D view, as base uuids. Drives the
+   * "Only selected" filter; has no effect until that toggle is on.
+   * @param {Iterable<string>} uuids
+   */
+  function setSelectedUuids(uuids) {
+    selectedUuids = new Set([...(uuids || [])].map(baseUuidOf).filter(Boolean));
+    applyRowFilter();
   }
 
   if (initialAtoms.length) initialAtoms.forEach((atom) => tbody.appendChild(buildRow(atom)));
   else addRowToTable();
   paintRows();
+
+  container.querySelector('#onlySelectedToggle')?.addEventListener('click', () => {
+    onlySelected = !onlySelected;
+    // Switching the filter ON is the point at which "show me just these atoms"
+    // is asked, so it starts from a clean slate: every earlier exemption (an
+    // atom added or restored during a previous stretch of filtering) expires
+    // here. Without this the exemptions accumulate across toggles and the
+    // table keeps showing rows the user has no way to account for. A row still
+    // waiting for its element to be typed keeps its exemption - it is not an
+    // atom yet and cannot be selected.
+    if (onlySelected) {
+      for (const row of tbody.querySelectorAll('tr')) {
+        const element = /** @type {HTMLInputElement} */ (row.querySelector('.atom-element'));
+        if (element?.value) delete row.dataset.unfiltered;
+      }
+    }
+    applyRowFilter();
+    // A row can only be scrolled to once it is actually visible again.
+    if (activeUuid) scrollRowIntoView(tbody.querySelector(`tr[data-uuid="${activeUuid}"]`));
+  });
 
   container.querySelector('#addNewRow').addEventListener('click', () => {
     const lastRow = tbody.querySelector('tr:last-child');
@@ -542,8 +697,11 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     const before = Number.isInteger(atom.position)
       ? [...tbody.querySelectorAll('tr')][atom.position]
       : null;
-    if (before) tbody.insertBefore(buildRow(atom), before);
-    else addRowToTable(atom);
+    if (before) {
+      const row = buildRow(atom);
+      row.dataset.unfiltered = '1'; // same reasoning as restoreAtom()
+      tbody.insertBefore(row, before);
+    } else addRowToTable(atom);
     notifyChange();
   }
 
@@ -561,5 +719,8 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     for (const idx of indices) rows[idx]?.classList.add('atom-row-conflict');
   }
 
-  return { getAtoms, getDeleted, restoreAtom, syncRow, setActiveUuid, clear, reload, addAtom, highlightConflicts, clearConflicts };
+  return {
+    getAtoms, getDeleted, restoreAtom, syncRow, setActiveUuid, setSelectedUuids,
+    clear, reload, addAtom, highlightConflicts, clearConflicts,
+  };
 }

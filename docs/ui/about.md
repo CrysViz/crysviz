@@ -4,6 +4,8 @@
 
 Version 0.9.10 Beta 2026-08-28
 
+Source code and issues: [github.com/CrysViz/crysviz](https://github.com/CrysViz/crysviz)
+
 Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).

@@ -1,6 +1,5 @@
 import { fileBrowser } from '../state/store.js';
 import { captureState } from './ShareModule.js';
-import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 import { isVacancy } from '../render/VacancyMarkerModule.js';
 
 export function poscartoFile() {
@@ -16,9 +15,18 @@ export function poscartoFile() {
   );
 
   // A POSCAR is a list of real atoms with no way to say "a site is empty", so
-  // vacancy markers ("Va") are dropped — writing them would make VASP read a
-  // made-up element. The .crysviz save keeps them (see ShareModule.buildPOSCAR).
-  const keep = structure.atoms.map((_, i) => !isVacancy(structure.elements[i]));
+  // two kinds of absence are dropped — writing either would make VASP read an
+  // atom that is not there:
+  //   - vacancy markers ("Va"), which would come back as a made-up element;
+  //   - sites edited down to zero occupancy, which are absence stated as a
+  //     number rather than as a symbol and had until now been written out as
+  //     ordinary, fully-occupied atoms of their species.
+  // Anything above zero is still a real (if partial) atom and is kept — that
+  // is the case the save button's confirm dialog warns about. The .crysviz
+  // save keeps both kinds (see ShareModule.buildPOSCAR): that path is a
+  // round-trip, not an export, and must reproduce the structure exactly.
+  const keep = structure.atoms.map((atom, i) =>
+    !isVacancy(structure.elements[i]) && (atom.getTotalOccupancy?.() ?? 1) > 0);
 
   // unique elements preserving first-occurrence order
   const seen = new Set();
@@ -29,7 +37,7 @@ export function poscartoFile() {
   });
 
   if (!uniqueElements.length) {
-    throw new Error('Structure has only vacancies — nothing to write to a POSCAR.');
+    throw new Error('Structure has only vacancies and empty sites — nothing to write to a POSCAR.');
   }
 
   const counts = uniqueElements.map(el => structure.elements.filter((e, i) => keep[i] && e === el).length);
@@ -56,6 +64,25 @@ export function poscartoFile() {
 }
 
 
+
+/**
+ * True when writing a POSCAR would actually throw occupancy information away.
+ *
+ * Deliberately NOT structureHasFractionalOccupancy(): that asks whether the
+ * structure is disordered at all, and a site at zero occupancy counts as
+ * disordered there. Such a site is written out faithfully — as absence, by
+ * being left out entirely — so warning about it would be warning about the one
+ * case the export gets exactly right. What is genuinely lost is a site that is
+ * partly occupied and still written as a whole atom.
+ *
+ * @returns {boolean}
+ */
+function poscarLosesOccupancy() {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure?.atoms?.length) return false;
+  return structure.atoms.some((atom) =>
+    atom.isDisordered?.() && (atom.getTotalOccupancy?.() ?? 1) > 0);
+}
 
 /** Base name of the selected structure's file (extension stripped). */
 export function currentBaseName() {
@@ -97,7 +124,7 @@ export function addSavePanel() {
       // structure would be written out as if it were ordered — silently, and
       // with each site collapsed to its majority species. Confirm rather than
       // lose that data without saying so.
-      if (structureHasFractionalOccupancy() && !confirm(
+      if (poscarLosesOccupancy() && !confirm(
         'This structure has fractionally occupied sites.\n\n'
         + 'The POSCAR format cannot express occupancy: each site will be written '
         + 'as its majority species and the disorder will be lost.\n\nExport anyway?'

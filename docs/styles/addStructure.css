@@ -204,6 +204,28 @@
   margin-top: var(--sp-3-5);
 }
 
+/* "Only selected" filter (AtomTableInput.js): narrows the table to the atoms
+   selected in the 3D view. Hidden rows stay in the DOM - the Modify editor
+   rebuilds the structure from every row - so the filter is display only. */
+.atom-table-filter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.atom-table-filter-btn.is-active {
+  background: rgb(var(--warn-rgb) / 0.35);
+  border-color: var(--warn);
+}
+
+.atom-table-filter-hint {
+  font-size: var(--fs-sm);
+  color: var(--fg-50);
+}
+
+tr.atom-row-filtered { display: none; }
+
 .atom-table-add-row {
   text-align: center;
   margin-top: var(--sp-3);

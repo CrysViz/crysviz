@@ -13,7 +13,7 @@ import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsP
 import { openPanel, closePanel } from './panels/PanelManager.js';
 import { ensureActiveCalculator, snapshotCurrentStructure } from './BackendPanel/AtomisticPanels.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
-import { StructureContainer } from '../model/index.js';
+import { TrajectoryContainer } from '../model/index.js';
 import { fileBrowser, structureShip, general } from '../state/store.js';
 
 const state = {
@@ -222,13 +222,18 @@ function registerScanRow(scan, potential) {
       // Re-scanning from one of the scan's own frames keeps the row's name
       // rather than nesting eos_ prefixes.
       if (rowIndex === fileBrowser.selectedRowIndex) name = container.fileName;
-      container.fileName = name;
-      container.structures = scan.structures;
+      // Swap in a fresh store-backed container rather than replacing the
+      // structures array in place — a trajectory container's frame count is
+      // owned by its store, so array surgery cannot re-seat it.
+      const rebuilt = TrajectoryContainer.fromStructures(name, scan.structures);
+      rebuilt.cameraSnapshot = container.cameraSnapshot;
+      rebuilt.featureSnapshot = container.featureSnapshot;
+      structureShip.container[rowIndex] = rebuilt;
       updateRow(row, { name, traj: scan.structures.length, step: 1 });
       return;
     }
   }
-  const container = new StructureContainer({ fileName: name, structures: scan.structures });
+  const container = TrajectoryContainer.fromStructures(name, scan.structures);
   structureShip.container.push(container);
   const newRow = createRow({ name, traj: scan.structures.length, step: 1 });
   tbody.appendChild(newRow);

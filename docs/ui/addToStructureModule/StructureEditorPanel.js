@@ -526,12 +526,23 @@ function buildFreeformModifyEditor(body, structure) {
   document.addEventListener('crysviz:atoms-changed', syncFromStructure);
   document.addEventListener('crysviz:colors-changed', syncFromStructure);
 
-  // Reverse highlight: picking an atom in the 3D scene lights up its table row.
+  // Reverse highlight: picking an atom in the 3D scene lights up its table row
+  // (and scrolls it into view - see AtomTableInput.setActiveUuid). The whole
+  // selection, not just the last atom, is handed over as well: it is what the
+  // table's "Only selected" filter narrows to, so clicking a few atoms in the
+  // view is how you get an editor showing just those atoms.
+  //
+  // emitCurrent: the panel is routinely opened with atoms already selected,
+  // and without it the table would sit unfiltered and unscrolled until the
+  // next selection change.
   const unsubscribeSelection = subscribeToAtomSelection(({ selectedAtoms }) => {
+    editor.setSelectedUuids(selectedAtoms
+      .map((a) => structure.atoms?.[a.sourceIndex]?.uuid)
+      .filter(Boolean));
     const last = selectedAtoms[selectedAtoms.length - 1];
     const uuid = last ? structure.atoms?.[last.sourceIndex]?.uuid ?? null : null;
     editor.setActiveUuid(uuid);
-  });
+  }, { emitCurrent: true });
 
   renderSummary();
 

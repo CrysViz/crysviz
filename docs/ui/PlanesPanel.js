@@ -11,8 +11,12 @@ import { computeAutoRange, roundToSigFigs } from '../utils/index.js';
 export const planesData = {
   activeInputMode: 'hkl', // 'hkl' or 'uvwd'
   showPlanes: true,
+  createFromAtomsEnabled: false,
   calculateFromAtomsEnabled: false,
 };
+
+// Fewest selected atoms fitPlaneToPoints() can turn into a plane.
+const MIN_ATOMS_FOR_PLANE_FIT = 3;
 
 const structurePlaneMeshes = new WeakMap();
 let activeRenderedStructure = null;
@@ -206,20 +210,34 @@ export function syncPlanesForSelectedStructure() {
   renderPlanesTable();
 }
 
-/**
- * Toggle the enabled state for "Calculate from Selected Atoms" button.
- * @param {boolean} enabled - Whether to enable the button
- */
-export function setCalculateFromAtomsEnabled(enabled) {
-  planesData.calculateFromAtomsEnabled = enabled;
-  const btn = document.getElementById('calcFromAtomsBtn');
-  if (btn) {
-    btn.disabled = !enabled;
-  }
+function hasSelectedPlane() {
+  const structure = getSelectedStructure();
+  return !!(structure
+    && selectedPlaneIndex !== null
+    && selectedPlaneIndex >= 0
+    && structure.planes?.[selectedPlaneIndex]);
 }
 
-function updateCalculateFromAtomsButtonForSelection(selectedAtoms = []) {
-  setCalculateFromAtomsEnabled(Array.isArray(selectedAtoms) && selectedAtoms.length >= 3);
+/**
+ * Refresh the enabled state of the two atom-derived plane buttons.
+ *
+ * Both need enough selected atoms for a fit; "Calculate from selection" also needs
+ * a plane selected in the table to write the fit into — without that second
+ * condition the button looked usable as soon as atoms were picked but silently
+ * did nothing, which is what users kept hitting.
+ *
+ * @param {Array} [selectedAtoms] - Current atom selection (defaults to live selection)
+ */
+export function refreshAtomsToPlaneButtons(selectedAtoms = getSelectedAtoms()) {
+  const enoughAtoms = Array.isArray(selectedAtoms) && selectedAtoms.length >= MIN_ATOMS_FOR_PLANE_FIT;
+  planesData.createFromAtomsEnabled = enoughAtoms;
+  planesData.calculateFromAtomsEnabled = enoughAtoms && hasSelectedPlane();
+
+  const createBtn = document.getElementById('createFromAtomsBtn');
+  if (createBtn) createBtn.disabled = !planesData.createFromAtomsEnabled;
+
+  const calcBtn = document.getElementById('calcFromAtomsBtn');
+  if (calcBtn) calcBtn.disabled = !planesData.calculateFromAtomsEnabled;
 }
 
 function ensureAtomSelectionSubscription() {
@@ -228,7 +246,7 @@ function ensureAtomSelectionSubscription() {
   }
 
   atomSelectionUnsubscribe = subscribeToAtomSelection(({ selectedAtoms }) => {
-    updateCalculateFromAtomsButtonForSelection(selectedAtoms);
+    refreshAtomsToPlaneButtons(selectedAtoms);
   }, { emitCurrent: true });
 }
 
@@ -694,10 +712,15 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
         </table>
       </div>
 
-      <!-- Calculate from atoms button (centered) -->
+      <!-- Atom-derived plane buttons (centered) -->
       <div class="planes-center-row">
-        <button id="calcFromAtomsBtn" class="file-action-btn planes-calc-btn" disabled>
-          Calculate from Selected Atoms
+        <button id="createFromAtomsBtn" class="file-action-btn planes-calc-btn" disabled
+                title="Add a new plane fitted to the selected atoms">
+          Create from<br>selection
+        </button>
+        <button id="calcFromAtomsBtn" class="file-action-btn planes-calc-btn" disabled
+                title="Fit the plane selected in the table to the selected atoms">
+          Calculate from<br>selection
         </button>
       </div>
 
@@ -778,14 +801,19 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
 
         </div>
 
-        <!-- Cut mode -->
-        <div class="planes-cut-row">
-          <label class="planes-cut-label">Filter/hide atoms:</label>
-          <select id="planeCutMode" class="planes-select" disabled>
-            <option value="${CutModes.NONE}">None</option>
-            <option value="${CutModes.ALONGN}">Along Normal</option>
-            <option value="${CutModes.OPPOSITEN}">Opposite Normal</option>
-          </select>
+        <!-- Cut mode — its own separated sub-section (same rule/spacing the
+             Plane Parameters and Field sections use), since it acts on the
+             atoms rather than on the plane's own geometry above. -->
+        <div class="planes-cut-section">
+          <h4 class="planes-section-title">Atom Filter</h4>
+          <div class="planes-cut-row">
+            <label class="planes-cut-label">Filter/hide atoms:</label>
+            <select id="planeCutMode" class="planes-select" disabled>
+              <option value="${CutModes.NONE}">None</option>
+              <option value="${CutModes.ALONGN}">Along Normal</option>
+              <option value="${CutModes.OPPOSITEN}">Opposite Normal</option>
+            </select>
+          </div>
         </div>
 
       </div>
@@ -860,7 +888,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
   `;
 
   setupPlanesEvents(container);
-  updateCalculateFromAtomsButtonForSelection(getSelectedAtoms());
+  refreshAtomsToPlaneButtons();
   syncPlanesForSelectedStructure();
   renderPlanesTable();
 }
@@ -909,6 +937,7 @@ function setupPlanesEvents(container) {
   });
 
   container.querySelector('#addPlaneBtn').addEventListener('click', addPlaneFromCurrentInputs);
+  container.querySelector('#createFromAtomsBtn').addEventListener('click', createPlaneFromSelectedAtoms);
   container.querySelector('#calcFromAtomsBtn').addEventListener('click', calculatePlaneFromSelectedAtoms);
 
   // d slider: mirrors the d text box, updating the plane in real time while
@@ -1042,11 +1071,41 @@ function addPlaneFromCurrentInputs() {
   }
 
   ensureStructurePlaneState(structure);
+  addPlane(structure, createDefaultPlane());
+}
 
-  const newPlane = {
+/**
+ * A plane's geometry: either Miller indices (h k l) or a Cartesian normal plus
+ * offset (u v w | d), tagged by `type`. Every member is optional so the two
+ * shapes share one loose type — the codebase switches on `type` everywhere.
+ *
+ * @typedef {{type: string, h?: number, k?: number, l?: number,
+ *            u?: number, v?: number, w?: number, d?: number}} PlaneParams
+ */
+
+/**
+ * Same label text updateSelectedPlaneFromInputs() writes for edited planes.
+ * @param {PlaneParams} [params]
+ * @returns {string}
+ */
+function planeLabelForParams(params) {
+  if (params?.type === 'hkl') return `(${params.h} ${params.k} ${params.l})`;
+  const u = params?.u ?? 0;
+  const v = params?.v ?? 0;
+  const w = params?.w ?? 0;
+  const d = params?.d ?? 0;
+  return `[${u.toFixed(2)} ${v.toFixed(2)} ${w.toFixed(2)}] d=${d.toFixed(2)}`;
+}
+
+/**
+ * @param {PlaneParams} [params]
+ * @param {string} [label]
+ */
+function createDefaultPlane(params = { type: 'hkl', h: 1, k: 1, l: 1 }, label = '(1 1 1)') {
+  return {
     enabled:       true,
-    params:        { type: 'hkl', h: 1, k: 1, l: 1 },
-    label:         '(1 1 1)',
+    params,
+    label,
     visualization: 'None',
     cutMode:       CutModes.NONE,
     colormap:      'jet',
@@ -1055,15 +1114,65 @@ function addPlaneFromCurrentInputs() {
     colormapMax:   100,
     field:        null,
   };
+}
 
-  structure.planes.push(newPlane);
-  replacePlaneMesh(structure, newPlane);
+/** Append a plane, render it, and make it the selected one. */
+function addPlane(structure, plane) {
+  structure.planes.push(plane);
+  replacePlaneMesh(structure, plane);
 
   selectedPlaneIndex = structure.planes.length - 1;
   renderPlanesTable();
   loadSelectedPlaneParameters();
 }
 
+/**
+ * Fit the current atom selection to a plane and return its uvwd parameters,
+ * or null (having told the user why) if the selection can't define one.
+ * @returns {PlaneParams|null}
+ */
+function planeParamsFromSelectedAtoms() {
+  const atoms = getSelectedAtoms();
+  if (!atoms || atoms.length < MIN_ATOMS_FOR_PLANE_FIT) {
+    alert(`Select at least ${MIN_ATOMS_FOR_PLANE_FIT} atoms to define a plane.`);
+    return null;
+  }
+
+  const points = atoms
+    .map((atom) => atom.position)
+    .filter((point) => point);
+  const planeFit = fitPlaneToPoints(points);
+  if (!planeFit.valid) {
+    alert('Selected atoms do not define a stable plane.');
+    return null;
+  }
+
+  return {
+    type: 'uvwd',
+    u: planeFit.normal[0],
+    v: planeFit.normal[1],
+    w: planeFit.normal[2],
+    d: planeFit.d,
+  };
+}
+
+/** Add a new plane fitted to the selected atoms (no plane selection needed). */
+function createPlaneFromSelectedAtoms() {
+  const structure = getSelectedStructure();
+  if (!structure) {
+    alert('Load/select a structure before adding planes.');
+    return;
+  }
+
+  const derivedParams = planeParamsFromSelectedAtoms();
+  if (!derivedParams) return;
+
+  ensureStructurePlaneState(structure);
+  addPlane(structure, createDefaultPlane(derivedParams, planeLabelForParams(derivedParams)));
+  syncAtomCutPlanesFromSelectedStructure();
+}
+
+/** Re-fit the plane selected in the table to the selected atoms. */
 function calculatePlaneFromSelectedAtoms() {
   const structure = getSelectedStructure();
   if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) {
@@ -1077,28 +1186,8 @@ function calculatePlaneFromSelectedAtoms() {
     return;
   }
 
-  const atoms = getSelectedAtoms();
-  if (!atoms || atoms.length < 3) {
-    alert('Select at least 3 atoms to define a plane.');
-    return;
-  }
-
-  const points = atoms
-    .map((atom) => atom.position)
-    .filter((point) => point);
-  const planeFit = fitPlaneToPoints(points);
-  if (!planeFit.valid) {
-    alert('Selected atoms do not define a stable plane.');
-    return;
-  }
-
-  const derivedParams = {
-    type: 'uvwd',
-    u: planeFit.normal[0],
-    v: planeFit.normal[1],
-    w: planeFit.normal[2],
-    d: planeFit.d,
-  };
+  const derivedParams = planeParamsFromSelectedAtoms();
+  if (!derivedParams) return;
 
   plane.params = derivedParams;
   // plane.label = `[${derivedParams.u.toFixed(2)} ${derivedParams.v.toFixed(2)} ${derivedParams.w.toFixed(2)}] d=${derivedParams.d.toFixed(2)}`;
@@ -1410,6 +1499,7 @@ function renderPlanesTable() {
   if (empty) {
     selectedPlaneIndex = null;
     disablePlaneControls();
+    refreshAtomsToPlaneButtons();
     return;
   }
 
@@ -1455,6 +1545,10 @@ function renderPlanesTable() {
 
     tbody.appendChild(tr);
   });
+
+  // The plane selection gates "Calculate from selection", and every path
+  // that changes it (row click, delete, structure switch) re-renders here.
+  refreshAtomsToPlaneButtons();
 
   tbody.querySelectorAll('.plane-enable-cb').forEach(cb => {
     cb.addEventListener('change', e => {
