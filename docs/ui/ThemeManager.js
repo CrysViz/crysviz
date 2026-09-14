@@ -169,8 +169,12 @@ export function applyTheme(paletteId, modeId) {
   currentMode = mode;
 
   applyConcreteVisuals(palette.modes[eff]);
-  localStorage.setItem(PALETTE_KEY, palette.id);
-  localStorage.setItem(MODE_KEY, mode);
+  // Opaque-origin iframe (sandbox without allow-same-origin) throws on any
+  // localStorage access — persist best-effort, never let it kill boot.
+  try {
+    localStorage.setItem(PALETTE_KEY, palette.id);
+    localStorage.setItem(MODE_KEY, mode);
+  } catch { /* storage unavailable */ }
   // data-theme stays the effective MODE so addons and any existing selector
   // keep working; the palette is a second attribute rather than a renaming.
   document.documentElement.setAttribute('data-theme', eff);
@@ -180,14 +184,28 @@ export function applyTheme(paletteId, modeId) {
 }
 
 function resolveInitialSelection() {
-  const savedPalette = localStorage.getItem(PALETTE_KEY);
-  const savedMode = localStorage.getItem(MODE_KEY);
+  let savedPalette = null, savedMode = null;
+  try {
+    savedPalette = localStorage.getItem(PALETTE_KEY);
+    savedMode = localStorage.getItem(MODE_KEY);
+  } catch { /* opaque-origin iframe: no storage → defaults below */ }
   const palette = manifest.palettes.some(p => p.id === savedPalette)
     ? savedPalette
     : manifest.palettes[0].id;
   // Anything not recognised (including a mode from a palette that has since
   // been removed) falls back to Auto, the intended default.
   const known = savedMode === 'auto' || manifest.palettes.some(p => offersMode(p, savedMode));
+  // Widget theme-follow: ?widget=1&theme=dark|light forces the mode at boot.
+  // Read from the URL only (opaque-origin storage stays unavailable; this never
+  // persists — applyTheme's setItem is already guarded). This is the app's first
+  // applyTheme, so there is no flash of the wrong theme.
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has('widget')) {
+      const t = params.get('theme');
+      if (t === 'dark' || t === 'light') return { palette, mode: t };
+    }
+  } catch { /* URL unavailable → fall through to the normal default */ }
   return { palette, mode: known ? savedMode : 'auto' };
 }
 

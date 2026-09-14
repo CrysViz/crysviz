@@ -3,7 +3,7 @@ import { StructureContainer } from '../model/index.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import { FileSource } from '../io/FileSource.js';
 const tableBody = document.querySelector("#objectTable tbody");
-import {fileBrowser,structureShip} from '../state/store.js';
+import {fileBrowser,structureShip,general} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
 import { restoreAtomColors } from '../utils/ColorModule.js';
 import { restoreFocusRegions } from '../render/FocusRegionModule.js';
@@ -86,14 +86,16 @@ export function isLikelyOUTCARContent(content) {
  * load path funnels through here.
  * @param {any} structureContainer
  * @param {{ restoreStoredPrefs?: boolean }} [options] restoreStoredPrefs
- *   (default true) re-applies the per-structure preferences saved for this
- *   same file in an earlier session — per-atom user colours
- *   (utils/ColorModule.js) and focus regions (render/FocusRegionModule.js),
- *   both stored by structure content in state/structurePrefs.js. A share-URL
- *   / .crysviz load passes false: that state is a complete snapshot and must
- *   not have stored preferences mixed in underneath it.
+ *   (default: general.restoreStoredPrefs, true in the full app) re-applies
+ *   the per-structure preferences saved for this same file in an earlier
+ *   session — per-atom user colours (utils/ColorModule.js) and focus regions
+ *   (render/FocusRegionModule.js), both stored by structure content in
+ *   state/structurePrefs.js. A share-URL / .crysviz load passes false: that
+ *   state is a complete snapshot and must not have stored preferences mixed
+ *   in underneath it. Widget mode flips the store default to false at boot
+ *   (host/early.js) unless the embed URL carries `prefs=1`.
  */
-export function initializeUIOnLoad(structureContainer, { restoreStoredPrefs = true } = {}) {
+export function initializeUIOnLoad(structureContainer, { restoreStoredPrefs = general.restoreStoredPrefs } = {}) {
   console.log(structureContainer);
   const fileName = structureContainer.fileName;
   const structures = structureContainer.structures;

@@ -18,7 +18,7 @@ import init, { compute_candidates } from '../compiled/periodic_wasm.js';
 
 // Idempotent; `import.meta.url` resolves the .wasm relative to this module (works in a
 // module worker). Resolving `ready` is what the warm-up task awaits.
-const ready = init(new URL('../compiled/periodic_wasm_bg.wasm', import.meta.url));
+const ready = init({ module_or_path: new URL('../compiled/periodic_wasm_bg.wasm', import.meta.url) });
 
 /**
  * Each handler returns `{ result, transfer }`. `result` is posted back; `transfer` lists

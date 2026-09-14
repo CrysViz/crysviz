@@ -9,7 +9,7 @@
 
 import init, { compute_bond_pairs } from './periodic_wasm.js';
 
-await init(new URL('./periodic_wasm_bg.wasm', import.meta.url));
+await init({ module_or_path: new URL('./periodic_wasm_bg.wasm', import.meta.url) });
 
 /**
  * @param {{

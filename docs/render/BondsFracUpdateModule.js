@@ -704,6 +704,15 @@ export function createBondsMesh(bondCount) {
   // Instanced mesh: 2 halves per bond
   const mesh = new THREE.InstancedMesh(geometry, material, bondCount * 2);
 
+  // rebuildBonds() always disposes and recreates this mesh, so its lazily
+  // auto-computed per-instance bounding sphere (three.js InstancedMesh) would
+  // normally stay correct. But updateBonds()/updateSingleBondPosition() and
+  // FastFrameModule.js's applyFrameFast() both reposition instances on this
+  // SAME mesh afterwards (cut-plane changes, live position edits, fast
+  // trajectory stepping) without invalidating that cached sphere — same
+  // latent cull bug as the spin/force arrows (SpinModule.js/ForceModule.js).
+  mesh.frustumCulled = false;
+
   // Instance colors
   mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2*3), 3, false);
 

@@ -3,6 +3,7 @@ import { app, fileBrowser, groups, general } from '../state/store.js';
 import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
 import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
 import { refreshForceHistogram } from '../ui/AnalysisPanels/ForceHistogram.js';
+import { requestRender } from './AnimateModule.js';
 import { applyFocusToArrows } from './FocusRegionModule.js';
 
 const SHAFT_SEGS = 20;
@@ -33,6 +34,7 @@ function disposeForceMeshes() {
 
 export function removeForces() {
   disposeForceMeshes();
+  requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
 }
 
 /**
@@ -102,7 +104,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   // Histogram panel (if open) tracks the current frame's forces regardless of
   // which of the many updateForces() call sites triggered this render.
   refreshForceHistogram(structure);
-  if (!structure?.periodic?.wrapped) { disposeForceMeshes(); return; }
+  if (!structure?.periodic?.wrapped) { disposeForceMeshes(); requestRender(); return; }
 
   const wrapped = structure.periodic.visibleWrapped;
   const shaftDiameter = general.forceRadius ?? 0.08;
@@ -110,7 +112,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   const tipLength = TIP_LENGTH * (shaftDiameter / 0.08);
 
   const forces = structure.forces;
-  if (!forces?.length) { disposeForceMeshes(); return; }
+  if (!forces?.length) { disposeForceMeshes(); requestRender(); return; }
 
   // Update force colors based on colormap
   const minValue = general.forceMin || 0;
@@ -262,7 +264,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
 
   if (!groups.forcesShaftMesh || groups.forcesShaftMesh.count !== count * 2) {
     disposeForceMeshes();
-    if (count === 0) return;
+    if (count === 0) { requestRender(); return; }
 
     const shaftGeo = new THREE.CylinderGeometry(1, 1, 1, SHAFT_SEGS, 1);
     // Same PBR preset atoms/bonds use (render/MaterialStyles.js) — a
@@ -274,6 +276,14 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     groups.forcesShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
     groups.forcesShaftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     groups.forcesShaftMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    // Same latent bug as SpinModule.js's arrows: this mesh sits at the world
+    // origin with every instance placed via setMatrixAt, so three.js's
+    // per-instance auto bounding sphere is only computed once, lazily — a
+    // rebuild that reuses this mesh (count unchanged) moves instances without
+    // invalidating that cached sphere, which can leave the whole batch culled
+    // until camera motion produces a frustum that happens to still intersect
+    // the stale sphere.
+    groups.forcesShaftMesh.frustumCulled = false;
     addArrowEmissiveAttributes(groups.forcesShaftMesh, count * 2);
     app.scene.add(groups.forcesShaftMesh);
 
@@ -283,6 +293,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     groups.forcesTipMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
     groups.forcesTipMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     groups.forcesTipMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    groups.forcesTipMesh.frustumCulled = false; // see forcesShaftMesh above
     addArrowEmissiveAttributes(groups.forcesTipMesh, count);
     app.scene.add(groups.forcesTipMesh);
   }
@@ -393,4 +404,6 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   // Fresh arrows: re-derive their focus-region opacity (the instanceOpacity
   // attribute is reset to 1 on every mesh rebuild).
   applyFocusToArrows(structure, 'forces');
+
+  requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
 }

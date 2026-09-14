@@ -454,9 +454,13 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
     console.warn(fileBrowser.selectedStructure)
-    // .crysviz restores its camera asynchronously as part of the session;
-    // that saved pose is authoritative and must not be overwritten here.
-    if (descriptor.id !== 'crysviz') {
+    // A .crysviz that restored a camera pose owns it — don't overwrite. But a
+    // session WITHOUT a saved camera (widget #load-file= payloads, share links
+    // with no pose) must still be fit/centered, or the orbit target is left at
+    // the (0,0,0) cell corner. loadCrysvizFile stamps container.cameraRestored.
+    const cameraRestored = descriptor.id === 'crysviz'
+      && structureContainer?.cameraRestored === true;
+    if (!cameraRestored) {
       // The first structure ever shown gets a fresh fit-to-structure camera;
       // later loads/switches keep the user's rotation and zoom, only
       // re-centering on the new structure (see `cameraFitted`).
@@ -656,7 +660,10 @@ async function initUIPanels() {
   initModifyStructureButton();
   initAddStructureButton();
   initCombineTrajectoriesButton();
-  initKeyboardShortcuts();
+  // Widget mode has no keyboard: it is an embed with no focusable app chrome,
+  // and its global key handlers (delete-atom, arrow-step, …) would fire against
+  // the host page's own shortcuts.
+  if (!document.body.classList.contains('widget-mode')) initKeyboardShortcuts();
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

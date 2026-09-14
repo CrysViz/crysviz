@@ -1262,6 +1262,15 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       trajectoryContainer = structures.length > 1
         ? TrajectoryContainer.fromStructures(fileName, structures)
         : new StructureContainer({ fileName, structures });
+      // Optional per-frame cell-kind labels (altermagnets DB precomputes
+      // loaded/conventional/primitive as frames). Order-aligned with `frames`;
+      // stashed for widget mode to read. Ignored everywhere else. Validate
+      // strictly (array of strings, one per frame) or drop it.
+      if (Array.isArray(state.frameKinds)
+        && state.frameKinds.length === frames.length
+        && state.frameKinds.every((k) => typeof k === 'string')) {
+        trajectoryContainer.frameKinds = state.frameKinds.slice();
+      }
       initializeUIOnLoad(trajectoryContainer, { restoreStoredPrefs: false });
       // Land on the frame the user was viewing before colors/fields are applied,
       // so `structure` below is that frame (also draws its arrows via the gated
@@ -1397,7 +1406,34 @@ export async function loadCrysvizFile(content, fileName = 'file.crysviz') {
   if (!container) {
     throw new Error(`Could not find the loaded structure in ${fileName}.`);
   }
+  // Record whether the session actually restored a camera pose (restoreCamera
+  // early-returns without one). loadStructure uses this to decide whether its
+  // crysviz branch may skip the fit-to-structure camera: a session WITHOUT a
+  // camera (widget #load-file= payloads, share links with no pose) must still
+  // get centered, or the orbit target stays at the (0,0,0) cell corner.
+  container.cameraRestored = !!(state.camera?.position && state.camera?.target);
+  // Optional embedder-supplied menu links (widget mode only; full app ignores).
+  container.menuLinks = validateMenuLinks(state.menuLinks);
   return container;
+}
+
+/** Strictly validate a payload's top-level `menuLinks`: an array of
+ *  {label, url} where label is a non-empty string (≤40 chars) and url parses
+ *  via new URL() with an http/https scheme. Invalid entries are dropped; an
+ *  empty result returns null (no menu group). */
+function validateMenuLinks(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  for (const entry of raw) {
+    const label = typeof entry?.label === 'string' ? entry.label.trim() : '';
+    const url = typeof entry?.url === 'string' ? entry.url : '';
+    if (!label || label.length > 40 || !url) continue;
+    let parsed;
+    try { parsed = new URL(url); } catch { continue; }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
+    out.push({ label, url });
+  }
+  return out.length ? out : null;
 }
 
 // ---------------------------------------------------------------------------

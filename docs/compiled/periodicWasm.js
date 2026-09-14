@@ -23,7 +23,7 @@ let _periodic_wrapped = null;
  * @param {URL|string} wasmUrl         – URL to the .wasm binary
  */
 export async function initPeriodicWasm(init, periodic_wrapped_fn, wasmUrl) {
-  await init(wasmUrl);
+  await init({ module_or_path: wasmUrl });
   _periodic_wrapped = periodic_wrapped_fn;
 }
 

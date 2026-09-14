@@ -283,6 +283,16 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   // Instanced mesh
   const mesh = new THREE.InstancedMesh(geometry, material, atomCount);
 
+  // rebuildAtoms() always disposes and recreates this mesh, so its lazily
+  // auto-computed per-instance bounding sphere (three.js InstancedMesh)
+  // would normally stay correct. But FastFrameModule.js's applyFrameFast()
+  // writes new atom positions straight into this SAME mesh's instanceMatrix
+  // buffer (a trajectory-stepping fast path that deliberately skips a full
+  // rebuild) without invalidating that cached sphere — a frame far enough
+  // from the one the sphere was computed against could then get wrongly
+  // culled. Same fix as the spin/force arrows (SpinModule.js/ForceModule.js).
+  mesh.frustumCulled = false;
+
   // Initialize instance color buffer with a default color (e.g., grey)
   mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3, false);
 

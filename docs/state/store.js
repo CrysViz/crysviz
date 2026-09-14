@@ -240,6 +240,9 @@ export const general = {
   forceRadius: 0.08,
   spinScale: 1.0,
   spinRadius: 0.08,
+  // Spin arrowhead (cone) length in the same base units as the shaft; scales
+  // with spinRadius like the shaft does. Default 0.4 = half the legacy 0.8.
+  spinTipLength: 0.4,
   // Spin colormap range (Spins panel min/max inputs; read with ||-defaults).
   spinMin: 0,
   spinMax: 2,
@@ -466,6 +469,19 @@ export const general = {
   // idle (stats computation isn't free, hence opt-in).
   forceStatsLive: false,
   spinsActive: false, // "Show Spins" toggle draws spin arrows
+  // Draw a spin arrow on every periodic-image copy of an atom too, not
+  // just the primary (Spins panel toggle, default off). Only physically
+  // meaningful when the cell is a magnetic unit cell — see the panel (i).
+  showSpinsOnCopies: false,
+  // Whether a plain structure load re-applies the per-structure preferences
+  // saved for the same file in an earlier session (per-atom colours, focus
+  // regions — state/structurePrefs.js). The full app leaves this on; widget
+  // mode (host/early.js) turns it off at boot unless the embed URL opts in
+  // with `prefs=1`, since the embed has no UI to inspect, change or reset
+  // those preferences. Read as the default of initializeUIOnLoad's
+  // restoreStoredPrefs option (ui/StructureInputModule.js); an explicit
+  // option still wins (share-URL / .crysviz loads always pass false).
+  restoreStoredPrefs: true,
   fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
   comparisonActive: false, // "Show Lattice Comparison" keeps the lattice popup synced (shared by both panels below)
   // Master "Enable Comparison" toggle (classic Comparison panel, ui/ComparisonPanel.js):

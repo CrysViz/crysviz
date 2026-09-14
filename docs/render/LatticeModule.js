@@ -2,6 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 
 import {app, groups, fileBrowser, general} from '../state/store.js';
 import {getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+import {getElementRadius} from '../defaults/radii_defaults.js'
 
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsFracUpdateModule.js'
@@ -446,16 +447,47 @@ export function getCellCenterAndDist() {
   for (const v of vertices) radius = Math.max(radius, v.distanceTo(center));
   radius = Math.max(radius, 1); // guard a degenerate/zero-size cell
 
+  // Atoms are drawn as spheres, and periodic images sit exactly on the cell
+  // faces/corners, so the true drawn extent can exceed the cell-vertex radius
+  // above by up to one atom radius. Grow radius to cover it — falls back to
+  // the cell-vertex radius when there's no atom data yet (early load, some
+  // orthographic-camera paths).
+  const wrapped = fileBrowser.selectedStructure.periodic?.visibleWrapped;
+  if (wrapped?.cart?.length) {
+    const atomSize = general.atomSize ?? 1;
+    for (let i = 0; i < wrapped.cart.length; i++) {
+      const drawnRadius = getElementRadius(wrapped.elements[i]) * atomSize;
+      radius = Math.max(radius, new THREE.Vector3(...wrapped.cart[i]).distanceTo(center) + drawnRadius);
+    }
+  }
+
   // Distance so the bounding sphere fits entirely inside the perspective
   // camera's frustum (45° vertical FOV, matching switchCameraType's
-  // PerspectiveCamera), with a small margin.
-  const halfFovRad = (45 / 2) * Math.PI / 180;
-  const fitDist = Math.max((radius / Math.sin(halfFovRad)) * 1.1, 20);
+  // PerspectiveCamera), with a small margin. A wide (landscape) viewport's
+  // horizontal FOV is always more generous than its vertical one, so fitting
+  // to the vertical half-angle alone is enough — but a narrow (portrait)
+  // viewport, e.g. an embedded iframe, has a TIGHTER horizontal FOV than
+  // vertical, and fitting only to vertical would leave the structure
+  // overflowing the sides. Use whichever half-angle is smaller.
+  const view = document.getElementById('view');
+  const w = view?.clientWidth || window.innerWidth;
+  const h = view?.clientHeight || window.innerHeight;
+  const aspect = w / h;
+  const halfFovV = (45 / 2) * Math.PI / 180;
+  const halfFovH = Math.atan(Math.tan(halfFovV) * aspect);
+  const halfFov = Math.min(halfFovV, halfFovH);
+  // Floor is radius*1.5, not an absolute constant: an absolute floor (the
+  // old code used 20) overshoots small real cells (AMDB structures are
+  // typically radius 4-9) into a needlessly zoomed-out start. radius*1.5
+  // still guarantees no near-plane clipping regardless of cell size — near
+  // is 0.1 and radius is floored at 1 above, so dist - radius >= 0.5*radius
+  // >= 0.5, comfortably clear of the 0.1 near plane.
+  const fitDist = Math.max((radius / Math.sin(halfFov)) * 1.1, radius * 1.5);
   // defaultZoomScale is a user zoom preference: it may pull the camera
   // further OUT, but never zooms in past the distance that guarantees the
   // whole structure is visible.
   const dist = fitDist * Math.max(1, app.defaultZoomScale);
-  return { center, dist };
+  return { center, dist, radius };
 }
 
 export function latticeDirs() {

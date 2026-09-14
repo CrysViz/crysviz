@@ -1137,3 +1137,14 @@
 .si-selbar-reset {
   margin-left: auto; /* push Reset to the right, dot stays next to the label */
 }
+
+/* Locked composition legend is read-only: drop the editing affordance
+   (text cursor + focus/hover outline). Labels' contentEditable is also set
+   false in CompositionLegendWidget.js. */
+.comp-legend-widget.cv-colorbar-locked .comp-legend-label:hover,
+.comp-legend-widget.cv-colorbar-locked .comp-legend-sub:hover,
+.comp-legend-widget.cv-colorbar-locked .comp-legend-label:focus,
+.comp-legend-widget.cv-colorbar-locked .comp-legend-sub:focus {
+  box-shadow: none;
+  cursor: default;
+}

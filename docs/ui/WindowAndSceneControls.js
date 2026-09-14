@@ -627,11 +627,15 @@ export function switchCameraType() {
 
   if (app.useOrthographicCamera) {
     // Switch to orthographic camera
-    const { center: _center, dist } = getCellCenterAndDist();
-    app.orthographicFrustumSize = dist * 0.5; // Adjust this multiplier as needed
+    const { center: _center, radius } = getCellCenterAndDist();
     const aspect = w / h;
-    // See initCamera's note: vertical half-height fixed, horizontal scaled
-    // by aspect.
+    // Exact fit: vertical half-height is `radius` (with a 10% margin) unless
+    // the viewport is portrait (aspect < 1), in which case the HORIZONTAL
+    // half-width (size * aspect, below) is the tighter constraint — dividing
+    // by aspect grows the vertical half-height enough that the width still
+    // covers `radius`. See initCamera's note: vertical half-height fixed,
+    // horizontal scaled by aspect.
+    app.orthographicFrustumSize = 1.1 * radius / Math.min(1, aspect);
     app.camera = new THREE.OrthographicCamera(
       -app.orthographicFrustumSize * aspect,
       app.orthographicFrustumSize * aspect,
@@ -756,8 +760,11 @@ function stopCameraMomentum() {
  *  camera distance — already handled by refit. */
 function refitOrthographicFrustum() {
   if (!app.useOrthographicCamera) return;
-  const { dist } = getCellCenterAndDist();
-  app.orthographicFrustumSize = dist * 0.5;
+  const { radius } = getCellCenterAndDist();
+  const w = view.clientWidth || window.innerWidth;
+  const h = view.clientHeight || window.innerHeight;
+  // Same exact/aspect-corrected fit as switchCameraType() — see its comment.
+  app.orthographicFrustumSize = 1.1 * radius / Math.min(1, w / h);
   resizeRenderer(app.orthographicFrustumSize);
 }
 

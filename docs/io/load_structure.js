@@ -1,6 +1,6 @@
 import { Structure } from "../model/index.js";
 import { StructureContainer } from '../model/index.js';
-import { Atom } from '../model/index.js';
+import { Atom, Spin } from '../model/index.js';
 import { cif_to_struct, mcif_to_magstruct } from './cif.js';
 import { parsePWSCFin } from './ReadPWSCFinModule.js';
 import { parsePWSCFout } from './ReadPWSCFoutModule.js';
@@ -136,7 +136,16 @@ export async function parse_cif(content, fileName = '', mcif = false) {
 
   const elements = cif_struct["species_full"];
   const positions = cif_struct["positions_full"];
-  const spins = cif_struct["moments_full"];
+  // mCIF moments arrive as bare [mx,my,mz] arrays (already Cartesian); wrap
+  // them like the QE/OUTCAR readers do so the Spins panel and renderer can
+  // read .vector/.scaling/.color. Plain CIFs have no moments_full.
+  const spins = (cif_struct["moments_full"] ?? []).map((vector, i) => new Spin({
+    vector: [...vector],
+    scaling: 1.0,
+    color: "#008080",
+    atomIndex: i,
+    element: elements[i],
+  }));
 
   // Full site composition, one entry per expanded atom. Present only for plain
   // CIFs — mCIF takes a different expansion path — in which case Atom falls
