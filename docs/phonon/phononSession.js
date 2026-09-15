@@ -208,31 +208,67 @@ const CALCULATORS = {
 };
 
 /**
- * A mode file (band/mesh/qpoints.yaml) or a phonopy.yaml without
- * `physical_unit` carries its cell in an unstated unit. Judge it from the
- * geometry (lengthUnitGuess.js) and, unless the user has forced a unit with
- * the Length unit selector, ask them to confirm — the guess is right for
- * every ordinary solid but a molecular crystal written in Bohr is genuinely
- * ambiguous, and getting it wrong scales the structure by 1.9x. Dismissing
- * the dialog (Escape, backdrop) takes the guess.
+ * Session memory of settled units, keyed by the raw lattice they were
+ * settled for. The unit is a property of the CELL, not of the session: a QE
+ * band.yaml and a VASP band.yaml loaded one after the other need different
+ * answers, while band.yaml, mesh.yaml and qpoints.yaml of the same run (or an
+ * undeclared phonopy.yaml followed by its band.yaml) share one cell and must
+ * not be asked about twice. Not part of the per-row record: it is what lets
+ * a row's unit be re-derived without asking when the same cell comes back.
+ * @type {{lattice:number[][], unit:'angstrom'|'bohr', source:'phonopy.yaml'|'user'|'geometry', assessment:any}[]}
+ */
+const unitMemory = [];
+
+function rememberUnit(lattice, unit, source, assessment = null) {
+  if (!lattice || !unit) return;
+  const copy = lattice.map((row) => [...row]);
+  const hit = unitMemory.find((m) => sameLattice(m.lattice, copy));
+  if (hit) Object.assign(hit, { unit, source, assessment });
+  else unitMemory.push({ lattice: copy, unit, source, assessment });
+}
+
+function recallUnit(lattice) {
+  return lattice ? unitMemory.find((m) => sameLattice(m.lattice, lattice)) ?? null : null;
+}
+
+/**
+ * Settle the length unit for the cell a file was written in and store it in
+ * detectedUnit / detectedUnitSource / unitAssessment.
+ *
+ * A cell seen before in this session (same raw lattice) takes its settled
+ * unit silently, whether that came from a phonopy.yaml declaration, an
+ * answer in the dialog or a geometry judgement. A new cell is judged from
+ * its geometry (lengthUnitGuess.js) and, unless the user has forced a unit
+ * with the Length unit selector, the user is asked to confirm: the guess is
+ * right for every ordinary solid but a molecular crystal written in Bohr is
+ * genuinely ambiguous, and getting it wrong scales the structure by 1.9x.
+ * Dismissing the dialog (Escape, backdrop) takes the guess.
  * @param {any} cellRaw  the cell as written in the file
  * @param {string} fileName
  */
-async function resolveUndeclaredUnit(cellRaw, fileName) {
-  // Already judged (and possibly confirmed) for this very cell — e.g. an
-  // undeclared phonopy.yaml followed by its band.yaml: do not ask twice.
-  if (phononState.detectedUnit && sameLattice(phononState.unitAssessment?.lattice, cellRaw?.lattice)) return;
-  const assessment = assessLengthUnit(cellRaw, (el) => atomicRadii[el] ?? 1.0);
-  assessment.lattice = cellRaw?.lattice?.map((row) => [...row]) ?? null;
-  phononState.unitAssessment = assessment;
-  if (phononState.lengthUnit !== 'auto') {
-    phononState.detectedUnit = assessment.guess;
-    phononState.detectedUnitSource = 'geometry';
+async function settleUnitFor(cellRaw, fileName) {
+  const known = recallUnit(cellRaw?.lattice);
+  if (known) {
+    phononState.detectedUnit = known.unit;
+    phononState.detectedUnitSource = known.source;
+    phononState.unitAssessment = known.assessment;
     return;
   }
-  const chosen = await promptLengthUnit(assessment, fileName);
-  phononState.detectedUnit = chosen ?? assessment.guess;
-  phononState.detectedUnitSource = chosen ? 'user' : 'geometry';
+  const assessment = assessLengthUnit(cellRaw, (el) => atomicRadii[el] ?? 1.0);
+  assessment.lattice = cellRaw?.lattice?.map((row) => [...row]) ?? null;
+  let unit = assessment.guess;
+  let source = /** @type {'user'|'geometry'} */ ('geometry');
+  if (phononState.lengthUnit === 'auto') {
+    const chosen = await promptLengthUnit(assessment, fileName);
+    if (chosen) { unit = chosen; source = 'user'; }
+    // Only a decision the user saw is worth remembering: under a forced unit
+    // the guess is never applied, so the cell should still be asked about
+    // once the selector is back on Auto.
+    rememberUnit(cellRaw?.lattice, unit, source, assessment);
+  }
+  phononState.detectedUnit = unit;
+  phononState.detectedUnitSource = source;
+  phononState.unitAssessment = assessment;
 }
 
 function sameLattice(a, b) {
@@ -384,9 +420,17 @@ export async function loadPhonopyFile(text, fileName, kind) {
       phononState.detectedUnit = cells.lengthUnit;
       phononState.detectedUnitSource = 'phonopy.yaml';
       phononState.unitAssessment = null;
+      // band.yaml carries the primitive cell, phonopy.yaml on its own shows the
+      // unit cell: either one coming back later is this same declared run.
+      rememberUnit(cells.primitive?.lattice, cells.lengthUnit, 'phonopy.yaml');
+      rememberUnit(cells.unit?.lattice, cells.lengthUnit, 'phonopy.yaml');
     } else {
-      // No physical_unit and an unknown (or absent) calculator: judge the cell.
-      await resolveUndeclaredUnit(cells.unit || cells.primitive, fileName);
+      // No physical_unit and an unknown (or absent) calculator: judge the cell,
+      // and let the other cell of the same run share the answer.
+      const judged = cells.unit || cells.primitive;
+      await settleUnitFor(judged, fileName);
+      const twin = judged === cells.unit ? cells.primitive : cells.unit;
+      rememberUnit(twin?.lattice, phononState.detectedUnit, phononState.detectedUnitSource, phononState.unitAssessment);
     }
     if (phononState.dataset && !phononState.dataset.cell) {
       phononState.dataset = withCell(phononState.dataset, cells);
@@ -421,11 +465,10 @@ export async function loadPhonopyFile(text, fileName, kind) {
   if (!dataset.cell) {
     throw new Error('This phonopy file carries no cell (old phonopy version). Load phonopy.yaml first, then this file again.');
   }
-  // Mode files never state their unit. A phonopy.yaml loaded earlier settles
-  // it (declared, or already judged and confirmed); otherwise judge this cell.
-  if (phononState.detectedUnitSource !== 'phonopy.yaml') {
-    await resolveUndeclaredUnit(dataset.cell, fileName);
-  }
+  // Mode files never state their unit. This cell may be known already (its
+  // phonopy.yaml, or a sibling mesh/qpoints file of the same run); a new cell
+  // is judged and confirmed on its own, whatever earlier files settled on.
+  await settleUnitFor(dataset.cell, fileName);
   // A fresh dataset gets its own row and record; the previous one stays on
   // its row (select that row to get it back).
   saveToRecord();

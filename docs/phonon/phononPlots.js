@@ -114,18 +114,44 @@ export function bandTicks(dataset) {
   return ticks;
 }
 
+/** The theme a plot is drawn with (colours, font sizes, margins), exposed so
+ *  bandFigure() can be driven without a rendered plot. */
+export function figureTheme(plotId, isExpanded = false) {
+  return baseLayout(plotId, isExpanded);
+}
+
+/** Tick label for a dataset that has a single q-point: the path label when
+ *  band.yaml carries one, else Γ for q = 0, else the reduced coordinates. */
+function singlePointLabel(dataset) {
+  const first = dataset.labels?.[0]?.[0];
+  if (dataset.kind === 'band' && first) return prettyLabel(first, { html: true });
+  const q = dataset.qpoints[0]?.q ?? [];
+  if (q.length && q.every((v) => Math.abs(v) < 1e-6)) return 'Γ';
+  return `(${q.map((v) => Math.round(v * 1e4) / 1e4).join(', ')})`;
+}
+
 /**
- * ctx: { dataset, dos, selected: {iq, ib}|null }
+ * The band/DOS figure as plain Plotly data + layout, for plotBands() to
+ * render and for tests to inspect without Plotly.
+ *
+ * ctx: { dataset, dos, selected: {iq, ib}|null }; theme: figureTheme().
  * Band datasets plot frequency vs path distance, one line per band; mesh /
- * qpoints datasets plot frequency vs q-point index as markers. Every point
- * carries customdata { iq, ib } so a click selects that mode.
+ * qpoints datasets plot frequency vs q-point index as markers. A dataset
+ * with a single q-point (a Γ-only calculation: one-point band.yaml, 1x1x1
+ * mesh, a lone qpoint) has nothing to draw a line between and a zero-width
+ * x range, so it was invisible — its modes are drawn instead as a ladder of
+ * horizontal marks at x = 0 under the point's label. Every point carries
+ * customdata { iq, ib } so a click selects that mode.
  */
-export async function plotBands(plotId, ctx, isExpanded = false) {
+export function bandFigure(ctx, theme, isExpanded = false) {
   const { dataset, dos, selected } = ctx;
-  const { layout, sizes, isLight } = baseLayout(plotId, isExpanded);
+  const { layout, sizes, isLight } = theme;
   const isBand = dataset.kind === 'band';
   const nq = dataset.qpoints.length;
-  const xs = dataset.qpoints.map((qp, i) => (isBand ? qp.distance : i));
+  const pathXs = dataset.qpoints.map((qp, i) => (isBand ? qp.distance : i));
+  const single = nq === 1 || (isBand && Math.abs(pathXs[nq - 1] - pathXs[0]) < 1e-9);
+  const xs = single ? pathXs.map(() => 0) : pathXs;
+  const asLines = isBand && !single;
   /** @type {any[]} */
   const data = [];
   const bandColor = isLight ? COLORS.BAND_LIGHT : COLORS.BAND;
@@ -145,7 +171,7 @@ export async function plotBands(plotId, ctx, isExpanded = false) {
     let x = xs;
     let y = ys;
     let cd = custom;
-    if (isBand && dataset.segments.length > 1) {
+    if (asLines && dataset.segments.length > 1) {
       x = []; y = []; cd = [];
       let start = 0;
       for (let s = 0; s < dataset.segments.length; s++) {
@@ -155,12 +181,17 @@ export async function plotBands(plotId, ctx, isExpanded = false) {
         start += n;
       }
     }
+    const color = anyImag ? imagColor : bandColor;
     data.push({
       x, y, customdata: cd,
       type: 'scatter',
-      mode: isBand ? 'lines' : 'markers',
-      line: { color: anyImag ? imagColor : bandColor, width: isExpanded ? 1.6 : 1 },
-      marker: { color: anyImag ? imagColor : bandColor, size: isExpanded ? 6 : 3.5 },
+      mode: asLines ? 'lines' : 'markers',
+      line: { color, width: isExpanded ? 1.6 : 1 },
+      // Single q-point: a horizontal dash per mode (Plotly's open 'line-ew'
+      // symbol is drawn with marker.line), long enough to read as a level.
+      marker: single
+        ? { color, symbol: 'line-ew', size: isExpanded ? 28 : 18, line: { color, width: isExpanded ? 3 : 2 } }
+        : { color, size: isExpanded ? 6 : 3.5 },
       hovertemplate: `band ${ib + 1}<br>%{y:.3f} THz<extra></extra>`,
       name: `band ${ib + 1}`,
       connectgaps: false,
@@ -177,13 +208,20 @@ export async function plotBands(plotId, ctx, isExpanded = false) {
     });
   }
 
-  const hasDos = dos && dos.frequencies?.length;
+  const hasDos = !!(dos && dos.frequencies?.length);
+  /** @type {any} */
   const xaxis = {
     color: layout.fontColor, gridcolor: layout.gridColor, zeroline: false, showgrid: false,
     tickfont: { size: sizes.tick }, domain: hasDos ? [0, 0.74] : [0, 1],
   };
   const shapes = [];
-  if (isBand) {
+  if (single) {
+    xaxis.tickmode = 'array';
+    xaxis.tickvals = [0];
+    xaxis.ticktext = [singlePointLabel(dataset)];
+    xaxis.range = [-1, 1];
+    shapes.push({ type: 'line', x0: 0, x1: 0, y0: 0, y1: 1, yref: 'paper', line: { color: layout.gridColor, width: 1 } });
+  } else if (isBand) {
     const ticks = bandTicks(dataset);
     xaxis.tickmode = 'array';
     xaxis.tickvals = ticks.map((t) => t.x);
@@ -221,7 +259,13 @@ export async function plotBands(plotId, ctx, isExpanded = false) {
   }
   delete full.gridColor;
   delete full.fontColor;
-  await renderInto(plotId, data, full);
+  return { data, layout: full };
+}
+
+/** Render the band/DOS figure (bandFigure) into the card `plotId`. */
+export async function plotBands(plotId, ctx, isExpanded = false) {
+  const { data, layout } = bandFigure(ctx, figureTheme(plotId, isExpanded), isExpanded);
+  await renderInto(plotId, data, layout);
 }
 
 /**
