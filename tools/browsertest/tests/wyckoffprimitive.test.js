@@ -184,6 +184,109 @@ const MODIFY = '[data-panel-id="modifyStructure"]';
   H.check('the moved orbit keeps its row position', moved.after.rowIndex === 0,
     JSON.stringify(moved.after));
 
+  // --- NaCl: centred cells whose orbits are not stored as the table's point --
+  // Fm-3m 4b is tabulated as 1/2,0,0. The agreement test used to compare only
+  // each orbit's first atom with that point, so a Cl orbit represented by
+  // 1/2,1/2,1/2 rejected the whole lock and left the chooser disabled at "free"
+  // - on the primitive cell AND on the conventional one Conv. Cell produces.
+  const NACL_PRIMITIVE = 'NaCl primitive\n1.0\n0 2.82 2.82\n2.82 0 2.82\n2.82 2.82 0\nNa Cl\n1 1\nDirect\n0 0 0\n0.5 0.5 0.5\n';
+
+  const loadPoscar = async (poscar, label) => {
+    await page.evaluate(async ({ poscar, label }) => {
+      const cv = await import('./core/crystal-viewer.js');
+      await cv.loadStructure(poscar, label);
+    }, { poscar, label });
+    await page.waitForTimeout(2000);
+    await page.evaluate(async () => {
+      const pm = await import('./ui/panels/PanelManager.js');
+      pm.openPanel('symmetry');
+    });
+    await page.waitForTimeout(1500);
+  };
+
+  // Enabling the editor removes any Modify panel left from the previous
+  // structure, so the wait below cannot be satisfied by a stale chooser.
+  const lockAndReadChooser = async () => {
+    await H.clickById(page, 'getWyckoffBtn');
+    await page.waitForTimeout(2500);
+    await page.evaluate(() => {
+      /** @type {HTMLElement} */ (document.getElementById('addButton')).click();
+    });
+    await page.waitForFunction((sel) => {
+      const select = document.querySelector(`${sel} #wyckoffNewSite`);
+      return select && (select.options.length > 1
+        || document.querySelector(`${sel} #wyckoffNewForm`)?.textContent === 'free');
+    }, MODIFY, { timeout: 40000 });
+    return page.evaluate(async (sel) => {
+      const { fileBrowser } = await import('./state/store.js');
+      const s = fileBrowser.selectedStructure;
+      const select = /** @type {HTMLSelectElement} */ (document.querySelector(`${sel} #wyckoffNewSite`));
+      return {
+        atoms: s.atoms.length,
+        group: s.symmetry?.number,
+        orbits: s.symmetry?.orbitGroups.map((o) => `${o.element}${o.multiplicity}${o.wyckoff}`),
+        enabled: !select.disabled,
+        labels: [...select.options].map((option) => option.textContent),
+      };
+    }, MODIFY);
+  };
+
+  // Picked the way a user does - selectOption refuses a disabled control.
+  const pickAndAdd = async (letter, element) => {
+    await page.selectOption(`${MODIFY} #wyckoffNewSite`, letter);
+    await page.fill(`${MODIFY} #wyckoffNewElement`, element);
+    return page.evaluate(async (sel) => {
+      const { fileBrowser } = await import('./state/store.js');
+      const s = fileBrowser.selectedStructure;
+      const panel = document.querySelector(sel);
+      const value = /** @type {HTMLSelectElement} */ (panel.querySelector('#wyckoffNewSite')).value;
+      const form = panel.querySelector('#wyckoffNewForm').textContent;
+      const before = s.atoms.length;
+      /** @type {HTMLElement} */ (panel.querySelector('#wyckoffAddSite')).click();
+      const last = s.symmetry.orbitGroups.at(-1);
+      return { value, form, landed: s.atoms.length - before, orbit: `${last.element}${last.multiplicity}${last.wyckoff}` };
+    }, MODIFY);
+  };
+
+  await loadPoscar(NACL_PRIMITIVE, 'NaCl');
+  const nacl = await lockAndReadChooser();
+  H.check('primitive NaCl locks as Fm-3m with Na on a and Cl on b',
+    nacl.atoms === 2 && nacl.group === 225 && nacl.orbits.join() === 'Na1a,Cl1b',
+    JSON.stringify(nacl));
+  // 4b itself is left out here: in primitive coordinates 1/2,0,0 is another site.
+  H.check('primitive NaCl still offers several Wyckoff sites',
+    nacl.enabled && nacl.labels.includes('1a (m-3m)') && nacl.labels.includes('2c (-43m)'),
+    JSON.stringify(nacl.labels));
+  const picked = await pickAndAdd('c', 'Na');
+  H.check('the chosen site sticks and adds what it offers',
+    picked.value === 'c' && picked.form === '1/4,1/4,1/4'
+      && picked.landed === 2 && picked.orbit === 'Na2c',
+    JSON.stringify(picked));
+
+  await loadPoscar(NACL_PRIMITIVE, 'NaCl');
+  await H.clickById(page, 'getConvBtn');
+  await page.waitForTimeout(2500);
+  const conv = await lockAndReadChooser();
+  H.check('conventional NaCl (Conv. Cell) offers every Fm-3m site',
+    conv.atoms === 8 && conv.orbits.join() === 'Na4a,Cl4b' && conv.enabled
+      && conv.labels.includes('4b (m-3m)') && conv.labels.includes('8c (-43m)'),
+    JSON.stringify(conv));
+  const convPicked = await pickAndAdd('c', 'Na');
+  H.check('on the conventional cell the chosen site sticks and adds 8 atoms',
+    convPicked.value === 'c' && convPicked.landed === 8 && convPicked.orbit === 'Na8c',
+    JSON.stringify(convPicked));
+
+  // Checking any atom of an orbit must not let a cell in another origin
+  // through: the same rock salt shifted by 1/4,1/4,1/4 has no atom on a
+  // tabulated a or b point, so the letters mean nothing in its coordinates.
+  await loadPoscar(`NaCl shifted origin\n1.0\n5.64 0 0\n0 5.64 0\n0 0 5.64\nNa Cl\n4 4\nDirect\n${
+    ['0.25 0.25 0.25', '0.25 0.75 0.75', '0.75 0.25 0.75', '0.75 0.75 0.25',
+      '0.75 0.75 0.75', '0.75 0.25 0.25', '0.25 0.75 0.25', '0.25 0.25 0.75'].join('\n')}\n`, 'NaCl shifted');
+  const shifted = await lockAndReadChooser();
+  H.check('a cell in a different origin still falls back to free coordinates',
+    shifted.group === 225 && !shifted.enabled && shifted.labels.join() === 'free',
+    JSON.stringify(shifted));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);
