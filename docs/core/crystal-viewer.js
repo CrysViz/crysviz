@@ -49,12 +49,16 @@ import {initAddStructureButton, initModifyStructureButton} from '../ui/addToStru
 import {initCombineTrajectoriesButton, selectStructure} from '../ui/FileBrowswerPanel.js'
 import {initPanelSystem, finishPanelRegistration, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
+import {isDebugMode} from '../debug/debugMode.js'
+import {openDebugPanel} from '../ui/DebugPanel.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
 import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
+import { initProjectionOverlay } from '../ui/notagameatall.js';
 
 import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
 import { applyFieldPeriodicBounds, updateForces, updateSpins } from '../render/index.js';
+import { loadPhonopyFile } from '../phonon/phononSession.js';
 
 // .........................................................................................................
 // Import Panels
@@ -407,6 +411,14 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
           payload, fileName, descriptor.id === 'elfcar' ? 'ELFCAR' : 'CHGCAR');
         break;
 
+      case 'phonopy-modes':
+      case 'phonopy-cells':
+      case 'phonopy-dos':
+        // phonopy output: the phonon session builds (or joins) the supercell
+        // row the modes are shown on and opens the Phonon windows.
+        structureContainer = await loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id);
+        break;
+
       // Everything else is a structure file and goes through the single pure
       // pipeline. parse_any picks the format (POSCAR is its fallback) and
       // returns a StructureContainer; registration happens once via
@@ -488,7 +500,9 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // visible warning instead of failing silently. The status line is kept as
     // a secondary, non-blocking trace.
     setStatus(`Error: ${error.message}`);
-    console.error(error);
+    // Lead with the file name: a bare Error object serialises to just "Error"
+    // in captured console text, which says nothing about what failed.
+    console.error(`Failed to load structure "${fileName}":`, error);
     showLoadErrorModal({ fileName, message: error?.message });
     throw error;
   }
@@ -648,6 +662,10 @@ async function initUIPanels() {
   initPanelSystem();
   registerDefaultPanels();
   finishPanelRegistration();
+  // ?debug: the Debug window opens in front of the side dock straight away —
+  // it exists to be looked at, and a remembered side-dock front tab from an
+  // ordinary session would otherwise hide it behind the EOS plots.
+  if (isDebugMode()) openDebugPanel();
   // Apply availability (grey-out) once now that panels exist. On first load the
   // default structure is loaded before panels are registered, so its own
   // revealFeaturePanels() refresh ran against no panels; this makes the initial
@@ -662,8 +680,12 @@ async function initUIPanels() {
   initCombineTrajectoriesButton();
   // Widget mode has no keyboard: it is an embed with no focusable app chrome,
   // and its global key handlers (delete-atom, arrow-step, …) would fire against
-  // the host page's own shortcuts.
-  if (!document.body.classList.contains('widget-mode')) initKeyboardShortcuts();
+  // the host page's own shortcuts. The projection overlay's chord is a keyboard
+  // feature too, so it stays out of widget mode for the same reason.
+  if (!document.body.classList.contains('widget-mode')) {
+    initKeyboardShortcuts();
+    initProjectionOverlay(); // Shift+4+2, see ui/notagameatall.js
+  }
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

@@ -26,12 +26,17 @@ import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
 import { addEOSPlotsPanel, removeEOSPlotsPanel } from '../EOSPlotsPanel.js';
 import { addDummySplitPanel, removeDummySplitPanel } from '../DummySplitPanel.js';
 import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, removeLandscapePlotsPanel } from '../LandscapePanel.js';
+import { addPhononPanel, removePhononPanel } from '../PhononPanel.js';
+import { addPhononPlotsPanel, removePhononPlotsPanel } from '../PhononPlotsPanel.js';
+import { phononAvailable } from '../../phonon/phononSession.js';
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
 import { createFeatureLockSwitch } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import { addFocusRegionsPanel, removeFocusRegionsPanel } from '../FocusRegionsPanel.js';
+import { isDebugMode } from '../../debug/debugMode.js';
+import { registerDebugPanel } from '../DebugPanel.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
 import { setBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
@@ -225,6 +230,11 @@ function buildFeaturesBody(body) {
 }
 
 export function registerDefaultPanels() {
+  // ---- debug window: only with ?debug on the URL ----------------------------
+  // Registered first so it lands in the side dock before the tabbed windows
+  // that default there; it is placed by `order`, so this is not load-bearing.
+  if (isDebugMode()) registerDebugPanel();
+
   // ---- floating trio: measure / view / structure info -----------------------
 
   registerPanel({
@@ -744,6 +754,37 @@ export function registerDefaultPanels() {
     buildContent(body) { addLandscapePlotsPanel(body.id); },
     onDestroyContent() { removeLandscapePlotsPanel(); },
     defaults: { dock: 'right', closed: true, order: 94 },
+  });
+
+  // Phonons: controls window (load phonopy output, pick/animate a mode, run a
+  // mode map) + plots window (band structure / DOS, mode-map curve). Same
+  // controls-plus-plots shape as EOS; the plots window opens when a phonopy
+  // file loads (phonon/phononSession.js -> PhononPanel's open hook).
+  registerPanel({
+    id: 'phonon',
+    title: 'Phonons',
+    lifecycle: 'persistent',
+    infoMd: './data/phononInfo.md',
+    // Both windows follow the selected row: they are available only while it
+    // (or a row derived from it) carries phonopy data, so the plots window
+    // closes out of the side dock on another structure and comes back with it.
+    available() { return phononAvailable(); },
+    buildContent(body) { addPhononPanel(body.id); },
+    onDestroyContent() { removePhononPanel(); },
+    defaults: { dock: 'left', order: 95, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'phononPlots',
+    title: 'Phonon Plots',
+    lifecycle: 'persistent',
+    closable: true,
+    closeMode: 'hide',
+    infoMd: './data/phononInfo.md',
+    available() { return phononAvailable(); },
+    buildContent(body) { addPhononPlotsPanel(body.id); },
+    onDestroyContent() { removePhononPlotsPanel(); },
+    defaults: { dock: 'right', closed: true, order: 95 },
   });
 
   registerPanel({

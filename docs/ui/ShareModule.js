@@ -506,6 +506,11 @@ export async function shareStructure() {
     const b64 = bytesToB64URL(bytes);
     const url = new URL(window.location.href);
     for (const p of [STATE_PARAM, PACKED_PARAM, ENC_PARAM]) url.searchParams.delete(p);
+    // A debugging session's ?debug (debug/debugMode.js) is this tab's, not
+    // the recipient's.
+    url.searchParams.delete('debug');
+    // Same for ?experimental (debug/experimentalMode.js).
+    url.searchParams.delete('experimental');
     url.searchParams.set(param, b64);
     return { text: url.toString(), chars: b64.length };
   };

@@ -26,6 +26,12 @@ tools/browsertest/run.sh tests/celoutline.test.js   # run one test
 tools/browsertest/run.sh tests/tracerbench.bench.js # tracer micro-benchmark (opt-in)
 ```
 
+Where Playwright's Firefox cannot be fetched but a Chromium is at hand,
+`CRYSVIZ_BROWSER=chromium` runs the suite in headless Chromium with software
+GL instead (`CRYSVIZ_CHROMIUM=<executable>` points at a non-Playwright
+binary). Pixel thresholds were tuned on Firefox/Mesa, so treat close calls
+there with care.
+
 `setup.sh` installs everything it can without root, but it cannot supply the
 two things that need a package manager: **Xvfb**, and the **GTK3 desktop stack
 playwright's Firefox is linked against** (a minimal container has neither, and

@@ -17,14 +17,22 @@
 // Performance: live streaming appends via Plotly.extendTraces (with a ring-buffer
 // cap), never a full redraw; the playback cursor is a layout shape moved through
 // a single rAF-coalesced relayout, so even a fast live feed can't thrash it.
+//
+// Reuse: the factory is parameterised (see createTrajectoryPlot's options) so
+// the Debug panel (ui/DebugPanel.js) draws its memory / frame-rate time series
+// with the SAME chrome, toolbar and streaming path — its own chart id, its own
+// series/axis specs, wall-clock seconds on x, and vertical event markers.
+// Every option defaults to the trajectory behaviour, so existing callers are
+// unchanged.
 
 import { loadPlotly } from '../utils/plotlyLoader.js';
 import { expandSplitItem, closeExpandedSplitItem } from './panels/SideDock.js';
 import { exportHistogramPNG } from './AnalysisPanels/histogramPlotly.js';
 
-// Stable id for the chart div — there is only ever one trajectory plot
+// Default id for the chart div — there is only ever one trajectory plot
 // instance (see plotTheme below), so a fixed id is safe and is what lets
-// exportHistogramPNG (shared with the analysis histograms) address it.
+// exportHistogramPNG (shared with the analysis histograms) address it. Other
+// users of the factory pass their own `id`.
 const PLOT_ID = 'trajectoryPlotChart';
 
 // Series metadata: colour, dash, autoscale group, legend label and whether the
@@ -57,11 +65,11 @@ const GROUP_META = {
 
 const GROUP_ORDER = ['temperature', 'energy', 'force', 'pressure'];
 const AXIS_IDS = ['y', 'y2', 'y3'];      // left, right, outer-right
-const KNOWN = ['temperatureK', 'targetTemperatureK', 'etotEv', 'epotEv', 'ekinEv', 'meanForce', 'pressure'];
 
-function specFor(name) {
-  return SERIES_SPEC[name] || { color: '#cccccc', lightColor: '#555555', dash: 'solid', group: name, label: name, plot: true };
-}
+// After a failed Plotly load (offline), wait this long before trying again.
+const PLOTLY_RETRY_MS = 15000;
+
+const GENERIC_SPEC = { color: '#cccccc', lightColor: '#555555', dash: 'solid', group: null, label: null, plot: true };
 
 // Light/dark toggle, module-level like eosPlots.js's plotThemes map — there is
 // only ever one trajectory plot instance, and keeping it outside the factory
@@ -83,11 +91,62 @@ function fmt(v, digits) {
  * @param {HTMLElement} hostEl
  * @param {object} [options]
  * @param {number} [options.maxPts=5000] - ring-buffer cap per streamed series.
+ * @param {string} [options.id] - chart div id (default: the trajectory plot's).
+ * @param {Record<string, object>} [options.seriesSpec] - per-series colour /
+ *   dash / group / label / plot flags (default: the trajectory series).
+ * @param {Record<string, object>} [options.groupMeta] - per-group axis colour
+ *   and title (default: the trajectory groups).
+ * @param {string[]} [options.groupOrder] - group -> axis assignment order.
+ * @param {(name: string) => object | null} [options.specFor] - spec for a
+ *   series name missing from seriesSpec (dynamic series, e.g. one per loaded
+ *   trajectory). Default: a grey line in its own group named after the series.
+ * @param {boolean} [options.acceptUnknown=false] - update() takes every key of
+ *   the point (except the x key) as a series; default: only seriesSpec keys.
+ * @param {string} [options.xKey='step'] - the point field carrying the x
+ *   coordinate for update().
+ * @param {string} [options.xTitle='Frame'] - x-axis title while no x values
+ *   were supplied (1-based sample index).
+ * @param {string} [options.xTitleWithX='Step'] - x-axis title once points
+ *   carry an x coordinate.
+ * @param {boolean} [options.showComputeStats=true] - keep the "Compute step
+ *   stats" toolbar slot (hidden until setComputeStatsAvailable(true)).
  * @returns {{update, setSeries, clear, setCursor, onSeek, onComputeStats,
- *            setComputeStatsAvailable, getEl, remove}}
+ *            setComputeStatsAvailable, addMarker, clearMarkers, getEl, remove}}
  */
 export function createTrajectoryPlot(hostEl, options = {}) {
   const maxPts = Number.isFinite(options.maxPts) ? options.maxPts : 5000;
+  const plotId = options.id || PLOT_ID;
+  const seriesSpec = options.seriesSpec || SERIES_SPEC;
+  const groupMeta = options.groupMeta || GROUP_META;
+  const groupOrder = options.groupOrder || GROUP_ORDER;
+  const knownNames = Object.keys(seriesSpec);
+  const acceptUnknown = options.acceptUnknown === true;
+  const xKey = options.xKey || 'step';
+  const xTitleDefault = options.xTitle || 'Frame';
+  const xTitleWithX = options.xTitleWithX || 'Step';
+  const fallbackSpec = typeof options.specFor === 'function' ? options.specFor : null;
+
+  // Spec lookup: the fixed table first, then the caller's resolver, then a
+  // generic grey line in a group of its own (so it still gets an axis).
+  const specCache = new Map();
+  function specFor(name) {
+    if (seriesSpec[name]) return seriesSpec[name];
+    let spec = specCache.get(name);
+    if (spec) return spec;
+    spec = (fallbackSpec && fallbackSpec(name)) || null;
+    spec = { ...GENERIC_SPEC, group: name, label: name, ...(spec || {}) };
+    specCache.set(name, spec);
+    return spec;
+  }
+  // Group order: the fixed list first, then any dynamic group in order of
+  // first appearance — a dynamic-series plot still assigns axes stably.
+  const dynamicGroups = [];
+  function orderedGroups() {
+    return dynamicGroups.length ? [...groupOrder, ...dynamicGroups] : groupOrder;
+  }
+  function noteGroup(g) {
+    if (!groupOrder.includes(g) && !dynamicGroups.includes(g)) dynamicGroups.push(g);
+  }
 
   // --- DOM scaffolding ----------------------------------------------------
   const root = document.createElement('div');
@@ -114,7 +173,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   computeBtn.className = 'trajPlotComputeBtn';
   computeBtn.textContent = 'Compute step stats';
   computeBtn.style.display = 'none';
-  toolbar.appendChild(computeBtn);
+  if (options.showComputeStats !== false) toolbar.appendChild(computeBtn);
   // Export + expand, same icons/styling as the analysis histograms'
   // .split-item-action-btn corner buttons — reused directly (sideDock.css)
   // rather than re-styled, so this reads as the same chrome.
@@ -124,7 +183,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   exportBtn.title = 'Export PNG';
   exportBtn.textContent = '📥';
   exportBtn.onclick = () => {
-    exportHistogramPNG(PLOT_ID).catch((error) => console.error('Trajectory plot export failed:', error));
+    exportHistogramPNG(plotId).catch((error) => console.error('Trajectory plot export failed:', error));
   };
   toolbar.appendChild(exportBtn);
   const expandBtn = document.createElement('button');
@@ -157,7 +216,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   root.appendChild(closeBtn);
 
   const plotDiv = document.createElement('div');
-  plotDiv.id = PLOT_ID;
+  plotDiv.id = plotId;
   plotDiv.className = 'trajPlotChart';
   root.appendChild(plotDiv);
 
@@ -175,20 +234,42 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // multiple of the save stride, e.g. 2,4,…), not the 1-based frame index, so
   // the axis reads real steps. cursor/seek map between frame index and these.
   const xValues = [];
-  let xTitle = 'Frame';
+  let xTitle = xTitleDefault;
   let sampleCount = 0;       // longest series length == number of x samples
   let cursorIndex = null;
+  // Vertical event markers ({x, label}) — a loaded file, play/pause, a GC
+  // hint — drawn as dotted lines with a small rotated label. Pruned with the
+  // ring buffer so they never outlive the samples they annotate.
+  /** @type {{x: number, label: string}[]} */
+  let markers = [];
   let seekCb = null;
   let computeCb = null;
 
   let Plotly = null;         // resolved module (once loaded)
+  let plotlyRetryAt = 0;     // no load attempt before this time (see drawFull)
   let ready = false;         // Plotly.newPlot has run at least once
+  // Plotly calls must not overlap: an extendTraces/relayout issued while a
+  // react is still in flight, or a purge before its deferred auto-margin
+  // redraw ran, ends in Plotly errors on a half-built or dead chart ("t.emit
+  // is not a function", "_redrawFromAutoMarginCount of undefined"). One
+  // react at a time; anything arriving meanwhile becomes ONE queued redraw
+  // (the data is already in `series`), and the purge waits for the react.
+  /** @type {Promise<any> | null} */
+  let inFlight = null;
+  let redrawQueued = false;
   let removed = false;
   let layoutSig = '';        // signature of the current trace/axis layout
   let isExpanded = false;    // fullscreen (⛶) — bigger fonts, see buildLayout
 
   function ensureSeries(name) {
-    if (!series.has(name)) { series.set(name, []); seriesOrder.push(name); }
+    if (!series.has(name)) {
+      // A series that appears mid-stream starts aligned with the samples
+      // already recorded: NaN for every past sample, so its first real value
+      // lands at the current x rather than being drawn from the first sample.
+      series.set(name, new Array(sampleCount).fill(NaN));
+      seriesOrder.push(name);
+      noteGroup(specFor(name).group);
+    }
     return series.get(name);
   }
 
@@ -202,7 +283,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // tagged with the y-axis its group maps to. Drives both traces and layout.
   function plottedSeries() {
     const present = [];
-    for (const g of GROUP_ORDER) {
+    for (const g of orderedGroups()) {
       for (const name of seriesOrder) {
         const spec = specFor(name);
         if (spec.group !== g || spec.plot === false) continue;
@@ -304,13 +385,19 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         color: fontColor, gridcolor: gridColor,
         zeroline: false, domain: [0, rightDomain],
       },
-      shapes: cursorShapes(),
+      shapes: [...markerShapes(), ...cursorShapes()],
+      annotations: markerAnnotations(),
     };
 
     groups.forEach((g, i) => {
       const axisId = map[g];
       const key = axisId === 'y' ? 'yaxis' : `yaxis${axisId.slice(1)}`;
-      const meta = GROUP_META[g];
+      // A dynamic group (no fixed meta) takes its first series' colour and
+      // is titled by that series' label.
+      const meta = groupMeta[g] || (() => {
+        const first = plotted.find((p) => p.group === g);
+        return first ? { color: first.spec.color, lightColor: first.spec.lightColor, title: first.spec.label } : GENERIC_SPEC;
+      })();
       const axColor = pickColor(meta, isLight);
       const ax = {
         title: { text: meta.title, font: { color: axColor, size: sizes.yTitle } },
@@ -347,6 +434,41 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     }];
   }
 
+  // Marker line + label colours for either canvas.
+  function markerColor() {
+    return plotTheme === 'light' ? 'rgba(20,20,20,0.45)' : 'rgba(255,255,255,0.45)';
+  }
+
+  function markerShapes() {
+    if (!markers.length) return [];
+    const color = markerColor();
+    return markers.map((m) => ({
+      type: 'line', xref: 'x', yref: 'paper',
+      x0: m.x, x1: m.x, y0: 0, y1: 1,
+      line: { color, width: 1, dash: 'dot' },
+      layer: 'below',
+    }));
+  }
+
+  function markerAnnotations() {
+    if (!markers.length) return [];
+    const color = markerColor();
+    const size = isExpanded ? 12 : 9;
+    return markers.map((m) => ({
+      x: m.x, y: 1, xref: 'x', yref: 'paper',
+      text: m.label, showarrow: false, textangle: -90,
+      xanchor: 'left', yanchor: 'top', xshift: 2,
+      font: { size, color },
+    }));
+  }
+
+  // Drop markers that fell out of the ring buffer.
+  function pruneMarkers() {
+    if (!markers.length || !xValues.length) return;
+    const oldest = xValues[0];
+    if (markers[0].x < oldest) markers = markers.filter((m) => m.x >= oldest);
+  }
+
   const config = {
     responsive: true,
     displaylogo: false,
@@ -363,21 +485,42 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // set of plotted series or their axis assignment changes.
   async function drawFull() {
     if (removed) return;
-    try {
-      if (!Plotly) Plotly = await loadPlotly();
-    } catch (error) {
-      plotDiv.textContent = error.message;
-      ready = false;
-      return;
+    if (!Plotly) {
+      // Offline, the loader rejects and forgets its promise so a later attempt
+      // can succeed; a streaming caller (live MD, the debug sampler) calls
+      // drawFull() on every point, so hold the retry for a while rather than
+      // re-fetching once per sample.
+      if (performance.now() < plotlyRetryAt) return;
+      try {
+        Plotly = await loadPlotly();
+      } catch (error) {
+        plotDiv.textContent = error.message;
+        ready = false;
+        plotlyRetryAt = performance.now() + PLOTLY_RETRY_MS;
+        return;
+      }
     }
     if (removed || !document.body.contains(plotDiv)) return;
+    if (inFlight) { redrawQueued = true; return; }
     const plotted = plottedSeries();
     layoutSig = sigOf(plotted);
-    await Plotly.react(plotDiv, buildTraces(plotted), buildLayout(plotted), config);
+    inFlight = Plotly.react(plotDiv, buildTraces(plotted), buildLayout(plotted), config);
+    try {
+      await inFlight;
+    } catch (error) {
+      console.error('Trajectory plot draw failed:', error);
+    } finally {
+      inFlight = null;
+    }
+    if (removed) return;
     ready = true;
     wireClickSeek();
     startResizeObserver();
-    requestAnimationFrame(() => { if (!removed) Plotly.Plots.resize(plotDiv); });
+    requestAnimationFrame(() => { if (!removed && !inFlight) Plotly.Plots.resize(plotDiv); });
+    if (redrawQueued) {
+      redrawQueued = false;
+      drawFull();
+    }
   }
 
   // Plotly's responsive:true only tracks window resizes; the panel is
@@ -398,15 +541,28 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     ro.observe(plotDiv);
   }
 
-  // --- live cursor (rAF-coalesced single relayout) ------------------------
-  let cursorRAF = 0;
+  // --- live cursor (throttled single relayout) -----------------------------
+  // A Plotly.relayout costs ~10-15 ms of main thread. Playback moves the cursor
+  // on EVERY frame, so a per-frame (rAF-coalesced) relayout at 60 frames/s
+  // spent most of the frame budget on the plot and made playback stutter in
+  // bursts. The cursor is a UI nicety: redraw it at most every CURSOR_MIN_MS,
+  // always landing the latest position (trailing call).
+  const CURSOR_MIN_MS = 250;
+  let cursorTimer = 0;
+  let cursorLastAt = -Infinity;
   function scheduleCursor() {
-    if (cursorRAF) return;
-    cursorRAF = requestAnimationFrame(() => {
-      cursorRAF = 0;
+    if (cursorTimer) return;
+    const wait = Math.max(0, CURSOR_MIN_MS - (performance.now() - cursorLastAt));
+    cursorTimer = window.setTimeout(() => {
+      cursorTimer = 0;
+      cursorLastAt = performance.now();
       if (!ready || removed) return;
-      Plotly.relayout(plotDiv, { shapes: cursorShapes() });
-    });
+      if (inFlight) { scheduleCursor(); return; } // after the redraw lands
+      Plotly.relayout(plotDiv, {
+        shapes: [...markerShapes(), ...cursorShapes()],
+        annotations: markerAnnotations(),
+      });
+    }, wait);
   }
 
   // --- click / drag to seek ----------------------------------------------
@@ -466,39 +622,61 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     // set/axes are unchanged; falls back to a full redraw when a new series or
     // axis appears (e.g. the first pressure sample).
     update(point = {}) {
-      const before = sigOf(plottedSeries());
-      for (const field of KNOWN) {
-        if (!(field in point)) continue;
-        if (SERIES_SPEC[field] && SERIES_SPEC[field].plot === false) continue; // stats-only
-        const arr = ensureSeries(field);
-        const v = point[field];
-        arr.push(Number.isFinite(v) ? v : NaN);
-        if (arr.length > maxPts) arr.shift();
-      }
-      // x-coordinate for this sample: the real step number when present (a
-      // multiple of the save stride), else the next running index.
-      const stepX = Number.isFinite(point.step)
-        ? point.step
-        : (xValues.length ? xValues[xValues.length - 1] + 1 : 1);
-      xValues.push(stepX);
-      if (xValues.length > maxPts) xValues.shift();
-      if (Number.isFinite(point.step) && xTitle !== 'Step') xTitle = 'Step';
+      api.updateBatch([point]);
+    },
 
+    // Append several points with ONE Plotly call (or one full redraw when the
+    // plotted set / axes changed) — the Debug window buffers its samples and
+    // flushes them at a lower cadence than it records them, because every
+    // extendTraces is a ~30 ms redraw on the main thread.
+    updateBatch(points) {
+      if (!points.length) return;
+      const before = sigOf(plottedSeries());
+      /** @type {number[]} */
+      const newX = [];
+      for (const point of points) {
+        const fields = acceptUnknown
+          ? Object.keys(point).filter((k) => k !== xKey)
+          : knownNames.filter((k) => k in point);
+        for (const field of fields) {
+          if (seriesSpec[field] && seriesSpec[field].plot === false) continue; // stats-only
+          const arr = ensureSeries(field);
+          const v = point[field];
+          arr.push(Number.isFinite(v) ? v : NaN);
+        }
+        // Every series absent from this point gets a NaN so all series stay
+        // 1:1 with xValues (a gap in the line, thanks to connectgaps:false).
+        const target = xValues.length + 1;
+        for (const arr of series.values()) while (arr.length < target) arr.push(NaN);
+        // x-coordinate for this sample: the real step number / time when
+        // present, else the next running index.
+        const px = point[xKey];
+        const stepX = Number.isFinite(px)
+          ? px
+          : (xValues.length ? xValues[xValues.length - 1] + 1 : 1);
+        xValues.push(stepX);
+        newX.push(stepX);
+        if (Number.isFinite(px) && xTitle !== xTitleWithX) xTitle = xTitleWithX;
+        if (!acceptUnknown) updateStatsLine(point);
+      }
+      // Trim everything to the ring cap.
+      for (const arr of series.values()) while (arr.length > maxPts) arr.shift();
+      while (xValues.length > maxPts) xValues.shift();
+      pruneMarkers();
       recomputeSampleCount();
-      updateStatsLine(point);
 
       const plotted = plottedSeries();
       const after = sigOf(plotted);
-      if (!ready || after !== before || after !== layoutSig) {
+      if (!ready || inFlight || after !== before || after !== layoutSig) {
         drawFull();
         return;
       }
-      // Fast path: append the new x + each trace's latest value (NaN if absent).
-      const nx = stepX;
-      const xUpdate = plotted.map(() => [nx]);
+      // Fast path: append the new x values + each trace's latest k values.
+      const k = newX.length;
+      const xUpdate = plotted.map(() => newX.slice());
       const yUpdate = plotted.map(({ name }) => {
-        const arr = series.get(name);
-        return [arr && arr.length ? arr[arr.length - 1] : NaN];
+        const arr = series.get(name) || [];
+        return arr.slice(Math.max(0, arr.length - k));
       });
       const idxs = plotted.map((_, i) => i);
       Plotly.extendTraces(plotDiv, { x: xUpdate, y: yUpdate }, idxs, maxPts);
@@ -512,23 +690,24 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       series.clear();
       seriesOrder.length = 0;
       for (const [name, arr] of Object.entries(seriesObj)) {
-        if (name === 'step') continue; // reserved: x-axis steps, not a plotted series
-        if (SERIES_SPEC[name] && SERIES_SPEC[name].plot === false) continue;
+        if (name === xKey) continue; // reserved: x-axis values, not a plotted series
+        if (seriesSpec[name] && seriesSpec[name].plot === false) continue;
         series.set(name, Array.isArray(arr) ? arr.slice() : []);
         seriesOrder.push(name);
+        noteGroup(specFor(name).group);
       }
       recomputeSampleCount();
 
       xValues.length = 0;
       const steps = Array.isArray(opts.steps) ? opts.steps
-        : (Array.isArray(seriesObj.step) ? seriesObj.step : null);
+        : (Array.isArray(seriesObj[xKey]) ? seriesObj[xKey] : null);
       if (steps) {
         for (let i = 0; i < sampleCount; i++) {
           xValues.push(Number.isFinite(steps[i]) ? steps[i] : i + 1);
         }
-        xTitle = 'Step';
+        xTitle = xTitleWithX;
       } else {
-        xTitle = 'Frame';
+        xTitle = xTitleDefault;
       }
 
       statsEl.textContent = '';
@@ -539,11 +718,26 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       series.clear();
       seriesOrder.length = 0;
       xValues.length = 0;
-      xTitle = 'Frame';
+      xTitle = xTitleDefault;
       sampleCount = 0;
       cursorIndex = null;
+      markers = [];
       statsEl.textContent = '';
       drawFull();
+    },
+
+    // Add a vertical event marker at x (in the plot's x units) with a short
+    // label. Drawn on the next cursor relayout (rAF-coalesced), so a burst of
+    // markers costs one relayout.
+    addMarker({ x, label }) {
+      if (!Number.isFinite(x)) return;
+      markers.push({ x, label: String(label ?? '') });
+      scheduleCursor();
+    },
+
+    clearMarkers() {
+      markers = [];
+      scheduleCursor();
     },
 
     setCursor(frameIndex) {
@@ -566,12 +760,16 @@ export function createTrajectoryPlot(hostEl, options = {}) {
 
     remove() {
       removed = true;
-      if (cursorRAF) cancelAnimationFrame(cursorRAF);
+      if (cursorTimer) clearTimeout(cursorTimer);
       if (resizeRAF) cancelAnimationFrame(resizeRAF);
       if (ro) { ro.disconnect(); ro = null; }
       if (isExpanded) { closeExpandedSplitItem(); isExpanded = false; }
-      try { if (Plotly && plotDiv) Plotly.purge(plotDiv); } catch { /* nothing drawn yet */ }
       root.remove();
+      // Purge only once no react is in flight (see inFlight above); the div is
+      // already out of the DOM, so nothing is visible in between.
+      const purge = () => { try { if (Plotly && plotDiv) Plotly.purge(plotDiv); } catch { /* nothing drawn yet */ } };
+      if (inFlight) inFlight.then(purge, purge);
+      else purge();
     },
   };
 

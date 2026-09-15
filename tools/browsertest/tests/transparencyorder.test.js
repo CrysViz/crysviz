@@ -547,8 +547,9 @@ function redCentroid(file) {
   }
   const fwdVsPeel = changedPixelCount(polyShots.forward, polyShots.depthpeel);
   const wboitVsPeel = changedPixelCount(polyShots.wboit, polyShots.depthpeel);
-  // wboitVsPeel sits deterministically at ~2021 since the 2026-07 main merge
-  // (identical on pristine main) — recalibrated from 2000 with headroom.
+  // All-opaque scenes take the direct-render fast path under both wboit and
+  // depthpeel, so both match forward exactly (the old ~2000-3400 wboit diff
+  // was the canvas MSAA lost by rendering through its offscreen target).
   H.check('opaque polyhedra render identically across forward/wboit/depthpeel',
     fwdVsPeel < 15000 && wboitVsPeel < 2500, JSON.stringify({ fwdVsPeel, wboitVsPeel }));
   await setPipeline('forward');

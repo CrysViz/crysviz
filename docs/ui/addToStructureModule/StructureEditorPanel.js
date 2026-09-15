@@ -972,10 +972,13 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   // and in whatever cell was analysed, while the tables are keyed to one setting
   // per IT number. The one thing this panel asks of them is that
   // constrainRepresentative() be meaningful in the LOCK's coordinates, so that
-  // is what gets tested - every labelled orbit's representative must already
+  // is what gets tested - some atom of every labelled orbit must already
   // satisfy the parametrisation the tables give its letter. A different setting
   // or a rotated standard cell fails that; a primitive or super cell does not,
-  // which is the point.
+  // which is the point. Any atom, not just the representative: in a centred
+  // cell the representative can be a centring image of the tabulated point
+  // (conventional NaCl's first Cl at 1/2,1/2,1/2 is 4b, tabulated as 1/2,0,0),
+  // and testing only it sent even the conventional cell to "free".
   //
   // Multiplicity is deliberately NOT part of the test. It differs whenever the
   // analysed cell is not the conventional one - primitive Si is Fd-3m 8a with
@@ -983,16 +986,25 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   // every primitive structure even though its coordinates line up exactly. The
   // count the user is shown always comes from the lock, and refreshAddPreview
   // says so when it disagrees with the table.
+  //
+  // In a cell that is not the conventional one, an orbit whose letter is not
+  // expressible there (letterIsConsistent) is skipped: its tabulated point is a
+  // different site in these coordinates, so it cannot agree even when the
+  // setting is right (primitive NaCl's lone Cl on 4b), and that letter is never
+  // offered anyway. A conventional cell in the tables' setting expresses every
+  // letter, so there a mismatch still means a different setting or origin.
   const SITE_MATCH_TOLERANCE = 1e-3;
   let siteLettersUsable = false;
 
   function lettersAgreeWithLock() {
+    const nonConventional = (symmetry.conventionalCellRatio ?? 1) > 1;
     const labelled = getWyckoffOrbitGroups(structure)
-      .filter((orbit) => /^[a-zA-Z]$/.test(orbit.wyckoff ?? ''));
+      .filter((orbit) => /^[a-zA-Z]$/.test(orbit.wyckoff ?? ''))
+      .filter((orbit) => !nonConventional || letterIsConsistent(orbit.wyckoff));
     if (!labelled.length) return false;
-    return labelled.every((orbit) => {
+    return labelled.every((orbit) => orbit.atomIndices.some((atomIndex) => {
       try {
-        const actual = structure.atoms[orbit.representativeIndex].position;
+        const actual = structure.atoms[atomIndex].position;
         const snapped = constrainRepresentative(symmetry.number, orbit.wyckoff, actual);
         return snapped.every((value, axis) => {
           let delta = value - actual[axis];
@@ -1002,7 +1014,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       } catch {
         return false;
       }
-    });
+    }));
   }
 
   // How many atoms a site actually produces IN THIS CELL, measured by expanding

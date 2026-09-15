@@ -11,25 +11,24 @@ export function readPOSCAR(content, fileName) {
   let i = 0;
 
   i++; // skip the comment line
-  let scale_or_volume = parseFloat(lines[i++]);
-  if (!Number.isFinite(scale_or_volume)) throw new Error('POSCAR: missing scale factor');
+  const scaleOrVolume = parseFloat(lines[i++]);
+  if (!Number.isFinite(scaleOrVolume)) throw new Error('POSCAR: missing scale factor');
 
   // --- lattice (3×3)
   const lattice = Array.from({ length: 3 }, () =>
     (lines[i++] || '').trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v))
   );
 
-  const lattice_volume = latticeVolume(lattice);
-  let scale_factor;
-  if (scale_or_volume < 0) { // negative scale factor is the target volume of the cell
-    const volume = -scale_or_volume;
-    scale_factor = volume / lattice_volume;
-  } else {
-    scale_factor = scale_or_volume;
+  // A negative scale factor is the target cell volume (VASP convention).
+  // Scaling every lattice vector by s scales the volume by s³, so the linear
+  // factor is the cube root of the volume ratio.
+  let scale = scaleOrVolume;
+  if (scaleOrVolume < 0) {
+    const volume = latticeVolume(lattice);
+    if (!(volume > 0)) throw new Error('POSCAR: degenerate lattice, cannot apply a target volume');
+    scale = Math.cbrt(-scaleOrVolume / volume);
   }
-  // --- apply scale factor to lattice
-  lattice.forEach((row, r) => row.forEach((v, c) => lattice[r][c] = v * scale_factor));
-
+  lattice.forEach((row) => row.forEach((v, c) => { row[c] = v * scale; }));
 
   // --- element symbols + counts
   const elementLine = (lines[i++] || '').trim().split(/\s+/);
@@ -67,7 +66,8 @@ export function readPOSCAR(content, fileName) {
   for (let n = 0; n < totalAtoms; n++) {
     const tokens = (lines[i++] || '').trim().split(/\s+/);
     if (tokens.length < 3) throw new Error('POSCAR: atomic position line too short');
-    positionsRaw.push(tokens.slice(0, 3).map(Number));
+    // Cartesian coordinates are in the same scaled units as the lattice.
+    positionsRaw.push(tokens.slice(0, 3).map(v => (isCartesian ? Number(v) * scale : Number(v))));
   }
 
   // --- convert cart → frac if needed

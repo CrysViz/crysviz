@@ -108,6 +108,10 @@ export const groups = {
   forcesTipMesh: null,
   spinShaftMesh: null,
   spinTipMesh: null,
+  // Phonon-mode displacement arrows (render/PhononArrowModule.js), owned by
+  // phonon/phononSession.js and rebuilt per animation tick.
+  phononShaftMesh: null,
+  phononTipMesh: null,
   fieldGroup: null,
   fieldMeshPos: null,
   fieldMeshNeg: null,
