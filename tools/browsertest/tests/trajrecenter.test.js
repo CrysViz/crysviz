@@ -34,6 +34,12 @@ const RES = [
     const { openPanel } = await import('./ui/panels/PanelManager.js');
     await cv.loadStructure(text, 'twocell.res');
     openPanel('trajectory'); // builds the player + the recenter checkbox
+    // A multi-frame load opens on its LAST frame (initializeUIOnLoad), so
+    // settle on frame 0 first — releasing the scrubber is a proper load that
+    // always recenters, giving the known 2-atom / 2.5 starting point.
+    const slider = document.getElementById('frameSlider');
+    slider.value = '0';
+    slider.dispatchEvent(new Event('change'));
     const cb = document.getElementById('recenterEachStep');
     const h4 = document.querySelector('#structureToggle h4');
     return {

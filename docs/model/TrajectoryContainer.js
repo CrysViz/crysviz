@@ -57,6 +57,40 @@ function sameElements(a, b) {
   return true;
 }
 
+/**
+ * Largest per-atom displacement between consecutive frames (Å) that still
+ * counts as ONE system in motion. MD/relax steps move atoms by hundredths of
+ * an Ångström; unrelated structures packed into one file (AIRSS candidates, a
+ * combined dataset) jump by bond lengths. Only motion may take the render
+ * fast path, which keeps the periodic-image set and bond pairs frozen between
+ * full rebuilds.
+ */
+export const MOTION_MAX_STEP = 1.0;
+
+/**
+ * Largest minimum-image displacement of any atom from frame `a` to frame `b`
+ * (same composition), in Å, measured in `b`'s cell.
+ * @param {FramePhysics} a @param {FramePhysics} b
+ */
+function maxDisplacement(a, b) {
+  const [[ax, ay, az], [bx, by, bz], [cx, cy, cz]] = b.lattice;
+  const pa = a.positions, pb = b.positions;
+  let maxSq = 0;
+  for (let i = 0; i < pb.length; i += 3) {
+    // Fractional delta wrapped into [-0.5, 0.5]: an atom leaving through one
+    // face and re-entering at the other is motion, not a jump.
+    let d0 = pb[i] - pa[i]; d0 -= Math.round(d0);
+    let d1 = pb[i + 1] - pa[i + 1]; d1 -= Math.round(d1);
+    let d2 = pb[i + 2] - pa[i + 2]; d2 -= Math.round(d2);
+    const x = d0 * ax + d1 * bx + d2 * cx;
+    const y = d0 * ay + d1 * by + d2 * cy;
+    const z = d0 * az + d1 * bz + d2 * cz;
+    const sq = x * x + y * y + z * z;
+    if (sq > maxSq) maxSq = sq;
+  }
+  return Math.sqrt(maxSq);
+}
+
 export class TrajectoryContainer extends StructureContainer {
   /**
    * @param {{fileName?: string,
@@ -74,6 +108,17 @@ export class TrajectoryContainer extends StructureContainer {
     this._liveElements = null;
     /** @type {Map<number, FrameStyleRecord>} step -> that frame's deviations */
     this._frameStyles = new Map();
+    /** Frame-switch counters for the Debug window (debug/memoryAccounting.js). */
+    this.debugStats = { shown: 0, reused: 0, rebuilt: 0, detached: 0, pristine: 0 };
+    /**
+     * How the Trajectory player renders playback frames: 'auto' takes the
+     * render fast path when motionProfile() says 'trajectory'; 'full' forces
+     * the exact rebuild on every frame.
+     * @type {'auto' | 'full'}
+     */
+    this.playbackMode = 'auto';
+    /** @type {{kind: 'trajectory' | 'dataset', maxStep: number, frames: number} | null} */
+    this._motionProfile = null;
   }
 
   /**
@@ -134,6 +179,55 @@ export class TrajectoryContainer extends StructureContainer {
   }
 
   /**
+   * Is this one system in motion ('trajectory': fixed composition, no atom
+   * moves more than MOTION_MAX_STEP between consecutive frames) or a set of
+   * unrelated structures ('dataset')? Answered from the typed arrays without
+   * materialising a frame, and cached until the frame count changes. A frame
+   * source that cannot be read synchronously is classified 'dataset' — the
+   * exact path is always correct. A growing trajectory (a live run appending
+   * frames; the Debug sampler asks every tick) only scans the new frames.
+   * @returns {{kind: 'trajectory' | 'dataset', maxStep: number, frames: number}}
+   */
+  motionProfile() {
+    const frames = this.frameCount;
+    const cached = this._motionProfile;
+    if (cached?.frames === frames) return cached;
+    // Appending frames never turns a dataset back into motion.
+    if (cached && cached.frames < frames && cached.kind === 'dataset') {
+      this._motionProfile = { ...cached, frames };
+      return this._motionProfile;
+    }
+    const extend = cached && cached.frames > 0 && cached.frames < frames && cached.kind === 'trajectory';
+    let kind = /** @type {'trajectory' | 'dataset'} */ ('trajectory');
+    let maxStep = extend ? cached.maxStep : 0;
+    const from = extend ? cached.frames - 1 : 0;
+    /** @type {FramePhysics | null} */
+    let prev = null;
+    for (let f = from; f < frames; f++) {
+      const ph = this.store.getFramePhysics(f);
+      if (isPending(ph)) { kind = 'dataset'; maxStep = NaN; break; }
+      if (prev) {
+        if (!sameElements(prev.elements, ph.elements)) { kind = 'dataset'; maxStep = Infinity; break; }
+        maxStep = Math.max(maxStep, maxDisplacement(prev, ph));
+      }
+      prev = ph;
+    }
+    if (maxStep > MOTION_MAX_STEP) kind = 'dataset';
+    this._motionProfile = { kind, maxStep, frames };
+    return this._motionProfile;
+  }
+
+  /**
+   * Does frame `step` carry a per-frame style record? A frame switch between
+   * two unstyled frames changes physics only, which is what lets playback
+   * move instances in place instead of rebuilding.
+   * @param {number} step
+   */
+  hasFrameStyles(step) {
+    return this._frameStyles.has(step);
+  }
+
+  /**
    * Extract the live frame's deviations into its sparse record (or clear the
    * record if it has none). Called before the live Structure moves on and
    * before anything reads per-frame data of the shown frame from records.
@@ -159,6 +253,7 @@ export class TrajectoryContainer extends StructureContainer {
    * @returns {Structure}
    */
   _showFrame(step, ph) {
+    this.debugStats.shown += 1;
     if (this._live && this._liveStep >= 0 && this._liveStep !== step) {
       const livePh = this.store.getFramePhysics(this._liveStep);
       // A sync source (the RAM store) always parks; an async source that
@@ -172,8 +267,10 @@ export class TrajectoryContainer extends StructureContainer {
     if (this._live && sameElements(this._liveElements, ph.elements)
       && this._live.atoms.length === ph.elements.length) {
       applyFramePhysics(this._live, ph);
+      this.debugStats.reused += 1;
     } else {
       this._live = materializeFrame(this.store, ph);
+      this.debugStats.rebuilt += 1;
     }
     this._liveElements = ph.elements;
     applyFrameStyles(this._live, this._frameStyles.get(step) ?? null);
@@ -195,11 +292,13 @@ export class TrajectoryContainer extends StructureContainer {
    */
   _installLazyAsLoaded(live, step) {
     const store = this.store;
+    const stats = this.debugStats;
     for (const name of ['original', 'originalSpins']) {
       Object.defineProperty(live, name, {
         configurable: true,
         enumerable: true,
         get() {
+          stats.pristine += 1;
           const pristine = materializeFrame(store,
             /** @type {FramePhysics} */(store.getFramePhysics(step)));
           Object.defineProperty(live, 'original', {
@@ -238,6 +337,7 @@ export class TrajectoryContainer extends StructureContainer {
    */
   frameAtDetached(step) {
     if (!(step >= 0 && step < this.frameCount)) return undefined;
+    this.debugStats.detached += 1;
     if (step === this._liveStep && this._live) {
       // The live frame's record may be stale relative to on-screen edits.
       const livePh = this.store.getFramePhysics(step);

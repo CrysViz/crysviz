@@ -597,6 +597,33 @@ class WboitPass extends Pass {
 		// Gather Opaque / Transparent Meshes
 		gatherMeshes();
 
+		// LOCAL MODIFICATION (CrysViz): FAST PATH — same as the vendored
+		// three-depthpeeling pass. With no transparent material in the scene
+		// there is nothing to blend, so render one plain direct pass (identical
+		// cost and pixels to the forward pipeline) instead of routing the opaque
+		// scene through the non-multisampled baseTarget, which dropped the
+		// canvas MSAA and left every opaque edge/silhouette aliased.
+		// gatherMeshes only forced depth flags on the opaque materials and
+		// cached their originals; resetVisible puts them back.
+		this.lastFrameFastPath = transparentMeshes.length === 0 && wboitMeshes.length === 0;
+		if ( this.lastFrameFastPath ) {
+
+			resetVisible();
+			renderer.setRenderTarget( oldRenderTarget );
+			renderer.setClearColor( this._oldClearColor, oldClearAlpha );
+			scene.overrideMaterial = oldOverrideMaterial;
+			scene.background = oldBackground;
+			renderer.autoClear = oldAutoClear;
+			cache.clear();
+			testCache.clear();
+			writeCache.clear();
+
+			renderer.clear();
+			renderer.render( scene, this.camera );
+			return;
+
+		}
+
 		// Clear Write Buffer
 		if ( this.clearColor ) {
 

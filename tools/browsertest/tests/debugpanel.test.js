@@ -156,13 +156,21 @@ export default Plotly;
     speed.value = '50';
     speed.dispatchEvent(new Event('change'));
     document.getElementById('playPauseBtn').click();
-    await new Promise((r) => setTimeout(r, 2500));
+    // Sample the Cl instance WHILE playing: that is the fast path at work
+    // (the pause below settles through a full rebuild), and comparing only the
+    // settled frame with the start misses motion whenever playback happens to
+    // stop on the frame it started from.
+    let clMoved = false;
+    for (let waited = 0; waited < 2500; waited += 100) {
+      await new Promise((r) => setTimeout(r, 100));
+      const cl = clSlot();
+      if (clBefore.some((v, i) => Math.abs(v - cl[i]) > 1e-6)) clMoved = true;
+    }
     document.getElementById('playPauseBtn').click(); // pause -> settle marker
     await new Promise((r) => setTimeout(r, 700));
     const idsAfter = usedIDs.size;
     const texturesAfter = app.renderer.info.memory.textures;
     const countersAfter = trace.counters();
-    const clAfter = clSlot();
     const meshSame = true;
     const kind = container.motionProfile().kind;
     const { samples, markers } = sampler.getDebugHistory();
@@ -190,7 +198,7 @@ export default Plotly;
       fastFrames: (countersAfter.playbackFast || 0) - (countersBefore.playbackFast || 0),
       fullFrames: (countersAfter.playbackFull || 0) - (countersBefore.playbackFull || 0),
       appliedFrames: (countersAfter.frameApplied || 0) - (countersBefore.frameApplied || 0),
-      clMoved: clBefore.some((v, i) => Math.abs(v - clAfter[i]) > 1e-6), meshSame, kind,
+      clMoved, meshSame, kind,
       last: (() => { const s = samples[samples.length - 1]; return {
         heapMB: s.heapMB, appMB: s.appMB, sceneMB: s.sceneMB, totalMB: s.totalMB, containersMB: s.containersMB,
         glGeometries: s.glGeometries, glTextures: s.glTextures, glPrograms: s.glPrograms,

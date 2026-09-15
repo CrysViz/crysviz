@@ -132,7 +132,8 @@ const clickCell = (page, value) => page.evaluate((v) => {
     });
     let bufferColor = null;
     if (firstDrawnSrcIdx !== null) {
-      const instance = groups.spinsInstanceBySrcIndex?.get(firstDrawnSrcIdx);
+      // srcIdx -> list of instance indices (one per drawn periodic copy).
+      const instance = groups.spinsInstancesBySrcIndex?.get(firstDrawnSrcIdx)?.[0];
       if (instance != null && groups.spinShaftMesh) {
         const out = new THREE.Color();
         groups.spinShaftMesh.getColorAt(instance * 2, out);

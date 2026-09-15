@@ -500,7 +500,9 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // visible warning instead of failing silently. The status line is kept as
     // a secondary, non-blocking trace.
     setStatus(`Error: ${error.message}`);
-    console.error(error);
+    // Lead with the file name: a bare Error object serialises to just "Error"
+    // in captured console text, which says nothing about what failed.
+    console.error(`Failed to load structure "${fileName}":`, error);
     showLoadErrorModal({ fileName, message: error?.message });
     throw error;
   }
