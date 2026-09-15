@@ -39,6 +39,10 @@ make checks
 mkdir -p "$(dirname "$generated_target")" "$(dirname "$generated_pkg")" "$(dirname "$generated_report")"
 touch "$generated_target" "$generated_pkg" "$generated_report"
 
+# The one version source (src/crysviz/__init__.py); the checks below require
+# the built packages and every human-facing version line to agree with it.
+"$python_bin" tools/release/bump_version.py --check
+expected_version=$("$python_bin" tools/release/bump_version.py --print)
 distribution_dir="$ci_temp/dist"
 "$python_bin" -m build --outdir "$distribution_dir"
 "$python_bin" tools/ci/inspect_distributions.py "$distribution_dir"
@@ -53,7 +57,7 @@ wheel_venv="$ci_temp/wheel-venv"
 "$wheel_venv/bin/python" -m pip install "$wheel"
 (
     cd "$ci_temp"
-    "$wheel_venv/bin/python" -c 'import importlib.resources, crysviz; assert crysviz.__version__ == "0.1.0"; assert importlib.resources.files("crysviz.web").joinpath("index.html").is_file()'
+    EXPECTED_VERSION="$expected_version" "$wheel_venv/bin/python" -c 'import importlib.metadata, importlib.resources, os, crysviz; assert crysviz.__version__ == os.environ["EXPECTED_VERSION"] == importlib.metadata.version("crysviz"); assert importlib.resources.files("crysviz.web").joinpath("index.html").is_file()'
     "$wheel_venv/bin/crysviz" --help >/dev/null
     "$wheel_venv/bin/crysviz" --version
 )

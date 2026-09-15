@@ -6,6 +6,7 @@ import json
 import os
 import pathlib
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -23,7 +24,7 @@ from crysviz.server import CrysVizServer
 
 class PayloadTests(unittest.TestCase):
     def test_import_surface_and_snapshot(self):
-        self.assertEqual(crysviz.__version__, "0.1.0")
+        self.assertRegex(crysviz.__version__, r"^\d+\.\d+\.\d+((a|b|rc)\d+)?$")
         self.assertIs(crysviz.ViewerEvent, crysviz._viewer.ViewerEvent)
         self.assertNotIn("webview", sys.modules)
         original = bytearray(b"input")
@@ -538,6 +539,20 @@ class ServerTests(unittest.TestCase):
 
 
 class PackagingMetadataTests(unittest.TestCase):
+    def test_version_has_one_source_and_every_display_agrees(self):
+        root = pathlib.Path(__file__).parents[1]
+        with (root / "pyproject.toml").open("rb") as stream:
+            metadata = tomllib.load(stream)
+        self.assertNotIn("version", metadata["project"])
+        self.assertIn("version", metadata["project"]["dynamic"])
+        self.assertEqual(metadata["tool"]["setuptools"]["dynamic"]["version"], {"attr": "crysviz.__version__"})
+        # README / About box lines are rewritten by tools/release/bump_version.py.
+        result = subprocess.run(
+            [sys.executable, str(root / "tools" / "release" / "bump_version.py"), "--check"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_pywebview_backend_extras_are_forwarded_and_pinned(self):
         with (pathlib.Path(__file__).parents[1] / "pyproject.toml").open("rb") as stream:
             metadata = tomllib.load(stream)

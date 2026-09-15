@@ -2,7 +2,7 @@
 
 ## Light-weight browser-based crystal structure visualisation and analysis with on-device rendering.
 
-Version 0.9.10 Beta 2026-08-28
+Version 0.10.0 Beta 2026-09-15
 
 Source code and issues: [github.com/CrysViz/crysviz](https://github.com/CrysViz/crysviz)
 
