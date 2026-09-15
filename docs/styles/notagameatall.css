@@ -16,6 +16,15 @@
   cursor: default; /* not the scene canvas's pick-affordance pointer */
 }
 
+/* `#view canvas { display: block }` (styles.css) outranks the UA [hidden]
+   rule, so without this the overlay stayed in the way after a run ended:
+   invisible, full-size, still swallowing every pointer event — the camera
+   could not be rotated again until the page reloaded. Same trap as
+   sideDock.css's .split-item[hidden]. */
+#view .cv-proj-overlay[hidden] {
+  display: none;
+}
+
 .cv-proj-overlay-note {
   top: 104px;
 }

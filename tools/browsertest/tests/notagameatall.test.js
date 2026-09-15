@@ -100,6 +100,29 @@ const H = require('../harness');
   H.check('camera controls re-enabled', after.controlsEnabled === before.controlsEnabled);
   H.check('overlay hidden again', after.canvasHidden && after.bannerHidden);
 
+  // The hidden overlay must not stay in the way: the scene canvas has to be
+  // what a pointer at the view's centre reaches, or the camera can no longer
+  // be rotated (`#view canvas { display: block }` used to beat [hidden]).
+  const pointer = await page.evaluate(async () => {
+    const { app } = await import('./state/store.js');
+    const view = document.getElementById('view');
+    const r = view.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    const overlay = document.querySelector('#view .cv-proj-overlay');
+    return { hitsScene: hit === app.renderer.domElement, hitTag: hit?.className || hit?.tagName, overlayDisplay: getComputedStyle(overlay).display };
+  });
+  H.check('after quitting, pointer events reach the scene canvas again', pointer.hitsScene && pointer.overlayDisplay === 'none', JSON.stringify(pointer));
+
+  // A second round starts and stops cleanly too.
+  await page.keyboard.down('Shift'); await page.keyboard.down('Digit4'); await page.keyboard.down('Digit2');
+  await page.keyboard.up('Digit2'); await page.keyboard.up('Digit4'); await page.keyboard.up('Shift');
+  await page.waitForTimeout(300);
+  const second = await page.evaluate(async () => (await import('./ui/notagameatall.js')).getProjectionOverlayState().active);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const secondStopped = await page.evaluate(async () => !(await import('./ui/notagameatall.js')).getProjectionOverlayState().active);
+  H.check('a second round starts and Escape ends it', second && secondStopped);
+
   // Space outside the overlay must still reach the app (it is a shortcut
   // modifier there) — the capture listener is gone once the overlay stops.
   const spaceReaches = await page.evaluate(() => new Promise((resolve) => {
