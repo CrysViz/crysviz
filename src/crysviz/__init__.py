@@ -29,7 +29,7 @@ ClosedViewerError = ViewerClosedError
 CommandTimeoutError = ViewerCommandTimeout
 ProtocolError = ViewerProtocolError
 
-__version__ = "0.1.0"
+__version__ = "0.10.0"
 
 __all__ = [
     "Payload", "Viewer", "show", "StructureInfo", "LoadResult", "PositionUpdateResult",

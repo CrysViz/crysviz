@@ -1,4 +1,4 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard checks ci tests_full periodic-wasm browsertest browsertest-setup
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard checks ci tests_full periodic-wasm browsertest browsertest-setup bump
 
 PYTHON ?= python3
 
@@ -98,3 +98,40 @@ periodic-wasm:
 	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm_bg.wasm       docs/compiled/periodic_wasm_bg.wasm
 	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm.d.ts          docs/compiled/periodic_wasm.d.ts
 	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm_bg.wasm.d.ts  docs/compiled/periodic_wasm_bg.wasm.d.ts
+
+# ── Releasing ────────────────────────────────────────────────────────────────
+# The version lives in one place, src/crysviz/__init__.py; `make bump` rewrites
+# it together with README.md, docs/ui/about.md (the About box) and a new
+# CHANGELOG.md section. What the number means is your call:
+#   major  incompatible change (file formats, Python API)    1.4.2 -> 2.0.0
+#   minor  new features, backwards compatible                1.4.2 -> 1.5.0
+#   fix    bug fixes only                                    1.4.2 -> 1.4.3
+#
+# 0. Along the way, any PR can add user-facing notes under "## Unreleased" in
+#    CHANGELOG.md.
+# 1. On a branch off main:
+#      make bump PART=minor          # or PART=major|fix, or VERSION=X.Y.Z
+#    The Unreleased notes move under the new "## X.Y.Z — date" heading (a fresh
+#    Unreleased opens above it); review or complete them there. That text heads
+#    the GitHub Release, above GitHub's list of merged PRs; a release with an
+#    empty section is refused.
+#    (The Actions tab's "Bump version" workflow does the bump and opens the PR
+#    for you; edit the notes in that PR.)
+# 2. Open a PR into main, review, merge.
+# 3. On GitHub, open a PR from main into deploy and merge it with
+#    "Create a merge commit" (not squash: deploy keeps commits of its own).
+# 4. That push to deploy starts two workflows:
+#      static.yml   deploys the website (live immediately)
+#      release.yml  sees the untagged version, runs `make ci`, builds, and waits
+#                   for a `pypi` environment reviewer: Actions -> the run ->
+#                   "Review deployments" -> approve. It then publishes to PyPI
+#                   and creates the vX.Y.Z tag + GitHub Release.
+#    A deploy without a new version only updates the website.
+# If publishing fails nothing is tagged: re-run the workflow (or deploy again).
+# Dry run to TestPyPI: Actions -> "Publish package" -> Run workflow.
+# `tools/release/bump_version.py --check` (run by CI) fails whenever the
+# version places or the CHANGELOG heading disagree.
+bump:
+	@if [ -n "$(VERSION)" ]; then $(PYTHON) tools/release/bump_version.py $(VERSION); \
+	elif [ -n "$(PART)" ]; then $(PYTHON) tools/release/bump_version.py $(PART); \
+	else echo "usage: make bump PART=major|minor|fix  or  make bump VERSION=X.Y.Z" >&2; exit 2; fi

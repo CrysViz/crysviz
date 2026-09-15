@@ -1,14 +1,34 @@
-# Publish CrysViz to PyPI when a GitHub release is published (trusted publishing, no API tokens). `workflow_dispatch` does a TestPyPI dry run.
+# Publish CrysViz to PyPI (trusted publishing, no API tokens).
+#
+# The version has one source, src/crysviz/__init__.py (tools/release/bump_version.py).
+# Releases ride on deploys: every push to the `deploy` branch (which also
+# publishes the website, static.yml) checks whether its version already has a
+# vX.Y.Z tag. If not, this runs the full CI gate, publishes to PyPI (after a
+# `pypi` environment reviewer approves), then creates the tag and the GitHub
+# Release, whose text is the version's CHANGELOG.md section followed by
+# GitHub's generated list of merged PRs. A deploy that does not change the
+# version publishes nothing here. Choosing the version and writing the notes
+# are manual: see the release notes above `bump` in the Makefile.
+# Publishing a GitHub Release by hand still works (its tag must match the
+# version). `workflow_dispatch` does a TestPyPI dry run.
+#
+# Keep this file's name and the `pypi` environment: PyPI's trusted-publisher
+# entry for the project is bound to both.
 name: Publish package
 
 on:
+  # No paths filter on purpose: a version whose publish failed is picked up
+  # again by the next deploy, and the plan job costs seconds when there is
+  # nothing new.
+  push:
+    branches: ["deploy"]
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       version_suffix:
         description: >-
-          Optional PEP 440 suffix appended to project.version for this
+          Optional PEP 440 suffix appended to the version for this
           TestPyPI build (e.g. .post1, rc2, .dev1)
         required: false
         default: ""
@@ -16,9 +36,59 @@ on:
 permissions:
   contents: read
 
+# Never run two publishes at once, never cancel one half-way.
+concurrency:
+  group: publish-package
+  cancel-in-progress: false
+
 jobs:
+  plan:
+    name: Decide what to publish
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the version and decide
+        id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 tools/release/bump_version.py --check
+          version=$(python3 tools/release/bump_version.py --print)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$EVENT" in
+            release)
+              if [ "$RELEASE_TAG" != "v$version" ]; then
+                echo "::error::release tag $RELEASE_TAG does not match v$version"
+                exit 1
+              fi
+              echo "publish=true" >> "$GITHUB_OUTPUT"
+              ;;
+            push)
+              if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+                echo "v$version is already tagged; nothing to publish."
+                echo "publish=false" >> "$GITHUB_OUTPUT"
+              else
+                # Fail here, before CI and the PyPI approval, rather than
+                # publishing a release with no notes.
+                python3 tools/release/bump_version.py --notes
+                echo "v$version is new; publishing."
+                echo "publish=true" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            *)
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
   build:
     name: Build and verify distributions
+    needs: plan
+    if: needs.plan.outputs.publish == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -33,24 +103,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Require the release tag to match the package version
-        if: github.event_name == 'release'
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-        run: |
-          python - <<'PY'
-          import os
-          import tomllib
-          from pathlib import Path
-
-          version = tomllib.loads(Path("pyproject.toml").read_text())["project"]["version"]
-          expected_tag = f"v{version}"
-          if os.environ["RELEASE_TAG"] != expected_tag:
-              raise SystemExit(
-                  f"release tag {os.environ['RELEASE_TAG']!r} does not match {expected_tag!r}"
-              )
-          PY
-
       - name: Apply version suffix (TestPyPI dry runs only)
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.version_suffix != ''
         env:
@@ -61,11 +113,11 @@ jobs:
           import re
           from pathlib import Path
 
-          path = Path("pyproject.toml")
+          path = Path("src/crysviz/__init__.py")
           text = path.read_text()
-          match = re.search(r'^version = "([^"]+)"', text, flags=re.M)
+          match = re.search(r'^__version__ = "([^"]+)"', text, flags=re.M)
           if match is None:
-              raise SystemExit("could not find project.version in pyproject.toml")
+              raise SystemExit("could not find __version__ in src/crysviz/__init__.py")
           version = match.group(1) + os.environ["VERSION_SUFFIX"]
           path.write_text(text[: match.start(1)] + version + text[match.end(1) :])
           print(f"building as version {version}")
@@ -75,7 +127,7 @@ jobs:
       # temp dir; rebuild into dist/ afterwards so the verified source is what
       # gets uploaded.
       - name: Run complete CI gate
-        if: github.event_name == 'release'
+        if: github.event_name != 'workflow_dispatch'
         run: make ci
 
       - name: Build distributions
@@ -114,8 +166,8 @@ jobs:
 
   publish-pypi:
     name: Publish to PyPI
-    if: github.event_name == 'release'
-    needs: build
+    if: needs.plan.outputs.publish == 'true' && github.event_name != 'workflow_dispatch'
+    needs: [plan, build]
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -131,3 +183,32 @@ jobs:
 
       - name: Publish distributions to PyPI
         uses: pypa/gh-action-pypi-publish@ba38be9e461d3875417946c167d0b5f3d385a247 # v1.14.1
+
+  # Tag only after PyPI accepted the upload, so a failed publish leaves no tag
+  # behind and simply re-running the workflow retries it. A release created
+  # with GITHUB_TOKEN does not trigger the `release` event, so this cannot
+  # publish twice.
+  github-release:
+    name: Tag and create the GitHub Release
+    if: github.event_name == 'push' && needs.plan.outputs.publish == 'true'
+    needs: [plan, publish-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --notes text is placed above the generated PR list (gh release create).
+      - name: Create tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          notes=$(python3 tools/release/bump_version.py --notes)
+          gh release create "v$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "v$VERSION" \
+            --notes "$notes" \
+            --generate-notes
