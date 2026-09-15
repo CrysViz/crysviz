@@ -9,6 +9,7 @@ import {updateRandomColors, startDisco, stopDisco} from '../ui/DiscoModule.js'
 import { updateChargeBadges } from './ChargeBadgeModule.js'
 import { updateMeasurementLabelVisibility } from './MeasurementModule.js'
 import { renderScanlinePass, toggleScanlineMode } from './ScanlinePass.js'
+import { count as traceCount } from '../debug/debugTrace.js'
 
 
 let isRendering = true;
@@ -36,8 +37,39 @@ export function requestRender() {
  *  transparent canvas revealing the page's background color underneath — on
  *  every resize event during a drag. Rendering immediately, in the same tick
  *  as the resize, closes that gap. */
+// ---- render benchmark mode (Debug window) ----------------------------------
+// The loop below renders on demand and caps at targetFPS, so the "render f/s"
+// the Debug window reports is the DEMAND rate, not what the scene could
+// sustain. Benchmark mode lifts both: every tick renders, uncapped (still one
+// render per animation frame, so vsync-bound), and each render ends in a 1-px
+// readPixels that blocks until the GPU has finished — the measured time per
+// frame then includes GPU work, and 1000/ms is the scene's real capacity.
+let renderBenchmark = false;
+const gpuSyncPixel = new Uint8Array(4);
+
+export function setRenderBenchmark(enabled) {
+  renderBenchmark = !!enabled;
+  if (renderBenchmark) needsRender = true;
+}
+
+export function isRenderBenchmark() {
+  return renderBenchmark;
+}
+
+function gpuSync() {
+  try {
+    const gl = app.renderer.getContext();
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, gpuSyncPixel);
+  } catch { /* context lost or no default framebuffer bound — timing is CPU-only then */ }
+}
+
 export function renderFrameNow({ interactive = false } = {}) {
   if (!app.renderer || !app.pipeline || !app.scene || !app.camera) return;
+  // One tick of the Debug panel's render counter per frame actually drawn
+  // (the on-demand loop skips idle ticks above, so this IS the render rate),
+  // plus the wall time this frame took (GPU-inclusive in benchmark mode).
+  traceCount('render');
+  const renderStart = performance.now();
   // Charge badges are placed in screen space and culled against the current
   // camera, so they have to be updated before the scene is drawn. Cheap when
   // there are none, and the loop only runs on frames that actually render.
@@ -54,6 +86,8 @@ export function renderFrameNow({ interactive = false } = {}) {
     app.gizmoRenderer.render(app.gizmoScene, app.gizmoCamera);
   }
   if (app.labelRenderer) app.labelRenderer.render(app.scene, app.camera);
+  if (renderBenchmark) gpuSync();
+  traceCount('renderMs', performance.now() - renderStart);
 }
 
 let renderOnDemandWired = false;
@@ -194,7 +228,7 @@ export function animation_update(time = 0) {
   if (!isRendering) return;
   requestAnimationFrame(animation_update);
   const interval = 1000 / targetFPS;
-  if (time - lastFrameTime < interval) return;
+  if (!renderBenchmark && time - lastFrameTime < interval) return;
   lastFrameTime = time;
 
   // Keep the target fixed on the structure center, and represent the camera
@@ -273,7 +307,7 @@ export function animation_update(time = 0) {
   }
   const autoRotating = app.angularVelocity != null &&
     general.autoRandomEnabled && app.angularVelocity.lengthSq() > 0;
-  if (autoRotating || isKeyComboActive) needsRender = true;
+  if (autoRotating || isKeyComboActive || renderBenchmark) needsRender = true;
 
   if (!needsRender) {
     // Idle: skip all render work; restart the FPS window so the counter only

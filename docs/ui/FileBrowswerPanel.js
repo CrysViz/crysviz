@@ -12,6 +12,7 @@ import {StructureContainer, TrajectoryContainer} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import { recenterCamera, captureCameraSnapshot, applyCameraSnapshot, fitCameraToCurrentStructure } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
+import { count as traceCount } from '../debug/debugTrace.js';
 import { generateID } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
 
@@ -883,6 +884,7 @@ let frameSwitchToken = 0;
 // The tail of a frame switch, once the frame exists as a Structure.
 function finishFrameSwitch(container, step, structure, rowChanged) {
   void step;
+  traceCount('frameApplied'); // Debug panel's playback counter (proper loads)
   fileBrowser.selectedStructure = structure;
   syncPlanesForSelectedStructure();
   refreshBackendTheme();

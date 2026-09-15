@@ -1,6 +1,6 @@
 import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
-import { transpose3x3, invert3x3, normalizeFractional, cartToFractional, latticeVolume } from "../math/index.js";
+import { transpose3x3, invert3x3, normalizeFractional, cartToFractional } from "../math/index.js";
 import { runPeriodicWrapped } from "../render/index.js";
 import { generateID } from "../utils/index.js";
 
@@ -11,25 +11,13 @@ export function readPOSCAR(content, fileName) {
   let i = 0;
 
   i++; // skip the comment line
-  let scale_or_volume = parseFloat(lines[i++]);
-  if (!Number.isFinite(scale_or_volume)) throw new Error('POSCAR: missing scale factor');
+  const scale = parseFloat(lines[i++]);
+  if (!Number.isFinite(scale)) throw new Error('POSCAR: missing scale factor');
 
   // --- lattice (3×3)
   const lattice = Array.from({ length: 3 }, () =>
-    (lines[i++] || '').trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v))
+    (lines[i++] || '').trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v) * scale)
   );
-
-  const lattice_volume = latticeVolume(lattice);
-  let scale_factor;
-  if (scale_or_volume < 0) { // negative scale factor is the target volume of the cell
-    const volume = -scale_or_volume;
-    scale_factor = volume / lattice_volume;
-  } else {
-    scale_factor = scale_or_volume;
-  }
-  // --- apply scale factor to lattice
-  lattice.forEach((row, r) => row.forEach((v, c) => lattice[r][c] = v * scale_factor));
-
 
   // --- element symbols + counts
   const elementLine = (lines[i++] || '').trim().split(/\s+/);

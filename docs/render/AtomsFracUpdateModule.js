@@ -121,6 +121,22 @@ export function applyWedgeUniforms(material) {
 }
 
 /**
+ * Dispose an atoms-mesh material AND the wedge DataTexture it carries.
+ * `Material.dispose()` never disposes textures a material references, and the
+ * wedge texture is (re)built per mesh by finishAtomsMesh — so every atoms
+ * rebuild (one per trajectory frame during playback) used to leave one
+ * uploaded GL texture behind for good. The pipeline overlay material shares
+ * the same wedge object; dispose the texture from whichever goes first
+ * (Texture.dispose is idempotent).
+ * @param {any} material
+ */
+export function disposeAtomsMaterial(material) {
+  if (!material) return;
+  material.userData?.wedge?.texture?.dispose?.();
+  material.dispose();
+}
+
+/**
  * Rebuild and re-upload just the wedge texture on the current atoms mesh,
  * after a per-species colour edit. Positions, the instance count, UUIDs and
  * every other buffer are untouched, so this is far cheaper than rebuildAtoms()
@@ -248,10 +264,10 @@ export function rebuildAtoms(opacity) {
     if (overlay) {
       overlay.parent?.remove(overlay);
       if (overlay.geometry !== groups.atomsMesh.geometry) overlay.geometry.dispose();
-      overlay.material.dispose();
+      disposeAtomsMaterial(overlay.material);
     }
     groups.atomsMesh.geometry.dispose();
-    groups.atomsMesh.material.dispose();
+    disposeAtomsMaterial(groups.atomsMesh.material);
     app.scene.remove(groups.atomsMesh);
     groups.atomsMesh = null;
   }

@@ -1,0 +1,237 @@
+/* Phonon controls window (docs/ui/PhononPanel.js). Reuses the app's
+   .control-group / .btn-mini / toggle tokens and the EOS window's collapsible
+   summary; only the rows unique to this panel are defined here. */
+
+.ph-heading {
+  margin: 0 0 var(--sp-2) 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  color: var(--fg-85);
+}
+
+.ph-status {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+  line-height: var(--lh-normal, 1.4);
+  overflow-wrap: anywhere;
+}
+
+.ph-help {
+  margin: 0 0 var(--sp-3) 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+  line-height: var(--lh-normal, 1.4);
+}
+
+.ph-drop-zone {
+  border: 2px dashed var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted-fg);
+  font-size: var(--fs-sm);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.ph-drop-zone:hover {
+  background: var(--wash-0);
+}
+
+.ph-drop-zone.highlight {
+  border-color: var(--highlight-color, var(--info));
+  background: var(--wash-1-5);
+}
+
+/* One control per row: fixed-width label, the control(s), a value readout. */
+.ph-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.ph-row > label:first-child {
+  flex: 0 0 70px;
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+}
+
+.ph-row input[type="range"] {
+  flex: 1 1 80px;
+  min-width: 60px;
+}
+
+.ph-value {
+  flex: 0 0 auto;
+  min-width: 52px;
+  text-align: right;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-85);
+}
+
+.ph-dim,
+.ph-num {
+  width: 3.6em;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--sp-1);
+  font-size: var(--fs-sm);
+}
+
+select.ph-num {
+  width: auto;
+}
+
+.ph-times,
+.ph-unit {
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+}
+
+.ph-inline-label {
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+  margin-left: var(--sp-2);
+}
+
+.ph-transport .btn-mini {
+  min-width: 2.4em;
+  padding: var(--sp-1) var(--sp-2);
+}
+
+.ph-toggle {
+  margin: 0;
+  gap: var(--sp-2);
+}
+
+.ph-toggle .toggle_text {
+  font-size: var(--sp-3-5);
+  color: var(--muted-fg);
+}
+
+.ph-swatch-host {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The mode-map card's own "put away" ✕, in the top-right corner like the
+   expanded view's close button (which takes over that corner when expanded). */
+.ph-card-hide {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: 1;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-4);
+  padding: 2px 7px;
+  cursor: pointer;
+  font-size: var(--fs-base);
+}
+
+.ph-card-hide:hover {
+  background: var(--wash-2);
+}
+
+.split-item.expanded .ph-card-hide {
+  display: none;
+}
+
+/* Buttons: the shared .btn-mini look at a fixed dense size, so the compact
+   rung's big-tap zoom (responsive.css, which excludes .ph-btn) cannot turn
+   four buttons on one row into a wall. */
+.ph-btn {
+  height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* The imaginary-mode list: left-aligned rows that stay inside the group box
+   (the group's padding plus a content-box 100% width overflowed it). */
+.ph-list {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin-top: var(--sp-2);
+  padding: var(--sp-1);
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  overflow-x: hidden;
+}
+
+.ph-list option {
+  text-align: left;
+  padding: 2px var(--sp-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ph-dims-auto {
+  margin-left: var(--sp-2);
+}
+
+.ph-dim:disabled {
+  opacity: 0.5;
+}
+
+.ph-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+
+.ph-collapsible {
+  margin-top: var(--sp-2);
+}
+
+.ph-collapsible[open] .eos-collapsible-arrow {
+  transform: rotate(90deg);
+}
+
+.ph-scan-results {
+  margin-top: var(--sp-2);
+}
+
+/* The plots window's card column: the mode-map card is hidden until a scan
+   exists, so the band card takes the whole height in the meantime. */
+.phonon-plot-stack .split-item {
+  min-height: 240px;
+}
+
+/* The mode-map group folds as a whole (<details>); its summary is the group
+   heading, so it keeps the heading's weight rather than the small collapsible
+   look used inside groups. */
+.ph-collapsible-group > .ph-group-summary {
+  font-size: var(--fs-md);
+  color: var(--fg-85);
+}
+
+.ph-collapsible-group[open] > .ph-group-summary {
+  margin-bottom: var(--sp-2);
+}
+
+.ph-collapsible-group[open] > .ph-group-summary .eos-collapsible-arrow {
+  transform: rotate(90deg);
+}
+
+/* The arrows block reuses the Forces panel's row classes (forcePanel.css);
+   only the host's spacing under its fold summary is ours. */
+.ph-arrow-host {
+  margin-top: var(--sp-2);
+}

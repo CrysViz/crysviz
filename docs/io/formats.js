@@ -355,6 +355,29 @@ function sniffAimsGeometry(head) {
 // The table
 // ---------------------------------------------------------------------------
 
+// ---- phonopy -----------------------------------------------------------------
+
+function sniffPhonopyModes({ text }) {
+  if (/^phonon:\s*$/m.test(text)) return /^nqpoint:|^mesh:|^natom:|^reciprocal_lattice:/m.test(text) || /^- q-position:/m.test(text);
+  return /^nqpoint:/m.test(text) && /^(npath|segment_nqpoint|mesh|reciprocal_lattice|labels):/m.test(text);
+}
+
+function sniffPhonopyCells({ text }) {
+  return /^phonopy:\s*$/m.test(text) && /^ {2}version:/m.test(text)
+    && /^(unit_cell|primitive_cell|supercell):\s*$/m.test(text);
+}
+
+function sniffPhonopyDos({ text, lines }) {
+  // phonopy stamps the smearing method on line 1; the body is 2+ numeric columns.
+  if (!/^#\s*(Tetrahedron|Sigma)/.test(text)) return false;
+  const body = lines.slice(1, 6).filter((l) => l.trim());
+  return body.length >= 2 && body.every((l) => {
+    const parts = l.trim().split(/\s+/);
+    return parts.length >= 2 && parts.every((t) => FLOAT.test(t));
+  });
+}
+
+
 /**
  * Ordered list. Order matters twice: among several content candidates with no
  * name match (rule 3), and for the filename fallback (rule 4), where the first
@@ -501,6 +524,38 @@ export const FORMATS = [
     handledBy: HandledBy.PARSE_ANY,
     matchesName: (lower) => lower.endsWith('.geom') || lower.endsWith('.md') || lower.endsWith('.ts'),
     sniff: sniffCastepGeom,
+  },
+  {
+    // phonopy band.yaml / mesh.yaml / qpoints.yaml: the phonon panel's input.
+    // Line-anchored YAML markers; `phonon:` is the list every one of them
+    // carries, `nqpoint:` + one of the header keys covers a head that is all
+    // header (a big primitive cell pushes `phonon:` past HEAD_BYTES).
+    id: 'phonopy-modes',
+    label: 'phonopy phonon modes',
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.VIEWER,
+    matchesName: (lower) => /(^|\/)(band|mesh|qpoints)[^/]*\.ya?ml$/.test(lower),
+    sniff: sniffPhonopyModes,
+  },
+  {
+    // phonopy.yaml / phonopy_disp.yaml / phonopy_params.yaml: cells (and the
+    // supercell/primitive matrices) — loads as a structure on its own, or
+    // supplies the cell to a band.yaml that predates phonopy writing it.
+    id: 'phonopy-cells',
+    label: 'phonopy.yaml',
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.VIEWER,
+    matchesName: (lower) => /(^|\/)phonopy[^/]*\.ya?ml$/.test(lower),
+    sniff: sniffPhonopyCells,
+  },
+  {
+    // total_dos.dat / projected_dos.dat: joins the loaded band structure.
+    id: 'phonopy-dos',
+    label: 'phonopy DOS',
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.VIEWER,
+    matchesName: (lower) => /(^|\/)(total|projected|partial)_dos\.dat$/.test(lower),
+    sniff: sniffPhonopyDos,
   },
   {
     id: 'aims-out',

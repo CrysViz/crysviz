@@ -18,7 +18,7 @@ import { getFocusOpacityForInstance } from './FocusRegionModule.js';
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
 import {refreshBondLengthHistogram, isBondLengthHistogramOpen} from '../ui/AnalysisPanels/BondLengthHistogram.js'
 import {refreshCoordinationHistogram, isCoordinationHistogramOpen} from '../ui/AnalysisPanels/CoordinationHistogram.js'
-import {generateID} from '../utils/index.js'
+import {generateID, releaseIDs} from '../utils/index.js'
 import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
@@ -86,6 +86,7 @@ export function disposeBondsMesh(clearBondData = false) {
     groups.bondsMesh = null;
   }
   if (clearBondData && fileBrowser.selectedStructure) {
+    releaseIDs(fileBrowser.selectedStructure.bonds);
     fileBrowser.selectedStructure.bonds = [];
     fileBrowser.selectedStructure.bondMapping = {};
     fileBrowser.selectedStructure.bondObjectMapping = {};
@@ -252,6 +253,7 @@ export function bondGroupKey(structure, bond) {
 
 export function buildBondObjects(structure){
   const _t0 = performance.now();
+  releaseIDs(structure.bonds); // the ids of the bonds being replaced
   structure.bonds = [];
   structure.bondMapping = {};
   structure.bondObjectMapping = {};

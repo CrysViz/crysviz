@@ -234,8 +234,10 @@
      rung zoomed its font to --fs-xl and stretched it, offsetting it in its row.
      .bond-cat-btn (per-pair Reset/Apply in the bond-length panel) is the same
      case again: a 32px x 50px box sized to its row, so the --fs-xl rung spilled
-     both labels straight out of their borders. */
-  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn):not(.bond-cat-btn) {
+     both labels straight out of their borders. .ph-btn (the Phonons window's
+     transport / Apply / Compute buttons) are dense row buttons in the same
+     sense — four of them share one row with number inputs. */
+  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn):not(.bond-cat-btn):not(.ph-btn) {
     padding: var(--sp-4) var(--sp-5);
     font-size: var(--fs-xl);
     align-self: stretch;

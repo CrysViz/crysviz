@@ -16,7 +16,7 @@ import {
   isTracerPipelineActive,
 } from './pipeline/index.js';
 
-export { pauseRendering, resumeRendering, animation_update, requestRender, renderFrameNow } from './AnimateModule.js';
+export { pauseRendering, resumeRendering, animation_update, requestRender, renderFrameNow, setRenderBenchmark, isRenderBenchmark } from './AnimateModule.js';
 
 export {
   rebuildAtoms, updateAtoms, updateSingleAtomDiameter, updateSingleAtomColor,

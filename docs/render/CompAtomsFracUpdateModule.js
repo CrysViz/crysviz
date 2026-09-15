@@ -5,7 +5,7 @@ import {atomicRadii} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import {runPeriodicWrapped} from './LatticeModule.js'
-import {finishAtomsMesh} from './AtomsFracUpdateModule.js'
+import {finishAtomsMesh, disposeAtomsMaterial } from './AtomsFracUpdateModule.js'
 import {createStyledMaterial, syncCelHullOpacitySuppression} from './MaterialStyles.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 
@@ -25,7 +25,7 @@ function disposeOverlayAtomsMesh(key) {
   const entry = groups.overlayMeshes.get(key);
   if (entry?.atomsMesh) {
     entry.atomsMesh.geometry.dispose();
-    entry.atomsMesh.material.dispose();
+    disposeAtomsMaterial(entry.atomsMesh.material);
     app.scene.remove(entry.atomsMesh);
     entry.atomsMesh = null;
   }
@@ -39,7 +39,7 @@ export function disposeOverlayMeshes(key) {
   if (!entry) return;
   if (entry.atomsMesh) {
     entry.atomsMesh.geometry.dispose();
-    entry.atomsMesh.material.dispose();
+    disposeAtomsMaterial(entry.atomsMesh.material);
     app.scene.remove(entry.atomsMesh);
   }
   if (entry.bondsMesh) {
