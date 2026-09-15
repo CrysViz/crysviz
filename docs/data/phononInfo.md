@@ -20,8 +20,12 @@ content, not the name:
 **Units.** phonopy writes the cell in the calculator's own length unit and converts nothing in
 `band.yaml`: VASP, CASTEP, CP2K and FHI-aims runs are in Å, but QE, abinit, siesta, elk and wien2k runs
 are in Bohr. Only `phonopy.yaml` records which (`calculator` and `physical_unit`), so load it alongside
-and the unit is picked up automatically; without it, use the **Length unit** selector. Frequencies are
-THz in every case.
+and the unit is picked up automatically. Without it the unit is judged from the geometry: the closest
+interatomic contact is compared with the two atoms' radii — read in the right unit it sits near the
+radii sum, read as Å when the file is in Bohr nothing touches, read as Bohr when the file is in Å the
+atoms overlap — and a dialog shows both readings for you to confirm or override (a molecular crystal
+in Bohr is the one genuinely ambiguous case). The **Length unit** selector forces a unit outright and
+skips the dialog. Frequencies are THz in every case.
 
 Loading a mode file adds a row `phonon_<file>_1x1x1` to the Files window holding the primitive cell the
 eigenvectors refer to, and the phonon data belongs to that row: both windows follow the selected

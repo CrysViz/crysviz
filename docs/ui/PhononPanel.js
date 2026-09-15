@@ -618,9 +618,14 @@ function refresh(container) {
   const unitSel = /** @type {HTMLSelectElement} */ (q(container, '#phLengthUnit'));
   if (unitSel) unitSel.value = phononState.lengthUnit;
   const unitName = (u) => (u === 'bohr' ? 'Bohr' : 'Å');
+  const unitSource = {
+    'phonopy.yaml': `from phonopy.yaml${phononState.cells?.calculator ? ` (calculator: ${phononState.cells.calculator})` : ''}`,
+    user: 'confirmed at load; the file declares no unit',
+    geometry: 'judged from the interatomic distances; the file declares no unit',
+  }[phononState.detectedUnitSource] || 'detected';
   setText(container, '#phUnitNote', phononState.lengthUnit === 'auto'
     ? (phononState.detectedUnit
-      ? `${unitName(phononState.detectedUnit)} — from phonopy.yaml${phononState.cells?.calculator ? ` (calculator: ${phononState.cells.calculator})` : ''}`
+      ? `${unitName(phononState.detectedUnit)} — ${unitSource}`
       : 'Å assumed — load phonopy.yaml to pick up the calculator\'s unit, or choose Bohr for QE / abinit / siesta runs.')
     : `cells read as ${unitName(effectiveLengthUnit())}`);
   const has = !!dataset;

@@ -27,6 +27,9 @@ import {
   parsePhonopyModes, parsePhonopyCells, parsePhonopyDos, withCell, listImaginaryModes,
   scaleCell, BOHR_TO_ANGSTROM,
 } from './phonopyReader.js';
+import { assessLengthUnit, describeReadings, unitLabel } from './lengthUnitGuess.js';
+import { atomicRadii } from '../defaults/radii_defaults.js';
+import { choiceDialog } from '../ui/ConfirmModal.js';
 import {
   buildSupercell, modePattern, animationDisplacement, cartToFracWithInverse, invert3x3,
   isCommensurate, commensurateDims,
@@ -45,8 +48,14 @@ export const phononState = {
   sourceName: '',
   /** 'auto' follows phonopy.yaml (or Å when none is loaded); the user can force Å / Bohr. */
   lengthUnit: /** @type {'auto'|'angstrom'|'bohr'} */ ('auto'),
-  /** @type {'angstrom'|'bohr'|null} the unit phonopy.yaml declared (calculator-dependent) */
+  /** @type {'angstrom'|'bohr'|null} the unit the cells were found to be in (see detectedUnitSource) */
   detectedUnit: null,
+  /** How detectedUnit was settled: 'phonopy.yaml' (declared by the file), 'user' (confirmed
+   *  in the load-time dialog), 'geometry' (inferred from the interatomic distances, dialog
+   *  dismissed) or null. @type {'phonopy.yaml'|'user'|'geometry'|null} */
+  detectedUnitSource: null,
+  /** The last geometry assessment (phonon/lengthUnitGuess.js), for the panel. @type {any} */
+  unitAssessment: null,
   dims: [1, 1, 1],
   /** @type {{iq:number, ib:number}|null} */
   selected: null,
@@ -121,7 +130,7 @@ function emit(event) {
 const RECORD_FIELDS = [
   'arrowColorMap', 'arrowScale', 'arrowRadius', 'arrowLengthLog', 'arrowColor', 'arrowMin', 'arrowMax', 'arrowColorScale', 'arrowBar',
   'arrowRangeAuto',
-  'dataset', 'dos', 'cells', 'sourceName', 'lengthUnit', 'detectedUnit', 'dims', 'selected',
+  'dataset', 'dos', 'cells', 'sourceName', 'lengthUnit', 'detectedUnit', 'detectedUnitSource', 'unitAssessment', 'dims', 'selected',
   'amplitude', 'speed', 'argumentDeg', 'modeMap', 'qConvention', 'energyPerAtom',
 ];
 
@@ -191,6 +200,68 @@ export function effectiveLengthUnit() {
 
 function unitFactor(unit = effectiveLengthUnit()) {
   return unit === 'bohr' ? BOHR_TO_ANGSTROM : 1;
+}
+
+const CALCULATORS = {
+  angstrom: 'VASP, CASTEP, CP2K, FHI-aims, LAMMPS runs',
+  bohr: 'Quantum ESPRESSO, abinit, siesta, elk, wien2k runs',
+};
+
+/**
+ * A mode file (band/mesh/qpoints.yaml) or a phonopy.yaml without
+ * `physical_unit` carries its cell in an unstated unit. Judge it from the
+ * geometry (lengthUnitGuess.js) and, unless the user has forced a unit with
+ * the Length unit selector, ask them to confirm — the guess is right for
+ * every ordinary solid but a molecular crystal written in Bohr is genuinely
+ * ambiguous, and getting it wrong scales the structure by 1.9x. Dismissing
+ * the dialog (Escape, backdrop) takes the guess.
+ * @param {any} cellRaw  the cell as written in the file
+ * @param {string} fileName
+ */
+async function resolveUndeclaredUnit(cellRaw, fileName) {
+  // Already judged (and possibly confirmed) for this very cell — e.g. an
+  // undeclared phonopy.yaml followed by its band.yaml: do not ask twice.
+  if (phononState.detectedUnit && sameLattice(phononState.unitAssessment?.lattice, cellRaw?.lattice)) return;
+  const assessment = assessLengthUnit(cellRaw, (el) => atomicRadii[el] ?? 1.0);
+  assessment.lattice = cellRaw?.lattice?.map((row) => [...row]) ?? null;
+  phononState.unitAssessment = assessment;
+  if (phononState.lengthUnit !== 'auto') {
+    phononState.detectedUnit = assessment.guess;
+    phononState.detectedUnitSource = 'geometry';
+    return;
+  }
+  const chosen = await promptLengthUnit(assessment, fileName);
+  phononState.detectedUnit = chosen ?? assessment.guess;
+  phononState.detectedUnitSource = chosen ? 'user' : 'geometry';
+}
+
+function sameLattice(a, b) {
+  if (!a || !b || a.length !== 3 || b.length !== 3) return false;
+  for (let i = 0; i < 3; i++) for (let k = 0; k < 3; k++) {
+    if (Math.abs(a[i][k] - b[i][k]) > 1e-6 * Math.max(1, Math.abs(a[i][k]))) return false;
+  }
+  return true;
+}
+
+function promptLengthUnit(assessment, fileName) {
+  const { guess, confidence } = assessment;
+  const other = guess === 'angstrom' ? 'bohr' : 'angstrom';
+  const name = String(fileName || 'This file').split(/[\\/]/).pop();
+  const certainty = confidence === 'high' ? 'almost certainly' : 'probably';
+  return choiceDialog(
+    `${name} does not say which length unit its cell is in. phonopy keeps the calculator's own unit `
+    + `(Å for VASP-family codes, Bohr for QE, abinit, siesta, …) and only phonopy.yaml records which. `
+    + `Judged by the interatomic distances, this cell is ${certainty} in ${unitLabel(guess)}.`,
+    {
+      title: 'Phonon cell: length unit',
+      detail: describeReadings(assessment),
+      choices: [
+        { value: guess, label: `Use ${unitLabel(guess)} (detected)`, description: CALCULATORS[guess] },
+        { value: other, label: `Use ${unitLabel(other)}`, description: CALCULATORS[other] },
+      ],
+      cancelValue: null,
+    },
+  );
 }
 
 /** dataset.cell is always Å for the viewer; cellRaw keeps what the file said. */
@@ -309,7 +380,14 @@ export async function loadPhonopyFile(text, fileName, kind) {
   if (kind === 'phonopy-cells') {
     const cells = parsePhonopyCells(text);
     phononState.cells = cells;
-    phononState.detectedUnit = cells.lengthUnit;
+    if (cells.lengthUnit) {
+      phononState.detectedUnit = cells.lengthUnit;
+      phononState.detectedUnitSource = 'phonopy.yaml';
+      phononState.unitAssessment = null;
+    } else {
+      // No physical_unit and an unknown (or absent) calculator: judge the cell.
+      await resolveUndeclaredUnit(cells.unit || cells.primitive, fileName);
+    }
     if (phononState.dataset && !phononState.dataset.cell) {
       phononState.dataset = withCell(phononState.dataset, cells);
       phononState.dataset.cellRaw = null;
@@ -342,6 +420,11 @@ export async function loadPhonopyFile(text, fileName, kind) {
   if (!dataset.cell && phononState.cells) dataset = withCell(dataset, phononState.cells);
   if (!dataset.cell) {
     throw new Error('This phonopy file carries no cell (old phonopy version). Load phonopy.yaml first, then this file again.');
+  }
+  // Mode files never state their unit. A phonopy.yaml loaded earlier settles
+  // it (declared, or already judged and confirmed); otherwise judge this cell.
+  if (phononState.detectedUnitSource !== 'phonopy.yaml') {
+    await resolveUndeclaredUnit(dataset.cell, fileName);
   }
   // A fresh dataset gets its own row and record; the previous one stays on
   // its row (select that row to get it back).
