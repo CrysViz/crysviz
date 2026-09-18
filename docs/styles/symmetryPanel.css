@@ -266,18 +266,11 @@
   white-space: nowrap;
 }
 
-/* The slider is the widest control here; let it take the slack rather than
-   forcing the row to wrap on a narrow dock. */
+/* The app's standard slider (styles.css); only its width is set here. */
 .sym-asu-control input[type="range"] {
   width: 92px;
   max-width: 100%;
-  /* The shared control styling leaves the track 6px tall with a 2px margin,
-     which reads as a hairline next to a 24px swatch and gives the thumb almost
-     no grab area. */
-  height: 18px;
   margin: 0;
-  accent-color: var(--accent-fg, var(--info-bright));
-  cursor: pointer;
 }
 
 .sym-asu-check {
