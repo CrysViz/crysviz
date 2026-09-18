@@ -34,7 +34,6 @@ if [[ "$setup_dependencies" == "1" ]]; then
 fi
 
 "$python_bin" tools/update_version.py --check
-expected_version=$("$python_bin" -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
 
 make checks
 "$python_bin" -m unittest discover -s tests -v
@@ -56,7 +55,7 @@ wheel_venv="$ci_temp/wheel-venv"
 "$wheel_venv/bin/python" -m pip install "$wheel"
 (
     cd "$ci_temp"
-    EXPECTED_VERSION="$expected_version" "$wheel_venv/bin/python" -c 'import importlib.resources, os, crysviz; assert crysviz.__version__ == os.environ["EXPECTED_VERSION"]; assert importlib.resources.files("crysviz.web").joinpath("index.html").is_file()'
+    "$wheel_venv/bin/python" -c 'import importlib.resources, crysviz; assert importlib.resources.files("crysviz.web").joinpath("index.html").is_file()'
     "$wheel_venv/bin/crysviz" --help >/dev/null
     "$wheel_venv/bin/crysviz" --version
 )

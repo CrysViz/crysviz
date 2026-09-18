@@ -100,9 +100,10 @@ periodic-wasm:
 	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm_bg.wasm.d.ts  docs/compiled/periodic_wasm_bg.wasm.d.ts
 
 # ── Releasing ────────────────────────────────────────────────────────────────
-# The version lives in pyproject.toml. `make update_version` copies it into
-# src/crysviz/__init__.py and docs/version.js (shown in the About dialog); CI
-# fails with "You need to run `make update_version`" if they disagree.
+# The version lives in pyproject.toml; crysviz.__version__ reads it from the
+# installed package. `make update_version` copies it into docs/version.js
+# (shown in the About dialog); CI fails with "You need to run
+# `make update_version`" if they disagree.
 #
 # 1. Set `version` in pyproject.toml, run `make update_version`, and move the
 #    CHANGELOG.md "Unreleased" notes under a new "## X.Y.Z" heading.
