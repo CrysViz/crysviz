@@ -4,8 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "crysviz"
-# Single source: src/crysviz/__init__.py __version__ (see tools/release/bump_version.py).
-dynamic = ["version"]
+version = "0.10.0"
 description = "Browser-based crystal structure visualisation and analysis"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -32,9 +31,6 @@ gtk = ["pywebview[gtk]>=6.2,<7"]
 
 [project.scripts]
 crysviz = "crysviz.cli:main"
-
-[tool.setuptools.dynamic]
-version = { attr = "crysviz.__version__" }
 
 [tool.setuptools]
 package-dir = { "" = "src", "crysviz.web" = "docs" }

@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.10.0 — 2026-09-15
+## 0.10.0
 
 ### Highlights
 
@@ -25,6 +25,6 @@
 - Spin and force arrows no longer vanish when zooming in after changing the cell boundary, and magnetic moments from mCIF files load correctly again.
 - Playing long trajectories no longer makes memory use grow steadily.
 
-## 0.1.0 — 2026-08-28
+## 0.1.0
 
 Initial public release of CrysViz.

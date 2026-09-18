@@ -7,8 +7,6 @@
 
 Run it in your browser at [crysviz.org](https://crysviz.org).
 
-Version 0.10.0 Beta 2026-09-15
-
 <img width="600" alt="Screenshot_crysviz" src="https://raw.githubusercontent.com/CrysViz/crysviz/deploy/docs/data/CrysViz_screenshot.png" />
 
 
