@@ -31,7 +31,7 @@ import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
 import { updateForces, removeForces } from '../../render/index.js';
-import { updateLattice } from '../../render/index.js';
+import { updateLattice, updateAsymmetricUnit, updateAsuAtomHighlight } from '../../render/index.js';
 import { rebuildAtoms } from '../../render/index.js';
 import { createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
 import { transpose3x3, invert3x3, matVec } from '../../atomistic/math.js';
@@ -207,6 +207,7 @@ function fastUpdatePositions(cartPositions, lattice, elements, forces) {
     liveStructure.lattice = lattice.map(r => [...r]);
     updateLattice();
   }
+  updateAsuAtomHighlight();
 
   // Forces (optional — only if user has enabled the Forces toggle)
   if (forces && general.forcesActive) {
@@ -262,6 +263,7 @@ function fullRebuild(nAtoms, lattice, cartPositions, elements, forces) {
   } else {
     liveContainer.structures[0] = liveStructure;
     fileBrowser.selectedStructure = liveStructure;
+    updateAsymmetricUnit();
   }
 
   // Temporarily disable periodic images and bonds so the mesh has exactly N instances

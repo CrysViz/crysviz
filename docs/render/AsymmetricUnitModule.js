@@ -30,9 +30,13 @@ import { app, groups, fileBrowser, general } from '../state/store.js';
 import { disposeGroup } from '../ui/WindowAndSceneControls.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { containsFractional, CONTAINS_TOLERANCE } from '../ui/BackendPanel/asuGeometry.js';
-import {
-  fracToCartPoint, invert3x3, transpose3x3, multiplyMatVec,
-} from '../math/index.js';
+import { getCutPlaneMaskSign } from '../model/Plane.js';
+import { MAX_CUT_PLANES } from './MaterialStyles.js';
+import { fracToCartPoint, invert3x3, transpose3x3 } from '../math/index.js';
+import { setAsuHighlightRefresh } from './asuHighlightHook.js';
+
+/** Fired when the module drops a wedge by itself, so the panel can re-sync. */
+export const ASU_DROPPED_EVENT = 'crysviz:asu-dropped';
 
 /** Wedge face opacity when `general.asuOpacity` is unset or nonsense. */
 const DEFAULT_OPACITY = 0.22;
@@ -54,6 +58,9 @@ const HALO_SCALE = 1.22;
 /** Halo opacity. Near-opaque: it is a ring, not a veil. */
 const HALO_OPACITY = 0.85;
 
+/** Atoms drawn fainter than this (focus regions, per-atom alpha) get no ring. */
+const HALO_MIN_ATOM_OPACITY = 0.5;
+
 /** Fallback if a theme somehow supplies no --asu-color. */
 const FALLBACK_COLOR = '#a05cd6';
 
@@ -64,10 +71,10 @@ const LATTICE_TOL = 1e-6;
 // by every rebuild, so the wedge survives the redraws that structure edits,
 // theme switches and camera-driven refreshes trigger.
 //
-// `structure` is the structure the wedge was computed FOR. Holding the
-// reference is what makes staleness detectable: a wedge belongs to one
-// structure's space group, and switching structures (or frames) must drop it
-// rather than leave a wedge from the previous cell floating in the scene.
+// `structure` is the structure the wedge was computed FOR, and `cell` its
+// lattice at that moment. Switching structures drops the wedge. Trajectory
+// frames, EOS points and lattice edits reuse the same object, so a changed
+// `cell` is what catches those (see reconcileCell).
 let wedge = null;
 
 // The hull, kept to hand so a slider drag can retint or re-alpha it without
@@ -260,11 +267,31 @@ export function showAsymmetricUnit({ polyhedron, halfSpaces, lattice, structure 
     hi,
     lattice: lattice.map((row) => [...row]),
     structure,
+    cell: structure?.lattice?.map((row) => [...row]) ?? null,
     // Answered once, at the moment the user asked for the wedge, against the
     // cell that was on screen then.
     showCellBox: !latticesMatch(lattice, structure?.lattice),
   };
   updateAsymmetricUnit();
+}
+
+// The Wyckoff editor strains the cell without breaking the symmetry, so the
+// fractional wedge follows the new lattice there. Any other cell change
+// (variable-cell frame, supercell, vacuum, transform) invalidates it.
+function reconcileCell() {
+  const lattice = wedge?.structure?.lattice;
+  if (!wedge || latticesMatch(wedge.cell, lattice)) return;
+  if (!wedge.showCellBox && wedge.structure.symmetry?.mode === 'wyckoff') {
+    wedge.lattice = lattice.map((row) => [...row]);
+    wedge.cell = lattice.map((row) => [...row]);
+  } else {
+    wedge = null;
+  }
+}
+
+/** Rebuild the wedge only if its cell has changed. Cheap enough per frame. */
+export function refreshAsymmetricUnitIfStale() {
+  if (wedge && !latticesMatch(wedge.cell, wedge.structure?.lattice)) updateAsymmetricUnit();
 }
 
 /** Stop drawing the wedge. */
@@ -407,6 +434,7 @@ function ensureHalo(capacity) {
  * thousands of atoms costs well under a millisecond.
  */
 export function updateAsuAtomHighlight() {
+  if (highlightAtoms) refreshAsymmetricUnitIfStale();
   if (!highlightAtoms || !isAsymmetricUnitVisible()) {
     clearHalo();
     return;
@@ -417,13 +445,16 @@ export function updateAsuAtomHighlight() {
   // and each is ringed where it stands.
   const cart = structure?.periodic?.visibleWrapped?.cart;
   const atomsMesh = groups.atomsMesh;
-  if (!cart?.length || !atomsMesh || !app?.scene) {
+  if (!cart?.length || !atomsMesh || atomsMesh.visible === false || !app?.scene) {
     clearHalo();
     return;
   }
 
-  const toFractional = invert3x3(transpose3x3(wedge.lattice));
+  const [m0, m1, m2] = invert3x3(transpose3x3(wedge.lattice));
   const source = atomsMesh.instanceMatrix.array;
+  const opacity = atomsMesh.geometry?.attributes?.instanceOpacity;
+  const immune = atomsMesh.geometry?.attributes?.instanceCutPlaneImmune;
+  const cutPlanes = activeCutPlanes();
   const srcIndex = structure.periodic.visibleWrapped.srcIndex;
   const mesh = ensureHalo(cart.length);
   const target = mesh.instanceMatrix.array;
@@ -439,7 +470,13 @@ export function updateAsuAtomHighlight() {
 
   for (let i = 0; i < cart.length; i += 1) {
     const point = cart[i];
-    const frac = multiplyMatVec(toFractional, point);
+    if (opacity && opacity.getX(i) < HALO_MIN_ATOM_OPACITY) continue;
+    if (cutPlanes.length && !(immune?.getX(i) >= 0.5) && isCutAway(point, cutPlanes)) continue;
+    const frac = [
+      m0[0] * point[0] + m0[1] * point[1] + m0[2] * point[2],
+      m1[0] * point[0] + m1[1] * point[1] + m1[2] * point[2],
+      m2[0] * point[0] + m2[1] * point[1] + m2[2] * point[2],
+    ];
 
     // Only the translations that could possibly land this atom in the wedge:
     // t must satisfy lo <= frac + t <= hi on every axis.
@@ -500,6 +537,32 @@ export function updateAsuAtomHighlight() {
   inWedgeAtoms = distinct;
 }
 
+// Same test the atom shader uses to discard a cut-away atom, so a ring never
+// outlives the atom it surrounds.
+function activeCutPlanes() {
+  const planes = [];
+  const enabled = (general.atomCutPlanes || []).filter((plane) => plane?.enabled);
+  for (const plane of enabled.slice(0, MAX_CUT_PLANES)) {
+    const sign = getCutPlaneMaskSign(plane.side);
+    if (!sign) continue;
+    const n = [Number(plane.x) || 0, Number(plane.y) || 0, Number(plane.z) || 0];
+    const length = Math.hypot(n[0], n[1], n[2]);
+    planes.push({
+      n: length < 1e-8 ? [1, 0, 0] : n.map((v) => v / length),
+      r: Number(plane.r) || 0,
+      sign,
+    });
+  }
+  return planes;
+}
+
+function isCutAway(point, planes) {
+  return planes.some(({ n, r, sign }) =>
+    (point[0] * n[0] + point[1] * n[1] + point[2] * n[2] - r) * sign > 0);
+}
+
+setAsuHighlightRefresh(updateAsuAtomHighlight);
+
 /**
  * Rebuild the wedge group from the stored state. Called from
  * updateVisualization (so the wedge survives every redraw) and on theme change
@@ -513,7 +576,10 @@ export function updateAsymmetricUnit() {
   // A wedge describes one structure's space group in one cell. Once the
   // selection has moved on it is not "out of date", it is wrong — so it goes,
   // rather than being redrawn against a cell it was never computed for.
+  const hadWedge = !!wedge;
   if (wedge && wedge.structure !== fileBrowser.selectedStructure) wedge = null;
+  reconcileCell();
+  if (hadWedge && !wedge) document.dispatchEvent(new CustomEvent(ASU_DROPPED_EVENT));
   if (!wedge || !app?.scene) {
     clearHalo();
     return;

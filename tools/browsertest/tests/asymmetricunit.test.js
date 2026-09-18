@@ -582,6 +582,118 @@ async function waitForWedge(page, wanted) {
     !afterHide.mesh && afterHide.counts.instances === 0 && afterHide.stillOn,
     JSON.stringify(afterHide));
 
+  // --- the rings only go where an atom is actually drawn ----------------
+  await H.clickById(page, 'showAsuBtn');
+  await waitForWedge(page, true);
+  const ringGates = await page.evaluate(async () => {
+    const { groups, general } = await import('./state/store.js');
+    const render = await import('./render/index.js');
+    const { CutModes } = await import('./model/Plane.js');
+    const count = () => render.asuAtomsInside().instances;
+    const out = { base: count() };
+
+    general.atomCutPlanes = [{ enabled: true, x: 1, y: 0, z: 0, r: -1000, side: CutModes.ALONGN }];
+    render.updateAtomCutPlaneState();
+    out.cut = count();
+    general.atomCutPlanes = [];
+    render.updateAtomCutPlaneState();
+    out.uncut = count();
+
+    const showAtoms = document.getElementById('showAtoms');
+    showAtoms.checked = false;
+    showAtoms.dispatchEvent(new Event('change'));
+    out.atomsOff = count();
+    showAtoms.checked = true;
+    showAtoms.dispatchEvent(new Event('change'));
+    out.atomsOn = count();
+
+    const opacity = groups.atomsMesh.geometry.attributes.instanceOpacity;
+    const saved = Array.from(opacity.array);
+    opacity.array.fill(0.1);
+    render.updateAsuAtomHighlight();
+    out.faded = count();
+    opacity.array.set(saved);
+    render.updateAsuAtomHighlight();
+    out.unfaded = count();
+    return out;
+  });
+  H.check('cut-away atoms lose their rings, and get them back',
+    ringGates.base > 0 && ringGates.cut === 0 && ringGates.uncut === ringGates.base,
+    JSON.stringify(ringGates));
+  H.check('"Show Atoms" off takes the rings with it',
+    ringGates.atomsOff === 0 && ringGates.atomsOn === ringGates.base, JSON.stringify(ringGates));
+  H.check('faded atoms (focus regions, per-atom alpha) are not ringed',
+    ringGates.faded === 0 && ringGates.unfaded === ringGates.base, JSON.stringify(ringGates));
+
+  // --- a changed cell: followed under the Wyckoff lock, dropped otherwise --
+  const strained = await page.evaluate(async () => {
+    const { groups, fileBrowser } = await import('./state/store.js');
+    const render = await import('./render/index.js');
+    const sym = await import('./ui/SymmetryEditModule.js');
+    const structure = fileBrowser.selectedStructure;
+    const hullExtent = () => {
+      let max = 0;
+      groups.asuGroup?.traverse((o) => {
+        if (o.material?.type !== 'MeshStandardMaterial') return;
+        o.geometry.computeBoundingBox();
+        max = o.geometry.boundingBox.max.length();
+      });
+      return max;
+    };
+    await sym.activateWyckoffMode(structure);
+    const before = hullExtent();
+    sym.applyWyckoffLattice(structure.lattice.map((row) => row.map((v) => v * 1.1)));
+    const after = hullExtent();
+    const visible = render.isAsymmetricUnitVisible();
+    sym.deactivateWyckoffMode(structure);
+    return { ratio: after / before, visible };
+  });
+  H.check('a Wyckoff-locked strain keeps the wedge and scales it with the cell',
+    strained.visible && Math.abs(strained.ratio - 1.1) < 1e-3, JSON.stringify(strained));
+
+  const deformed = await page.evaluate(async () => {
+    const { groups, fileBrowser } = await import('./state/store.js');
+    const render = await import('./render/index.js');
+    const structure = fileBrowser.selectedStructure;
+    const saved = structure.lattice.map((row) => [...row]);
+    // In place, as a variable-cell trajectory frame or an EOS point does,
+    // and through the fast-frame hook rather than updateVisualization.
+    structure.lattice = saved.map((row, i) => row.map((v) => (i === 0 ? v * 1.05 : v)));
+    render.refreshAsymmetricUnitIfStale();
+    const out = {
+      group: !!groups.asuGroup,
+      halo: !!groups.asuHaloMesh,
+      visible: render.isAsymmetricUnitVisible(),
+      label: document.getElementById('showAsuBtn').textContent.trim(),
+      boxHidden: document.getElementById('asuResult').hidden,
+    };
+    structure.lattice = saved;
+    const cv = await import('./core/crystal-viewer.js');
+    cv.updateVisualization({});
+    return out;
+  });
+  H.check('any other change of cell drops the wedge and its rings',
+    !deformed.group && !deformed.halo && !deformed.visible, JSON.stringify(deformed));
+  H.check('and the panel goes back to offering "Show"',
+    deformed.label === 'Show Asymmetric Unit' && deformed.boxHidden, JSON.stringify(deformed));
+
+  // --- dropped by a selection change the panel did not make --------------
+  await H.clickById(page, 'showAsuBtn');
+  await waitForWedge(page, true);
+  await H.clickById(page, 'getPrimBtn');
+  await waitForWedge(page, false);
+  const afterPrim = await page.evaluate(() => ({
+    label: document.getElementById('showAsuBtn').textContent.trim(),
+    boxHidden: document.getElementById('asuResult').hidden,
+  }));
+  H.check('Prim. Cell selects a new row, and the button follows the dropped wedge',
+    afterPrim.label === 'Show Asymmetric Unit' && afterPrim.boxHidden, JSON.stringify(afterPrim));
+  await page.evaluate(async () => {
+    const render = await import('./render/index.js');
+    render.setAsuAtomHighlight(false);
+    document.getElementById('asuHighlightChk').checked = false;
+  });
+
   // --- every space-group setting, four invariants ------------------------
   const sweep = await page.evaluate(async () => {
     const geom = await import('./ui/BackendPanel/asuGeometry.js');

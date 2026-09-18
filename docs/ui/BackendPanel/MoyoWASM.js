@@ -18,7 +18,7 @@ import {
   showAsymmetricUnit, hideAsymmetricUnit, isAsymmetricUnitVisible,
   asymmetricUnitNeedsCellBox, latticesMatch, requestRender,
   refreshAsuAppearance, setAsuAtomHighlight, isAsuAtomHighlightOn,
-  asuAtomsInside,
+  asuAtomsInside, ASU_DROPPED_EVENT,
 } from '../../render/index.js';
 import { openSwatchColorPicker } from '../SwatchColorPicker.js';
 
@@ -74,6 +74,8 @@ export const PT_INVERTED = {
   "Og": 118
 };
 
+
+let asuDroppedListener = null;
 
 async function initMoyo() {
   const _wasmReady = await init(); // no-arg: moyo_wasm.js resolves the .wasm via import.meta.url
@@ -451,6 +453,12 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
       setStatus(`${atoms} atom${atoms === 1 ? '' : 's'} inside the wedge`
         + (instances > atoms ? ` (${instances} images ringed)` : ''));
     });
+
+    // A new selection or a changed cell drops the wedge from outside the
+    // panel; without this the button would still offer to hide it.
+    if (asuDroppedListener) document.removeEventListener(ASU_DROPPED_EVENT, asuDroppedListener);
+    asuDroppedListener = () => { if (asuBtn.isConnected) syncAsuButton(); };
+    document.addEventListener(ASU_DROPPED_EVENT, asuDroppedListener);
 
     syncAsuButton();
 }

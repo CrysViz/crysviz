@@ -8,7 +8,7 @@ import { updateForces } from './ForceModule.js';
 import { getActiveCutPlanes, isBondCutByPlanes, hideSingleBond } from './BondsFracUpdateModule.js';
 import { requestRender } from './AnimateModule.js';
 import { updateGroundPlane } from './GroundPlaneModule.js';
-import { updateAsuAtomHighlight } from './AsymmetricUnitModule.js';
+import { updateAsuAtomHighlight, refreshAsymmetricUnitIfStale } from './AsymmetricUnitModule.js';
 
 // ── Render fast path for MD / relax frames ────────────────────────────────────
 //
@@ -300,8 +300,8 @@ export function applyFrameFast(structure) {
   updateGroundPlane();
 
   // Same reason: which atoms fall inside the asymmetric-unit wedge changes as
-  // they move. The wedge itself is fixed, so only the highlight is refreshed,
-  // and it returns immediately when the toggle is off.
+  // they move. The wedge itself only changes if the cell does.
+  refreshAsymmetricUnitIfStale();
   updateAsuAtomHighlight();
 
   requestRender();

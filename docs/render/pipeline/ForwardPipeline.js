@@ -114,7 +114,8 @@ export class ForwardPipeline {
         // never occlude what it contains: no depth write, and drawn after the
         // opaque structure the way the isosurface is.
         material.transparent = opacity < 1;
-        material.depthWrite = false;
+        // Fully opaque, it is a solid and must depth-sort its own faces.
+        material.depthWrite = opacity >= 1;
         if (spec.mesh) spec.mesh.renderOrder = 1;
         break;
       case 'asuEdge':

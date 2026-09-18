@@ -19,6 +19,7 @@ import {
 import {setAtomColor}  from '../utils/ColorModule.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { getFocusOpacityForInstance, prepareFocusRegions } from './FocusRegionModule.js';
+import { refreshAsuHighlight } from './asuHighlightHook.js';
 
 
 // Module-scope scratch colour reused across the per-atom colour loop in updateAtoms
@@ -710,6 +711,7 @@ export function updateAtomCutPlaneState() {
     updateSingleAtomCutPlaneImmunity(i, atom?.cutPlaneImmune);
   }
   applyAtomCutPlaneUniforms(mesh.material);
+  refreshAsuHighlight();
 }
 
 function syncAtomMaterialTransparency(baseOpacity = 1.0) {

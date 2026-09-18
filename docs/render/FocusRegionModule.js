@@ -12,6 +12,7 @@ import { syncArrowTransparency } from './ArrowMaterial.js';
 import { applyFocusToPolyhedra } from './PolyhedraModule.js';
 import { applyFocusToChargeBadges } from './ChargeBadgeModule.js';
 import { applyFocusToHydrogenBonds } from './HydrogenBondModule.js';
+import { refreshAsuHighlight } from './asuHighlightHook.js';
 
 export const DEFAULT_FOCUS_REGION = Object.freeze({
   enabled: true,
@@ -386,6 +387,7 @@ export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
   applyFocusToField(structure);
   applyFocusToChargeBadges(structure);
   applyFocusToHydrogenBonds(structure);
+  refreshAsuHighlight();
   requestRender();
 }
 
