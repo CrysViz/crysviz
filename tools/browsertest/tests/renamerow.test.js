@@ -38,6 +38,7 @@ const rowByName = (name) => [...document.querySelectorAll('#objectTable tbody tr
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     const idx = [...row.parentElement.children].indexOf(row);
     row.querySelector('.ftd.icon.copy').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     const copyRow = row.nextElementSibling;
     const copyIdx = [...row.parentElement.children].indexOf(copyRow);
     return {

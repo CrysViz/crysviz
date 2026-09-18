@@ -11,7 +11,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const { firefox } = require('playwright-core');
+const { firefox, chromium } = require('playwright-core');
+// Firefox-on-Xvfb is the default (see README.md: the only browser whose WebGL
+// works in the usual agent sandbox). CRYSVIZ_BROWSER=chromium runs headless
+// Chromium instead — for hosts where Chromium is available (optionally at
+// CRYSVIZ_CHROMIUM=<executable>) but Playwright's Firefox cannot be fetched.
+// Software GL via ANGLE/SwiftShader so WebGL2 exists without a GPU. The pixel
+// assertions were tuned on Firefox/Mesa and may differ slightly here.
+const BROWSER = process.env.CRYSVIZ_BROWSER || 'firefox';
 const { PNG } = require('pngjs');
 
 const URL = process.env.CRYSVIZ_URL || 'http://localhost:8123/index.html';
@@ -35,7 +42,13 @@ async function launchApp({ navigate = true } = {}) {
   // headless FF has no WebGL. Stale modules are handled at the server
   // (tools/devserver.py sends Cache-Control: no-store), not with browser prefs
   // here — one mechanism, and it covers `make serve` in a real browser too.
-  const browser = await firefox.launch({ headless: false });
+  const browser = BROWSER === 'chromium'
+    ? await chromium.launch({
+      headless: true,
+      executablePath: process.env.CRYSVIZ_CHROMIUM || undefined,
+      args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
+    })
+    : await firefox.launch({ headless: false });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   // Pre-dismiss the ray/path-tracing performance-warning modal: shotCanvas is a
   // page screenshot (DOM overlays included), so the modal backdrop would dim

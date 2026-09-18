@@ -37,6 +37,45 @@ const H = require('../harness');
   H.check('fit distance covers the true (oblique) bounding radius',
     fit.dist >= fit.required, JSON.stringify(fit));
 
+  // Atoms are drawn as spheres, and periodic images sit on the cell faces/
+  // corners — getCellCenterAndDist()'s radius must cover the actually-drawn
+  // atom spheres, not just the cell-vertex bounding box, or the outermost
+  // atoms clip outside the viewport (this is what the embedded widget hit).
+  const atomFit = await page.evaluate(async () => {
+    const { fileBrowser, general } = await import('./state/store.js');
+    const { getCellCenterAndDist } = await import('./render/index.js');
+    const { getElementRadius } = await import('./defaults/radii_defaults.js');
+    const THREE = await import('./external/three/three.module.js');
+    // state/store.js declares atomSize:1.0; initApp then dials it down to the
+    // #atomSize slider's ~0.4 default, which happens to keep YBCO's actual
+    // packing (no atom sits exactly on a cell vertex) inside the old margin.
+    // Force the module's own declared default here so this check exercises
+    // the fix regardless of the live UI setting, then restore it.
+    const savedAtomSize = general.atomSize;
+    general.atomSize = 1.0;
+    const { center, dist } = getCellCenterAndDist();
+    const c3 = new THREE.Vector3(center.x, center.y, center.z);
+    const wrapped = fileBrowser.selectedStructure.periodic.visibleWrapped;
+    let trueRadius = 0;
+    for (let i = 0; i < wrapped.cart.length; i++) {
+      const p = new THREE.Vector3(...wrapped.cart[i]);
+      const r = getElementRadius(wrapped.elements[i]) * general.atomSize;
+      trueRadius = Math.max(trueRadius, p.distanceTo(c3) + r);
+    }
+    general.atomSize = savedAtomSize;
+    const view = document.getElementById('view');
+    const w = view?.clientWidth || window.innerWidth;
+    const h = view?.clientHeight || window.innerHeight;
+    const aspect = w / h;
+    const halfFovV = (45 / 2) * Math.PI / 180;
+    const halfFovH = Math.atan(Math.tan(halfFovV) * aspect);
+    const halfFov = Math.min(halfFovV, halfFovH);
+    const required = trueRadius / Math.sin(halfFov);
+    return { dist, trueRadius, required };
+  });
+  H.check('fit distance covers the true drawn-atom-sphere radius',
+    atomFit.dist >= atomFit.required, JSON.stringify(atomFit));
+
   // File-browser structure switch preserves rotation/zoom, only recenters.
   await page.evaluate(async () => {
     const { app } = await import('./state/store.js');

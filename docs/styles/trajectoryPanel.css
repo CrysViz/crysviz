@@ -155,6 +155,10 @@
     .trajOpt input[type=number] { width: 48px; }
     .trajOpt select:focus,
     .trajOpt input:focus { border-color: var(--ok); outline: none; }
+    /* The "Recenter each step" checkbox row: clickable label, checkbox sized
+       like the other controls rather than stretched by the flex row. */
+    .trajOptCheck { cursor: pointer; }
+    .trajOptCheck input[type=checkbox] { cursor: pointer; margin: 0; }
 
     /* ---- Resizable Plotly plot region (unified MD Monitor). Hidden by default
        via inline style until hasPlottableData() decides there's something to

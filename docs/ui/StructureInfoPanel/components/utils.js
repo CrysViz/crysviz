@@ -168,9 +168,13 @@ export function setCutPlaneImmunityForAtoms(atomIndices, immune) {
 export function applyToOtherTrajectoryFrames(structure, fn) {
   const trajContainer = structureShip.container[fileBrowser.selectedRowIndex];
   if (!trajContainer || trajContainer.structures.length < 2) return;
-  trajContainer.structures.forEach((frame) => {
-    if (frame !== structure) fn(frame);
-  });
+  // Through the container's frame seam: an eager container visits its
+  // structures exactly as the old forEach did, while a store-backed
+  // trajectory materialises each frame, applies `fn`, and keeps only the
+  // frames `fn` actually changed. May run asynchronously for a container
+  // whose frames come from disk — these are UI mutators with no return
+  // value, so fire-and-forget is safe.
+  trajContainer.forEachFrameMaterialized(fn, { skip: structure });
 }
 
 // Styling lives in styles/structureInfoPanel.css (.press-hold-popup and

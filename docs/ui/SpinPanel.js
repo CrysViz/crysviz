@@ -1,5 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
-import { updateSpins } from '../render/index.js';
+import { updateSpins, autoSpinScale } from '../render/index.js';
 import { fileBrowser, general } from '../state/store.js';
 import { Spin } from '../model/index.js'; // Update path
 import { createColorBar } from './ColorBarWidget.js';
@@ -124,8 +124,21 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   logLengthLabel.appendChild(logLengthCheckbox);
   logLengthLabel.appendChild(document.createTextNode("log length"));
 
+  // "Auto" sets Global Scaling so the longest (centered) arrow spans a little
+  // less than the nearest magnetic-atom neighbour distance — i.e. reaches just
+  // short of half that distance on each side (see autoScaleBtn handler).
+  const autoScaleBtn = document.createElement("button");
+  autoScaleBtn.type = "button";
+  autoScaleBtn.textContent = "Auto";
+  autoScaleBtn.id = "spinAutoScaleBtn";
+  autoScaleBtn.className = "file-action-btn cv-auto-range-btn";
+  autoScaleBtn.title = "Set the length scale so the longest spin arrow, "
+    + "centered on its atom, spans a little less than the distance to the "
+    + "nearest neighbour of a magnetic atom.";
+
   lengthTopRow.appendChild(lengthLabel);
   lengthTopRow.appendChild(logLengthLabel);
+  lengthTopRow.appendChild(autoScaleBtn);
   lengthWrapper.appendChild(lengthTopRow);
 
   const lengthBottomRow = document.createElement("div");
@@ -169,6 +182,58 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   sizeWrapper.appendChild(sizeValue);
   sizeWrapper.appendChild(sizeSlider);
   content.appendChild(sizeWrapper);
+
+  // --- Arrowhead length slider ---
+  const tipWrapper = document.createElement("div");
+  tipWrapper.className = "cv-force-row";
+  const tipLabel = document.createElement("label");
+  tipLabel.textContent = "Arrowhead Length: ";
+  const tipValue = document.createElement("span");
+  tipValue.className = "cv-force-value";
+  tipValue.textContent = (general.spinTipLength ?? 0.4).toFixed(2);
+  const tipSlider = /** @type {any} */ (document.createElement("input"));
+  tipSlider.id = "spinTipLengthSlider";
+  tipSlider.type = "range";
+  tipSlider.min = 0.1;
+  tipSlider.max = 1.5;
+  tipSlider.step = 0.05;
+  tipSlider.value = general.spinTipLength ?? 0.4;
+  tipWrapper.appendChild(tipLabel);
+  tipWrapper.appendChild(tipValue);
+  tipWrapper.appendChild(tipSlider);
+  content.appendChild(tipWrapper);
+  tipSlider.addEventListener("input", () => {
+    const val = parseFloat(tipSlider.value);
+    tipValue.textContent = val.toFixed(2);
+    general.spinTipLength = val;
+    if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+  });
+
+  // --- Show spins on periodic copies -----------------------------------
+  const copiesWrapper = document.createElement("div");
+  copiesWrapper.className = "cv-force-row";
+  const copiesLabel = document.createElement("label");
+  copiesLabel.className = "cv-force-check";
+  const copiesCheckbox = document.createElement("input");
+  copiesCheckbox.type = "checkbox";
+  copiesCheckbox.id = "spinShowCopiesCheckbox";
+  copiesCheckbox.checked = general.showSpinsOnCopies === true;
+  copiesLabel.appendChild(copiesCheckbox);
+  copiesLabel.appendChild(document.createTextNode("Show spins on periodic copies"));
+  // (i) affordance: same title-tooltip pattern as the SAXIS input above.
+  const copiesInfo = document.createElement("span");
+  copiesInfo.className = "cv-info-marker";
+  copiesInfo.textContent = "\u24D8"; // circled i
+  copiesInfo.title = "Periodic copies are only guaranteed correct when the cell "
+    + "is a magnetic unit cell. Spins inscribed onto a non-magnetic cell may "
+    + "differ between equivalent sites.";
+  copiesLabel.appendChild(copiesInfo);
+  copiesWrapper.appendChild(copiesLabel);
+  content.appendChild(copiesWrapper);
+  copiesCheckbox.addEventListener("change", () => {
+    general.showSpinsOnCopies = copiesCheckbox.checked;
+    if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+  });
 
   // --- Spin Reference Frame + Visual Rotation ---------------------------
   // A moment is a Cartesian vector, but VASP reports it in the SAXIS-local
@@ -648,6 +713,21 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
     lengthValue.textContent = val.toFixed(2);
     general.spinScale = val;
     if (general.spinsActive) updateSpins(val, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+  });
+
+  // Auto length-scale (shared render/SpinModule.autoSpinScale — same result the
+  // widget applies automatically). Uses the live source (file or manual spins).
+  autoScaleBtn.addEventListener("click", () => {
+    const useManualSpins = sourceSelect.value === "manual";
+    const spins = useManualSpins ? parseManualSpins() : (fileBrowser.selectedStructure?.spins ?? []);
+    const scale = autoSpinScale(fileBrowser.selectedStructure, spins, { manual: useManualSpins });
+    if (scale == null || !(scale > 0)) return; // no spins / all-zero -> no-op
+    const lo = parseFloat(lengthSlider.min), hi = parseFloat(lengthSlider.max);
+    const clamped = Math.min(Math.max(scale, lo), hi);
+    general.spinScale = clamped;
+    lengthSlider.value = String(clamped);
+    lengthValue.textContent = clamped.toFixed(2);
+    if (general.spinsActive) updateSpins(clamped, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
   });
 
   sizeSlider.addEventListener("input", () => {

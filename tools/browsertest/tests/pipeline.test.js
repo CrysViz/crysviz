@@ -296,7 +296,7 @@ const H = require('../harness');
   H.check('Reset rendering settings restores every default (pipeline back to depthpeel)',
     reset.pipeline === 'depthpeel' && reset.style === 'metallic'
       && Math.abs(reset.reflectivity - 0.15) < 1e-9 && Math.abs(reset.ambient - 0.3) < 1e-9
-      && reset.ground === false && reset.tiled === true && reset.peel === 5
+      && reset.ground === false && reset.tiled === true && reset.peel === 10
       && reset.preview === true && reset.previewToggleChecked
       && Math.abs(reset.hull - 0.025) < 1e-9
       && reset.menuValue === 'depthpeel' && reset.styleRowVisible,

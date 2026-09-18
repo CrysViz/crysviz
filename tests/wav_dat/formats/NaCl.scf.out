@@ -1,0 +1,21 @@
+
+     Program PWSCF v.7.0 starts on 28Mar2025 at  8: 6:43
+
+     bravais-lattice index     =            2
+     lattice parameter (alat)  =      10.6600  a.u.
+     number of atoms/cell      =            2
+
+     celldm(1)=  10.660000  celldm(2)=   0.000000  celldm(3)=   0.000000
+
+     crystal axes: (cart. coord. in units of alat)
+               a(1) = (  -0.500000   0.000000   0.500000 )  
+               a(2) = (   0.000000   0.500000   0.500000 )  
+               a(3) = (  -0.500000   0.500000   0.000000 )  
+
+     site n.     atom                  positions (alat units)
+         1           Na  tau(   1) = (   0.0000000   0.0000000   0.0000000  )
+         2           Cl  tau(   2) = (   0.5000000   0.5000000   0.5000000  )
+
+     End of self-consistent calculation
+
+!    total energy              =     -10.00000000 Ry

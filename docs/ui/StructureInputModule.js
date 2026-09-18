@@ -3,8 +3,10 @@ import { StructureContainer } from '../model/index.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import { FileSource } from '../io/FileSource.js';
 const tableBody = document.querySelector("#objectTable tbody");
-import {fileBrowser,structureShip} from '../state/store.js';
+import {fileBrowser,structureShip,general} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
+import { restoreAtomColors } from '../utils/ColorModule.js';
+import { restoreFocusRegions } from '../render/FocusRegionModule.js';
 import {
   transpose3x3,
   invert3x3,
@@ -32,19 +34,19 @@ export {
 
 
 
-export  function parsePOSCAR(content, fileName) {
+export  function parsePOSCAR(content, fileName, options = undefined) {
    console.log(content)
   const structure = readPOSCAR(content, fileName);
-  return initializeWithPOSCAR(structure, fileName);
+  return initializeWithPOSCAR(structure, fileName, options);
 }
 
-export function initializeWithPOSCAR(structure, fileName) {
+export function initializeWithPOSCAR(structure, fileName, options = undefined) {
   const container = new StructureContainer({
     fileName: fileName,
     structures: [structure],
   });
 
-  return initializeUIOnLoad(container);
+  return initializeUIOnLoad(container, options);
 }
 
 
@@ -79,7 +81,21 @@ export function isLikelyOUTCARContent(content) {
   return false;
 }
 
-export function initializeUIOnLoad(structureContainer) {
+/**
+ * Register a loaded container with the file browser and select it — every
+ * load path funnels through here.
+ * @param {any} structureContainer
+ * @param {{ restoreStoredPrefs?: boolean }} [options] restoreStoredPrefs
+ *   (default: general.restoreStoredPrefs, true in the full app) re-applies
+ *   the per-structure preferences saved for this same file in an earlier
+ *   session — per-atom user colours (utils/ColorModule.js) and focus regions
+ *   (render/FocusRegionModule.js), both stored by structure content in
+ *   state/structurePrefs.js. A share-URL / .crysviz load passes false: that
+ *   state is a complete snapshot and must not have stored preferences mixed
+ *   in underneath it. Widget mode flips the store default to false at boot
+ *   (host/early.js) unless the embed URL carries `prefs=1`.
+ */
+export function initializeUIOnLoad(structureContainer, { restoreStoredPrefs = general.restoreStoredPrefs } = {}) {
   console.log(structureContainer);
   const fileName = structureContainer.fileName;
   const structures = structureContainer.structures;
@@ -90,8 +106,16 @@ export function initializeUIOnLoad(structureContainer) {
   tableBody.appendChild(row);
   fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
 
+  // Colours go on BEFORE the row is selected (and rendered) below, so the
+  // first rebuild already paints them.
+  if (restoreStoredPrefs) restoreAtomColors(structureContainer);
+
   structureShip.container.push(structureContainer);
   selectLastAddedRow();
+
+  // Focus regions live on the displayed frame, so they go on once it exists;
+  // restoreFocusRegions repaints the per-instance opacity itself (cheap).
+  if (restoreStoredPrefs) restoreFocusRegions(structureContainer, fileBrowser.selectedStructure);
   return structureContainer;
 }
 
@@ -269,16 +293,33 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   //      by ui/SavePanel.js) ----
 
   if (downloadButton && downloadMenu) {
+    // Portal the menu to <body> and pin it under the button (position:fixed).
+    // Left in the Files dock panel it can't escape that panel's stacking
+    // context, so sibling dock panels painted over its lower entries.
+    const openDownloadMenu = () => {
+      if (downloadMenu.parentElement !== document.body) document.body.appendChild(downloadMenu);
+      const r = downloadButton.getBoundingClientRect();
+      downloadMenu.style.position = 'fixed';
+      downloadMenu.style.top = `${Math.round(r.bottom + 4)}px`;
+      downloadMenu.style.left = 'auto';
+      downloadMenu.style.right = `${Math.round(window.innerWidth - r.right)}px`;
+      downloadMenu.hidden = false;
+    };
+    const closeDownloadMenu = () => { downloadMenu.hidden = true; };
+
     downloadButton.addEventListener('click', (e) => {
       e.stopPropagation();
-      downloadMenu.hidden = !downloadMenu.hidden;
+      if (downloadMenu.hidden) openDownloadMenu(); else closeDownloadMenu();
     });
-    downloadMenu.addEventListener('click', () => { downloadMenu.hidden = true; });
+    downloadMenu.addEventListener('click', closeDownloadMenu);
     document.addEventListener('click', (e) => {
-      if (!downloadMenu.hidden && !downloadButton.contains(/** @type {Node} */ (e.target))) {
-        downloadMenu.hidden = true;
+      const target = /** @type {Node} */ (e.target);
+      if (!downloadMenu.hidden && !downloadButton.contains(target) && !downloadMenu.contains(target)) {
+        closeDownloadMenu();
       }
     });
+    // A fixed-position menu can't track the button — close it if the layout moves.
+    window.addEventListener('resize', closeDownloadMenu);
   }
 
   // ---- Drag & drop: the Files window and the 3D view are drop targets ----

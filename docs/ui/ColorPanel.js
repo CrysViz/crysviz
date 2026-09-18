@@ -412,7 +412,7 @@ export function addColorPanel(target = "colorContainer") {
   const depthPeelLabel = createElement("label", { for: "depthPeelLayersSlider" }, {},
     `Peel layers: ${general.depthPeelLayers}`);
   const depthPeelSlider = createElement("input", {
-    type: "range", id: "depthPeelLayersSlider", min: "1", max: "10", step: "1",
+    type: "range", id: "depthPeelLayersSlider", min: "1", max: "50", step: "1",
     value: String(general.depthPeelLayers),
   });
   depthPeelSlider.addEventListener("input", () => {

@@ -1,5 +1,5 @@
 import { fileBrowser, groups, general, mode } from '../../../state/store.js';
-import { colorHexToCss, getAtomColor, hexToRgba, setAtomColor, createPieDot, updatePieDot } from '../../../utils/ColorModule.js';
+import { colorHexToCss, getAtomColor, hexToRgba, setAtomColor, createPieDot, updatePieDot, saveAtomColors, scheduleAtomColorSave } from '../../../utils/ColorModule.js';
 import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import {
@@ -462,6 +462,10 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
           updateSingleAtomColor(linkedAtomIndex, imgIndex, structure.elements[linkedAtomIndex], hex, hex);
         });
       });
+      // Keep the overrides for the next session (debounced — the picker
+      // fires on every pointer move). Per-image copies above are styles,
+      // not atom colours, and are not persisted.
+      scheduleAtomColorSave(structure);
     }
     groups.atomsMesh.instanceColor.needsUpdate = true;
     if (groups.bondsMesh) {
@@ -1050,6 +1054,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     }
 
     resetLinkedAtomsColorData(structure, currentMode);
+    saveAtomColors(structure); // drops the cleared overrides from storage too
 
     linkedAtomIndices.forEach((linkedAtomIndex) => {
       const atom = structure.atoms[linkedAtomIndex];

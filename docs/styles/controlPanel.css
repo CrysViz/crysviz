@@ -683,17 +683,27 @@ font-size: var(--fs-xl);
   background: var(--chrome-tint-3);
 }
 
-/* Centered calculate button row */
+/* Centered row of atom-derived plane buttons (create / calculate), kept on one
+   line: the pair reads as a matched set, so they share the row width evenly
+   instead of wrapping when the panel is narrow. */
 .planes-center-row {
   display: flex;
   justify-content: center;
+  gap: var(--sp-2);
   margin-bottom: var(--sp-3-5);
 }
 
+/* Both labels are broken onto two lines (an explicit <br> before "selection")
+   so the pair stays on one row at panel width — file-action-btn's own
+   white-space: nowrap would otherwise push the longer label past its border. */
 .planes-calc-btn {
-  width: auto;
-  padding: var(--sp-2) var(--sp-5);
+  flex: 1 1 0;
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-2);
   font-size: var(--fs-sm);
+  white-space: normal;
+  text-align: center;
+  line-height: 1.25;
 }
 
 .planes-calc-btn:disabled {
@@ -798,12 +808,19 @@ font-size: var(--fs-xl);
   box-sizing: border-box;
 }
 
-/* Cut mode row */
+/* Cut mode sub-section — separated from the plane parameter inputs above by
+   the same rule the Plane Parameters / Field sections are separated by, since
+   it was reading as just another parameter row. */
+.planes-cut-section {
+  margin-top: var(--sp-3-5);
+  padding-top: var(--sp-3-5);
+  border-top: 1px solid var(--line-1);
+}
+
 .planes-cut-row {
   display: flex;
   align-items: center;
   gap: var(--sp-3-5);
-  margin-top: var(--sp-3);
 }
 
 .planes-cut-label {

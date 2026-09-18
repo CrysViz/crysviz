@@ -11,8 +11,14 @@ export const FONT_SCALE_DEFAULT = 1;
 
 /** Read the persisted scale (falls back to 1 if unset/invalid). */
 export function getFontScale() {
-  const raw = parseFloat(localStorage.getItem(LS_KEY));
-  return Number.isFinite(raw) && raw > 0 ? raw : FONT_SCALE_DEFAULT;
+  try {
+    const raw = parseFloat(localStorage.getItem(LS_KEY));
+    return Number.isFinite(raw) && raw > 0 ? raw : FONT_SCALE_DEFAULT;
+  } catch {
+    // Opaque-origin iframe (sandbox without allow-same-origin): any localStorage
+    // access throws SecurityError. Fall back to the default rather than kill boot.
+    return FONT_SCALE_DEFAULT;
+  }
 }
 
 /** Apply a scale to the document (does not persist). */

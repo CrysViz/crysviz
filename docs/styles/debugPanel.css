@@ -1,0 +1,145 @@
+/* Debug window (ui/DebugPanel.js) — only registered with ?debug. Reuses the
+   trajectory player's chrome (trajectoryPanel.css: .panelBody, .trajTransport,
+   .trajBtn, .trajOpt, .trajPlot) so the two read as one instrument; the rules
+   here are the additions: the recording toggle, the tape-counter readout row,
+   the plot titles and the per-structure table. Tokens only. */
+
+.dbgBody {
+  gap: var(--sp-3);
+}
+
+/* Transport: record toggle is the primary action (round accent like Play);
+   text buttons are the square trajBtn with room for a word. */
+.dbgTransport {
+  flex-wrap: wrap;
+}
+.dbgRecordBtn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: var(--fs-lg);
+}
+.dbgRecordBtn.is-recording {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--on-accent);
+  box-shadow: 0 0 0 4px rgb(var(--danger-rgb) / 0.12);
+}
+.dbgRecordBtn.is-recording:hover { background: var(--danger); border-color: var(--danger); }
+.dbgTextBtn {
+  width: auto;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.dbgSpacer { flex: 1 1 auto; }
+.dbgMarkLabel {
+  flex: 0 1 140px;
+  min-width: 70px;
+  height: 28px;
+  padding: 0 var(--sp-2);
+  box-sizing: border-box;
+  background: var(--chrome-2);
+  color: var(--ink-5);
+  border: 1px solid var(--chrome-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+.dbgMarkLabel:focus { border-color: var(--ok); outline: none; }
+
+/* Readout: the frame counter's tape style, one item per figure. */
+.dbgReadout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--fs-md);
+  white-space: nowrap;
+}
+.dbgStat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+}
+.dbgStatLabel {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--ink-1);
+}
+.dbgStatValue { color: var(--ink-5); font-weight: var(--fw-bold); }
+.dbgStatUnit { color: var(--ink-1); font-size: var(--fs-sm); }
+
+/* Plot cards: the trajectory plot's own chrome; a small tracked title above
+   each card since the window holds two. */
+.dbgPlots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.dbgPlotTitle {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: var(--ink-1);
+  padding-left: 2px;
+}
+.dbgPlotHost { width: 100%; }
+
+/* Per-structure table: compact mono numbers, wraps horizontally in a scroll
+   box rather than widening the window. */
+.dbgTableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--chrome-2);
+  border-radius: var(--radius-md);
+  background: var(--chrome-1);
+}
+.dbgTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-4);
+}
+.dbgTable th {
+  text-align: right;
+  padding: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink-1);
+  border-bottom: 1px solid var(--chrome-3);
+  white-space: nowrap;
+}
+.dbgTable th:first-child { text-align: left; }
+.dbgTable td {
+  padding: var(--sp-1) var(--sp-2);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--chrome-2);
+}
+.dbgTable tr:last-child td { border-bottom: none; }
+.dbgTable .dbgNum { text-align: right; }
+.dbgTable .dbgName {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ink-5);
+}
+.dbgTable .dbgTruncated { color: var(--warn); }
+.dbgTable .dbgGrowing { color: var(--warn); font-weight: var(--fw-bold); }
+.dbgSwatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}

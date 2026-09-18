@@ -23,7 +23,6 @@ from crysviz.server import CrysVizServer
 
 class PayloadTests(unittest.TestCase):
     def test_import_surface_and_snapshot(self):
-        self.assertEqual(crysviz.__version__, "0.1.0")
         self.assertIs(crysviz.ViewerEvent, crysviz._viewer.ViewerEvent)
         self.assertNotIn("webview", sys.modules)
         original = bytearray(b"input")

@@ -5,7 +5,7 @@ import * as THREE from '../external/three/three.module.js';
 
 export class Spin extends ColoredObject {
   /** @param {{vector?:any, rawVector?:any, scaling?:any, color?:any, atomIndex?:any, element?:any, position?:any}} [opts] */
-  constructor({ vector = [], rawVector = null, scaling = null, color = [], atomIndex = null, element = null, position = null } = {}) {
+  constructor({ vector = [], rawVector = null, scaling = null, color = null, atomIndex = null, element = null, position = null } = {}) {
         const colorObj = color ?
       (color instanceof THREE.Color ? color : new THREE.Color(/** @type {any} */ (color))) :
       new THREE.Color("#008080");
@@ -36,10 +36,10 @@ export class Spin extends ColoredObject {
     this.hidden = false;
     // Store original values (immutable). color is colorObj (the resolved
     // THREE.Color), not the raw constructor param — that param defaults to
-    // [] (an empty array, not a color), which reset() below would otherwise
-    // hand back as this.color, breaking anything expecting a THREE.Color
-    // (getHexString(), instance-buffer .r/.g/.b reads) until the next
-    // colormap pass overwrote it.
+    // null (not a color), which reset() below would otherwise hand back as
+    // this.color, breaking anything expecting a THREE.Color (getHexString(),
+    // instance-buffer .r/.g/.b reads) until the next colormap pass
+    // overwrote it.
     this.original = Object.freeze({
       vector: [...vector],
       rawVector: [...this.rawVector],

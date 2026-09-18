@@ -2,12 +2,14 @@ import * as THREE from '../external/three/three.module.js';
 import { app, fileBrowser, groups, general } from '../state/store.js';
 import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
 import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
+import { requestRender } from './AnimateModule.js';
+import { applyFocusToArrows } from './FocusRegionModule.js';
 
 
 
 const SHAFT_SEGS = 20;
 const TIP_SEGS = 20;
-const TIP_LENGTH = 0.8;
+const TIP_LENGTH = 0.8; // legacy arrowhead length; the general.spinTipLength default is half this
 const TIP_RADIUS = 0.3;
 const UP = new THREE.Vector3(0, 1, 0);
 const LOG_EPS = 1e-6;
@@ -20,6 +22,11 @@ const LOG_EPS = 1e-6;
 // so it borrows ForceModule.js's own range for a consistent look.
 const ARROW_LEN_MIN = 0.3;
 const ARROW_LEN_MAX = 2.0;
+// Minimum rendered magnitude for an arrow to be drawn at all. Shared by
+// updateSpins()'s draw cutoff and autoSpinScale()'s "magnetic" classification
+// so the auto scale sizes off exactly the arrows that actually appear — a spin
+// below this never draws, so it must not drag the scale down either.
+const SPIN_DRAW_THRESHOLD = 0.05;
 
 function disposeSpinMeshes() {
   for (const key of ['spinShaftMesh', 'spinTipMesh']) {
@@ -30,16 +37,18 @@ function disposeSpinMeshes() {
       groups[key] = null;
     }
   }
-  groups.spinsInstanceBySrcIndex = null;
+  groups.spinsInstancesBySrcIndex = null;
   groups.spinsArrowByInstance = null;
 }
 
 export function removeSpins() {
   disposeSpinMeshes();
+  requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
 }
 
 export function deleteSpins() {
   disposeSpinMeshes();
+  requestRender(); // see removeSpins() above
 }
 
 /**
@@ -107,12 +116,12 @@ export function computeSpinColor(vector, scaling, {
 
 export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpins = [], colorMap = "none") {
   const structure = fileBrowser.selectedStructure;
-  if (!structure?.periodic?.wrapped) { disposeSpinMeshes(); return; }
+  if (!structure?.periodic?.wrapped) { disposeSpinMeshes(); requestRender(); return; }
 
   const wrapped = structure.periodic.visibleWrapped;
   const shaftDiameter = general.spinRadius ?? 0.08;
   const tipDiameter = TIP_RADIUS * (shaftDiameter / 0.08);
-  const tipLength = TIP_LENGTH * (shaftDiameter / 0.08);
+  const tipLength = (general.spinTipLength ?? TIP_LENGTH / 2) * (shaftDiameter / 0.08);
 
   let spins;
   if (useManualSpins) {
@@ -121,7 +130,7 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     spins = structure.spins;
   }
 
-  if (!spins?.length) { disposeSpinMeshes(); return; }
+  if (!spins?.length) { disposeSpinMeshes(); requestRender(); return; }
 
   // Update spin colors based on colormap
   const minValue = general.spinMin || 0;
@@ -210,6 +219,21 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
 
   // --- Prepare arrows for rendering ---
   const arrows = [];
+  // ONE ARROW PER DRAWN ATOM IMAGE, not per source atom. The wrapped set is
+  // the atom images actually on screen — periodic face mirrors, the display
+  // boundary's extra cells (general.periodicBounds), PBC-bond ghosts,
+  // polyhedra-completing atoms — and every one of them is the same atom, so
+  // every one carries the same spin vector. Keeping only the first left every
+  // other copy of an atom bare next to its drawn sphere, and the arrows stopped
+  // following the boundary entirely once it widened past the unit cell.
+  //
+  // Dedupe by (source atom, rounded position) like render/ChargeBadgeModule.js
+  // does for its badges: near-coincident mirror copies of the same atom (a
+  // corner atom can mirror onto positions a fraction of an Angstrom apart)
+  // would otherwise stack two arrows in the same place, which reads as one
+  // arrow drawn too thick.
+  const seenAt = new Set();
+  // Primary-only mode (general.showSpinsOnCopies off): one arrow per source atom.
   const seen = new Set();
 
   // Get species visibility
@@ -220,10 +244,20 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     speciesVisibility[element] = /** @type {HTMLInputElement} */ (checkbox).checked;
   });
 
+  // With general.showSpinsOnCopies on, draw an arrow at EVERY wrapped image of
+  // an atom (same vector/colour); off (default), only the primary — the `seen`
+  // set skips the periodic copies. Widget mode forces it on for magnetic cells.
+  const showCopies = general.showSpinsOnCopies === true;
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    if (seen.has(srcIdx)) continue;
-    seen.add(srcIdx);
+    if (!showCopies) {
+      if (seen.has(srcIdx)) continue;
+      seen.add(srcIdx);
+    }
+    const c = wrapped.cart[i];
+    const posKey = `${srcIdx}:${c[0].toFixed(2)},${c[1].toFixed(2)},${c[2].toFixed(2)}`;
+    if (seenAt.has(posKey)) continue;
+    seenAt.add(posKey);
 
     const spin = useManualSpins ? spins.find(s => s.atomIndex === srcIdx) : spins[srcIdx];
     if (!spin?.vector) continue;
@@ -234,7 +268,7 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
 
     const v = spin.vector;
     const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
-    if (mag < 0.05) continue;
+    if (mag < SPIN_DRAW_THRESHOLD) continue;
 
     // Linear mode: length directly proportional to magnitude (unchanged).
     // Log mode: same compressed-into-a-fixed-window shape ForceModule.js
@@ -259,7 +293,7 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
 
   if (!groups.spinShaftMesh || groups.spinShaftMesh.count !== count * 2) {
     disposeSpinMeshes();
-    if (count === 0) return;
+    if (count === 0) { requestRender(); return; }
 
     const shaftGeo = new THREE.CylinderGeometry(1, 1, 1, SHAFT_SEGS, 1);
     // Same PBR preset atoms/bonds use (render/MaterialStyles.js) — a
@@ -271,6 +305,16 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     groups.spinShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
     groups.spinShaftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     groups.spinShaftMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    // The mesh sits at the world origin and every instance is placed via
+    // setMatrixAt below, so three.js's per-instance auto bounding sphere (see
+    // InstancedMesh.computeBoundingSphere) is only ever computed once, lazily,
+    // the first time it's needed — later setMatrixAt calls (a rebuild that
+    // reuses this same mesh because the arrow count didn't change) never
+    // invalidate that cached sphere. A stale sphere from a previous
+    // arrangement culled the whole batch until camera motion produced a
+    // frustum that happened to still intersect it. Same fix/precedent as
+    // RayTracingPipeline.js's meshes.
+    groups.spinShaftMesh.frustumCulled = false;
     addArrowEmissiveAttributes(groups.spinShaftMesh, count * 2);
     app.scene.add(groups.spinShaftMesh);
 
@@ -280,23 +324,28 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     groups.spinTipMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
     groups.spinTipMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     groups.spinTipMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    groups.spinTipMesh.frustumCulled = false; // see spinShaftMesh above
     addArrowEmissiveAttributes(groups.spinTipMesh, count);
     app.scene.add(groups.spinTipMesh);
   }
 
-  // Which arrow-instance index (shaft i*2/i*2+1, tip i) belongs to which
+  // Which arrow-instance indices (shaft i*2/i*2+1, tip i) belong to which
   // atom (structure.atoms order) — SelectAndHighlightModule.js uses this to
-  // highlight a selected atom's own spin arrow along with the atom itself.
+  // highlight a selected atom's own spin arrows along with the atom itself.
+  // A LIST per atom, not a single index: one atom is drawn once per periodic
+  // image inside the display boundary and each image carries its own arrow, so
+  // selecting the atom has to light all of them.
   // AFTER the mesh-rebuild block above, not before: disposeSpinMeshes()
   // (called from inside it, on a rebuild) unconditionally nulls this out —
   // setting it earlier would just have it wiped again immediately.
-  const instanceBySrcIndex = new Map();
+  const instancesBySrcIndex = new Map();
   const arrowByInstance = new Map();
   arrows.forEach(({ srcIdx }, i) => {
-    instanceBySrcIndex.set(srcIdx, i);
+    const list = instancesBySrcIndex.get(srcIdx);
+    if (list) list.push(i); else instancesBySrcIndex.set(srcIdx, [i]);
     arrowByInstance.set(i, useManualSpins ? structure.spins[srcIdx] : spins[srcIdx]);
   });
-  groups.spinsInstanceBySrcIndex = instanceBySrcIndex;
+  groups.spinsInstancesBySrcIndex = instancesBySrcIndex;
   groups.spinsArrowByInstance = arrowByInstance;
   groups.spinShaftMesh.userData.arrowStylesByInstance = arrowByInstance;
 
@@ -364,4 +413,100 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
   groups.spinTipMesh.instanceColor.needsUpdate = true;
   groups.spinTipMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.spinTipMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+
+  // An InstancedMesh caches the bounding sphere the renderer's frustum test
+  // computes on its FIRST cull check, and three.js never invalidates it when
+  // setMatrixAt() moves instances (see Frustum.intersectsObject: it computes
+  // only while `boundingSphere === null`). The meshes above are only recreated
+  // when the arrow COUNT changes, so any redraw that keeps the count but moves
+  // the arrows — a trajectory frame, a display-boundary edit that shifts which
+  // periodic image an atom is drawn at, a manual spin re-emitted elsewhere —
+  // would otherwise keep culling against where the arrows USED to be. With a
+  // small arrow set (one manual spin) that stale sphere is small and far away,
+  // and the whole mesh vanishes as soon as the camera stops overlapping it:
+  // zooming in tightens the frustum and every arrow disappears at once.
+  // Nulling both defers the recompute to the next cull test, which is where
+  // three.js wants it.
+  groups.spinShaftMesh.boundingSphere = null;
+  groups.spinShaftMesh.boundingBox = null;
+  groups.spinTipMesh.boundingSphere = null;
+  groups.spinTipMesh.boundingBox = null;
+
+  // Fresh arrows: re-derive their focus-region opacity (the instanceOpacity
+  // attribute is reset to 1 on every mesh rebuild).
+  applyFocusToArrows(structure, 'spins');
+
+  requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
+}
+
+/**
+ * Auto length-scale for spin arrows: scale the LONGEST arrow to
+ *   d_target = 0.9 · min( d_nn(mag→non-mag), d_nn(mag→mag) )
+ * where d_nn are shortest nearest-neighbour distances over the WRAPPED
+ * cartesian positions (periodic copies in, so minimum-image neighbours count),
+ * and "magnetic" = |spin| ≥ SPIN_DRAW_THRESHOLD (the same cutoff updateSpins()
+ * draws by, so an arrow too short to render never shrinks the scale). Arrows
+ * render CENTERED on their atom (see updateSpins: shaftHalfLen = totalLen/2,
+ * assembly midpoint at the atom), so an arrow of length d_target extends only
+ * d_target/2 toward a neighbour. The non-touching cap for an ANTIPARALLEL
+ * magnetic pair is therefore the full separation d (each arrow reaches d/2 from
+ * its own atom, meeting in the middle), not d/2 — hence the plain 0.9·d on the
+ * mag→mag term too, no extra 0.5. Returns d_target / L_max, or null when no
+ * usable term exists. Edge cases: no non-magnetic atoms → only the mag-pair
+ * term; fewer than two magnetic atoms → only the mag→non-mag term; neither
+ * computable → null. Log-length mode still sizes off this linear L_max (the
+ * scale is a single global factor). Shared by the Spins-panel Auto button and
+ * widget-mode's automatic apply. ponytail: O(N²) over wrapped atoms — fine for
+ * the small cells this serves.
+ *
+ * @param {any} structure
+ * @param {any[]} [spins] defaults to structure.spins
+ * @param {{manual?:boolean}} [opts] manual spins carry their own atomIndex
+ * @returns {number|null}
+ */
+export function autoSpinScale(structure, spins = structure?.spins ?? [], { manual = false } = {}) {
+  if (!spins?.length) return null;
+
+  let Lmax = 0;
+  const magnetic = new Set();
+  spins.forEach((spin, i) => {
+    const v = spin?.vector;
+    if (!v) return;
+    const mag = Math.hypot(v[0], v[1], v[2]);
+    // Same cutoff updateSpins() draws by (mag < threshold → no arrow): a spin
+    // too short to render must not count as magnetic here either.
+    if (mag < SPIN_DRAW_THRESHOLD) return;
+    magnetic.add(manual ? (spin.atomIndex ?? i) : i);
+    Lmax = Math.max(Lmax, mag * (spin.scaling ?? 1.0));
+  });
+  if (Lmax <= 0 || magnetic.size === 0) return null;
+
+  const wrapped = structure?.periodic?.visibleWrapped ?? structure?.periodic?.wrapped;
+  const cart = wrapped?.cart;
+  if (!cart?.length) return null;
+  const srcIndex = wrapped.srcIndex;
+  const isMag = (i) => magnetic.has(srcIndex ? srcIndex[i] : i);
+
+  let dMagNon = Infinity, dMagMag = Infinity;
+  for (let i = 0; i < cart.length; i++) {
+    if (!isMag(i)) continue;
+    const a = cart[i];
+    for (let j = 0; j < cart.length; j++) {
+      if (j === i) continue;
+      const b = cart[j];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+      if (d <= 1e-6) continue; // coincident duplicates
+      if (isMag(j)) { if (d < dMagMag) dMagMag = d; }
+      else if (d < dMagNon) dMagNon = d;
+    }
+  }
+
+  const terms = [];
+  if (Number.isFinite(dMagNon)) terms.push(0.9 * dMagNon);
+  // Only when there are ≥2 distinct magnetic atoms (a lone magnetic atom's
+  // periodic copies aren't a "magnetic pair" for this purpose). Plain 0.9·d,
+  // same as the mag→non-mag term: centered arrows make d (not d/2) the cap.
+  if (magnetic.size >= 2 && Number.isFinite(dMagMag)) terms.push(0.9 * dMagMag);
+  if (!terms.length) return null;
+  return Math.min(...terms) / Lmax;
 }

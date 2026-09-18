@@ -4,6 +4,7 @@ import { general, groups, app, fileBrowser } from '../state/store.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { getAtomRadius } from './MeasurementModule.js';
 import { requestRender } from './AnimateModule.js';
+import { getFocusOpacityForInstance } from './FocusRegionModule.js';
 
 // --- Hydrogen bond model ---------------------------------------------------
 //
@@ -171,7 +172,7 @@ export function computeHydrogenBonds(structure = fileBrowser.selectedStructure) 
       // (strong) hydrogen bond is ~180 degrees; require it above the floor.
       const cos = (hdx * hax + hdy * hay + hdz * haz) / (hdLen * haLen);
       if (cos > cosMax) continue;
-      contacts.push({ from: ph, to: pa, pair: hbondPairKey('H', elements[a]) });
+      contacts.push({ from: ph, to: pa, pair: hbondPairKey('H', elements[a]), indices: [h, a] });
     }
   }
   return contacts;
@@ -254,25 +255,11 @@ export function updateHydrogenBonds(structure = fileBrowser.selectedStructure) {
   }
   clearHydrogenBonds();
 
-  const opacity = general.measureLineOpacity ?? 1;
-  // One material per distinct colour in use (pairs can be coloured
-  // independently), reused across every dash of that colour and disposed
-  // together on the next clear.
-  const materials = new Map(); // colorHex -> MeshBasicMaterial
-  const materialFor = (color) => {
-    let material = materials.get(color);
-    if (!material) {
-      material = new THREE.MeshBasicMaterial({ color, opacity });
-      // Route the transparency intent through the active pipeline, same as the
-      // measurement ghost lines — never set transparent/depthWrite by hand.
-      applyTransparency(material, { kind: 'measureGhost', opacity });
-      materials.set(color, material);
-    }
-    return material;
-  };
-
   const _start = new THREE.Vector3();
   const _end = new THREE.Vector3();
+  // Dashes are built with one throwaway material; assignHydrogenBondMaterials
+  // swaps in the shared per-(colour, opacity) materials right after.
+  const placeholder = new THREE.MeshBasicMaterial();
   for (const c of contacts) {
     _start.set(c.from[0], c.from[1], c.from[2]);
     _end.set(c.to[0], c.to[1], c.to[2]);
@@ -280,9 +267,56 @@ export function updateHydrogenBonds(structure = fileBrowser.selectedStructure) {
     const acceptorEl = e1 === 'H' ? e2 : e1;
     // Trim the H end minimally (hydrogens are tiny) and the acceptor end to
     // its own surface so the dashes meet the sphere rather than vanish inside.
-    addDashedLine(group, materialFor(hydrogenBondColorFor(c.pair)), _start, _end,
+    const before = group.children.length;
+    addDashedLine(group, placeholder, _start, _end,
       getAtomRadius('H') * 0.8, getAtomRadius(acceptorEl) * 0.9);
+    for (let i = before; i < group.children.length; i++) {
+      group.children[i].userData.contact = { pair: c.pair, indices: c.indices };
+    }
   }
-  group.userData.sharedMaterials = [...materials.values()];
+  assignHydrogenBondMaterials(structure);
+  placeholder.dispose();
   requestRender();
+}
+
+/** Give every dash its material: one MeshBasicMaterial per distinct
+ *  (colour, opacity) pair in use, shared across the dashes of that pair and
+ *  disposed together on the next clear. Opacity is the measurement-line
+ *  opacity scaled by the focus-region factor of the dash's dimmer endpoint,
+ *  exactly as covalent bonds follow their atoms. */
+function assignHydrogenBondMaterials(structure = fileBrowser.selectedStructure) {
+  const group = groups.hydrogenBondsGroup;
+  if (!group) return;
+  const lineOpacity = general.measureLineOpacity ?? 1;
+  const materials = new Map(); // `${colorHex}|${opacity}` -> MeshBasicMaterial
+  for (const dash of group.children) {
+    const contact = dash.userData?.contact;
+    if (!contact) continue;
+    const color = hydrogenBondColorFor(contact.pair);
+    const [h, a] = contact.indices ?? [];
+    const focus = Math.min(
+      h == null ? 1 : getFocusOpacityForInstance(h, structure),
+      a == null ? 1 : getFocusOpacityForInstance(a, structure),
+    );
+    const opacity = lineOpacity * focus;
+    const key = `${color}|${opacity.toFixed(4)}`;
+    let material = materials.get(key);
+    if (!material) {
+      material = new THREE.MeshBasicMaterial({ color, opacity });
+      // Route the transparency intent through the active pipeline, same as the
+      // measurement ghost lines — never set transparent/depthWrite by hand.
+      applyTransparency(material, { kind: 'measureGhost', opacity });
+      materials.set(key, material);
+    }
+    dash.material = material;
+  }
+  for (const material of group.userData.sharedMaterials ?? []) material.dispose?.();
+  group.userData.sharedMaterials = [...materials.values()];
+}
+
+/** Re-derive dash opacity after a focus-region edit, without recomputing the
+ *  contacts. No-op when no hydrogen bonds are drawn. */
+export function applyFocusToHydrogenBonds(structure = fileBrowser.selectedStructure) {
+  if (!groups.hydrogenBondsGroup?.children.length) return;
+  assignHydrogenBondMaterials(structure);
 }

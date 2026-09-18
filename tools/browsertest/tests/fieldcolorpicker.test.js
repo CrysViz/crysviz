@@ -12,12 +12,6 @@ const H = require('../harness');
     const { fileBrowser, groups } = await import('./state/store.js');
     const { addFieldPanel, fieldBrowser } = await import('./ui/FieldPanel.js');
 
-    // A real Field inside a real FieldContainer, because the panel now builds
-    // from volumetricFields.catalog: a plain object literal has no catalog, so
-    // addFieldPanel bails to the "no fields" message and no picker is ever
-    // created. The container synthesises a flat catalog and the panel points
-    // fieldBrowser at it itself, so nothing here has to. 2x2x2 with a single
-    // non-zero corner keeps the marching-cubes pass this goes through trivial.
     const { Field, FieldContainer } = await import('./model/index.js');
     const lat = fileBrowser.selectedStructure.lattice;
     const n = 2;
@@ -25,8 +19,9 @@ const H = require('../harness');
     const values = new Float32Array(n * n * n);
     values[0] = 1;
     const field = new Field({
-      nx: n, ny: n, nz: n, origin: [0, 0, 0], voxel, values, label: 'test-field',
-      isoValue: 0.1, minValue: 0, maxValue: 1, useAbsoluteIsoValue: false,
+      nx: n, ny: n, nz: n, origin: [0, 0, 0], voxel, values,
+      label: 'test-field', isoValue: 0.1, minValue: 0, maxValue: 1,
+      useAbsoluteIsoValue: false,
     });
     fileBrowser.selectedStructure.volumetricFields = new FieldContainer({
       fileName: 'test', source: 'Cube', fields: [field], fieldCount: 1,

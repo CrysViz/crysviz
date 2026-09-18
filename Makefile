@@ -1,4 +1,4 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard checks ci tests_full periodic-wasm browsertest browsertest-setup
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard checks ci tests_full periodic-wasm browsertest browsertest-setup update_version
 
 PYTHON ?= python3
 
@@ -98,3 +98,20 @@ periodic-wasm:
 	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm_bg.wasm       docs/compiled/periodic_wasm_bg.wasm
 	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm.d.ts          docs/compiled/periodic_wasm.d.ts
 	cp $(PERIODIC_WASM_SRC)/pkg/periodic_wasm_bg.wasm.d.ts  docs/compiled/periodic_wasm_bg.wasm.d.ts
+
+# ── Releasing ────────────────────────────────────────────────────────────────
+# The version lives in pyproject.toml; crysviz.__version__ reads it from the
+# installed package. `make update_version` copies it into docs/version.js
+# (shown in the About dialog); CI fails with "You need to run
+# `make update_version`" if they disagree.
+#
+# 1. Set `version` in pyproject.toml, run `make update_version`, and move the
+#    CHANGELOG.md "Unreleased" notes under a new "## X.Y.Z" heading.
+# 2. Open a PR into main, review, merge.
+# 3. On GitHub, create a Release on main tagged vX.Y.Z (the CHANGELOG section
+#    makes a good description). Publishing it runs release.yml, which puts
+#    the package on PyPI after a `pypi` environment reviewer approves.
+# 4. When crysviz.org should get the new version, open a PR from main into
+#    deploy and merge it with "Create a merge commit".
+update_version:
+	$(PYTHON) tools/update_version.py

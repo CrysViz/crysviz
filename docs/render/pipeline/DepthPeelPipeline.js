@@ -33,7 +33,7 @@ export class DepthPeelPipeline extends StagedTransparencyPipeline {
     }
     this._pass.scene = scene;
     this._pass.camera = camera;
-    this._pass.setLayerCount(general.depthPeelLayers ?? 5);
+    this._pass.setLayerCount(general.depthPeelLayers ?? 10);
     this._syncOverlayVisibility();
     this._pass.render(renderer);
     renderCelOutlinePass(renderer, scene, camera);

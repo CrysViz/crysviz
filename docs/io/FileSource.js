@@ -131,8 +131,9 @@ export class FileSource {
   /**
    * First `n` bytes plus a lossy text decode of them, for format detection.
    *
-   * Cheap for every source kind, which is what lets `io/formats.js` pass a head
-   * to every descriptor without caring whether content sniffing is switched on.
+   * Cheap for every source kind, which is what lets `io/formats.js` sniff the
+   * contents of every file before it looks at the name. `loadStructure` passes
+   * `HEAD_BYTES` from `io/formats.js`; the default here is only a floor.
    *
    * @param {number} [n]
    * @returns {Promise<{bytes: Uint8Array, text: string}>}
@@ -160,6 +161,29 @@ export class FileSource {
     if (this.kind === 'text') return this._text;
     if (this.kind === 'bytes') return decoder().decode(this._bytes);
     return this._blob.text();
+  }
+
+  /**
+   * The source as a Blob, without materialising anything for a Blob-backed
+   * source.
+   *
+   * This exists for readers that hand the file to a worker: structured-cloning
+   * a Blob copies a *reference*, not the bytes, so a worker can receive a
+   * multi-hundred-MB file for free and read it in chunks on its own thread
+   * (`io/ReadOutcarModule.js` does exactly this). For the in-memory kinds the
+   * data is already resident and small enough that wrapping it costs one copy
+   * into browser-managed Blob storage.
+   *
+   * @returns {Blob}
+   */
+  asBlob() {
+    if (this.kind === 'blob') return this._blob;
+    if (this.kind === 'bytes') {
+      // Same narrowing note as readAllBytes: `_bytes` is typed over
+      // ArrayBufferLike but is always built on a plain ArrayBuffer here.
+      return new Blob([/** @type {Uint8Array<ArrayBuffer>} */ (this._bytes)]);
+    }
+    return new Blob([this._text]);
   }
 
   /**

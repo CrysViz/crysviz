@@ -13,7 +13,7 @@ import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsP
 import { openPanel, closePanel } from './panels/PanelManager.js';
 import { ensureActiveCalculator, snapshotCurrentStructure } from './BackendPanel/AtomisticPanels.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
-import { StructureContainer } from '../model/index.js';
+import { TrajectoryContainer } from '../model/index.js';
 import { fileBrowser, structureShip, general } from '../state/store.js';
 
 const state = {
@@ -84,13 +84,8 @@ function ensurePlotsWindowOpen() {
 
 async function redraw(plotId) {
   const isExpanded = isPlotExpanded(plotId);
-  // A fit is not enough — the plots need the data it was fitted to. resetFit
-  // clears the two in sequence and several callers (safeRedraw off the
-  // resize/expand handlers, the reference-divisor input) fire independently of
-  // whatever redraw is already in flight, so there is a window where a result
-  // survives its own volumes. plotPV spreads them on its first line, so the
-  // symptom was an intermittent TypeError out of an async catch rather than a
-  // plot that simply had nothing to draw.
+  // Reset clears the fitted result and its source data separately. A queued
+  // redraw can observe the result after its volumes are gone; cancel it.
   if (!state.volumes?.length) return;
   if (plotId === 'ev-plot' && state.evResult) {
     await plotEV('ev-plot', { volumes: state.volumes, energies: state.energies, evParams: state.evResult.params }, isExpanded);
@@ -230,13 +225,18 @@ function registerScanRow(scan, potential) {
       // Re-scanning from one of the scan's own frames keeps the row's name
       // rather than nesting eos_ prefixes.
       if (rowIndex === fileBrowser.selectedRowIndex) name = container.fileName;
-      container.fileName = name;
-      container.structures = scan.structures;
+      // Swap in a fresh store-backed container rather than replacing the
+      // structures array in place — a trajectory container's frame count is
+      // owned by its store, so array surgery cannot re-seat it.
+      const rebuilt = TrajectoryContainer.fromStructures(name, scan.structures);
+      rebuilt.cameraSnapshot = container.cameraSnapshot;
+      rebuilt.featureSnapshot = container.featureSnapshot;
+      structureShip.container[rowIndex] = rebuilt;
       updateRow(row, { name, traj: scan.structures.length, step: 1 });
       return;
     }
   }
-  const container = new StructureContainer({ fileName: name, structures: scan.structures });
+  const container = TrajectoryContainer.fromStructures(name, scan.structures);
   structureShip.container.push(container);
   const newRow = createRow({ name, traj: scan.structures.length, step: 1 });
   tbody.appendChild(newRow);

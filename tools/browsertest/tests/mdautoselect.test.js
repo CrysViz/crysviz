@@ -49,6 +49,7 @@ const H = require('../harness');
     openPanel('trajectory');
     await new Promise((r) => setTimeout(r, 400));
     const lastContainer = structureShip.container[structureShip.container.length - 1];
+    const firstFrame = await Promise.resolve(lastContainer.frameAtDetached(0));
     const slider = document.getElementById('frameSlider');
     const ind = document.getElementById('frameIndicator');
     const after = {
@@ -56,8 +57,8 @@ const H = require('../harness');
       lastRowSelected: rows[rows.length - 1].classList.contains('selected'),
       firstRowStillSelected: rows[0].classList.contains('selected'),
       elements: [...(fileBrowser.selectedStructure?.elements || [])],
-      lastContainerElements: [...(lastContainer.structures[0].elements || [])],
-      frames: lastContainer.structures.length,
+      lastContainerElements: [...(firstFrame.elements || [])],
+      frames: lastContainer.frameCount,
       sliderMax: Number(slider?.max),
       indicatorTotal: ind?.querySelector('.tfTot')?.textContent,
     };

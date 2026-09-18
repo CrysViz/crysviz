@@ -13,7 +13,7 @@
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Stress } from "../model/index.js";
-import { StructureContainer } from "../model/index.js";
+import { StructureContainer, TrajectoryContainer } from "../model/index.js";
 import { Structure } from "../model/index.js";
 import { generateID } from "../utils/index.js";
 
@@ -247,9 +247,10 @@ export function parseASETrajectory(arrayBuffer, fileName) {
     );
   }
 
-  // Return a StructureContainer; the loader registers it in the UI/store.
-  return new StructureContainer({
-    fileName,
-    structures,
-  });
+  // Return a container; the loader registers it in the UI/store. Multi-frame
+  // trajectories become store-backed (physics packed per frame, one live
+  // Structure for rendering); single frames stay eager.
+  return structures.length > 1
+    ? TrajectoryContainer.fromStructures(fileName, structures)
+    : new StructureContainer({ fileName, structures });
 }

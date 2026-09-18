@@ -18,6 +18,7 @@
 #        mesa-libGL mesa-libEGL mesa-dri-drivers dejavu-sans-fonts
 set -euo pipefail
 cd "$(dirname "$0")"
+platform=$(uname -s)
 
 mkdir -p env
 cd env
@@ -44,10 +45,13 @@ if [ ! -d pw-browsers ] || ! ls pw-browsers/firefox-* >/dev/null 2>&1; then
 fi
 echo "setup: playwright Firefox ready"
 
-# Vendoring first, exactly as before: on an apt machine this takes the same
+# macOS runs headed Firefox in its native window system and needs no X server.
+# Vendoring first on Linux: on an apt machine this takes the same
 # branch it always did, whether or not the distro also has an Xvfb installed.
 # The system fallback is only reached where `apt-get download` cannot run.
-if [ -x xvfb-root/usr/bin/Xvfb ]; then
+if [ "$platform" = "Darwin" ]; then
+  echo "setup: Xvfb not required on macOS"
+elif [ -x xvfb-root/usr/bin/Xvfb ]; then
   echo "setup: Xvfb ready (vendored)"
 elif command -v apt-get >/dev/null 2>&1 && command -v dpkg >/dev/null 2>&1; then
   apt-get download xvfb
@@ -66,7 +70,7 @@ fi
 # it and the launch dies with 'XPCOMGlueLoad error ... libgtk-3.so.0'. Catch
 # that here, where the fix is one command, rather than inside a test run.
 FIREFOX_BIN="$( { ls -d pw-browsers/firefox-*/firefox/firefox 2>/dev/null | head -1; } || true)"
-if [ -n "$FIREFOX_BIN" ]; then
+if [ "$platform" = "Linux" ] && [ -n "$FIREFOX_BIN" ]; then
   FIREFOX_DIR="$(dirname "$FIREFOX_BIN")"
   # Scan the shipped libraries, not just the launcher: the launcher itself has
   # eight dependencies and GTK is not among them — libmozgtk.so and libxul.so

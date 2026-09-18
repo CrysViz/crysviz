@@ -145,16 +145,12 @@ export function onEOSPointClick(plotId, handler) {
 
 async function renderInto(plotId, data, layout) {
   const Plotly = await loadPlotly();
-  // Plotly loads asynchronously and the plots window can close while it does —
-  // Reset does exactly that, and so does the user. newPlot THROWS when its
-  // target div is gone rather than no-opping, and this runs inside an async
-  // chain whose rejection surfaces as an unhandled page error. Same guard
-  // clearPlot and resizePlot already carry, for the same window.
+  // The plots window may close while Plotly is loading. newPlot throws when
+  // its target has disappeared, so treat a closed window as a cancelled draw.
   if (!document.getElementById(plotId)) return;
   await Plotly.newPlot(plotId, data, layout, { responsive: true, displayModeBar: false });
   renderGeneration.set(plotId, (renderGeneration.get(plotId) || 0) + 1);
   wirePointClick(plotId);
-  // A frame later still, so the same question has to be asked again.
   requestAnimationFrame(() => {
     if (document.getElementById(plotId)) Plotly.Plots.resize(plotId);
   });

@@ -1,0 +1,9 @@
+# AIRSS buildcell seed: no lattice block, the cell is generated from the hints
+%BLOCK POSITIONS_ABS
+ang
+H 0.000 0.000 0.000 # H1 % NUM=1
+H 0.000 0.000 0.740 # H2 % NUM=1
+%ENDBLOCK POSITIONS_ABS
+
+#TARGVOL=20
+#MINSEP=1.0

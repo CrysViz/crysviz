@@ -18,6 +18,7 @@ import * as THREE from '../external/three/three.module.js';
 
 import { app, groups, fileBrowser, general } from '../state/store.js';
 import { getElementRadius } from '../defaults/radii_defaults.js';
+import { getFocusOpacityForInstance } from './FocusRegionModule.js';
 
 /** Above this many badges the per-frame raycast is skipped (see updateChargeBadges). */
 const MAX_OCCLUSION_RAYCASTS = 200;
@@ -37,7 +38,7 @@ let badgeGroup = null;
 // Sprite and CanvasTexture as values but does not surface them as types, so a
 // precise annotation fails typecheck (same reason bondDistanceLabels.js casts
 // its CSS2DObject).
-/** @type {Array<{sprite: any, cart: number[], radius: number, srcIndex: number}>} */
+/** @type {Array<{sprite: any, cart: number[], radius: number, srcIndex: number, instance: number}>} */
 let badges = [];
 /** @type {Map<string, any>} */
 const textureCache = new Map();
@@ -230,11 +231,20 @@ export function rebuildChargeBadges() {
     sprite.scale.set(height * aspect, height, 1);
 
     badgeGroup.add(sprite);
-    badges.push({ sprite, cart: cart[i], radius, srcIndex: srcIndex[i] });
+    badges.push({ sprite, cart: cart[i], radius, srcIndex: srcIndex[i], instance: i });
   }
 
   if (badges.length) app.scene.add(badgeGroup);
   else badgeGroup = null;
+  applyFocusToChargeBadges(structure);
+}
+
+/** A badge fades with the atom it labels: sprite alpha = focus-region factor
+ *  of that atom's wrapped instance (1 without regions). */
+export function applyFocusToChargeBadges(structure = fileBrowser.selectedStructure) {
+  for (const { sprite, instance } of badges) {
+    sprite.material.opacity = getFocusOpacityForInstance(instance, structure);
+  }
 }
 
 /**

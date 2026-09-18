@@ -1,0 +1,30 @@
+/* notagameatall — the interactive screen-space projection overlay's 2D
+   canvas (ui/notagameatall.js, Shift+4+2). Laid over the whole 3D view and
+   drawn by the module every frame while the overlay runs; hidden (the
+   [hidden] attribute) otherwise. Sits above the three.js canvas and the
+   scene widgets but below the side dock and every popup/menu/modal, and
+   swallows pointer events so a click cannot pick an atom or start a camera
+   drag mid-run — the camera drifts on its own. The instruction banner
+   reuses the shared .cv-warning-banner shell (warningBanners.css) in its own
+   stacking slot, one rung below Disco's. */
+
+#view .cv-proj-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-overlay-widget);
+  pointer-events: auto;
+  cursor: default; /* not the scene canvas's pick-affordance pointer */
+}
+
+/* `#view canvas { display: block }` (styles.css) outranks the UA [hidden]
+   rule, so without this the overlay stayed in the way after a run ended:
+   invisible, full-size, still swallowing every pointer event — the camera
+   could not be rotated again until the page reloaded. Same trap as
+   sideDock.css's .split-item[hidden]. */
+#view .cv-proj-overlay[hidden] {
+  display: none;
+}
+
+.cv-proj-overlay-note {
+  top: 104px;
+}

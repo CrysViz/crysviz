@@ -10,6 +10,7 @@ import {getAtomImageStyle} from './AtomsFracUpdateModule.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { requestRender } from './AnimateModule.js';
+import { getFocusOpacityForInstance } from './FocusRegionModule.js';
 
 
 
@@ -17,7 +18,7 @@ import { requestRender } from './AnimateModule.js';
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
 import {refreshBondLengthHistogram, isBondLengthHistogramOpen} from '../ui/AnalysisPanels/BondLengthHistogram.js'
 import {refreshCoordinationHistogram, isCoordinationHistogramOpen} from '../ui/AnalysisPanels/CoordinationHistogram.js'
-import {generateID} from '../utils/index.js'
+import {generateID, releaseIDs} from '../utils/index.js'
 import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
@@ -85,6 +86,7 @@ export function disposeBondsMesh(clearBondData = false) {
     groups.bondsMesh = null;
   }
   if (clearBondData && fileBrowser.selectedStructure) {
+    releaseIDs(fileBrowser.selectedStructure.bonds);
     fileBrowser.selectedStructure.bonds = [];
     fileBrowser.selectedStructure.bondMapping = {};
     fileBrowser.selectedStructure.bondObjectMapping = {};
@@ -251,6 +253,7 @@ export function bondGroupKey(structure, bond) {
 
 export function buildBondObjects(structure){
   const _t0 = performance.now();
+  releaseIDs(structure.bonds); // the ids of the bonds being replaced
   structure.bonds = [];
   structure.bondMapping = {};
   structure.bondObjectMapping = {};
@@ -703,6 +706,15 @@ export function createBondsMesh(bondCount) {
   // Instanced mesh: 2 halves per bond
   const mesh = new THREE.InstancedMesh(geometry, material, bondCount * 2);
 
+  // rebuildBonds() always disposes and recreates this mesh, so its lazily
+  // auto-computed per-instance bounding sphere (three.js InstancedMesh) would
+  // normally stay correct. But updateBonds()/updateSingleBondPosition() and
+  // FastFrameModule.js's applyFrameFast() both reposition instances on this
+  // SAME mesh afterwards (cut-plane changes, live position edits, fast
+  // trajectory stepping) without invalidating that cached sphere — same
+  // latent cull bug as the spin/force arrows (SpinModule.js/ForceModule.js).
+  mesh.frustumCulled = false;
+
   // Instance colors
   mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(bondCount*2*3), 3, false);
 
@@ -916,7 +928,9 @@ function syncBondMaterialTransparency(baseOpacity = 1.0) {
   if (!mesh?.material) return;
   const hasTransparentInstances = fileBrowser.selectedStructure?.bonds?.some((bond) =>
     (bond.alpha ?? 1) < 0.999) ?? false;
-  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
+  const hasFocusTransparency = (fileBrowser.selectedStructure?.focusRegions ?? [])
+    .some((region) => region.enabled !== false && region.center?.length);
+  const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances || hasFocusTransparency;
   applyTransparency(mesh.material, {
     kind: 'bonds', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
   });
@@ -995,8 +1009,12 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   // Carries the half's own instance id so the shader can look up that
   // endpoint's species in the wedge texture (was an unused constant 0).
   mesh.geometry.attributes.instanceElementIndex.setX(index*2, index*2);
+  const focusOpacity = Math.min(
+    getFocusOpacityForInstance(bond.indices[0]),
+    getFocusOpacityForInstance(bond.indices[1]),
+  );
   mesh.geometry.attributes.instanceOpacity.setX(index*2,
-    Math.max(0, Math.min(1, bond.alpha ?? 1)));
+    Math.max(0, Math.min(1, bond.alpha ?? 1)) * focusOpacity);
 
   // ---- second half ----
   _bondDummy.position.copy(bond.center2);
@@ -1011,7 +1029,7 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   mesh.geometry.attributes.instanceEmissiveIntensity.setX(index*2 + 1, 0);
   mesh.geometry.attributes.instanceElementIndex.setX(index*2 + 1, index*2 + 1);
   mesh.geometry.attributes.instanceOpacity.setX(index*2 + 1,
-    Math.max(0, Math.min(1, bond.alpha ?? 1)));
+    Math.max(0, Math.min(1, bond.alpha ?? 1)) * focusOpacity);
 }
 
 export function hideSingleBond(index) {

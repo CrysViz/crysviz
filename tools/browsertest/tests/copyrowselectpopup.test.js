@@ -6,7 +6,7 @@
 const H = require('../harness');
 
 async function copyViaPopup(page, option) {
-  return page.evaluate((option) => {
+  return page.evaluate(async (option) => {
     const rows = document.querySelectorAll('#objectTable tbody tr');
     const middleRow = [...rows].find((r) => r.querySelector('.name-inner')?.textContent === 'middle');
     const middleIndex = [...rows].indexOf(middleRow);
@@ -22,6 +22,7 @@ async function copyViaPopup(page, option) {
     select.dispatchEvent(new Event('change'));
     const confirmBtn = [...popup.querySelectorAll('button')].find((b) => b.textContent === 'Copy');
     confirmBtn.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     const rowsAfter = document.querySelectorAll('#objectTable tbody tr');
     const selected = document.querySelector('#objectTable tbody tr.selected');

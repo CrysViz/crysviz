@@ -6,6 +6,7 @@
 # Requires tools/browsertest/env/ (make browsertest-setup / setup.sh).
 set -euo pipefail
 cd "$(dirname "$0")"
+platform=$(uname -s)
 
 # Xvfb comes from the Ubuntu package setup.sh vendors into env/ — the system
 # one is a fallback for machines where `apt-get download` does not exist, so an
@@ -17,7 +18,7 @@ elif command -v Xvfb >/dev/null 2>&1; then
 else
   XVFB_BIN=""
 fi
-if [ ! -d env/node_modules/playwright-core ] || [ -z "$XVFB_BIN" ]; then
+if [ ! -d env/node_modules/playwright-core ] || { [ "$platform" != "Darwin" ] && [ -z "$XVFB_BIN" ]; }; then
   echo "browsertest env missing — run 'make browsertest-setup' first" >&2
   exit 1
 fi
@@ -50,20 +51,29 @@ done
 # none, so Firefox can execute the PREVIOUS version of a just-edited module.
 python3 ../devserver.py "$PORT" --bind 127.0.0.1 --directory ../../docs >/dev/null 2>&1 &
 SERVER_PID=$!
-"$XVFB_BIN" ":$DISPLAY_NUM" -screen 0 1400x900x24 -nolisten tcp >/dev/null 2>&1 &
-XVFB_PID=$!
-trap 'kill "$SERVER_PID" "$XVFB_PID" 2>/dev/null || true' EXIT
+XVFB_PID=""
+if [ "$platform" != "Darwin" ]; then
+  "$XVFB_BIN" ":$DISPLAY_NUM" -screen 0 1400x900x24 -nolisten tcp >/dev/null 2>&1 &
+  XVFB_PID=$!
+fi
+cleanup() {
+  kill "$SERVER_PID" 2>/dev/null || true
+  if [ -n "$XVFB_PID" ]; then kill "$XVFB_PID" 2>/dev/null || true; fi
+}
+trap cleanup EXIT
 sleep 1.5
 
-export DISPLAY=":$DISPLAY_NUM"
 export PLAYWRIGHT_BROWSERS_PATH="$PWD/env/pw-browsers"
 export NODE_PATH="$PWD/env/node_modules"
 export CRYSVIZ_URL="http://localhost:$PORT/index.html"
 # Firefox's own sandboxes crash (signal 11) inside agent sandboxes; WebGL must
 # come from Mesa software rendering on the Xvfb display.
-export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1
-export MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1
-export LIBGL_ALWAYS_SOFTWARE=1
+if [ "$platform" = "Linux" ]; then
+  export DISPLAY=":$DISPLAY_NUM"
+  export MOZ_DISABLE_CONTENT_SANDBOX=1 MOZ_DISABLE_GMP_SANDBOX=1
+  export MOZ_DISABLE_RDD_SANDBOX=1 MOZ_DISABLE_SOCKET_PROCESS_SANDBOX=1
+  export LIBGL_ALWAYS_SOFTWARE=1
+fi
 # On a Wayland desktop (and inside a toolbox/podman container on one, where the
 # compositor socket is passed through), GTK prefers Wayland over $DISPLAY: the
 # browser would connect to the REAL session and pop a visible window on the
@@ -76,14 +86,16 @@ export LIBGL_ALWAYS_SOFTWARE=1
 # it is needed everywhere, because the trigger is a Wayland session, which any
 # distro can have. Keying off WAYLAND_DISPLAY would also miss an environment
 # that sets GDK_BACKEND=wayland on its own.
-export GDK_BACKEND=x11
-export MOZ_ENABLE_WAYLAND=0
-unset WAYLAND_DISPLAY
+if [ "$platform" = "Linux" ]; then
+  export GDK_BACKEND=x11
+  export MOZ_ENABLE_WAYLAND=0
+  unset WAYLAND_DISPLAY
+fi
 # Playwright's pre-launch host check names the apt packages it wants: right on
 # a Debian machine, and wrong everywhere else — it aborts on Fedora even when
 # every library is present. Leave it on where it means something; setup.sh's
 # ldd check covers the machines where it is skipped.
-if ! command -v apt-get >/dev/null 2>&1; then
+if [ "$platform" = "Linux" ] && ! command -v apt-get >/dev/null 2>&1; then
   export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
 fi
 

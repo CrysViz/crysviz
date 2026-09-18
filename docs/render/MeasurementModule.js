@@ -890,7 +890,6 @@ export function addDistanceMeasurement(atom1, atom2) {
   const atom2Ref = createMeasurementAtomRef(atom2);
   // Create thick dashed cylinder for distance measurement (BLUE for distance)
   const pa = atom1.position.clone(), pb = atom2.position.clone();
-
   const cylinderGroup = new THREE.Group();
   buildMeasureLine(cylinderGroup, pa, pb, 'distance',
     lineStandoff(atom1.userData.element), lineStandoff(atom2.userData.element));

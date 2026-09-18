@@ -11,6 +11,7 @@ import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
 
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
+import { showLoadErrorModal, showLoadWarningModal } from '../ui/LoadErrorModal.js';
 // Side-effect import: AboutPanel wires the "about" trigger at module load.
 // (Its named exports are unused, so keep it as a bare import.)
 import '../ui/AboutPanel.js';
@@ -49,11 +50,16 @@ import {initAddStructureButton, initModifyStructureButton} from '../ui/addToStru
 import {initCombineTrajectoriesButton, selectStructure} from '../ui/FileBrowswerPanel.js'
 import {initPanelSystem, finishPanelRegistration, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
+import {isDebugMode} from '../debug/debugMode.js'
+import {openDebugPanel} from '../ui/DebugPanel.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
 import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
+import { initProjectionOverlay } from '../ui/notagameatall.js';
 
 import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
+import { applyFieldPeriodicBounds, updateForces, updateSpins } from '../render/index.js';
+import { loadPhonopyFile } from '../phonon/phononSession.js';
 
 // .........................................................................................................
 // Import Panels
@@ -85,7 +91,7 @@ import {initRaytraceWarningModal} from '../ui/RaytraceWarningModal.js'
 
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any } from '../io/index.js';
-import { FileSource, detectFormat, materialize } from '../io/index.js';
+import { FileSource, detectFormat, materialize, HEAD_BYTES } from '../io/index.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
@@ -159,6 +165,16 @@ export function updateVisualization(options = {}) {
     // and rely on polyhedra refreshing.
     reRenderPolyhedra = true,
 
+    // The periodic IMAGE SET itself changed — "Show Periodic Images", the
+    // Cell & Supercell panel's display boundary (general.periodicBounds), PBC
+    // bonds. Atoms and bonds are rebuilt from it by the flags above; the other
+    // things drawn per image (force/spin arrows, the volumetric field) are
+    // refreshed by this one, since nothing else in the app watches the
+    // boundary. Off by default: the hot paths (MD/relax frames, trajectory
+    // playback) move atoms within a FIXED image set and refresh their own
+    // arrows.
+    reRenderPeriodic = false,
+
     mOpacity = general.mainOpacity,
     reRenderField = false
   } = options;
@@ -200,6 +216,21 @@ export function updateVisualization(options = {}) {
     updateBonds(mOpacity)
   }
 
+  // Everything else that is drawn once per periodic image: one arrow per drawn
+  // atom (render/SpinModule.js, render/ForceModule.js) and the volumetric
+  // field repeated into the cells the boundary reaches (render/
+  // Render3DFieldModule.js). Rebuilt, not moved — the image COUNT changed.
+  // (Like ShareModule.js and SelectAndHighlightModule.js, this refresh always
+  // draws the structure's own spins: SpinPanel.js's separate "manual spins"
+  // textarea mode lives in that panel's DOM, so a boundary edit made while
+  // manual spins are showing reverts to the structure's until the next manual
+  // redraw.)
+  if (reRenderPeriodic) {
+    if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
+    if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
+    applyFieldPeriodicBounds();
+  }
+
   // Overlay structures — one rebuild/update pass per fileBrowser.overlayEntries
   // entry, each keeping its own opacity and bonds visibility.
   if (SecondReRenderAtoms || SecondAtomsUpdate || SecondReRenderBonds || SecondBondsUpdate) {
@@ -236,19 +267,18 @@ export function updateVisualization(options = {}) {
     initModifyStructureButton();
   }
   console.time("uv:updateLattice");
-  if (reRenderLattice) updateLattice(general.currentLatticeColor);
-  // The asymmetric-unit wedge is rebuilt on the same trigger as the cell it
-  // sits in, and unconditionally: the call is a no-op when no wedge is shown,
-  // and when one IS shown it is also what drops a wedge whose structure is no
-  // longer selected (render/AsymmetricUnitModule.js). Gating it on a "wedge
-  // on" flag would leave that stale wedge in the scene.
-  if (reRenderLattice) updateAsymmetricUnit();
-  // Which atoms fall INSIDE that wedge is a question about the atoms, not the
-  // cell, so it cannot ride on reRenderLattice the way the geometry above
-  // does. The Wyckoff editor moves atoms with reRenderLattice: false — the
-  // cell genuinely has not changed — and the rings stayed where they were.
-  // Cheap enough to run every pass: it returns at its first line while the
-  // highlight is off, which is the normal case.
+  if (reRenderLattice) {
+    updateLattice(general.currentLatticeColor);
+    // The field copies are translated by the structure lattice (a supercell
+    // repeats the field's original sub-cell, gaps included), so re-seat them
+    // whenever the lattice is rebuilt. Idempotent and cheap when unchanged.
+    if (!reRenderPeriodic) applyFieldPeriodicBounds();
+    // Unconditional: this is also what drops a wedge whose structure is no
+    // longer selected.
+    updateAsymmetricUnit();
+  }
+  // Atoms can move without the cell changing (Wyckoff editor), so the
+  // in-wedge highlight refreshes every pass; it is a no-op while off.
   updateAsuAtomHighlight();
   console.timeEnd("uv:updateLattice");
   console.time("uv:updateOther");
@@ -351,11 +381,10 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // WAVECAR can be opened at all.
     const source = FileSource.from(content);
 
-    // Format detection lives in io/formats.js, which is also where the
-    // (currently unused) content-sniffing hooks are declared. `head` is read for
-    // every file so that switching detection over to inspecting contents needs
-    // no change here.
-    const head = await source.readHead();
+    // Format detection lives in io/formats.js and goes by the file's contents
+    // first: the first HEAD_BYTES are read for every file (one cheap slice,
+    // even for a multi-GB WAVECAR) and the name is only the tiebreak/fallback.
+    const head = await source.readHead(HEAD_BYTES);
     const descriptor = detectFormat({ fileName: parserFileName, head });
 
     // Text formats get the whole file as a string exactly as before; .traj gets
@@ -389,6 +418,14 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
           payload, fileName, descriptor.id === 'elfcar' ? 'ELFCAR' : 'CHGCAR');
         break;
 
+      case 'phonopy-modes':
+      case 'phonopy-cells':
+      case 'phonopy-dos':
+        // phonopy output: the phonon session builds (or joins) the supercell
+        // row the modes are shown on and opens the Phonon windows.
+        structureContainer = await loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id);
+        break;
+
       // Everything else is a structure file and goes through the single pure
       // pipeline. parse_any picks the format (POSCAR is its fallback) and
       // returns a StructureContainer; registration happens once via
@@ -398,7 +435,18 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         // The parser filename may carry a format suffix, but the browser must
         // display the manifest/addon supplied name verbatim.
         if (structureContainer) structureContainer.fileName = fileName;
-        if (structureContainer && structureContainer.structures) initializeUIOnLoad(structureContainer);
+        // A parser that returns an empty container (no structures, or a
+        // structure with no atoms) "loaded" nothing — treat it as a failure so
+        // it reaches the warning modal instead of silently doing nothing.
+        // Through the frame seam, not `structures` directly: a multi-frame
+        // file comes back as a TrajectoryContainer whose `structures` is a
+        // sparse array with no slot occupied until a frame is shown, and
+        // `.some()` skips holes — indexing it here rejected every good
+        // multi-step OUTCAR/XYZ/pw.x trajectory as "no atoms found".
+        if (!structureContainer?.frameCount || !structureContainer.hasAtoms()) {
+          throw new Error('No atoms or structures were found in this file.');
+        }
+        initializeUIOnLoad(structureContainer);
         break;
     }
 
@@ -425,9 +473,13 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
     console.warn(fileBrowser.selectedStructure)
-    // .crysviz restores its camera asynchronously as part of the session;
-    // that saved pose is authoritative and must not be overwritten here.
-    if (descriptor.id !== 'crysviz') {
+    // A .crysviz that restored a camera pose owns it — don't overwrite. But a
+    // session WITHOUT a saved camera (widget #load-file= payloads, share links
+    // with no pose) must still be fit/centered, or the orbit target is left at
+    // the (0,0,0) cell corner. loadCrysvizFile stamps container.cameraRestored.
+    const cameraRestored = descriptor.id === 'crysviz'
+      && structureContainer?.cameraRestored === true;
+    if (!cameraRestored) {
       // The first structure ever shown gets a fresh fit-to-structure camera;
       // later loads/switches keep the user's rotation and zoom, only
       // re-centering on the new structure (see `cameraFitted`).
@@ -441,10 +493,24 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     }
     resizeRenderer(app.orthographicFrustumSize);
 
+    // Soft warnings a parser attached for data it loaded WITHOUT (e.g. an
+    // aims.out that is spin-polarised but whose per-atom moments we couldn't
+    // read). The structure loaded fine; this just tells the user what dropped.
+    const warnings = structureContainer.loadWarnings;
+    if (Array.isArray(warnings) && warnings.length) {
+      showLoadWarningModal({ fileName, message: warnings[0] });
+    }
+
     return { ok: true, container: structureContainer, name: fileName, format: format || undefined };
   } catch (error) {
+    // Single choke point for every load path and every format: surface a
+    // visible warning instead of failing silently. The status line is kept as
+    // a secondary, non-blocking trace.
     setStatus(`Error: ${error.message}`);
-    console.error(error);
+    // Lead with the file name: a bare Error object serialises to just "Error"
+    // in captured console text, which says nothing about what failed.
+    console.error(`Failed to load structure "${fileName}":`, error);
+    showLoadErrorModal({ fileName, message: error?.message });
     throw error;
   }
 }
@@ -603,6 +669,10 @@ async function initUIPanels() {
   initPanelSystem();
   registerDefaultPanels();
   finishPanelRegistration();
+  // ?debug: the Debug window opens in front of the side dock straight away —
+  // it exists to be looked at, and a remembered side-dock front tab from an
+  // ordinary session would otherwise hide it behind the EOS plots.
+  if (isDebugMode()) openDebugPanel();
   // Apply availability (grey-out) once now that panels exist. On first load the
   // default structure is loaded before panels are registered, so its own
   // revealFeaturePanels() refresh ran against no panels; this makes the initial
@@ -615,7 +685,14 @@ async function initUIPanels() {
   initModifyStructureButton();
   initAddStructureButton();
   initCombineTrajectoriesButton();
-  initKeyboardShortcuts();
+  // Widget mode has no keyboard: it is an embed with no focusable app chrome,
+  // and its global key handlers (delete-atom, arrow-step, …) would fire against
+  // the host page's own shortcuts. The projection overlay's chord is a keyboard
+  // feature too, so it stays out of widget mode for the same reason.
+  if (!document.body.classList.contains('widget-mode')) {
+    initKeyboardShortcuts();
+    initProjectionOverlay(); // Shift+4+2, see ui/notagameatall.js
+  }
 
   // Add viewport meta tag if not present for proper mobile scaling
   if (!document.querySelector('meta[name="viewport"]')) {

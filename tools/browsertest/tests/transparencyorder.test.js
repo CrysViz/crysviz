@@ -227,15 +227,43 @@ function redCentroid(file) {
     pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera }); // FIRST frame
     const pass = pipeline._pass;
     const w = pass.accumulationTarget.width, h = pass.accumulationTarget.height;
-    // Scan a horizontal band through the staged spheres for the max accum alpha.
+    // Scan a horizontal band through the staged spheres: the max accumulated
+    // alpha, and the depth-range stage's (min, max) fragment depth. With the
+    // transmittance-interpolated weight (WboitUtils.js) the front fragment
+    // carries weight 1, so accumulated alpha is O(1) — never the ~300x scale
+    // of the old heuristic. A wrong render stage would leave the depth-range
+    // target holding plain colours (rgb up to 1, alpha = coverage) instead of
+    // depth-buffer values, which sit far below 0.5 for this ortho camera.
     const buf = new Float32Array(4 * w);
     app.renderer.readRenderTargetPixels(pass.accumulationTarget, 0, Math.floor(h / 2), w, 1, buf);
     let maxAlpha = 0;
     for (let i = 3; i < buf.length; i += 4) maxAlpha = Math.max(maxAlpha, buf[i]);
-    return { maxAlpha };
+    const range = new Float32Array(4 * w);
+    app.renderer.readRenderTargetPixels(pass.depthRangeTarget, 0, Math.floor(h / 2), w, 1, range);
+    let covered = 0, depthOk = 0, maxDepth = 0;
+    let minNear = Infinity, maxNear = 0, minFar = Infinity, minGap = Infinity, maxGap = -Infinity;
+    const depthSamples = [];
+    for (let i = 0; i < range.length; i += 4) {
+      const far = range[i + 3];
+      if (far <= 0) continue; // untouched pixel (cleared to transparent black)
+      const near = 1 - range[i];
+      covered++;
+      maxDepth = Math.max(maxDepth, far);
+      minNear = Math.min(minNear, near); maxNear = Math.max(maxNear, near);
+      minFar = Math.min(minFar, far);
+      minGap = Math.min(minGap, far - near); maxGap = Math.max(maxGap, far - near);
+      if (depthSamples.length < 6) depthSamples.push([near, far]);
+      // Half-float/readback rounding can put identical one-fragment depths a
+      // few 1e-8 apart after decoding 1-near; accept that numeric noise.
+      if (near > 0 && far + 1e-6 >= near && far < 0.5) depthOk++;
+    }
+    return { maxAlpha, covered, depthOk, maxDepth, minNear, maxNear, minFar,
+      minGap, maxGap, depthSamples };
   });
   H.check('wboit: first frame accumulates with the correct render stage (weighted alpha)',
-    firstFrame.maxAlpha > 50, JSON.stringify(firstFrame));
+    firstFrame.maxAlpha > 0.1 && firstFrame.maxAlpha < 5, JSON.stringify(firstFrame));
+  H.check('wboit: the depth-range stage records transparent fragment depths, not colours',
+    firstFrame.covered > 0 && firstFrame.depthOk === firstFrame.covered, JSON.stringify(firstFrame));
   await page.waitForTimeout(500);
   const s5File = await shootFile('transparencyorder-wboit-both');
   const s5 = sampleDisk(s5File, spot.x, spot.y, R);
@@ -519,8 +547,9 @@ function redCentroid(file) {
   }
   const fwdVsPeel = changedPixelCount(polyShots.forward, polyShots.depthpeel);
   const wboitVsPeel = changedPixelCount(polyShots.wboit, polyShots.depthpeel);
-  // wboitVsPeel sits deterministically at ~2021 since the 2026-07 main merge
-  // (identical on pristine main) — recalibrated from 2000 with headroom.
+  // All-opaque scenes take the direct-render fast path under both wboit and
+  // depthpeel, so both match forward exactly (the old ~2000-3400 wboit diff
+  // was the canvas MSAA lost by rendering through its offscreen target).
   H.check('opaque polyhedra render identically across forward/wboit/depthpeel',
     fwdVsPeel < 15000 && wboitVsPeel < 2500, JSON.stringify({ fwdVsPeel, wboitVsPeel }));
   await setPipeline('forward');

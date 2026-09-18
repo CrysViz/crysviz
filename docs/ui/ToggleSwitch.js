@@ -35,15 +35,15 @@ export function createToggleSwitch({ id = '', checked = false, small = false, ta
  * panel-specific (e.g. cmp-toggle-row) — the pill inside stays stock.
  * @param {{ id?: string, label: string, checked?: boolean,
  *           onChange?: (checked: boolean, e: Event) => void,
- *           rowClass?: string, textClass?: string }} opts
+ *           rowClass?: string, textClass?: string, small?: boolean }} opts
  * @returns {{ row: HTMLLabelElement, input: HTMLInputElement }}
  */
 export function createToggleRow({ id = '', label, checked = false, onChange,
                                   rowClass = 'toggle_row toggle_container',
-                                  textClass = 'toggle_text' }) {
+                                  textClass = 'toggle_text', small = false }) {
   const row = document.createElement('label');
   row.className = rowClass;
-  const { switchEl, input } = createToggleSwitch({ id, checked });
+  const { switchEl, input } = createToggleSwitch({ id, checked, small });
   const text = document.createElement('span');
   text.className = textClass;
   text.textContent = label;

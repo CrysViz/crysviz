@@ -33,8 +33,10 @@ const H = require('../harness');
     const row = rows[rows.length - 1];
     const box = row.querySelector('input[type="number"]');
     const container = structureShip.container[structureShip.container.length - 1];
-    const frames = container.structures.length;
+    const frames = container.frameCount;
     const naX = (s) => s && s.atoms[0].position[0];
+    const firstFrame = await Promise.resolve(container.frameAtDetached(0));
+    const lastFrame = await Promise.resolve(container.frameAtDetached(frames - 1));
 
     // Put the row back on frame 1, the state a live run leaves it in (the row
     // is created before any frames are appended).
@@ -73,8 +75,8 @@ const H = require('../harness');
 
     return {
       frames,
-      lastNaX: naX(container.structures[frames - 1]),
-      firstNaX: naX(container.structures[0]),
+      lastNaX: naX(lastFrame),
+      firstNaX: naX(firstFrame),
       before,
       afterUpdateRow,
       afterScrub,

@@ -2,6 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 
 import {app, groups, fileBrowser, general} from '../state/store.js';
 import {getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
+import {getElementRadius} from '../defaults/radii_defaults.js'
 
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsFracUpdateModule.js'
@@ -190,7 +191,13 @@ function periodicWrappedJS(general, frac, elements, lattice) {
   }
 
   if (general.showPBCBonds) {
-    const maxCutoff = Math.max(0.0, ...Object.values(general.bondLengths || {}).map(v => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
+    // A pair whose Bonds-tab checkbox is off contributes no bond, so it must
+    // not size the neighbour (PBC-ghost) search either — skip hidden pairs.
+    // (The per-atom test below uses getBondCutoff, which already returns 0 for
+    // hidden pairs; this keeps the search shell/grid consistent with that.)
+    const maxCutoff = Math.max(0.0, ...Object.entries(general.bondLengths || {})
+      .filter(([pair]) => general.bondVisibility?.[pair] !== false)
+      .map(([, v]) => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
     if (maxCutoff > 1e-6) {
       const latticeInverse = invert3x3(transpose3x3(lattice));
       // Wrapped atoms already have their Cartesian coords in newCcrds (flat
@@ -322,7 +329,8 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
     let inputHash = hashInputFast(
       frac, elements, lattice, bondLenghts,
-      showPeriodic, showPBCBonds, general.completePolyhedra, faceTol, bounds
+      showPeriodic, showPBCBonds, general.completePolyhedra, faceTol, bounds,
+      general.bondVisibility
     )
 
     if (periodic.hash != inputHash){
@@ -369,7 +377,7 @@ function hashString(h, s) {
   return (Math.imul(h, 33) ^ 0x1f) >>> 0;
 }
 
-function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol, bounds) {
+function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol, bounds, bondVisibility) {
   let h = 5381 >>> 0;
   h = (Math.imul(h, 33) ^ (showPeriodic ? 1 : 0)) >>> 0;
   h = (Math.imul(h, 33) ^ (showPBCBonds ? 1 : 0)) >>> 0;
@@ -396,6 +404,11 @@ function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showP
 
   // bondLengths: object keyed by "El-El" -> {min, max} (or a bare number). Hash in
   // sorted-key order so it is deterministic regardless of insertion order.
+  // Each pair's per-pair visibility is folded in alongside its cutoff: a hidden
+  // pair contributes cutoff 0 to the neighbour (PBC-ghost) search (getBondCutoff
+  // returns 0 for it), so toggling a pair's Bonds-tab checkbox must invalidate
+  // the cached wrapped set the same way editing its cutoff does — otherwise
+  // runPeriodicWrapped's hash guard would reuse a stale ghost set.
   const bl = bondLengths || {};
   const keys = Object.keys(bl).sort();
   for (let k = 0; k < keys.length; k++) {
@@ -408,6 +421,7 @@ function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showP
       h = hashFloat(h, v?.min ?? 0);
       h = hashFloat(h, v?.max ?? 0);
     }
+    h = (Math.imul(h, 33) ^ (bondVisibility?.[key] === false ? 1 : 0)) >>> 0;
   }
   return h >>> 0;
 }
@@ -433,16 +447,47 @@ export function getCellCenterAndDist() {
   for (const v of vertices) radius = Math.max(radius, v.distanceTo(center));
   radius = Math.max(radius, 1); // guard a degenerate/zero-size cell
 
+  // Atoms are drawn as spheres, and periodic images sit exactly on the cell
+  // faces/corners, so the true drawn extent can exceed the cell-vertex radius
+  // above by up to one atom radius. Grow radius to cover it — falls back to
+  // the cell-vertex radius when there's no atom data yet (early load, some
+  // orthographic-camera paths).
+  const wrapped = fileBrowser.selectedStructure.periodic?.visibleWrapped;
+  if (wrapped?.cart?.length) {
+    const atomSize = general.atomSize ?? 1;
+    for (let i = 0; i < wrapped.cart.length; i++) {
+      const drawnRadius = getElementRadius(wrapped.elements[i]) * atomSize;
+      radius = Math.max(radius, new THREE.Vector3(...wrapped.cart[i]).distanceTo(center) + drawnRadius);
+    }
+  }
+
   // Distance so the bounding sphere fits entirely inside the perspective
   // camera's frustum (45° vertical FOV, matching switchCameraType's
-  // PerspectiveCamera), with a small margin.
-  const halfFovRad = (45 / 2) * Math.PI / 180;
-  const fitDist = Math.max((radius / Math.sin(halfFovRad)) * 1.1, 20);
+  // PerspectiveCamera), with a small margin. A wide (landscape) viewport's
+  // horizontal FOV is always more generous than its vertical one, so fitting
+  // to the vertical half-angle alone is enough — but a narrow (portrait)
+  // viewport, e.g. an embedded iframe, has a TIGHTER horizontal FOV than
+  // vertical, and fitting only to vertical would leave the structure
+  // overflowing the sides. Use whichever half-angle is smaller.
+  const view = document.getElementById('view');
+  const w = view?.clientWidth || window.innerWidth;
+  const h = view?.clientHeight || window.innerHeight;
+  const aspect = w / h;
+  const halfFovV = (45 / 2) * Math.PI / 180;
+  const halfFovH = Math.atan(Math.tan(halfFovV) * aspect);
+  const halfFov = Math.min(halfFovV, halfFovH);
+  // Floor is radius*1.5, not an absolute constant: an absolute floor (the
+  // old code used 20) overshoots small real cells (AMDB structures are
+  // typically radius 4-9) into a needlessly zoomed-out start. radius*1.5
+  // still guarantees no near-plane clipping regardless of cell size — near
+  // is 0.1 and radius is floored at 1 above, so dist - radius >= 0.5*radius
+  // >= 0.5, comfortably clear of the 0.1 near plane.
+  const fitDist = Math.max((radius / Math.sin(halfFov)) * 1.1, radius * 1.5);
   // defaultZoomScale is a user zoom preference: it may pull the camera
   // further OUT, but never zooms in past the distance that guarantees the
   // whole structure is visible.
   const dist = fitDist * Math.max(1, app.defaultZoomScale);
-  return { center, dist };
+  return { center, dist, radius };
 }
 
 export function latticeDirs() {

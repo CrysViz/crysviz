@@ -108,6 +108,10 @@ export const groups = {
   forcesTipMesh: null,
   spinShaftMesh: null,
   spinTipMesh: null,
+  // Phonon-mode displacement arrows (render/PhononArrowModule.js), owned by
+  // phonon/phononSession.js and rebuilt per animation tick.
+  phononShaftMesh: null,
+  phononTipMesh: null,
   fieldGroup: null,
   fieldMeshPos: null,
   fieldMeshNeg: null,
@@ -138,7 +142,7 @@ export const RENDERING_DEFAULTS = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
   renderPipeline: 'depthpeel', // active rendering pipeline id; depthpeel self-optimizes to a plain forward pass when the scene has no transparency (DepthPeelPass fast path)
   showAllRenderPipelines: false, // HIDDEN (config-only, no GUI): list superseded/debug pipelines in the rendering dropdown
-  depthPeelLayers: 5, // peel passes for the 'depthpeel' pipeline (1-10; more = deeper transparency, slower)
+  depthPeelLayers: 10, // peel passes for the 'depthpeel' pipeline (1-50; more = deeper transparency, slower)
   rtResolutionScale: 0.95, // raytrace/pathtrace pipelines: internal resolution as a fraction of the canvas
   rtTiledRender: true, // raytrace/pathtrace: render each sample in scissored tiles (one/frame) to keep the shared GPU responsive; untiled half-res while the camera moves
   rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)
@@ -179,6 +183,10 @@ export const RENDERING_DEFAULTS = {
 export const general = {
   ...RENDERING_DEFAULTS,
   polyEdgeWidth: 1, // polyhedra edge line thickness in pixels (fat lines; 1 = classic hairline)
+  // Multiplier on mouse/touch rotate + pan sensitivity (Visual ▸ Camera slider).
+  // 1 = the tuned default; <1 slower, >1 faster. Persisted via the panelPref of
+  // the same name; applied to controls.rotateSpeed and the GestureArbiter pan.
+  cameraSpeedFactor: 1,
   ForceMin:1e-4,
   ForceMax:2.5,
   BondMin:1.1,
@@ -257,6 +265,9 @@ export const general = {
   forceRadius: 0.08,
   spinScale: 1.0,
   spinRadius: 0.08,
+  // Spin arrowhead (cone) length in the same base units as the shaft; scales
+  // with spinRadius like the shaft does. Default 0.4 = half the legacy 0.8.
+  spinTipLength: 0.4,
   // Spin colormap range (Spins panel min/max inputs; read with ||-defaults).
   spinMin: 0,
   spinMax: 2,
@@ -443,6 +454,11 @@ export const general = {
   // (corner/edge/face atoms duplicated onto all their images); widening e.g.
   // xmax to 1.2 reveals atoms up to 0.2 of a cell past the boundary. Applied
   // in render/LatticeModule.js periodicWrapped (JS + WASM parity).
+  // Everything else drawn per image follows the same region: one force/spin
+  // arrow per drawn atom (render/ForceModule.js, render/SpinModule.js) and the
+  // volumetric field, which is repeated into every cell the region reaches and
+  // clipped to it (model/Isosurface.js setPeriodicBounds; the tracers march the
+  // same box, render/pipeline/raytrace/fieldChunk.js).
   periodicBounds:{ xmin:0, xmax:1, ymin:0, ymax:1, zmin:0, zmax:1 },
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   completePolyhedra:false, // Show the out-of-cell atoms needed to complete the polyhedra
@@ -478,6 +494,19 @@ export const general = {
   // idle (stats computation isn't free, hence opt-in).
   forceStatsLive: false,
   spinsActive: false, // "Show Spins" toggle draws spin arrows
+  // Draw a spin arrow on every periodic-image copy of an atom too, not
+  // just the primary (Spins panel toggle, default off). Only physically
+  // meaningful when the cell is a magnetic unit cell — see the panel (i).
+  showSpinsOnCopies: false,
+  // Whether a plain structure load re-applies the per-structure preferences
+  // saved for the same file in an earlier session (per-atom colours, focus
+  // regions — state/structurePrefs.js). The full app leaves this on; widget
+  // mode (host/early.js) turns it off at boot unless the embed URL opts in
+  // with `prefs=1`, since the embed has no UI to inspect, change or reset
+  // those preferences. Read as the default of initializeUIOnLoad's
+  // restoreStoredPrefs option (ui/StructureInputModule.js); an explicit
+  // option still wins (share-URL / .crysviz loads always pass false).
+  restoreStoredPrefs: true,
   fieldActive: true, // "Show Volumetric Field" toggle draws the isosurface
   comparisonActive: false, // "Show Lattice Comparison" keeps the lattice popup synced (shared by both panels below)
   // Master "Enable Comparison" toggle (classic Comparison panel, ui/ComparisonPanel.js):

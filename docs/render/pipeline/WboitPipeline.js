@@ -1,14 +1,17 @@
 // "Weight blended (WBOIT)" pipeline: order-independent transparency via the
 // vendored three-wboit library (docs/external/three-wboit/ — McGuire & Bavoil
 // weighted blended OIT). Every frame runs WboitPass's stages instead of a
-// plain renderer.render: opaque pass → plain-transparent pass → WBOIT
-// accumulation → revealage → full-screen composite. All transparent content
-// blends order-independently — including ACROSS meshes — as a soft weighted
-// average (approximate; high-alpha overlaps look softer than exact
-// compositing, and depth discrimination is weak over this app's shallow
-// orthographic depth range). The staging/split/overlay behaviour lives in
-// StagedTransparencyPipeline; this class contributes the WBOIT material patch
-// and the pass lifecycle.
+// plain renderer.render: opaque pass → plain-transparent pass → WBOIT depth
+// range → revealage → accumulation → full-screen composite. All transparent
+// content blends order-independently — including ACROSS meshes. The
+// accumulation weight is transmittance-interpolated (WboitUtils.js): each
+// fragment is weighted by the estimated transmittance of the transparent
+// fragments in front of it, derived from the pixel's revealage and its
+// transparent depth range. That is exact for two fragments and for equally
+// spaced stacks, and converges on the opaque rendering as alpha → 1 (no jump
+// between alpha 0.99 and 1); unevenly spaced deep stacks remain approximate.
+// The staging/split/overlay behaviour lives in StagedTransparencyPipeline;
+// this class contributes the WBOIT material patch and the pass lifecycle.
 
 import * as THREE from '../../external/three/three.module.js';
 import { app } from '../../state/store.js';

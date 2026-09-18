@@ -1,3 +1,4 @@
+import { saveAtomColors } from '../utils/ColorModule.js';
 import init, { analyze_cell } from '../external/moyo-test/moyo_wasm.js';
 import { fileBrowser, general, structureShip } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
@@ -224,19 +225,33 @@ async function ensureMoyoReady() {
   return moyoReady;
 }
 
-export async function analyzeStructureSymmetry(structure = fileBrowser.selectedStructure, tolerance = defaultSymprec()) {
-  if (!structure) throw new Error('No structure selected');
+/**
+ * Run moyo on a bare cell. `lattice` is 3 row vectors (Å), `positions` are
+ * fractional, `numbers` are per-atom integer labels — moyo only ever compares
+ * them for equality, so they need not be atomic numbers (the symmetric CIF
+ * export passes composition labels so that two mixed sites are equivalent only
+ * when their species AND occupancies agree). Resolves to the raw moyo dataset
+ * in the 'Standard' setting; rejects with a user-readable message.
+ * @param {{lattice: number[][], positions: number[][], numbers: number[]}} cell
+ * @param {number} tolerance symprec in Å
+ */
+export async function analyzeCell({ lattice, positions, numbers }, tolerance = defaultSymprec()) {
   await ensureMoyoReady();
-
-  const numbers = structure.elements.map((element) => PT_INVERTED[element]);
-  const positions = structure.atoms.map((atom) => [...atom.position]);
-  const lattice = structure.lattice.map((row) => [...row]);
   const cell = { positions, lattice: { basis: lattice.flat() }, numbers };
   try {
     return analyze_cell(JSON.stringify(cell), tolerance, 'Standard');
   } catch (error) {
     throw new Error(describeMoyoFailure(error, tolerance));
   }
+}
+
+export async function analyzeStructureSymmetry(structure = fileBrowser.selectedStructure, tolerance = defaultSymprec()) {
+  if (!structure) throw new Error('No structure selected');
+  return analyzeCell({
+    lattice: structure.lattice.map((row) => [...row]),
+    positions: structure.atoms.map((atom) => [...atom.position]),
+    numbers: structure.elements.map((element) => PT_INVERTED[element]),
+  }, tolerance);
 }
 
 // moyo throws bare tagged strings ("PrimitiveSymmetrySearchError"). Turn them
@@ -644,6 +659,7 @@ export function setWyckoffOrbitColor(orbitId, hex, structure = fileBrowser.selec
     structure.atoms[atomIndex].userColor = hex;
     structure.atoms[atomIndex].setColor(hex);
   });
+  saveAtomColors(structure); // keep the overrides for the next session
   // Nothing moved, so bonds and the cell are left alone.
   updateVisualization({
     reRenderAtoms: true,

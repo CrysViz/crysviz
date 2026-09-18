@@ -1,0 +1,5 @@
+{
+  "format": "crysviz",
+  "version": 1,
+  "structure": { "poscar": "Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nDirect\n0 0 0\n" }
+}

@@ -183,6 +183,40 @@
   margin: var(--sp-3-5) 0;
 }
 
+/* Rotate & pan speed slider row: label + value on one line, range beneath.
+   Matches the vertical rhythm of the toggle rows above it. */
+.camera_speed_row {
+  display: block;
+  margin: var(--sp-3-5) 0 0;
+}
+.camera_speed_row .slider-value {
+  float: right;
+}
+/* Range + Reset button share one line, the range taking the remaining width. */
+.camera_speed_controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3-5);
+  margin-top: var(--sp-3-5);
+}
+.camera_speed_controls input[type="range"] {
+  flex: 1;
+  min-width: 0;
+}
+.camera_speed_reset {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: var(--fs-sm);
+  color: var(--accent-fg);
+  background: var(--wash-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-4);
+  cursor: pointer;
+}
+.camera_speed_reset:hover {
+  background: var(--wash-3, var(--wash-2));
+}
+
 .camera_label,
 .camera_label_r,
 .camera_label-pnr {

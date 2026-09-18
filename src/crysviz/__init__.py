@@ -5,6 +5,8 @@ module deliberately stays small: the optional GUI dependency is imported only
 when the command launcher is asked to use it.
 """
 
+from importlib.metadata import version
+
 from ._payload import Payload
 from ._viewer import (
     BrowserCommandError,
@@ -29,7 +31,7 @@ ClosedViewerError = ViewerClosedError
 CommandTimeoutError = ViewerCommandTimeout
 ProtocolError = ViewerProtocolError
 
-__version__ = "0.1.0"
+__version__ = version("crysviz")
 
 __all__ = [
     "Payload", "Viewer", "show", "StructureInfo", "LoadResult", "PositionUpdateResult",

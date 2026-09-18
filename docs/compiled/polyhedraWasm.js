@@ -19,7 +19,7 @@ import { atomicRadii } from '../defaults/radii_defaults.js';
 
 // Initialise once at import (idempotent — returns the existing instance if the
 // periodic path already initialised the module).
-await init(new URL('./periodic_wasm_bg.wasm', import.meta.url));
+await init({ module_or_path: new URL('./periodic_wasm_bg.wasm', import.meta.url) });
 
 /**
  * Marshal the display-coupled `prep` into flat typed-array WASM inputs. Shared by the

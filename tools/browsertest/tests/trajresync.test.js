@@ -35,12 +35,16 @@ async function chartSampleCount(page) {
     const idxA = fileBrowser.selectedRowIndex;
     // Guarantee A carries per-frame energy (the real OUTCAR case), independent
     // of extxyz comment-line energy parsing.
-    structureShip.container[idxA].structures.forEach((s, i) => { s.energy = -10 - i * 0.1; });
+    const containerA = structureShip.container[idxA];
+    for (let i = 0; i < containerA.frameCount; i++) {
+      const physics = await Promise.resolve(containerA.store?.getFramePhysics(i));
+      if (physics) physics.energy = -10 - i * 0.1;
+    }
     openPanel('trajectory');
     await new Promise((r) => setTimeout(r, 250));
 
     // Simulate a live-MD container B with a long streamed series, selected.
-    const seed = structureShip.container[idxA].structures[0];
+    const seed = await Promise.resolve(containerA.frameAtDetached(0));
     const B = new StructureContainer({ fileName: 'B_live', structures: [] });
     const N = 40;
     B.structures = Array.from({ length: N }, () => seed);
@@ -68,7 +72,7 @@ async function chartSampleCount(page) {
 
     // Now select A again and re-sync (the row-click path calls refreshActivePanels).
     fileBrowser.selectedRowIndex = idxA;
-    fileBrowser.selectedStructure = structureShip.container[idxA].structures[0];
+    fileBrowser.selectedStructure = await Promise.resolve(containerA.frameAt(0));
     refreshActivePanels();
     for (let i = 0; i < 60; i++) {
       const c = document.querySelector('#trajPlotHost .js-plotly-plot');
@@ -80,7 +84,7 @@ async function chartSampleCount(page) {
       return c && c.data ? Math.max(...c.data.map((t) => (t.x ? t.x.length : 0))) : -1;
     })();
 
-    return { framesA: structureShip.container[idxA].structures.length, countAfterB, countAfterA };
+    return { framesA: containerA.frameCount, countAfterB, countAfterA };
   }, A);
 
   H.check('plot shows B\'s long live series when B is selected', res.countAfterB === 40, JSON.stringify(res));

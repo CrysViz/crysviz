@@ -18,6 +18,7 @@ import * as THREE from '../../../external/three/three.module.js';
 import { ConvexHull } from '../../../external/three/ConvexHull.js';
 import { groups, fileBrowser, general, app, measurements } from '../../../state/store.js';
 import { bondKey } from '../../BondsFracUpdateModule.js';
+import { normalizePeriodicBounds } from '../../LatticeModule.js';
 import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
 import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
 import { getCutPlaneMaskSign, Plane } from '../../../model/index.js';
@@ -272,7 +273,22 @@ export class SceneEncoder {
   fieldTexture = this._dummyFieldTexture;
   fieldEnabled = false;
   fieldWorldToFrac = new THREE.Matrix4();
+  // The STRUCTURE lattice's fractional space, in which the display boundary is
+  // expressed: world -> cell fractions, and cell fractions -> field grid
+  // fractions [0,1]^3. They differ from fieldWorldToFrac once a supercell is
+  // built after the field was loaded (the field keeps its original sub-cell).
+  fieldWorldToCell = new THREE.Matrix4();
+  fieldCellToFrac = new THREE.Matrix4();
+  // widest boundary span in FIELD-grid-cell units (march step budget)
+  fieldSpanCells = 1;
   fieldDims = [1, 1, 1];
+  // The periodic display boundary in fractional field coordinates: the region
+  // the ray march covers. [0,1] is the plain unit cell; wider values repeat
+  // the field into the neighbouring cells, exactly like the raster pipelines'
+  // translated + clipped copies (model/Isosurface.js setPeriodicBounds).
+  fieldBoundsMin = new THREE.Vector3(0, 0, 0);
+  fieldBoundsMax = new THREE.Vector3(1, 1, 1);
+  fieldWrap = false; // sample periodically (only needed outside the unit cell)
   fieldIso = 0;
   fieldAbsMode = false;
   fieldPosColor = new THREE.Color(0x33aaff);
@@ -371,6 +387,7 @@ export class SceneEncoder {
     if (structure) {
       parts.push('ms',
         JSON.stringify(structure.atomImageStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.focusRegions ?? {}),
         JSON.stringify(structure.bondCategoryStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.bondUserStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}, dropMaterialKey),
@@ -393,8 +410,10 @@ export class SceneEncoder {
     if (field) {
       const iso = groups.isosurfaceGroup;
       const vals = field.values;
+      const fb = this._fieldBounds();
       parts.push('f', field.nx, field.ny, field.nz, field.isoValue,
-        field.useAbsoluteIsoValue ? 1 : 0,
+        field.useAbsoluteIsoValue ? 1 : 0, fb.join(','),
+        String(fileBrowser.selectedStructure?.lattice?.flat?.() ?? ''),
         iso.meshes?.positive?.material?.color?.getHexString(),
         iso.meshes?.negative?.material?.color?.getHexString(),
         iso.meshes?.positive?.material?.opacity,
@@ -471,6 +490,15 @@ export class SceneEncoder {
   /** The live volumetric field to trace, or null. Same source as the raster
    *  isosurface: the isosurfaceGroup, in the scene (clearField removes it) and
    *  not hidden, carrying a field with values. */
+  /** The periodic display boundary as a flat [xLo,xHi,yLo,yHi,zLo,zHi], or the
+   *  plain unit cell when periodic images are off (no boundary is in force for
+   *  the atoms either then). */
+  _fieldBounds() {
+    if (!general.showPeriodic) return [0, 1, 0, 1, 0, 1];
+    const b = normalizePeriodicBounds(general.periodicBounds);
+    return [b[0][0], b[0][1], b[1][0], b[1][1], b[2][0], b[2][1]];
+  }
+
   _activeField() {
     const iso = groups.isosurfaceGroup;
     const field = iso?.field;
@@ -707,8 +735,12 @@ export class SceneEncoder {
       }
     }
     if (this.fieldEnabled && this._fieldForward) {
+      // Corners of the DISPLAY BOUNDARY box, not of the unit cell: a widened
+      // boundary draws the field past the cell, and the grid the tracer builds
+      // has to contain it.
+      const lo = this.fieldBoundsMin, hi = this.fieldBoundsMax;
       for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < 2; k++) {
-        _pos.set(i, j, k).applyMatrix4(this._fieldForward);
+        _pos.set(i ? hi.x : lo.x, j ? hi.y : lo.y, k ? hi.z : lo.z).applyMatrix4(this._fieldForward);
         fold(_pos.x, _pos.y, _pos.z);
       }
     }
@@ -1173,12 +1205,14 @@ export class SceneEncoder {
       tip.updateWorldMatrix(true, false);
       const count = Math.min(tip.count, Math.floor(shaft.count / 2));
       const instanceMap = (kind === 'forces'
-        ? groups.forcesInstanceBySrcIndex : groups.spinsInstanceBySrcIndex) ?? new Map();
+        ? groups.forcesInstancesBySrcIndex : groups.spinsInstancesBySrcIndex) ?? new Map();
       const arrowMap = kind === 'forces'
         ? (shaft.userData?.arrowStylesByInstance ?? groups.forcesArrowByInstance)
         : (shaft.userData?.arrowStylesByInstance ?? groups.spinsArrowByInstance);
+      // srcIdx -> instance LIST (one arrow per periodic image of the atom),
+      // inverted here to instance -> srcIdx.
       const srcByInstance = new Map([...instanceMap]
-        .map(([srcIdx, instanceIndex]) => [instanceIndex, srcIdx]));
+        .flatMap(([srcIdx, list]) => list.map((instanceIndex) => [instanceIndex, srcIdx])));
       for (let i = 0; i < count; i++) {
         const shaftColors = shaft.instanceColor?.array;
         const tipColors = tip.instanceColor?.array;
@@ -1205,9 +1239,11 @@ export class SceneEncoder {
           shaftColors[i * 6 + 2]];
         const style = arrowStyle(fileBrowser.selectedStructure, kind,
           srcByInstance.get(i), fallbackColor, arrowMap?.get(i));
+        const shaftFocusAlpha = shaft.geometry?.attributes?.instanceOpacity?.getX(i * 2) ?? 1;
         result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
           r: style.color[0], g: style.color[1], b: style.color[2],
-          a: shaft.material?.opacity ?? 1, matTexel: materialTexel(style.material),
+          a: (shaft.material?.opacity ?? 1) * shaftFocusAlpha,
+          matTexel: materialTexel(style.material),
           shape: { rTop: 1 } });
 
         tip.getMatrixAt(i, _m);
@@ -1221,9 +1257,11 @@ export class SceneEncoder {
         const tipStyle = arrowStyle(fileBrowser.selectedStructure, kind,
           srcByInstance.get(i), tipFallback, arrowMap?.get(i));
         const tipColor = tipStyle.color ?? tipFallback;
+        const tipFocusAlpha = tip.geometry?.attributes?.instanceOpacity?.getX(i) ?? 1;
         result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
           r: tipColor[0], g: tipColor[1], b: tipColor[2],
-          a: tip.material?.opacity ?? 1, matTexel: materialTexel(tipStyle.material),
+          a: (tip.material?.opacity ?? 1) * tipFocusAlpha,
+          matTexel: materialTexel(tipStyle.material),
           shape: { rTop: 0 } });
       }
     };
@@ -1367,7 +1405,40 @@ export class SceneEncoder {
       0, 0, 0, 1);
     _m.scale(_scale.set(field.nx, field.ny, field.nz));
     this.fieldWorldToFrac.copy(_m).invert();
-    this._fieldForward = _m.clone(); // frac [0,1]^3 -> world (scene-bounds corners)
+
+    // The display boundary is in the STRUCTURE lattice's fractional space. The
+    // tracer marches that box and wraps the sample coordinate into the unit
+    // cell, then maps the cell point into the field grid — where the raster
+    // pipelines translate a copy of the mesh by lattice vectors and clip it.
+    // After a supercell the grid covers only part of the cell, and the gaps
+    // repeat with the cell exactly like the raster copies' do.
+    const structure = fileBrowser.selectedStructure;
+    const lat = structure?.lattice;
+    const hasLattice = Array.isArray(lat) && lat.length === 3
+      && lat.every((row) => Array.isArray(row) && row.length === 3 && row.every(Number.isFinite));
+    const cellToWorld = hasLattice
+      ? new THREE.Matrix4().set(
+        lat[0][0], lat[1][0], lat[2][0], 0,
+        lat[0][1], lat[1][1], lat[2][1], 0,
+        lat[0][2], lat[1][2], lat[2][2], 0,
+        0, 0, 0, 1)
+      : _m.clone(); // no lattice: the cell IS the field grid cell
+    this.fieldWorldToCell.copy(cellToWorld).invert();
+    this.fieldCellToFrac.multiplyMatrices(this.fieldWorldToFrac, cellToWorld);
+    this._fieldForward = cellToWorld; // cell fractions -> world (scene-bounds corners)
+
+    const [bxLo, bxHi, byLo, byHi, bzLo, bzHi] = this._fieldBounds();
+    this.fieldBoundsMin.set(bxLo, byLo, bzLo);
+    this.fieldBoundsMax.set(bxHi, byHi, bzHi);
+    this.fieldWrap = bxLo < 0 || bxHi > 1 || byLo < 0 || byHi > 1 || bzLo < 0 || bzHi > 1;
+    // Step budget: the span in field-grid cells, so a supercell (structure
+    // cell = several grid cells) is marched as finely per grid cell as before.
+    const gridLen = (k) => Math.hypot(_m.elements[4 * k], _m.elements[4 * k + 1], _m.elements[4 * k + 2]);
+    const cellLen = (k) => Math.hypot(cellToWorld.elements[4 * k], cellToWorld.elements[4 * k + 1],
+      cellToWorld.elements[4 * k + 2]);
+    const spans = [bxHi - bxLo, byHi - byLo, bzHi - bzLo];
+    this.fieldSpanCells = Math.max(1, ...spans.map((span, k) =>
+      span * (gridLen(k) > 0 ? cellLen(k) / gridLen(k) : 1)));
 
     this.fieldIso = Number.isFinite(field.isoValue) ? field.isoValue : 0;
     this.fieldAbsMode = !!field.useAbsoluteIsoValue;
@@ -1381,7 +1452,6 @@ export class SceneEncoder {
     // still glows, but it has no bounding-sphere primitive to add to the NEE
     // _emissiveList, so it lights via the PT non-listed diffuse-arrival
     // fallback only (hasEmissive keeps shadow-any-hit off so it isn't occluded).
-    const structure = fileBrowser.selectedStructure;
     let fm = structure?.fieldMaterial;
     if (fm && fm.type === 'glass') {
       if (!this._fieldGlassWarned) {

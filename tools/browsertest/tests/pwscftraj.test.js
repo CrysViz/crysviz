@@ -104,7 +104,7 @@ const QE_OUT = [
 
     await cv.loadStructure(text, 'AgN5.scf.in.out');
     const container = structureShip.container[fileBrowser.selectedRowIndex];
-    const frames = container.structures;
+    const frames = await Promise.resolve(container.framesSlice());
     const pressure = (s) => {
       const t = s.stress && s.stress.tensor;
       return t ? (t[0][0] + t[1][1] + t[2][2]) / 3 : null;
@@ -120,7 +120,7 @@ const QE_OUT = [
     }
 
     return {
-      nframes: frames.length,
+      nframes: container.frameCount,
       fileName: container.fileName,
       energies: frames.map((s) => s.energy),
       forceCounts: frames.map((s) => (s.forces ? s.forces.length : 0)),

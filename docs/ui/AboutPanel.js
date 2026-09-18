@@ -8,6 +8,7 @@ let aboutLoading = false;
 let aboutPreviousFocus = null;
 
 import {resizeRenderer} from './WindowAndSceneControls.js';
+import {CRYSVIZ_VERSION} from '../version.js';
 
 export async function loadAboutContent() {
   if (!aboutContent || aboutLoading || aboutLoaded) return;
@@ -18,7 +19,7 @@ export async function loadAboutContent() {
     if (!response.ok) {
       throw new Error(`Request failed (${response.status})`);
     }
-    const text = await response.text();
+    const text = (await response.text()).replaceAll('{{version}}', CRYSVIZ_VERSION);
     aboutContent.innerHTML = renderMarkdownContent(text) || '<p>No About content available.</p>';
     aboutLoaded = true;
   } catch (error) {

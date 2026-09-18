@@ -1,4 +1,5 @@
 import {fileBrowser} from '../state/store.js';
+import { readStructurePrefs, saveStructurePref, scheduleStructurePrefSave } from '../state/structurePrefs.js';
 
 
 // Get the color for an atom (custom or default). Guards against a stale index —
@@ -20,36 +21,86 @@ export function resetAtomColor(atom) {
   return atom.resetColor();
 }
 
-// Save all custom atom colors to localStorage
-export function saveAtomColors(atoms) {
-  try {
-    const colors = atoms.reduce((acc, atom) => {
-      if (atom.uuid && atom.getColor() !== atom.defaultColor) {
-        acc[atom.uuid] = atom.getColor();
-      }
-      return acc;
-    }, {});
-    localStorage.setItem('atomColors', JSON.stringify(colors));
-  } catch (_) {
-    console.log("Failed to save atom colors");
-  }
+// ---------------------------------------------------------------------------
+// Per-atom user colour persistence — the colours a user picks for individual
+// atoms / whole elements survive a browser reload.
+//
+// History: the original save/load pair was switched off in 3ccec17 ("storing
+// color is not switched on"), and its replacement (549ce34) was keyed on
+// atom.uuid and never called from anywhere — nor could it have worked, since
+// uuids are minted from Date.now() on every load (model/InstanceMeshManager.js).
+// Storage now lives in state/structurePrefs.js, keyed on the structure's
+// CONTENT (so the same file opened again is recognised) with one record per
+// structure shared with the other per-structure preferences; this file only
+// decides WHAT to store (atom.userColor, by atom index — never derived
+// colours such as force mode or the element map) and how to re-apply it.
+// ---------------------------------------------------------------------------
+
+/** { [atomIndex]: '#rrggbb' } for every atom with an explicit user override. */
+function collectUserColors(structure) {
+  const colors = {};
+  structure.atoms.forEach((atom, i) => {
+    const c = atom.userColor;
+    if (typeof c === 'string' ? c !== '' : typeof c === 'number') colors[i] = colorHexToCss(c);
+  });
+  return colors;
 }
 
-// Load custom atom colors from localStorage and apply them
-export function loadAtomColors(atoms) {
-  try {
-    const raw = localStorage.getItem('atomColors');
-    if (raw) {
-      const colors = JSON.parse(raw);
-      atoms.forEach(atom => {
-        if (atom.uuid && colors[atom.uuid] !== undefined) {
-          atom.setColor(colorHexToCss(colors[atom.uuid]));
-        }
-      });
+/**
+ * Save this structure's per-atom user colours. No overrides left -> the
+ * field is dropped, so a Reset clears storage too. Called by every colour
+ * editor right after it writes atom.userColor; the pickers go through
+ * scheduleAtomColorSave instead since they fire on every pointer move.
+ * @param {any} [structure] defaults to the selected structure
+ * @returns {boolean} whether storage changed
+ */
+export function saveAtomColors(structure = fileBrowser.selectedStructure) {
+  if (!structure?.atoms) return false;
+  return saveStructurePref(structure, 'colors', collectUserColors(structure));
+}
+
+/**
+ * Debounced saveAtomColors for the colour pickers (one write per drag burst).
+ * @param {any} [structure] defaults to the selected structure
+ */
+export function scheduleAtomColorSave(structure = fileBrowser.selectedStructure) {
+  if (!structure?.atoms) return;
+  scheduleStructurePrefSave(structure, 'colors', () => collectUserColors(structure));
+}
+
+/**
+ * Re-apply the per-atom user colours saved for this container in an earlier
+ * session, to every frame it holds — through the container's own
+ * trajectory-wide primitive (forEachFrameMaterialized), so a store-backed
+ * trajectory (sparse `structures`, frames materialised on demand) records the
+ * colours per frame exactly as "Apply to Trajectory" would. Runs from the
+ * single load funnel (ui/StructureInputModule.js initializeUIOnLoad) BEFORE
+ * the structure is selected and rendered, so the first rebuild already paints
+ * the colours and no extra GPU pass is needed. Returns the number of atom
+ * colours applied synchronously (a frame source that reads from disk applies
+ * the rest as its frames resolve).
+ * @param {any} container a StructureContainer
+ * @returns {number}
+ */
+export function restoreAtomColors(container) {
+  const colors = readStructurePrefs(container)?.colors;
+  if (!colors || typeof colors !== 'object' || typeof container?.forEachFrameMaterialized !== 'function') return 0;
+  const entries = Object.entries(colors).filter(([, hex]) => typeof hex === 'string');
+  if (!entries.length) return 0;
+  let applied = 0;
+  container.forEachFrameMaterialized((frame) => {
+    for (const [idx, hex] of entries) {
+      const atom = frame.atoms?.[Number(idx)];
+      if (!atom) continue;
+      // The same two writes every colour editor makes (ColorEditor.js,
+      // IndividualAtomRow.js, SelectionActionBar.js): userColor is the
+      // authoritative override getColor() reads; color keeps the plain
+      // field in step for the paths that read it directly.
+      atom.userColor = hex;
+      if (atom.setColor(hex)) applied++;
     }
-  } catch (_) {
-    console.log("Failed to load atom colors");
-  }
+  });
+  return applied;
 }
 
 export function clearAtomColor(atom) {

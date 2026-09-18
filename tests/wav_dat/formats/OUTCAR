@@ -1,0 +1,16 @@
+ vasp.6.4.3 19Mar24 (build Mar 20 2024 18:56:02) gamma-only                     
+  
+ executed on           LinuxIFC date 2025.03.10  15:58:59
+ running   16 mpi-ranks, with    1 threads/rank
+
+
+--------------------------------------------------------------------------------------------------------
+
+
+ INCAR:
+   PREC = Accurate
+   ENCUT = 500
+ POTCAR:    PAW_PBE Si 05Jan2001
+
+ Startparameter for this run:
+   NWRITE =      2    write-flag & timer

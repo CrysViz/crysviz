@@ -45,12 +45,14 @@ const H = require('../harness');
     s.bondCategoryStyles['Cl-Na'] = { color: '#ff0000', alpha: 0.5 };
     s.atoms[0].userColor = '#00ff00';
     s.atoms[0].color = '#00ff00';
+    const currentIndex = container.frameIndexOf(s);
+    const otherIndex = currentIndex === 0 ? 1 : 0;
+    const other = await Promise.resolve(container.frameAtDetached(otherIndex));
     return {
-      frames: container.structures.length,
-      frameIndex: container.structures.indexOf(s),
+      frames: container.frameCount,
+      frameIndex: currentIndex,
       buttonPresent: !!document.getElementById('applyStylesToTrajectoryBtn'),
-      otherFrameEmpty: Object.keys(
-        container.structures.find((f) => f !== s)?.bondCategoryStyles ?? {}).length === 0,
+      otherFrameEmpty: Object.keys(other?.bondCategoryStyles ?? {}).length === 0,
     };
   });
   H.check('2-frame trajectory loaded with the button present and other frame unstyled',
@@ -62,7 +64,8 @@ const H = require('../harness');
     const { fileBrowser, structureShip } = await import('./state/store.js');
     const container = structureShip.container[fileBrowser.selectedRowIndex];
     const current = fileBrowser.selectedStructure;
-    const other = container.structures.find((f) => f !== current);
+    const currentIndex = container.frameIndexOf(current);
+    const other = await Promise.resolve(container.frameAtDetached(currentIndex === 0 ? 1 : 0));
     return {
       otherCatStyle: other.bondCategoryStyles['Cl-Na'],
       distinctObjects: other.bondCategoryStyles !== current.bondCategoryStyles,
@@ -81,8 +84,8 @@ const H = require('../harness');
     const { fileBrowser, structureShip, groups, general } = await import('./state/store.js');
     const { updateVisualization } = await import('./core/crystal-viewer.js');
     const container = structureShip.container[fileBrowser.selectedRowIndex];
-    const nextIndex = container.structures.indexOf(fileBrowser.selectedStructure) === 0 ? 1 : 0;
-    fileBrowser.selectedStructure = container.structures[nextIndex];
+    const nextIndex = container.frameIndexOf(fileBrowser.selectedStructure) === 0 ? 1 : 0;
+    fileBrowser.selectedStructure = await Promise.resolve(container.frameAt(nextIndex));
     fileBrowser.stepInput = nextIndex;
     const counterBefore = general.bondsBuildCounter;
     await updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
