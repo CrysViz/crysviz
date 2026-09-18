@@ -56,6 +56,13 @@ async function expandPanel(page, id) {
     const overlay = document.getElementById('aboutOverlay');
     return overlay && !overlay.hasAttribute('hidden') && overlay.classList.contains('visible');
   }));
+  const aboutVersion = await page.waitForFunction(() => {
+    const text = document.getElementById('aboutContent')?.textContent || '';
+    return !text.includes('Loading About') && text.match(/Version (\S+) Beta/)?.[1];
+  }, null, { timeout: 5000 }).then((h) => h.jsonValue()).catch(() => null);
+  const { CRYSVIZ_VERSION } = await page.evaluate(() => import('./version.js'));
+  H.check('About dialog shows the version from docs/version.js',
+    aboutVersion === CRYSVIZ_VERSION, `${aboutVersion} vs ${CRYSVIZ_VERSION}`);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(220);
   H.check('Escape closes the About dialog', await page.evaluate(() =>
