@@ -9,7 +9,7 @@ import {Bond} from '../model/index.js';
 
 
 import {createBondsMesh} from './BondsFracUpdateModule.js'
-import {generateID} from '../utils/index.js'
+import {generateID, releaseIDs} from '../utils/index.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 //import {getBondCutoff} from './BondsModule.js'
 //
@@ -86,6 +86,7 @@ export function getBondMinCutoff(elem1, elem2) {
 }
 
 export function buildOverlayBondObjects(structure){
+  releaseIDs(structure.bonds); // the ids of the bonds being replaced
   structure.bonds = [];
   structure.bondMapping ={};
 

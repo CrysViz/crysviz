@@ -965,6 +965,48 @@
   gap: var(--sp-3); /* 8px */
 }
 
+/* Isosurface value: slider + typed value on one row (same shape as the opacity
+   row above). The readout is an INPUT rather than a span because the slider's
+   100 steps cannot address a level like 2.5e-3 on a field whose maximum is
+   orders of magnitude larger — that value has to be typeable. */
+.field-iso-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3); /* 8px */
+}
+
+/* The slider yields the row; the box keeps its width so the exponential
+   readout never wraps or reflows as digits change. */
+.field-iso-row input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.field-iso-input {
+  flex: 0 0 auto;
+  width: 11ch;
+  min-height: var(--control-h);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--wash-1-5);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-sm);
+  color: var(--fg-1);
+  font-size: var(--fs-md);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.field-iso-input:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.field-iso-input:focus:not(:disabled) {
+  outline: none;
+  border-color: var(--accent-color);
+  background: var(--wash-3);
+}
+
 /* ---------------------------------------------------------------------------
    FieldCatalogWidget.js — the field selector.
 

@@ -11,6 +11,10 @@ const WboitStages = {
 	Normal: 0.0,
 	Acummulation: 1.0,
 	Revealage: 2.0,
+	// LOCAL MODIFICATION (CrysViz): per-pixel min/max fragment depth of the
+	// transparent set, rendered BEFORE accumulation so the accumulation weight
+	// can estimate the transmittance in front of each fragment (WboitUtils.js).
+	DepthRange: 3.0,
 };
 
 const WboitBasicShader = {

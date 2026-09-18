@@ -145,10 +145,15 @@ export function onEOSPointClick(plotId, handler) {
 
 async function renderInto(plotId, data, layout) {
   const Plotly = await loadPlotly();
+  // The plots window may close while Plotly is loading. newPlot throws when
+  // its target has disappeared, so treat a closed window as a cancelled draw.
+  if (!document.getElementById(plotId)) return;
   await Plotly.newPlot(plotId, data, layout, { responsive: true, displayModeBar: false });
   renderGeneration.set(plotId, (renderGeneration.get(plotId) || 0) + 1);
   wirePointClick(plotId);
-  requestAnimationFrame(() => Plotly.Plots.resize(plotId));
+  requestAnimationFrame(() => {
+    if (document.getElementById(plotId)) Plotly.Plots.resize(plotId);
+  });
 }
 
 /** ctx: { volumes, energies, evParams: [E0,V0,K0,K0Prime] } */

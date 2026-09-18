@@ -16,7 +16,7 @@ import {
   isTracerPipelineActive,
 } from './pipeline/index.js';
 
-export { pauseRendering, resumeRendering, animation_update, requestRender, renderFrameNow } from './AnimateModule.js';
+export { pauseRendering, resumeRendering, animation_update, requestRender, renderFrameNow, setRenderBenchmark, isRenderBenchmark } from './AnimateModule.js';
 
 export {
   rebuildAtoms, updateAtoms, updateSingleAtomDiameter, updateSingleAtomColor,
@@ -29,7 +29,7 @@ export {
 
 export {
   rebuildChargeBadges, updateChargeBadges, disposeChargeBadges, clearChargeTextureCache,
-  formatCharge, parseChargeInput,
+  formatCharge, parseChargeInput, applyFocusToChargeBadges,
 } from './ChargeBadgeModule.js';
 
 export {
@@ -51,10 +51,18 @@ export { removeForces, updateForces, computeForceColor } from './ForceModule.js'
 export {
   updateHydrogenBonds, clearHydrogenBonds, initHydrogenBondPairs,
   resetHydrogenBondLengths, getEligibleHydrogenBondPairs, hydrogenBondAcceptorOf,
-  hydrogenBondColorFor,
+  hydrogenBondColorFor, applyFocusToHydrogenBonds,
 } from './HydrogenBondModule.js';
 
 export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail } from './FastFrameModule.js';
+
+export {
+  DEFAULT_FOCUS_REGION, POLYHEDRA_FOCUS_MODES, focusOpacityAt, focusDistanceTo, gradientStartRadius,
+  combinedFocusOpacity, focusOpacityForPolyhedron, getFocusOpacityForPolyhedron, getFocusRegions,
+  focusRegionsActive, getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion,
+  removeFocusRegion, clearFocusRegions, applyFocusRegions, setFocusRegionCenterFractional,
+  resetFocusRegionCenter, applyFocusToArrows, applyFocusToField,
+} from './FocusRegionModule.js';
 
 export { updateGroundPlane } from './GroundPlaneModule.js';
 
@@ -66,16 +74,16 @@ export {
 export {
   updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
   resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
-  polyhedronFaceColor,
+  polyhedronFaceColor, applyFocusToPolyhedra,
 } from './PolyhedraModule.js';
 
 export {
-  updateField, setActiveField, toggleFieldVisibility, clearField, deleteField,
-  parseCHGCARFile, parseCubeFile, parseWavecarFile, revealFieldPanelForCurrentStructure,
-  suggestIsoValue,
+  updateField, applyFieldPeriodicBounds, setActiveField, toggleFieldVisibility, clearField,
+  deleteField, parseCHGCARFile, parseCubeFile, parseWavecarFile,
+  revealFieldPanelForCurrentStructure, suggestIsoValue,
 } from './Render3DFieldModule.js';
 
-export { removeSpins, updateSpins, deleteSpins, computeSpinColor } from './SpinModule.js';
+export { removeSpins, updateSpins, deleteSpins, computeSpinColor, autoSpinScale } from './SpinModule.js';
 
 export {
   setupAxisControls, setupAxisLongPress, setAxisStepButtonsMode, applyRotationFromUI,

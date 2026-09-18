@@ -12,6 +12,7 @@ import {StructureContainer, TrajectoryContainer} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import { recenterCamera, captureCameraSnapshot, applyCameraSnapshot, fitCameraToCurrentStructure } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
+import { count as traceCount } from '../debug/debugTrace.js';
 import { generateID } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
 
@@ -282,7 +283,7 @@ export function createRow(obj) {
       stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
     } else {
       stepInput.setCustomValidity("");
-      updateStructureFromRowAndStep(strucIndex);
+      applyRowStepChange(strucIndex);
     }
   });
 
@@ -796,7 +797,7 @@ export function updateRow(row, obj) {
       stepInput.setCustomValidity(`Step must be between 1 and ${obj.traj}`);
     } else {
       stepInput.setCustomValidity("");
-      updateStructureFromRowAndStep(strucIndex);
+      applyRowStepChange(strucIndex);
     }
   }
   function checkboxLimitLogic() {
@@ -815,6 +816,24 @@ export function updateRow(row, obj) {
 // save the outgoing camera/feature snapshot onto. Stays null until the first
 // switch actually happens.
 let lastActiveContainer = null;
+
+// A frame typed or spin-clicked into a row's step box is a deliberate settle
+// jump, exactly like the Trajectory player's own step buttons: the frame is
+// properly loaded and the view re-centres on it. When the player is built it
+// owns that jump (so its scrubber, frame label and plot cursor follow too) —
+// it registers itself here, which also avoids importing TrajectoryPanel from
+// this module (TrajectoryPanel already imports selectStructure from here).
+// Without a player the box drives the frame change itself and re-centres.
+let rowStepJumpHandler = null;
+export function setRowStepJumpHandler(fn) {
+  rowStepJumpHandler = typeof fn === 'function' ? fn : null;
+}
+
+function applyRowStepChange(rowIndex) {
+  if (rowStepJumpHandler && rowStepJumpHandler(rowIndex) === true) return;
+  updateStructureFromRowAndStep(rowIndex);
+  recenterCamera(); // keep the user's rotation/zoom; only re-centre on the new frame
+}
 
 // Function to update structure data from a row and its step input
 function updateStructureFromRowAndStep(rowIndex) {
@@ -865,6 +884,7 @@ let frameSwitchToken = 0;
 // The tail of a frame switch, once the frame exists as a Structure.
 function finishFrameSwitch(container, step, structure, rowChanged) {
   void step;
+  traceCount('frameApplied'); // Debug panel's playback counter (proper loads)
   fileBrowser.selectedStructure = structure;
   syncPlanesForSelectedStructure();
   refreshBackendTheme();

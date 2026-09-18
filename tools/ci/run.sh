@@ -33,6 +33,8 @@ if [[ "$setup_dependencies" == "1" ]]; then
     "$python_bin" -m pip install -e .
 fi
 
+"$python_bin" tools/update_version.py --check
+
 make checks
 "$python_bin" -m unittest discover -s tests -v
 
@@ -53,7 +55,7 @@ wheel_venv="$ci_temp/wheel-venv"
 "$wheel_venv/bin/python" -m pip install "$wheel"
 (
     cd "$ci_temp"
-    "$wheel_venv/bin/python" -c 'import importlib.resources, crysviz; assert crysviz.__version__ == "0.1.0"; assert importlib.resources.files("crysviz.web").joinpath("index.html").is_file()'
+    "$wheel_venv/bin/python" -c 'import importlib.resources, crysviz; assert importlib.resources.files("crysviz.web").joinpath("index.html").is_file()'
     "$wheel_venv/bin/crysviz" --help >/dev/null
     "$wheel_venv/bin/crysviz" --version
 )

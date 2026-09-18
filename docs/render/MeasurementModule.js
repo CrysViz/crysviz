@@ -10,8 +10,8 @@ import { getBondByInstanceId } from './BondsFracUpdateModule.js';
 // Angle measurements used to render green (atom rings all 0x00ff00-ish,
 // separate from the dashed legs' own orange) — unified to the same orange as
 // the dashed legs so the whole angle measurement (legs, rings, arc) reads as
-// one consistent accent color.
-const ANGLE_ACCENT = 0xff6600; // default angle accent (general.measureAngleColor overrides at runtime)
+// one consistent accent color. The colour itself lives in
+// general.measureAngleColor (state/store.js).
 // How far outside the vertex atom's own surface the arc sits, as a multiple
 // of that atom's radius. The inspector's own mini viewport uses arcR =
 // bondSpan * 0.4 (bondSpan being the shortest bond off the centre atom), but
@@ -890,9 +890,6 @@ export function addDistanceMeasurement(atom1, atom2) {
   const atom2Ref = createMeasurementAtomRef(atom2);
   // Create thick dashed cylinder for distance measurement (BLUE for distance)
   const pa = atom1.position.clone(), pb = atom2.position.clone();
-  const distance = pa.distanceTo(pb);
-  const direction = new THREE.Vector3().subVectors(pb, pa);
-
   const cylinderGroup = new THREE.Group();
   buildMeasureLine(cylinderGroup, pa, pb, 'distance',
     lineStandoff(atom1.userData.element), lineStandoff(atom2.userData.element));

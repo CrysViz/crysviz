@@ -17,7 +17,7 @@
 // Spec fields (see ForwardPipeline.applyTransparency for the kinds):
 //   kind:               'atoms' | 'bonds' | 'compAtoms' | 'compBonds' |
 //                       'polyhedraFace' | 'polyhedraEdge' | 'isosurface' |
-//                       'plane' | 'planeBorder' | 'measureGhost'
+//                       'plane' | 'planeBorder' | 'measureGhost' | 'arrows'
 //   opacity:            the uniform material opacity the module set (0..1)
 //   needsTransparency:  atoms/bonds — true when the base opacity or any
 //                       per-instance opacity is below 1

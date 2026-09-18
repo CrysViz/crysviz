@@ -109,7 +109,7 @@ export function setupControlsWiring() {
   if (PBCBondToggle) {
       PBCBondToggle.onchange = (e) => {
       general.showPBCBonds = e.target.checked;
-      updateVisualization({reRenderAtoms:true, reRenderBonds:true});
+      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
     };
   }
 
@@ -117,7 +117,7 @@ export function setupControlsWiring() {
   if (showPeriodicToggle) {
     showPeriodicToggle.onchange = (e) => {
       general.showPeriodic = e.target.checked;
-      updateVisualization({reRenderAtoms:true, reRenderBonds:true});
+      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
     };
   }
 

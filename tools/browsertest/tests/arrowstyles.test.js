@@ -116,7 +116,7 @@ function distinctivePixels(file) {
     rough.dispatchEvent(new Event('input'));
     const force = fileBrowser.selectedStructure.forces[0];
     const { groups } = await import('./state/store.js');
-    const instance = groups.forcesInstanceBySrcIndex.get(0);
+    const instance = groups.forcesInstancesBySrcIndex.get(0)[0];
     const rgb = groups.forcesShaftMesh.instanceColor.array.slice(instance * 6, instance * 6 + 3);
     return { rgb: [...rgb], color: force.userColor?.getHexString?.(), material: force.userMaterial, instance };
   });
@@ -196,11 +196,11 @@ function distinctivePixels(file) {
     type.value = 'metal';
     type.dispatchEvent(new Event('change'));
     updateSpins();
-    const categorySrcIdx = [...groups.spinsInstanceBySrcIndex.keys()]
+    const categorySrcIdx = [...groups.spinsInstancesBySrcIndex.keys()]
       .find((srcIdx) => s.elements[srcIdx] === el && srcIdx !== 0);
-    const instance = groups.spinsInstanceBySrcIndex.get(categorySrcIdx);
+    const instance = groups.spinsInstancesBySrcIndex.get(categorySrcIdx)[0];
     const rgb = groups.spinShaftMesh.instanceColor.array.slice(instance * 6, instance * 6 + 3);
-    const overriddenInstance = groups.spinsInstanceBySrcIndex.get(0);
+    const overriddenInstance = groups.spinsInstancesBySrcIndex.get(0)[0];
     const overriddenRgb = groups.spinShaftMesh.instanceColor.array
       .slice(overriddenInstance * 6, overriddenInstance * 6 + 3);
     return { el, categorySrcIdx, spinInstance: instance, rgb: [...rgb],
@@ -256,7 +256,7 @@ function distinctivePixels(file) {
     const targetIndex = fileBrowser.selectedStructure.spins.findIndex((spin, index) =>
       index !== 0 && fileBrowser.selectedStructure.elements[index] === element && !spin.userColor);
     reset.click();
-    const instance = groups.spinsInstanceBySrcIndex.get(targetIndex);
+    const instance = groups.spinsInstancesBySrcIndex.get(targetIndex)[0];
     const after = groups.spinShaftMesh.instanceColor.array.slice(instance * 6, instance * 6 + 3);
     const expected = fileBrowser.selectedStructure.spins[targetIndex].defaultColor;
     return { before: [...before], after: [...after], expected: [expected.r, expected.g, expected.b], targetIndex };

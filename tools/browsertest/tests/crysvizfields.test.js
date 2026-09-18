@@ -58,9 +58,7 @@ const H = require('../harness');
       useAbsoluteIsoValue: false, isVisible: true,
     });
     structure.volumetricFields = new FieldContainer({ fileName: 'blob.cube', source: 'Cube', fields: [field] });
-    fieldBrowser.selectedField = null;
-    fieldBrowser.setAvailableFields([field]);
-    fieldBrowser.setSelectedField(0);
+    fieldBrowser.setCatalog(structure.volumetricFields.catalog);
     setActiveField(field, false);
     updateField(0.5);
 

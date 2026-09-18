@@ -1,6 +1,6 @@
 import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
-import { transpose3x3, invert3x3, normalizeFractional, cartToFractional } from "../math/index.js";
+import { transpose3x3, invert3x3, normalizeFractional, cartToFractional, latticeVolume } from "../math/index.js";
 import { runPeriodicWrapped } from "../render/index.js";
 import { generateID } from "../utils/index.js";
 
@@ -11,13 +11,24 @@ export function readPOSCAR(content, fileName) {
   let i = 0;
 
   i++; // skip the comment line
-  const scale = parseFloat(lines[i++]);
-  if (!Number.isFinite(scale)) throw new Error('POSCAR: missing scale factor');
+  const scaleOrVolume = parseFloat(lines[i++]);
+  if (!Number.isFinite(scaleOrVolume)) throw new Error('POSCAR: missing scale factor');
 
   // --- lattice (3×3)
   const lattice = Array.from({ length: 3 }, () =>
-    (lines[i++] || '').trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v) * scale)
+    (lines[i++] || '').trim().split(/\s+/).slice(0, 3).map(v => parseFloat(v))
   );
+
+  // A negative scale factor is the target cell volume (VASP convention).
+  // Scaling every lattice vector by s scales the volume by s³, so the linear
+  // factor is the cube root of the volume ratio.
+  let scale = scaleOrVolume;
+  if (scaleOrVolume < 0) {
+    const volume = latticeVolume(lattice);
+    if (!(volume > 0)) throw new Error('POSCAR: degenerate lattice, cannot apply a target volume');
+    scale = Math.cbrt(-scaleOrVolume / volume);
+  }
+  lattice.forEach((row) => row.forEach((v, c) => { row[c] = v * scale; }));
 
   // --- element symbols + counts
   const elementLine = (lines[i++] || '').trim().split(/\s+/);
@@ -55,7 +66,8 @@ export function readPOSCAR(content, fileName) {
   for (let n = 0; n < totalAtoms; n++) {
     const tokens = (lines[i++] || '').trim().split(/\s+/);
     if (tokens.length < 3) throw new Error('POSCAR: atomic position line too short');
-    positionsRaw.push(tokens.slice(0, 3).map(Number));
+    // Cartesian coordinates are in the same scaled units as the lattice.
+    positionsRaw.push(tokens.slice(0, 3).map(v => (isCartesian ? Number(v) * scale : Number(v))));
   }
 
   // --- convert cart → frac if needed

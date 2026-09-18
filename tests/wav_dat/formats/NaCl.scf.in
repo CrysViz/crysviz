@@ -1,0 +1,18 @@
+&CONTROL
+  calculation = 'scf'
+  prefix = 'nacl'
+/
+&SYSTEM
+  ibrav = 2, celldm(1) = 10.66, nat = 2, ntyp = 2,
+  ecutwfc = 40.0
+/
+&ELECTRONS
+/
+ATOMIC_SPECIES
+Na 22.990 Na.pbe-spn-kjpaw_psl.UPF
+Cl 35.453 Cl.pbe-n-kjpaw_psl.UPF
+ATOMIC_POSITIONS (crystal)
+Na 0.00 0.00 0.00
+Cl 0.50 0.50 0.50
+K_POINTS automatic
+4 4 4 0 0 0

@@ -12,21 +12,20 @@ const H = require('../harness');
     const { fileBrowser, groups } = await import('./state/store.js');
     const { addFieldPanel, fieldBrowser } = await import('./ui/FieldPanel.js');
 
-    // Fabricate a minimal single-field dataset (no real volumetric data
-    // needed to exercise the panel's own DOM/controls).
-    const field = {
-      label: 'test-field',
-      minValue: -1, maxValue: 1, isoValue: 0.1,
-      grid: [2, 2, 2], data: new Float32Array(8), origin: [0, 0, 0],
-      lattice: fileBrowser.selectedStructure.lattice,
-    };
-    fileBrowser.selectedStructure.volumetricFields = { fields: [field] };
-    // Set the field directly (skip setAvailableFields/setSelectedField,
-    // which trigger a real marching-cubes mesh build this fake grid can't
-    // support) — addFieldPanel only needs selectedField for its own DOM.
-    fieldBrowser.availableFields = [field];
-    fieldBrowser.selectedField = field;
-    fieldBrowser.selectedFieldIndex = 0;
+    const { Field, FieldContainer } = await import('./model/index.js');
+    const lat = fileBrowser.selectedStructure.lattice;
+    const n = 2;
+    const voxel = lat.map((row) => row.map((component) => component / n));
+    const values = new Float32Array(n * n * n);
+    values[0] = 1;
+    const field = new Field({
+      nx: n, ny: n, nz: n, origin: [0, 0, 0], voxel, values,
+      label: 'test-field', isoValue: 0.1, minValue: 0, maxValue: 1,
+      useAbsoluteIsoValue: false,
+    });
+    fileBrowser.selectedStructure.volumetricFields = new FieldContainer({
+      fileName: 'test', source: 'Cube', fields: [field], fieldCount: 1,
+    });
 
     const target = document.getElementById('cvPanelBody-field');
     addFieldPanel('cvPanelBody-field');

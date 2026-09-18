@@ -567,6 +567,11 @@ function addVacuumSection(container) {
 // default [0,1] per axis is the classic unit cell; widening e.g. a-max to 1.2
 // reveals atoms up to 0.2 of a cell past the boundary. Only takes effect while
 // "Show Periodic Images" is on, so editing a bound switches it on.
+//
+// The region governs the whole picture, not just the atoms: each drawn atom
+// image carries its own force/spin arrow, and the volumetric field is repeated
+// into every cell the region reaches and cut off where it stops part-way
+// through one (see the reRenderPeriodic note in commit() below).
 const PERIODIC_BOUNDS_AXES = [
   { key: 'x', label: 'a' },
   { key: 'y', label: 'b' },
@@ -727,9 +732,13 @@ function addPeriodicBoundarySection(container) {
     }
 
     const widened = xmin < 0 || xmax > 1 || ymin < 0 || ymax > 1 || zmin < 0 || zmax > 1;
-    hint.textContent = widened ? 'Showing atoms beyond the unit cell.' : '';
+    hint.textContent = widened ? 'Showing the structure and field beyond the unit cell.' : '';
 
-    updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+    // reRenderPeriodic: the boundary decides the periodic image set, so the
+    // per-image drawings that are not atoms or bonds — force/spin arrows, the
+    // volumetric field, which is repeated into the cells the boundary reaches
+    // and cut off where it stops part-way through one — have to follow it too.
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderPeriodic: true });
   };
 
   for (const { key, label } of PERIODIC_BOUNDS_AXES) {

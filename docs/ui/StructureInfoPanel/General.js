@@ -1,3 +1,4 @@
+import { saveAtomColors } from '../../utils/ColorModule.js';
 import {fileBrowser, general, structureShip} from '../../state/store.js';
 
 
@@ -619,6 +620,7 @@ wirePressHoldPopup(resetAllColorsBtn, {
   holdLabel: 'Reset Trajectory',
   onPress: () => {
     resetAllColorStyling(fileBrowser.selectedStructure);
+    saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -629,6 +631,7 @@ wirePressHoldPopup(resetAllColorsBtn, {
     // onto them — that would wrongly clobber other frames' own force-mode
     // colors and alpha/size overrides, which this reset must leave untouched.
     applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllColorStyling);
+    saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -644,6 +647,7 @@ wirePressHoldPopup(resetAtomsBtn, {
   holdLabel: 'Reset Trajectory',
   onPress: () => {
     resetAllStyling(fileBrowser.selectedStructure);
+    saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -653,6 +657,7 @@ wirePressHoldPopup(resetAtomsBtn, {
     // resetAllStyling wipes everything to fixed defaults anyway, so unlike
     // the color-only reset there's no per-frame data it could clobber.
     applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllStyling);
+    saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },

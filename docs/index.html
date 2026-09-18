@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="./styles/styles.css">
     <link rel="stylesheet" href="./styles/styles_file_browswer.css">
     <link rel="stylesheet" href="./styles/trajectoryPanel.css">
+    <link rel="stylesheet" href="./styles/debugPanel.css">
     <link rel="stylesheet" href="./styles/controlPanel.css">
     <link rel="stylesheet" href="./styles/panelWindow.css">
     <link rel="stylesheet" href="./styles/backendPanel.css">
@@ -25,6 +26,7 @@
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
     <link rel="stylesheet" href="./styles/info_button_styles.css">
     <link rel="stylesheet" href="./styles/EOSPanel.css">
+    <link rel="stylesheet" href="./styles/phononPanel.css">
     <link rel="stylesheet" href="./styles/sideDock.css">
     <link rel="stylesheet" href="./styles/DummySplitPanel.css">
     <link rel="stylesheet" href="./styles/forcePanel.css">
@@ -34,7 +36,9 @@
     <link rel="stylesheet" href="./styles/structureInfoPanel.css">
     <link rel="stylesheet" href="./styles/sceneWidgets.css">
     <link rel="stylesheet" href="./styles/analysisPanels.css">
+    <link rel="stylesheet" href="./styles/focusRegionsPanel.css">
     <link rel="stylesheet" href="./styles/warningBanners.css">
+    <link rel="stylesheet" href="./styles/notagameatall.css">
     <!-- Loaded after component styles so native WebKit select chrome cannot
          override the app's compact dark dropdown appearance. -->
     <link rel="stylesheet" href="./styles/formControls.css">
@@ -42,6 +46,9 @@
          component styles so it wins cascade ties, but still before the
          active theme so a theme can still override it if it ever needs to. -->
     <link rel="stylesheet" href="./styles/responsive.css">
+    <!-- Widget mode (?widget=1) chrome hiding + logo/settings control. All
+         rules scoped to body.widget-mode (ui/WidgetMode.js). -->
+    <link rel="stylesheet" href="./styles/widgetMode.css">
     <!-- Active theme override — keep last so theme rules win the cascade. -->
     <link rel="stylesheet" id="theme-active">
 
@@ -98,6 +105,11 @@
               <button type="button" id="downloadButton" class="file-action-btn">Download ▾</button>
               <div class="download-menu" id="downloadMenu" hidden>
                 <button type="button" id="saveButton">POSCAR</button>
+                <button type="button" id="saveCifButton">CIF (P1)</button>
+                <button type="button" id="saveCifSymButton">CIF (symmetry)</button>
+                <button type="button" id="saveCellButton">CASTEP cell</button>
+                <button type="button" id="saveGeometryButton">FHI-aims geometry</button>
+                <button type="button" id="qeInputButton">Quantum ESPRESSO…</button>
                 <button type="button" id="saveCrysvizButton">CrysViz</button>
                 <button type="button" id="saveImageButton">Image…</button>
               </div>

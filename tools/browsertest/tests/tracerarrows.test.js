@@ -327,8 +327,11 @@ function forceTaperProfile(file, base, apex) {
       JSON.stringify({ pixels: arrowColorPixels(spin, 'spin') }));
   }
 
-  // Scale sanity on the loaded 35-atom structure: two bodies per arrow, with
-  // the actual CPU encode time and allocated poly texture recorded for handoff.
+  // Scale sanity on the loaded structure: two bodies per drawn arrow, with the
+  // actual CPU encode time and allocated poly texture recorded for handoff.
+  // Arrows are drawn once per periodic image of each atom inside the display
+  // boundary, so the expected count comes from the raster tip mesh (one
+  // instance per drawn arrow), not from the source atom count.
   await page.evaluate(async () => {
     const { fileBrowser, general } = await import('./state/store.js');
     const { Force } = await import('./model/index.js');
@@ -339,11 +342,13 @@ function forceTaperProfile(file, base, apex) {
     removeSpins();
     updateForces();
   });
-  const moderateAtomCount = await page.evaluate(async () => {
-    const { fileBrowser } = await import('./state/store.js');
-    return fileBrowser.selectedStructure.atoms.length;
+  const moderateCounts = await page.evaluate(async () => {
+    const { fileBrowser, groups } = await import('./state/store.js');
+    return { atoms: fileBrowser.selectedStructure.atoms.length, arrows: groups.forcesTipMesh.count };
   });
-  const moderateBodies = await waitArrowBodies(moderateAtomCount * 2);
+  const moderateAtomCount = moderateCounts.atoms;
+  const moderateArrowCount = moderateCounts.arrows;
+  const moderateBodies = await waitArrowBodies(moderateArrowCount * 2);
   const moderate = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     const e = app.pipeline._encoder;
@@ -351,9 +356,10 @@ function forceTaperProfile(file, base, apex) {
     return { bodies: e.arrowBodyCount, cylinderCount: e.cylinderCount,
       encodeMs: performance.now() - t0 };
   });
-  H.check('moderate-scene arrow scale is two bodies per atom',
-    moderateBodies === moderateAtomCount * 2 && moderate.bodies === moderateAtomCount * 2,
-    JSON.stringify({ atoms: moderateAtomCount, ...moderate }));
+  H.check('moderate-scene arrow scale is two bodies per drawn arrow (at least one arrow per atom)',
+    moderateArrowCount >= moderateAtomCount
+      && moderateBodies === moderateArrowCount * 2 && moderate.bodies === moderateArrowCount * 2,
+    JSON.stringify({ atoms: moderateAtomCount, arrows: moderateArrowCount, ...moderate }));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

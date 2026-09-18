@@ -9,7 +9,7 @@ const EXPECTED_PANEL_IDS = [
   'measure', 'view', 'info', 'backend', 'files', 'features', 'trajectory',
   'comparison', 'forces', 'spins', 'field', 'planes', 'bonds', 'cell',
   'symmetry', 'polyhedra', 'visual', 'eos', 'eosPlots', 'splitDemo', 'landscape',
-  'landscapePlots', 'settings',
+  'landscapePlots', 'phonon', 'phononPlots', 'settings',
 ];
 
 (async () => {

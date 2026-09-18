@@ -73,6 +73,14 @@
   cursor: not-allowed;
 }
 
+/* Inline "circled i" info marker with a title tooltip (Spins panel's
+   "Show spins on periodic copies"). Token-only. */
+.cv-info-marker {
+  margin-left: var(--sp-1);
+  color: var(--fg-3);
+  cursor: help;
+}
+
 .cv-force-bar-controls {
   display: flex;
   align-items: center;

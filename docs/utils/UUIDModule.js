@@ -42,6 +42,27 @@ export function getUUIDByIndex(mesh, index) {
 
 
 /**
+ * Release ids that are no longer in use so the registry does not grow without
+ * bound. Bonds are rebuilt on every trajectory frame (render/
+ * BondsFracUpdateModule.js) and each rebuild minted new registered ids while
+ * nothing ever dropped the previous frame's — ~80 bytes per bond per frame,
+ * for as long as playback ran. Callers pass the objects being replaced.
+ * @param {Iterable<{uuid?: string} | string>} items
+ */
+export function releaseIDs(items) {
+  if (!items) return;
+  for (const item of items) {
+    const id = typeof item === 'string' ? item : item?.uuid;
+    if (!id) continue;
+    // generateID registers only the compact `<timestamp>-<random>` tail, not
+    // the element-prefixed id it returns (so does InstanceMeshManager's
+    // twin); a bare compact id IS its own tail.
+    const parts = id.split('-');
+    usedIDs.delete(parts.length > 2 ? parts.slice(-2).join('-') : id);
+  }
+}
+
+/**
  * Reset the usedIDs set
  */
 export function resetUsedIDs() {

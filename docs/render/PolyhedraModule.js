@@ -17,6 +17,7 @@ import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity } from '../defaults/electronegativity_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js'
+import { getFocusOpacityForPolyhedron } from './FocusRegionModule.js'
 import { LineSegments2 } from '../external/three/LineSegments2.js'
 import { LineSegmentsGeometry } from '../external/three/LineSegmentsGeometry.js'
 import { LineMaterial } from '../external/three/LineMaterial.js'
@@ -1143,14 +1144,15 @@ export function renderPolyhedra(structure) {
 
     const style = resolvePolyhedronStyle(
       structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem);
+    const focus = getFocusOpacityForPolyhedron(poly, structure);
     const mat = new THREE.MeshStandardMaterial({
       color: style.color,
-      opacity: style.opacity,
+      opacity: style.opacity * focus,
       metalness: 0.0,
       roughness: 1.0,
       side: DOUBLE_SIDE ? THREE.DoubleSide : THREE.FrontSide,
     });
-    applyTransparency(mat, { kind: 'polyhedraFace', opacity: style.opacity });
+    applyTransparency(mat, { kind: 'polyhedraFace', opacity: mat.opacity });
     const mesh = new THREE.Mesh(geom, mat);
     mesh.visible = style.visible; // category-level show/hide
     mesh.userData = {
@@ -1165,6 +1167,10 @@ export function renderPolyhedra(structure) {
       groupKey: poly.groupKey, // periodic-copy group ("Link periodic copies")
       catKey: poly.catKey,     // category (Poly tab grouping)
       polyIndex,               // index into structure.polyhedra.polyhedra
+      // Authored alpha (style) — focus regions scale it (applyFocusToPolyhedra)
+      // without ever overwriting it, mirroring Atom.opacity.
+      baseOpacity: style.opacity,
+      baseEdgeOpacity: style.edgeOpacity,
     };
 
     // Per-polyhedron edge material so edge color/alpha are styleable via the
@@ -1180,7 +1186,7 @@ export function renderPolyhedra(structure) {
     const edgeGeom = new LineSegmentsGeometry().setPositions(edgeSegments);
     egeom.dispose();
     const edgeMat = new LineMaterial({
-      color: style.edgeColor, opacity: style.edgeOpacity,
+      color: style.edgeColor, opacity: style.edgeOpacity * focus,
       linewidth: 0.03 * (general.polyEdgeWidth ?? 1),
       worldUnits: true,
     });
@@ -1188,7 +1194,7 @@ export function renderPolyhedra(structure) {
       const size = app.renderer.getSize(new THREE.Vector2());
       edgeMat.resolution.set(size.x, size.y);
     }
-    applyTransparency(edgeMat, { kind: 'polyhedraEdge', opacity: style.edgeOpacity });
+    applyTransparency(edgeMat, { kind: 'polyhedraEdge', opacity: edgeMat.opacity });
     const edgeLines = new LineSegments2(edgeGeom, edgeMat);
     edgeLines.raycast = () => {}; // never intercept picking
     edgeLines.userData.type = 'polyhedron-edges';
@@ -1208,9 +1214,48 @@ export function renderPolyhedra(structure) {
       for (const p of posList) center.add(p);
       center.multiplyScalar(1 / posList.length);
       addCelPolyOutline(mesh, center);
+      const hull = mesh.children.find((c) => c.name === 'celOutline');
+      if (hull) hull.visible = general.celHullPolyWidth > 0 && mat.opacity >= 0.999;
     }
 
     groups.polyhedraGroup.add(mesh);
+  }
+}
+
+/** Write a polyhedron's displayed alpha: authored style alpha × focus factor,
+ *  for the faces, the edge lines and the cel hull's opaque-only rule. */
+function applyPolyhedronOpacity(mesh, faceOpacity, edgeOpacity) {
+  mesh.material.opacity = faceOpacity;
+  applyTransparency(mesh.material, { kind: 'polyhedraFace', opacity: faceOpacity, mesh });
+  const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
+  if (edge?.material) {
+    edge.material.opacity = edgeOpacity;
+    applyTransparency(edge.material, { kind: 'polyhedraEdge', opacity: edgeOpacity, mesh: edge });
+  }
+  // Cel hull outlines are suppressed on transparent objects (the opaque
+  // inverted-hull shell would black out the background behind a transparent
+  // polyhedron) — keep the shell's visibility in sync with alpha edits.
+  const hull = mesh.children.find((c) => c.name === 'celOutline');
+  if (hull) hull.visible = general.celHullPolyWidth > 0 && faceOpacity >= 0.999;
+}
+
+/** Re-scale every drawn polyhedron by its focus-region factor (see
+ *  FocusRegionModule.focusOpacityForPolyhedron). Authored alpha is read from
+ *  the userData stamp, so repeated calls never compound. */
+export function applyFocusToPolyhedra(structure = fileBrowser.selectedStructure) {
+  const grp = groups.polyhedraGroup;
+  if (!grp || !structure) return;
+  for (const mesh of grp.children) {
+    const ud = mesh.userData;
+    if (ud?.type !== 'polyhedron' || !mesh.material) continue;
+    const poly = structure.polyhedra?.polyhedra?.[ud.polyIndex];
+    const focus = poly ? getFocusOpacityForPolyhedron(poly, structure) : 1;
+    const base = ud.baseOpacity ?? mesh.material.opacity;
+    const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
+    const baseEdge = ud.baseEdgeOpacity ?? edge?.material?.opacity ?? 1;
+    ud.baseOpacity = base;
+    ud.baseEdgeOpacity = baseEdge;
+    applyPolyhedronOpacity(mesh, base * focus, baseEdge * focus);
   }
 }
 
@@ -1233,20 +1278,14 @@ export function updatePolyhedraColors() {
     const style = resolvePolyhedronStyle(
       structure, ud.key, ud.catKey, ud.mode, ud.centerSrcIndex, ud.colorElem);
     mesh.material.color.set(style.color);
-    mesh.material.opacity = style.opacity;
-    applyTransparency(mesh.material, { kind: 'polyhedraFace', opacity: style.opacity, mesh });
     mesh.visible = style.visible;
     const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
-    if (edge?.material) {
-      edge.material.color.set(style.edgeColor);
-      edge.material.opacity = style.edgeOpacity;
-      applyTransparency(edge.material, { kind: 'polyhedraEdge', opacity: style.edgeOpacity, mesh: edge });
-    }
-    // Cel hull outlines are suppressed on transparent objects (the opaque
-    // inverted-hull shell would black out the background behind a transparent
-    // polyhedron) — keep the shell's visibility in sync with alpha edits.
-    const hull = mesh.children.find((c) => c.name === 'celOutline');
-    if (hull) hull.visible = general.celHullPolyWidth > 0 && style.opacity >= 0.999;
+    if (edge?.material) edge.material.color.set(style.edgeColor);
+    const poly = structure.polyhedra?.polyhedra?.[ud.polyIndex];
+    const focus = poly ? getFocusOpacityForPolyhedron(poly, structure) : 1;
+    ud.baseOpacity = style.opacity;
+    ud.baseEdgeOpacity = style.edgeOpacity;
+    applyPolyhedronOpacity(mesh, style.opacity * focus, style.edgeOpacity * focus);
   }
 }
 

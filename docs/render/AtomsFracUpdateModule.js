@@ -18,6 +18,7 @@ import {
 
 import {setAtomColor}  from '../utils/ColorModule.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
+import { getFocusOpacityForInstance, prepareFocusRegions } from './FocusRegionModule.js';
 
 
 // Module-scope scratch colour reused across the per-atom colour loop in updateAtoms
@@ -117,6 +118,22 @@ export function applyWedgeUniforms(material) {
   shader.uniforms.uWedgeTexSize.value.set(wedge.size[0], wedge.size[1]);
   // Skip the branch entirely when nothing in the structure is disordered.
   shader.uniforms.uWedgeEnabled.value = wedge.any ? 1 : 0;
+}
+
+/**
+ * Dispose an atoms-mesh material AND the wedge DataTexture it carries.
+ * `Material.dispose()` never disposes textures a material references, and the
+ * wedge texture is (re)built per mesh by finishAtomsMesh — so every atoms
+ * rebuild (one per trajectory frame during playback) used to leave one
+ * uploaded GL texture behind for good. The pipeline overlay material shares
+ * the same wedge object; dispose the texture from whichever goes first
+ * (Texture.dispose is idempotent).
+ * @param {any} material
+ */
+export function disposeAtomsMaterial(material) {
+  if (!material) return;
+  material.userData?.wedge?.texture?.dispose?.();
+  material.dispose();
 }
 
 /**
@@ -247,10 +264,10 @@ export function rebuildAtoms(opacity) {
     if (overlay) {
       overlay.parent?.remove(overlay);
       if (overlay.geometry !== groups.atomsMesh.geometry) overlay.geometry.dispose();
-      overlay.material.dispose();
+      disposeAtomsMaterial(overlay.material);
     }
     groups.atomsMesh.geometry.dispose();
-    groups.atomsMesh.material.dispose();
+    disposeAtomsMaterial(groups.atomsMesh.material);
     app.scene.remove(groups.atomsMesh);
     groups.atomsMesh = null;
   }
@@ -281,6 +298,16 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
 
   // Instanced mesh
   const mesh = new THREE.InstancedMesh(geometry, material, atomCount);
+
+  // rebuildAtoms() always disposes and recreates this mesh, so its lazily
+  // auto-computed per-instance bounding sphere (three.js InstancedMesh)
+  // would normally stay correct. But FastFrameModule.js's applyFrameFast()
+  // writes new atom positions straight into this SAME mesh's instanceMatrix
+  // buffer (a trajectory-stepping fast path that deliberately skips a full
+  // rebuild) without invalidating that cached sphere — a frame far enough
+  // from the one the sphere was computed against could then get wrongly
+  // culled. Same fix as the spin/force arrows (SpinModule.js/ForceModule.js).
+  mesh.frustumCulled = false;
 
   // Initialize instance color buffer with a default color (e.g., grey)
   mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3, false);
@@ -658,7 +685,8 @@ export function updateSingleAtomColor(originalIndex, index, element, hex=null,us
 }
 
 export function updateSingleAtomOpacity(index, opacity = 1.0) {
-  const normalizedOpacity = Math.max(0, Math.min(1, Number(opacity) || 0));
+  const normalizedOpacity = Math.max(0, Math.min(1, Number(opacity) || 0))
+    * getFocusOpacityForInstance(index);
   groups.atomsMesh.geometry.attributes.instanceOpacity.setX(index, normalizedOpacity);
   groups.atomsMesh.geometry.attributes.instanceOpacity.needsUpdate = true;
   syncAtomMaterialTransparency(general.mainOpacity);
@@ -689,7 +717,8 @@ function syncAtomMaterialTransparency(baseOpacity = 1.0) {
   if (!mesh?.material) return;
   const structure = fileBrowser.selectedStructure;
   const hasTransparentInstances = (structure?.atoms?.some((atom) => (atom.getOpacity?.() ?? atom.opacity ?? 1) < 0.999) ?? false)
-    || Object.values(structure?.atomImageStyles ?? {}).some((entry) => (entry?.alpha ?? 1) < 0.999);
+    || Object.values(structure?.atomImageStyles ?? {}).some((entry) => (entry?.alpha ?? 1) < 0.999)
+    || (structure?.focusRegions ?? []).some((region) => region.enabled !== false && region.center?.length);
   const needsTransparency = baseOpacity < 0.999 || hasTransparentInstances;
   applyTransparency(mesh.material, {
     kind: 'atoms', opacity: baseOpacity, needsTransparency, perInstanceOpacity: true, mesh,
@@ -740,6 +769,7 @@ export function updateAtoms(opacity = 1.0) {
   const opacityAttr = mesh.geometry.attributes.instanceOpacity;
   const immuneAttr = mesh.geometry.attributes.instanceCutPlaneImmune;
   const structure = fileBrowser.selectedStructure;
+  prepareFocusRegions(structure);
 
   for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
@@ -755,7 +785,8 @@ export function updateAtoms(opacity = 1.0) {
 
     // Opacity + cut-plane immunity written inline (the per-atom helpers each flag
     // needsUpdate / re-sync transparency; done once after the loop instead).
-    const baseOp = imageStyle?.alpha ?? atom.getOpacity?.() ?? atom.opacity ?? 1;
+    const baseOp = (imageStyle?.alpha ?? atom.getOpacity?.() ?? atom.opacity ?? 1)
+      * getFocusOpacityForInstance(i, structure);
     opacityAttr.setX(i, Math.max(0, Math.min(1, Number(baseOp) || 0)));
     immuneAttr.setX(i, atom.cutPlaneImmune ? 1 : 0);
 

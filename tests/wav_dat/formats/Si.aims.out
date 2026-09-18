@@ -1,0 +1,49 @@
+------------------------------------------------------------
+          Invoking FHI-aims ...
+
+          When using FHI-aims, please cite the following reference:
+------------------------------------------------------------
+  Reading geometry description geometry.in.
+  Input geometry:
+  | Unit cell:
+  |        0.00000000        2.71500000        2.71500000
+  |        2.71500000        0.00000000        2.71500000
+  |        2.71500000        2.71500000        0.00000000
+  | Atomic structure:
+  |       Atom                x [A]            y [A]            z [A]
+  |     1: Species Si            0.00000000        0.00000000        0.00000000
+  |     2: Species Si            1.35750000        1.35750000        1.35750000
+
+  Begin self-consistency loop: Initialization.
+
+  Total energy components:
+  | Total energy corrected        :         -0.15757893855934E+05 eV
+  | Electronic free energy        :         -0.15757893855934E+05 eV
+
+  Total atomic forces (unitary forces cleaned) [eV/Ang]:
+  |    1          0.000000000000000E+00          0.000000000000000E+00          0.000000000000000E+00
+  |    2          0.000000000000000E+00          0.000000000000000E+00          0.000000000000000E+00
+
+  Geometry optimization: Attempting to predict improved coordinates.
+
+  Updated atomic structure:
+                        x [A]             y [A]             z [A]
+  lattice_vector         0.00000000        2.71500000        2.71500000
+  lattice_vector         2.71500000        0.00000000        2.71500000
+  lattice_vector         2.71500000        2.71500000        0.00000000
+            atom         0.00000000        0.00000000        0.00000000  Si
+            atom         1.36000000        1.36000000        1.36000000  Si
+
+  Begin self-consistency loop: Re-initialization.
+
+  Total energy components:
+  | Total energy corrected        :         -0.15757893900000E+05 eV
+
+  Total atomic forces (unitary forces cleaned) [eV/Ang]:
+  |    1          0.100000000000000E-02          0.000000000000000E+00          0.000000000000000E+00
+  |    2         -0.100000000000000E-02          0.000000000000000E+00          0.000000000000000E+00
+
+  Present geometry is converged.
+
+          Have a nice day.
+------------------------------------------------------------

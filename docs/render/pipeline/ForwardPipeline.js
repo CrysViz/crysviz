@@ -53,10 +53,11 @@ export class ForwardPipeline {
    * The pre-refactor per-module transparency flags, keyed by spec.kind.
    * Behavior-preserving: each case matches what its module used to set
    * directly — do not "clean up" the inconsistencies here.
-   * (One deliberate exception: polyhedra faces/edges are opacity-aware —
-   * alpha = 1 renders opaque. The legacy always-transparent flags let a
-   * poly's hidden edges show through its faces and made WBOIT wash out
-   * fully opaque polyhedra.)
+   * (Two deliberate exceptions, both "alpha = 1 means genuinely opaque":
+   * polyhedra faces/edges — the legacy always-transparent flags let a poly's
+   * hidden edges show through its faces and made WBOIT wash out fully opaque
+   * polyhedra — and the field isosurface, whose legacy always-off depthWrite
+   * left a fully opaque surface resolving by draw order; see those cases.)
    * @param {any} material
    * @param {{kind?: string, opacity?: number, needsTransparency?: boolean, mesh?: any}} spec
    */
@@ -74,6 +75,10 @@ export class ForwardPipeline {
         // Main bonds: blend but always keep depth writes.
         material.transparent = !!spec.needsTransparency;
         material.depthWrite = true;
+        break;
+      case 'arrows':
+        material.transparent = !!spec.needsTransparency;
+        material.depthWrite = !spec.needsTransparency;
         break;
       case 'compAtoms': {
         // Comparison ghost atoms: uniform opacity only.
@@ -106,12 +111,30 @@ export class ForwardPipeline {
       case 'planeBorder':
         material.transparent = true;
         break;
-      case 'isosurface':
-        material.transparent = opacity < 1;
-        material.depthWrite = false;
-        // Render after opaque structures to reduce blending artifacts.
-        if (spec.mesh) spec.mesh.renderOrder = 1;
+      case 'isosurface': {
+        // Opacity-aware like polyhedra faces: alpha = 1 is a genuinely OPAQUE
+        // surface and must write depth. The legacy flags kept depthWrite off
+        // at EVERY alpha, which at alpha = 1 dropped the mesh out of the
+        // order-independent stage (transparent = false) into the opaque pass
+        // with no depth writes — so its own overlapping triangles resolved by
+        // submission order and the marching-cubes vertex order decided which
+        // lobe wall won, flipping whenever a new isovalue reshuffled it. That
+        // is the artifact the CPU triangle sort used to paper over
+        // (model/Isosurface.js): below alpha 1 the OIT pipelines handle it,
+        // and at alpha 1 the depth buffer resolves it exactly — in every
+        // pipeline, forward included.
+        // needsTransparency: focus regions fade vertices below the uniform
+        // material opacity via a vertex alpha (FocusRegionModule.applyFocusToField),
+        // which only shows in the blended pass.
+        const isTransparent = opacity < 1 || !!spec.needsTransparency;
+        material.transparent = isTransparent;
+        material.depthWrite = !isTransparent;
+        // Blended: render after opaque structures to reduce blending
+        // artifacts. Opaque: back in the normal opaque bucket, where
+        // front-to-back sorting and depth writes give the exact image.
+        if (spec.mesh) spec.mesh.renderOrder = isTransparent ? 1 : 0;
         break;
+      }
       case 'plane':
         material.transparent = true;
         material.depthWrite = false;

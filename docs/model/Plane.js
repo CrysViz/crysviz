@@ -531,32 +531,50 @@ function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RE
 }
 
 /**
- * Build 6 THREE.Plane objects representing the faces of the cell parallelepiped,
- * with inward-facing normals in world space.
+ * Build 6 THREE.Plane objects bounding a FRACTIONAL box of the cell, with
+ * inward-facing normals in world space.
+ *
+ * `bounds` is the per-axis [min, max] in fractional coordinates — the same
+ * shape render/LatticeModule.js normalizePeriodicBounds() produces for the
+ * VESTA-style display boundary. The default [0,1] per axis is the cell itself.
  *
  * Assign these to `material.clippingPlanes` and set
  * `renderer.localClippingEnabled = true` for clipping to take effect.
  *
  * @param {Array} cell - lattice vectors [a, b, c]
+ * @param {[number, number][]} [bounds] - per-axis [min, max], fractional
  * @returns {THREE.Plane[]}
  */
-function makeCellClippingPlanes(cell) {
+export function makeFractionalBoundsClippingPlanes(cell, bounds = [[0, 1], [0, 1], [0, 1]]) {
   const [a, b, c] = cell.map(toVec3);
   const planes = [];
 
   // Iterate over each pair of spanning vectors (u, v) and their outward axis w.
   // The inward normal nr = cross(u, v), oriented so that nr·w > 0.
-  for (const [u, v, w] of [[b, c, a], [c, a, b], [a, b, c]]) {
+  for (const [u, v, w, [lo, hi]] of [[b, c, a, bounds[0]], [c, a, b, bounds[1]], [a, b, c, bounds[2]]]) {
     const nr = new THREE.Vector3().crossVectors(u, v);
     if (nr.dot(w) < 0) nr.negate(); // flip to point into the cell
     nr.normalize();
 
-    // Face at origin:  keep where  nr·x >= 0  →  THREE.Plane(nr, 0)
-    planes.push(new THREE.Plane(nr.clone(), -1e-3)); // offset slightly to avoid numerical edge-clipping issues
-    // Opposite face:   keep where  nr·x <= nr·w  →  THREE.Plane(-nr, nr·w)
-    planes.push(new THREE.Plane(nr.clone().negate(), nr.dot(w) + 1e-3));
+    // The axis spans nr·w in world units per whole cell, so the fractional
+    // bound f sits at the world offset f * (nr·w) along nr.
+    const span = nr.dot(w);
+    // Near face:  keep where  nr·x >= lo*span  →  THREE.Plane(nr, -lo*span)
+    planes.push(new THREE.Plane(nr.clone(), -lo * span - 1e-3)); // offset slightly to avoid numerical edge-clipping issues
+    // Far face:   keep where  nr·x <= hi*span  →  THREE.Plane(-nr, hi*span)
+    planes.push(new THREE.Plane(nr.clone().negate(), hi * span + 1e-3));
   }
   return planes;
+}
+
+/**
+ * The cell parallelepiped's own 6 faces — the [0,1] case of
+ * makeFractionalBoundsClippingPlanes.
+ * @param {Array} cell - lattice vectors [a, b, c]
+ * @returns {THREE.Plane[]}
+ */
+function makeCellClippingPlanes(cell) {
+  return makeFractionalBoundsClippingPlanes(cell);
 }
 
 // ---------------------------------------------------------------------------

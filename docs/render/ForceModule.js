@@ -3,6 +3,8 @@ import { app, fileBrowser, groups, general } from '../state/store.js';
 import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
 import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
 import { refreshForceHistogram } from '../ui/AnalysisPanels/ForceHistogram.js';
+import { requestRender } from './AnimateModule.js';
+import { applyFocusToArrows } from './FocusRegionModule.js';
 
 const SHAFT_SEGS = 20;
 const TIP_SEGS = 20;
@@ -26,12 +28,13 @@ function disposeForceMeshes() {
       groups[key] = null;
     }
   }
-  groups.forcesInstanceBySrcIndex = null;
+  groups.forcesInstancesBySrcIndex = null;
   groups.forcesArrowByInstance = null;
 }
 
 export function removeForces() {
   disposeForceMeshes();
+  requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
 }
 
 /**
@@ -101,7 +104,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   // Histogram panel (if open) tracks the current frame's forces regardless of
   // which of the many updateForces() call sites triggered this render.
   refreshForceHistogram(structure);
-  if (!structure?.periodic?.wrapped) { disposeForceMeshes(); return; }
+  if (!structure?.periodic?.wrapped) { disposeForceMeshes(); requestRender(); return; }
 
   const wrapped = structure.periodic.visibleWrapped;
   const shaftDiameter = general.forceRadius ?? 0.08;
@@ -109,7 +112,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   const tipLength = TIP_LENGTH * (shaftDiameter / 0.08);
 
   const forces = structure.forces;
-  if (!forces?.length) { disposeForceMeshes(); return; }
+  if (!forces?.length) { disposeForceMeshes(); requestRender(); return; }
 
   // Update force colors based on colormap
   const minValue = general.forceMin || 0;
@@ -188,7 +191,20 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
 
   // --- Prepare arrows for rendering ---
   const arrows = [];
-  const seen = new Set();
+  // ONE ARROW PER DRAWN ATOM IMAGE, not per source atom. The wrapped set is
+  // the atom images actually on screen — periodic face mirrors, the display
+  // boundary's extra cells (general.periodicBounds), PBC-bond ghosts,
+  // polyhedra-completing atoms — and every one of them is the same atom, so
+  // every one carries the same force vector. Keeping only the first left every
+  // other copy of an atom bare next to its drawn sphere, and the arrows stopped
+  // following the boundary entirely once it widened past the unit cell.
+  //
+  // Dedupe by (source atom, rounded position) like render/ChargeBadgeModule.js
+  // does for its badges: near-coincident mirror copies of the same atom (a
+  // corner atom can mirror onto positions a fraction of an Angstrom apart)
+  // would otherwise stack two arrows in the same place, which reads as one
+  // arrow drawn too thick.
+  const seenAt = new Set();
 
   // Get species visibility from this panel's own toggles (falls back to
   // "show everything" if the Forces panel hasn't been built yet).
@@ -202,8 +218,10 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
 
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
-    if (seen.has(srcIdx)) continue;
-    seen.add(srcIdx);
+    const c = wrapped.cart[i];
+    const posKey = `${srcIdx}:${c[0].toFixed(2)},${c[1].toFixed(2)},${c[2].toFixed(2)}`;
+    if (seenAt.has(posKey)) continue;
+    seenAt.add(posKey);
 
     const force = forces[srcIdx];
     if (!force?.vector) continue;
@@ -246,7 +264,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
 
   if (!groups.forcesShaftMesh || groups.forcesShaftMesh.count !== count * 2) {
     disposeForceMeshes();
-    if (count === 0) return;
+    if (count === 0) { requestRender(); return; }
 
     const shaftGeo = new THREE.CylinderGeometry(1, 1, 1, SHAFT_SEGS, 1);
     // Same PBR preset atoms/bonds use (render/MaterialStyles.js) — a
@@ -258,6 +276,14 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     groups.forcesShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
     groups.forcesShaftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     groups.forcesShaftMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    // Same latent bug as SpinModule.js's arrows: this mesh sits at the world
+    // origin with every instance placed via setMatrixAt, so three.js's
+    // per-instance auto bounding sphere is only computed once, lazily — a
+    // rebuild that reuses this mesh (count unchanged) moves instances without
+    // invalidating that cached sphere, which can leave the whole batch culled
+    // until camera motion produces a frustum that happens to still intersect
+    // the stale sphere.
+    groups.forcesShaftMesh.frustumCulled = false;
     addArrowEmissiveAttributes(groups.forcesShaftMesh, count * 2);
     app.scene.add(groups.forcesShaftMesh);
 
@@ -267,23 +293,28 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     groups.forcesTipMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
     groups.forcesTipMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     groups.forcesTipMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    groups.forcesTipMesh.frustumCulled = false; // see forcesShaftMesh above
     addArrowEmissiveAttributes(groups.forcesTipMesh, count);
     app.scene.add(groups.forcesTipMesh);
   }
 
-  // Which arrow-instance index (shaft i*2/i*2+1, tip i) belongs to which
+  // Which arrow-instance indices (shaft i*2/i*2+1, tip i) belong to which
   // atom (structure.atoms order) — SelectAndHighlightModule.js uses this to
-  // highlight a selected atom's own force arrow along with the atom itself.
+  // highlight a selected atom's own force arrows along with the atom itself.
+  // A LIST per atom, not a single index: one atom is drawn once per periodic
+  // image inside the display boundary and each image carries its own arrow, so
+  // selecting the atom has to light all of them.
   // AFTER the mesh-rebuild block above, not before: disposeForceMeshes()
   // (called from inside it, on a rebuild) unconditionally nulls this out —
   // setting it earlier would just have it wiped again immediately.
-  const instanceBySrcIndex = new Map();
+  const instancesBySrcIndex = new Map();
   const arrowByInstance = new Map();
   arrows.forEach(({ srcIdx }, i) => {
-    instanceBySrcIndex.set(srcIdx, i);
+    const list = instancesBySrcIndex.get(srcIdx);
+    if (list) list.push(i); else instancesBySrcIndex.set(srcIdx, [i]);
     arrowByInstance.set(i, forces[srcIdx]);
   });
-  groups.forcesInstanceBySrcIndex = instanceBySrcIndex;
+  groups.forcesInstancesBySrcIndex = instancesBySrcIndex;
   groups.forcesArrowByInstance = arrowByInstance;
   groups.forcesShaftMesh.userData.arrowStylesByInstance = arrowByInstance;
 
@@ -351,4 +382,28 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   groups.forcesTipMesh.instanceColor.needsUpdate = true;
   groups.forcesTipMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
   groups.forcesTipMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+
+  // An InstancedMesh caches the bounding sphere the renderer's frustum test
+  // computes on its FIRST cull check, and three.js never invalidates it when
+  // setMatrixAt() moves instances (see Frustum.intersectsObject: it computes
+  // only while `boundingSphere === null`). The meshes above are only recreated
+  // when the arrow COUNT changes, so any redraw that keeps the count but moves
+  // the arrows — a trajectory frame, a display-boundary edit that shifts which
+  // periodic image an atom is drawn at, a manual spin re-emitted elsewhere —
+  // would otherwise keep culling against where the arrows USED to be. With a
+  // small arrow set (one manual spin) that stale sphere is small and far away,
+  // and the whole mesh vanishes as soon as the camera stops overlapping it:
+  // zooming in tightens the frustum and every arrow disappears at once.
+  // Nulling both defers the recompute to the next cull test, which is where
+  // three.js wants it.
+  groups.forcesShaftMesh.boundingSphere = null;
+  groups.forcesShaftMesh.boundingBox = null;
+  groups.forcesTipMesh.boundingSphere = null;
+  groups.forcesTipMesh.boundingBox = null;
+
+  // Fresh arrows: re-derive their focus-region opacity (the instanceOpacity
+  // attribute is reset to 1 on every mesh rebuild).
+  applyFocusToArrows(structure, 'forces');
+
+  requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
 }

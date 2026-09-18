@@ -1,6 +1,7 @@
 import { WavefunctionSource, RTAG_SINGLE, RTAG_DOUBLE } from '../model/WavefunctionSource.js';
 import { Structure } from '../model/Structure.js';
 import { FileSource } from './FileSource.js';
+import { looksLike } from './formats.js';
 
 /**
  * Reader for VASP WAVECAR files.
@@ -202,27 +203,17 @@ export async function readWAVECAR(content, fileName, options = {}) {
 /**
  * Sniff for a WAVECAR by its header rather than its name.
  *
- * NOT WIRED UP YET — `io/formats.js` declares this on the descriptor but does
- * not consult it; see the note there about content-based detection being the
- * planned direction. Kept here next to the layout it depends on so the two stay
- * in sync.
- *
- * The tell is the RTAG in the third float64: 45200 or 45210 is a very specific
- * bit pattern to hit by chance, and it sits alongside a plausible record length
- * and spin count.
+ * The rule itself lives on the `wavecar` descriptor in `io/formats.js`, where
+ * `detectFormat` consults it for every file; this is the same test exposed
+ * under the name callers already import. The tell is the RTAG in the third
+ * float64: 45200 or 45210 is a very specific bit pattern to hit by chance, and
+ * it sits alongside a plausible record length and spin count.
  *
  * @param {Uint8Array} head first bytes of the file
  * @returns {boolean}
  */
 export function isLikelyWAVECARContent(head) {
-  if (!head || head.byteLength < 4 * DOUBLE) return false;
-  const view = new DataView(head.buffer, head.byteOffset, head.byteLength);
-  const recl = view.getFloat64(0, true);
-  const nspin = view.getFloat64(DOUBLE, true);
-  const rtag = Math.round(view.getFloat64(2 * DOUBLE, true));
-  if (!(rtag === RTAG_SINGLE || rtag === RTAG_DOUBLE)) return false;
-  if (!(recl > 0 && Number.isFinite(recl))) return false;
-  return nspin === 1 || nspin === 2;
+  return looksLike('wavecar', head);
 }
 
 /** [spin][kpt][band] filled with zeros. */

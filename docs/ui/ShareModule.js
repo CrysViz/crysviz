@@ -279,6 +279,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       bondLengths: { ...general.bondLengths },
       bondVisibility: { ...general.bondVisibility },
       atomVisibility: { ...general.atomVisibility },
+      focusRegions: nonEmptyDeepCopy(structure.focusRegions),
       bondCutImmunity: { ...general.bondCutImmunity },
       // Force / spin arrow display (issue #53). Only the values ForceModule/
       // SpinModule read to draw the arrows are persisted — not panel widget
@@ -505,6 +506,11 @@ export async function shareStructure() {
     const b64 = bytesToB64URL(bytes);
     const url = new URL(window.location.href);
     for (const p of [STATE_PARAM, PACKED_PARAM, ENC_PARAM]) url.searchParams.delete(p);
+    // A debugging session's ?debug (debug/debugMode.js) is this tab's, not
+    // the recipient's.
+    url.searchParams.delete('debug');
+    // Same for ?experimental (debug/experimentalMode.js).
+    url.searchParams.delete('experimental');
     url.searchParams.set(param, b64);
     return { text: url.toString(), chars: b64.length };
   };
@@ -1261,13 +1267,22 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       trajectoryContainer = structures.length > 1
         ? TrajectoryContainer.fromStructures(fileName, structures)
         : new StructureContainer({ fileName, structures });
-      initializeUIOnLoad(trajectoryContainer);
+      // Optional per-frame cell-kind labels (altermagnets DB precomputes
+      // loaded/conventional/primitive as frames). Order-aligned with `frames`;
+      // stashed for widget mode to read. Ignored everywhere else. Validate
+      // strictly (array of strings, one per frame) or drop it.
+      if (Array.isArray(state.frameKinds)
+        && state.frameKinds.length === frames.length
+        && state.frameKinds.every((k) => typeof k === 'string')) {
+        trajectoryContainer.frameKinds = state.frameKinds.slice();
+      }
+      initializeUIOnLoad(trajectoryContainer, { restoreStoredPrefs: false });
       // Land on the frame the user was viewing before colors/fields are applied,
       // so `structure` below is that frame (also draws its arrows via the gated
       // updateForces/updateSpins in updateStructureFromFrame).
       showTrajectoryFrame(selectedFrameIndex, trajectoryContainer);
     } else {
-      parsePOSCAR(buildPOSCAR({ structure: viewed }), fileName);
+      parsePOSCAR(buildPOSCAR({ structure: viewed }), fileName, { restoreStoredPrefs: false });
     }
   } catch (e) {
     console.error('Failed to load structure from state:', e);
@@ -1276,6 +1291,10 @@ export function applySharedState(state, fileName = 'shared.vasp') {
 
   const structure = fileBrowser.selectedStructure;
   if (!structure) return false;
+
+  if (Array.isArray(state.display?.focusRegions)) {
+    structure.focusRegions = JSON.parse(JSON.stringify(state.display.focusRegions));
+  }
 
   // Single-frame: buildPOSCAR() groups atoms by element, so restore the saved
   // atom ordering before applying any per-atom state that relies on stable
@@ -1392,7 +1411,34 @@ export async function loadCrysvizFile(content, fileName = 'file.crysviz') {
   if (!container) {
     throw new Error(`Could not find the loaded structure in ${fileName}.`);
   }
+  // Record whether the session actually restored a camera pose (restoreCamera
+  // early-returns without one). loadStructure uses this to decide whether its
+  // crysviz branch may skip the fit-to-structure camera: a session WITHOUT a
+  // camera (widget #load-file= payloads, share links with no pose) must still
+  // get centered, or the orbit target stays at the (0,0,0) cell corner.
+  container.cameraRestored = !!(state.camera?.position && state.camera?.target);
+  // Optional embedder-supplied menu links (widget mode only; full app ignores).
+  container.menuLinks = validateMenuLinks(state.menuLinks);
   return container;
+}
+
+/** Strictly validate a payload's top-level `menuLinks`: an array of
+ *  {label, url} where label is a non-empty string (≤40 chars) and url parses
+ *  via new URL() with an http/https scheme. Invalid entries are dropped; an
+ *  empty result returns null (no menu group). */
+function validateMenuLinks(raw) {
+  if (!Array.isArray(raw)) return null;
+  const out = [];
+  for (const entry of raw) {
+    const label = typeof entry?.label === 'string' ? entry.label.trim() : '';
+    const url = typeof entry?.url === 'string' ? entry.url : '';
+    if (!label || label.length > 40 || !url) continue;
+    let parsed;
+    try { parsed = new URL(url); } catch { continue; }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') continue;
+    out.push({ label, url });
+  }
+  return out.length ? out : null;
 }
 
 // ---------------------------------------------------------------------------

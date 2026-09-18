@@ -17,6 +17,7 @@ import {
 	CustomBlending,
 	FloatType,
 	HalfFloatType,
+	MaxEquation,
 	NearestFilter,
 	OneFactor,
 	OneMinusSrcAlphaFactor,
@@ -35,6 +36,7 @@ import { ShaderPass } from '../three/ShaderPass.js';
 import { FillShader } from './shaders/FillShader.js';
 import { WboitCompositeShader } from './shaders/WboitCompositeShader.js';
 import { WboitStages } from './materials/MeshWboitMaterial.js';
+import { WboitUtils } from './WboitUtils.js';
 
 const _clearColorZero = new Color( 0.0, 0.0, 0.0 );
 const _clearColorOne = new Color( 1.0, 1.0, 1.0 );
@@ -311,6 +313,20 @@ class WboitPass extends Pass {
 			depthBuffer: false,
 		} );
 
+		// LOCAL MODIFICATION (CrysViz): the revealage and depth-range stages now
+		// render BEFORE accumulation and are read back by it (see WboitUtils.js),
+		// so each needs its own texture instead of living in baseTarget.
+		const makeStageTarget = () => new WebGLRenderTarget( effectiveWidth, effectiveHeight, {
+			minFilter: NearestFilter,
+			magFilter: NearestFilter,
+			type: targetType,
+			format: RGBAFormat,
+			stencilBuffer: false,
+			depthBuffer: false,
+		} );
+		this.revealageTarget = makeStageTarget();
+		this.depthRangeTarget = makeStageTarget();
+
 		// LOCAL MODIFICATION (CrysViz): three r152+ forces NoToneMapping and
 		// linear output when rendering into offscreen render targets, so the
 		// scene stages lost the renderer's tone mapping (e.g. ACESFilmic) and
@@ -332,6 +348,9 @@ class WboitPass extends Pass {
 
 		this.baseTarget.dispose();
 		this.accumulationTarget.dispose();
+		this.revealageTarget.dispose();
+		this.depthRangeTarget.dispose();
+		WboitUtils.setStageTextures( null, null );
 
 	}
 
@@ -339,6 +358,8 @@ class WboitPass extends Pass {
 
 		this.baseTarget.setSize( width, height );
 		this.accumulationTarget.setSize( width, height );
+		this.revealageTarget.setSize( width, height );
+		this.depthRangeTarget.setSize( width, height );
 
 	}
 
@@ -471,6 +492,8 @@ class WboitPass extends Pass {
 
 		}
 
+		// LOCAL MODIFICATION (CrysViz): stage-specific blend state is restored
+		// to the material defaults before each stage is configured.
 		function prepareWboitBlending( stage ) {
 
 			wboitMeshes.forEach( ( mesh ) => {
@@ -491,12 +514,32 @@ class WboitPass extends Pass {
 
 					}
 
+					materials[ i ].blendEquationAlpha = null;
+					materials[ i ].blendSrcAlpha = null;
+					materials[ i ].blendDstAlpha = null;
+
 					switch ( stage ) {
 
 						case WboitStages.Acummulation:
 
 							materials[ i ].blending = CustomBlending;
 							materials[ i ].blendEquation = AddEquation;
+							materials[ i ].blendSrc = OneFactor;
+							materials[ i ].blendDst = OneFactor;
+							materials[ i ].depthWrite = false;
+							materials[ i ].depthTest = true;
+
+							break;
+
+						case WboitStages.DepthRange:
+
+							// rgb: max(1 - depth), which encodes the nearest fragment;
+							// alpha: max(depth), which records the farthest fragment.
+							// A single MAX equation lets the target start at transparent
+							// black. That remains correct when the renderer premultiplies
+							// clear colours (white with alpha zero otherwise becomes zero).
+							materials[ i ].blending = CustomBlending;
+							materials[ i ].blendEquation = MaxEquation;
 							materials[ i ].blendSrc = OneFactor;
 							materials[ i ].blendDst = OneFactor;
 							materials[ i ].depthWrite = false;
@@ -554,6 +597,33 @@ class WboitPass extends Pass {
 		// Gather Opaque / Transparent Meshes
 		gatherMeshes();
 
+		// LOCAL MODIFICATION (CrysViz): FAST PATH — same as the vendored
+		// three-depthpeeling pass. With no transparent material in the scene
+		// there is nothing to blend, so render one plain direct pass (identical
+		// cost and pixels to the forward pipeline) instead of routing the opaque
+		// scene through the non-multisampled baseTarget, which dropped the
+		// canvas MSAA and left every opaque edge/silhouette aliased.
+		// gatherMeshes only forced depth flags on the opaque materials and
+		// cached their originals; resetVisible puts them back.
+		this.lastFrameFastPath = transparentMeshes.length === 0 && wboitMeshes.length === 0;
+		if ( this.lastFrameFastPath ) {
+
+			resetVisible();
+			renderer.setRenderTarget( oldRenderTarget );
+			renderer.setClearColor( this._oldClearColor, oldClearAlpha );
+			scene.overrideMaterial = oldOverrideMaterial;
+			scene.background = oldBackground;
+			renderer.autoClear = oldAutoClear;
+			cache.clear();
+			testCache.clear();
+			writeCache.clear();
+
+			renderer.clear();
+			renderer.render( scene, this.camera );
+			return;
+
+		}
+
 		// Clear Write Buffer
 		if ( this.clearColor ) {
 
@@ -595,13 +665,19 @@ class WboitPass extends Pass {
 		// Copy 'Transparent Render' to write buffer so we can re-use depth buffer
 		this.transparentPass.render( renderer, writeBuffer, this.baseTarget );
 
-		// Render Wboit Objects, Accumulation Pass (copy render to write buffer so we can re-use depth buffer)
+		// LOCAL MODIFICATION (CrysViz): stage order is depth range → revealage →
+		// accumulation, because the accumulation weight reads the first two back
+		// (WboitUtils.js). Every stage still renders into baseTarget to depth-test
+		// against the opaque pass, then is copied out to its own texture.
 		changeVisible( false, false, true );
-		prepareWboitBlending( WboitStages.Acummulation );
+
+		// Render Wboit Objects, Depth Range Pass (r = min depth, a = max depth)
+		prepareWboitBlending( WboitStages.DepthRange );
 		renderer.setRenderTarget( this.baseTarget );
+		renderer.setClearColor( _clearColorZero, 0.0 );
 		renderer.clearColor();
 		renderer.render( scene, this.camera );
-		this.copyPass.render( renderer, this.accumulationTarget, this.baseTarget );
+		this.copyPass.render( renderer, this.depthRangeTarget, this.baseTarget );
 
 		// Render Wboit Objects, Revealage Pass
 		prepareWboitBlending( WboitStages.Revealage );
@@ -609,11 +685,21 @@ class WboitPass extends Pass {
 		renderer.setClearColor( _clearColorOne, 1.0 );
 		renderer.clearColor();
 		renderer.render( scene, this.camera );
+		this.copyPass.render( renderer, this.revealageTarget, this.baseTarget );
+
+		// Render Wboit Objects, Accumulation Pass (reads the two textures above)
+		WboitUtils.setStageTextures( this.revealageTarget.texture, this.depthRangeTarget.texture );
+		prepareWboitBlending( WboitStages.Acummulation );
+		renderer.setRenderTarget( this.baseTarget );
+		renderer.setClearColor( _clearColorZero, 0.0 );
+		renderer.clearColor();
+		renderer.render( scene, this.camera );
+		this.copyPass.render( renderer, this.accumulationTarget, this.baseTarget );
 
 		// Composite Wboit Objects
 		renderer.setRenderTarget( writeBuffer );
 		this.compositePass.uniforms[ 'tAccumulation' ].value = this.accumulationTarget.texture;
-		this.compositePass.uniforms[ 'tRevealage' ].value = this.baseTarget.texture; /* now holds revealage render */
+		this.compositePass.uniforms[ 'tRevealage' ].value = this.revealageTarget.texture;
 		this.compositePass.render( renderer, writeBuffer );
 
 		// Restore Original State

@@ -113,6 +113,63 @@ const H = require('../harness');
   H.check('reload redraws the force AND spin arrows on screen',
     restored.forceArrows > 0 && restored.spinArrows > 0, JSON.stringify(restored));
 
+  // Full-app default of the new "Show spins on periodic copies" toggle: OFF,
+  // and the checkbox is built unchecked.
+  const copies = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const { addSpinPanel } = await import('./ui/SpinPanel.js');
+    const host = document.createElement('div');
+    host.id = 'cvPanelBody-spins-test';
+    document.body.appendChild(host);
+    addSpinPanel('cvPanelBody-spins-test');
+    const cb = document.getElementById('spinShowCopiesCheckbox');
+    return { flag: general.showSpinsOnCopies, exists: !!cb, checked: cb ? cb.checked : null };
+  });
+  H.check('full app: Show-spins-on-copies toggle exists and defaults off',
+    copies.flag === false && copies.exists === true && copies.checked === false, JSON.stringify(copies));
+
+  // Item 3: "Auto" spin scaling — d_target = 0.9*min(d(mag→non), d(mag→mag)),
+  // scale = d_target/L_max, clamped to the slider range. Plain 0.9*d on BOTH
+  // terms because arrows render centered on their atom (an arrow of length d
+  // reaches only d/2 each way), so the non-touching cap for a magnetic pair is
+  // the full separation d, not d/2. "magnetic" uses the same 0.05 draw cutoff
+  // updateSpins() draws by. This fixture has spins on EVERY atom (no
+  // non-magnetic), so only the mag→mag term applies. Expected recomputed inline
+  // (independent of autoSpinScale) to catch a formula regression.
+  const auto = await page.evaluate(async () => {
+    const { general, fileBrowser } = await import('./state/store.js');
+    const { autoSpinScale } = await import('./render/index.js');
+    general.spinsActive = true;
+    const s = fileBrowser.selectedStructure;
+    let Lmax = 0; const mag = new Set();
+    s.spins.forEach((sp, i) => { const v = sp.vector; if (!v) return; const m = Math.hypot(v[0], v[1], v[2]); if (m >= 0.05) { mag.add(i); Lmax = Math.max(Lmax, m * (sp.scaling ?? 1)); } });
+    const w = s.periodic.visibleWrapped ?? s.periodic.wrapped; const cart = w.cart; const si = w.srcIndex;
+    const isMag = (i) => mag.has(si ? si[i] : i);
+    let dMN = Infinity, dMM = Infinity;
+    for (let i = 0; i < cart.length; i++) { if (!isMag(i)) continue; const a = cart[i]; for (let j = 0; j < cart.length; j++) { if (j === i) continue; const b = cart[j]; const d = Math.hypot(a[0]-b[0], a[1]-b[1], a[2]-b[2]); if (d <= 1e-6) continue; if (isMag(j)) { if (d < dMM) dMM = d; } else if (d < dMN) dMN = d; } }
+    const terms = [];
+    if (Number.isFinite(dMN)) terms.push(0.9 * dMN);
+    if (mag.size >= 2 && Number.isFinite(dMM)) terms.push(0.9 * dMM);
+    const expected = Math.min(Math.max(Math.min(...terms) / Lmax, 0.1), 10);
+    const fn = autoSpinScale(s); // the shared fn the button calls
+    const before = general.spinScale;
+    document.getElementById('spinAutoScaleBtn').click();
+    return { before, after: general.spinScale, expected, fn: Math.min(Math.max(fn, 0.1), 10), noNonMag: !Number.isFinite(dMN) };
+  });
+  H.check('Auto spin scaling = 0.9*min(d(mag-non), d(mag-mag))/L_max (mag-mag only here)',
+    auto.noNonMag === true && Math.abs(auto.after - auto.expected) < 1e-6 && Math.abs(auto.after - auto.fn) < 1e-6, JSON.stringify(auto));
+
+  // Item 4: arrowhead length slider drives general.spinTipLength (default 0.4).
+  const tip = await page.evaluate(async () => {
+    const { general } = await import('./state/store.js');
+    const sl = /** @type {HTMLInputElement} */ (document.getElementById('spinTipLengthSlider'));
+    const def = general.spinTipLength;
+    sl.value = '0.2'; sl.dispatchEvent(new Event('input'));
+    return { def, defaultAttr: parseFloat(sl.value), flag: general.spinTipLength };
+  });
+  H.check('arrowhead length default is 0.4 and the slider updates it',
+    Math.abs(tip.def - 0.4) < 1e-9 && Math.abs(tip.flag - 0.2) < 1e-9, JSON.stringify(tip));
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

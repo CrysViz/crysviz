@@ -84,6 +84,9 @@ function ensurePlotsWindowOpen() {
 
 async function redraw(plotId) {
   const isExpanded = isPlotExpanded(plotId);
+  // Reset clears the fitted result and its source data separately. A queued
+  // redraw can observe the result after its volumes are gone; cancel it.
+  if (!state.volumes?.length) return;
   if (plotId === 'ev-plot' && state.evResult) {
     await plotEV('ev-plot', { volumes: state.volumes, energies: state.energies, evParams: state.evResult.params }, isExpanded);
   } else if (plotId === 'pv-plot' && state.pvResult) {

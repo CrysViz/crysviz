@@ -1,5 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
-import { app } from '../state/store.js';
+import { app, general } from '../state/store.js';
 import { requestRender } from '../render/index.js';
 
 const cameraPanRight = new THREE.Vector3();
@@ -138,8 +138,12 @@ export function installGestureArbiter(domElement) {
       worldPerPixel = (camera.top - camera.bottom) / camera.zoom / viewportHeightPx;
     }
 
-    const deltaX = -dxPx * worldPerPixel;
-    const deltaY = dyPx * worldPerPixel;
+    // Pan runs off a custom pixel->world mapping (noPan on the trackball), so
+    // the Visual ▸ Camera speed slider is applied here rather than via
+    // controls.panSpeed. 1 = the original 1:1 mapping.
+    const speed = general.cameraSpeedFactor || 1;
+    const deltaX = -dxPx * worldPerPixel * speed;
+    const deltaY = dyPx * worldPerPixel * speed;
     app.cameraPan.x += deltaX;
     app.cameraPan.y += deltaY;
 

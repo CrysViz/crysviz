@@ -19,6 +19,24 @@ export class StructureContainer {
     // is off — see FileBrowswerPanel.js's updateStructureFromRowAndStep.
     this.cameraSnapshot = null;
     this.featureSnapshot = null;
+    // Optional per-frame "cell kind" labels ("loaded"/"conventional"/"primitive"),
+    // order-aligned with `structures`. Set by the .crysviz loader from the
+    // session's top-level `frameKinds` and read ONLY by widget mode (ui/WidgetMode.js)
+    // to map its Cell menu to frame selection. The full app ignores it.
+    /** @type {string[] | null} */
+    this.frameKinds = null;
+    // Optional embedder-supplied menu links ({label, url}) from the session's
+    // top-level `menuLinks`. Validated + set by the .crysviz loader, read ONLY
+    // by widget mode (extra dropdown items). The full app ignores it.
+    /** @type {{label:string, url:string}[] | null} */
+    this.menuLinks = null;
+    // Soft, non-fatal load warnings a reader attaches for data it could NOT
+    // read even though the structure loaded (e.g. an FHI-aims run that is
+    // spin-polarised but whose per-atom moments were in an unparsed format).
+    // core/crystal-viewer.js surfaces these in the load-warning modal. null
+    // when the load was clean.
+    /** @type {string[] | null} */
+    this.loadWarnings = null;
   }
 
   _ensureListOfClass(input, ClassType) {
@@ -130,6 +148,17 @@ export class StructureContainer {
     return this.structures.map(s => (Number.isFinite(s?.energy) ? s.energy : NaN));
   }
 
+  /**
+   * Whether any frame has at least one atom. This is the "did the file load
+   * anything" test the load path runs, so it must go through the seam: a
+   * store-backed subclass keeps `structures` sparse (no slot is populated
+   * until a frame is first shown) and `structures.some(...)` skips holes,
+   * which would report a perfectly good trajectory as empty.
+   */
+  hasAtoms() {
+    return this.structures.some(s => Array.isArray(s?.atoms) && s.atoms.length > 0);
+  }
+
   /** Whether any frame carries spin data. */
   hasSpins() {
     return this.structures.some(s => Array.isArray(s?.spins) && s.spins.length > 0);
@@ -163,6 +192,11 @@ export class StructureContainer {
     this.forEachFrameMaterialized(structure => {
       // Copy atom colors
       structure.atoms.forEach((atom, atomIndex) => {
+        // Index-aligned copy is only meaningful between same-element sites.
+        // Cell-variant frames (widget `frameKinds` payloads) can have different
+        // counts/sequences; for true trajectories elements always match per
+        // index, so this guard is a no-op there.
+        if (structure.elements[atomIndex] !== targetStructure.elements[atomIndex]) return;
         if (targetStructure.atoms[atomIndex]) {
           atom.color = targetStructure.atoms[atomIndex].color;
           atom.opacity = targetStructure.atoms[atomIndex].opacity;
