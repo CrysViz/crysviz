@@ -17,12 +17,9 @@
 // arrives here is a finished polyhedron in fractional coordinates plus the
 // lattice to push it through. Nothing here knows about space groups.
 //
-// Two limitations, both shared with the rest of the overlay modules and
-// neither silent:
-//   * The raytrace/pathtrace pipelines enumerate the groups they encode
-//     (pipeline/raytrace/SceneEncoder.js) and this is not one of them, so a
-//     traced frame omits the wedge. The raster pipelines all draw it.
-//   * SVG export has the same enumeration, so it omits the wedge too.
+// The raytrace/pathtrace pipelines enumerate the groups they encode
+// (pipeline/raytrace/SceneEncoder.js) and this is not one of them, so a traced
+// frame omits the wedge. The raster pipelines and SVG export draw it.
 
 import * as THREE from '../external/three/three.module.js';
 
@@ -53,7 +50,7 @@ const CELL_RADIUS = 0.01;
 const CELL_OPACITY = 0.5;
 
 /** Halo shell radius as a multiple of the atom's own drawn radius. */
-const HALO_SCALE = 1.22;
+export const ASU_HALO_SCALE = 1.22;
 
 /** Halo opacity. Near-opaque: it is a ring, not a veil. */
 const HALO_OPACITY = 0.85;
@@ -514,9 +511,9 @@ export function updateAsuAtomHighlight() {
     // Pure scale + translation. Every other slot of a fresh InstancedMesh's
     // matrix array is already zero and nothing here ever writes one, so the
     // six touched below are the whole matrix.
-    target[offset] = radius * HALO_SCALE;
-    target[offset + 5] = radius * HALO_SCALE;
-    target[offset + 10] = radius * HALO_SCALE;
+    target[offset] = radius * ASU_HALO_SCALE;
+    target[offset + 5] = radius * ASU_HALO_SCALE;
+    target[offset + 10] = radius * ASU_HALO_SCALE;
     target[offset + 12] = point[0];
     target[offset + 13] = point[1];
     target[offset + 14] = point[2];

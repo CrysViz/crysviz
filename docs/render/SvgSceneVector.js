@@ -23,6 +23,7 @@ import { app, general, groups, fileBrowser, measurements } from '../state/store.
 import { activeAtomCutPlanes } from './pipeline/raytrace/SceneEncoder.js';
 import { wedgeDataForAtom } from './WedgeAtoms.js';
 import { Plane } from '../model/index.js';
+import { ASU_HALO_SCALE } from './AsymmetricUnitModule.js';
 
 const _v = new THREE.Vector3();
 const _axis = new THREE.Vector3();
@@ -281,24 +282,82 @@ function latticeEdges() {
   const group = groups.latticeGroup;
   if (!general.showLattice || !group || !group.visible) return out;
   for (const mesh of group.children ?? []) {
-    if (!mesh.visible || !mesh.geometry?.parameters) continue;
-    mesh.updateWorldMatrix(true, false);
-    mesh.matrixWorld.decompose(_v, _quat, _scale);
-    const params = mesh.geometry.parameters;
-    const len = (params.height ?? 1) * Math.abs(_scale.y);
-    const radius = (params.radiusTop ?? 0.015)
-      * Math.max(Math.abs(_scale.x), Math.abs(_scale.z));
-    if (!(len > 1e-6) || !(radius > 0)) continue;
-    _axis.set(0, 1, 0).applyQuaternion(_quat).normalize().multiplyScalar(len / 2);
-    out.push({
-      x1: _v.x - _axis.x, y1: _v.y - _axis.y, z1: _v.z - _axis.z,
-      x2: _v.x + _axis.x, y2: _v.y + _axis.y, z2: _v.z + _axis.z,
-      radius,
-      hex: hexFromColor(mesh.material.color),
-      alpha: mesh.material.transparent ? (mesh.material.opacity ?? 1) : 1,
-    });
+    const seg = cylinderSegment(mesh);
+    if (seg) out.push(seg);
   }
   return out;
+}
+
+/** A CylinderGeometry mesh as a world segment, or null if degenerate. */
+function cylinderSegment(mesh) {
+  if (!mesh.visible || !mesh.geometry?.parameters) return null;
+  mesh.updateWorldMatrix(true, false);
+  mesh.matrixWorld.decompose(_v, _quat, _scale);
+  const params = mesh.geometry.parameters;
+  const len = (params.height ?? 1) * Math.abs(_scale.y);
+  const radius = (params.radiusTop ?? 0.015)
+    * Math.max(Math.abs(_scale.x), Math.abs(_scale.z));
+  if (!(len > 1e-6) || !(radius > 0)) return null;
+  _axis.set(0, 1, 0).applyQuaternion(_quat).normalize().multiplyScalar(len / 2);
+  return {
+    x1: _v.x - _axis.x, y1: _v.y - _axis.y, z1: _v.z - _axis.z,
+    x2: _v.x + _axis.x, y2: _v.y + _axis.y, z2: _v.z + _axis.z,
+    radius,
+    hex: hexFromColor(mesh.material.color),
+    alpha: mesh.material.transparent ? (mesh.material.opacity ?? 1) : 1,
+  };
+}
+
+/** Asymmetric-unit wedge (render/AsymmetricUnitModule.js): the hull's
+ *  triangles, its outline and cell-box cylinders, and the in-wedge halos as
+ *  rings. The halo mesh's instance scale is the ring's outer radius. */
+function asymmetricUnitParts() {
+  /** @type {any[]} */
+  const faces = [];
+  /** @type {any[]} */
+  const edges = [];
+  /** @type {any[]} */
+  const rings = [];
+  const group = groups.asuGroup;
+  if (group?.visible) {
+    for (const mesh of group.children ?? []) {
+      if (!mesh.visible) continue;
+      if (mesh.geometry?.type === 'CylinderGeometry') {
+        const seg = cylinderSegment(mesh);
+        if (seg) edges.push(seg);
+        continue;
+      }
+      const position = mesh.geometry?.attributes?.position;
+      const alpha = mesh.material?.opacity ?? 1;
+      if (!position || !(alpha > 0.01)) continue;
+      mesh.updateWorldMatrix(true, false);
+      const tris = [];
+      for (let t = 0; t + 2 < position.count; t += 3) {
+        const verts = [];
+        for (let k = 0; k < 3; k++) {
+          _v.fromBufferAttribute(position, t + k).applyMatrix4(mesh.matrixWorld);
+          verts.push([_v.x, _v.y, _v.z]);
+        }
+        tris.push(verts);
+      }
+      faces.push({ hex: hexFromColor(mesh.material.color), alpha, tris });
+    }
+  }
+  const halo = groups.asuHaloMesh;
+  const matrices = halo?.visible ? halo.instanceMatrix?.array : null;
+  if (matrices) {
+    const hex = hexFromColor(halo.material.color);
+    const alpha = halo.material.opacity ?? 1;
+    for (let i = 0; i < halo.count; i++) {
+      const o = i * 16;
+      if (!(matrices[o] > 0)) continue;
+      rings.push({
+        x: matrices[o + 12], y: matrices[o + 13], z: matrices[o + 14],
+        radius: matrices[o], hex, alpha,
+      });
+    }
+  }
+  return { faces, edges, rings };
 }
 
 /** Visible polyhedron meshes with their world-space face triangles, plus the
@@ -536,6 +595,7 @@ export function buildVectorStructure(ctx) {
   const counts = {
     atoms: 0, bondHalves: 0, cellEdges: 0, polyFaces: 0,
     polyEdges: 0, arrows: 0, measurementLines: 0, measurementMarkers: 0,
+    asuFaces: 0, asuEdges: 0, asuRings: 0,
   };
 
   const onPage = (minX, minY, maxX, maxY) =>
@@ -704,48 +764,84 @@ export function buildVectorStructure(ctx) {
   });
 
   // ---- polyhedra: flat-shaded face triangles + their edges
+  /** One world triangle -> one flat-shaded <polygon>. Shared by polyhedra
+   *  and the asymmetric-unit hull. */
+  const emitTriangle = (tri, baseHex, faceAlpha, id, cls, label) => {
+    const p0 = project(tri[0][0], tri[0][1], tri[0][2]);
+    const p1 = project(tri[1][0], tri[1][1], tri[1][2]);
+    const p2 = project(tri[2][0], tri[2][1], tri[2][2]);
+    if (!p0 || !p1 || !p2) return false;
+    const minX = Math.min(p0.x, p1.x, p2.x), maxX = Math.max(p0.x, p1.x, p2.x);
+    const minY = Math.min(p0.y, p1.y, p2.y), maxY = Math.max(p0.y, p1.y, p2.y);
+    if (!onPage(minX, minY, maxX, maxY)) return false;
+    const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
+    const cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+    const cz = (tri[0][2] + tri[1][2] + tri[2][2]) / 3;
+    // Lambert term without a camera matrix: for an orthographic camera
+    // (px.x, -px.y, -depth * pixelsPerUnit) is view space up to one uniform
+    // scale + translation, so the face normal comes out exactly right; for a
+    // perspective camera it is right to within the triangle's own depth
+    // spread, which is all flat shading needs.
+    const s = radiusPx(cx, cy, cz, 1) || 1;
+    const ax = p1.x - p0.x, ay = -(p1.y - p0.y), az = -(p1.depth - p0.depth) * s;
+    const bx = p2.x - p0.x, by = -(p2.y - p0.y), bz = -(p2.depth - p0.depth) * s;
+    const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+    const nlen = Math.hypot(nx, ny, nz);
+    const lambert = nlen > 1e-9
+      ? Math.abs((nx * light.x + ny * light.y + nz * light.z) / nlen) : 1;
+    const hex = scaleHex(baseHex, FACE_AMBIENT + (1 - FACE_AMBIENT) * lambert);
+    const alpha = faceAlpha < 0.999
+      ? ` fill-opacity="${fmt(faceAlpha)}" stroke-opacity="${fmt(faceAlpha)}"` : '';
+    prims.push({
+      depth: (p0.depth + p1.depth + p2.depth) / 3,
+      svg: `<polygon id="${id}" class="${cls}"`
+        + ` inkscape:label="${esc(label)}"`
+        + ` points="${fmt(p0.x)},${fmt(p0.y)} ${fmt(p1.x)},${fmt(p1.y)}`
+        + ` ${fmt(p2.x)},${fmt(p2.y)}" fill="${hex}" stroke="${hex}"`
+        + ` stroke-width="${FACE_SEAM_STROKE}" stroke-linejoin="round"${alpha}/>`,
+    });
+    return true;
+  };
+
   const { faces, edges } = polyhedronParts();
   for (const poly of faces) {
     poly.tris.forEach((tri, t) => {
-      const p0 = project(tri[0][0], tri[0][1], tri[0][2]);
-      const p1 = project(tri[1][0], tri[1][1], tri[1][2]);
-      const p2 = project(tri[2][0], tri[2][1], tri[2][2]);
-      if (!p0 || !p1 || !p2) return;
-      const minX = Math.min(p0.x, p1.x, p2.x), maxX = Math.max(p0.x, p1.x, p2.x);
-      const minY = Math.min(p0.y, p1.y, p2.y), maxY = Math.max(p0.y, p1.y, p2.y);
-      if (!onPage(minX, minY, maxX, maxY)) return;
-      const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3;
-      const cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
-      const cz = (tri[0][2] + tri[1][2] + tri[2][2]) / 3;
-      // Lambert term without a camera matrix: for an orthographic camera
-      // (px.x, -px.y, -depth * pixelsPerUnit) is view space up to one uniform
-      // scale + translation, so the face normal comes out exactly right; for a
-      // perspective camera it is right to within the triangle's own depth
-      // spread, which is all flat shading needs.
-      const s = radiusPx(cx, cy, cz, 1) || 1;
-      const ax = p1.x - p0.x, ay = -(p1.y - p0.y), az = -(p1.depth - p0.depth) * s;
-      const bx = p2.x - p0.x, by = -(p2.y - p0.y), bz = -(p2.depth - p0.depth) * s;
-      const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
-      const nlen = Math.hypot(nx, ny, nz);
-      const lambert = nlen > 1e-9
-        ? Math.abs((nx * light.x + ny * light.y + nz * light.z) / nlen) : 1;
-      const hex = scaleHex(poly.hex, FACE_AMBIENT + (1 - FACE_AMBIENT) * lambert);
-      const alpha = poly.alpha < 0.999
-        ? ` fill-opacity="${fmt(poly.alpha)}" stroke-opacity="${fmt(poly.alpha)}"` : '';
-      prims.push({
-        depth: (p0.depth + p1.depth + p2.depth) / 3,
-        svg: `<polygon id="${prefix}poly-${poly.polyIndex}-f${t}" class="poly-face"`
-          + ` inkscape:label="${esc(`polyhedron ${poly.polyIndex} face`)}"`
-          + ` points="${fmt(p0.x)},${fmt(p0.y)} ${fmt(p1.x)},${fmt(p1.y)}`
-          + ` ${fmt(p2.x)},${fmt(p2.y)}" fill="${hex}" stroke="${hex}"`
-          + ` stroke-width="${FACE_SEAM_STROKE}" stroke-linejoin="round"${alpha}/>`,
-      });
-      counts.polyFaces++;
+      if (emitTriangle(tri, poly.hex, poly.alpha, `${prefix}poly-${poly.polyIndex}-f${t}`,
+        'poly-face', `polyhedron ${poly.polyIndex} face`)) counts.polyFaces++;
     });
   }
   edges.forEach((edge, i) => {
     if (emitSegment(edge, `${prefix}pedge-${i}`, 'poly-edge',
       `polyhedron ${edge.polyIndex} edge`)) counts.polyEdges++;
+  });
+
+  // ---- asymmetric-unit wedge: hull, outline, in-wedge rings
+  const asu = asymmetricUnitParts();
+  asu.faces.forEach((face, f) => face.tris.forEach((tri, t) => {
+    if (emitTriangle(tri, face.hex, face.alpha, `${prefix}asu-${f}-f${t}`,
+      'asu-face', 'asymmetric unit face')) counts.asuFaces++;
+  }));
+  asu.edges.forEach((edge, i) => {
+    if (emitSegment(edge, `${prefix}asu-edge-${i}`, 'asu-edge',
+      'asymmetric unit edge')) counts.asuEdges++;
+  });
+  asu.rings.forEach((ring, i) => {
+    const p = project(ring.x, ring.y, ring.z);
+    if (!p) return;
+    const outerPx = radiusPx(ring.x, ring.y, ring.z, ring.radius);
+    const innerPx = radiusPx(ring.x, ring.y, ring.z, ring.radius / ASU_HALO_SCALE);
+    if (!(outerPx > 0.05) || !onPage(
+      p.x - outerPx, p.y - outerPx, p.x + outerPx, p.y + outerPx)) return;
+    const alpha = ring.alpha < 0.999 ? ` stroke-opacity="${fmt(ring.alpha)}"` : '';
+    prims.push({
+      // Just behind its atom, which it surrounds but never covers.
+      depth: p.depth + 1e-6,
+      svg: `<circle id="${prefix}asu-ring-${i}" class="asu-ring"`
+        + ` inkscape:label="atom in asymmetric unit"`
+        + ` cx="${fmt(p.x)}" cy="${fmt(p.y)}" r="${fmt((innerPx + outerPx) / 2)}"`
+        + ` fill="none" stroke="${ring.hex}" stroke-width="${fmt(outerPx - innerPx)}"${alpha}/>`,
+    });
+    counts.asuRings++;
   });
 
   // ---- force / spin arrows: shaft line + triangular head
@@ -874,6 +970,9 @@ export function estimateVectorPrimitiveCount() {
       if (segments) total += Math.floor(segments.length / 6);
     }
   }
+  const asu = asymmetricUnitParts();
+  total += asu.faces.reduce((n, face) => n + face.tris.length, 0);
+  total += asu.edges.length + asu.rings.length;
   const arrowPairs = (shaft, tip) => (shaft?.visible && tip?.visible
     ? Math.min(tip.count ?? 0, Math.floor((shaft.count ?? 0) / 2)) : 0);
   total += arrowPairs(groups.forcesShaftMesh, groups.forcesTipMesh);

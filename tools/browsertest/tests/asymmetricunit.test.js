@@ -625,6 +625,55 @@ async function waitForWedge(page, wanted) {
   H.check('faded atoms (focus regions, per-atom alpha) are not ringed',
     ringGates.faded === 0 && ringGates.unfaded === ringGates.base, JSON.stringify(ringGates));
 
+  // --- the SVG vector export carries the wedge and its rings -------------
+  const svg = await page.evaluate(async () => {
+    const THREE = await import('./external/three/three.module.js');
+    const { app, groups } = await import('./state/store.js');
+    const { buildVectorStructure, estimateVectorPrimitiveCount } =
+      await import('./render/SvgSceneVector.js');
+    const view = document.getElementById('view');
+    const width = view.clientWidth;
+    const height = view.clientHeight;
+    const cam = app.camera;
+    cam.updateMatrixWorld();
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0).normalize();
+    const project = (x, y, z) => {
+      const v = new THREE.Vector3(x, y, z).applyMatrix4(cam.matrixWorldInverse);
+      const p = new THREE.Vector3(x, y, z).project(cam);
+      return { x: (p.x * 0.5 + 0.5) * width, y: (0.5 - p.y * 0.5) * height, depth: -v.z };
+    };
+    const radiusPx = (x, y, z, r) => {
+      const a = project(x, y, z);
+      const b = project(x + right.x * r, y + right.y * r, z + right.z * r);
+      return Math.hypot(b.x - a.x, b.y - a.y);
+    };
+    const out = buildVectorStructure({ project, radiusPx, width, height, idPrefix: 'asu-' });
+    let triangles = 0;
+    let cylinders = 0;
+    groups.asuGroup.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.geometry.type === 'CylinderGeometry') cylinders += 1;
+      else triangles += o.geometry.getAttribute('position').count / 3;
+    });
+    return {
+      counts: out.counts,
+      triangles,
+      cylinders,
+      halos: groups.asuHaloMesh?.count ?? 0,
+      hasFace: out.body.includes('class="asu-face"'),
+      hasRing: out.body.includes('class="asu-ring"'),
+      estimate: estimateVectorPrimitiveCount(),
+      emitted: Object.values(out.counts).reduce((a, b) => a + b, 0),
+    };
+  });
+  H.check('SVG export draws every hull triangle and outline cylinder',
+    svg.hasFace && svg.counts.asuFaces === svg.triangles && svg.counts.asuEdges === svg.cylinders,
+    JSON.stringify(svg));
+  H.check('and rings every in-wedge atom',
+    svg.hasRing && svg.halos > 0 && svg.counts.asuRings === svg.halos, JSON.stringify(svg));
+  H.check('the primitive estimate still bounds what was emitted',
+    svg.estimate >= svg.emitted, `${svg.estimate} >= ${svg.emitted}`);
+
   // --- a changed cell: followed under the Wyckoff lock, dropped otherwise --
   const strained = await page.evaluate(async () => {
     const { groups, fileBrowser } = await import('./state/store.js');
