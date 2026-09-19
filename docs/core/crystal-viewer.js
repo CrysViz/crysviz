@@ -27,7 +27,7 @@ import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
 import { pauseRendering, resumeRendering,animation_update,requestRender,runPeriodicWrapped,
   applyRotationFromUI, captureSceneToPng } from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
-import { setActivePipelineFromController } from '../ui/ColorPanel.js';
+import { setActivePipelineFromController, reapplyAtomForceColors } from '../ui/ColorPanel.js';
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
@@ -187,6 +187,15 @@ export function updateVisualization(options = {}) {
   // never move on the non-rebuild path. Re-derive here, once, for all of them.
   // Cheap: same-reference no-op unless an atom is actually hidden.
   deriveVisibleWrapped(fileBrowser.selectedStructure);
+
+  // Honor the active Atoms colour MODE before the atoms render below reads
+  // atom.color. "Force" colouring is frame-dependent (magnitudes change every
+  // step) and each new trajectory/MD frame is materialised with atom.color reset
+  // to the element default (materializeFrame.applyFrameStyles), so without this
+  // the force colour map would only ever paint the frame it was switched on.
+  // Central here so every full-render caller — trajectory settle loads, the
+  // scrub path, panel refreshes — keeps it alive; no-op unless force mode is on.
+  reapplyAtomForceColors(fileBrowser.selectedStructure);
 
   // Main Structure
   if (reRenderAtoms) {

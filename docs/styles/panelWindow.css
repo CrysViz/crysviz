@@ -111,6 +111,17 @@
   backdrop-filter: none;
 }
 
+/* Same containing-block trap one level up: a main-docked host lives inside
+   #ui, whose backdrop-filter (styles.css) would otherwise pin the fixed-
+   position item to the side panel's box — clipped by its overflow and
+   scrolling with it. SideDock.expandSplitItem tags #ui too; lift the filter
+   while it hosts an expanded item, and raise it in case a responsive rung has
+   it positioned below the scrim (harmless when it is not positioned). */
+#ui.cv-has-expanded-item {
+  backdrop-filter: none;
+  z-index: var(--z-dock-expanded);
+}
+
 .cv-panel.cv-floating.cv-has-expanded-item {
   z-index: 1400 !important;
 }

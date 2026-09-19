@@ -24,6 +24,7 @@
  * reprojections (recomputed from the raw file-frame moments).
  */
 
+import { general } from '../state/store.js';
 import { Structure } from './Structure.js';
 import { Atom } from './Atom.js';
 import { Spin } from './Spin.js';
@@ -170,6 +171,16 @@ export function extractFrameStyles(frame, ph) {
   /** @type {any} */
   const rec = {};
 
+  // Atoms coloured by force carry a per-frame DERIVED colour in a.color (the
+  // force magnitude mapped through the colour bar). It is recomputed for every
+  // frame from that frame's forces on display (ColorPanel.reapplyAtomForceColors,
+  // via crystal-viewer.updateVisualization and the fast/live paths), so it must
+  // NOT be captured as a per-frame style deviation — same reason materializeFrame
+  // deliberately never records colormap-driven spin/force ARROW colours. Recording
+  // it would bloat every parked frame with a full atom-colour map and, worse,
+  // freeze stale force colours onto frames if the user later leaves force mode. A
+  // user's explicit per-atom pick still lands in userColor, which IS captured.
+  const colorByForce = general.atomsColor === 'force';
   /** @type {Map<number, object>} */
   const atoms = new Map();
   frame.atoms.forEach((a, i) => {
@@ -178,7 +189,7 @@ export function extractFrameStyles(frame, ph) {
     if (a.userColor !== null) d.userColor = a.userColor;
     if (a.hidden) d.hidden = true;
     if (a.cutPlaneImmune) d.cutPlaneImmune = true;
-    if (a.color !== a.defaultColor) d.color = a.color;
+    if (!colorByForce && a.color !== a.defaultColor) d.color = a.color;
     if (a.elementColor !== a.defaultColor) d.elementColor = a.elementColor;
     if (a.opacity !== 1) d.opacity = a.opacity;
     if (a.elementOpacity !== 1) d.elementOpacity = a.elementOpacity;

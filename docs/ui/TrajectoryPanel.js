@@ -9,9 +9,10 @@ import { openPanel, refreshPanelAvailability, getPanelPref, setPanelPref } from 
 import { recenterCamera } from './WindowAndSceneControls.js';
 import { selectStructure, setRowStepJumpHandler } from './FileBrowswerPanel.js';
 import { stressMean } from '../atomistic/relaxer.js';
-import { applyFrameFast, BOND_TOPOLOGY_STRIDE } from '../render/FastFrameModule.js';
+import { applyFrameFast, BOND_TOPOLOGY_STRIDE, isFrameDependentColorMode } from '../render/FastFrameModule.js';
 import { count as traceCount, markEvent } from '../debug/debugTrace.js';
 import { isDebugMode } from '../debug/debugMode.js';
+import { isExperimentalMode } from '../debug/experimentalMode.js';
 // Mean force magnitude over a frame's per-atom force vectors (eV/Å). Kept local
 // so the panel does not depend on the Forces-panel/histogram machinery.
 function meanForceMagnitude(structure) {
@@ -375,6 +376,18 @@ function updateStructureFromFrame(frame, container, playback = null) {
   applyFrameStructure(frameRef, frame, container, playback);
 }
 
+/** Show the "full render each frame" note while a force/length colour map is
+ *  active — Auto then rebuilds every playback frame (see playbackFastAllowed),
+ *  and the user should learn why playback got slower right where they control
+ *  it. No-op when the player isn't built. Kept in sync by the colour panels'
+ *  bulk-recolour broadcast (crysviz:colors-changed) and by every frame update. */
+function syncRenderNote() {
+  const note = trajectoryPlayerElements.renderNote;
+  if (!note) return;
+  note.hidden = !isFrameDependentColorMode();
+}
+document.addEventListener('crysviz:colors-changed', syncRenderNote);
+
 /** May a playback step from `fromStep` to `toStep` move instances in place?
  *  Only for one system in motion (TrajectoryContainer.motionProfile) with the
  *  player in 'auto' render mode, between two frames without per-frame styling
@@ -382,6 +395,11 @@ function updateStructureFromFrame(frame, container, playback = null) {
  *  periodic topology refresh is due. */
 function playbackFastAllowed(container, fromStep, toStep, playback) {
   if (playback.forceFull || container.playbackMode === 'full') return false;
+  // Auto falls back to Full while a force/length colour map is active: the
+  // fast path moves instances without recolouring them, and those colours
+  // change every frame. (applyFrameFast bails on the same predicate, so this
+  // is the explicit player-level decision; the note in the panel explains it.)
+  if (isFrameDependentColorMode()) return false;
   if (typeof container.motionProfile !== 'function') return false;
   if (container.motionProfile().kind !== 'trajectory') return false;
   if (container.hasFrameStyles(fromStep) || container.hasFrameStyles(toStep)) return false;
@@ -396,6 +414,10 @@ function applyFrameStructure(structure, frame, container, playback = null) {
     // The live Structure was updated in place by frameAt, so the meshes on
     // screen still belong to it — applyFrameFast bails (false) whenever the
     // image set or mesh no longer matches, and the full path below runs.
+    // The fast path (positions-only) is taken only for static colour modes;
+    // applyFrameFast itself bails for frame-dependent colouring (atoms-by-force,
+    // bonds-by-length), so those frames fall through to the full rebuild below,
+    // which recolours correctly.
     if (structure === fileBrowser.selectedStructure
       && playbackFastAllowed(container, fileBrowser.stepInput, frame, playback)
       && applyFrameFast(structure)) {
@@ -414,6 +436,10 @@ function applyFrameStructure(structure, frame, container, playback = null) {
 
   createBondLengthControls();
 
+  // Force-based atom colours are re-applied centrally inside updateVisualization
+  // (it honours the active Atoms colour mode before rendering atoms), so the
+  // full path here needs no explicit recolour — only the fast path above does,
+  // because it bypasses updateVisualization.
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
 
   // Forces and spins must be updated AFTER updateVisualization so
@@ -481,6 +507,7 @@ function updateFrame(frame, container, opts = {}) {
   else if (ind) ind.textContent = `${frame + 1} / ${numFrames}`;
   if (trajectoryPlayerElements.frameSlider) trajectoryPlayerElements.frameSlider.value = frame;
   syncRowStepInput(frame);
+  syncRenderNote();
 
   if (opts.render !== false) {
     if (opts.full) properLoadFrame(frame, container);
@@ -600,7 +627,7 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
             <option value="0">max</option>
           </select>
         </label>
-        <label class="trajOpt" id="renderModeOpt" hidden title="Auto moves atoms and bonds in place during playback when the frames are one system in motion; Full rebuilds every frame exactly">Render
+        <label class="trajOpt" id="renderModeOpt" title="Auto moves atoms and bonds in place during playback when the frames are one system in motion; Full rebuilds every frame exactly">Render
           <select id="renderModeSelect">
             <option value="auto">Auto</option>
             <option value="full">Full</option>
@@ -614,6 +641,7 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
           Recenter each step
         </label>
       </div>
+      <div id="trajRenderNote" class="trajRenderNote" hidden title="Force / bond-length colours change every frame, so Auto rebuilds each frame in full instead of moving atoms in place. Switch the Atoms/Bonds colour mode back to Elements for fast playback.">Colour map active: full render each frame (slower playback)</div>
       <div id="trajPlotHost" style="display:none;"></div>
     </div>
   `;
@@ -632,7 +660,16 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
     recenterCheckbox: trajControlPanel.querySelector('#recenterEachStep'),
     renderModeOpt: trajControlPanel.querySelector('#renderModeOpt'),
     renderModeSelect: trajControlPanel.querySelector('#renderModeSelect'),
+    renderNote: trajControlPanel.querySelector('#trajRenderNote'),
   };
+  syncRenderNote();
+
+  // Speed "max" (one frame per animation frame, no interval) is experimental:
+  // offered only under ?experimental (debug/experimentalMode.js). The still
+  // faster playback modes in development live on another branch, not here.
+  if (!isExperimentalMode()) {
+    trajectoryPlayerElements.speedSelect.querySelector('option[value="0"]')?.remove();
+  }
 
   // Reflect the persisted choice; the toggle just stores the pref, read live by
   // updateStructureFromFrame on each frame change.
@@ -668,18 +705,20 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   refreshPlotFromContainer(container);
   updateComputeStepStatsBtnVisibility(container);
 
-  // Debug mode only: show the detected kind and let playback be forced onto
-  // the exact path, to compare against the fast path.
+  // Render mode is offered to everyone: Auto moves atoms and bonds in place
+  // during playback when the frames are one system in motion (and falls back
+  // to Full for frame-dependent colour maps, see playbackFastAllowed); Full
+  // rebuilds every frame exactly. Debug additionally shows the detected motion
+  // kind on the Auto label so the two paths can be compared.
+  const renderSelect = trajectoryPlayerElements.renderModeSelect;
   if (isDebugMode() && typeof container.motionProfile === 'function') {
-    const select = trajectoryPlayerElements.renderModeSelect;
-    select.querySelector('option[value="auto"]').textContent = `Auto (${container.motionProfile().kind})`;
-    select.value = container.playbackMode === 'full' ? 'full' : 'auto';
-    select.onchange = () => {
-      container.playbackMode = select.value === 'full' ? 'full' : 'auto';
-      markEvent(`render ${container.playbackMode}`);
-    };
-    trajectoryPlayerElements.renderModeOpt.hidden = false;
+    renderSelect.querySelector('option[value="auto"]').textContent = `Auto (${container.motionProfile().kind})`;
   }
+  renderSelect.value = container.playbackMode === 'full' ? 'full' : 'auto';
+  renderSelect.onchange = () => {
+    container.playbackMode = renderSelect.value === 'full' ? 'full' : 'auto';
+    markEvent(`render ${container.playbackMode}`);
+  };
 
   // Disable play button if only 1 frame
   if (container.structures.length <= 1) {
