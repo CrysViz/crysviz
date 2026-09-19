@@ -93,6 +93,7 @@ import {initRaytraceWarningModal} from '../ui/RaytraceWarningModal.js'
 import { parse_any } from '../io/index.js';
 import { FileSource, detectFormat, materialize, HEAD_BYTES } from '../io/index.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
+import { offerCifSymmetryChoice } from '../ui/CifSymmetryLoad.js';
 import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
 import { applyFrameFast } from '../render/FastFrameModule.js';
@@ -445,6 +446,13 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
           throw new Error('No atoms or structures were found in this file.');
         }
         initializeUIOnLoad(structureContainer);
+        // A CIF carries a declared space group. Offer to keep it (Wyckoff editor
+        // in the file's own setting) once the structure is selected — skipped for
+        // the built-in default so startup stays promptless. The selected
+        // structure is the one just registered by initializeUIOnLoad.
+        if (descriptor.id === 'cif' && !isDefault) {
+          await offerCifSymmetryChoice(fileBrowser.selectedStructure, fileName);
+        }
         break;
     }
 

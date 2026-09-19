@@ -12,15 +12,21 @@
 // live edits (core/crystal-viewer.js's updateVisualization calls
 // refreshFileStructureSummary, which only re-renders when the lattice or the
 // positions actually changed). Wyckoff positions come from the structure's
-// active Wyckoff lock when it has one, else from a moyo analysis at a tight
-// fixed tolerance (WYCKOFF_TOLERANCE) — run debounced, and only while the section is
-// open, so trajectory playback with the section folded costs nothing.
+// active Wyckoff lock when it has one; else, for a structure read from a CIF
+// whose declared operations close on its atoms, from that declared symmetry
+// (the file's own space group and orbits — Moyo is only asked, at the app's
+// symprec, for the Wyckoff letters the file cannot name); else from a moyo
+// analysis at a tight fixed tolerance (WYCKOFF_TOLERANCE) — run debounced, and
+// only while the section is open, so trajectory playback with the section
+// folded costs nothing.
 
 import { fileBrowser } from '../state/store.js';
 import { onActiveStructureChange } from '../state/structures.js';
 import { getPanelPref, setPanelPref } from './panels/PanelManager.js';
 import { openModifyStructurePanel } from './addToStructureModule/AddStructureModule.js';
-import { analyzeStructureSymmetry } from './SymmetryEditModule.js';
+import {
+  analyzeStructureSymmetry, buildCifWyckoffSymmetryState, cifSymmetryIsUsable, defaultSymprec,
+} from './SymmetryEditModule.js';
 import { hallEntry, symdataHallUrl } from './BackendPanel/hallSymbols.js';
 import {
   latticeText, latticeParamsText, positionsTable, wyckoffRows, wyckoffText, structureSummaryText,
@@ -44,7 +50,10 @@ const state = {
   /** Lattice + positions signature of what is rendered, for cheap "changed?" checks. */
   signature: '',
   cartesian: false,
-  /** @type {{signature: string, tolerance: number, info: object | null, error: string | null} | null} */
+  /** @type {{signature: string, tolerance: number, info: object | null, error: string | null,
+   *           source: 'lock' | 'cif' | 'analysis', lock: object | null,
+   *           pending?: boolean,
+   *           detected?: {spaceGroup: string, number: number | null, tolerance: number} | null} | null} */
   wyckoff: null,
   wyckoffTimer: 0,
   wyckoffToken: 0,
@@ -191,7 +200,6 @@ function renderWyckoff() {
     return;
   }
   const info = w.info;
-  const fromLock = state.structure?.symmetry?.mode === 'wyckoff';
   // "Pnnm (58)" — linked to the symbol's symdata page, like the Symmetry
   // panel, when a Hall number is known (a fresh analysis always has one; an
   // active Wyckoff lock may not, and then it stays plain text).
@@ -201,10 +209,18 @@ function renderWyckoff() {
   const sg = url
     ? `<a class="sym-link" href="${url}" target="_blank" rel="noopener noreferrer">${sgLabel}</a>`
     : sgLabel;
-  const tol = w.tolerance < 1e-3 ? w.tolerance.toExponential(0) : String(w.tolerance);
-  const source = fromLock ? 'from the active Wyckoff lock' : `tolerance ${tol} Å`;
+  const fmtTol = (t) => (t < 1e-3 ? t.toExponential(0) : String(t));
+  const source = w.source === 'lock' ? 'from the active Wyckoff lock'
+    : w.source === 'cif' ? 'declared by the CIF'
+      : `tolerance ${fmtTol(w.tolerance)} Å`;
+  // A CIF whose geometry analyses to a different group than it declares gets
+  // that said next to the declared one, rather than silently either way.
+  const detected = w.detected;
+  const disagreement = detected && detected.number !== info.number
+    ? ` · geometry at ${fmtTol(detected.tolerance)} Å: ${escapeHtml(detected.spaceGroup)}${detected.number ? ` (${detected.number})` : ''}`
+    : '';
   line.innerHTML = `Space group ${sg}`
-    + ` <span class="fss-muted">· ${info.rows.length} orbit${info.rows.length === 1 ? '' : 's'} (${source})</span>`;
+    + ` <span class="fss-muted">· ${info.rows.length} orbit${info.rows.length === 1 ? '' : 's'} (${source})${disagreement}</span>`;
   table.hidden = false;
   tbody.innerHTML = info.rows.map((r) => `<tr>
       ${cell(r.element)}${cell(r.wyckoff)}${r.xyz.map((v) => cell(fmt(v))).join('')}
@@ -219,25 +235,69 @@ function scheduleWyckoff() {
   const { structure, signature } = state;
   if (!structure || !isOpen()) return;
   const tolerance = WYCKOFF_TOLERANCE;
-  if (state.wyckoff && state.wyckoff.signature === signature && state.wyckoff.tolerance === tolerance) {
+  // Where the rows come from decides the cache key together with the geometry:
+  // the same cell loaded twice (once locked, once plain) or re-locked must not
+  // reuse rows built for the other lock state.
+  const lock = structure.symmetry?.mode === 'wyckoff' ? structure.symmetry : null;
+  const cifSym = !lock && structure.cifSymmetry && cifSymmetryIsUsable(structure, structure.cifSymmetry)
+    ? structure.cifSymmetry
+    : null;
+  const source = lock ? 'lock' : cifSym ? 'cif' : 'analysis';
+  const cached = state.wyckoff;
+  // A pending entry (CIF rows shown, Moyo letters still to come) is not a
+  // hit: the clearTimeout above just cancelled its fetch, so it is re-armed.
+  if (cached && cached.signature === signature && cached.tolerance === tolerance
+      && cached.source === source && cached.lock === lock && !cached.pending) {
     renderWyckoff();
     return;
   }
-  if (structure.symmetry?.mode === 'wyckoff') {
-    state.wyckoff = { signature, tolerance, info: wyckoffRows(structure, { lock: structure.symmetry }), error: null };
+  if (lock) {
+    state.wyckoff = { signature, tolerance, info: wyckoffRows(structure, { lock }), error: null, source, lock };
     renderWyckoff();
     return;
   }
-  renderWyckoff(); // "Analysing…"
   const token = ++state.wyckoffToken;
+
+  // A CIF's own symmetry, when its operations close on the loaded atoms: the
+  // declared group and orbits render at once (letters '?'), then Moyo — at
+  // the app's symprec, since this is confirming a declared group rather than
+  // measuring one — supplies the letters when it finds the same group, or the
+  // disagreement to show when it does not.
+  const cifLock = cifSym ? buildCifWyckoffSymmetryState(structure, cifSym, defaultSymprec()) : null;
+  if (cifLock) {
+    state.wyckoff = { signature, tolerance, info: wyckoffRows(structure, { lock: cifLock }), error: null, source, lock: null, pending: true };
+    renderWyckoff();
+    const symprec = defaultSymprec();
+    state.wyckoffTimer = window.setTimeout(async () => {
+      let dataset = null;
+      try {
+        dataset = await analyzeStructureSymmetry(structure, symprec);
+      } catch {
+        // The declared symmetry is already shown; the letters stay '?'.
+        if (token === state.wyckoffToken && state.wyckoff?.pending) state.wyckoff.pending = false;
+        return;
+      }
+      if (token !== state.wyckoffToken) return;
+      const lettered = buildCifWyckoffSymmetryState(structure, cifSym, symprec, { dataset }) ?? cifLock;
+      const compact = String(dataset.hm_symbol ?? '?').replace(/\s+/g, '') || '?';
+      state.wyckoff = {
+        signature, tolerance, info: wyckoffRows(structure, { lock: lettered }), error: null, source, lock: null,
+        detected: { spaceGroup: compact, number: dataset.number ?? null, tolerance: symprec },
+      };
+      if (state.signature === signature) renderWyckoff();
+    }, WYCKOFF_DEBOUNCE_MS);
+    return;
+  }
+
+  renderWyckoff(); // "Analysing…"
   state.wyckoffTimer = window.setTimeout(async () => {
     try {
       const dataset = await analyzeStructureSymmetry(structure, tolerance);
       if (token !== state.wyckoffToken) return;
-      state.wyckoff = { signature, tolerance, info: wyckoffRows(structure, { dataset }), error: null };
+      state.wyckoff = { signature, tolerance, info: wyckoffRows(structure, { dataset }), error: null, source, lock: null };
     } catch (error) {
       if (token !== state.wyckoffToken) return;
-      state.wyckoff = { signature, tolerance, info: null, error: error?.message || String(error) };
+      state.wyckoff = { signature, tolerance, info: null, error: error?.message || String(error), source, lock: null };
     }
     if (state.signature === signature) renderWyckoff();
   }, WYCKOFF_DEBOUNCE_MS);
