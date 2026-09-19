@@ -315,8 +315,14 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
   cursor: pointer;
 }
 
-.cv-panel-menu-item:hover {
+.cv-panel-menu-item:hover:not(:disabled) {
   background: var(--hover-color);
+}
+
+/* Greyed-out action (e.g. "Deselect" with nothing selected). */
+.cv-panel-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* Thin separator before an untitled section (e.g. the Close item). */

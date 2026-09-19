@@ -46,6 +46,7 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 
 
 import {initAddStructureButton, initModifyStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
+import { refreshFileStructureSummary } from '../ui/FileStructureSummary.js';
 import {initCombineTrajectoriesButton, selectStructure} from '../ui/FileBrowswerPanel.js'
 import {initPanelSystem, finishPanelRegistration, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
 import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
@@ -264,6 +265,10 @@ export function updateVisualization(options = {}) {
     // updateVisualization() call — avoids stacking duplicate click listeners
     // on the same live button node.
     initModifyStructureButton();
+    // The Files window's Structure info section shows this structure's
+    // geometry; a live edit (Modify Structure) or a relaxation step lands
+    // here, so let it re-check (cheap when nothing changed).
+    refreshFileStructureSummary();
   }
   console.time("uv:updateLattice");
   if (reRenderLattice) {

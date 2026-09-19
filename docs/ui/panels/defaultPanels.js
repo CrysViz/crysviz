@@ -24,6 +24,9 @@ import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
 import { addEOSPlotsPanel, removeEOSPlotsPanel } from '../EOSPlotsPanel.js';
+import { addLatticeAnalysisPanel, removeLatticeAnalysisPanel, latticeAnalysisAvailable } from '../LatticeAnalysisPanel.js';
+import { addLatticePlotsPanel, removeLatticePlotsPanel } from '../LatticePlotsPanel.js';
+import { addFileStructureSummary } from '../FileStructureSummary.js';
 import { addDummySplitPanel, removeDummySplitPanel } from '../DummySplitPanel.js';
 import { addLandscapePanel, removeLandscapePanel, addLandscapePlotsPanel, removeLandscapePlotsPanel } from '../LandscapePanel.js';
 import { addPhononPanel, removePhononPanel } from '../PhononPanel.js';
@@ -398,6 +401,9 @@ export function registerDefaultPanels() {
       if (table) body.appendChild(table);
       // (The Share button lives in #uploadSection's action row and moves with
       // it; see ShareModule.createShareButton.)
+      // The selected structure's lattice / positions / Wyckoff positions,
+      // copyable, with its own ✎ (ui/FileStructureSummary.js).
+      addFileStructureSummary(body);
     },
     defaults: { dock: 'left', order: -20, collapsed: false, barCollapsed: true },
   });
@@ -679,7 +685,7 @@ export function registerDefaultPanels() {
     defaults: { dock: 'left', order: 5, collapsed: false },
   });
 
-  // ---- controls + plots window pairs (EOS, Energy Landscape) -----------------
+  // ---- controls + plots window pairs (Lattice Analysis, EOS, Energy Landscape) --
   //
   // Each feature is TWO ordinary windows: a controls window in the main dock
   // (like any feature window) and a plots window that DEFAULTS to the wide
@@ -691,6 +697,39 @@ export function registerDefaultPanels() {
   // closeMode:'hide': their content (fit data / loaded JSON) is independent
   // of the selected structure and survives both structure switches and
   // close/reopen; the build is simply deferred to first open.
+
+  // Lattice Analysis: cell parameters (a, b, c, α, β, γ) of every frame of
+  // the selected trajectory, plotted against the frame number or a custom
+  // x axis. Same controls-plus-plots shape as EOS, but trajectory-bound like
+  // the Trajectory player: both windows are available only while the
+  // selected row has 2+ frames, so the plots window closes out of the side
+  // dock on a single-frame structure and comes back with the next trajectory.
+  // The controls window rebuilds on a structure switch (it follows the
+  // selection) and opens the plots window whenever it has something to show.
+  registerPanel({
+    id: 'latticeAnalysis',
+    title: 'Lattice Analysis',
+    lifecycle: 'rebuild',
+    hiddenUntilStructure: true,
+    infoMd: './data/latticeAnalysisInfo.md',
+    available() { return latticeAnalysisAvailable(); },
+    buildContent(body) { addLatticeAnalysisPanel(body.id); },
+    onDestroyContent() { removeLatticeAnalysisPanel(); },
+    defaults: { dock: 'left', order: 91, collapsed: true },
+  });
+
+  registerPanel({
+    id: 'latticePlots',
+    title: 'Lattice Plots',
+    lifecycle: 'persistent',
+    closable: true,
+    closeMode: 'hide',
+    infoMd: './data/latticeAnalysisInfo.md',
+    available() { return latticeAnalysisAvailable(); },
+    buildContent(body) { addLatticePlotsPanel(body.id); },
+    onDestroyContent() { removeLatticePlotsPanel(); },
+    defaults: { dock: 'right', closed: true, order: 91 },
+  });
 
   registerPanel({
     id: 'eos',

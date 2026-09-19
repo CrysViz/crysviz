@@ -101,7 +101,7 @@
   /* Drag the bottom edge down to make just this one chart taller — a plain
      block-level resize handle, independent of Plotly's own sizing (a
      ResizeObserver on this div calls Plotly.Plots.resize() whenever it
-     changes, see watchPlotResize in BondLengthHistogram.js). overflow other
+     changes, see watchCardResize in BondLengthHistogram.js). overflow other
      than visible is required for the native handle to appear at all. */
   resize: vertical;
   overflow: hidden;
