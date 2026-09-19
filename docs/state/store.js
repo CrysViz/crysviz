@@ -384,6 +384,10 @@ export const general = {
   // arrow's tip inside the gizmo's own 3D scene instead of in the separate
   // #axesLegend box (WindowAndSceneControls.initAxesGizmo).
   gizmoLabelsOnArrows: false,
+  // Multiplier on the on-arrow a/b/c label sprite size (WindowAndSceneControls
+  // gizmoLabelScale). 1 = the app default; widget mode bumps it so the letters
+  // stay legible on the small embed compass without enlarging the arrows.
+  gizmoLabelSizeFactor: 1,
   // Side length in px of the #axesGizmo box (ui/GizmoDrag.js's resize
   // handle), or null to use the CSS default (--gizmo-size, theme.css).
   gizmoSize: null,

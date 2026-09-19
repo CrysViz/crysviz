@@ -520,11 +520,13 @@ function jumpToRowStep(rowIndex) {
 /** Jump the trajectory to a specific frame. Used by the .crysviz loader to
  *  restore the step the user was viewing; reuses updateFrame so the structure,
  *  scrubber, plot cursor and force/spin arrows all follow. */
-export function showTrajectoryFrame(frame, container) {
+export function showTrajectoryFrame(frame, container, opts = {}) {
   if (!container?.structures?.length) return;
   currentFrame = Math.max(0, Math.min(container.structures.length - 1, frame));
   // Restoring a saved view should land properly loaded, like a real selection.
-  updateFrame(currentFrame, container, { full: true });
+  // Extra opts (e.g. recenter:false, used by widget-mode host control so a new
+  // frame never re-orients the camera) are forwarded to updateFrame.
+  updateFrame(currentFrame, container, { full: true, ...opts });
 }
 
 // --- Auto-play control ---

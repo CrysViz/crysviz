@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CrysViz widget — trajectory control demo</title>
+<link rel="icon" href="data:,">
+
+<style>
+  :root {
+    --bg: #12201f; --panel: #1b2b2a; --fg: #e8efed; --muted: #9fb3af;
+    --accent: #37b985; --line: #2c413f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 15px/1.5 system-ui, sans-serif;
+    background: var(--bg); color: var(--fg);
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; padding: 24px 16px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  p.lede { margin: 0 0 20px; color: var(--muted); max-width: 520px; text-align: center; }
+  .stage {
+    width: 400px; max-width: 100%;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 12px;
+  }
+  iframe {
+    width: 100%; aspect-ratio: 1 / 1; border: 0; border-radius: 8px;
+    display: block; background: #000;
+  }
+  .controls { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
+  button {
+    font: inherit; color: var(--fg); background: var(--accent);
+    border: 0; border-radius: 7px; padding: 7px 14px; cursor: pointer; font-weight: 600;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  .frame-label { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 62px; text-align: right; }
+  code { background: #0d1817; padding: 1px 5px; border-radius: 4px; color: var(--accent); }
+  .note { margin-top: 16px; color: var(--muted); font-size: 13px; max-width: 520px; }
+</style>
+</head>
+<body>
+  <h1>CrysViz widget — trajectory control</h1>
+  <p class="lede">The 3D view is an embedded CrysViz widget. The controls below it
+  live on <em>this</em> page and drive the trajectory over <code>postMessage</code> —
+  no reloading, and the camera never re-orients.</p>
+
+  <div class="stage">
+    <iframe id="viewer" title="CrysViz widget"
+      sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads"
+      referrerpolicy="no-referrer"></iframe>
+    <div class="controls">
+      <button id="playBtn" disabled>▶ Play</button>
+      <input id="scrub" type="range" min="0" max="0" value="0" step="1" disabled>
+      <span class="frame-label" id="label">— / —</span>
+    </div>
+  </div>
+
+  <p class="note">Host → widget: <code>{target:'crysviz-widget', type:'setFrame'|'play'|'pause'|'getState', …}</code>.
+  Widget → host: <code>{source:'crysviz-widget', type:'ready'|'frame'|'state', …}</code>.
+  See the CrysViz README “Widget mode / embedding”.</p>
+
+<script type="module">
+  // Which CrysViz build to embed. Same origin as this page by default so the
+  // demo works from a local `python3 tools/devserver.py`. Override with
+  // ?crysviz=<url> (e.g. ?crysviz=https://crysviz.org/index.html).
+  const params = new URLSearchParams(location.search);
+  const HOST = params.get('crysviz') || new URL('./index.html', location.href).href;
+
+  // --- Build a demo trajectory: an 8-atom rock-salt cell whose atoms wobble
+  //     (a standing-wave displacement along x), 40 frames, so playback is smooth.
+  function buildTrajectory() {
+    const a = 4.3;
+    const lattice = [[a, 0, 0], [0, a, 0], [0, 0, a]];
+    const base = [
+      [0, 0, 0], [0.5, 0.5, 0], [0.5, 0, 0.5], [0, 0.5, 0.5],   // Fe (fcc)
+      [0.5, 0, 0], [0, 0.5, 0], [0, 0, 0.5], [0.5, 0.5, 0.5],   // O
+    ];
+    const elements = ['Fe', 'Fe', 'Fe', 'Fe', 'O', 'O', 'O', 'O'];
+    const N = 40, amp = 0.06;
+    const frames = [];
+    for (let f = 0; f < N; f++) {
+      const phase = (2 * Math.PI * f) / N;
+      const positions = base.map(([x, y, z], i) => {
+        // Alternate sublattices move out of phase → a visible optical-like wobble.
+        const dir = i < 4 ? 1 : -1;
+        return [x + dir * amp * Math.sin(phase + y * Math.PI), y, z];
+      });
+      frames.push({ elements, lattice, positions });
+    }
+    return { format: 'crysviz', version: '2.16', frames, selectedFrameIndex: 0,
+      display: { showAtoms: true, showBonds: true, showLattice: true }, style: {} };
+  }
+
+  function base64Utf8(str) {
+    const bytes = new TextEncoder().encode(str);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  }
+
+  function widgetURL(session, theme) {
+    const name = encodeURIComponent('demo.crysviz');
+    const content = encodeURIComponent(base64Utf8(JSON.stringify(session)));
+    const t = theme ? `&theme=${theme}` : '';
+    // control=1 opts into the live postMessage control channel.
+    return `${HOST}?widget=1&control=1${t}#load-file=${name}|${content}`;
+  }
+
+  const viewer = document.getElementById('viewer');
+  const playBtn = document.getElementById('playBtn');
+  const scrub = document.getElementById('scrub');
+  const label = document.getElementById('label');
+
+  let frameCount = 0, index = 0, playing = false;
+
+  function send(type, extra = {}) {
+    // targetOrigin '*' is fine: the payload is only a frame command. The widget
+    // still verifies the message comes from this window (its parent).
+    viewer.contentWindow?.postMessage({ target: 'crysviz-widget', type, ...extra }, '*');
+  }
+
+  function setLabel() { label.textContent = frameCount ? `${index + 1} / ${frameCount}` : '— / —'; }
+  function setPlaying(on) { playing = on; playBtn.textContent = on ? '❚❚ Pause' : '▶ Play'; }
+
+  // Only trust messages from the iframe we created.
+  window.addEventListener('message', (e) => {
+    if (e.source !== viewer.contentWindow) return;
+    const d = e.data;
+    if (!d || typeof d !== 'object' || d.source !== 'crysviz-widget') return;
+    if (d.type === 'ready' || d.type === 'state') {
+      frameCount = d.frameCount; index = d.index;
+      scrub.max = String(Math.max(0, frameCount - 1));
+      scrub.value = String(index);
+      scrub.disabled = playBtn.disabled = frameCount <= 1;
+      if (d.type === 'state') setPlaying(!!d.playing);
+      setLabel();
+    } else if (d.type === 'frame') {
+      index = d.index; scrub.value = String(index); setLabel();
+    }
+  });
+
+  scrub.addEventListener('input', () => {
+    if (playing) { send('pause'); setPlaying(false); }
+    index = parseInt(scrub.value, 10);
+    send('setFrame', { index });
+    setLabel();
+  });
+
+  playBtn.addEventListener('click', () => {
+    if (playing) { send('pause'); setPlaying(false); }
+    else { send('play', { fps: 18, loop: true }); setPlaying(true); }
+  });
+
+  // Follow the OS theme for the embed, and launch it.
+  const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  viewer.src = widgetURL(buildTrajectory(), theme);
+  // ready may arrive before or after load; also ask for state once loaded.
+  viewer.addEventListener('load', () => setTimeout(() => send('getState'), 300));
+</script>
+</body>
+</html>
