@@ -10,6 +10,7 @@
 // loaded and keeps working offline — nothing here is fetched on demand later.
 
 import '../ui/AboutPanel.js'; // side-effect: wires the About trigger at load
+import '../render/pipeline/tracers.js'; // side-effect: registers the ray/path tracing pipelines
 import { initPanelSystem, finishPanelRegistration, refreshActivePanels } from '../ui/panels/PanelManager.js';
 import { registerDefaultPanels } from '../ui/panels/defaultPanels.js';
 import { isDebugMode } from '../debug/debugMode.js';

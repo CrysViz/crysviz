@@ -3,9 +3,10 @@
 // gizmo (lower-left), a reduced camera control (top-right), and a top-left
 // CrysViz logo that IS the menu trigger — its dropdown leads with "Open in
 // CrysViz" (full UI, new tab), then Structures (cell choice), Shading
-// (metallic/matte/cel), and Bonds/Polyhedra toggles. Everything here is
-// additive and gated on body.widget-mode; the full app is untouched. See
-// docs/styles/widgetMode.css for the chrome rules.
+// (metallic/matte/cel — plus ray/path tracing when the embed opts in with
+// ?tracers=1), Bonds/Polyhedra toggles, and Download POSCAR/CIF. Everything
+// here is additive and gated on body.widget-mode; the full app is untouched.
+// See docs/styles/widgetMode.css for the chrome rules.
 
 import { fileBrowser, general, structureShip } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
@@ -51,6 +52,18 @@ let framesContainer = null;
  *  CrysViz" menu item opens it, minus the widget param, in a new tab. */
 let capturedHref = '';
 
+/** Ray/path tracing are opt-in via ?tracers=1 (they pull ~hundreds of KB of
+ *  tracer pipelines, so the default embed skips them). When enabled the Shading
+ *  menu gains Ray tracing / Path tracing and the boot atom/bond sizes are
+ *  captured so those presets can bump them and the raster shadings restore them. */
+let tracersEnabled = false;
+let defaultAtomSize = null;
+let defaultBondRadius = null;
+/** Ray/path tracing want larger spheres + fatter bonds (programmatic activation,
+ *  so no performance-warning modal — that only fires from ColorPanel's own select). */
+const PRESET_ATOM_SIZE = 0.50;
+const PRESET_BOND_RADIUS = 0.17;
+
 /**
  * Initialise widget-mode UI. Runs once, after the authoritative bootstrap has
  * loaded the structure (so the composition legend and spin arrows have data).
@@ -59,7 +72,7 @@ let capturedHref = '';
  *   strips the location hash — the logo links back to the full UI with the same
  *   structure (same URL minus the `widget` param).
  */
-export function initWidgetMode(opts) {
+export async function initWidgetMode(opts) {
   loadedStructure = fileBrowser.selectedStructure ?? null;
   loadedRowIndex = fileBrowser.selectedRowIndex ?? 0;
   // Force the feature locks on. With a persisted featuresLocked=false (from
@@ -91,6 +104,23 @@ export function initWidgetMode(opts) {
   // boot path (initAxesGizmo already sized it correctly first paint), but
   // covers the display:'' clear above, which can change the box from 0x0.
   resizeGizmoRenderer();
+
+  // Ray/path tracing (?tracers=1): register the tracer pipelines before the menu
+  // is built so the Shading group can offer them and activation works. Dynamic
+  // import — like the full app at boot — so a default embed never downloads them.
+  try {
+    tracersEnabled = new URLSearchParams(window.location.search).get('tracers') === '1';
+  } catch { tracersEnabled = false; }
+  if (tracersEnabled) {
+    defaultAtomSize = general.atomSize;
+    defaultBondRadius = general.bondRadius;
+    try {
+      await import('../render/pipeline/tracers.js');
+    } catch (error) {
+      console.warn('[widget] tracer pipelines unavailable:', error);
+      tracersEnabled = false;
+    }
+  }
 
   setupFramesMode();
   buildSettings(opts?.href ?? '');
@@ -217,15 +247,21 @@ function hrefForCurrentFrame(href) {
   }
 }
 
-const PRESET_GROUP = {
-  key: 'preset',
-  label: 'Shading',
-  items: [
+/** The Shading group's entries: always the three material styles, plus the two
+ *  tracers when ?tracers=1 loaded them. */
+function presetItems() {
+  const items = [
     { value: 'metallic', label: 'Metallic' },
     { value: 'matte', label: 'Matte' },
     { value: 'cel', label: 'Cel shading' },
-  ],
-};
+  ];
+  if (tracersEnabled) {
+    // Caption above the tracer entries — they are progressive GPU renderers.
+    items.push({ value: 'raytrace', label: 'Ray tracing', note: 'Heavy computations · Requires GPU' });
+    items.push({ value: 'pathtrace', label: 'Path tracing' });
+  }
+  return items;
+}
 
 /** Live radio selection per group (Structures = 'cell', Shading = 'preset').
  *  The check-toggles (Bonds/Polyhedra) read general.* directly instead. */
@@ -237,6 +273,7 @@ const selection = { cell: 'loaded', preset: currentPresetValue() };
 function buildSettings(href) {
   capturedHref = href;
   selection.cell = initialStructureValue();
+  selection.preset = currentPresetValue(); // reflect the live style/pipeline now
 
   const host = document.createElement('div');
   host.id = 'widgetSettings';
@@ -271,8 +308,8 @@ function buildSettings(href) {
   // b. Structures (radio) — the cells the payload provides.
   renderRadioGroup(menu, 'cell', 'Structures', structureItems());
   menu.appendChild(makeSep());
-  // c. Shading (radio) — metallic / matte / cel material style.
-  renderRadioGroup(menu, 'preset', PRESET_GROUP.label, PRESET_GROUP.items);
+  // c. Shading (radio) — metallic / matte / cel, plus the tracers with ?tracers=1.
+  renderRadioGroup(menu, 'preset', 'Shading', presetItems());
   menu.appendChild(makeSep());
   // d. Bonds / Polyhedra (check toggles, reflecting live state).
   menu.appendChild(makeToggleRow('bonds', 'Bonds', () => general.showBonds));
@@ -331,6 +368,14 @@ function renderRadioGroup(menu, groupKey, title, items) {
   label.textContent = title;
   menu.appendChild(label);
   for (const item of items) {
+    // An item may carry a small caption shown just above it (e.g. the "heavy
+    // computations, requires GPU" note above the tracer entries).
+    if (item.note) {
+      const note = document.createElement('div');
+      note.className = 'widget-menu-note';
+      note.textContent = item.note;
+      menu.appendChild(note);
+    }
     const row = makeRow('menuitemradio', item.label);
     row.dataset.group = groupKey;
     row.dataset.value = item.value;
@@ -517,22 +562,44 @@ async function onSelect(groupKey, value) {
 
 // ── Shading ────────────────────────────────────────────────────────────────
 
-/** The shading value implied by the live renderStyle (a restored session may
- *  boot into any of the three). */
+/** The shading value implied by the live pipeline/style (a restored session or a
+ *  tracer choice may boot into any of these). */
 function currentPresetValue() {
+  if (general.renderPipeline === 'raytrace') return 'raytrace';
+  if (general.renderPipeline === 'pathtrace') return 'pathtrace';
   if (general.renderStyle === 'matte') return 'matte';
   if (general.renderStyle === 'cel') return 'cel';
   return 'metallic';
 }
 
-/** The widget offers only the three material styles (metallic / matte / cel),
- *  all on the standard depth-peel pipeline at the boot atom/bond sizes — no
- *  ray/path tracing and no size bumping. */
+/**
+ * Apply a Shading choice. Metallic / matte / cel are material styles on the
+ * standard depth-peel pipeline; ray/path tracing (only present with ?tracers=1)
+ * switch the render pipeline and bump atom/bond sizes. Boot sizes are only
+ * captured when tracing is enabled, so a tracer-free embed never touches sizes.
+ */
 function applyPreset(value) {
-  if (value !== 'metallic' && value !== 'matte' && value !== 'cel') return;
-  general.renderStyle = value;
-  setActivePipelineFromController('depthpeel');
-  restyleAtomsBonds();
+  switch (value) {
+    case 'metallic':
+    case 'matte':
+    case 'cel':
+      general.renderStyle = value;
+      if (defaultAtomSize != null) general.atomSize = defaultAtomSize;
+      if (defaultBondRadius != null) general.bondRadius = defaultBondRadius;
+      setActivePipelineFromController('depthpeel');
+      restyleAtomsBonds();
+      break;
+    case 'raytrace':
+    case 'pathtrace':
+      if (!tracersEnabled) return;
+      general.atomSize = PRESET_ATOM_SIZE;
+      general.bondRadius = PRESET_BOND_RADIUS;
+      setActivePipelineFromController(value);
+      restyleAtomsBonds();
+      break;
+    default:
+      break;
+  }
 }
 
 /** Re-render atoms/bonds at the current sizes/style and let colour-driven

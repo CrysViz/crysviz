@@ -128,6 +128,16 @@ body.widget-mode .widget-menu-group-label {
   color: var(--fg-3);
 }
 
+/* Small caption above a menu item (e.g. the tracer warning). Muted, wraps, and
+   aligns with the item labels (past the check column). */
+body.widget-mode .widget-menu-note {
+  padding: var(--sp-1) var(--sp-4);
+  padding-left: calc(var(--sp-4) + 1em + var(--sp-2));
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
+  color: var(--fg-3);
+}
+
 body.widget-mode .widget-menu-item {
   display: flex;
   align-items: center;
