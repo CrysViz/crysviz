@@ -8,7 +8,8 @@
 
 ### Fixes
 
-- Bonds now end exactly at the atom surface instead of reaching 20% into the atom.
+- Bonds now end more closely to the atom surface instead of reaching 20% into the atom.
+- Fewer transparency ghosts in large structures: the default number of depth-peeling layers is now 15 (was 10).
 
 ## 0.10.0
 
