@@ -300,9 +300,10 @@ export class SceneEncoder {
   _fieldDimsKey = '';
 
   // ---- crystallographic lattice planes ------------------------------------
-  // planesTexture holds 6 texels/plane (see planeChunk.js); planeAtlasTexture
+  // planesTexture holds 8 texels/plane (see planeChunk.js); planeAtlasTexture
   // is the shared RGBA8 colormap atlas for Field-mode planes (a 1x1 dummy when
-  // no Field plane is present). cellWorldToFrac clips planes to the unit cell.
+  // no Field plane is present). cellWorldToFrac takes hit points to fractional
+  // cell coords, where each plane is clipped to its own box (Plane.bounds).
   planesTexture = makeDataTexture(1);
   planeCount = 0;
   cellWorldToFrac = new THREE.Matrix4();
@@ -429,6 +430,7 @@ export class SceneEncoder {
       const f = plane.field;
       const vals = f?.values;
       parts.push('pl', plane.mode, n.x, n.y, n.z, plane.planeD,
+        plane.bounds.flat().join(','),
         mat?.color?.getHex?.(), mat?.opacity,
         plane.colormap, plane.colormapMin, plane.colormapMax,
         f ? `${f.label}|${f.nx}|${f.ny}|${f.nz}|${f.minValue}|${f.maxValue}` : 'nofield',
@@ -1498,9 +1500,10 @@ export class SceneEncoder {
     this.fieldDims = [nx, ny, nz];
   }
 
-  /** Encode the visible crystallographic planes for the tracers: 6 texels per
+  /** Encode the visible crystallographic planes for the tracers: 8 texels per
    *  plane (see planeChunk.js), the cell world->fractional matrix (from the
-   *  lattice basis, for exact cell clipping), and — for Field-mode planes — a
+   *  lattice basis, for exact clipping to each plane's fractional box), and —
+   *  for Field-mode planes — a
    *  CPU-baked colormap atlas (each plane gets its own tile, so planes may
    *  reference different fields). The bake reuses Plane.bakeFieldAtlasTile, the
    *  same sampling path as the raster updateColorMap. */
@@ -1513,7 +1516,7 @@ export class SceneEncoder {
     }
 
     // world -> fractional cell coords: invert the lattice-vector basis (columns
-    // = a, b, c; origin 0), matching makeCellClippingPlanes' cell faces.
+    // = a, b, c; origin 0), matching makeFractionalBoundsClippingPlanes' faces.
     const lattice = fileBrowser.selectedStructure?.lattice;
     if (Array.isArray(lattice) && lattice.length === 3) {
       _m.set(
@@ -1555,10 +1558,10 @@ export class SceneEncoder {
       this.planeAtlasTexture = this._dummyAtlas;
     }
 
-    const texture = this._ensureCapacity('planesTexture', planes.length * 6);
+    const texture = this._ensureCapacity('planesTexture', planes.length * 8);
     const data = texture.image.data;
     planes.forEach((plane, p) => {
-      const d = p * 24;
+      const d = p * 32;
       const n = plane.planeNormal;
       const isField = atlasRects.has(plane);
       // texel 0: normal.xyz, d
@@ -1579,6 +1582,10 @@ export class SceneEncoder {
       // texel 5: atlas rect (uMin, vMin, uSize, vSize)
       const rect = atlasRects.get(plane) ?? [0, 0, 0, 0];
       data[d + 20] = rect[0]; data[d + 21] = rect[1]; data[d + 22] = rect[2]; data[d + 23] = rect[3];
+      // texel 6/7: fractional box the plane is trimmed to (min.xyz, max.xyz)
+      const b = plane.bounds;
+      data[d + 24] = b[0][0]; data[d + 25] = b[1][0]; data[d + 26] = b[2][0]; data[d + 27] = 0;
+      data[d + 28] = b[0][1]; data[d + 29] = b[1][1]; data[d + 30] = b[2][1]; data[d + 31] = 0;
     });
     texture.needsUpdate = true;
   }

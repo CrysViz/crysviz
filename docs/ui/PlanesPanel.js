@@ -1,7 +1,8 @@
 import { app, fileBrowser, general } from '../state/store.js';
-import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
+import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getPlaneDefinitionNormalAndD, getPlaneDRangeInCell, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../render/AtomsFracUpdateModule.js';
+import { activePeriodicBounds } from '../render/LatticeModule.js';
 import { getSelectedAtoms, subscribeToAtomSelection } from './SelectAndHighlightModule.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createColorBar } from './ColorBarWidget.js';
@@ -95,6 +96,9 @@ function replacePlaneMesh(structure, planeDef) {
     normal,
     d,
     cell: lattice,
+    // Trimmed to the periodic display boundary (the Cell & Supercell panel's
+    // "Active Cell Boundary"), like the atoms and the field, not just the cell.
+    bounds: activePeriodicBounds(),
     // Mesh tessellation density is no longer a user-exposed setting (it
     // never actually controlled color smoothness — the LUT sampling was
     // always a fixed 256 steps regardless — just the geometry's own vertex
@@ -148,6 +152,28 @@ function refreshCurrentStructurePlanesInScene() {
 export function setPlanesVisible(visible) {
   planesData.showPlanes = !!visible;
   refreshCurrentStructurePlanesInScene();
+}
+
+/**
+ * Re-trim the planes to the periodic display boundary (general.periodicBounds)
+ * — call it whenever the boundary or "Show Periodic Images" changes. Rebuilds
+ * the plane meshes (polygon, border, clipping) and re-derives the selected
+ * plane's d slider range, which spans the boundary box's corners.
+ */
+export function applyPlanesPeriodicBounds() {
+  const structure = getSelectedStructure();
+  if (!structure?.planes?.length) return;
+
+  // Other periodic-image changes (e.g. the PBC bonds toggle) land here too —
+  // only rebuild meshes actually trimmed to a different box.
+  const activeBounds = JSON.stringify(activePeriodicBounds());
+  const stale = [...getStructureMeshMap(structure).values()]
+    .some(mesh => JSON.stringify(mesh.bounds) !== activeBounds);
+  if (stale) refreshCurrentStructurePlanesInScene();
+
+  if (hasSelectedPlane()) {
+    syncDerivedPlaneInputs(structure.planes[selectedPlaneIndex].params, structure.lattice);
+  }
 }
 
 function syncAtomCutPlanesFromSelectedStructure() {
@@ -265,6 +291,61 @@ function setNumericInputValue(elementId, value, fractionDigits = null) {
     : numericValue.toFixed(fractionDigits);
 }
 
+// d slider endpoints used when there is no cell/normal to derive them from.
+const D_SLIDER_FALLBACK_BOUNDS = { min: -10, max: 10 };
+// Decimal places the cell-derived endpoints are rounded to (matches the
+// 4-digit d text box).
+const D_SLIDER_BOUND_DIGITS = 4;
+
+// Normal + lattice + display boundary the d slider's endpoints were last
+// derived from, so they are only re-derived when one of those changes — not on
+// every d edit/drag, which would undo the user's own endpoint adjustments.
+let dSliderBoundsKey = null;
+
+/**
+ * Default d slider endpoints for a plane normal: the d range over which the
+ * plane stays within the displayed box — the periodic display boundary, i.e.
+ * the cell itself by default (d at the box corners, lowest/highest).
+ * Rounded inwards so the endpoints themselves don't land just outside the box.
+ */
+function getCellDSliderBounds(normal, lattice) {
+  const range = getPlaneDRangeInCell(normal, lattice, activePeriodicBounds());
+  if (!range) return { ...D_SLIDER_FALLBACK_BOUNDS };
+
+  const scale = 10 ** D_SLIDER_BOUND_DIGITS;
+  // 1e-9 slack keeps float noise (4.999999999) from rounding a clean 5 to 4.9999.
+  const min = Math.ceil((range.min - 1e-9) * scale) / scale;
+  const max = Math.floor((range.max + 1e-9) * scale) / scale;
+  return min < max ? { min, max } : range;
+}
+
+function getSelectedPlaneCellDSliderBounds() {
+  const structure = getSelectedStructure();
+  const plane = hasSelectedPlane() ? structure.planes[selectedPlaneIndex] : null;
+  if (!plane) return { ...D_SLIDER_FALLBACK_BOUNDS };
+  const { normal } = getPlaneDefinitionNormalAndD(plane, structure.lattice);
+  return getCellDSliderBounds(normal, structure.lattice);
+}
+
+/**
+ * Reset the d slider's endpoints to the box-derived range whenever the plane
+ * normal, the lattice or the display boundary changed since they were last
+ * derived.
+ */
+function syncDSliderBoundsToCell(normal, lattice) {
+  const minInput = document.getElementById('planeDSliderMin');
+  const maxInput = document.getElementById('planeDSliderMax');
+  if (!minInput || !maxInput) return;
+
+  const key = JSON.stringify([normal, lattice, activePeriodicBounds()]);
+  if (key === dSliderBoundsKey) return;
+  dSliderBoundsKey = key;
+
+  const { min, max } = getCellDSliderBounds(normal, lattice);
+  minInput.value = `${min}`;
+  maxInput.value = `${max}`;
+}
+
 /**
  * Apply the user-adjustable min/max endpoint inputs to the d slider's own
  * range, clamping its current thumb position (display only — the
@@ -278,8 +359,9 @@ function applyDSliderBounds() {
 
   let min = parseFloat(minInput.value);
   let max = parseFloat(maxInput.value);
-  if (!Number.isFinite(min)) min = -10;
-  if (!Number.isFinite(max)) max = 10;
+  const defaults = getSelectedPlaneCellDSliderBounds();
+  if (!Number.isFinite(min)) min = defaults.min;
+  if (!Number.isFinite(max)) max = defaults.max;
   if (min >= max) max = min + 0.01;
 
   minInput.value = `${min}`;
@@ -290,24 +372,33 @@ function applyDSliderBounds() {
 }
 
 /**
- * Keep the d slider's endpoints wide enough to cover the plane's current d
- * value (e.g. a plane loaded from a file/state with d outside the default
- * [-10, 10] bounds), then sync the thumb to that value.
+ * Sync the d slider to a plane: endpoints default to the d range that keeps
+ * the plane within the cell (re-derived when the normal/lattice changes),
+ * widened if needed to cover the plane's current d value (e.g. a plane fitted
+ * to atoms outside the cell, or typed in by hand), then the thumb is moved to
+ * that value.
  */
-function ensureDSliderCoversValue(dValue) {
+function syncDSlider(dValue, normal, lattice) {
   const slider = document.getElementById('planeDSlider');
   const minInput = document.getElementById('planeDSliderMin');
   const maxInput = document.getElementById('planeDSliderMax');
   if (!slider || !minInput || !maxInput) return;
 
+  syncDSliderBoundsToCell(normal, lattice);
+
   let min = parseFloat(minInput.value);
   let max = parseFloat(maxInput.value);
-  if (!Number.isFinite(min)) min = -10;
-  if (!Number.isFinite(max)) max = 10;
+  const defaults = getCellDSliderBounds(normal, lattice);
+  if (!Number.isFinite(min)) min = defaults.min;
+  if (!Number.isFinite(max)) max = defaults.max;
 
   if (Number.isFinite(dValue)) {
-    if (dValue < min) min = Math.floor(dValue - 1);
-    if (dValue > max) max = Math.ceil(dValue + 1);
+    // Tolerance: a plane sitting exactly on a cell corner/face (e.g. (1 0 0))
+    // can exceed the inward-rounded endpoint by a rounding step — the thumb
+    // just clamps there rather than the range jumping a whole unit wider.
+    const tolerance = 10 ** -D_SLIDER_BOUND_DIGITS;
+    if (dValue < min - tolerance) min = Math.floor(dValue - 1);
+    if (dValue > max + tolerance) max = Math.ceil(dValue + 1);
   }
 
   minInput.value = `${min}`;
@@ -417,7 +508,7 @@ function syncDerivedPlaneInputs(params, lattice) {
       setNumericInputValue('planeV', 0, 4);
       setNumericInputValue('planeW', 0, 4);
       setNumericInputValue('planeD', 0, 4);
-      ensureDSliderCoversValue(0);
+      syncDSlider(0, null, lattice);
       return;
     }
 
@@ -427,7 +518,7 @@ function syncDerivedPlaneInputs(params, lattice) {
     setNumericInputValue('planeV', normal[1] ?? 0, 4);
     setNumericInputValue('planeW', normal[2] ?? 0, 4);
     setNumericInputValue('planeD', derived?.d ?? 0, 4);
-    ensureDSliderCoversValue(derived?.d ?? 0);
+    syncDSlider(derived?.d ?? 0, normal, lattice);
     return;
   }
 
@@ -441,7 +532,7 @@ function syncDerivedPlaneInputs(params, lattice) {
     setNumericInputValue('planeV', v, 4);
     setNumericInputValue('planeW', w, 4);
     setNumericInputValue('planeD', d, 4);
-    ensureDSliderCoversValue(d);
+    syncDSlider(d, [u, v, w], lattice);
 
     if (!Array.isArray(lattice) || lattice.length !== 3) {
       setNumericInputValue('planeH', 0);
@@ -1236,6 +1327,9 @@ function loadSelectedPlaneParameters() {
     document.getElementById('radioUVWD').dispatchEvent(new Event('change'));
   }
 
+  // A newly selected plane starts from its own cell-derived d slider range,
+  // not endpoints hand-adjusted for whichever plane was selected before.
+  dSliderBoundsKey = null;
   syncDerivedPlaneInputs(plane.params, structure.lattice);
 
   // Load show planes toggle

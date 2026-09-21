@@ -410,25 +410,91 @@ let cube_vertex_pos = [
 
 
 /**
+ * The plain unit cell as a fractional per-axis [min, max] box.
+ * @type {[number, number][]}
+ */
+const UNIT_BOUNDS = [[0, 1], [0, 1], [0, 1]];
+
+/**
+ * Coerce a fractional per-axis [min, max] box (the shape
+ * render/LatticeModule.js normalizePeriodicBounds() produces for the
+ * VESTA-style display boundary) into finite numbers with min <= max, falling
+ * back to the unit cell per axis.
+ * @param {[number, number][]} [bounds]
+ * @returns {[number, number][]}
+ */
+function sanitizeFractionalBounds(bounds) {
+  return UNIT_BOUNDS.map(([defLo, defHi], axis) => {
+    const lo = Number(bounds?.[axis]?.[0]);
+    const hi = Number(bounds?.[axis]?.[1]);
+    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return [defLo, defHi];
+    return lo <= hi ? [lo, hi] : [hi, lo];
+  });
+}
+
+/**
+ * The 8 Cartesian corners of a fractional box of the cell, in
+ * cube_vertex_pos order (so edge2vertex indexes them).
+ * @param {Array}              cell   - lattice vectors [a, b, c]
+ * @param {[number, number][]} bounds - per-axis [min, max], fractional
+ * @returns {THREE.Vector3[]}
+ */
+function fractionalBoxCorners(cell, bounds) {
+  const [a1, a2, a3] = cell.map(toVec3);
+  return cube_vertex_pos.map(([fa, fb, fc]) => new THREE.Vector3()
+    .addScaledVector(a1, bounds[0][fa])
+    .addScaledVector(a2, bounds[1][fb])
+    .addScaledVector(a3, bounds[2][fc]));
+}
+
+/**
+ * Range of the plane offset d (n̂·x = d, n̂ = unit normal — the same convention
+ * Plane and the atom cut planes use) over which the plane still touches the
+ * displayed box: d evaluated at each of its 8 corners, lowest and highest.
+ *
+ * @param {Array|THREE.Vector3} normal   - plane normal (need not be unit length)
+ * @param {Array}               cell     - lattice vectors [a, b, c]
+ * @param {[number, number][]}  [bounds] - per-axis [min, max], fractional
+ *                                         (default: the unit cell)
+ * @returns {{min: number, max: number}|null} null for a zero normal / invalid cell
+ */
+export function getPlaneDRangeInCell(normal, cell, bounds) {
+  if (!normal || !Array.isArray(cell) || cell.length !== 3) return null;
+  const n = toVec3(normal);
+  if (!(n.lengthSq() > 1e-20)) return null;
+  n.normalize();
+
+  let min = Infinity;
+  let max = -Infinity;
+  for (const corner of fractionalBoxCorners(cell, sanitizeFractionalBounds(bounds))) {
+    const d = n.dot(corner);
+    if (d < min) min = d;
+    if (d > max) max = d;
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+  return { min, max };
+}
+
+/**
  * Compute the convex polygon formed by the intersection of the plane n·x = d
- * with the cell parallelepiped.  Returns a CCW-sorted array of THREE.Vector3,
- * or an empty array when there is no intersection.
+ * with the displayed box of the cell (the cell parallelepiped itself for the
+ * default bounds).  Returns a CCW-sorted array of THREE.Vector3, or an empty
+ * array when there is no intersection.
  *
  * @param {THREE.Vector3} n - unit plane normal
  * @param {number}        d - plane offset (n·x = d)
  * @param {Array}         cell - lattice vectors [a, b, c]
+ * @param {[number, number][]} [bounds] - per-axis [min, max], fractional
  */
-function planePolygon(n, d, cell) {
+function planePolygon(n, d, cell, bounds = UNIT_BOUNDS) {
   const pts = [];
 
-  // Intersect plane with each of the 12 edges of the cell
+  // Intersect plane with each of the 12 edges of the box
   // k = (d - n·v0) / (n·(v1 - v0)) gives the parametric position of the intersection along the edge
-  const cellMatrix = new THREE.Matrix3().fromArray(cell.flat());
+  const corners = fractionalBoxCorners(cell, bounds);
   for (const [i, j] of edge2vertex) {
-    const edgeVec = (new THREE.Vector3(cube_vertex_pos[j][0] - cube_vertex_pos[i][0],
-                                      cube_vertex_pos[j][1] - cube_vertex_pos[i][1],
-                                      cube_vertex_pos[j][2] - cube_vertex_pos[i][2])).applyMatrix3(cellMatrix);
-    const v0Vector = new THREE.Vector3(cube_vertex_pos[i][0], cube_vertex_pos[i][1], cube_vertex_pos[i][2]).applyMatrix3(cellMatrix);
+    const v0Vector = corners[i].clone();
+    const edgeVec = new THREE.Vector3().subVectors(corners[j], corners[i]);
     const edgeProj = n.dot(edgeVec);
     if (Math.abs(edgeProj) < 1e-10) continue; // edge parallel to plane
     const t = (d - n.dot(v0Vector)) / edgeProj;
@@ -484,9 +550,10 @@ function planePolygon(n, d, cell) {
  * @param {THREE.Vector3}   n          - unit plane normal
  * @param {Array}           [cell]     - lattice vectors [a, b, c] for clipping planes
  * @param {number}          [resolution=DEFAULT_COLORMAP_RESOLUTION]
+ * @param {[number, number][]} [bounds] - per-axis [min, max], fractional, for clipping planes
  * @returns {{ geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes }}
  */
-function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RESOLUTION) {
+function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, bounds = UNIT_BOUNDS) {
   // ── 1. Centroid ───────────────────────────────────────────────────────────
   const centroid = new THREE.Vector3();
   for (const p of polygon) centroid.add(p);
@@ -522,9 +589,9 @@ function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RE
   matrix.setPosition(centroid);
   geometry.applyMatrix4(matrix);
 
-  // ── 6. Cell clipping planes (world space, inward normals) ─────────────────
+  // ── 6. Box clipping planes (world space, inward normals) ──────────────────
   const clippingPlanes = (cell && cell.length === 3)
-    ? makeCellClippingPlanes(cell)
+    ? makeFractionalBoundsClippingPlanes(cell, bounds)
     : [];
 
   return { geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes };
@@ -560,21 +627,14 @@ export function makeFractionalBoundsClippingPlanes(cell, bounds = [[0, 1], [0, 1
     // bound f sits at the world offset f * (nr·w) along nr.
     const span = nr.dot(w);
     // Near face:  keep where  nr·x >= lo*span  →  THREE.Plane(nr, -lo*span)
-    planes.push(new THREE.Plane(nr.clone(), -lo * span - 1e-3)); // offset slightly to avoid numerical edge-clipping issues
+    // Both faces are pushed 1e-3 OUTWARDS to avoid numerical edge-clipping
+    // issues — so a surface lying exactly on a face (a plane at either end of
+    // its d range) is kept rather than clipped away.
+    planes.push(new THREE.Plane(nr.clone(), -lo * span + 1e-3));
     // Far face:   keep where  nr·x <= hi*span  →  THREE.Plane(-nr, hi*span)
     planes.push(new THREE.Plane(nr.clone().negate(), hi * span + 1e-3));
   }
   return planes;
-}
-
-/**
- * The cell parallelepiped's own 6 faces — the [0,1] case of
- * makeFractionalBoundsClippingPlanes.
- * @param {Array} cell - lattice vectors [a, b, c]
- * @returns {THREE.Plane[]}
- */
-function makeCellClippingPlanes(cell) {
-  return makeFractionalBoundsClippingPlanes(cell);
 }
 
 // ---------------------------------------------------------------------------
@@ -615,24 +675,29 @@ export class Plane extends THREE.Group {
   * @param {number}               [opts.colormapMin] - LUT lower bound override
   * @param {number}               [opts.colormapMax] - LUT upper bound override
   * @param {string}               [opts.colormapScale] - 'linear' or 'log'
+  * @param {[number, number][]}   [opts.bounds]    - fractional per-axis [min, max] box of the
+  *                                                  cell the plane is trimmed to (the periodic
+  *                                                  display boundary); default: the unit cell
   */
-  constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode, field, colormap = 'heatmap', colormapMin = null, colormapMax = null, colormapScale = 'linear' } = {}) {
+  constructor({ normal, d = 0, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, mode, field, colormap = 'heatmap', colormapMin = null, colormapMax = null, colormapScale = 'linear', bounds } = {}) {
     // ── Normalise the plane normal ──────────────────────────────────────────
     const n = normal
       ? toVec3(normal).normalize()
       : new THREE.Vector3(0, 0, 1);
 
-    // ── Intersect plane with cell to obtain the boundary polygon ───────────
+    const safeBounds = sanitizeFractionalBounds(bounds);
+
+    // ── Intersect plane with the box to obtain the boundary polygon ────────
     let polygon = [];
     if (cell && cell.length === 3) {
-      polygon = planePolygon(n, d, cell);
+      polygon = planePolygon(n, d, cell, safeBounds);
     }
 
     // ── Build geometry ─────────────────────────────────────────────────────
     let geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes;
     if (polygon.length >= 3) {
       ({ geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes } =
-          buildPolygonGeometry(polygon, n, cell, resolution));
+          buildPolygonGeometry(polygon, n, cell, resolution, safeBounds));
     } else {
       // Fallback: make plane outside of cell bounds
       console.warn('Plane: insufficient intersection with cell; using unit-square fallback.');
@@ -645,7 +710,7 @@ export class Plane extends THREE.Group {
       const matrix = new THREE.Matrix4().makeBasis(uAxis, vAxis, n);
       matrix.setPosition(centroid);
       geometry.applyMatrix4(matrix);
-      clippingPlanes = (cell && cell.length === 3) ? makeCellClippingPlanes(cell) : [];
+      clippingPlanes = (cell && cell.length === 3) ? makeFractionalBoundsClippingPlanes(cell, safeBounds) : [];
     }
 
     super();
@@ -664,8 +729,11 @@ export class Plane extends THREE.Group {
     this._colormapMax    = Number.isFinite(colormapMax) ? Number(colormapMax) : null;
     this._colormapScale  = colormapScale === 'log' ? 'log' : 'linear';
     this._lut            = createPlaneLut(colormap);
-    /** THREE.Plane[] for the 6 cell faces — applied to every material. */
+    /** THREE.Plane[] for the 6 box faces — applied to every material. */
     this._clippingPlanes = clippingPlanes ?? [];
+
+    /** Fractional per-axis [min, max] box of the cell the plane is trimmed to. */
+    this.bounds        = safeBounds;
 
     /** Unit plane normal in Cartesian space. */
     this.planeNormal   = n;

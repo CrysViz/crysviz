@@ -58,6 +58,7 @@ import { initProjectionOverlay } from '../ui/notagameatall.js';
 import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
 import { applyFieldPeriodicBounds, updateForces, updateSpins } from '../render/index.js';
+import { applyPlanesPeriodicBounds } from '../ui/PlanesPanel.js';
 import { loadPhonopyFile } from '../phonon/phononSession.js';
 
 // .........................................................................................................
@@ -228,6 +229,7 @@ export function updateVisualization(options = {}) {
     if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
     applyFieldPeriodicBounds();
+    applyPlanesPeriodicBounds();
   }
 
   // Overlay structures — one rebuild/update pass per fileBrowser.overlayEntries
