@@ -28,6 +28,11 @@ export { parseASETrajectory } from "./ReadASETrajectoryModule.js";
 export { readCHGCAR } from "./ReadChgcarModule.js";
 export { readCubeFile } from "./ReadCubeModule.js";
 export { readWAVECAR, isLikelyWAVECARContent } from "./ReadWavecarModule.js";
+// INCAR carries no structure: these read its magnetic tags and fit MAGMOM to an
+// atom count. ui/IncarSpinImport.js turns the result into spins.
+export {
+  parseIncarTags, readIncarMagnetism, resolveIncarSpins, incarRawVectors, IncarSpinProblem,
+} from "./ReadIncarModule.js";
 
 // Lazy byte access + the format registry. FileSource is what lets a reader ask
 // for a byte range instead of being handed the whole file as a string; formats

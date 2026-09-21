@@ -95,7 +95,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   // --- No-spins note ---
   const noSpinsNote = document.createElement("div");
   noSpinsNote.className = "control-note cv-force-hidden";
-  noSpinsNote.textContent = "No spin data available for this structure. Upload a file that includes spin information (e.g. an OUTCAR) or add spins manually.";
+  noSpinsNote.textContent = "No spin data available for this structure. Upload a file that includes spin information (e.g. an OUTCAR), load an INCAR with MAGMOM onto this structure, or add spins manually.";
   content.appendChild(noSpinsNote);
 
   // --- Global Scaling slider ---

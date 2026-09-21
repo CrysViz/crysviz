@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Highlights
+
+- **Spins from a VASP INCAR:** load an `INCAR` onto the selected structure to replace its spins with the file's `MAGMOM`.
+
 ### Fixes
 
 - Bonds now end exactly at the atom surface instead of reaching 20% into the atom.

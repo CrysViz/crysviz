@@ -12,6 +12,7 @@ import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
 import { showLoadErrorModal, showLoadWarningModal } from '../ui/LoadErrorModal.js';
+import { loadIncarSpins } from '../ui/IncarSpinImport.js';
 // Side-effect import: AboutPanel wires the "about" trigger at module load.
 // (Its named exports are unused, so keep it as a bare import.)
 import '../ui/AboutPanel.js';
@@ -421,6 +422,19 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         structureContainer = await loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id);
         break;
 
+      case 'incar': {
+        // No atoms in an INCAR: its MAGMOM is offered to the selected structure
+        // as spins, behind a dialog. Nothing about the scene's geometry changes,
+        // so this returns before the camera/measurement resets below. A file
+        // with no usable moments throws and reaches the modal in the catch.
+        const imported = await loadIncarSpins(/** @type {string} */ (payload), fileName);
+        if (!imported) {
+          setStatus('Load cancelled.');
+          return { ok: false, cancelled: true, name: fileName, format: format || undefined };
+        }
+        return { ok: true, container: imported.container, name: fileName, format: format || undefined };
+      }
+
       // Everything else is a structure file and goes through the single pure
       // pipeline. parse_any picks the format (POSCAR is its fallback) and
       // returns a StructureContainer; registration happens once via
@@ -505,7 +519,15 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // Lead with the file name: a bare Error object serialises to just "Error"
     // in captured console text, which says nothing about what failed.
     console.error(`Failed to load structure "${fileName}":`, error);
-    showLoadErrorModal({ fileName, message: error?.message });
+    // An error may bring its own headline (`modalTitle` / `modalSummary`) for a
+    // failure the generic "corrupt or unsupported" wording would misdescribe,
+    // e.g. a valid INCAR whose MAGMOM does not fit the selected structure.
+    showLoadErrorModal({
+      fileName,
+      message: error?.message,
+      title: error?.modalTitle,
+      summary: error?.modalSummary,
+    });
     throw error;
   }
 }
