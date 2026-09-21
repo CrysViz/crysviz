@@ -1,7 +1,7 @@
 import { fileBrowser, groups, general } from '../../../state/store.js';
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
-import { updateSingleBondColor, updateSingleBondOpacity, updateSingleBondDiameter, bondKey } from '../../../render/BondsFracUpdateModule.js';
+import { updateSingleBondColor, updateSingleBondOpacity, applyBondRadius, bondKey } from '../../../render/BondsFracUpdateModule.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { notifyColorsChanged } from '../../../render/index.js';
@@ -205,11 +205,8 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
       stylesEntryFor(b).radiusScale = value;
       // b.radius drives every repaint (updateSingleBond), so the live change
       // sticks; buildBondObjects re-derives it from the persisted scale.
-      b.radius = general.bondRadius * value;
-      if (b.instanceIds && groups.bondsMesh) {
-        updateSingleBondDiameter(b.instanceIds[0], b.radius);
-        updateSingleBondDiameter(b.instanceIds[1], b.radius);
-      }
+      // applyBondRadius also re-clips the length, which depends on the radius.
+      applyBondRadius(b, general.bondRadius * value);
     }
   }
   sizeSlider.oninput = (e) => applyBondRadiusScale(/** @type {any} */ (e.target).value);

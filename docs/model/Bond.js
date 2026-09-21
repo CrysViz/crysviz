@@ -46,44 +46,64 @@ export class Bond {
 
     // Compute clipped bond geometry
     if (elements.length >= 2 && this.dist !== null) {
-      // 0.8: the bond tip sits 20% inside the rendered atom surface so the
-      // cylinder end never peeks out. The per-endpoint radiusScales keep this
-      // true when atoms are resized per species/atom/copy.
-      this.r1 = getAtomRadius(elements[0]) * (radiusScales?.[0] ?? 1) * 0.8;
-      this.r2 = getAtomRadius(elements[1]) * (radiusScales?.[1] ?? 1) * 0.8;
-
-      this.visibleLen = Math.max(this.dist - (this.r1 + this.r2), 0);
-      this.halfLen = this.visibleLen * 0.5;
+      // Rendered radii of the two end atoms. The per-endpoint radiusScales keep
+      // the clip exact when atoms are resized per species/atom/copy.
+      this.atomR1 = getAtomRadius(elements[0]) * (radiusScales?.[0] ?? 1);
+      this.atomR2 = getAtomRadius(elements[1]) * (radiusScales?.[1] ?? 1);
       this.radius = general.bondRadius;
-
-      if (this.visibleLen > 1e-3) {
-        // Scalar math instead of clone()/normalize() temporaries: this constructor runs
-        // once per bond (100k+ on large structures) and each clone allocated a Vector3.
-        const inv = this.dist > 1e-9 ? 1 / this.dist : 0;
-        const ux = this.dir.x * inv, uy = this.dir.y * inv, uz = this.dir.z * inv;
-        const a1 = this.r1 + this.halfLen / 2;
-        const a2 = -this.r2 - this.halfLen / 2;
-        this.center1 = new THREE.Vector3(this.p1.x + ux * a1, this.p1.y + uy * a1, this.p1.z + uz * a1);
-        this.center2 = new THREE.Vector3(this.p2.x + ux * a2, this.p2.y + uy * a2, this.p2.z + uz * a2);
-      } else {
-        this.center1 = this.center2 = null;
-      }
+      this._updateClip();
     } else {
       // fallback if not enough info
+      this.atomR1 = this.atomR2 = null;
       this.r1 = this.r2 = this.visibleLen = this.halfLen = this.radius = null;
       this.center1 = this.center2 = null;
     }
   }
 
+  // Change the cylinder radius. The clip depends on it (a wider bond meets the
+  // sphere further from the atom centre line), so the clipped geometry is
+  // recomputed; callers repaint the instance from halfLen/center1/center2.
+  setRadius(radius) {
+    this.radius = radius;
+    if (this.atomR1 != null && this.atomR2 != null && this.dist != null) this._updateClip();
+    return this;
+  }
+
+  // Clipped geometry from the current endpoints (p1/p2/dir/dist), end-atom
+  // radii and bond radius: r1/r2 (tip offsets from the atom centres),
+  // visibleLen, halfLen and the two half-cylinder centres. Shared by the
+  // constructor, updateEndpoints and setRadius so all three always agree.
+  _updateClip() {
+    this.r1 = bondClipOffset(this.atomR1, this.radius);
+    this.r2 = bondClipOffset(this.atomR2, this.radius);
+
+    this.visibleLen = Math.max(this.dist - (this.r1 + this.r2), 0);
+    this.halfLen = this.visibleLen * 0.5;
+
+    if (this.visibleLen > 1e-3) {
+      // Scalar math instead of clone()/normalize() temporaries: this runs once
+      // per bond (100k+ on large structures) and each clone allocated a Vector3.
+      const inv = this.dist > 1e-9 ? 1 / this.dist : 0;
+      const ux = this.dir.x * inv, uy = this.dir.y * inv, uz = this.dir.z * inv;
+      const a1 = this.r1 + this.halfLen / 2;
+      const a2 = -this.r2 - this.halfLen / 2;
+      if (!this.center1) this.center1 = new THREE.Vector3();
+      if (!this.center2) this.center2 = new THREE.Vector3();
+      this.center1.set(this.p1.x + ux * a1, this.p1.y + uy * a1, this.p1.z + uz * a1);
+      this.center2.set(this.p2.x + ux * a2, this.p2.y + uy * a2, this.p2.z + uz * a2);
+    } else {
+      this.center1 = this.center2 = null;
+    }
+  }
+
   // Fast in-place endpoint update for the render fast path (MD/relax frames).
-  // Reuses the fixed per-element radii r1/r2 computed once in the constructor and
-  // recomputes only the position-dependent geometry (dir, dist, visibleLen,
-  // halfLen, center1/center2, positions/p1/p2/midpoint). Mirrors the constructor's
-  // clipped-bond math exactly so a freshly constructed Bond at the same endpoints
-  // is identical. p1/p2 are [x, y, z] cartesian arrays.
+  // Reuses the fixed end-atom radii computed once in the constructor and the
+  // bond's CURRENT radius (so per-pair/per-bond size scales survive playback),
+  // and recomputes only the position-dependent geometry. Shares _updateClip
+  // with the constructor so a freshly constructed Bond at the same endpoints
+  // and radius is identical. p1/p2 are [x, y, z] cartesian arrays.
   updateEndpoints(p1, p2) {
-    // radius may change between frames (bondRadius slider); r1/r2 stay fixed.
-    this.radius = general.bondRadius;
+    if (this.radius == null) this.radius = general.bondRadius;
 
     if (!this.p1) this.p1 = new THREE.Vector3();
     if (!this.p2) this.p2 = new THREE.Vector3();
@@ -97,29 +117,34 @@ export class Bond {
     this.dir.set(p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]);
     this.dist = this.dir.length();
 
-    if (this.r1 == null || this.r2 == null) {
+    if (this.atomR1 == null || this.atomR2 == null) {
       this.visibleLen = this.halfLen = null;
       this.center1 = this.center2 = null;
       return this;
     }
 
-    this.visibleLen = Math.max(this.dist - (this.r1 + this.r2), 0);
-    this.halfLen = this.visibleLen * 0.5;
-
-    if (this.visibleLen > 1e-3) {
-      const inv = this.dist > 1e-9 ? 1 / this.dist : 0;
-      const ux = this.dir.x * inv, uy = this.dir.y * inv, uz = this.dir.z * inv;
-      const a1 = this.r1 + this.halfLen / 2;
-      const a2 = -this.r2 - this.halfLen / 2;
-      if (!this.center1) this.center1 = new THREE.Vector3();
-      if (!this.center2) this.center2 = new THREE.Vector3();
-      this.center1.set(this.p1.x + ux * a1, this.p1.y + uy * a1, this.p1.z + uz * a1);
-      this.center2.set(this.p2.x + ux * a2, this.p2.y + uy * a2, this.p2.z + uz * a2);
-    } else {
-      this.center1 = this.center2 = null;
-    }
+    this._updateClip();
     return this;
   }
+}
+
+// Fraction of the atom radius the bond rim is pulled INSIDE the ideal sphere.
+// Atoms are drawn as 32x24-segment meshes whose facet centres sit up to ~0.7%
+// of the radius inside the ideal sphere; a rim placed exactly on the ideal
+// surface would leave a hairline gap there showing the open cylinder end. 1%
+// covers the faceting with a small margin and is invisible at any zoom.
+export const BOND_SURFACE_INSET = 0.01;
+
+// Distance from an atom centre to the bond tip such that the cylinder RIM (not
+// its centre line) lands on the atom surface. With atom radius r and bond
+// radius s the rim circle lies on the sphere at sqrt(r^2 - s^2) along the
+// axis, i.e. the tip extends x = r - sqrt(r^2 - s^2) past the point where the
+// centre line pierces the surface. A bond at least as wide as the atom
+// (s >= r) clamps to 0: it starts at the atom centre.
+export function bondClipOffset(atomRadius, bondRadius) {
+  const r = atomRadius * (1 - BOND_SURFACE_INSET);
+  const s = bondRadius || 0;
+  return Math.sqrt(Math.max(r * r - s * s, 0));
 }
 
 // Helper outside class. Uses getElementRadius (not the raw atomicRadii table)

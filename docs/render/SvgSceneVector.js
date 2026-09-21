@@ -176,7 +176,9 @@ function atomInstances(mesh, cutPlanes) {
 }
 
 /** Point -> containing atom lookup over a uniform spatial hash. Bond halves
- *  start 20% INSIDE their end atom (Bond's r1/r2 clipping), so "which atom
+ *  start just INSIDE their end atom (Bond's r1/r2 clipping puts the cylinder
+ *  rim on the surface less BOND_SURFACE_INSET, so the tip centre is at least
+ *  that 1% of the radius inside — far above float32 noise), so "which atom
  *  does this half grow out of" is answered by "which sphere contains its
  *  atom-side endpoint" — which also answers "is that atom hidden or cut away"
  *  (it is simply absent from the list, and the half is dropped with it). */

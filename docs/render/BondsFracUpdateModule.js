@@ -142,6 +142,11 @@ export function scheduleBondRebuild(delayMs = 200) {
   bondRebuildTimer = setTimeout(() => {
     bondRebuildTimer = null;
     rebuildBonds(general.mainOpacity ?? 1);
+    // Rendering is on demand, and this runs from a timer — after the input
+    // event whose catch-all listener already painted its frame. Without this
+    // the rebuilt bonds stay undrawn until something else (a camera move)
+    // invalidates the frame.
+    requestRender();
   }, delayMs);
 }
 
@@ -473,7 +478,7 @@ export function buildBondObjects(structure){
         bond.userColor = [cs.color, cs.color]; // survives updateSingleBond repaints
       }
       if (cs.alpha != null) bond.alpha = cs.alpha;
-      if (cs.radiusScale != null) bond.radius = general.bondRadius * cs.radiusScale;
+      if (cs.radiusScale != null) bond.setRadius(general.bondRadius * cs.radiusScale);
     }
   }
 
@@ -490,7 +495,7 @@ export function buildBondObjects(structure){
         bond.userColor = [saved.color, saved.color];
       }
       if (saved.alpha != null) bond.alpha = saved.alpha;
-      if (saved.radiusScale != null) bond.radius = general.bondRadius * saved.radiusScale;
+      if (saved.radiusScale != null) bond.setRadius(general.bondRadius * saved.radiusScale);
     }
   }
 
@@ -954,6 +959,38 @@ export function updateSingleBondPosition(index, bond) {
   _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir);
   _bondDummy.updateMatrix();
   mesh.setMatrixAt(index * 2 + 1, _bondDummy.matrix);
+}
+
+/**
+ * Live bond-width change for ONE bond: re-clip the Bond (its length depends on
+ * the radius — a wider cylinder meets the atom sphere further out) and repaint
+ * both half-cylinder instances. Use this instead of a bare `bond.radius = …` +
+ * updateSingleBondDiameter, which would leave the old length in place.
+ *
+ * A bond whose visibility flips (it now fits entirely inside its atoms, or was
+ * unrendered and now clears them) has no valid instance slot to move into, so
+ * the debounced full rebuild picks it up.
+ */
+export function applyBondRadius(bond, radius) {
+  bond.setRadius(radius);
+  const mesh = groups.bondsMesh;
+  const idx = bond.renderIndex;
+  const visible = bond.visibleLen > 1e-3 && bond.center1 && bond.center2;
+  if (!mesh || !Number.isInteger(idx)) {
+    if (visible && general.showBonds) scheduleBondRebuild();
+    return;
+  }
+  if (!visible) {
+    hideSingleBond(idx);
+    scheduleBondRebuild();
+  } else {
+    // A zero-scaled instance is hidden on purpose (cut plane, broken bond in
+    // the fast frame path) — do not resurrect it.
+    const m = mesh.instanceMatrix.array, o = idx * 2 * 16;
+    if (m[o] === 0 && m[o + 1] === 0 && m[o + 2] === 0) return; // x column = 0 scale
+    updateSingleBondPosition(idx, bond);
+  }
+  mesh.instanceMatrix.needsUpdate = true;
 }
 
 export function updateSingleBondDiameter(instanceIndex, newRadius) {

@@ -17,7 +17,7 @@ import {
 } from './StructureInfoPanel/components/utils.js';
 import {
   bondGroupKey, bondKey, updateSingleBondColor, updateSingleBondOpacity,
-  updateSingleBondDiameter,
+  applyBondRadius,
 } from '../render/index.js';
 import {
   updateHydrogenBonds, initHydrogenBondPairs, hydrogenBondAcceptorOf,
@@ -591,11 +591,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       catStyle().radiusScale = value;
       for (const b of memberBonds()) {
         if (structure().bondUserStyles?.[bondKey(b.indices)]?.radiusScale != null) continue;
-        b.radius = general.bondRadius * value;
-        if (b.instanceIds && groups.bondsMesh) {
-          updateSingleBondDiameter(b.instanceIds[0], b.radius);
-          updateSingleBondDiameter(b.instanceIds[1], b.radius);
-        }
+        applyBondRadius(b, general.bondRadius * value);
       }
     }
     catSizeSlider.oninput = (e) => applyCatSize(/** @type {any} */ (e.target).value);

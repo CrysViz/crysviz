@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Bonds now end exactly at the atom surface instead of reaching 20% into the atom.
+
 ## 0.10.0
 
 ### Highlights

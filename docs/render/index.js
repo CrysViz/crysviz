@@ -34,7 +34,7 @@ export {
 
 export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,
-  updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
+  updateSingleBondDiameter, applyBondRadius, disposeBondsMesh, updateSingleBondColor,
   updateSingleBondOpacity, bondKey, bondGroupKey, refreshBondColorsForAtoms,
 } from './BondsFracUpdateModule.js';
 
