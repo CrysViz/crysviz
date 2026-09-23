@@ -24,9 +24,14 @@ function cloneAtom(src, element, position) {
   return atom;
 }
 
-export function createSupercell(nx = 1, ny = 1, nz = 1) {
-
-  const sel = fileBrowser.selectedStructure;
+/**
+ * Re-tile `sel` in place to an nx×ny×nz supercell of its base cell (the model
+ * only: atoms, elements, lattice, `supercell`; nothing is rendered). Split out
+ * of createSupercell so the stored-preference restore (state/cellPrefs.js) can
+ * tile a freshly loaded structure before it is first selected and drawn.
+ * @param {any} sel a Structure
+ */
+export function tileSupercell(sel, nx = 1, ny = 1, nz = 1) {
 
   // Current supercell factors of the *live* structure (defaults to 1×1×1).
   const cur = sel.supercell || {};
@@ -99,6 +104,10 @@ export function createSupercell(nx = 1, ny = 1, nz = 1) {
   sel.atoms = newAtoms;
   sel.lattice = newLattice;
   sel.supercell = { nx, ny, nz };
+}
+
+export function createSupercell(nx = 1, ny = 1, nz = 1) {
+  tileSupercell(fileBrowser.selectedStructure, nx, ny, nz);
 
   // Re-render
   //

@@ -1,4 +1,6 @@
 import { saveAtomColors } from '../../utils/ColorModule.js';
+import { saveAtomRadiusScales, saveBondStyles } from '../SizePrefs.js';
+import { saveArrowOverridesFromStructure } from '../ArrowStylePrefs.js';
 import {fileBrowser, general, structureShip} from '../../state/store.js';
 
 
@@ -67,6 +69,12 @@ function resetAllColorStyling(structure) {
 /** Re-render force/spin arrows (if shown) and any currently-open Structure
  *  Info Spin/Force row editor after a bulk edit to structure.forces/spins —
  *  shared by the Reset Colors and Reset Styling buttons below. */
+/** The stored per-arrow / category arrow styles follow a reset (drops them). */
+function saveArrowOverrides(structure) {
+  saveArrowOverridesFromStructure('spin', structure);
+  saveArrowOverridesFromStructure('force', structure);
+}
+
 function refreshForceSpinArrows() {
   if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
   if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
@@ -621,6 +629,7 @@ wirePressHoldPopup(resetAllColorsBtn, {
   onPress: () => {
     resetAllColorStyling(fileBrowser.selectedStructure);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -632,6 +641,7 @@ wirePressHoldPopup(resetAllColorsBtn, {
     // colors and alpha/size overrides, which this reset must leave untouched.
     applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllColorStyling);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -648,6 +658,9 @@ wirePressHoldPopup(resetAtomsBtn, {
   onPress: () => {
     resetAllStyling(fileBrowser.selectedStructure);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveAtomRadiusScales(fileBrowser.selectedStructure); // ... and the stored sizes / bond styles
+    saveBondStyles(fileBrowser.selectedStructure);
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -658,6 +671,9 @@ wirePressHoldPopup(resetAtomsBtn, {
     // the color-only reset there's no per-frame data it could clobber.
     applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllStyling);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveAtomRadiusScales(fileBrowser.selectedStructure);
+    saveBondStyles(fileBrowser.selectedStructure);
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },

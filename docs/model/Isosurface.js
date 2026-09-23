@@ -23,6 +23,15 @@ export let defaultPosColor = new THREE.Color(0x33aaff);
 export let defaultNegColor = new THREE.Color(0xff3333);
 export let isosurfaceTriangleSortingEnabled = true;
 
+// The out-of-the-box isosurface material, frozen so edits to the live
+// settings above never move it. The Field panel treats a value equal to one of
+// these as "reset" and drops it from the per-structure prefs (issue #18).
+export const DEFAULT_ISOSURFACE_MATERIAL = Object.freeze({
+    positiveColor: `#${defaultPosColor.getHexString()}`,
+    negativeColor: `#${defaultNegColor.getHexString()}`,
+    opacity: surface_options.opacity,
+});
+
 
 const _sortCameraPosition = new THREE.Vector3();
 const _sortCameraQuaternion = new THREE.Quaternion();

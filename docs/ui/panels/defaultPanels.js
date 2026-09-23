@@ -6,6 +6,7 @@
 import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref, setForcedIconMode } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
+import { clearLocalData } from '../../state/structurePrefs.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender, setAxisStepButtonsMode } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
@@ -904,15 +905,17 @@ export function registerDefaultPanels() {
       resetBtn.textContent = 'Reset UI';
       resetBtn.addEventListener('click', () => resetAllPanels());
       resetRow.appendChild(resetBtn);
-      // Wipe every localStorage key the app uses (layout, prefs, theme, colors,
-      // export prefs, font scale). No reload — changes take effect next load.
+      // Wipe every localStorage key the app uses (layout, prefs, theme, the
+      // per-structure preferences, export prefs, font scale). No reload —
+      // changes take effect next load. state/structurePrefs.js clearLocalData
+      // also cancels the pending debounced saves so nothing is written back.
       const clearBtn = document.createElement('button');
       clearBtn.id = 'clearLocalDataButton';
       clearBtn.type = 'button';
       clearBtn.className = 'reset-btn reset-btn-danger';
       clearBtn.textContent = 'Clear local data';
       clearBtn.addEventListener('click', () => {
-        if (confirm('Clear all saved local data?')) localStorage.clear();
+        if (confirm('Clear all saved local data?')) clearLocalData();
       });
       resetRow.appendChild(clearBtn);
       body.appendChild(resetRow);

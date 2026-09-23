@@ -1,5 +1,6 @@
 import { fileBrowser, groups, general, structureShip, mode } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor, setAtomColor, saveAtomColors, scheduleAtomColorSave } from '../../../utils/ColorModule.js';
+import { scheduleAtomRadiusScaleSave } from '../../SizePrefs.js';
 import { clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom, refreshAtomWedgeTexture } from '../../../render/AtomsFracUpdateModule.js';
 import { isVacancy } from '../../../render/VacancyMarkerModule.js';
@@ -206,6 +207,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     updateMeasurementMarkers();
     // Bond visible lengths bake the atom radii in — refresh once settled.
     scheduleBondRebuild();
+    scheduleAtomRadiusScaleSave(structure); // per-structure pref (ui/SizePrefs.js)
   }
 
   sizeSlider.oninput = (e) => applyElementRadiusScale(/** @type {any} */ (e.target).value);

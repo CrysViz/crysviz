@@ -1,5 +1,6 @@
 import { fileBrowser, groups, general, mode } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor, hexToRgba, setAtomColor, createPieDot, updatePieDot, saveAtomColors, scheduleAtomColorSave } from '../../../utils/ColorModule.js';
+import { saveAtomRadiusScales, scheduleAtomRadiusScaleSave } from '../../SizePrefs.js';
 import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import {
@@ -774,6 +775,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     updateMeasurementMarkers();
     // Bond visible lengths bake the atom radii in — refresh once settled.
     scheduleBondRebuild();
+    if (!perImage) scheduleAtomRadiusScaleSave(structure); // per-structure pref (ui/SizePrefs.js)
   }
 
   atomSizeSlider.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
@@ -1055,6 +1057,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
     resetLinkedAtomsColorData(structure, currentMode);
     saveAtomColors(structure); // drops the cleared overrides from storage too
+    saveAtomRadiusScales(structure);
 
     linkedAtomIndices.forEach((linkedAtomIndex) => {
       const atom = structure.atoms[linkedAtomIndex];

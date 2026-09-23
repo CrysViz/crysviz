@@ -12,6 +12,7 @@ import { updatePolyhedra, updateSingleAtomDiameter, applyBondRadius, updateLatti
 import { bondKey } from '../render/BondsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
+import { scheduleAtomSizeSave, scheduleBondRadiusSave } from './SizePrefs.js';
 
 // ---- size-slider mapping ---------------------------------------------------
 // The Atom Size / Bond Diameter sliders are continuous [0,1] positions with a
@@ -136,6 +137,7 @@ export function setupControlsWiring() {
     updateMeasurementMarkers(); // Update ring markers when atom size changes
     // Bond visible lengths bake the atom radii in — refresh once settled.
     scheduleBondRebuild();
+    scheduleAtomSizeSave(); // per-structure pref (ui/SizePrefs.js)
   };
 
 
@@ -162,6 +164,7 @@ export function setupControlsWiring() {
         applyBondRadius(bond, general.bondRadius * scale);
       }
       if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+      scheduleBondRadiusSave(); // per-structure pref (ui/SizePrefs.js)
     };
   }
   // Unit-cell outline line width control (rebuilds the 12 outline cylinders)

@@ -12,6 +12,7 @@ import { updateGroundPlane } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
 import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
+import { saveBondStyles } from './SizePrefs.js'
 import { createColorBar } from './ColorBarWidget.js'
 import { registerColorBarSource } from './ColorBarRegistry.js'
 import { computeAutoRange } from '../utils/index.js'
@@ -1014,6 +1015,7 @@ export function addColorPanel(target = "colorContainer") {
       for (const styles of [structure.atomImageStyles, structure.bondUserStyles, structure.bondCategoryStyles]) {
         for (const key of Object.keys(styles ?? {})) delete styles[key].material;
       }
+      saveBondStyles(structure); // the stored bond styles lose their materials too
     }
     // Already-mounted material editors (Structure-window species/atom/bond
     // rows, FieldPanel) seeded from the OLD map at build time — re-sync them

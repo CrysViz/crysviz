@@ -14,6 +14,7 @@
 
 import { fileBrowser, groups, mode, general } from '../../state/store.js';
 import { getAtomColor, setAtomColor, colorHexToCss, createPieDot, updatePieDot, saveAtomColors, scheduleAtomColorSave } from '../../utils/ColorModule.js';
+import { saveAtomRadiusScales, scheduleAtomRadiusScaleSave } from '../SizePrefs.js';
 import {
   updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter,
   clearAtomImageStylesForAtom, setAtomImageStyle, clearAtomImageStyle,
@@ -245,6 +246,7 @@ function applyBulkRadiusScale(selected, value) {
       clearAtomImageStylesForAtom(structure, idx, 'radiusScale');
       structure.atomImages[idx]?.forEach((imgIndex) => updateSingleAtomDiameter(imgIndex, structure.elements[idx], value));
     });
+    scheduleAtomRadiusScaleSave(structure); // per-structure pref (ui/SizePrefs.js)
   } else {
     selected.forEach((atom) => {
       setAtomImageStyle(structure, atom.instanceId, { radiusScale: value });
@@ -285,6 +287,7 @@ function resetBulkStyle(selected) {
       });
     });
     saveAtomColors(structure); // drops the cleared overrides from storage too
+    saveAtomRadiusScales(structure);
     if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, null);
   } else {
     // Drop only the selected copies' per-image overrides and repaint them from

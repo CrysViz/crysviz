@@ -5,8 +5,7 @@ import { FileSource } from '../io/FileSource.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip,general} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
-import { restoreAtomColors } from '../utils/ColorModule.js';
-import { restoreFocusRegions } from '../render/FocusRegionModule.js';
+import { restoreStructurePrefs } from '../state/structurePrefs.js';
 import {
   transpose3x3,
   invert3x3,
@@ -88,9 +87,10 @@ export function isLikelyOUTCARContent(content) {
  * @param {{ restoreStoredPrefs?: boolean }} [options] restoreStoredPrefs
  *   (default: general.restoreStoredPrefs, true in the full app) re-applies
  *   the per-structure preferences saved for this same file in an earlier
- *   session — per-atom user colours (utils/ColorModule.js) and focus regions
- *   (render/FocusRegionModule.js), both stored by structure content in
- *   state/structurePrefs.js. A share-URL / .crysviz load passes false: that
+ *   session — per-atom user colours (utils/ColorModule.js), focus regions
+ *   (render/FocusRegionModule.js) and every other field registered with
+ *   state/structurePrefs.js, all stored by structure content there. A
+ *   share-URL / .crysviz load passes false: that
  *   state is a complete snapshot and must not have stored preferences mixed
  *   in underneath it. Widget mode flips the store default to false at boot
  *   (host/early.js) unless the embed URL carries `prefs=1`.
@@ -106,16 +106,16 @@ export function initializeUIOnLoad(structureContainer, { restoreStoredPrefs = ge
   tableBody.appendChild(row);
   fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
 
-  // Colours go on BEFORE the row is selected (and rendered) below, so the
-  // first rebuild already paints them.
-  if (restoreStoredPrefs) restoreAtomColors(structureContainer);
+  // 'beforeSelect' fields (the atom colours) go on BEFORE the row is
+  // selected (and rendered) below, so the first rebuild already paints them.
+  if (restoreStoredPrefs) restoreStructurePrefs(structureContainer, 'beforeSelect');
 
   structureShip.container.push(structureContainer);
   selectLastAddedRow();
 
-  // Focus regions live on the displayed frame, so they go on once it exists;
-  // restoreFocusRegions repaints the per-instance opacity itself (cheap).
-  if (restoreStoredPrefs) restoreFocusRegions(structureContainer, fileBrowser.selectedStructure);
+  // 'afterSelect' fields (focus regions, planes, arrow styles, ...) need the
+  // displayed frame and the scene, so they go on once those exist.
+  if (restoreStoredPrefs) restoreStructurePrefs(structureContainer, 'afterSelect', fileBrowser.selectedStructure);
   return structureContainer;
 }
 

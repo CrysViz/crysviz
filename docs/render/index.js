@@ -60,7 +60,8 @@ export {
   DEFAULT_FOCUS_REGION, POLYHEDRA_FOCUS_MODES, focusOpacityAt, focusDistanceTo, gradientStartRadius,
   combinedFocusOpacity, focusOpacityForPolyhedron, getFocusOpacityForPolyhedron, getFocusRegions,
   focusRegionsActive, getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion,
-  removeFocusRegion, clearFocusRegions, applyFocusRegions, setFocusRegionCenterFractional,
+  removeFocusRegion, clearFocusRegions, applyFocusRegions, applyFocusRegionEdit, persistFocusRegions,
+  setFocusRegionCenterFractional,
   resetFocusRegionCenter, applyFocusToArrows, applyFocusToField,
 } from './FocusRegionModule.js';
 

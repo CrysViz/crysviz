@@ -11,6 +11,7 @@
 // plumbing (tabs, resize handle, drop zone) lives in SideDock.js.
 
 import { PanelWindow, applyEdgeAnchors } from './PanelWindow.js';
+import { onClearLocalData } from '../../state/structurePrefs.js';
 import {
   initSideDock, sideDockPanel, sideUndockPanel,
   setSideDockCollapsed, setSideDockSide, refreshSideDock, getSideDockLayout,
@@ -1685,6 +1686,13 @@ function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveTimer = 0; saveLayout(); }, SAVE_DEBOUNCE_MS);
 }
+
+// "Clear local data" (state/structurePrefs.js clearLocalData): a layout save
+// still in its debounce window would otherwise land after the wipe.
+onClearLocalData(() => {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = 0;
+});
 
 /**
  * Validate a stored/default floating position without altering its values:
