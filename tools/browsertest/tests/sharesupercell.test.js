@@ -29,11 +29,15 @@ const PAINTED = async () => {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page);
 
-  const { url, before, coloured } = await page.evaluate(async (painted) => {
+  const { url, before, coloured, unitLinkLength } = await page.evaluate(async (painted) => {
     const { createSupercell } = await import('./ui/SuperCellModule.js');
     const { fileBrowser } = await import('./state/store.js');
     const { updateAtoms } = await import('./render/index.js');
     const { shareStructure } = await import('./ui/ShareModule.js');
+    // The unit cell's link, for the size comparison below.
+    await shareStructure();
+    const unitLinkLength = document.getElementById('shareLinkUrl').value.length;
+    document.getElementById('shareLinkClose').click();
     createSupercell(2, 2, 1);
     const s = fileBrowser.selectedStructure;
     // Scattered, so a permutation cannot coincidentally land on the same atoms.
@@ -45,12 +49,17 @@ const PAINTED = async () => {
       url: document.getElementById('shareLinkUrl').value,
       before,
       coloured: Object.values(before).filter(c => c === '#ff00ff').length,
+      unitLinkLength,
     };
   }, PAINTED.toString());
 
   H.check('the supercell really is multi-species and multi-coloured',
     Object.keys(before).length > 40 && coloured > 5, `${Object.keys(before).length} sites, ${coloured} coloured`);
 
+  // A supercell travels as its base cell + multipliers, so the link must not
+  // grow with the tiling (only the scattered per-atom colours add to it).
+  H.check('a 2x2x1 supercell link is at most 1.5x the unit-cell link',
+    url.length <= 1.5 * unitLinkLength, `${url.length} vs ${unitLinkLength} chars`);
   H.check('the share link carries its payload in the fragment (#z=)', /#z=[A-Za-z0-9_-]+$/.test(url), url.slice(0, 80));
   // Via about:blank: a link that differs from the current URL only in the
   // fragment is a same-document navigation and would not reload the page.

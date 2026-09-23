@@ -1,6 +1,7 @@
 
 import { StructureContainer } from '../model/index.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
+import { geometryFingerprint } from '../io/share/shareCodec.js';
 import { FileSource } from '../io/FileSource.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip,general} from '../state/store.js';
@@ -235,6 +236,31 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     pasteModal.hidden = true;
   }
 
+  // A structure fetched from a database remembers where it came from, so a
+  // share link can name the entry instead of carrying its coordinates
+  // (ui/ShareModule.js; the share codec only does so while the structure is
+  // unchanged). The fingerprint is taken from the fetched POSCAR itself, the
+  // same way a recipient's browser reads it back. In memory only.
+  async function loadWithProvenance(result, source) {
+    const before = structureShip.container.length;
+    await onLoadStructure(result.content, result.fileName);
+    const container = structureShip.container.length > before ? structureShip.container.at(-1) : null;
+    if (!container) return;
+    try {
+      const fetched = readPOSCAR(result.content, result.fileName);
+      container.provenance = {
+        ...source,
+        fingerprint: geometryFingerprint({
+          elements: [...fetched.elements],
+          lattice: fetched.lattice.map((row) => [...row]),
+          positions: fetched.atoms.map((atom) => [...atom.position]),
+        }),
+      };
+    } catch (error) {
+      console.warn('Could not fingerprint the fetched structure; share links will embed it.', error);
+    }
+  }
+
   async function loadStructureFromText() {
     const raw = structureText.value.trim();
     if (!raw) {
@@ -258,11 +284,11 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
       if (isOptimadeStructureUrl(raw)) {
         setStatus('Fetching structure from OPTIMADE...');
         const result = await fetchOptimadeStructure(raw);
-        await onLoadStructure(result.content, result.fileName);
+        await loadWithProvenance(result, { kind: 'optimade', url: raw });
       } else if (normalizeAlexandriaId(raw)) {
         setStatus('Fetching structure from Alexandria...');
         const result = await fetchAlexandriaStructure(raw);
-        await onLoadStructure(result.content, result.fileName);
+        await loadWithProvenance(result, { kind: 'alexandria', id: normalizeAlexandriaId(raw) });
       } else {
         await onLoadStructure(raw, 'pasted');
       }

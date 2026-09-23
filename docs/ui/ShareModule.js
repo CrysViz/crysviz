@@ -116,9 +116,11 @@ import { getContrastingBorder } from './BackgroundPicker.js';
 import { showShareLink, promptSharePassword } from './ShareLinkModal.js';
 import {
   bytesToB64URL, b64URLToBytes, bytesToBase32, base32ToBytes,
-  CODEC_FULL_JSON, sealEnvelope, openEnvelope, openLegacyEncrypted,
+  CODEC_FULL_JSON, CODEC_COMPACT_V3, sealEnvelope, openEnvelope, openLegacyEncrypted,
   inflateRaw, cryptoAvailable,
 } from '../io/share/shareEnvelope.js';
+import { encodeCompact, expandCompact, compactReference } from '../io/share/shareCodec.js';
+import { fetchAlexandriaStructure, fetchOptimadeStructure } from '../io/OptimadeModule.js';
 import { wasLaunchedByHost } from '../host/BrowserHost.js';
 
 // Share links carry their payload in the URL fragment, which browsers never
@@ -426,16 +428,100 @@ const LEGACY_PARAMS = ['state', 'z', 'e'];
 // reach, so its links name the public site; the decoder ignores the domain.
 const PUBLIC_BASE = 'https://crysviz.org/';
 
-/** Payload of a share link for `state`. The one place that picks the codec. */
+// Database references (a link that names the database entry instead of carrying
+// the coordinates) are only written for, and only fetched from, these hosts —
+// https only. A crafted link therefore cannot make a recipient's browser
+// contact an arbitrary server.
+export const SHARE_REFERENCE_HOSTS = Object.freeze([
+  'alexandria.icams.rub.de',
+  'optimade.materialsproject.org',
+]);
+
+/** Whether a database provenance record may be shared (and fetched) by reference. */
+function referenceAllowed(ref) {
+  if (ref?.kind === 'alexandria') return typeof ref.id === 'string';
+  if (ref?.kind !== 'optimade' || typeof ref.url !== 'string') return false;
+  try {
+    const url = new URL(ref.url);
+    return url.protocol === 'https:' && SHARE_REFERENCE_HOSTS.includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Human name of a reference's source, for the dialog and error messages. */
+function referenceSource(ref) {
+  return ref.kind === 'alexandria' ? 'Alexandria' : 'the OPTIMADE provider';
+}
+
+/** The database provenance of the selected structure's file row (set by the
+ *  Paste Text box when a structure is fetched from OPTIMADE or Alexandria), or
+ *  null. The codec decides whether the structure still matches it. */
+function selectedProvenance() {
+  const container = structureShip.container?.[fileBrowser.selectedRowIndex];
+  const ref = container?.provenance;
+  return referenceAllowed(ref) ? ref : null;
+}
+
+/**
+ * Payload of a share link for `state`. The one place that picks the codec.
+ * @returns {Promise<{ codec: number, jsonBytes: Uint8Array, reference: any }>}
+ *   reference: the database reference the link uses instead of coordinates,
+ *   or null when the structure is embedded.
+ */
 async function buildSharePayload(state) {
-  return { codec: CODEC_FULL_JSON, jsonBytes: new TextEncoder().encode(JSON.stringify(state)) };
+  const sc = fileBrowser.selectedStructure?.supercell;
+  const supercell = sc && (sc.nx || 1) * (sc.ny || 1) * (sc.nz || 1) > 1
+    ? { nx: sc.nx || 1, ny: sc.ny || 1, nz: sc.nz || 1 }
+    : null;
+  const provenance = selectedProvenance();
+  const compact = encodeCompact(state, { supercell, reference: provenance });
+  return {
+    codec: CODEC_COMPACT_V3,
+    jsonBytes: new TextEncoder().encode(JSON.stringify(compact)),
+    reference: compact.r ? provenance : null,
+  };
+}
+
+/** Fetch the database structure a compact link refers to, as plain arrays. */
+async function fetchReferenceStructure(ref) {
+  if (!referenceAllowed(ref)) {
+    throw new Error('This link refers to a structure database CrysViz does not load share links from.');
+  }
+  const label = ref.kind === 'alexandria' ? ref.id : ref.url;
+  let result;
+  try {
+    result = ref.kind === 'alexandria'
+      ? await fetchAlexandriaStructure(ref.id)
+      : await fetchOptimadeStructure(ref.url);
+  } catch (error) {
+    throw new Error(`Could not load ${label} from ${referenceSource(ref)}: ${error.message}`);
+  }
+  const structure = readPOSCAR(result.content, result.fileName);
+  return {
+    elements: [...structure.elements],
+    lattice: structure.lattice.map((row) => [...row]),
+    positions: structure.atoms.map((atom) => [...atom.position]),
+  };
 }
 
 /** Inverse of buildSharePayload: a decoded payload object -> a full state for
- *  applySharedState. */
+ *  applySharedState. Compact links that name a database entry fetch it first. */
 async function expandSharePayload(codec, obj) {
   if (codec === CODEC_FULL_JSON) return obj;
-  throw new Error(`Share format ${codec} is not yet supported by this version of CrysViz.`);
+  if (codec === CODEC_COMPACT_V3) {
+    const ref = compactReference(obj);
+    if (!ref) return expandCompact(obj);
+    setShareStatus(`Loading ${ref.kind === 'alexandria' ? ref.id : 'the structure'} from ${referenceSource(ref)}...`);
+    return expandCompact(obj, { referenceStructure: await fetchReferenceStructure(ref) });
+  }
+  throw new Error(`Share format ${codec} is not supported by this version of CrysViz.`);
+}
+
+/** Write to the app's status line (#status), if present. */
+function setShareStatus(text) {
+  const el = document.getElementById('status');
+  if (el) el.textContent = text;
 }
 
 /** The URL a share link is built on: this page without share/debug params,
@@ -464,7 +550,7 @@ export async function shareStructure() {
   const state = captureState();
   if (!state) { alert('No structure loaded to share.'); return; }
 
-  const { codec, jsonBytes } = await buildSharePayload(state);
+  const { codec, jsonBytes, reference } = await buildSharePayload(state);
   const plain = shareURLs(await sealEnvelope(jsonBytes, { codec }));
 
   if (plain.text.length > URL_CONFIRM_CHARS) {
@@ -489,12 +575,12 @@ export async function shareStructure() {
     ? async (password) => shareURLs(await sealEnvelope(jsonBytes, { codec, password }))
     : null;
 
-  showShareLink(plain, {
-    encryptURL,
-    lengthNote: plain.text.length > URL_NOTE_CHARS
-      ? `This link is ${plain.text.length.toLocaleString()} characters long; some chat apps shorten or break links this long.`
-      : '',
-  });
+  const notes = [];
+  if (reference) notes.push(`The structure loads from ${referenceSource(reference)} when the link is opened.`);
+  if (plain.text.length > URL_NOTE_CHARS) {
+    notes.push(`This link is ${plain.text.length.toLocaleString()} characters long; some chat apps shorten or break links this long.`);
+  }
+  showShareLink(plain, { encryptURL, lengthNote: notes.join(' ') });
 }
 
 // ---------------------------------------------------------------------------
@@ -1163,11 +1249,16 @@ export async function openShareLink(urlString) {
   }
   if (state === null) return false; // password prompt cancelled
 
+  const warnings = Array.isArray(state.shareWarnings) ? state.shareWarnings : [];
   if (!applySharedState(state, 'shared.vasp')) {
     throw new Error('Shared state could not be applied.');
   }
   await waitForStateRestoration();
   general.sharedStructureLoaded = true;
+  if (warnings.length) {
+    console.warn('Share link:', warnings.join(' '));
+    setShareStatus(warnings.join(' '));
+  }
   return true;
 }
 
