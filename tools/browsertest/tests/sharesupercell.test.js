@@ -51,6 +51,10 @@ const PAINTED = async () => {
   H.check('the supercell really is multi-species and multi-coloured',
     Object.keys(before).length > 40 && coloured > 5, `${Object.keys(before).length} sites, ${coloured} coloured`);
 
+  H.check('the share link carries its payload in the fragment (#z=)', /#z=[A-Za-z0-9_-]+$/.test(url), url.slice(0, 80));
+  // Via about:blank: a link that differs from the current URL only in the
+  // fragment is a same-document navigation and would not reload the page.
+  await page.goto('about:blank');
   await page.goto(url, { waitUntil: 'load' });
   await H.waitFor(page, async () => {
     const { fileBrowser } = await import('./state/store.js');

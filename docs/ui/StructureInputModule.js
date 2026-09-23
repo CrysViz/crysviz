@@ -188,7 +188,7 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   pasteModal.hidden = true;
   pasteModal.innerHTML = `
     <div class="paste-modal" role="dialog" aria-modal="true" aria-label="Paste structure text">
-      <textarea id="structureText" placeholder="Paste POSCAR/CIF content, an OPTIMADE structure URL, or an Alexandria agm-id"></textarea>
+      <textarea id="structureText" placeholder="Paste POSCAR/CIF content, an OPTIMADE structure URL, an Alexandria agm-id, or a CrysViz share link"></textarea>
       <div class="paste-modal-actions">
         <button type="button" id="loadTextButton">Load Structure</button>
         <button type="button" id="cancelTextButton">Cancel</button>
@@ -238,12 +238,23 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   async function loadStructureFromText() {
     const raw = structureText.value.trim();
     if (!raw) {
-      setStatus('Paste POSCAR, CIF, an OPTIMADE structure URL, or an Alexandria agm-id before loading.');
+      setStatus('Paste POSCAR, CIF, an OPTIMADE structure URL, an Alexandria agm-id, or a CrysViz share link before loading.');
       structureText.focus({ preventScroll: true });
       return;
     }
     closePasteModal();
     try {
+      // A CrysViz share link, whatever domain it names (crysviz.org, a local
+      // server, the desktop app): open it here instead of navigating. Imported
+      // lazily — ShareModule imports this module.
+      if (/^https?:\/\/\S*[#?&](z|q|state|e)=/i.test(raw) && !/\s/.test(raw)) {
+        const { openShareLink } = await import('./ShareModule.js');
+        setStatus('Opening share link...');
+        const opened = await openShareLink(raw);
+        setStatus(opened ? 'Loaded shared structure.' : 'Share link not opened.');
+        if (opened) structureText.value = '';
+        return;
+      }
       if (isOptimadeStructureUrl(raw)) {
         setStatus('Fetching structure from OPTIMADE...');
         const result = await fetchOptimadeStructure(raw);
