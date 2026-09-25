@@ -25,8 +25,9 @@ import { SplitAtomsPipeline } from './SplitAtomsPipeline.js';
 import { SortedAtomsPipeline } from './SortedAtomsPipeline.js';
 import { WboitPipeline } from './WboitPipeline.js';
 import { DepthPeelPipeline } from './DepthPeelPipeline.js';
-import { RayTracingPipeline } from './RayTracingPipeline.js';
-import { PathTracingPipeline } from './PathTracingPipeline.js';
+// The ray/path tracing pipelines are NOT imported here — they self-register via
+// pipeline/tracers.js, imported only by the full app (at boot) and by a widget
+// embed opted in with ?tracers=1, so a default embed never downloads them.
 
 /** @type {Map<string, any>} pipeline id -> class */
 const registry = new Map();
@@ -59,7 +60,9 @@ export function getActivePipeline() {
  *  a post-present overlay instead. */
 export function isTracerPipelineActive() {
   const id = app.pipeline?.id;
-  return id === RayTracingPipeline.id || id === PathTracingPipeline.id;
+  // Compared by id string (not the classes) so this module doesn't pull the
+  // tracer pipelines into the graph — see pipeline/tracers.js.
+  return id === 'raytrace' || id === 'pathtrace';
 }
 
 /**
@@ -97,7 +100,8 @@ export function setActivePipeline(id) {
 registerPipeline(DepthPeelPipeline);
 registerPipeline(WboitPipeline);
 registerPipeline(ForwardPipeline);
-registerPipeline(RayTracingPipeline);
-registerPipeline(PathTracingPipeline);
+// RayTracingPipeline + PathTracingPipeline register from pipeline/tracers.js
+// when tracing is loaded (full app at boot, or ?tracers=1 widget). They still
+// slot ahead of the hidden raster variants in the visible dropdown.
 registerPipeline(SplitAtomsPipeline);
 registerPipeline(SortedAtomsPipeline);

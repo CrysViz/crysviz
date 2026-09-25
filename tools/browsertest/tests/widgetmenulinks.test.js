@@ -42,15 +42,16 @@ async function loadWidget(page, json) {
   ]));
   const links = await page.evaluate(() => {
     const rows = [...document.querySelectorAll('.widget-menu-item[data-link]')];
-    // Position sanity: link rows sit before the "Open in CrysViz" action.
+    // Position sanity: link rows sit after the "Open in CrysViz" action, which
+    // now leads the menu.
     const open = document.querySelector('.widget-menu-item[data-action="open"]');
     const items = [...document.querySelectorAll('.widget-menu-item')];
-    const beforeOpen = rows.length > 0 && items.indexOf(rows[rows.length - 1]) < items.indexOf(open);
-    return { count: rows.length, labels: rows.map((r) => r.querySelector(".widget-menu-text").textContent.trim()), urls: rows.map((r) => r.dataset.link), beforeOpen };
+    const afterOpen = rows.length > 0 && items.indexOf(rows[0]) > items.indexOf(open);
+    return { count: rows.length, labels: rows.map((r) => r.querySelector(".widget-menu-text").textContent.trim()), urls: rows.map((r) => r.dataset.link), afterOpen };
   });
   H.check('exactly the two valid links render (invalid dropped)',
     links.count === 2 && links.labels.includes('Download CIF') && links.labels.includes('Download POSCAR'), JSON.stringify(links));
-  H.check('link rows sit above "Open in CrysViz"', links.beforeOpen === true, JSON.stringify(links));
+  H.check('link rows sit below "Open in CrysViz"', links.afterOpen === true, JSON.stringify(links));
 
   const clicked = await page.evaluate(() => {
     let captured = null;

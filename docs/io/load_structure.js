@@ -164,12 +164,37 @@ export async function parse_cif(content, fileName = '', mcif = false) {
     );
   });
 
+  // Keep the symmetry the CIF declared, rather than dropping it here. The parser
+  // has already read the space-group operations and labels into `cif_struct`
+  // (io/cif/cif_parser.js); carrying them onto the Structure lets the load path
+  // compare the file's declared symmetry against the one Moyo detects from the
+  // expanded cell, and — when they agree — rebuild the Wyckoff lock in the CIF's
+  // own setting. mCIF takes a different expansion path and is left untouched.
+  const cifNumberRaw = mcif ? null : cif_struct["space_group_nbr"];
+  const cifNumber = Number.parseInt(cifNumberRaw, 10);
+  // The parser keeps operation entries as exact Fraction objects; store plain
+  // numbers so the record survives any JSON/structured clone of the Structure.
+  const opValue = (value) => (value && typeof value === 'object' && typeof value.toNumber === 'function'
+    ? value.toNumber()
+    : Number(value));
+  const symops = (cif_struct["symops"] ?? []).map(([R, t]) => [
+    R.map((row) => row.map(opValue)),
+    t.map(opValue),
+  ]);
+  const cifSymmetry = mcif ? null : {
+    symops,
+    number: Number.isFinite(cifNumber) ? cifNumber : null,
+    hmName: cif_struct["space_group_name_hm"] ?? null,
+    hall: cif_struct["space_group_name_hall"] ?? null,
+  };
+
   const structure = new Structure({
     elements,
     uniqueElements: [...new Set(elements)].sort(),
     lattice: cif_struct["basis"],
     atoms,
-    spins
+    spins,
+    cifSymmetry,
   });
 
   const container = new StructureContainer({

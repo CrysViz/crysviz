@@ -1,0 +1,261 @@
+/* Files window ▸ Structure info (docs/ui/FileStructureSummary.js): a
+   collapsible block under the structure table with the selected structure's
+   lattice, positions and Wyckoff positions as plain selectable text, with a
+   copy button per block. Reuses the EOS collapsible's caret, .btn-mini and
+   the Structure window's ✎ button class; only its own layout lives here. */
+
+.fss {
+  margin-top: var(--sp-3);
+  background: var(--wash-1);
+  border-radius: var(--radius-md);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-base);
+}
+
+.fss-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  list-style: none;
+  cursor: pointer;
+  color: var(--fg-85);
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-md);
+}
+
+.fss-summary::-webkit-details-marker {
+  display: none;
+}
+
+.fss[open] .eos-collapsible-arrow {
+  transform: rotate(90deg);
+}
+
+.fss-title {
+  flex: 1 1 auto;
+}
+
+.fss-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-normal);
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+}
+
+.fss-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 0 0 auto;
+}
+
+.fss-btn {
+  height: 26px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.fss-empty,
+.fss-muted {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+}
+
+.fss-status {
+  min-height: 1em;
+}
+
+.fss-block {
+  margin-top: var(--sp-3);
+}
+
+/* The body (styles.css) switches text selection off everywhere and turns it
+   back on per element; these values exist to be selected and copied. The
+   top margin sets the "Parameters" summary apart from the first body line. */
+.fss-body {
+  margin-top: var(--sp-4);
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+.fss-block-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--fg-85);
+}
+
+.fss-block-head > span:first-child {
+  flex: 1 1 auto;
+}
+
+/* Same look as the plot cards' corner buttons (sideDock.css). */
+.fss-copy-btn {
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-4);
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.fss-copy-btn:hover {
+  background: var(--wash-2);
+}
+
+/* frac / cart segmented pair. */
+.fss-seg {
+  display: inline-flex;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-4);
+  overflow: hidden;
+}
+
+.fss-seg button {
+  background: transparent;
+  color: var(--muted-fg);
+  border: 0;
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+}
+
+.fss-seg button + button {
+  border-left: 1px solid var(--panel-border);
+}
+
+.fss-seg button:hover {
+  background: var(--wash-1-5);
+}
+
+.fss-seg button.active {
+  background: var(--accent-color);
+  color: var(--fg-1);
+}
+
+.fss-pre {
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--textarea-bg);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal, 1.4);
+  color: var(--fg-1);
+  overflow-x: auto;
+}
+
+/* Scalar properties (energy, pressure, max force) as chips at the very top. */
+.fss-props {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+
+.fss-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  margin-top: var(--sp-2);
+}
+
+.fss-chip {
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-85);
+}
+
+/* Long tables scroll vertically inside the block instead of stretching the
+   window. Widths are kept inside the sidebar by design — five monospace
+   columns of 6-decimal numbers at tight padding — so no horizontal scroll
+   is expected; overflow-x: auto is only the safety net for an extreme font
+   scale. */
+.fss-table-wrap {
+  max-height: 240px;
+  overflow-y: auto;
+  overflow-x: auto;
+  margin-top: var(--sp-2);
+  /* Reserve the scrollbar's lane so it sits to the RIGHT of the cells rather
+     than painting over the z column when the list overflows. */
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--highlight-color) var(--wash-1-5);
+}
+
+.fss-table-wrap::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.fss-table-wrap::-webkit-scrollbar-track {
+  background: var(--wash-1-5);
+  border-radius: var(--radius-4);
+}
+
+.fss-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--highlight-color);
+  border-radius: var(--radius-4);
+}
+
+.fss-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-color);
+}
+
+.fss-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.fss-table th,
+.fss-table td {
+  padding: 1px var(--sp-1);
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line-1);
+}
+
+.fss-table th {
+  position: sticky;
+  top: 0;
+  background: var(--group-bg);
+  color: var(--muted-fg);
+  font-weight: var(--fw-medium);
+}
+
+.fss-table th:nth-child(-n+2),
+.fss-table td:nth-child(-n+2) {
+  text-align: left;
+  width: 1%;            /* shrink-to-content: no slack on the element column */
+  white-space: nowrap;
+  padding-right: var(--sp-2);
+}
+
+.fss-idx {
+  color: var(--muted-fg);
+}
+
+/* Copy buttons flash in the ok state once the clipboard has the text. */
+.fss-copy-btn.fss-copied,
+.fss-btn.fss-copied {
+  background: rgb(var(--ok-rgb) / 0.25);
+  color: var(--ok-bright);
+}

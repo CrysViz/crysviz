@@ -127,12 +127,20 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 18px;
+      /* Wrap whole controls onto a second line in a narrow pane (side dock,
+         phone) instead of squeezing the row: without this the flex row never
+         wrapped, so a label like "Recenter each step" broke into three lines
+         and the controls overflowed the panel. */
+      flex-wrap: wrap;
+      gap: var(--sp-2) 18px;
     }
-    /* Instrument micro-labels: tracked uppercase, like a control-deck legend. */
+    /* Instrument micro-labels: tracked uppercase, like a control-deck legend.
+       Each label is one unit — it wraps as a whole (see .trajOptions), never
+       inside its own text. */
     .trajOpt {
       display: inline-flex;
       align-items: center;
+      white-space: nowrap;
       gap: 7px;
       font-size: var(--fs-xs);
       font-weight: var(--fw-bold);
@@ -159,6 +167,17 @@
        like the other controls rather than stretched by the flex row. */
     .trajOptCheck { cursor: pointer; }
     .trajOptCheck input[type=checkbox] { cursor: pointer; margin: 0; }
+    /* "Full render each frame" note: shown while a force/length colour map is
+       active, since Auto then rebuilds every playback frame (slower). Muted and
+       small — an explanation, not an alarm. */
+    .trajRenderNote {
+      margin-top: 6px;
+      text-align: center;
+      font-size: var(--fs-xs);
+      color: var(--ink-1);
+      letter-spacing: 0.3px;
+    }
+    .trajRenderNote[hidden] { display: none; }
 
     /* ---- Resizable Plotly plot region (unified MD Monitor). Hidden by default
        via inline style until hasPlottableData() decides there's something to
@@ -202,6 +221,10 @@
       z-index: var(--z-dock-expanded) !important;
       resize: none !important;
       box-shadow: 0 0 24px var(--overlay) !important;
+      /* The compact card's wash (--chrome-1: 80% on dark themes, a 5% tint on
+         light ones) is meant to sit on a panel surface. Over the fullscreen
+         scrim it reads as see-through; use the one opaque surface token. */
+      background: var(--panel-bg);
     }
 
     .trajPlot.expanded .split-item-close-btn {

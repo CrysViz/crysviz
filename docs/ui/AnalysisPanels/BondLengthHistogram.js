@@ -239,16 +239,26 @@ export function addBondLengthHistogramPanel() {
         return pairRanges[key] ?? { min: MIN_LENGTH, max: DEFAULT_MAX };
       }
 
-      /** Watches one plot div's own size (the native resize-handle drag adds
-       *  an inline height, independent of the body-width observer below) and
-       *  tells Plotly to refit whenever it changes. */
-      function watchPlotResize(plotEl, plotId) {
+      /** Watches one card's plot div and range slider for their own size
+       *  changes — the native resize-handle drag (an inline height on the
+       *  plot div), the card un-collapsing (display:none -> laid out), the
+       *  fullscreen expand — and refits Plotly / repaints the slider's fill.
+       *  The body-width observer below cannot see any of these: none of them
+       *  changes the body's width. The fill used to be painted once at wire
+       *  time, while every card was still collapsed and the slider measured
+       *  0 px wide, so it kept a made-up 120 px geometry (too short) until
+       *  something happened to resize the whole window. */
+      function watchCardResize(cardEl, key) {
         let raf = 0;
         const ro = new ResizeObserver(() => {
           cancelAnimationFrame(raf);
-          raf = requestAnimationFrame(() => resizeHistogramPlot(plotId));
+          raf = requestAnimationFrame(() => {
+            resizeHistogramPlot(plotIdFor(key));
+            sliderHandles.get(key)?.updateFill();
+          });
         });
-        ro.observe(plotEl);
+        ro.observe(cardEl.querySelector('.blh-pair-plot'));
+        ro.observe(cardEl.querySelector('.blh-range-slider'));
         return ro;
       }
 
@@ -318,7 +328,10 @@ export function addBondLengthHistogramPanel() {
         else collapsedItems.delete(key);
         card?.classList.toggle('collapsed', collapsed);
         if (toggleBtn) toggleBtn.textContent = collapsed ? '▸' : '▾';
-        if (!collapsed) redrawItem(key); // catch up if it was never rendered while collapsed
+        if (!collapsed) {
+          redrawItem(key); // catch up if it was never rendered while collapsed
+          sliderHandles.get(key)?.updateFill();
+        }
       }
 
       function wireRangeSlider(cardEl, key) {
@@ -330,7 +343,10 @@ export function addBondLengthHistogramPanel() {
         const sliderEl = cardEl.querySelector('.blh-range-slider');
 
         function updateFill() {
-          const width = sliderEl.clientWidth || 120;
+          // Not laid out yet (collapsed card, hidden tab): leave the fill for
+          // the card's ResizeObserver, which fires the moment it has a width.
+          const width = sliderEl.clientWidth;
+          if (!width) return;
           const minPx = rangeThumbPos(parseFloat(minInput.value), ABS_MIN, ABS_MAX, width);
           const maxPx = rangeThumbPos(parseFloat(maxInput.value), ABS_MIN, ABS_MAX, width);
           fill.style.left = `${minPx}px`;
@@ -450,7 +466,7 @@ export function addBondLengthHistogramPanel() {
         keys.forEach((key) => {
           const cardEl = list.querySelector(`#${cardIdFor(key)}`);
           wireRangeSlider(cardEl, key);
-          plotResizeObservers.set(key, watchPlotResize(cardEl.querySelector('.blh-pair-plot'), plotIdFor(key)));
+          plotResizeObservers.set(key, watchCardResize(cardEl, key));
         });
       }
 
