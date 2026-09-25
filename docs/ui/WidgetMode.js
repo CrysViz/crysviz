@@ -20,6 +20,7 @@ import { ensureMoyoReady, moyoDataset, buildSymmetrisedContainer, PT } from './B
 import { Spin } from '../model/index.js';
 import { computeSpinRemap } from './WidgetSpinRemap.js';
 import { initWidgetControl } from './WidgetControl.js';
+import { getLaunchSource } from '../io/FileURLLoader.js';
 // Structure writers for the menu's Download items. SavePanel is already in the
 // widget graph (via ShareModule), so these add no extra download to the embed.
 import { poscartoFile, cifToFile, downloadTextFile, currentBaseName } from './SavePanel.js';
@@ -202,20 +203,46 @@ function fullUiHref(href) {
   }
 }
 
-/** The launch URL with its payload's `selectedFrameIndex` rewritten to the
- *  frame currently on screen — the full app reloads FROM this payload (see
- *  ShareModule.applySharedState), so this is what makes "Open in CrysViz"
- *  open what the user is actually looking at instead of always the as-loaded
- *  frame. Moyo-built variants aren't in the launch payload at all (they're
- *  computed in-browser), so moyo fallback mode is out of scope and left
- *  unchanged; any parse hiccup also falls back to the unchanged href, since
- *  opening the as-loaded frame is a safe degradation and the menu action must
- *  never be blocked by it. */
-function hrefForCurrentFrame(href) {
-  if (!framesContainer) return href;
-  const index = framesContainer.structures.indexOf(fileBrowser.selectedStructure);
-  if (index < 0) return href;
+/** Index of the frame on screen within the launch container, or -1 when the
+ *  shown structure is not one of its frames (e.g. a moyo-built cell variant,
+ *  which is computed in-browser and is not in the launch payload at all). */
+function currentLaunchFrame() {
+  const container = framesContainer ?? structureShip.container[loadedRowIndex];
+  return container?.structures?.indexOf(fileBrowser.selectedStructure) ?? -1;
+}
 
+/** Decode a UTF-8 string from launch data (string or ArrayBuffer). */
+function launchText(data) {
+  if (typeof data === 'string') return data;
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  return null;
+}
+
+/** The launch session with its `selectedFrameIndex` set to the frame on
+ *  screen — the full app reloads FROM the session (see
+ *  ShareModule.applySharedState), so this is what makes "Open in CrysViz" open
+ *  what the user is actually looking at instead of always the as-loaded frame.
+ *  Returns null when there is nothing to rewrite (no frame match, not a .crysviz
+ *  JSON session, or a parse hiccup); callers then pass the data on unchanged,
+ *  since opening the as-loaded frame is a safe degradation and the menu action
+ *  must never be blocked by it. */
+function sessionTextForCurrentFrame(text) {
+  const index = currentLaunchFrame();
+  if (index < 0 || text == null) return null;
+  try {
+    const state = JSON.parse(text);
+    if (!state || typeof state !== 'object' || !Array.isArray(state.frames)) return null;
+    if (state.selectedFrameIndex === index) return null; // already right — keep as is
+    state.selectedFrameIndex = index;
+    return JSON.stringify(state);
+  } catch {
+    return null;
+  }
+}
+
+/** The launch URL with its `#load-file=` payload rewritten to the frame on
+ *  screen (see sessionTextForCurrentFrame); unchanged if nothing to rewrite. */
+function hrefForCurrentFrame(href) {
   const hashIdx = href.indexOf('#load-file=');
   if (hashIdx < 0) return href;
   const rawHash = href.slice(hashIdx + '#load-file='.length);
@@ -230,10 +257,10 @@ function hrefForCurrentFrame(href) {
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const state = JSON.parse(new TextDecoder().decode(bytes));
-    state.selectedFrameIndex = index;
+    const rewritten = sessionTextForCurrentFrame(new TextDecoder().decode(bytes));
+    if (rewritten == null) return href;
 
-    const newBytes = new TextEncoder().encode(JSON.stringify(state));
+    const newBytes = new TextEncoder().encode(rewritten);
     // Chunked to dodge the String.fromCharCode argument-limit overflow on
     // large payloads (same pattern the altermagnets embedder uses).
     let binaryOut = '';
@@ -441,8 +468,65 @@ function downloadStructure(kind) {
 /** "Open in CrysViz": the logo is no longer an <a>, so open via window.open
  *  (same target=_blank/noopener the old link used; needs the iframe's
  *  allow-popups, which the old link already required). */
+/** Above this, "Open in CrysViz" hands the session over by postMessage instead
+ *  of a `#load-file=` URL: browsers cap URL length (~2 MB in Chromium, less
+ *  elsewhere), and the URL-loaded payload is also re-encoded once more here. */
+const MAX_OPEN_URL_LENGTH = 1_000_000;
+/** How long the opened tab has to ask for its session. */
+const HANDOFF_TIMEOUT_MS = 60000;
+
 function openFullUi() {
-  window.open(fullUiHref(hrefForCurrentFrame(capturedHref)), '_blank', 'noopener');
+  const source = getLaunchSource();
+  if (!source || source.kind === 'file') {
+    const href = fullUiHref(hrefForCurrentFrame(capturedHref));
+    if (href.length <= MAX_OPEN_URL_LENGTH || !source) {
+      window.open(href, '_blank', 'noopener');
+      return;
+    }
+  }
+  openFullUiWithHandoff(source);
+}
+
+/**
+ * Open the full app at `#load-opener` and post it the launch session once it
+ * asks (io/SessionReceiver.js). Used when the data arrived by postMessage or
+ * `#load-url=`, or is too big for a URL. The session is posted only to the tab
+ * we opened (event.source check) and only to the CrysViz origin (targetOrigin),
+ * so a tab that navigated away never receives it.
+ */
+function openFullUiWithHandoff(source) {
+  let target;
+  try {
+    target = new URL(fullUiHref(capturedHref || window.location.href));
+  } catch {
+    return;
+  }
+  target.hash = 'load-opener';
+  // No 'noopener': the new tab must be able to reach back to this window.
+  const tab = window.open(target.toString(), '_blank');
+  if (!tab) return; // popup blocked
+  const targetOrigin = target.origin === 'null' ? '*' : target.origin;
+  const text = launchText(source.data);
+  const rewritten = sessionTextForCurrentFrame(text);
+  const data = rewritten ?? source.data;
+
+  const onMessage = (/** @type {MessageEvent} */ event) => {
+    if (event.source !== tab) return;
+    const d = event.data;
+    if (!d || typeof d !== 'object' || d.source !== 'crysviz-app' || d.type !== 'awaitingSession') return;
+    done();
+    try {
+      tab.postMessage({ target: 'crysviz-app', type: 'loadSession', name: source.name, data, format: source.format || '' }, targetOrigin);
+    } catch (error) {
+      console.warn('[widget] could not hand the structure to the new tab:', error);
+    }
+  };
+  const timer = setTimeout(() => done(), HANDOFF_TIMEOUT_MS);
+  function done() {
+    clearTimeout(timer);
+    window.removeEventListener('message', onMessage);
+  }
+  window.addEventListener('message', onMessage);
 }
 
 // ── Reduced camera control (top-right) ──────────────────────────────────────

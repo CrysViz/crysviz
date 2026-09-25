@@ -108,6 +108,10 @@ export const groups = {
   forcesTipMesh: null,
   spinShaftMesh: null,
   spinTipMesh: null,
+  // Comparison spin set (structure.spins2, experimental), drawn by
+  // render/SpinModule.js alongside the primary spins.
+  spin2ShaftMesh: null,
+  spin2TipMesh: null,
   // Phonon-mode displacement arrows (render/PhononArrowModule.js), owned by
   // phonon/phononSession.js and rebuilt per animation tick.
   phononShaftMesh: null,
@@ -258,6 +262,19 @@ export const general = {
   // independent of spinColorScale — same one-directional lock as
   // forceLengthLogScale above (render/SpinModule.js's normalizeMag()).
   spinLengthLogScale: false,
+  // Comparison spin set (structure.spins2; Spins panel "Comparison Spins",
+  // experimental). Length controls are shared with the primary set above;
+  // these are the per-set colour and diameter settings.
+  spin2Visible: true,
+  // "Highlight" toggles (Comparison Spins section): make every arrow of the
+  // primary / comparison set glow, to tell the two sets apart.
+  spinHighlightAll: false,
+  spin2HighlightAll: false,
+  spin2Radius: 0.08,
+  spin2ColorMap: 'none',
+  spin2Min: 0,
+  spin2Max: 2,
+  spin2ColorScale: 'linear',
   // Force colormap range (Forces panel min/max inputs; read with ||-defaults).
   forceMin: 0,
   forceMax: 2,

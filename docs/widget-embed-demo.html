@@ -59,7 +59,9 @@
   </div>
 
   <p class="note">Host → widget: <code>{target:'crysviz-widget', type:'setFrame'|'play'|'pause'|'getState', …}</code>.
-  Widget → host: <code>{source:'crysviz-widget', type:'ready'|'frame'|'state', …}</code>.
+  Widget → host: <code>{source:'crysviz-widget', type:'awaitingSession'|'ready'|'frame'|'state', …}</code>.
+  The trajectory itself is posted in reply to <code>awaitingSession</code>
+  (<code>#load-message</code>); add <code>?transport=hash</code> to send it in the URL instead.
   See the CrysViz README “Widget mode / embedding”.</p>
 
 <script type="module">
@@ -101,12 +103,20 @@
     return btoa(bin);
   }
 
+  // How the trajectory reaches the widget. Default: posted as a message after
+  // the widget asks for it (#load-message) — no URL-length limit, so this is the
+  // one to use for big trajectories. ?transport=hash puts it in the URL instead
+  // (#load-file=), which is simpler but capped by the browser's URL length.
+  const TRANSPORT = params.get('transport') === 'hash' ? 'hash' : 'message';
+
   function widgetURL(session, theme) {
-    const name = encodeURIComponent('demo.crysviz');
-    const content = encodeURIComponent(base64Utf8(JSON.stringify(session)));
     const t = theme ? `&theme=${theme}` : '';
     // control=1 opts into the live postMessage control channel.
-    return `${HOST}?widget=1&control=1${t}#load-file=${name}|${content}`;
+    const base = `${HOST}?widget=1&control=1${t}`;
+    if (TRANSPORT === 'message') return `${base}#load-message`;
+    const name = encodeURIComponent('demo.crysviz');
+    const content = encodeURIComponent(base64Utf8(JSON.stringify(session)));
+    return `${base}#load-file=${name}|${content}`;
   }
 
   const viewer = document.getElementById('viewer');
@@ -130,7 +140,13 @@
     if (e.source !== viewer.contentWindow) return;
     const d = e.data;
     if (!d || typeof d !== 'object' || d.source !== 'crysviz-widget') return;
-    if (d.type === 'ready' || d.type === 'state') {
+    if (d.type === 'awaitingSession') {
+      // #load-message: hand over the trajectory as bytes (transferred, no copy).
+      const bytes = new TextEncoder().encode(JSON.stringify(session));
+      viewer.contentWindow.postMessage(
+        { target: 'crysviz-widget', type: 'loadSession', name: 'demo.crysviz', data: bytes.buffer },
+        '*', [bytes.buffer]);
+    } else if (d.type === 'ready' || d.type === 'state') {
       frameCount = d.frameCount; index = d.index;
       scrub.max = String(Math.max(0, frameCount - 1));
       scrub.value = String(index);
@@ -156,7 +172,8 @@
 
   // Follow the OS theme for the embed, and launch it.
   const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  viewer.src = widgetURL(buildTrajectory(), theme);
+  const session = buildTrajectory();
+  viewer.src = widgetURL(session, theme);
   // ready may arrive before or after load; also ask for state once loaded.
   viewer.addEventListener('load', () => setTimeout(() => send('getState'), 300));
 </script>

@@ -116,7 +116,11 @@ function onMessage(event) {
   const data = event.data;
   if (!data || typeof data !== 'object' || data.target !== TARGET) return;
   // Remember who is controlling us so replies go straight back to them.
-  if (controllerOrigin == null && typeof event.origin === 'string') controllerOrigin = event.origin;
+  // An opaque-origin host (sandboxed / file://) reports 'null', which is not a
+  // valid postMessage target — keep '*' for it (still only to window.parent).
+  if (controllerOrigin == null && typeof event.origin === 'string' && event.origin !== 'null') {
+    controllerOrigin = event.origin;
+  }
 
   switch (data.type) {
     case 'getState':

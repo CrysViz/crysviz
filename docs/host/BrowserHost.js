@@ -6,6 +6,7 @@ import {
   getContainers,
   onActiveStructureChange,
 } from '../state/structures.js';
+import { LOAD_HASH_RE } from '../io/SessionReceiver.js';
 
 const PROTOCOL_VERSION = 1;
 const COMMANDS = new Set([
@@ -692,9 +693,9 @@ export async function bootstrapAuthoritative(deps) {
     if (!result) throw manifestError('SHARED_STATE_FAILED', 'Shared state was present but could not be loaded');
     return { source: 'shared' };
   }
-  if (window.location.hash.startsWith('#load-file=')) {
+  if (LOAD_HASH_RE.test(window.location.hash)) {
     const result = await loadHash();
-    if (!result) throw manifestError('HASH_LOAD_FAILED', 'The load-file hash was present but could not be loaded');
+    if (!result) throw manifestError('HASH_LOAD_FAILED', 'The load hash was present but could not be loaded');
     return { source: 'hash' };
   }
   await loadDefault();

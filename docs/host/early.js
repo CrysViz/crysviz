@@ -1,4 +1,5 @@
 import { bootstrapAuthoritative, createBrowserHost } from './BrowserHost.js';
+import { startSessionReceiver } from '../io/SessionReceiver.js';
 
 // This module is loaded before the application module. It captures the
 // launch capability in module-private state and removes it before any later
@@ -33,6 +34,12 @@ const widget = (() => {
   document.getElementById('ui')?.classList.add('panel-hidden');
   return { present: true, href, restorePrefs };
 })();
+
+// #load-message / #load-opener: the structure arrives over postMessage rather
+// than in the URL (io/SessionReceiver.js). Listen now, before the app module
+// graph loads, so a sender that posts as soon as the page exists is not missed.
+if (window.location.hash === '#load-message') startSessionReceiver('message');
+else if (window.location.hash === '#load-opener') startSessionReceiver('opener');
 
 // Install the public object while the core module graph is still evaluating.
 // It remains NOT_READY until core supplies its private callbacks and finishes
