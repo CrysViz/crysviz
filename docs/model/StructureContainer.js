@@ -19,6 +19,12 @@ export class StructureContainer {
     // is off — see FileBrowswerPanel.js's updateStructureFromRowAndStep.
     this.cameraSnapshot = null;
     this.featureSnapshot = null;
+    // Per-structure Atom Size / Bond Diameter ({ atomSize, bondRadius }),
+    // always on (no lock). general.atomSize/bondRadius mirror the SELECTED
+    // container's values; null = adopt whatever is live when first shown.
+    // See ui/SizePrefs.js and FileBrowswerPanel.js's updateStructureFromRowAndStep.
+    /** @type {{ atomSize: number, bondRadius: number } | null} */
+    this.displaySizes = null;
     // Optional per-frame "cell kind" labels ("loaded"/"conventional"/"primitive"),
     // order-aligned with `structures`. Set by the .crysviz loader from the
     // session's top-level `frameKinds` and read ONLY by widget mode (ui/WidgetMode.js)

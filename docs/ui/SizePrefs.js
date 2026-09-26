@@ -19,6 +19,15 @@ import { sizeSliderToValue, sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANG
 //                       that differ from the pair's default AND from the
 //                       globally persisted Custom User Settings override.
 //
+// Atom Size / Bond Diameter are PER STRUCTURE, not global: each container
+// keeps its own pair in container.displaySizes and general.atomSize /
+// general.bondRadius only mirror the selected one (captureContainerSizes on
+// leaving a row, applyContainerSizes on entering one — FileBrowswerPanel.js).
+// Before this they were one global pair that was also saved per structure, so
+// switching rows carried one structure's size over to the next and the next
+// slider edit saved it there. (Deliberate design choice; revert this commit to
+// go back to global sizes.)
+//
 // Every save below is called from a user-edit handler only (rule 1). All
 // restorers run in the 'beforeSelect' phase: the first rebuild (atoms, bonds,
 // Bonds tab) then already reads the restored values, so no extra render pass
@@ -152,18 +161,57 @@ function setSizeSlider(id, labelId, value, range) {
   if (span) span.textContent = Number(value).toFixed(2);
 }
 
-function restoreAtomSize(_container, value) {
-  const v = Number(value);
-  if (!Number.isFinite(v) || v <= 0) return;
-  general.atomSize = Math.min(ATOM_SIZE_RANGE.max, Math.max(ATOM_SIZE_RANGE.min, v));
-  setSizeSlider('atomSize', 'atomSizeValue', general.atomSize, ATOM_SIZE_RANGE);
+const clampSize = (v, range) => Math.min(range.max, Math.max(range.min, v));
+
+/** The container's size pair, created at the slider defaults when missing. */
+function ensureSizes(container) {
+  if (!container.displaySizes) {
+    container.displaySizes = {
+      atomSize: sliderDefault('atomSize', ATOM_SIZE_RANGE, 1),
+      bondRadius: sliderDefault('bondWidth', BOND_RADIUS_RANGE, 0.08),
+    };
+  }
+  return container.displaySizes;
 }
 
-function restoreBondRadius(_container, value) {
+/**
+ * Give a freshly loaded container the default sizes (called by
+ * initializeUIOnLoad before the stored-prefs restorers, which may then
+ * override them). A load that skips stored prefs (share link, .crysviz,
+ * widget) leaves displaySizes null so the container adopts the sizes that
+ * load just applied.
+ */
+export function seedContainerSizes(container) {
+  if (container) { container.displaySizes = null; ensureSizes(container); }
+}
+
+/** Remember the live sizes on the container being left. */
+export function captureContainerSizes(container) {
+  if (container) container.displaySizes = { atomSize: general.atomSize, bondRadius: general.bondRadius };
+}
+
+/** Make the container's sizes live (general + sliders) before it is rendered;
+ *  a container without its own pair adopts the live one. */
+export function applyContainerSizes(container) {
+  if (!container) return;
+  if (!container.displaySizes) { captureContainerSizes(container); return; }
+  const { atomSize, bondRadius } = container.displaySizes;
+  general.atomSize = atomSize;
+  general.bondRadius = bondRadius;
+  setSizeSlider('atomSize', 'atomSizeValue', atomSize, ATOM_SIZE_RANGE);
+  setSizeSlider('bondWidth', 'bondWidthValue', bondRadius, BOND_RADIUS_RANGE);
+}
+
+function restoreAtomSize(container, value) {
   const v = Number(value);
-  if (!Number.isFinite(v) || v <= 0) return;
-  general.bondRadius = Math.min(BOND_RADIUS_RANGE.max, Math.max(BOND_RADIUS_RANGE.min, v));
-  setSizeSlider('bondWidth', 'bondWidthValue', general.bondRadius, BOND_RADIUS_RANGE);
+  if (!container || !Number.isFinite(v) || v <= 0) return;
+  ensureSizes(container).atomSize = clampSize(v, ATOM_SIZE_RANGE);
+}
+
+function restoreBondRadius(container, value) {
+  const v = Number(value);
+  if (!container || !Number.isFinite(v) || v <= 0) return;
+  ensureSizes(container).bondRadius = clampSize(v, BOND_RADIUS_RANGE);
 }
 
 function restoreAtomRadiusScales(container, value) {

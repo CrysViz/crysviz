@@ -7,6 +7,7 @@ const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip,general} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
 import { restoreStructurePrefs } from '../state/structurePrefs.js';
+import { seedContainerSizes } from './SizePrefs.js';
 import {
   transpose3x3,
   invert3x3,
@@ -109,7 +110,12 @@ export function initializeUIOnLoad(structureContainer, { restoreStoredPrefs = ge
 
   // 'beforeSelect' fields (the atom colours) go on BEFORE the row is
   // selected (and rendered) below, so the first rebuild already paints them.
-  if (restoreStoredPrefs) restoreStructurePrefs(structureContainer, 'beforeSelect');
+  // A new structure starts at the default sizes (per-structure, ui/SizePrefs.js),
+  // unless its stored record says otherwise.
+  if (restoreStoredPrefs) {
+    seedContainerSizes(structureContainer);
+    restoreStructurePrefs(structureContainer, 'beforeSelect');
+  }
 
   structureShip.container.push(structureContainer);
   selectLastAddedRow();
