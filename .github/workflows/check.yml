@@ -33,5 +33,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The runner image's apt lists can go stale, so `apt-get download xvfb`
+      # in browsertest setup 404s on a superseded package version.
+      - name: Refresh apt package lists
+        run: sudo apt-get update
+
       - name: Run complete CI gate
         run: make ci
