@@ -313,6 +313,11 @@ function shorten(text, max = 120) {
  *   collinear moment — still possibly symbolic; see `incarRawVectors`.
  */
 export function resolveIncarSpins(info, natoms) {
+  /**
+   * @param {string} problem
+   * @param {string} message
+   * @returns {{ok: false, problem: string, message: string}}
+   */
   const fail = (problem, message) => ({ ok: false, problem, message });
   const { present, magmom } = info;
 

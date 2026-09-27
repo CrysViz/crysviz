@@ -153,7 +153,7 @@ export async function loadIncarSpins(text, fileName) {
   const structure = fileBrowser.selectedStructure;
   const info = readIncarMagnetism(text);
   const resolved = resolveIncarSpins(info, structure?.atoms?.length ?? 0);
-  if (!resolved.ok) throw new IncarSpinError(resolved.message, resolved.problem);
+  if (resolved.ok === false) throw new IncarSpinError(resolved.message, resolved.problem);
 
   const structureName = structureDisplayName(structure);
 
