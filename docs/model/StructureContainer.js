@@ -14,11 +14,21 @@ export class StructureContainer {
     // Populated by live MD/relax and "Compute step stats"; null until then.
     /** @type {Record<string, number[]> | null} */
     this.plotSeries = null;
-    // Per-structure camera/feature-toggle memory, used only while the
-    // corresponding lock (state/store.js's app.cameraLocked / general.featuresLocked)
-    // is off — see FileBrowswerPanel.js's updateStructureFromRowAndStep.
+    // Per-structure camera memory, used only while the camera lock
+    // (state/store.js's app.cameraLocked) is off — see FileBrowswerPanel.js's
+    // updateStructureFromRowAndStep.
     this.cameraSnapshot = null;
-    this.featureSnapshot = null;
+    // This structure's Features-switch overrides ({ [toggleId]: boolean },
+    // ui/FeatureLockModule.js): the switches the user changed on it while the
+    // shared view lock was off, seeded from browser storage at load (or from
+    // the link's values for a share / .crysviz load). null = none.
+    /** @type {Record<string, boolean> | null} */
+    this.featureOverrides = null;
+    // True when the load applied stored preferences (initializeUIOnLoad with
+    // restoreStoredPrefs): the Features window applies the switch cascade to
+    // such a container once it is built. A share / .crysviz / plain widget
+    // load leaves it false so the link's values are never overwritten.
+    this.featureStorePrefs = false;
     // Per-structure Atom Size / Bond Diameter ({ atomSize, bondRadius }),
     // always on (no lock). general.atomSize/bondRadius mirror the SELECTED
     // container's values; null = adopt whatever is live when first shown.

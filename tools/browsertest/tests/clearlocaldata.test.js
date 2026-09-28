@@ -19,8 +19,10 @@ const KEY = 'crysviz.structurePrefs.v1';
 const FIELDS = [
   'colors', 'focusRegions', 'fieldIso', 'fieldMaterial', 'planes', 'spinStyle', 'forceStyle',
   'atomSize', 'bondRadius', 'atomRadiusScales', 'bondCategoryStyles', 'bondUserStyles', 'bondLengths',
-  'supercell', 'periodicBounds',
+  'supercell', 'periodicBounds', 'featureToggles',
 ].sort();
+// The shared Features switches (ui/FeatureLockModule.js), an app-level blob.
+const SHARED_KEY = 'crysviz.sharedFeatureToggles.v1';
 
 // Same fixture as arrowprefs.test.js: two ionic steps, Fe + O, spins + forces.
 const STEP = (oX, toten) => [
@@ -190,7 +192,7 @@ async function loadOutcar(page) {
     const { registeredStructurePrefFields } = await import('./state/structurePrefs.js');
     return registeredStructurePrefFields();
   });
-  H.check('registered structurePrefs fields are exactly the known 15 (extend this test for a new one)',
+  H.check('registered structurePrefs fields are exactly the known 16 (extend this test for a new one)',
     JSON.stringify([...registered].sort()) === JSON.stringify(FIELDS), JSON.stringify([...registered].sort()));
 
   // ---- baseline on the default structure ------------------------------------
@@ -316,6 +318,24 @@ async function loadOutcar(page) {
     flushPendingStructurePrefSaves();
   });
 
+  // Features switches (ui/FeatureLockModule.js): a flip while locked writes the
+  // shared set; unlocking (no confirm on the way off) and a flip on the OUTCAR
+  // row writes its 'featureToggles' override. The app stays unlocked from here
+  // on, so the row switches after the clear below run the cascade too.
+  await expandPanel(page, 'features');
+  await H.clickById(page, 'showCharges');
+  await H.clickById(page, 'featureSharedViewToggle');
+  await page.waitForTimeout(200);
+  await H.clickById(page, 'showAtoms');
+  await page.waitForTimeout(200);
+  const featureStores = await page.evaluate(async (k) => {
+    const { general } = await import('./state/store.js');
+    return { locked: general.featuresLocked, shared: localStorage.getItem(k) };
+  }, SHARED_KEY);
+  H.check('DW-1.6 shared Features switches stored, app unlocked',
+    featureStores.locked === false && featureStores.shared === JSON.stringify({ showCharges: true }),
+    JSON.stringify(featureStores));
+
   const stored = await page.evaluate((k) => JSON.parse(localStorage.getItem(k) || '{}'), KEY);
   const records = Object.values(stored);
   const union = new Set(records.flatMap((r) => Object.keys(r)));
@@ -354,8 +374,8 @@ async function loadOutcar(page) {
 
   const before = await page.evaluate(storageSnapshot);
   console.log(`  localStorage keys before the clear: ${before.keys.join(', ')}`);
-  const wanted = [KEY, 'panelLayout', 'crysvizCustomUserSettings'];
-  H.check('app-level blobs present before the clear (structurePrefs, layout, custom settings, theme)',
+  const wanted = [KEY, 'panelLayout', 'crysvizCustomUserSettings', SHARED_KEY];
+  H.check('app-level blobs present before the clear (structurePrefs, layout, custom settings, shared switches, theme)',
     wanted.every((k) => before.keys.includes(k)) && before.keys.length >= wanted.length + 1,
     JSON.stringify(before.keys));
 
@@ -364,6 +384,8 @@ async function loadOutcar(page) {
   await H.clickById(page, 'clearLocalDataButton');
   const right = await page.evaluate(storageSnapshot);
   H.check('localStorage empty right after the click', right.length === 0, JSON.stringify(right.keys));
+  const sharedAfter = await page.evaluate((k) => localStorage.getItem(k), SHARED_KEY);
+  H.check('DW-1.6 the shared Features switches key is gone', sharedAfter === null, String(sharedAfter));
 
   // ---- e. programmatic paths, no user edit -------------------------------------
   const groupsRun = [

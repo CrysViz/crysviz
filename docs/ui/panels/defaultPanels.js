@@ -33,7 +33,7 @@ import { phononAvailable } from '../../phonon/phononSession.js';
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
-import { createFeatureLockSwitch } from '../FeatureLockModule.js';
+import { createFeatureLockSwitch, onFeaturesBodyBuilt } from '../FeatureLockModule.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import { addFocusRegionsPanel, removeFocusRegionsPanel } from '../FocusRegionsPanel.js';
 import { isDebugMode } from '../../debug/debugMode.js';
@@ -228,6 +228,11 @@ function buildFeaturesBody(body) {
     const cb = document.getElementById(id);
     if (cb) cb.addEventListener('change', () => onToggle(panelId, cb.checked));
   }
+
+  // All ten switches exist now: wire their user-edit saves and apply the
+  // stored shared set / this structure's overrides to the four built above,
+  // which the load-time apply could not reach (FeatureLockModule.js).
+  onFeaturesBodyBuilt();
 }
 
 export function registerDefaultPanels() {

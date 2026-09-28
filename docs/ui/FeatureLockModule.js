@@ -1,20 +1,52 @@
-// Per-structure lock for the Features window's toggles (ui/panels/defaultPanels.js's
-// buildFeaturesBody) — the counterpart to the camera lock in
-// WindowAndSceneControls.js. Locked (default): one shared set of toggle
-// values across every loaded structure, exactly as before. Unlocked: each
-// file-browser row remembers its own toggle values (not per trajectory step
-// within a row) — save/restore is driven from FileBrowswerPanel.js's
-// updateStructureFromRowAndStep, the single choke point for every row switch.
+// The "Shared view for all structures" lock for the Features window's ten
+// on/off switches (ui/panels/defaultPanels.js's buildFeaturesBody) — the
+// counterpart to the camera lock in WindowAndSceneControls.js.
+//
+// Each switch resolves through a cascade (planning/2026-09-28-shared-view-lock.md D1):
+//
+//   locked   (general.featuresLocked, the default): shared[id] ?? default[id]
+//   unlocked:                     override[id] ?? shared[id] ?? default[id]
+//
+// Two stores, both wiped by "Clear local data":
+//
+//   - the SHARED set, localStorage 'crysviz.sharedFeatureToggles.v1', a
+//     { [toggleId]: boolean } written when the user flips a switch while
+//     locked (and, on locking, from the current values);
+//   - per-structure OVERRIDES, the 'featureToggles' field of
+//     state/structurePrefs.js (matched by structure fingerprint), holding only
+//     the switches the user changed on that structure while unlocked.
+//
+// In memory the source of truth is `container.featureOverrides` (seeded by the
+// 'featureToggles' restorer at load, or from the link's values for a share /
+// .crysviz load) plus a module-level cache of the shared set. Row switches and
+// unlocks read memory only; user edits update memory first, then storage.
+//
+// Storage rules (state/structurePrefs.js header, 1-4): saves happen ONLY from
+// the switches' own change handlers, as a per-switch patch of the id the user
+// flipped. A programmatic apply (applyFeatureToggles below, a share restore)
+// never writes: applyFeatureToggles raises an "applying" guard the save hook
+// checks, and ShareModule's setToggle sets .checked without dispatching
+// 'change'. `event.isTrusted` is deliberately not used — the browser tests
+// flip checkboxes with synthetic events.
+//
+// The cascade is applied (a) in initializeUIOnLoad for a load that restores
+// stored prefs, (b) at the end of buildFeaturesBody — four of the switches are
+// created there, after the first load — for the selected container if it is
+// marked `featureStorePrefs`, (c) on a row switch while unlocked
+// (FileBrowswerPanel.js finishFrameSwitch) and (d) when the lock is turned off.
+// A share / .crysviz load and a widget embed without `prefs=1` never apply
+// either store (restoreStoredPrefs false), so their containers are not marked.
 
-import { general, saveLockPrefs } from '../state/store.js';
+import { general, saveLockPrefs, structureShip, fileBrowser } from '../state/store.js';
+import { registerStructurePrefField, saveStructurePref, readStructurePrefs, onClearLocalData } from '../state/structurePrefs.js';
+import { planesData } from './PlanesPanel.js';
 import { createToggleRow } from './ToggleSwitch.js';
 import { createLockIcon } from './LockToggleButton.js';
 import { confirmDialog } from './ConfirmModal.js';
 
-// Checkbox ids for every toggle the Features window exposes — the complete
-// set snapshotted/restored per-structure while unlocked. Values here are the
-// app's own declared defaults (store.js/PlanesPanel.js) — the fallback for a
-// structure that's never been individually saved (see applyDefaultFeatureToggles).
+// Checkbox ids for every switch the Features window exposes. Values here are
+// the app's own declared defaults (store.js / PlanesPanel.js) — the bottom of
+// the cascade.
 const FEATURE_TOGGLE_DEFAULTS = {
   showAtoms: true,
   showBonds: true,
@@ -29,41 +61,204 @@ const FEATURE_TOGGLE_DEFAULTS = {
 };
 const FEATURE_TOGGLE_IDS = Object.keys(FEATURE_TOGGLE_DEFAULTS);
 
-/** Read the current checked state of every Features toggle. */
+// The state each switch drives, read when its checkbox does not exist yet
+// (the four panel-built switches before buildFeaturesBody has run) — the same
+// values buildFeaturesBody initialises the checkboxes from.
+const LIVE_VALUE = {
+  showAtoms: () => general.showAtoms !== false,
+  showBonds: () => general.showBonds !== false,
+  showCharges: () => !!general.showCharges,
+  PBCBondToggle: () => !!general.showPBCBonds,
+  showPolyhedra: () => !!general.showPolyhedra,
+  completePolyhedraToggle: () => !!general.completePolyhedra,
+  showForcesToggle: () => !!general.forcesActive,
+  showSpinsToggle: () => !!general.spinsActive,
+  showFieldToggle: () => general.fieldActive !== false,
+  showPlanesMasterToggle: () => planesData.showPlanes !== false,
+};
+
+export const SHARED_FEATURE_TOGGLES_KEY = 'crysviz.sharedFeatureToggles.v1';
+export const FEATURE_TOGGLES_FIELD = 'featureToggles';
+
+/** @type {Record<string, boolean> | null | undefined} undefined = not read yet. */
+let sharedCache;
+/** Raised while applyFeatureToggles dispatches 'change' so the save hook stays quiet. */
+let applying = false;
+/** Checkbox inputs that already carry the save hook (buildFeaturesBody may run again). */
+const wiredInputs = new WeakSet();
+
+// ---------------------------------------------------------------------------
+// Validation barricade: everything that comes out of storage passes here.
+// ---------------------------------------------------------------------------
+
+/**
+ * A { toggleId: boolean } map from untrusted JSON: only known ids with boolean
+ * values survive. Null for anything that is not a plain object or has no
+ * usable entry.
+ * @param {any} raw
+ * @returns {Record<string, boolean> | null}
+ */
+function sanitizeToggleMap(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  /** @type {Record<string, boolean>} */
+  const out = {};
+  for (const id of FEATURE_TOGGLE_IDS) {
+    if (typeof raw[id] === 'boolean') out[id] = raw[id];
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function loadSharedFromStorage() {
+  try {
+    return sanitizeToggleMap(JSON.parse(localStorage.getItem(SHARED_FEATURE_TOGGLES_KEY) || 'null'));
+  } catch { return null; /* corrupted or storage unavailable -> nothing stored */ }
+}
+
+function sharedSet() {
+  if (sharedCache === undefined) sharedCache = loadSharedFromStorage();
+  return sharedCache;
+}
+
+/** The container of the selected file-browser row. */
+function selectedContainer() {
+  return structureShip.container[fileBrowser.selectedRowIndex] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Public API (also used by the three-way lock prompt, plan Phase 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * The stored shared set, or null when nothing usable is stored.
+ * @returns {Record<string, boolean> | null}
+ */
+export function readSharedFeatureToggles() {
+  const shared = sharedSet();
+  return shared ? { ...shared } : null;
+}
+
+/**
+ * Persist `values` as the shared set and update the cache. Applies nothing to
+ * the checkboxes. Only called from user-edit handlers (rule 1).
+ * @param {Record<string, boolean>} values
+ */
+export function writeSharedFeatureToggles(values) {
+  sharedCache = sanitizeToggleMap(values);
+  try {
+    if (sharedCache) localStorage.setItem(SHARED_FEATURE_TOGGLES_KEY, JSON.stringify(sharedCache));
+    else localStorage.removeItem(SHARED_FEATURE_TOGGLES_KEY);
+  } catch { /* storage unavailable or quota exceeded */ }
+}
+
+/** Read the current state of every Features switch: the checkbox where it
+ *  exists, otherwise the state it drives (see LIVE_VALUE). Always all ten. */
 export function snapshotFeatureToggles() {
+  /** @type {Record<string, boolean>} */
   const snap = {};
   for (const id of FEATURE_TOGGLE_IDS) {
-    const cb = document.getElementById(id);
-    if (cb) snap[id] = cb.checked;
+    const cb = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+    snap[id] = cb ? cb.checked : LIVE_VALUE[id]();
   }
   return snap;
 }
 
-/** Restore a snapshot from snapshotFeatureToggles() — sets each checkbox and
+/** Apply a { toggleId: boolean } map — sets each checkbox that differs and
  *  dispatches 'change' so the existing listeners (ControlsWiring.js for the
- *  detached static rows, buildFeaturesBody for the rest) do the actual scene
- *  update, exactly as if the user had clicked it. */
+ *  static rows, buildFeaturesBody for the rest) do the scene update, exactly
+ *  as if the user had clicked it. Idempotent, and never saves (the guard). */
 export function applyFeatureToggles(snapshot) {
   if (!snapshot) return;
-  for (const id of FEATURE_TOGGLE_IDS) {
-    const cb = document.getElementById(id);
-    if (!cb || !(id in snapshot) || cb.checked === snapshot[id]) continue;
-    cb.checked = snapshot[id];
-    cb.dispatchEvent(new Event('change', { bubbles: true }));
+  applying = true;
+  try {
+    for (const id of FEATURE_TOGGLE_IDS) {
+      const cb = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+      if (!cb || typeof snapshot[id] !== 'boolean' || cb.checked === snapshot[id]) continue;
+      cb.checked = snapshot[id];
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  } finally {
+    applying = false;
   }
 }
 
-/** Fallback for a structure that's never been individually saved (see
- *  FileBrowswerPanel.js's updateStructureFromRowAndStep) — resets to the
- *  app's own declared defaults rather than leaving whatever the checkboxes
- *  currently read, which may belong to a DIFFERENT structure's own
- *  customization made after unlocking (e.g. duplicate a structure, unlock,
- *  change a toggle on the copy, then visit the original for the first time
- *  since unlocking — the original never had its own value recorded, so
- *  leaving it alone would just show the copy's). */
-export function applyDefaultFeatureToggles() {
-  applyFeatureToggles(FEATURE_TOGGLE_DEFAULTS);
+/**
+ * Resolve the cascade for `container` (default: the selected row's) under the
+ * current lock state, from memory only, and apply it.
+ * @param {any} [container]
+ */
+export function applyEffectiveFeatureToggles(container = selectedContainer()) {
+  const shared = sharedSet();
+  const overrides = general.featuresLocked === false ? container?.featureOverrides : null;
+  /** @type {Record<string, boolean>} */
+  const resolved = {};
+  for (const id of FEATURE_TOGGLE_IDS) {
+    resolved[id] = overrides?.[id] ?? shared?.[id] ?? FEATURE_TOGGLE_DEFAULTS[id];
+  }
+  applyFeatureToggles(resolved);
 }
+
+/**
+ * End-of-build hook for buildFeaturesBody: attaches the user-edit save hook
+ * to all ten switches (idempotent) and applies the cascade for the selected
+ * container when it was loaded with stored prefs (four switches only exist
+ * from here on, so the load-time apply could not reach them).
+ */
+export function onFeaturesBodyBuilt() {
+  for (const id of FEATURE_TOGGLE_IDS) {
+    const cb = document.getElementById(id);
+    if (!cb || wiredInputs.has(cb)) continue;
+    wiredInputs.add(cb);
+    cb.addEventListener('change', () => {
+      if (!applying) saveUserToggle(id, /** @type {HTMLInputElement} */ (cb).checked);
+    });
+  }
+  const container = selectedContainer();
+  if (container?.featureStorePrefs) applyEffectiveFeatureToggles(container);
+}
+
+// ---------------------------------------------------------------------------
+// Saving (user edits only)
+// ---------------------------------------------------------------------------
+
+/** One switch flipped by the user: patch the store the lock state selects. */
+function saveUserToggle(id, value) {
+  if (general.featuresLocked !== false) {
+    writeSharedFeatureToggles({ ...(sharedSet() ?? {}), [id]: value });
+    return;
+  }
+  const container = selectedContainer();
+  if (!container) return;
+  container.featureOverrides = { ...(container.featureOverrides ?? {}), [id]: value };
+  // Storage gets a per-switch patch of what the user changed on this
+  // structure — never the in-memory map, which for a share-loaded container
+  // holds the link's ten values. An override back at the value the cascade
+  // would give anyway is dropped so the field disappears once nothing is left.
+  const stored = sanitizeToggleMap(readStructurePrefs(container)?.[FEATURE_TOGGLES_FIELD]) ?? {};
+  const fallback = sharedSet()?.[id] ?? FEATURE_TOGGLE_DEFAULTS[id];
+  if (value === fallback) delete stored[id];
+  else stored[id] = value;
+  saveStructurePref(container, FEATURE_TOGGLES_FIELD, Object.keys(stored).length ? stored : null);
+}
+
+// The restorer only seeds memory; it runs 'beforeSelect' so the overrides are
+// in place before initializeUIOnLoad's selectLastAddedRow(), whose row switch
+// already resolves the cascade for the new container while unlocked.
+registerStructurePrefField(FEATURE_TOGGLES_FIELD, (container, value) => {
+  container.featureOverrides = sanitizeToggleMap(value);
+}, { phase: 'beforeSelect' });
+
+// "Clear local data": drop the in-memory copies so nothing can be written
+// back; the screen is left as it is (rule 4).
+onClearLocalData(() => {
+  sharedCache = null;
+  for (const container of structureShip.container) {
+    if (container) container.featureOverrides = null;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The lock switch
+// ---------------------------------------------------------------------------
 
 const FEATURE_LOCK_CONFIRM = 'Locking feature toggles makes every structure share the current values going forward — any independent settings other structures had will stop being used (though not lost; unlocking again brings them back). Continue?';
 
@@ -91,8 +286,16 @@ export function createFeatureLockSwitch() {
         input.checked = false;
         return;
       }
+      // The current values become the shared set (a user decision, so it
+      // may write); nothing on screen changes.
+      writeSharedFeatureToggles(snapshotFeatureToggles());
+      general.featuresLocked = true;
+    } else {
+      general.featuresLocked = false;
+      // This structure's overrides, falling through to the shared values —
+      // a structure without overrides keeps every switch as it is.
+      applyEffectiveFeatureToggles();
     }
-    general.featuresLocked = locked;
     saveLockPrefs();
   });
   return row;

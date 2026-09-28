@@ -8,6 +8,7 @@ import {fileBrowser,structureShip,general} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
 import { restoreStructurePrefs } from '../state/structurePrefs.js';
 import { seedContainerSizes } from './SizePrefs.js';
+import { applyEffectiveFeatureToggles, snapshotFeatureToggles } from './FeatureLockModule.js';
 import {
   transpose3x3,
   invert3x3,
@@ -112,17 +113,33 @@ export function initializeUIOnLoad(structureContainer, { restoreStoredPrefs = ge
   // selected (and rendered) below, so the first rebuild already paints them.
   // A new structure starts at the default sizes (per-structure, ui/SizePrefs.js),
   // unless its stored record says otherwise.
+  // The Features switches (ui/FeatureLockModule.js): the 'featureToggles'
+  // restorer seeds container.featureOverrides here too, and the mark lets the
+  // Features window apply the cascade once its own switches exist. A load
+  // that skips stored prefs (share link, .crysviz, widget without prefs=1)
+  // instead remembers the values the load just applied, so switching back to
+  // this row while unlocked shows the link's view — in memory only, nothing
+  // is written. Both go BEFORE the select: its row switch already resolves
+  // the cascade for the new container while unlocked.
   if (restoreStoredPrefs) {
+    structureContainer.featureStorePrefs = true;
     seedContainerSizes(structureContainer);
     restoreStructurePrefs(structureContainer, 'beforeSelect');
+  } else {
+    structureContainer.featureOverrides = snapshotFeatureToggles();
   }
 
   structureShip.container.push(structureContainer);
   selectLastAddedRow();
 
   // 'afterSelect' fields (focus regions, planes, arrow styles, ...) need the
-  // displayed frame and the scene, so they go on once those exist.
-  if (restoreStoredPrefs) restoreStructurePrefs(structureContainer, 'afterSelect', fileBrowser.selectedStructure);
+  // displayed frame and the scene, so they go on once those exist. Then the
+  // switch cascade: the first load has no row switch to resolve it, and
+  // while locked the row switch never does.
+  if (restoreStoredPrefs) {
+    restoreStructurePrefs(structureContainer, 'afterSelect', fileBrowser.selectedStructure);
+    applyEffectiveFeatureToggles(structureContainer);
+  }
   return structureContainer;
 }
 

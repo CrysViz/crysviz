@@ -14,6 +14,9 @@ There are three planned options for which information is stored on **YOUR device
   - spin and force arrow settings (length, size, colours and colour map)
   - the supercell
   - the cell boundary
+  - the Features switches (atoms, bonds, charges, polyhedra, forces, spins, field, planes) you changed on that structure while "Shared view for all structures" is off
+
+  Independent of any structure, CrysViz also remembers the shared Features switches (the values every structure shows while "Shared view for all structures" is on) and the state of that switch itself.
 
 - **Structure** (not yet available): The structures you are working with are stored in the browser tmp storage on your device. Reload will preserved all settings and loaded structures. This has limitations depending on the browser and device. Usually 50MB. Using the purge button you can delete all stored information 
 **Important:** No data is leaving your device unless you connnect to the backend server hosted by the Theoretical Physics Division at Linköping University. If you do so we can at this point not guarantee that filenames or information about your structure are not saved on our server in log files. However, these log files are only used for performance analysis and error tracking, and will be periodically deleted. 

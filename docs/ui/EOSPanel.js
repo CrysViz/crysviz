@@ -230,7 +230,8 @@ function registerScanRow(scan, potential) {
       // owned by its store, so array surgery cannot re-seat it.
       const rebuilt = TrajectoryContainer.fromStructures(name, scan.structures);
       rebuilt.cameraSnapshot = container.cameraSnapshot;
-      rebuilt.featureSnapshot = container.featureSnapshot;
+      rebuilt.featureOverrides = container.featureOverrides;
+      rebuilt.featureStorePrefs = container.featureStorePrefs;
       // The selected row's own pair is only captured on leaving it, so it may
       // be stale: null lets the rebuilt container adopt the live sizes.
       rebuilt.displaySizes = rowIndex === fileBrowser.selectedRowIndex ? null : container.displaySizes;
