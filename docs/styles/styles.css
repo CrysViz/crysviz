@@ -1532,6 +1532,53 @@ body.panel-hidden #axesLegend {
   overflow-x: auto;
 }
 
+/* CIF symmetry dialog (ui/CifSymmetryModal.js): the same full-screen overlay
+ * #confirmModal gets, with its card reusing the .lock-confirm-modal rules
+ * above, plus the symmetrise-tolerance row shown on the mismatch paths. */
+#cifSymmetryModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-confirm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+#cifSymmetryModal[hidden] {
+  display: none;
+}
+
+.cif-sym-tol-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3-5) 0;
+}
+
+/* [hidden] alone loses to the row's display:flex (the .png-row trap above). */
+.cif-sym-tol-row[hidden] {
+  display: none;
+}
+
+.cif-sym-tol-row label {
+  font-size: var(--fs-sm);
+}
+
+/* Same field look as .cif-export-row's tolerance input. The attribute selector
+ * is needed to outrank the bare input[type="number"] rule in
+ * styles_file_browswer.css, which would otherwise pin the width to 45px. */
+.cif-sym-tol-row input[type="number"] {
+  width: 6.5em;
+  text-align: center;
+  border: 1px solid var(--line-1);
+  background: var(--input-bg);
+  color: var(--fg-1);
+  border-radius: var(--radius);
+  padding: 5px var(--sp-3);
+  font-size: var(--fs-md);
+}
+
 /* Small Main-dock triggers, positioned immediately left of .theme-switch
  * (ui/KeyboardShortcuts.js; the About trigger is the left sibling of the
  * keyboard-shortcuts trigger). */

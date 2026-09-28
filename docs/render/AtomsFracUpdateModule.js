@@ -19,6 +19,7 @@ import {
 import {setAtomColor}  from '../utils/ColorModule.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { getFocusOpacityForInstance, prepareFocusRegions } from './FocusRegionModule.js';
+import { refreshAsuHighlight } from './asuHighlightHook.js';
 
 
 // Module-scope scratch colour reused across the per-atom colour loop in updateAtoms
@@ -710,6 +711,7 @@ export function updateAtomCutPlaneState() {
     updateSingleAtomCutPlaneImmunity(i, atom?.cutPlaneImmune);
   }
   applyAtomCutPlaneUniforms(mesh.material);
+  refreshAsuHighlight();
 }
 
 function syncAtomMaterialTransparency(baseOpacity = 1.0) {
@@ -742,6 +744,32 @@ export function updateSingleAtomDiameter(index, element, scale = 1) {
   a[mOffset + 10] = radius;
 }
 
+
+// Colour-only re-push: write each visible instance's colour from its source
+// atom (per-image overrides win, same rule as updateAtoms) without touching
+// positions, radii, opacity or materials. The trajectory fast path and the
+// live-MD stream use this to refresh force-based atom colours as frames advance,
+// where a full updateAtoms would be wasted work and the fast paths otherwise
+// write only instance positions. No-op when the mesh instance count no longer
+// matches the frame — a topology change is the full rebuild's job, not this.
+export function refreshAtomColors(structure = fileBrowser.selectedStructure) {
+  const mesh = groups.atomsMesh;
+  if (!mesh || !mesh.instanceColor || !structure) return;
+  const wrapped = structure.periodic?.visibleWrapped ?? structure.periodic?.wrapped;
+  if (!wrapped) return;
+  const srcIndex = wrapped.srcIndex;
+  const n = srcIndex ? srcIndex.length : structure.atoms.length;
+  if (n !== mesh.count) return;
+  for (let i = 0; i < n; i++) {
+    const originalIndex = srcIndex ? srcIndex[i] : i;
+    const atom = structure.atoms[originalIndex];
+    if (!atom) continue;
+    const imageStyle = getAtomImageStyle(structure, i);
+    _scratchColor.set(imageStyle?.color ?? atom.getColor(originalIndex));
+    mesh.setColorAt(i, _scratchColor);
+  }
+  mesh.instanceColor.needsUpdate = true;
+}
 
 export function updateAtoms(opacity = 1.0) {
   //console.error("Update main opacity", opacity)

@@ -60,13 +60,14 @@ async function runSym(page) {
       resultHidden: document.getElementById('symResult').hidden,
       // the old inline-styled markup is gone
       hasInlineStyledButtons: !!body.querySelector('#getSymBtn[style]'),
-      ids: ['symTolInput', 'getSymBtn', 'getPrimBtn', 'getConvBtn', 'getWyckoffBtn', 'calcResult']
+      ids: ['symTolInput', 'getSymBtn', 'getPrimBtn', 'getConvBtn', 'getWyckoffBtn', 'calcResult',
+        'showAsuBtn', 'asuColorSlot', 'asuOpacityInput', 'asuHighlightChk', 'asuResult']
         .filter((id) => !document.getElementById(id)),
     };
   });
 
-  H.check('panel is three centred cards (info / symmetrize / Wyckoff)',
-    layout.cards === 3 && layout.centred, JSON.stringify(layout.titles));
+  H.check('panel is four centred cards (info / symmetrize / asymmetric unit / Wyckoff)',
+    layout.cards === 4 && layout.centred, JSON.stringify(layout.titles));
   H.check('result block starts hidden', layout.resultHidden === true);
   H.check('all control ids still present', layout.ids.length === 0, layout.ids.join(','));
 

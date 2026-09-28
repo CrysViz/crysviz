@@ -108,6 +108,10 @@ export const groups = {
   forcesTipMesh: null,
   spinShaftMesh: null,
   spinTipMesh: null,
+  // Comparison spin set (structure.spins2, experimental), drawn by
+  // render/SpinModule.js alongside the primary spins.
+  spin2ShaftMesh: null,
+  spin2TipMesh: null,
   // Phonon-mode displacement arrows (render/PhononArrowModule.js), owned by
   // phonon/phononSession.js and rebuilt per animation tick.
   phononShaftMesh: null,
@@ -122,6 +126,16 @@ export const groups = {
   // THREE.Group of short cylinder dashes, rebuilt from the current structure on
   // every updateVisualization when any eligible pair is enabled.
   hydrogenBondsGroup: null,
+  // Real-space asymmetric unit ("irreducible wedge") of the detected space
+  // group (render/AsymmetricUnitModule.js). A THREE.Group holding the wedge
+  // hull, its outline, and — only when the displayed cell is not the
+  // conventional one — the conventional cell box the wedge is defined in.
+  asuGroup: null,
+  // Halo shells marking the atoms that fall inside the wedge. Its own mesh
+  // rather than a child of asuGroup: the wedge is static while this tracks
+  // atoms that move (MD playback), so it is refreshed in place — rewriting
+  // instance matrices and `count` — instead of being rebuilt with the group.
+  asuHaloMesh: null,
 };
 
 
@@ -189,6 +203,17 @@ export const general = {
   symmetryTolerance: 0.01,
   powerMode: true,
   currentLatticeColor:null,
+  // Asymmetric-unit wedge colour. Mirrored from --asu-color by
+  // ui/ThemeManager.js the same way currentLatticeColor mirrors
+  // --lattice-color, so a palette can retint the wedge.
+  asuColor:null,
+  // Set once the user picks a wedge colour by hand, which stops a later theme
+  // change from mirroring --asu-color over their choice. The picker's Reset
+  // clears it, and the next theme read takes over again.
+  asuColorUserSet:false,
+  // Wedge face opacity (Symmetry panel slider). The outline stays opaque —
+  // dropping this to 0 leaves a readable wireframe rather than nothing.
+  asuOpacity:0.22,
   defaultBackgroundColor:null,
   useDefaultColors:true,
   // "Element Materials Map" (Visual → Colors): per-species tracer-material
@@ -258,6 +283,19 @@ export const general = {
   // independent of spinColorScale — same one-directional lock as
   // forceLengthLogScale above (render/SpinModule.js's normalizeMag()).
   spinLengthLogScale: false,
+  // Comparison spin set (structure.spins2; Spins panel "Comparison Spins",
+  // experimental). Length controls are shared with the primary set above;
+  // these are the per-set colour and diameter settings.
+  spin2Visible: true,
+  // "Highlight" toggles (Comparison Spins section): make every arrow of the
+  // primary / comparison set glow, to tell the two sets apart.
+  spinHighlightAll: false,
+  spin2HighlightAll: false,
+  spin2Radius: 0.08,
+  spin2ColorMap: 'none',
+  spin2Min: 0,
+  spin2Max: 2,
+  spin2ColorScale: 'linear',
   // Force colormap range (Forces panel min/max inputs; read with ||-defaults).
   forceMin: 0,
   forceMax: 2,
@@ -384,6 +422,10 @@ export const general = {
   // arrow's tip inside the gizmo's own 3D scene instead of in the separate
   // #axesLegend box (WindowAndSceneControls.initAxesGizmo).
   gizmoLabelsOnArrows: false,
+  // Multiplier on the on-arrow a/b/c label sprite size (WindowAndSceneControls
+  // gizmoLabelScale). 1 = the app default; widget mode bumps it so the letters
+  // stay legible on the small embed compass without enlarging the arrows.
+  gizmoLabelSizeFactor: 1,
   // Side length in px of the #axesGizmo box (ui/GizmoDrag.js's resize
   // handle), or null to use the CSS default (--gizmo-size, theme.css).
   gizmoSize: null,

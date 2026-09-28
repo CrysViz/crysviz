@@ -12,6 +12,15 @@ import { refreshBackendTheme } from './BackendTheme.js';
 import { normalizeFractional } from "../../math/index.js";
 import { runPeriodicWrapped } from "../../render/index.js";
 import { hallEntry, symdataHallUrl } from './hallSymbols.js';
+import { asymmetricUnitForHallNumber } from './asuGeometry.js';
+import { loadSymmetryData } from '../addToStructureModule/WyckoffProjector.js';
+import {
+  showAsymmetricUnit, hideAsymmetricUnit, isAsymmetricUnitVisible,
+  asymmetricUnitNeedsCellBox, latticesMatch, requestRender,
+  refreshAsuAppearance, setAsuAtomHighlight, isAsuAtomHighlightOn,
+  asuAtomsInside, ASU_DROPPED_EVENT,
+} from '../../render/index.js';
+import { openSwatchColorPicker } from '../SwatchColorPicker.js';
 
 
 
@@ -65,6 +74,8 @@ export const PT_INVERTED = {
   "Og": 118
 };
 
+
+let asuDroppedListener = null;
 
 async function initMoyo() {
   const _wasmReady = await init(); // no-arg: moyo_wasm.js resolves the .wasm via import.meta.url
@@ -146,6 +157,30 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
           <button class="calcButton" id="getPrimBtn">Prim. Cell</button>
           <button class="calcButton" id="getConvBtn">Conv. Cell</button>
         </div>
+      </div>
+
+      <div class="sym-card">
+        <div class="sym-card-title">Asymmetric unit</div>
+        <div class="sym-row">
+          <button class="calcButton sym-wide" id="showAsuBtn">Show Asymmetric Unit</button>
+        </div>
+        <div class="sym-row sym-asu-controls">
+          <span class="sym-asu-control">
+            <span class="sym-asu-control-label">Colour</span>
+            <span id="asuColorSlot"></span>
+          </span>
+          <label class="sym-asu-control" for="asuOpacityInput">
+            <span class="sym-asu-control-label">Opacity</span>
+            <input type="range" id="asuOpacityInput" min="0" max="1" step="0.01">
+          </label>
+        </div>
+        <div class="sym-row">
+          <label class="sym-asu-check" for="asuHighlightChk">
+            <input type="checkbox" id="asuHighlightChk">
+            Highlight atoms inside
+          </label>
+        </div>
+        <div class="sym-result" id="asuResult" hidden></div>
       </div>
 
       <div class="sym-card">
@@ -258,6 +293,174 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
     };
 
     syncWyckoffButton();
+
+    // --- asymmetric unit ("irreducible wedge") ---------------------------
+    const asuBtn = document.getElementById("showAsuBtn");
+
+    const syncAsuButton = () => {
+      const shown = isAsymmetricUnitVisible();
+      asuBtn.textContent = shown ? 'Hide Asymmetric Unit' : 'Show Asymmetric Unit';
+      asuBtn.classList.toggle('sym-btn-active', shown);
+      const box = document.getElementById('asuResult');
+      if (box && !shown) {
+        box.hidden = true;
+        box.innerHTML = '';
+      }
+    };
+
+    asuBtn.onclick = async () => {
+      if (isAsymmetricUnitVisible()) {
+        hideAsymmetricUnit();
+        requestRender();
+        syncAsuButton();
+        setStatus();
+        return;
+      }
+
+      // The two failure modes want different words, so they get different
+      // try blocks: moyo's are tolerance problems (describeMoyoFailure knows
+      // how to phrase those), while the dataset's are a failed 8.9 MB fetch.
+      let result;
+      try {
+        // getConvUnit rather than getSymmetryInfo: the wedge is only defined
+        // in the conventional cell, so this is the analysis that produces both
+        // that cell and the Hall number to look the wedge up by.
+        result = callMoyo("getConvUnit", getTol());
+      } catch (error) {
+        setStatus(describeMoyoFailure(error, getTol()));
+        return;
+      }
+
+      // Symmetrise to the conventional cell FIRST, and draw the wedge onto
+      // the result.
+      //
+      // A conventional cell is in general rotated and axis-permuted relative
+      // to the cell that was loaded — moyo reorders Pmmm's axes so that
+      // a <= b <= c, and a primitive cell is a different cell entirely — so a
+      // wedge drawn against the cell on screen sits at the wrong orientation
+      // even though its shape is right. Transforming the structure into the
+      // frame the wedge is defined in is what makes the two agree, and it is
+      // the same transform the Conv. Cell button applies, committed as its own
+      // structure so it is visible in the Files list rather than happening
+      // invisibly under the user.
+      let structure = fileBrowser.selectedStructure;
+      let symmetrised = false;
+      if (!isConventionalCellDisplayed(result, structure)) {
+        newContainerFromSymmetrisation(
+          "conv", result.positions, result.lattice, result.elements
+        );
+        // Row selection sets this synchronously, so the wedge below is
+        // attached to the conventional cell rather than the one it replaced.
+        structure = fileBrowser.selectedStructure;
+        symmetrised = true;
+      }
+
+      asuBtn.disabled = true;
+      try {
+        await loadSymmetryData();
+        const asu = asymmetricUnitForHallNumber(result.hall_number);
+        if (!asu) {
+          throw new Error(`no asymmetric unit tabulated for Hall number ${result.hall_number}`);
+        }
+        showAsymmetricUnit({
+          polyhedron: asu.polyhedron,
+          halfSpaces: asu.halfSpaces,
+          lattice: result.lattice,
+          structure,
+        });
+        requestRender();
+        renderSymmetryResult(result);
+        renderAsuResult(asu, result.hall_number);
+        setStatus(symmetrised
+          ? 'Symmetrised to the conventional cell — the wedge is drawn in it'
+          : '');
+      } catch (error) {
+        hideAsymmetricUnit();
+        setStatus(`Could not build the asymmetric unit: ${error?.message ?? error}`);
+      } finally {
+        asuBtn.disabled = false;
+        syncAsuButton();
+      }
+    };
+
+    // --- wedge appearance: colour swatch + opacity slider ----------------
+    // Both repaint in place (refreshAsuAppearance) rather than rebuilding the
+    // wedge: the shape has not moved, and a slider drag emits a change per
+    // pixel of travel.
+    const themeAsuColor = () => getComputedStyle(document.documentElement)
+      .getPropertyValue('--asu-color').trim();
+
+    const swatch = document.createElement('button');
+    swatch.type = 'button';
+    swatch.className = 'color-swatch-btn';
+    swatch.title = 'Wedge colour';
+    const paintSwatch = (hex) => {
+      // The swatch's own fill IS the value it represents, so it stays inline
+      // — same call the shared picker makes (ui/SwatchColorPicker.js).
+      swatch.style.background = hex;
+      swatch.dataset.hex = hex;
+    };
+    paintSwatch(general.asuColor || themeAsuColor());
+
+    swatch.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openSwatchColorPicker(swatch, swatch.dataset.hex, (hex) => {
+        general.asuColor = hex;
+        // Pins the choice against the next theme switch (ui/ThemeManager.js).
+        general.asuColorUserSet = true;
+        refreshAsuAppearance();
+        requestRender();
+      }, {
+        onReset: () => {
+          // Back to the palette's own --asu-color, and back under the theme's
+          // control for the next palette switch.
+          general.asuColorUserSet = false;
+          general.asuColor = themeAsuColor();
+          paintSwatch(general.asuColor);
+          refreshAsuAppearance();
+          requestRender();
+        },
+      });
+    });
+    document.getElementById('asuColorSlot').appendChild(swatch);
+
+    const opacityInput = document.getElementById('asuOpacityInput');
+    opacityInput.value = String(general.asuOpacity);
+    opacityInput.addEventListener('input', () => {
+      general.asuOpacity = parseFloat(opacityInput.value);
+      refreshAsuAppearance();
+      requestRender();
+    });
+
+    // --- highlight the atoms inside the wedge ----------------------------
+    const highlightChk = document.getElementById('asuHighlightChk');
+    highlightChk.checked = isAsuAtomHighlightOn();
+    highlightChk.addEventListener('change', () => {
+      setAsuAtomHighlight(highlightChk.checked);
+      requestRender();
+      if (!highlightChk.checked) {
+        setStatus();
+        return;
+      }
+      if (!isAsymmetricUnitVisible()) {
+        setStatus('Show the asymmetric unit first — nothing to be inside of yet');
+        return;
+      }
+      // Distinct atoms, not drawn copies: an atom on a wedge face is drawn
+      // once per periodic image, and all of them are ringed, but the count
+      // that means something is how many atoms the wedge actually holds.
+      const { atoms, instances } = asuAtomsInside();
+      setStatus(`${atoms} atom${atoms === 1 ? '' : 's'} inside the wedge`
+        + (instances > atoms ? ` (${instances} images ringed)` : ''));
+    });
+
+    // A new selection or a changed cell drops the wedge from outside the
+    // panel; without this the button would still offer to hide it.
+    if (asuDroppedListener) document.removeEventListener(ASU_DROPPED_EVENT, asuDroppedListener);
+    asuDroppedListener = () => { if (asuBtn.isConnected) syncAsuButton(); };
+    document.addEventListener(ASU_DROPPED_EVENT, asuDroppedListener);
+
+    syncAsuButton();
 }
 
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
@@ -346,6 +549,95 @@ function renderSymmetryResult(result) {
       <span class="sym-proto-label">Protostructure</span>
       <span class="sym-mono sym-proto-value">${result.protostructure}</span>
     </div>`;
+  box.hidden = false;
+}
+
+// Whether the selected structure already IS moyo's conventional cell, in which
+// case the wedge can be drawn straight onto it.
+//
+// Checked on the SITES as well as the lattice. An origin shift leaves the
+// lattice identical while moving every atom, and the asymmetric unit is
+// defined relative to the conventional cell's own origin — so a lattice-only
+// test would pass a structure whose wedge lands in the right box against the
+// wrong atoms, which is exactly the kind of quietly-wrong picture this
+// feature must not produce.
+//
+// Deliberately errs towards saying "no": a false negative costs one extra
+// symmetrised structure, which is visible and harmless, while a false
+// positive is a misplaced wedge.
+function isConventionalCellDisplayed(result, structure) {
+  if (!structure || !latticesMatch(result.lattice, structure.lattice)) return false;
+
+  const sites = structure.atoms ?? [];
+  if (sites.length !== result.positions.length) return false;
+
+  // moyo is free to hand back the sites in a different order, so this compares
+  // them as a set rather than pairwise.
+  return result.positions.every((position, i) => sites.some((atom, j) => {
+    if (result.elements[i] !== structure.elements[j]) return false;
+    for (let axis = 0; axis < 3; axis += 1) {
+      let delta = position[axis] - atom.position[axis];
+      delta -= Math.round(delta); // fractional coordinates: compare modulo 1
+      if (Math.abs(delta) > 1e-6) return false;
+    }
+    return true;
+  }));
+}
+
+// The asymmetric-unit conditions are inequalities, so the strings genuinely
+// contain "<" and ">" ("x<=1/2 [y<=0]") and cannot go near innerHTML unescaped.
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// Fill the asymmetric-unit block: how much of the cell the wedge is, and the
+// two condition strings behind it — the full asymmetric unit, and the
+// shape-only one that is what actually gets drawn (see asuGeometry.js for why
+// they differ and why only the second is drawable).
+function renderAsuResult(asu, hallNumber) {
+  const box = document.getElementById('asuResult');
+  if (!box) return;
+
+  // Which of the 530 settings this wedge came from. Recorded because the
+  // setting is what decides the wedge and it is not otherwise recoverable
+  // from the panel: Fd-3m's two origin choices give genuinely different
+  // asymmetric units (525 wants y<=1/8, 526 wants y<=0).
+  box.dataset.hallNumber = String(hallNumber);
+
+  // Taken from the polyhedron that was just built, not from the dataset's
+  // symop count, so the number describes the shape on screen. That the two
+  // always agree is the invariant checked across all 530 settings by
+  // tools/browsertest/tests/asymmetricunit.test.js.
+  const denominator = Math.round(1 / asu.volumeFraction);
+
+  // A fallback, not the normal path: the button symmetrises to the
+  // conventional cell before drawing, so the wedge and the cell on screen are
+  // normally the same frame and no box is needed. This covers the case where
+  // that transform did not take — the wedge is then still correct, but it is
+  // correct about a cell that is not the one on screen, and saying nothing
+  // would make it look misplaced instead of merely elsewhere.
+  const note = asymmetricUnitNeedsCellBox()
+    ? `<p class="sym-asu-note">Drawn in the conventional cell, which is not the
+         cell on screen — the thin outline is that conventional cell.</p>`
+    : '';
+
+  box.innerHTML = `
+    <dl class="sym-kv">
+      <dt>Volume</dt><dd class="sym-mono">1/${denominator} of the cell</dd>
+      <dt>Faces</dt><dd class="sym-mono">${asu.polyhedron.faces.length}</dd>
+    </dl>
+    <div class="sym-asu-block">
+      <span class="sym-asu-label">Asymmetric unit</span>
+      <span class="sym-mono sym-asu-conditions">${escapeHtml(asu.conditions)}</span>
+    </div>
+    <div class="sym-asu-block">
+      <span class="sym-asu-label">Shape only (drawn)</span>
+      <span class="sym-mono sym-asu-conditions">${escapeHtml(asu.shapeConditions)}</span>
+    </div>
+    ${note}`;
   box.hidden = false;
 }
 

@@ -12,6 +12,7 @@ import { syncArrowTransparency } from './ArrowMaterial.js';
 import { applyFocusToPolyhedra } from './PolyhedraModule.js';
 import { applyFocusToChargeBadges } from './ChargeBadgeModule.js';
 import { applyFocusToHydrogenBonds } from './HydrogenBondModule.js';
+import { refreshAsuHighlight } from './asuHighlightHook.js';
 
 export const DEFAULT_FOCUS_REGION = Object.freeze({
   enabled: true,
@@ -382,10 +383,12 @@ export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
   }
   applyFocusToArrows(structure, 'forces');
   applyFocusToArrows(structure, 'spins');
+  applyFocusToArrows(structure, 'spins2');
   applyFocusToPolyhedra(structure);
   applyFocusToField(structure);
   applyFocusToChargeBadges(structure);
   applyFocusToHydrogenBonds(structure);
+  refreshAsuHighlight();
   requestRender();
 }
 
@@ -456,7 +459,7 @@ export function applyFocusToField(structure = fileBrowser.selectedStructure) {
 }
 
 export function applyFocusToArrows(structure = fileBrowser.selectedStructure, kind) {
-  const prefix = kind === 'forces' ? 'forces' : 'spin';
+  const prefix = kind === 'forces' ? 'forces' : kind === 'spins2' ? 'spin2' : 'spin';
   // arrow indices per source atom (SpinModule/ForceModule: one arrow per drawn
   // atom image, so a LIST per atom)
   const lists = groups[`${kind}InstancesBySrcIndex`];

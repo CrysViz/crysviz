@@ -8,7 +8,7 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, scheduleBondRebuild, rebuildChargeBadges, updateChargeBadges, requestRender } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, scheduleBondRebuild, rebuildChargeBadges, updateChargeBadges, requestRender, updateAsuAtomHighlight } from '../render/index.js';
 import { bondKey } from '../render/BondsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
@@ -43,6 +43,7 @@ export function setupControlsWiring() {
   document.getElementById('showAtoms').onchange = (e) => {
     general.showAtoms = e.target.checked;
     if (groups.atomsMesh) groups.atomsMesh.visible = general.showAtoms;
+    updateAsuAtomHighlight();
   };
 
   // Control handlers
