@@ -36,13 +36,22 @@
 // (FileBrowswerPanel.js finishFrameSwitch) and (d) when the lock is turned off.
 // A share / .crysviz load and a widget embed without `prefs=1` never apply
 // either store (restoreStoredPrefs false), so their containers are not marked.
+//
+// Turning the lock ON (plan Phase 2, D2): when a shared set is already
+// stored, a three-way choiceDialog asks to keep it (cascade re-applied so the
+// stored values show), use the current view as the new shared set (nothing on
+// screen changes), or cancel (switch stays off, nothing changes). When
+// nothing is stored yet, the lock is applied with no prompt, using the
+// current view as the shared set. The switch input is disabled while the
+// dialog is pending so a second click cannot desync it from
+// general.featuresLocked.
 
 import { general, saveLockPrefs, structureShip, fileBrowser } from '../state/store.js';
 import { registerStructurePrefField, saveStructurePref, readStructurePrefs, onClearLocalData } from '../state/structurePrefs.js';
 import { planesData } from './PlanesPanel.js';
 import { createToggleRow } from './ToggleSwitch.js';
 import { createLockIcon } from './LockToggleButton.js';
-import { confirmDialog } from './ConfirmModal.js';
+import { choiceDialog } from './ConfirmModal.js';
 
 // Checkbox ids for every switch the Features window exposes. Values here are
 // the app's own declared defaults (store.js / PlanesPanel.js) — the bottom of
@@ -260,7 +269,31 @@ onClearLocalData(() => {
 // The lock switch
 // ---------------------------------------------------------------------------
 
-const FEATURE_LOCK_CONFIRM = 'Locking feature toggles makes every structure share the current values going forward — any independent settings other structures had will stop being used (though not lost; unlocking again brings them back). Continue?';
+/**
+ * Turning the lock on with a shared set already stored: ask which view wins.
+ * Cancel (Escape / backdrop click both resolve 'cancel' too) leaves the
+ * switch off and changes nothing.
+ * @returns {Promise<'keep' | 'current' | 'cancel'>}
+ */
+function askLockChoice() {
+  return choiceDialog(
+    'A shared view is already saved. Locking makes every structure use one shared set of feature toggles.',
+    {
+      title: 'Lock this setting?',
+      cancelValue: 'cancel',
+      choices: [
+        {
+          value: 'keep', id: 'featureLockKeepShared', label: 'Keep saved shared view',
+          description: 'Switch to the values saved the last time this was shared.',
+        },
+        {
+          value: 'current', id: 'featureLockUseCurrent', label: 'Use current view as shared',
+          description: 'Save what is on screen now as the shared set, replacing the saved one.',
+        },
+      ],
+    },
+  );
+}
 
 /** Build the Features panel's first row: a normal app switch whose ON state
  * means that all feature toggles are shared across structures. */
@@ -281,15 +314,34 @@ export function createFeatureLockSwitch() {
   input.addEventListener('change', async () => {
     const locked = input.checked;
     if (locked) {
-      const ok = await confirmDialog(FEATURE_LOCK_CONFIRM, { title: 'Lock this setting?', okLabel: 'Lock' });
-      if (!ok) {
-        input.checked = false;
-        return;
+      if (readSharedFeatureToggles() !== null) {
+        input.disabled = true;
+        let choice;
+        try {
+          choice = await askLockChoice();
+        } finally {
+          input.disabled = false;
+        }
+        if (choice === 'cancel') {
+          input.checked = false;
+          return;
+        }
+        if (choice === 'current') {
+          // The current values become the new shared set; nothing on screen
+          // changes.
+          writeSharedFeatureToggles(snapshotFeatureToggles());
+          general.featuresLocked = true;
+        } else {
+          // 'keep': lock first so the cascade ignores this structure's
+          // overrides, then show the stored shared values.
+          general.featuresLocked = true;
+          applyEffectiveFeatureToggles();
+        }
+      } else {
+        // Nothing stored yet: lock without a prompt, using the current view.
+        writeSharedFeatureToggles(snapshotFeatureToggles());
+        general.featuresLocked = true;
       }
-      // The current values become the shared set (a user decision, so it
-      // may write); nothing on screen changes.
-      writeSharedFeatureToggles(snapshotFeatureToggles());
-      general.featuresLocked = true;
     } else {
       general.featuresLocked = false;
       // This structure's overrides, falling through to the shared values —

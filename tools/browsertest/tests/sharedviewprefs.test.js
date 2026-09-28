@@ -19,6 +19,9 @@
 //   E. a Features window collapsed at boot applies a stored panel-built switch
 //      once it is expanded
 //   F. corrupted stored JSON boots with the defaults and no errors
+//   G. the three-way lock-on prompt (plan Phase 2): keep saved / use current /
+//      cancel (Escape, backdrop), the no-stored-set no-dialog path, and the
+//      switch disabled while the dialog is pending (DW-2.1 to DW-2.5)
 'use strict';
 const H = require('../harness');
 
@@ -138,13 +141,27 @@ async function unlock(page) {
   await flip(page, 'featureSharedViewToggle');
 }
 
-/** Lock through the real switch and accept its confirm dialog. */
+/** Lock through the real switch. A shared set may or may not already be
+ *  stored: if the three-way dialog shows (DW-2.1-2.5), accept "Use current
+ *  view as shared" so callers get today's familiar "current becomes shared"
+ *  result regardless of which path ran; with nothing stored, DW-2.4 means no
+ *  dialog appears at all and the click alone finishes the lock. */
 async function lock(page) {
   await H.clickById(page, 'featureSharedViewToggle');
-  await page.waitForSelector('#confirmModalOk', { state: 'visible', timeout: 5000 });
-  await H.clickById(page, 'confirmModalOk');
+  const dialogShown = await page.waitForSelector('#featureLockUseCurrent', { state: 'visible', timeout: 1500 })
+    .then(() => true).catch(() => false);
+  if (dialogShown) await H.clickById(page, 'featureLockUseCurrent');
   await page.waitForTimeout(400);
 }
+
+/** Whether the confirm/choice modal is hidden right now. */
+const modalHidden = (page) => page.evaluate(() => document.getElementById('confirmModal')?.hidden !== false);
+
+/** The lock switch's own DOM state (not covered by STATE()). */
+const switchState = (page) => page.evaluate(() => {
+  const el = document.getElementById('featureSharedViewToggle');
+  return { checked: el.checked, disabled: el.disabled };
+});
 
 async function setLockPref(page, locked) {
   await page.evaluate(({ k, locked }) => localStorage.setItem(k, JSON.stringify({ cameraLocked: true, featuresLocked: locked })),
@@ -534,6 +551,112 @@ const bothStoresEmpty = (s) => s.shared === null && !/featureToggles/.test(s.pre
     JSON.stringify([s.checks, readPartial, s.overrides]));
   H.check('DW-1.4 a boot from corrupted stores rewrites nothing',
     s.shared === JSON.stringify({ showBonds: 'no', bogus: true, showCharges: true }), s.shared);
+
+  // ==== G. Three-way lock-on prompt (DW-2.1 to DW-2.5) ====
+  await page.evaluate(({ SHARED_KEY, PREFS_KEY }) => {
+    localStorage.removeItem(SHARED_KEY);
+    localStorage.removeItem(PREFS_KEY);
+  }, { SHARED_KEY, PREFS_KEY });
+  await setLockPref(page, false);
+  await reload(page);
+  await expandPanel(page, 'features');
+  s = await page.evaluate(STATE);
+  H.check('G setup: unlocked, nothing stored, defaults on screen',
+    s.locked === false && bothStoresEmpty(s) && same(s.checks, DEFAULTS), JSON.stringify(s));
+
+  // DW-2.4: nothing stored -> lock with no dialog, current values become shared.
+  await H.clickById(page, 'featureSharedViewToggle');
+  await page.waitForTimeout(300);
+  s = await page.evaluate(STATE);
+  let sw = await switchState(page);
+  let hidden = await modalHidden(page);
+  H.check('DW-2.4 no stored set: locking shows no dialog and stores current values',
+    hidden && s.locked === true && same(JSON.parse(s.shared || 'null'), DEFAULTS)
+      && sw.checked === true && sw.disabled === false && sw.checked === s.locked,
+    JSON.stringify([hidden, s.locked, s.shared, sw]));
+
+  // Build an unlocked view that differs from the (now stored) shared set: an
+  // override on this structure. This is the only way the on-screen view can
+  // diverge from the shared set while unlocked (the cascade falls through to
+  // the shared value with no override).
+  await unlock(page);
+  await flip(page, 'showBonds');
+  s = await page.evaluate(STATE);
+  H.check('G setup: an override makes the current view differ from the stored shared set',
+    s.locked === false && s.checks.showBonds === false && same(s.overrides, { showBonds: false })
+      && JSON.parse(s.shared).showBonds === true,
+    JSON.stringify(s));
+  const beforeChoice = s;
+
+  // DW-2.5: the switch is disabled while the dialog is pending.
+  await H.clickById(page, 'featureSharedViewToggle');
+  await page.waitForSelector('#featureLockKeepShared', { state: 'visible', timeout: 5000 });
+  sw = await switchState(page);
+  H.check('DW-2.5 switch input disabled while the dialog is open', sw.disabled === true, JSON.stringify(sw));
+
+  // DW-2.1: "Keep saved shared view" -> shows the stored values, stored set unchanged.
+  await H.clickById(page, 'featureLockKeepShared');
+  await page.waitForTimeout(300);
+  s = await page.evaluate(STATE);
+  sw = await switchState(page);
+  H.check('DW-2.1 keep saved shared view shows the stored values, stored set unchanged',
+    s.locked === true && same(s.checks, DEFAULTS) && s.shared === beforeChoice.shared
+      && sw.checked === true && sw.disabled === false && sw.checked === s.locked,
+    JSON.stringify([s.checks, s.shared, beforeChoice.shared, sw]));
+  H.check('DW-2.1 keep: the override is kept (not cleared), just ignored while locked',
+    same(s.overrides, { showBonds: false }), JSON.stringify(s.overrides));
+
+  // Back to the override-driven view for DW-2.2.
+  await unlock(page);
+  s = await page.evaluate(STATE);
+  H.check('G setup: unlock restores the override-driven view (showBonds off, override kept)',
+    s.locked === false && s.checks.showBonds === false && same(s.overrides, { showBonds: false }), JSON.stringify(s));
+
+  // DW-2.2: "Use current view as shared" -> stores current values, nothing on screen changes.
+  await H.clickById(page, 'featureSharedViewToggle');
+  await page.waitForSelector('#featureLockUseCurrent', { state: 'visible', timeout: 5000 });
+  const beforeUseCurrent = await page.evaluate(STATE);
+  await H.clickById(page, 'featureLockUseCurrent');
+  await page.waitForTimeout(300);
+  s = await page.evaluate(STATE);
+  sw = await switchState(page);
+  H.check('DW-2.2 use current view as shared stores current values, nothing on screen changes',
+    s.locked === true && same(s.checks, beforeUseCurrent.checks) && same(JSON.parse(s.shared), s.checks)
+      && s.checks.showBonds === false && sw.checked === true && sw.checked === s.locked,
+    JSON.stringify([s.checks, s.shared, beforeUseCurrent.checks]));
+  H.check('DW-2.2 use current: the override is kept (not cleared), just ignored while locked',
+    same(s.overrides, { showBonds: false }), JSON.stringify(s.overrides));
+
+  // DW-2.3: cancel via Escape leaves the switch off and both stores unchanged.
+  await unlock(page);
+  let beforeCancel = await page.evaluate(STATE);
+  await H.clickById(page, 'featureSharedViewToggle');
+  await page.waitForSelector('#featureLockKeepShared', { state: 'visible', timeout: 5000 });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  s = await page.evaluate(STATE);
+  sw = await switchState(page);
+  hidden = await modalHidden(page);
+  H.check('DW-2.3 Escape cancels: switch off, featuresLocked false, both stores unchanged',
+    hidden && s.locked === false && sw.checked === false && sw.disabled === false && sw.checked === s.locked
+      && same(s.checks, beforeCancel.checks) && s.shared === beforeCancel.shared
+      && same(STORED_TOGGLES(s.prefs), STORED_TOGGLES(beforeCancel.prefs)),
+    JSON.stringify([s.locked, sw, s.shared, beforeCancel.shared]));
+
+  // DW-2.3: cancel via a backdrop click, same guarantees.
+  beforeCancel = await page.evaluate(STATE);
+  await H.clickById(page, 'featureSharedViewToggle');
+  await page.waitForSelector('#featureLockKeepShared', { state: 'visible', timeout: 5000 });
+  await page.evaluate(() => document.getElementById('confirmModal').click());
+  await page.waitForTimeout(300);
+  s = await page.evaluate(STATE);
+  sw = await switchState(page);
+  hidden = await modalHidden(page);
+  H.check('DW-2.3 backdrop click cancels: switch off, featuresLocked false, both stores unchanged',
+    hidden && s.locked === false && sw.checked === false && sw.disabled === false && sw.checked === s.locked
+      && same(s.checks, beforeCancel.checks) && s.shared === beforeCancel.shared
+      && same(STORED_TOGGLES(s.prefs), STORED_TOGGLES(beforeCancel.prefs)),
+    JSON.stringify([s.locked, sw, s.shared, beforeCancel.shared]));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);
