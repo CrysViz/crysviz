@@ -104,57 +104,63 @@ export function initModifyStructureButton(buttonId = 'addButton') {
   document.addEventListener('click', (event) => {
     const target = event.target;
     if (!(target instanceof Element) || !target.closest(`#${buttonId}`)) return;
+    openModifyStructurePanel();
+  });
+}
 
-    removePanel(MODIFY_PANEL_ID); // idempotent re-open
+/** Open the Modify Structure panel for the selected structure — what the ✎
+ *  button in the Structure window does; the Files window's Structure info
+ *  section calls it from its own ✎. Re-opening replaces an open panel. */
+export function openModifyStructurePanel() {
+  removePanel(MODIFY_PANEL_ID); // idempotent re-open
 
-    const structure = fileBrowser.selectedStructure;
-    if (!structure) {
-      console.warn('Modify structure: no structure selected.');
-      return;
-    }
-    /** @type {{dispose: () => void} | null} */
-    let editor = null;
-    /** @type {((event: KeyboardEvent) => void) | null} */
-    let onKeyDown = null;
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) {
+    console.warn('Modify structure: no structure selected.');
+    return;
+  }
+  /** @type {{dispose: () => void} | null} */
+  let editor = null;
+  /** @type {((event: KeyboardEvent) => void) | null} */
+  let onKeyDown = null;
 
-    openEditorPanel({
-      id: MODIFY_PANEL_ID,
-      // One title for both modes: the panel offers the same edits either way,
-      // and a Revert can drop the lock mid-session, which would leave a
-      // mode-specific title lying.
-      title: 'Modify Structure',
-      lifecycle: 'persistent',
-      closable: true,
-      persist: false,
-      buildContent(body) {
-        body.classList.add('addstructure-panel-body--lg');
+  openEditorPanel({
+    id: MODIFY_PANEL_ID,
+    // One title for both modes: the panel offers the same edits either way,
+    // and a Revert can drop the lock mid-session, which would leave a
+    // mode-specific title lying.
+    title: 'Modify Structure',
+    lifecycle: 'persistent',
+    closable: true,
+    persist: false,
+    buildContent(body) {
+      body.classList.add('addstructure-panel-body--lg');
 
-        // The Modify editor is LIVE: it edits `structure` in place as changes
-        // are made (no commit), and its button reverts instead. It picks the
-        // orbit-row or atom-row body from the structure's lock - see
-        // StructureEditorPanel.js's buildModifyEditor.
-        editor = buildStructureEditor(body, { source: structure });
+      // The Modify editor is LIVE: it edits `structure` in place as changes
+      // are made (no commit), and its button reverts instead. It picks the
+      // orbit-row or atom-row body from the structure's lock - see
+      // StructureEditorPanel.js's buildModifyEditor.
+      editor = buildStructureEditor(body, { source: structure });
 
-        // Escape closes the panel. A picker popup opened from inside it (the
-        // element periodic table, a colour swatch) owns the first Escape, so
-        // skip while one is up - it dismisses itself, and the next Escape
-        // reaches the panel.
-        onKeyDown = (event) => {
-          if (event.key !== 'Escape') return;
-          if (document.getElementById('periodicTablePopup')
-            || document.querySelector('.swatch-color-picker')) return;
-          removePanel(MODIFY_PANEL_ID);
-        };
-        document.addEventListener('keydown', onKeyDown);
-      },
-      onDestroyContent() {
-        if (onKeyDown) {
-          document.removeEventListener('keydown', onKeyDown);
-          onKeyDown = null;
-        }
-        editor?.dispose();
-        editor = null;
-      },
-    });
+      // Escape closes the panel. A picker popup opened from inside it (the
+      // element periodic table, a colour swatch) owns the first Escape, so
+      // skip while one is up - it dismisses itself, and the next Escape
+      // reaches the panel.
+      onKeyDown = (event) => {
+        if (event.key !== 'Escape') return;
+        if (document.getElementById('periodicTablePopup')
+          || document.querySelector('.swatch-color-picker')) return;
+        removePanel(MODIFY_PANEL_ID);
+      };
+      document.addEventListener('keydown', onKeyDown);
+    },
+    onDestroyContent() {
+      if (onKeyDown) {
+        document.removeEventListener('keydown', onKeyDown);
+        onKeyDown = null;
+      }
+      editor?.dispose();
+      editor = null;
+    },
   });
 }

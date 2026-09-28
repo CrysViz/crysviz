@@ -224,6 +224,46 @@ export function atomForceToColor(magnitude, minVal = general.ForceMin, maxVal = 
   return valueToColor(magnitude, minVal, maxVal, general.atomColorMap, general.atomColorScale === "log");
 }
 
+// One atom's force colour, or its element colour when the frame carries no
+// matching force for it — the shared kernel behind both the interactive repaint
+// (updateAtomColorsByForce) and the per-frame re-application reapplyAtomForceColors
+// does, so the two can never drift on binning or fallback.
+function forceColorForAtom(structure, atomIndex, min, max, colorMap, isLog) {
+  const forceObj = structure.forces[atomIndex];
+  if (!forceObj || !forceObj.vector || forceObj.vector.length < 3) {
+    return structure.getDefaultElementColor(structure.elements[atomIndex]);
+  }
+  const [fx, fy, fz] = forceObj.vector;
+  const magnitude = Math.sqrt(fx * fx + fy * fy + fz * fz);
+  return valueToColor(magnitude, min, max, colorMap, isLog);
+}
+
+// Re-derive every atom's colour from THIS frame's forces, using the range and
+// colour map the Atoms panel currently holds. NO autorange (unlike the
+// interactive repaint): the scale stays fixed across the whole trajectory so a
+// force magnitude maps to the same colour in every frame and the frames are
+// comparable. Only writes atom.color — the caller pushes it to the mesh
+// (updateVisualization/updateAtoms on the full path, refreshAtomColors on the
+// fast/live paths). Silent no-op unless the Atoms colour mode is "force" and the
+// frame actually carries per-atom forces, so playing a trajectory whose frames
+// lack forces simply keeps element colours instead of alerting every step.
+// This is what keeps force colouring alive as a trajectory plays or an MD runs:
+// each new frame otherwise resets atom.color to the element default
+// (materializeFrame.applyFrameStyles) and nothing else recomputes it.
+export function reapplyAtomForceColors(structure = fileBrowser.selectedStructure) {
+  if (general.atomsColor !== "force") return false;
+  if (!structure || !structure.atoms || !structure.forces
+    || structure.forces.length !== structure.atoms.length) return false;
+  const min = general.ForceMin;
+  const max = general.ForceMax;
+  const colorMap = general.atomColorMap || "heatmap";
+  const isLog = general.atomColorScale === "log";
+  structure.atoms.forEach((atom, i) => {
+    atom.color = forceColorForAtom(structure, i, min, max, colorMap, isLog);
+  });
+  return true;
+}
+
 function updateAtomColorsByForce() {
   const structure = fileBrowser.selectedStructure;
   if (!structure || !structure.atoms) {
@@ -270,21 +310,14 @@ function updateAtomColorsByForce() {
   const min = general.ForceMin;
   const max = general.ForceMax;
 
+  const isLog = general.atomColorScale === "log";
   structure.atoms.forEach((atom, atomIndex) => {
-    const forceObj = structure.forces[atomIndex];
-    if (!forceObj || !forceObj.vector || forceObj.vector.length < 3) {
-      const element = structure.elements[atomIndex];
-      atom.color = structure.getDefaultElementColor(element);
-      return;
-    }
-
-    const vector = forceObj.vector;
-    const magnitude = Math.sqrt(vector[0]*vector[0] + vector[1]*vector[1] + vector[2]*vector[2]);
-    // Delegates to the same binning valueToColor uses elsewhere (bonds-by-
-    // length, atomForceToColor) instead of a second hand-rolled copy — this
-    // one used to be linear-only, unlike valueToColor's now-log-aware
-    // version, and there's no reason the two should drift.
-    atom.color = valueToColor(magnitude, min, max, colorMap, general.atomColorScale === "log");
+    // Delegates to the same kernel reapplyAtomForceColors uses on every
+    // trajectory/MD frame, which in turn uses the same binning valueToColor
+    // uses elsewhere (bonds-by-length, atomForceToColor) — one code path so the
+    // interactive repaint and the per-frame re-application can never drift on
+    // binning, log handling, or the element fallback.
+    atom.color = forceColorForAtom(structure, atomIndex, min, max, colorMap, isLog);
   });
 
   if (groups.atomsMesh) {
@@ -1215,7 +1248,11 @@ export function addColorPanel(target = "colorContainer") {
     general.atomsColor = mode;
     updateAtoms();
     updatePolyhedraColors();
-
+    // A mode switch is a bulk recolour: broadcast on the same event every other
+    // bulk recolour uses, so UIs mirroring the colour state (the Composition
+    // swatches, the trajectory player's "full render" note for force colouring)
+    // learn about it without polling.
+    document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
   }
 
 
@@ -1465,6 +1502,9 @@ export function addColorPanel(target = "colorContainer") {
       bondsSolidColorPicker = null;
     }
     updatePolyhedraColors();
+    // Bulk recolour broadcast (see onAtomsModeChange): lets the trajectory
+    // player show/hide its "full render each frame" note for Length mode.
+    document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
   }
 
   // =========================

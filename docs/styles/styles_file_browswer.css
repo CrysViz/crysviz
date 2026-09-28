@@ -27,6 +27,19 @@
   padding: var(--sp-3);
  }
 
+  /* Center the first column so each row's select checkbox lines up under the
+     ≡ selection button in the header (which fills its cell, centered). */
+  #objectTable tr > .fth:first-child,
+  #objectTable tr > .ftd:first-child {
+    text-align: center;
+  }
+
+  /* The checkbox carries the UA's asymmetric default margins, which nudge it
+     off the cell's center; zero them so it sits dead-center under the ≡. */
+  #objectTable tr > .ftd:first-child input[type="checkbox"] {
+    margin: 0;
+  }
+
   table {
     width: 100%;
     border-collapse: collapse;

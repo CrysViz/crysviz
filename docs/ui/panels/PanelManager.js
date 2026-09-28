@@ -112,6 +112,12 @@ const panelPrefDefaults = {
   // fixed-cell MD doesn't need it; a relaxation/optimization that translates
   // the structure does.
   trajRecenterEachStep: false,
+  // Lattice Plots ▸ card heights the user dragged, px by plot id
+  // (ui/LatticePlotsPanel.js); empty = every card flex-shares the stack.
+  latticePlotHeights: {},
+  // Files ▸ Structure info: whether the section is unfolded
+  // (ui/FileStructureSummary.js).
+  fileStructureInfoOpen: false,
 };
 const panelPrefs = { ...panelPrefDefaults };
 

@@ -52,6 +52,7 @@ export class Structure {
     bonds = [],
     atoms = [],
     symmetry = null,
+    cifSymmetry = null,
     spins = [],
     spinFrame = null,
     forces = [],
@@ -77,6 +78,14 @@ export class Structure {
     this.lattice = lattice;       // 3×3
     this.atoms = atoms;           // list of atoms
     this.symmetry = symmetry;
+    // Symmetry as DECLARED by a source CIF, kept verbatim from the file rather
+    // than re-derived: { symops: [[R,t],...] (fractional, row-major),
+    // number: IT number|null, hmName: H-M symbol|null, hall: Hall symbol|null }.
+    // This is the raw record the loader compares against Moyo's detected
+    // symmetry and, when they agree, builds the Wyckoff lock from — so the CIF's
+    // own setting and operations are preserved instead of Moyo's standardised
+    // ones. null for every non-CIF source and for CIFs that declare no symmetry.
+    this.cifSymmetry = cifSymmetry;
     this.spins = spins;           // list of spins
     // How the loaded spins' raw components map to global Cartesian, so the
     // Spins panel can re-project them (utils/spinFrame.js). Currently carries

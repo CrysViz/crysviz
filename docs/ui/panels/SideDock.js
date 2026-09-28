@@ -601,13 +601,18 @@ export function expandSplitItem(wrapper) {
   overlay?.classList.add('active');
   viewArea?.classList.add('split-item-expanded');
   wrapper.closest('.cv-panel')?.classList.add('cv-has-expanded-item');
+  // Main-docked hosts sit inside #ui, whose own backdrop-filter would make it
+  // the fixed-position containing block too — the item then renders clipped
+  // and scrolling INSIDE the side panel instead of over the viewport. Tag #ui
+  // as well so panelWindow.css can lift that filter for the duration.
+  wrapper.closest('#ui')?.classList.add('cv-has-expanded-item');
 }
 
 export function closeExpandedSplitItem() {
   const { viewArea, overlay } = els();
   document.querySelectorAll('.split-item.expanded, .trajPlot.expanded')
     .forEach((w) => w.classList.remove('expanded'));
-  document.querySelectorAll('.cv-panel.cv-has-expanded-item')
+  document.querySelectorAll('.cv-panel.cv-has-expanded-item, #ui.cv-has-expanded-item')
     .forEach((el) => el.classList.remove('cv-has-expanded-item'));
   overlay?.classList.remove('active');
   viewArea?.classList.remove('split-item-expanded');
