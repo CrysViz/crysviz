@@ -83,7 +83,9 @@ async function start() {
       el.textContent = 'CrysViz could not load this structure.';
       document.body.appendChild(el);
     }
-    console.error(error);
+    // Message first: Firefox reports a bare Error argument's text as just
+    // "Error", which leaves console scrapers (and the browser tests) blind.
+    console.error(`CrysViz boot failed: ${error?.message ?? error}`, error);
   }
 }
 
