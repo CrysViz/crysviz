@@ -111,10 +111,25 @@ else
   TESTS=(tests/*.test.js)
 fi
 
+# A test that hangs (e.g. awaiting a dialog nobody answers) would otherwise stall
+# the whole run with no output. Cap each file — generously, the tracer tests
+# take minutes under software GL — and report the hang as a failure. macOS has no
+# coreutils `timeout` by default; there tests run uncapped, as before.
+TEST_TIMEOUT="${TEST_TIMEOUT:-900}"
+TIMEOUT_CMD=()
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_CMD=(timeout --kill-after=10 "$TEST_TIMEOUT")
+fi
+
 FAILED=0
 for t in "${TESTS[@]}"; do
   echo "== $t"
-  if ! node "$t"; then
+  rc=0
+  ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} node "$t" || rc=$?
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+    echo "  TEST DRIVER ERROR: $t timed out after ${TEST_TIMEOUT}s"
+  fi
+  if [ "$rc" -ne 0 ]; then
     FAILED=1
   fi
 done

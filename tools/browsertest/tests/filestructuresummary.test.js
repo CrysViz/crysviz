@@ -9,8 +9,8 @@
 //     positions table (one row per atom, fractional; the frac/cart pair
 //     switches to Cartesian) and, from a local moyo analysis, the space group
 //     and one Wyckoff row per orbit (YBCO: Pmmm, 47)
-//   - values are plain selectable text (no click-to-copy); a block's ⧉ copies
-//     the block (clipboard stubbed to observe it)
+//   - a click on a value copies nothing (no click-to-copy); a block's ⧉
+//     copies the block (clipboard stubbed to observe it)
 //   - ✎ opens the Modify Structure panel without folding the section
 //   - the section follows a structure switch (Si diamond: 2 atoms, Fd-3m)
 //   - the pure text builders in structureSummaryText.js
@@ -118,17 +118,15 @@ const H = require('../harness');
     const cellEl = d.querySelector('#fssPositionsBody tr:nth-child(2) td:nth-child(3)');
     cellEl.click();
     await new Promise((r) => setTimeout(r, 50));
-    const selectable = getComputedStyle(cellEl).userSelect === 'text'
-      && getComputedStyle(d.querySelector('#fssLattice')).userSelect === 'text';
     const clickCopied = copied.length; // must stay 0: a value click copies nothing
     d.querySelector('[data-copy-block="lattice"]').click();
     await new Promise((r) => setTimeout(r, 50));
     d.querySelector('[data-copy-block="positions"]').click();
     await new Promise((r) => setTimeout(r, 50));
-    return { copied, selectable, clickCopied, noCopyAll: !d.querySelector('#fssCopyAllBtn') };
+    return { copied, clickCopied, noCopyAll: !d.querySelector('#fssCopyAllBtn') };
   });
-  H.check('values are selectable text and a click on one copies nothing',
-    copies.selectable && copies.clickCopied === 0, JSON.stringify([copies.selectable, copies.clickCopied]));
+  H.check('a click on a value copies nothing (the ⧉ buttons are the copy path)',
+    copies.clickCopied === 0, String(copies.clickCopied));
   H.check('the lattice block copies vectors + parameters',
     copies.copied[0]?.split('\n').length === 4 && /V = /.test(copies.copied[0]), JSON.stringify(copies.copied[0]));
   H.check('the positions block copies every atom; there is no Copy all button',

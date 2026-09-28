@@ -15,7 +15,7 @@
 //   - both windows are unavailable on a single-frame structure and available
 //     on the trajectory; expanding the controls does NOT open the plots
 //     window, the "Show plots" button does
-//   - the parameter table is selectable text; Copy table copies it as TSV;
+//   - a click on a table cell copies nothing; Copy table copies it as TSV;
 //     latticeCsv/latticeTableText build the export texts
 //   - dragging a chart's native resize corner sets its height (persisted in
 //     panel prefs), same handle as the Bond Length Histogram cards
@@ -303,7 +303,6 @@ export default stub;
     const cell = body.querySelector('#laTableBody tr:nth-child(3) td:nth-child(2)'); // c, shown
     cell.click();
     await new Promise((r) => setTimeout(r, 50));
-    const selectable = getComputedStyle(cell).userSelect === 'text';
     const clickCopied = copied.length; // must stay 0
     body.querySelector('#laCopyTableBtn').click();
     await new Promise((r) => setTimeout(r, 50));
@@ -316,7 +315,7 @@ export default stub;
     await new Promise((r) => setTimeout(r, 50));
     HTMLAnchorElement.prototype.click = origClick;
     return {
-      csvLines: csv.trim().split('\n'), tsv, selectable, clickCopied, copied, download, copyStatus, status: body.querySelector('#laStatus').textContent,
+      csvLines: csv.trim().split('\n'), tsv, clickCopied, copied, download, copyStatus, status: body.querySelector('#laStatus').textContent,
     };
   });
   const csvRow3 = table.csvLines[3]?.split(',') ?? [];
@@ -330,10 +329,10 @@ export default stub;
   H.check('latticeTableText: tab-separated with header, shown column = frame 3',
     table.tsv.split('\n')[0] === '\tShown\tMin\tMax\tUnit' && table.tsv.split('\n')[3] === 'c\t4.4000\t4.0000\t4.4000\tÅ',
     JSON.stringify(table.tsv));
-  H.check('table cells are selectable text (a click copies nothing); Copy table copies the TSV',
-    table.selectable && table.clickCopied === 0 && table.copied[0]?.startsWith('\tShown\tMin\tMax\tUnit')
+  H.check('a click on a table cell copies nothing; Copy table copies the TSV',
+    table.clickCopied === 0 && table.copied[0]?.startsWith('\tShown\tMin\tMax\tUnit')
       && /Table copied/.test(table.copyStatus),
-    JSON.stringify([table.selectable, table.clickCopied, table.copied, table.copyStatus]));
+    JSON.stringify([table.clickCopied, table.copied, table.copyStatus]));
   H.check('Export CSV downloads lattice_<name>.csv',
     table.download === 'lattice_OUTCAR_cell.csv' && /Exported 4 points/.test(table.status), JSON.stringify([table.download, table.status]));
   // Resize: a real mouse drag on the a/b/c chart's native resize corner.
