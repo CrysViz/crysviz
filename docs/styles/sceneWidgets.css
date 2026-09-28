@@ -61,6 +61,41 @@
   flex: 1;
 }
 
+/* Comparison Spins section (ui/SpinPanel.js): set apart from the
+   Draw / Overwrite / Restore buttons above it. */
+.cv-spin-compare-section {
+  margin-top: var(--sp-6);
+}
+
+/* Comparison Spins file drop zone — same look as the EOS/phonon ones. */
+.cv-spin-drop-zone {
+  margin-top: var(--sp-3);
+  border: 2px dashed var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted-fg);
+  font-size: var(--fs-md);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.cv-spin-drop-zone:hover {
+  background: var(--wash-0);
+}
+
+.cv-spin-drop-zone.highlight {
+  border-color: var(--highlight-color, var(--info));
+  background: var(--wash-1-5);
+}
+
+/* Comparison Spins "Highlight" toggles (ui/SpinComparisonSection.js):
+   pressed state, same look as the Add Structure highlight toggle. */
+.cv-spin-highlight-btn.is-active {
+  background: rgb(var(--warn-rgb) / 0.35);
+  border-color: var(--warn);
+}
+
 /* --- Spin reference frame + visual rotation (ui/SpinPanel.js) --- */
 
 /* Editable "SAXIS = x y z" line, shown only in Custom frame mode:

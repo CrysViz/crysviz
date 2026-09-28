@@ -25,6 +25,11 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store, must-revalidate')
         self.send_header('Pragma', 'no-cache')
         self.send_header('Expires', '0')
+        # CORS so an opaque-origin embed (a sandboxed widget-mode <iframe> without
+        # allow-same-origin) can fetch the app's ES modules / WASM locally — the
+        # same headers GitHub Pages / crysviz.org serve in production. Lets the
+        # widget-embed demo (docs/widget-embed-demo.html) run against `make serve`.
+        self.send_header('Access-Control-Allow-Origin', '*')
         super().end_headers()
 
     def log_message(self, format, *args):  # quiet: one line per module is noise

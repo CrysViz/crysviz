@@ -166,7 +166,10 @@ export function parseSaxis(text) {
  * @param {{mode?:string, customSaxis?:number[], visualRot?:number[], visualMatrix?:number[][]}} [opts]
  */
 export function applySpinFrame(structure, opts = {}) {
-  if (!structure?.spins?.length) return;
+  // The comparison set (structure.spins2) goes through the same frame and
+  // rotation as the primary spins, so the two stay comparable.
+  const sets = [structure?.spins, structure?.spins2].filter(s => s?.length);
+  if (!sets.length) return;
   const mode = opts.mode ?? 'file';
   const fileSaxis = structure.spinFrame?.fileSaxis ?? [0, 0, 1];
   const F = frameMatrix(mode, {
@@ -183,7 +186,7 @@ export function applySpinFrame(structure, opts = {}) {
   }
   const M = V ? multiply3x3(V, F) : F;
 
-  for (const spin of structure.spins) {
+  for (const spin of sets.flat()) {
     let raw = spin.rawVector;
     if (!raw || raw.length < 3) {
       // No stored raw (a spin built by a path that predates rawVector, or one
