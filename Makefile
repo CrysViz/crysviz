@@ -12,7 +12,7 @@ PYTHON ?= python3
 #   - send Cache-Control. Without it Firefox caches modules heuristically and
 #     an edit resurfaces as a missing export from the previous version of a
 #     file. tools/devserver.py does all three.
-SERVE_HOST ?= 127.0.0.1
+SERVE_HOST ?= 0.0.0.0
 SERVE_PORT ?= 8000
 SERVE_TRIES ?= 20
 
