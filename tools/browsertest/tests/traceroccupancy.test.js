@@ -78,11 +78,12 @@ function distance(a, b) {
     return { rayHash: await digest(ray), pathHash: await digest(path),
       rayHasMarker: ray.includes('pieAtomColor'), pathHasMarker: path.includes('pieAtomColor') };
   });
+  // Hashes re-pinned for the block-field sampling change in raytrace/fieldChunk.js (included by both fragments).
   H.check('no-occupancy ray source retains the committed byte hash',
-    sourceState.rayHash === 'febd3f5b95e07ef0b0974bc57ebd8acfd1adf9d73ae150a5e1b350d44488ae8d'
+    sourceState.rayHash === '0a2d3d37752fe2bf02ea37054e00cd201690193b4ea770d11c3a54336a4afb23'
       && !sourceState.rayHasMarker, JSON.stringify(sourceState));
   H.check('no-occupancy path source retains the committed byte hash',
-    sourceState.pathHash === '9c4dfa931a5316532ad11a4125486fb56f311bc2757b3b78138ca6e5356d3964'
+    sourceState.pathHash === 'ccdee2eea8d6eb8deb9c3edabc20c31f2cf663e41bcd504225e6e4d117ae7ecb'
       && !sourceState.pathHasMarker, JSON.stringify(sourceState));
 
   await H.setSelect(page, 'renderPipelineMenu', 'depthpeel');

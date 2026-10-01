@@ -1,5 +1,6 @@
 import * as THREE from '../external/three/three.module.js';
 import { Field } from './Field.js';
+import { gridToWorld, blockCellRange, imageOffsets, isUnitBounds } from './fieldGeometry.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import {
   getHeatMapColors, getBatlowColors, getHawaiiColors, getManaguaColors,
@@ -51,6 +52,15 @@ export function getCutPlaneMaskSign(side) {
     default: return 0;
   }
 }
+
+// Base colour of a plane that shows no field: the flat "None" mode surface,
+// and the stand-in wherever a block field holds nothing (outside its grid).
+const PLANE_BASE_COLOR = 0x8c8c99;
+
+// Slack (cell fractions) so a point exactly on a block face still finds it,
+// and the cap on repeated copies tried per axis (the isosurface's own limit).
+const BLOCK_SAMPLE_EPS = 1e-6;
+const BLOCK_MAX_IMAGES_PER_AXIS = 5;
 
 // Resolution of the field colormap texture
 export const DEFAULT_COLORMAP_RESOLUTION = 256;
@@ -721,6 +731,10 @@ export class Plane extends THREE.Group {
     this._planeMesh = new THREE.Mesh(geometry, Plane._makeNoneMaterial(clippingPlanes));
     this.add(this._planeMesh);
 
+    /** Lattice rows the plane was cut from (THREE.Vector3[3]), or null. Block
+     *  fields repeat with it when the display bounds are widened. */
+    this._cellVectors    = (cell && cell.length === 3) ? cell.map(toVec3) : null;
+
     this._resolution     = resolution;
     this._mode           = null;
     this._field          = null;
@@ -794,7 +808,7 @@ export class Plane extends THREE.Group {
    */
   static _makeNoneMaterial(clippingPlanes = []) {
     const mat = new THREE.MeshBasicMaterial({
-      color:       0x8c8c99,
+      color:       PLANE_BASE_COLOR,
       opacity:     0.70,
       //alphaHash: true, // helps with sorting issues when multiple planes overlap
       side:        THREE.DoubleSide,
@@ -924,27 +938,99 @@ export class Plane extends THREE.Group {
     this._lut.setMin(minValue).setMax(maxValue).setLogScale(this._colormapScale === 'log');
   }
 
-  /** Inverse of the voxel*dims basis: maps a Cartesian world point to
-   *  fractional voxel coordinates. Returns null when no field/voxel is set. */
+  /** Sampling context for `fieldColorAtWorldPoint`, or null when no field /
+   *  voxel is set. For a periodic field it is the Matrix3 inverse of the
+   *  voxel*dims basis (Cartesian world point -> fractional voxel coordinates),
+   *  exactly as before. For a block (`periodic === false`) it is a plain
+   *  object: the inverse of the exact grid mapping plus, when the display
+   *  bounds are widened, the structure lattice the block repeats with. */
   _fieldFracBasisInv() {
-    const voxelBasis = this._field?.voxel;
+    const field = this._field;
+    const voxelBasis = field?.voxel;
     if (!voxelBasis) return null;
+    if (field.periodic === false) return this._blockSamplingContext();
     const [a, b, c] = voxelBasis.map(toVec3);
     return new THREE.Matrix3()
       .setFromMatrix4(new THREE.Matrix4().makeBasis(
-        a.multiplyScalar(this._field.nx),
-        b.multiplyScalar(this._field.ny),
-        c.multiplyScalar(this._field.nz)))
+        a.multiplyScalar(field.nx),
+        b.multiplyScalar(field.ny),
+        c.multiplyScalar(field.nz)))
       .invert();
   }
 
-  /** Colormap colour at a Cartesian world point: fractional voxel coordinates
-   *  (wrapped to [0,1]), field trilinear sample, then the LUT. `basisInv` is a
-   *  precomputed `_fieldFracBasisInv()`; the LUT range must be set beforehand
+  /** Block sampling context: `{ block, inv, cell, range }`. `inv` is null when
+   *  the grid has no volume (an axis with one point) or cannot be inverted:
+   *  the block then holds nothing anywhere. `cell`/`range` are set only when
+   *  the plane's bounds are widened past the unit cell and a usable structure
+   *  lattice is known; at unit bounds the block is sampled in place, once. */
+  _blockSamplingContext() {
+    const field = this._field;
+    const ctx = { block: true, inv: null, cell: null, range: null };
+    if (![field.nx, field.ny, field.nz].every((n) => n >= 2)) return ctx;
+    try {
+      const inv = new THREE.Matrix4().fromArray(gridToWorld(field));
+      if (Math.abs(inv.determinant()) > 0) ctx.inv = inv.invert();
+    } catch (error) {
+      console.warn(`Plane: block field has no usable grid (${error.message}); drawing no field`);
+      return ctx;
+    }
+    const widened = !isUnitBounds(this.bounds);
+    if (widened && this._cellVectors && ctx.inv) {
+      try {
+        ctx.range = blockCellRange(field, this._cellVectors.map((v) => v.toArray()));
+        ctx.cell = this._cellVectors;
+      } catch (error) {
+        console.warn(`Plane: ${error.message}; sampling the block once, unrepeated`);
+      }
+    }
+    return ctx;
+  }
+
+  /** Field value of a block at a world point, or null where it holds nothing.
+   *  Tries the block itself and, with a lattice in `ctx`, every lattice image
+   *  of it that could cover the point. */
+  _blockValueAtWorldPoint(worldPoint, ctx) {
+    if (!ctx.inv) return null;
+    const grid = new THREE.Vector3();
+    const sample = (shifted) => {
+      grid.copy(shifted).applyMatrix4(ctx.inv);
+      return this._field.getValueAtPoint(grid.x, grid.y, grid.z);
+    };
+    if (!ctx.cell) return sample(worldPoint);
+
+    // Cell fractions of the point, then the translations whose image of the
+    // block's extent contains it.
+    const [a, b, c] = ctx.cell;
+    const cellInv = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeBasis(a, b, c)).invert();
+    const s = worldPoint.clone().applyMatrix3(cellInv);
+    /** @type {[number, number][]} */
+    const pointRange = [0, 1, 2].map((k) => /** @type {[number, number]} */ ([s.getComponent(k), s.getComponent(k)]));
+    const shift = new THREE.Vector3();
+    const moved = new THREE.Vector3();
+    for (const [i, j, k] of imageOffsets(ctx.range.map(([lo, hi]) => /** @type {[number, number]} */ ([lo - BLOCK_SAMPLE_EPS, hi + BLOCK_SAMPLE_EPS])),
+      pointRange, { maxPerAxis: BLOCK_MAX_IMAGES_PER_AXIS, eps: 0 })) {
+      shift.set(0, 0, 0).addScaledVector(a, i).addScaledVector(b, j).addScaledVector(c, k);
+      const v = sample(moved.copy(worldPoint).sub(shift));
+      if (v != null) return v;
+    }
+    return null;
+  }
+
+  /** Colormap colour at a Cartesian world point. Periodic field: fractional
+   *  voxel coordinates wrapped to [0,1], trilinear sample, then the LUT. Block
+   *  field: the point is placed on the block's own grid (repeated with the
+   *  structure lattice when the bounds are widened) and sampled only where the
+   *  block is; anywhere else, like any non-finite sample, gets the neutral
+   *  plane colour, never a NaN. `basisInv` is a precomputed
+   *  `_fieldFracBasisInv()`; the LUT range must be set beforehand
    *  (`_configureLutRange`). Writes into `target` and returns it, or null when
    *  no field is available. */
   fieldColorAtWorldPoint(worldPoint, basisInv, target = new THREE.Color()) {
     if (!basisInv || !this._field) return null;
+    if (basisInv.block) {
+      const v = this._blockValueAtWorldPoint(worldPoint, basisInv);
+      return Number.isFinite(v) ? target.copy(this._lut.getColor(v)) : target.set(PLANE_BASE_COLOR);
+    }
     const vec = worldPoint.clone().applyMatrix3(basisInv);
     vec.x = (vec.x % 1 + 1) % 1; // wrap fractional coordinates to [0,1]
     vec.y = (vec.y % 1 + 1) % 1;

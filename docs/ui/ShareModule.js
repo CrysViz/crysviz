@@ -83,6 +83,7 @@ function captureFields(structure) {
       label: f.label,
       nx: f.nx, ny: f.ny, nz: f.nz,
       origin: f.origin, voxel: f.voxel,
+      periodic: f.periodic,
       component: f.component,
       isoValue: f.isoValue,
       useAbsoluteIsoValue: f.useAbsoluteIsoValue,
@@ -965,6 +966,8 @@ function restoreFields(fieldState, structure) {
     label: f.label,
     nx: f.nx, ny: f.ny, nz: f.nz,
     origin: f.origin, voxel: f.voxel,
+    // Share payloads are untrusted: only a literal false restores a block.
+    periodic: f.periodic === false ? false : true,
     component: f.component,
     isoValue: f.isoValue,
     useAbsoluteIsoValue: f.useAbsoluteIsoValue,

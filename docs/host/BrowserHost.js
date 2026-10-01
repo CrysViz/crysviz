@@ -77,6 +77,13 @@ function commandError(code, message, details = undefined) {
   return error;
 }
 
+/** `periodic` is an optional literal boolean; the string "false", 0 and null are all rejected. */
+function requirePeriodicOption(value) {
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw commandError('INVALID_ARGS', 'load.periodic must be boolean');
+  }
+}
+
 function safeName(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -249,10 +256,12 @@ export function createBrowserHost({
         if (input.binary !== undefined && typeof input.binary !== 'boolean') {
           throw commandError('INVALID_ARGS', 'load.binary must be boolean');
         }
+        requirePeriodicOption(input.periodic);
         const data = input.data instanceof Uint8Array
           ? input.data.buffer.slice(input.data.byteOffset, input.data.byteOffset + input.data.byteLength)
           : input.data;
-        const result = await loadStructure(data, input.name, false, input.format || '');
+        const result = await loadStructure(data, input.name, false, input.format || '', { periodic: input.periodic });
+        if (result?.cancelled) throw commandError('LOAD_CANCELLED', 'Load cancelled by the user');
         const container = result?.container || null;
         if (!container) throw commandError('LOAD_FAILED', 'The structure loader returned no structure');
         emit('structure_loaded', snapshotForContainer(container, getActiveStructure()));
@@ -456,6 +465,7 @@ export function createBrowserHost({
         || typeof descriptor.request !== 'object') return;
       const request = descriptor.request;
       if (request.args?.inputUrl !== undefined) {
+        if (request.command === 'load') requirePeriodicOption(request.args.periodic);
         const inputUrl = sameOriginURL(request.args.inputUrl, window.location.origin);
         if (!inputUrl || inputUrl.username || inputUrl.password) {
           throw commandError('INVALID_INPUT_URL', 'Managed input URL must be same-origin');
@@ -718,6 +728,7 @@ export async function bootstrapAuthoritative(deps) {
   }
   if (window.location.hash.startsWith('#load-file=')) {
     const result = await loadHash();
+    if (result === 'cancelled') throw manifestError('LOAD_CANCELLED', 'Load cancelled by the user');
     if (!result) throw manifestError('HASH_LOAD_FAILED', 'The load-file hash was present but could not be loaded');
     return { source: 'hash' };
   }

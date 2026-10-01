@@ -363,7 +363,7 @@ async function updateHostLattice(lattice) {
   return true;
 }
 
-export async function loadStructure(content, fileName = '', isDefault = false, format = '') {
+export async function loadStructure(content, fileName = '', isDefault = false, format = '', options = {}) {
   try {
 
     const parserFileName = format && !String(fileName).toLowerCase().endsWith(`.${String(format).toLowerCase()}`)
@@ -405,7 +405,7 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         break;
 
       case 'cube':
-        structureContainer = await parseCubeFile(payload, fileName);
+        structureContainer = await parseCubeFile(/** @type {string} */ (payload), fileName, { periodic: options?.periodic });
         break;
 
       case 'chgcar':
@@ -459,10 +459,10 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         break;
     }
 
-    // A WAVECAR whose dialog was cancelled deliberately loads nothing. That is a
+    // A WAVECAR or cube whose dialog was cancelled deliberately loads nothing. That is a
     // user decision, not a failure, so return quietly instead of falling into
     // the "loader returned no container" error below.
-    if (structureContainer === null && descriptor.id === 'wavecar') {
+    if (structureContainer === null && (descriptor.id === 'wavecar' || descriptor.id === 'cube')) {
       setStatus('Load cancelled.');
       return { ok: false, cancelled: true, name: fileName, format: format || undefined };
     }
@@ -561,7 +561,7 @@ export async function initializeCore(browserHostController) {
     },
     loadHash: async () => {
       const result = await loadFromFilePath();
-      if (result) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
+      if (result === true) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
       return result;
     },
     loadDefault: async () => {

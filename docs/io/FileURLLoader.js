@@ -4,6 +4,10 @@ import {loadStructure} from '../core/crystal-viewer.js';
 
 
 
+/** Returned by loadFromFilePath() when the user cancels a load dialog (distinct from `false`, "nothing to load"). */
+export const LOAD_CANCELLED = 'cancelled';
+
+/** @returns {Promise<boolean | typeof LOAD_CANCELLED>} true loaded, false no #load-file hash, LOAD_CANCELLED user cancelled */
 export async function loadFromFilePath() {
 
   const hash = window.location.hash;
@@ -16,6 +20,12 @@ export async function loadFromFilePath() {
   if (parts.length !== 2 || !parts[0] || !parts[1]) {
     throw new Error('The load-file hash must contain exactly filename|content.');
   }
+  // Optional ?cubePeriodic=true|false (search, not hash, so the filename|content split is untouched).
+  const periodicParams = new URL(window.location.href).searchParams.getAll('cubePeriodic');
+  if (periodicParams.length > 1 || (periodicParams.length === 1 && !['true', 'false'].includes(periodicParams[0]))) {
+    throw new Error('The cubePeriodic parameter must be exactly true or false.');
+  }
+  const options = periodicParams.length ? { periodic: periodicParams[0] === 'true' } : {};
   const [encodedFilename, encodedContent] = parts;
   const filename = decodeURIComponent(encodedFilename);
   const b64 = decodeURIComponent(encodedContent);
@@ -24,11 +34,13 @@ export async function loadFromFilePath() {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   const content = new TextDecoder().decode(bytes);
 
-  await loadStructure(content, filename, false);
-  general.sharedStructureLoaded = true;
+  const result = await loadStructure(content, filename, false, '', options);
   const url = new URL(window.location.href);
   url.hash = '';
+  url.searchParams.delete('cubePeriodic'); // later share links must not carry it
   window.history.replaceState({}, document.title, url.toString());
+  if (result?.cancelled) return LOAD_CANCELLED;
+  general.sharedStructureLoaded = true;
   console.warn('Loaded structure from URL');
   return true;
 }

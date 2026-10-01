@@ -481,11 +481,15 @@ class Viewer:
             with self._lock:
                 self._pending.pop(request_id, None)
 
-    def load(self, source: object) -> LoadResult:
+    def load(self, source: object, *, periodic: bool | None = None) -> LoadResult:
+        if periodic is not None and not isinstance(periodic, bool):
+            raise TypeError("periodic must be True, False or None")
         sources = prepare_sources([source])
         prepared = sources[0]
         try:
-            payload = {"name": prepared.name, "format": prepared.format, "binary": prepared.binary}
+            payload: dict[str, object] = {"name": prepared.name, "format": prepared.format, "binary": prepared.binary}
+            if periodic is not None:
+                payload["periodic"] = periodic
             result = self._command("load", payload, {"data": prepared.open()})
             return LoadResult(_structure(result))
         finally:

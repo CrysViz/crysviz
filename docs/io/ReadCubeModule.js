@@ -1,6 +1,6 @@
 // ReadCubeModule.js
 // Gaussian .cube files → Structure + Fields (format parsing in cubeParse.js)
-// Exports: readCubeFile(), readCubeStructure()
+// Exports: readCubeFile(), buildCubeStructure(), readCubeStructure()
 //
 import { Structure } from '../model/index.js';
 import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from '../math/index.js';
@@ -11,6 +11,7 @@ import { computeFieldStats } from '../model/index.js';
 import { Atom } from '../model/index.js';
 import { generateID } from '../utils/index.js';
 import { parseCube } from './cubeParse.js';
+import { boxedCubeLayout } from './cubeLayout.js';
 
 
 //------------------------------------------------------------
@@ -55,35 +56,50 @@ export const PT = {
 //  than the sampled points, with the same spacing.
 //------------------------------------------------------------
 export function readCubeFile(content, fileName) {
-  const cube = parseCube(content);
-  const structure = readCubeStructure(cube);
+  return buildCubeStructure(parseCube(content), fileName, { periodic: true });
+}
+
+/**
+ * Build the structure and its fields from an already-parsed cube.
+ *
+ * `periodic: true` is the historical behaviour (grid box = cell, atoms wrapped).
+ * `periodic: false` treats the file as a finite block: the cell is a padded
+ * orthorhombic box around every atom and the whole grid (io/cubeLayout.js),
+ * atoms keep their Cartesian positions, and each field keeps its own grid with
+ * an `origin` inside that box and `periodic: false`. No array is padded.
+ *
+ * @param {import('./cubeParse.js').CubeData} cube
+ * @param {string} fileName
+ * @param {{ periodic: boolean }} options
+ */
+export function buildCubeStructure(cube, fileName, { periodic }) {
+  const isBlock = periodic === false;
+  const layout = isBlock ? boxedCubeLayout(cube) : null;
+  const structure = isBlock ? structureFromLayout(cube, layout) : readCubeStructure(cube);
+  const origin = layout ? layout.fieldOrigin : [0, 0, 0];
 
   const fields = cube.values.map((values, index) => new Field({
     nx: cube.grid[0],
     ny: cube.grid[1],
     nz: cube.grid[2],
-    origin: [0, 0, 0],
+    origin: [...origin],
     voxel: cube.voxel,
     values,
     component: index,
     label: datasetLabel(cube, index),
+    periodic: !isBlock,
     // One pass instead of the four separate `reduce` walks this used to do
     // over an array that runs to millions of entries.
     ...computeFieldStats(values),
   }));
 
-  const container = new FieldContainer({
-    fileName: fileName,
-    source: "Cube",
-    fields: fields,
-    fieldCount: fields.length
-  });
-
-  structure.volumetricFields = container; // Attach field container to structure for easy access in rendering
-  return {
+  structure.volumetricFields = new FieldContainer({
     fileName,
-    structure_with_field: structure
-  };
+    source: "Cube",
+    fields,
+    fieldCount: fields.length
+  }); // attached to the structure for easy access in rendering
+  return { fileName, structure_with_field: structure };
 }
 
 /** The comment label, qualified by orbital id / value index when the file
@@ -94,18 +110,26 @@ function datasetLabel(cube, index) {
   return cube.label;
 }
 
-/** @param {import('./cubeParse.js').CubeData} cube */
+/** Periodic structure: atoms shifted so the grid origin is the cell corner, then wrapped. */
 export function readCubeStructure(cube) {
   const lattice = cube.lattice;
   const elements = cube.atoms.map((a) => PT[a.atomicNumber] || "X");
   // Shift by the grid origin so atoms and field share the cell-corner frame.
   const positions_cart = cube.atoms.map((a) => a.position.map((c, k) => c - cube.origin[k]));
+  return assembleStructure(lattice, elements, positions_cart, true);
+}
 
+/** Block structure: Cartesian positions already inside the padded box, never wrapped. */
+function structureFromLayout(cube, layout) {
+  const elements = cube.atoms.map((a) => PT[a.atomicNumber] || "X");
+  return assembleStructure(layout.lattice, elements, layout.positions, false);
+}
+
+function assembleStructure(lattice, elements, positions_cart, wrap) {
   // --- convert cart → frac
   const latticeInverse = invert3x3(transpose3x3(lattice));
-  const positions = (
-    positions_cart.map(vec => cartToFractional(vec, lattice, latticeInverse))
-  ).map(pos => pos.map(normalizeFractional));
+  const fractional = positions_cart.map(vec => cartToFractional(vec, lattice, latticeInverse));
+  const positions = wrap ? fractional.map(pos => pos.map(normalizeFractional)) : fractional;
 
   const atoms = [];
 
