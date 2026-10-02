@@ -1,12 +1,14 @@
 import { app, fileBrowser, general } from '../state/store.js';
-import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getPlaneDefinitionNormalAndD, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
+import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getPlaneDefinitionNormalAndD, getPlaneDRangeInCell, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../render/AtomsFracUpdateModule.js';
+import { activePeriodicBounds } from '../render/LatticeModule.js';
 import { getSelectedAtoms, subscribeToAtomSelection } from './SelectAndHighlightModule.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
 import { computeAutoRange, roundToSigFigs } from '../utils/index.js';
+import { saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
 
 export const planesData = {
   activeInputMode: 'hkl', // 'hkl' or 'uvwd'
@@ -43,6 +45,122 @@ registerColorBarSource('plane', 'Field', () => planesColorBarInstance);
 function getSelectedStructure() {
   return fileBrowser.selectedStructure || null;
 }
+
+// ---------------------------------------------------------------------------
+// Persistence (state/structurePrefs.js, field 'planes'): the created planes
+// and each plane's field/colormap settings, per structure. Saved ONLY from
+// the user-edit handlers below (add/create/calc buttons, parameter inputs,
+// the d slider, show/enable/delete, cut mode, field/colormap/range/log/auto
+// range, the color bar's own limits/legend) — never from
+// syncPlanesForSelectedStructure / replacePlaneMesh / applyPlanesPeriodicBounds
+// or a frame change. The live `field` reference is never stored: the plane
+// keeps `fieldLabel` and re-resolves it against fieldBrowser.availableFields
+// (resolvePendingPlaneFields), also once a field is loaded after the
+// structure.
+// ---------------------------------------------------------------------------
+
+const PLANES_PREF_FIELD = 'planes';
+
+/** Plain-JSON copy of a structure's planes (no live Field reference). */
+function serializePlanes(structure) {
+  return (structure?.planes ?? []).filter(p => p?.params).map(p => {
+    const out = {
+      enabled: p.enabled !== false,
+      label: p.label ?? planeLabelForParams(p.params),
+      params: { ...p.params },
+      visualization: p.visualization || PLANE_VIS_NONE,
+      cutMode: normalizePlaneCutMode(p.cutMode),
+      colormap: p.colormap || 'jet',
+      colormapScale: p.colormapScale || 'linear',
+      colormapMin: p.colormapMin,
+      colormapMax: p.colormapMax,
+    };
+    const fieldLabel = p.field?.label || p.fieldLabel;
+    if (fieldLabel) out.fieldLabel = fieldLabel;
+    // The color bar writes its default legend (the field's name) back onto
+    // the plane; only a user-edited legend is worth storing.
+    if (p.legendText != null && p.legendText !== fieldLabel) out.legendText = p.legendText;
+    return out;
+  });
+}
+
+/**
+ * Save the selected structure's planes (user edits only — see above).
+ * `debounce` for inputs that fire per pointer move (d slider, range sliders).
+ */
+function persistPlanes({ debounce = false } = {}) {
+  const structure = getSelectedStructure();
+  if (!structure) return;
+  if (debounce) scheduleStructurePrefSave(structure, PLANES_PREF_FIELD, () => serializePlanes(structure));
+  else saveStructurePref(structure, PLANES_PREF_FIELD, serializePlanes(structure));
+}
+
+/** The loaded field a plane's `fieldLabel` names, or null. */
+function findFieldByLabel(label) {
+  if (!label) return null;
+  return fieldBrowser.availableFields.find(f => f.label === label) || null;
+}
+
+/**
+ * Bind every plane of the selected structure that names a field
+ * (`fieldLabel`, visualization 'Field') but holds no Field yet — a restored
+ * plane whose volumetric data arrived after the structure — to that field
+ * once it is loaded, and re-render it. Idempotent and never saves; runs on
+ * every 'crysviz:fields-changed' (ui/FieldPanel.js fieldBrowser.setSelectedField).
+ * @returns {number} planes resolved
+ */
+export function resolvePendingPlaneFields() {
+  const structure = getSelectedStructure();
+  if (!structure?.planes?.length) return 0;
+  let resolved = 0;
+  structure.planes.forEach(plane => {
+    if (plane.field || plane.visualization !== PLANE_VIS_FIELD) return;
+    const field = findFieldByLabel(plane.fieldLabel);
+    if (!field) return;
+    plane.field = field;
+    replacePlaneMesh(structure, plane);
+    resolved++;
+  });
+  if (resolved) {
+    renderPlanesTable();
+    if (hasSelectedPlane()) updateFieldSelectionDropdown();
+  }
+  return resolved;
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('crysviz:fields-changed', () => resolvePendingPlaneFields());
+}
+
+/**
+ * Re-apply stored planes onto the displayed frame (afterSelect restorer).
+ * Planes already on the structure with the same params (a .crysviz load)
+ * are not duplicated. Returns the number of planes added.
+ */
+function restorePlanes(container, value, structure) {
+  if (!Array.isArray(value) || !value.length || !structure) return 0;
+  const owns = typeof container?.ownsStructure === 'function'
+    ? container.ownsStructure(structure) : !!container?.structures?.includes(structure);
+  if (!owns) return 0;
+  ensureStructurePlaneState(structure);
+  const keyOf = params => JSON.stringify(params);
+  const existing = new Set(structure.planes.map(p => keyOf(p?.params)));
+  let added = 0;
+  for (const stored of value) {
+    if (!stored?.params || existing.has(keyOf(stored.params))) continue;
+    const copy = JSON.parse(JSON.stringify(stored));
+    const plane = { ...createDefaultPlane(copy.params, copy.label ?? planeLabelForParams(copy.params)), ...copy, field: null };
+    plane.cutMode = normalizePlaneCutMode(plane.cutMode);
+    if (plane.visualization === PLANE_VIS_FIELD) plane.field = findFieldByLabel(plane.fieldLabel);
+    structure.planes.push(plane);
+    existing.add(keyOf(plane.params));
+    added++;
+  }
+  if (added && structure === getSelectedStructure()) syncPlanesForSelectedStructure();
+  return added;
+}
+
+registerStructurePrefField(PLANES_PREF_FIELD, (container, value, structure) => restorePlanes(container, value, structure));
 
 function ensureStructurePlaneState(structure) {
   if (!structure) return;
@@ -95,6 +213,9 @@ function replacePlaneMesh(structure, planeDef) {
     normal,
     d,
     cell: lattice,
+    // Trimmed to the periodic display boundary (the Cell & Supercell panel's
+    // "Active Cell Boundary"), like the atoms and the field, not just the cell.
+    bounds: activePeriodicBounds(),
     // Mesh tessellation density is no longer a user-exposed setting (it
     // never actually controlled color smoothness — the LUT sampling was
     // always a fixed 256 steps regardless — just the geometry's own vertex
@@ -148,6 +269,28 @@ function refreshCurrentStructurePlanesInScene() {
 export function setPlanesVisible(visible) {
   planesData.showPlanes = !!visible;
   refreshCurrentStructurePlanesInScene();
+}
+
+/**
+ * Re-trim the planes to the periodic display boundary (general.periodicBounds)
+ * — call it whenever the boundary or "Show Periodic Images" changes. Rebuilds
+ * the plane meshes (polygon, border, clipping) and re-derives the selected
+ * plane's d slider range, which spans the boundary box's corners.
+ */
+export function applyPlanesPeriodicBounds() {
+  const structure = getSelectedStructure();
+  if (!structure?.planes?.length) return;
+
+  // Other periodic-image changes (e.g. the PBC bonds toggle) land here too —
+  // only rebuild meshes actually trimmed to a different box.
+  const activeBounds = JSON.stringify(activePeriodicBounds());
+  const stale = [...getStructureMeshMap(structure).values()]
+    .some(mesh => JSON.stringify(mesh.bounds) !== activeBounds);
+  if (stale) refreshCurrentStructurePlanesInScene();
+
+  if (hasSelectedPlane()) {
+    syncDerivedPlaneInputs(structure.planes[selectedPlaneIndex].params, structure.lattice);
+  }
 }
 
 function syncAtomCutPlanesFromSelectedStructure() {
@@ -265,6 +408,61 @@ function setNumericInputValue(elementId, value, fractionDigits = null) {
     : numericValue.toFixed(fractionDigits);
 }
 
+// d slider endpoints used when there is no cell/normal to derive them from.
+const D_SLIDER_FALLBACK_BOUNDS = { min: -10, max: 10 };
+// Decimal places the cell-derived endpoints are rounded to (matches the
+// 4-digit d text box).
+const D_SLIDER_BOUND_DIGITS = 4;
+
+// Normal + lattice + display boundary the d slider's endpoints were last
+// derived from, so they are only re-derived when one of those changes — not on
+// every d edit/drag, which would undo the user's own endpoint adjustments.
+let dSliderBoundsKey = null;
+
+/**
+ * Default d slider endpoints for a plane normal: the d range over which the
+ * plane stays within the displayed box — the periodic display boundary, i.e.
+ * the cell itself by default (d at the box corners, lowest/highest).
+ * Rounded inwards so the endpoints themselves don't land just outside the box.
+ */
+function getCellDSliderBounds(normal, lattice) {
+  const range = getPlaneDRangeInCell(normal, lattice, activePeriodicBounds());
+  if (!range) return { ...D_SLIDER_FALLBACK_BOUNDS };
+
+  const scale = 10 ** D_SLIDER_BOUND_DIGITS;
+  // 1e-9 slack keeps float noise (4.999999999) from rounding a clean 5 to 4.9999.
+  const min = Math.ceil((range.min - 1e-9) * scale) / scale;
+  const max = Math.floor((range.max + 1e-9) * scale) / scale;
+  return min < max ? { min, max } : range;
+}
+
+function getSelectedPlaneCellDSliderBounds() {
+  const structure = getSelectedStructure();
+  const plane = hasSelectedPlane() ? structure.planes[selectedPlaneIndex] : null;
+  if (!plane) return { ...D_SLIDER_FALLBACK_BOUNDS };
+  const { normal } = getPlaneDefinitionNormalAndD(plane, structure.lattice);
+  return getCellDSliderBounds(normal, structure.lattice);
+}
+
+/**
+ * Reset the d slider's endpoints to the box-derived range whenever the plane
+ * normal, the lattice or the display boundary changed since they were last
+ * derived.
+ */
+function syncDSliderBoundsToCell(normal, lattice) {
+  const minInput = document.getElementById('planeDSliderMin');
+  const maxInput = document.getElementById('planeDSliderMax');
+  if (!minInput || !maxInput) return;
+
+  const key = JSON.stringify([normal, lattice, activePeriodicBounds()]);
+  if (key === dSliderBoundsKey) return;
+  dSliderBoundsKey = key;
+
+  const { min, max } = getCellDSliderBounds(normal, lattice);
+  minInput.value = `${min}`;
+  maxInput.value = `${max}`;
+}
+
 /**
  * Apply the user-adjustable min/max endpoint inputs to the d slider's own
  * range, clamping its current thumb position (display only — the
@@ -278,8 +476,9 @@ function applyDSliderBounds() {
 
   let min = parseFloat(minInput.value);
   let max = parseFloat(maxInput.value);
-  if (!Number.isFinite(min)) min = -10;
-  if (!Number.isFinite(max)) max = 10;
+  const defaults = getSelectedPlaneCellDSliderBounds();
+  if (!Number.isFinite(min)) min = defaults.min;
+  if (!Number.isFinite(max)) max = defaults.max;
   if (min >= max) max = min + 0.01;
 
   minInput.value = `${min}`;
@@ -290,24 +489,33 @@ function applyDSliderBounds() {
 }
 
 /**
- * Keep the d slider's endpoints wide enough to cover the plane's current d
- * value (e.g. a plane loaded from a file/state with d outside the default
- * [-10, 10] bounds), then sync the thumb to that value.
+ * Sync the d slider to a plane: endpoints default to the d range that keeps
+ * the plane within the cell (re-derived when the normal/lattice changes),
+ * widened if needed to cover the plane's current d value (e.g. a plane fitted
+ * to atoms outside the cell, or typed in by hand), then the thumb is moved to
+ * that value.
  */
-function ensureDSliderCoversValue(dValue) {
+function syncDSlider(dValue, normal, lattice) {
   const slider = document.getElementById('planeDSlider');
   const minInput = document.getElementById('planeDSliderMin');
   const maxInput = document.getElementById('planeDSliderMax');
   if (!slider || !minInput || !maxInput) return;
 
+  syncDSliderBoundsToCell(normal, lattice);
+
   let min = parseFloat(minInput.value);
   let max = parseFloat(maxInput.value);
-  if (!Number.isFinite(min)) min = -10;
-  if (!Number.isFinite(max)) max = 10;
+  const defaults = getCellDSliderBounds(normal, lattice);
+  if (!Number.isFinite(min)) min = defaults.min;
+  if (!Number.isFinite(max)) max = defaults.max;
 
   if (Number.isFinite(dValue)) {
-    if (dValue < min) min = Math.floor(dValue - 1);
-    if (dValue > max) max = Math.ceil(dValue + 1);
+    // Tolerance: a plane sitting exactly on a cell corner/face (e.g. (1 0 0))
+    // can exceed the inward-rounded endpoint by a rounding step — the thumb
+    // just clamps there rather than the range jumping a whole unit wider.
+    const tolerance = 10 ** -D_SLIDER_BOUND_DIGITS;
+    if (dValue < min - tolerance) min = Math.floor(dValue - 1);
+    if (dValue > max + tolerance) max = Math.ceil(dValue + 1);
   }
 
   minInput.value = `${min}`;
@@ -417,7 +625,7 @@ function syncDerivedPlaneInputs(params, lattice) {
       setNumericInputValue('planeV', 0, 4);
       setNumericInputValue('planeW', 0, 4);
       setNumericInputValue('planeD', 0, 4);
-      ensureDSliderCoversValue(0);
+      syncDSlider(0, null, lattice);
       return;
     }
 
@@ -427,7 +635,7 @@ function syncDerivedPlaneInputs(params, lattice) {
     setNumericInputValue('planeV', normal[1] ?? 0, 4);
     setNumericInputValue('planeW', normal[2] ?? 0, 4);
     setNumericInputValue('planeD', derived?.d ?? 0, 4);
-    ensureDSliderCoversValue(derived?.d ?? 0);
+    syncDSlider(derived?.d ?? 0, normal, lattice);
     return;
   }
 
@@ -441,7 +649,7 @@ function syncDerivedPlaneInputs(params, lattice) {
     setNumericInputValue('planeV', v, 4);
     setNumericInputValue('planeW', w, 4);
     setNumericInputValue('planeD', d, 4);
-    ensureDSliderCoversValue(d);
+    syncDSlider(d, [u, v, w], lattice);
 
     if (!Array.isArray(lattice) || lattice.length !== 3) {
       setNumericInputValue('planeH', 0);
@@ -620,9 +828,18 @@ function refreshPlaneColorBar() {
       p.colormapMax = max;
       syncPlaneRangeControls(min, max);
       replacePlaneMesh(s, p);
+      persistPlanes();
     },
-    onScaleChange: (scale) => applyPlaneLogScale(scale === 'log'),
-    onAutoRange: () => applyPlaneAutoRange(),
+    onScaleChange: (scale) => {
+      if (applyPlaneLogScale(scale === 'log')) persistPlanes();
+    },
+    onAutoRange: () => {
+      if (applyPlaneAutoRange()) persistPlanes();
+    },
+    onLegendChange: (legendText) => {
+      plane.legendText = legendText;
+      if (getSelectedStructure()?.planes?.includes(plane)) persistPlanes();
+    },
   });
   planesColorBarOwnerPlane = plane;
 
@@ -637,9 +854,9 @@ function refreshPlaneColorBar() {
 // ForcePanel.js's applyLogScale.
 function applyPlaneLogScale(isLog) {
   const structure = getSelectedStructure();
-  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
+  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return false;
   const plane = structure.planes[selectedPlaneIndex];
-  if (!plane) return;
+  if (!plane) return false;
 
   plane.colormapScale = isLog ? 'log' : 'linear';
   // log10(0) is -Infinity — floor a min at/below 0 to a small positive
@@ -654,6 +871,7 @@ function applyPlaneLogScale(isLog) {
   if (logScaleCheckbox) logScaleCheckbox.checked = isLog;
   planesColorBarInstance?.update(plane.colormap, plane.colormapScale);
   replacePlaneMesh(structure, plane);
+  return true;
 }
 
 // Shared by the Auto Range button and the layout menu's own "Auto Range"
@@ -663,12 +881,12 @@ function applyPlaneLogScale(isLog) {
 // (computeAutoRange), exactly matching Forces/Spins/Atoms/Bonds.
 function applyPlaneAutoRange() {
   const structure = getSelectedStructure();
-  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
+  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return false;
   const plane = structure.planes[selectedPlaneIndex];
-  if (!plane || !plane.field) return;
+  if (!plane || !plane.field) return false;
 
   const range = computeAutoRange([Number(plane.field.minValue), Number(plane.field.maxValue)]);
-  if (!range) return;
+  if (!range) return false;
   let { min, max } = range;
   if (plane.colormapScale === 'log' && min <= 0) min = 0.01;
 
@@ -677,6 +895,7 @@ function applyPlaneAutoRange() {
   syncPlaneRangeControls(min, max);
   planesColorBarInstance?.setRange(min, max);
   replacePlaneMesh(structure, plane);
+  return true;
 }
 
 export function addPlanesPanel(target = "cvPanelBody-planes") {
@@ -903,6 +1122,7 @@ function setupPlanesEvents(container) {
         plane.enabled = e.target.checked;
         replacePlaneMesh(structure, plane);
         syncAtomCutPlanesFromSelectedStructure();
+        persistPlanes();
       }
     }
   });
@@ -927,7 +1147,9 @@ function setupPlanesEvents(container) {
 
   // Commit plane parameter edits on blur or Enter.
   [...hklInputs(), ...uvwdInputs()].forEach(input => {
-    input.addEventListener('blur', updateSelectedPlaneFromInputs);
+    input.addEventListener('blur', () => {
+      if (updateSelectedPlaneFromInputs()) persistPlanes();
+    });
     input.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
         event.preventDefault();
@@ -936,9 +1158,15 @@ function setupPlanesEvents(container) {
     });
   });
 
-  container.querySelector('#addPlaneBtn').addEventListener('click', addPlaneFromCurrentInputs);
-  container.querySelector('#createFromAtomsBtn').addEventListener('click', createPlaneFromSelectedAtoms);
-  container.querySelector('#calcFromAtomsBtn').addEventListener('click', calculatePlaneFromSelectedAtoms);
+  container.querySelector('#addPlaneBtn').addEventListener('click', () => {
+    if (addPlaneFromCurrentInputs()) persistPlanes();
+  });
+  container.querySelector('#createFromAtomsBtn').addEventListener('click', () => {
+    if (createPlaneFromSelectedAtoms()) persistPlanes();
+  });
+  container.querySelector('#calcFromAtomsBtn').addEventListener('click', () => {
+    if (calculatePlaneFromSelectedAtoms()) persistPlanes();
+  });
 
   // d slider: mirrors the d text box, updating the plane in real time while
   // dragging (not just on blur/Enter like the other numeric inputs).
@@ -949,7 +1177,7 @@ function setupPlanesEvents(container) {
 
   planeDSlider.addEventListener('input', () => {
     planeDInput.value = planeDSlider.value;
-    updateSelectedPlaneFromInputs();
+    if (updateSelectedPlaneFromInputs()) persistPlanes({ debounce: true });
   });
 
   // The slider's own endpoints are user-adjustable, independent of the d value.
@@ -1004,6 +1232,7 @@ function setupPlanesEvents(container) {
       replacePlaneMesh(structure, plane);
       refreshPlaneColorBar();
       renderPlanesTable();
+      persistPlanes();
     });
   }
 
@@ -1017,6 +1246,7 @@ function setupPlanesEvents(container) {
       plane.colormap = e.target.value;
       replacePlaneMesh(structure, plane);
       refreshPlaneColorBar();
+      persistPlanes();
     });
   }
 
@@ -1029,8 +1259,14 @@ function setupPlanesEvents(container) {
       rangeMax.style.zIndex = activeInput === rangeMax ? '3' : '2';
     };
 
-    rangeMin.addEventListener('input', () => updateRangeDisplayAndPlane(rangeMin));
-    rangeMax.addEventListener('input', () => updateRangeDisplayAndPlane(rangeMax));
+    rangeMin.addEventListener('input', () => {
+      updateRangeDisplayAndPlane(rangeMin);
+      if (hasSelectedPlane()) persistPlanes({ debounce: true });
+    });
+    rangeMax.addEventListener('input', () => {
+      updateRangeDisplayAndPlane(rangeMax);
+      if (hasSelectedPlane()) persistPlanes({ debounce: true });
+    });
     rangeMin.addEventListener('focus', () => bringThumbToFront(rangeMin));
     rangeMax.addEventListener('focus', () => bringThumbToFront(rangeMax));
     rangeMin.addEventListener('pointerdown', () => bringThumbToFront(rangeMin));
@@ -1041,12 +1277,16 @@ function setupPlanesEvents(container) {
 
   const logScaleCheckbox = container.querySelector('#planesLogScaleCheckbox');
   if (logScaleCheckbox) {
-    logScaleCheckbox.addEventListener('change', () => applyPlaneLogScale(logScaleCheckbox.checked));
+    logScaleCheckbox.addEventListener('change', () => {
+      if (applyPlaneLogScale(logScaleCheckbox.checked)) persistPlanes();
+    });
   }
 
   const autoRangeBtn = container.querySelector('#planesAutoRangeBtn');
   if (autoRangeBtn) {
-    autoRangeBtn.addEventListener('click', applyPlaneAutoRange);
+    autoRangeBtn.addEventListener('click', () => {
+      if (applyPlaneAutoRange()) persistPlanes();
+    });
   }
 
   const cutModeSelect = container.querySelector('#planeCutMode');
@@ -1059,6 +1299,7 @@ function setupPlanesEvents(container) {
       plane.cutMode = normalizePlaneCutMode(e.target.value);
       syncAtomCutPlanesFromSelectedStructure();
       renderPlanesTable();
+      persistPlanes();
     });
   }
 }
@@ -1067,11 +1308,12 @@ function addPlaneFromCurrentInputs() {
   const structure = getSelectedStructure();
   if (!structure) {
     alert('Load/select a structure before adding planes.');
-    return;
+    return false;
   }
 
   ensureStructurePlaneState(structure);
   addPlane(structure, createDefaultPlane());
+  return true;
 }
 
 /**
@@ -1161,15 +1403,16 @@ function createPlaneFromSelectedAtoms() {
   const structure = getSelectedStructure();
   if (!structure) {
     alert('Load/select a structure before adding planes.');
-    return;
+    return false;
   }
 
   const derivedParams = planeParamsFromSelectedAtoms();
-  if (!derivedParams) return;
+  if (!derivedParams) return false;
 
   ensureStructurePlaneState(structure);
   addPlane(structure, createDefaultPlane(derivedParams, planeLabelForParams(derivedParams)));
   syncAtomCutPlanesFromSelectedStructure();
+  return true;
 }
 
 /** Re-fit the plane selected in the table to the selected atoms. */
@@ -1177,17 +1420,17 @@ function calculatePlaneFromSelectedAtoms() {
   const structure = getSelectedStructure();
   if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) {
     alert('Select a plane to update before calculating from atoms.');
-    return;
+    return false;
   }
 
   const plane = structure.planes[selectedPlaneIndex];
   if (!plane) {
     alert('Selected plane could not be found.');
-    return;
+    return false;
   }
 
   const derivedParams = planeParamsFromSelectedAtoms();
-  if (!derivedParams) return;
+  if (!derivedParams) return false;
 
   plane.params = derivedParams;
   // plane.label = `[${derivedParams.u.toFixed(2)} ${derivedParams.v.toFixed(2)} ${derivedParams.w.toFixed(2)}] d=${derivedParams.d.toFixed(2)}`;
@@ -1204,6 +1447,7 @@ function calculatePlaneFromSelectedAtoms() {
   replacePlaneMesh(structure, plane);
   syncAtomCutPlanesFromSelectedStructure();
   renderPlanesTable();
+  return true;
 }
 
 /**
@@ -1236,6 +1480,9 @@ function loadSelectedPlaneParameters() {
     document.getElementById('radioUVWD').dispatchEvent(new Event('change'));
   }
 
+  // A newly selected plane starts from its own cell-derived d slider range,
+  // not endpoints hand-adjusted for whichever plane was selected before.
+  dSliderBoundsKey = null;
   syncDerivedPlaneInputs(plane.params, structure.lattice);
 
   // Load show planes toggle
@@ -1264,10 +1511,11 @@ function loadSelectedPlaneParameters() {
  */
 function updateSelectedPlaneFromInputs() {
   const structure = getSelectedStructure();
-  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return;
+  if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return false;
 
   const plane = structure.planes[selectedPlaneIndex];
-  if (!plane) return;
+  if (!plane) return false;
+  const paramsBefore = JSON.stringify(plane.params);
 
   if (planesData.activeInputMode === 'hkl') {
     const h = parseFloat(document.getElementById('planeH').value) || 0;
@@ -1288,6 +1536,7 @@ function updateSelectedPlaneFromInputs() {
   replacePlaneMesh(structure, plane);
   syncAtomCutPlanesFromSelectedStructure();
   renderPlanesTable();
+  return JSON.stringify(plane.params) !== paramsBefore;
 }
 
 /**
@@ -1510,7 +1759,8 @@ function renderPlanesTable() {
 
     const { hklStr, uvwdStr } = getPlaneTableDisplayParams(plane, lattice);
     const { hklValues, uvwdValues, dValue } = getPlaneTableDisplayData(plane, lattice);
-    const rawField = plane.field?.label || '—';
+    const rawField = plane.field?.label
+      || (plane.visualization === PLANE_VIS_FIELD && plane.fieldLabel) || '—';
     const fieldDisplay = rawField !== '—' && rawField.length > 15
       ? rawField.slice(0, 14) + '…'
       : rawField;
@@ -1560,6 +1810,7 @@ function renderPlanesTable() {
       plane.enabled = e.target.checked;
       replacePlaneMesh(s, plane);
       syncAtomCutPlanesFromSelectedStructure();
+      persistPlanes();
     });
   });
 
@@ -1585,6 +1836,7 @@ function renderPlanesTable() {
       } else {
         disablePlaneControls();
       }
+      persistPlanes();
     });
   });
 }

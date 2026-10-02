@@ -8,6 +8,7 @@ Currently it is possible to view the following file types:
 - **VASP**:
     - POSCAR: structure only.
     - OUTCAR: structure, forces, and spin for the complete trajectory of a MD or relaxation.
+    - INCAR: magnetic moments only. Load the structure first, select it, then load the INCAR (the file name must contain `INCAR`): its `MAGMOM` is read together with `LNONCOLLINEAR`/`LSORBIT` and `SAXIS` — one signed moment per atom for a collinear run, a 3-vector per atom for a non-collinear one, repeat counts such as `4*1.5` included — and, after you confirm, replaces the structure's spins. The number of values must fit the selected structure. A `MAGMOM` written with variables (`m -m`) can be loaded with the variables set to unit magnitude.
 
 - **Quantum Espresso**:
     - Input file: structure only.

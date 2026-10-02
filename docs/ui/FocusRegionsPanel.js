@@ -1,6 +1,6 @@
 import { fileBrowser } from '../state/store.js';
 import {
-  applyFocusRegions, createFocusRegion, focusDistanceTo, getFocusRegions, gradientStartRadius,
+  applyFocusRegionEdit, createFocusRegion, focusDistanceTo, getFocusRegions, gradientStartRadius,
   prepareFocusRegions, removeFocusRegion, resetFocusRegionCenter, setFocusRegionCenterFractional,
 } from '../render/index.js';
 import {
@@ -98,7 +98,7 @@ function renderRegionCard(region, index, rerender) {
   enabled.checked = region.enabled !== false;
   enabled.title = 'Enable focus region';
   enabled.setAttribute('aria-label', `Enable Region ${index + 1}`);
-  enabled.addEventListener('change', () => { region.enabled = enabled.checked; applyFocusRegions(); });
+  enabled.addEventListener('change', () => { region.enabled = enabled.checked; applyFocusRegionEdit(); });
   header.append(enabled, title, button('×', 'btn-mini focus-regions-delete', () => {
     removeFocusRegion(region.id);
     rerender();
@@ -117,7 +117,7 @@ function renderRegionCard(region, index, rerender) {
     small: true,
     rowClass: 'toggle_row focus-regions-inner-toggle',
     textClass: 'toggle_text focus-regions-inner-toggle-text',
-    onChange(on) { region.innerEnabled = on; rerender(); applyFocusRegions(); },
+    onChange(on) { region.innerEnabled = on; rerender(); applyFocusRegionEdit(); },
   });
   card.appendChild(innerToggle.row);
   if (region.innerEnabled !== false) {
@@ -125,16 +125,16 @@ function renderRegionCard(region, index, rerender) {
     card.appendChild(centerEditor(region, rerender));
     card.appendChild(rangeRow('Inner radius', region.innerRadius, 0, 20, 0.1, (value) => {
       region.innerRadius = value;
-      applyFocusRegions();
+      applyFocusRegionEdit();
     }));
     card.appendChild(rangeRow('Inner opacity', region.innerOpacity, 0, 1, 0.01, (value) => {
       region.innerOpacity = value;
-      applyFocusRegions();
+      applyFocusRegionEdit();
     }));
   }
   card.appendChild(rangeRow('Outer opacity', region.outerOpacity, 0, 1, 0.01, (value) => {
     region.outerOpacity = value;
-    applyFocusRegions();
+    applyFocusRegionEdit();
   }));
 
   const selectInner = button('Select inner atoms', 'btn-mini focus-regions-select', () => {
@@ -169,12 +169,12 @@ function renderRegionCard(region, index, rerender) {
       ...selected.map((atom) => atom.sourceIndex).filter(Number.isInteger),
     ])];
     refreshExceptionText();
-    applyFocusRegions();
+    applyFocusRegionEdit();
   });
   const clearExceptions = button('Clear', 'btn-mini', () => {
     region.excludedSourceIndices = [];
     refreshExceptionText();
-    applyFocusRegions();
+    applyFocusRegionEdit();
   });
   exceptions.append(exceptionText, addExceptions, clearExceptions);
   card.appendChild(exceptions);
@@ -197,7 +197,7 @@ function gradientEditor(region, rerender) {
     small: true,
     rowClass: 'toggle_row focus-regions-inner-toggle',
     textClass: 'toggle_text focus-regions-inner-toggle-text',
-    onChange(on) { region.gradientEnabled = on; rerender(); applyFocusRegions(); },
+    onChange(on) { region.gradientEnabled = on; rerender(); applyFocusRegionEdit(); },
   });
   wrap.appendChild(toggle.row);
   if (region.gradientEnabled === true) {
@@ -212,7 +212,7 @@ function gradientEditor(region, rerender) {
     wrap.appendChild(rangeRow('Gradient share of inner radius', region.gradientFraction, 0, 1, 0.01, (value) => {
       region.gradientFraction = value;
       refreshHint();
-      applyFocusRegions();
+      applyFocusRegionEdit();
     }));
     wrap.appendChild(hint);
   }
@@ -237,7 +237,7 @@ function polyhedraModeEditor(region) {
   select.value = region.polyhedraMode === 'position' ? 'position' : 'average';
   select.addEventListener('change', () => {
     region.polyhedraMode = select.value;
-    applyFocusRegions();
+    applyFocusRegionEdit();
   });
   row.append(text, select);
   return row;

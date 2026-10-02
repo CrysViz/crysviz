@@ -107,8 +107,9 @@ async function expandPanel(page, id) {
   H.check('View panel camera lock remains available', featureLockUi.cameraLock);
 
   // OFF is the non-destructive direction and changes the same persisted flag
-  // without a dialog. Turning it back ON must hold the flag until the existing
-  // confirm dialog is accepted.
+  // without a dialog. Turning it back ON here hits the shared view lock's
+  // no-stored-set path (plan Phase 2, DW-2.4): this is a fresh profile, so
+  // nothing is stored yet and the flag flips immediately with no dialog.
   await page.evaluate(() => document.getElementById('featureSharedViewToggle').click());
   await page.waitForTimeout(100);
   const featureUnlocked = await page.evaluate(async () => {
@@ -125,30 +126,17 @@ async function expandPanel(page, id) {
 
   await page.evaluate(() => document.getElementById('featureSharedViewToggle').click());
   await page.waitForTimeout(100);
-  const featureConfirmPending = await page.evaluate(async () => {
+  const featureLocked = await page.evaluate(async () => {
     const { general } = await import('./state/store.js');
     return {
       flag: general.featuresLocked,
       checked: document.getElementById('featureSharedViewToggle').checked,
-      modalVisible: document.getElementById('confirmModal')?.hidden === false,
-      title: document.getElementById('confirmModalTitle')?.textContent,
+      modalHidden: document.getElementById('confirmModal')?.hidden !== false,
     };
   });
-  H.check('turning shared view ON shows the existing confirmation before changing the flag',
-    featureConfirmPending.flag === false
-      && featureConfirmPending.checked === true
-      && featureConfirmPending.modalVisible
-      && featureConfirmPending.title === 'Lock this setting?',
-  JSON.stringify(featureConfirmPending));
-  await H.clickById(page, 'confirmModalOk');
-  await page.waitForTimeout(100);
-  const featureLocked = await page.evaluate(async () => {
-    const { general } = await import('./state/store.js');
-    return general.featuresLocked === true
-      && document.getElementById('featureSharedViewToggle').checked === true
-      && document.getElementById('confirmModal').hidden;
-  });
-  H.check('confirming shared view ON flips the same flag', featureLocked);
+  H.check('turning shared view ON with nothing stored locks immediately with no dialog',
+    featureLocked.flag === true && featureLocked.checked === true && featureLocked.modalHidden,
+    JSON.stringify(featureLocked));
 
   await page.evaluate(() => document.getElementById('featureSharedViewToggle').click());
   await page.waitForTimeout(100);
@@ -156,7 +144,7 @@ async function expandPanel(page, id) {
     const { general } = await import('./state/store.js');
     return general.featuresLocked === false
       && document.getElementById('featureSharedViewToggle').checked === false
-      && document.getElementById('confirmModal').hidden;
+      && document.getElementById('confirmModal')?.hidden !== false;
   });
   H.check('turning shared view OFF again needs no confirmation', featureUnlockedAgain);
 

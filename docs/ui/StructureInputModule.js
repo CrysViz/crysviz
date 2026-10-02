@@ -1,12 +1,14 @@
 
 import { StructureContainer } from '../model/index.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
+import { geometryFingerprint } from '../io/share/shareCodec.js';
 import { FileSource } from '../io/FileSource.js';
 const tableBody = document.querySelector("#objectTable tbody");
 import {fileBrowser,structureShip,general} from '../state/store.js';
 import {createRow,selectLastAddedRow} from './FileBrowswerPanel.js';
-import { restoreAtomColors } from '../utils/ColorModule.js';
-import { restoreFocusRegions } from '../render/FocusRegionModule.js';
+import { restoreStructurePrefs } from '../state/structurePrefs.js';
+import { seedContainerSizes } from './SizePrefs.js';
+import { applyEffectiveFeatureToggles, snapshotFeatureToggles } from './FeatureLockModule.js';
 import {
   transpose3x3,
   invert3x3,
@@ -88,9 +90,10 @@ export function isLikelyOUTCARContent(content) {
  * @param {{ restoreStoredPrefs?: boolean }} [options] restoreStoredPrefs
  *   (default: general.restoreStoredPrefs, true in the full app) re-applies
  *   the per-structure preferences saved for this same file in an earlier
- *   session — per-atom user colours (utils/ColorModule.js) and focus regions
- *   (render/FocusRegionModule.js), both stored by structure content in
- *   state/structurePrefs.js. A share-URL / .crysviz load passes false: that
+ *   session — per-atom user colours (utils/ColorModule.js), focus regions
+ *   (render/FocusRegionModule.js) and every other field registered with
+ *   state/structurePrefs.js, all stored by structure content there. A
+ *   share-URL / .crysviz load passes false: that
  *   state is a complete snapshot and must not have stored preferences mixed
  *   in underneath it. Widget mode flips the store default to false at boot
  *   (host/early.js) unless the embed URL carries `prefs=1`.
@@ -106,16 +109,37 @@ export function initializeUIOnLoad(structureContainer, { restoreStoredPrefs = ge
   tableBody.appendChild(row);
   fileBrowser.fileData.push({ idx: -1, name: fileName, traj, step });
 
-  // Colours go on BEFORE the row is selected (and rendered) below, so the
-  // first rebuild already paints them.
-  if (restoreStoredPrefs) restoreAtomColors(structureContainer);
+  // 'beforeSelect' fields (the atom colours) go on BEFORE the row is
+  // selected (and rendered) below, so the first rebuild already paints them.
+  // A new structure starts at the default sizes (per-structure, ui/SizePrefs.js),
+  // unless its stored record says otherwise.
+  // The Features switches (ui/FeatureLockModule.js): the 'featureToggles'
+  // restorer seeds container.featureOverrides here too, and the mark lets the
+  // Features window apply the cascade once its own switches exist. A load
+  // that skips stored prefs (share link, .crysviz, widget without prefs=1)
+  // instead remembers the values the load just applied, so switching back to
+  // this row while unlocked shows the link's view — in memory only, nothing
+  // is written. Both go BEFORE the select: its row switch already resolves
+  // the cascade for the new container while unlocked.
+  if (restoreStoredPrefs) {
+    structureContainer.featureStorePrefs = true;
+    seedContainerSizes(structureContainer);
+    restoreStructurePrefs(structureContainer, 'beforeSelect');
+  } else {
+    structureContainer.featureOverrides = snapshotFeatureToggles();
+  }
 
   structureShip.container.push(structureContainer);
   selectLastAddedRow();
 
-  // Focus regions live on the displayed frame, so they go on once it exists;
-  // restoreFocusRegions repaints the per-instance opacity itself (cheap).
-  if (restoreStoredPrefs) restoreFocusRegions(structureContainer, fileBrowser.selectedStructure);
+  // 'afterSelect' fields (focus regions, planes, arrow styles, ...) need the
+  // displayed frame and the scene, so they go on once those exist. Then the
+  // switch cascade: the first load has no row switch to resolve it, and
+  // while locked the row switch never does.
+  if (restoreStoredPrefs) {
+    restoreStructurePrefs(structureContainer, 'afterSelect', fileBrowser.selectedStructure);
+    applyEffectiveFeatureToggles(structureContainer);
+  }
   return structureContainer;
 }
 
@@ -188,7 +212,7 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   pasteModal.hidden = true;
   pasteModal.innerHTML = `
     <div class="paste-modal" role="dialog" aria-modal="true" aria-label="Paste structure text">
-      <textarea id="structureText" placeholder="Paste POSCAR/CIF content, an OPTIMADE structure URL, or an Alexandria agm-id"></textarea>
+      <textarea id="structureText" placeholder="Paste POSCAR/CIF content, an OPTIMADE structure URL, an Alexandria agm-id, or a CrysViz share link"></textarea>
       <div class="paste-modal-actions">
         <button type="button" id="loadTextButton">Load Structure</button>
         <button type="button" id="cancelTextButton">Cancel</button>
@@ -235,23 +259,59 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     pasteModal.hidden = true;
   }
 
+  // A structure fetched from a database remembers where it came from, so a
+  // share link can name the entry instead of carrying its coordinates
+  // (ui/ShareModule.js; the share codec only does so while the structure is
+  // unchanged). The fingerprint is taken from the fetched POSCAR itself, the
+  // same way a recipient's browser reads it back. In memory only.
+  async function loadWithProvenance(result, source) {
+    const before = structureShip.container.length;
+    await onLoadStructure(result.content, result.fileName);
+    const container = structureShip.container.length > before ? structureShip.container.at(-1) : null;
+    if (!container) return;
+    try {
+      const fetched = readPOSCAR(result.content, result.fileName);
+      container.provenance = {
+        ...source,
+        fingerprint: geometryFingerprint({
+          elements: [...fetched.elements],
+          lattice: fetched.lattice.map((row) => [...row]),
+          positions: fetched.atoms.map((atom) => [...atom.position]),
+        }),
+      };
+    } catch (error) {
+      console.warn('Could not fingerprint the fetched structure; share links will embed it.', error);
+    }
+  }
+
   async function loadStructureFromText() {
     const raw = structureText.value.trim();
     if (!raw) {
-      setStatus('Paste POSCAR, CIF, an OPTIMADE structure URL, or an Alexandria agm-id before loading.');
+      setStatus('Paste POSCAR, CIF, an OPTIMADE structure URL, an Alexandria agm-id, or a CrysViz share link before loading.');
       structureText.focus({ preventScroll: true });
       return;
     }
     closePasteModal();
     try {
+      // A CrysViz share link, whatever domain it names (crysviz.org, a local
+      // server, the desktop app): open it here instead of navigating. Imported
+      // lazily — ShareModule imports this module.
+      if (/^https?:\/\/\S*[#?&](z|q|state|e)=/i.test(raw) && !/\s/.test(raw)) {
+        const { openShareLink } = await import('./ShareModule.js');
+        setStatus('Opening share link...');
+        const opened = await openShareLink(raw);
+        setStatus(opened ? 'Loaded shared structure.' : 'Share link not opened.');
+        if (opened) structureText.value = '';
+        return;
+      }
       if (isOptimadeStructureUrl(raw)) {
         setStatus('Fetching structure from OPTIMADE...');
         const result = await fetchOptimadeStructure(raw);
-        await onLoadStructure(result.content, result.fileName);
+        await loadWithProvenance(result, { kind: 'optimade', url: raw });
       } else if (normalizeAlexandriaId(raw)) {
         setStatus('Fetching structure from Alexandria...');
         const result = await fetchAlexandriaStructure(raw);
-        await onLoadStructure(result.content, result.fileName);
+        await loadWithProvenance(result, { kind: 'alexandria', id: normalizeAlexandriaId(raw) });
       } else {
         await onLoadStructure(raw, 'pasted');
       }

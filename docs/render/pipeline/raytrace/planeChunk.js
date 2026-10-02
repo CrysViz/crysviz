@@ -3,9 +3,10 @@
 // path-tracing (pathtrace/ptSceneFragment.js) scene shaders. It renders the
 // SAME planes the raster pipelines drape over the cell as subdivided quads
 // (added to app.scene by ui/PlanesPanel.js), but as exact analytic ray-plane
-// intersections trimmed to the unit cell.
+// intersections trimmed to the plane's fractional box of the cell (Plane.bounds
+// — the periodic display boundary; the unit cell by default).
 //
-// Each plane is encoded by SceneEncoder._encodePlanes into 6 texels of a data
+// Each plane is encoded by SceneEncoder._encodePlanes into 8 texels of a data
 // texture (see the layout comment in sceneFragment.js). 'None'-mode planes are
 // a flat translucent grey (alpha 0.70 -> the existing stochastic see-through);
 // their purple perimeter border is emitted as thin cylinders into the shared
@@ -16,8 +17,9 @@
 //
 // Cell clipping mirrors the raster material.clippingPlanes exactly: the hit
 // point is transformed to fractional cell coordinates via uCellWorldToFrac
-// (the inverse of the lattice-vector basis, origin 0) and rejected outside
-// [0-eps, 1+eps]^3 (eps 1e-3, matching makeCellClippingPlanes' offset). Because
+// (the inverse of the lattice-vector basis, origin 0) and rejected outside the
+// plane's own [lo-eps, hi+eps] box (eps 1e-3, matching
+// makeFractionalBoundsClippingPlanes' offset). Because
 // intersectPlanes is reached through each shader's SceneIntersect, planes cast
 // shadows and appear in reflections for free.
 //
@@ -42,7 +44,7 @@ bool intersectPlanes(vec3 ro, vec3 rd, float bestT,
 	float bt = bestT;
 	for (int i = 0; i < uPlaneCount; i++)
 	{
-		int o = i * 6;
+		int o = i * 8;
 		vec4 nd = fetchData(uPlanesDataTexture, o); // normal.xyz, d
 		vec3 n = nd.xyz;
 		float denom = dot(n, rd);
@@ -51,9 +53,11 @@ bool intersectPlanes(vec3 ro, vec3 rd, float bestT,
 		if (t < uEPS_intersect || t >= bt) continue;
 
 		vec3 p = ro + (t * rd);
-		// cell clip: fractional cell coordinates must lie in [0-eps, 1+eps]^3
+		// box clip: fractional cell coordinates must lie in [lo-eps, hi+eps]
 		vec3 fr = (uCellWorldToFrac * vec4(p, 1.0)).xyz;
-		if (any(lessThan(fr, vec3(-1e-3))) || any(greaterThan(fr, vec3(1.0 + 1e-3))))
+		vec3 boundsLo = fetchData(uPlanesDataTexture, o + 6).xyz;
+		vec3 boundsHi = fetchData(uPlanesDataTexture, o + 7).xyz;
+		if (any(lessThan(fr, boundsLo - 1e-3)) || any(greaterThan(fr, boundsHi + 1e-3)))
 			continue;
 
 		vec4 c1 = fetchData(uPlanesDataTexture, o + 1); // flatColor.rgb, alpha

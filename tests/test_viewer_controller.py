@@ -161,6 +161,25 @@ class ViewerControllerTests(unittest.TestCase):
         finally:
             viewer.close()
 
+    def test_DW_6_2_load_periodic_passthrough_and_rejection(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            viewer.load(Payload("a.cube", b"x"), periodic=False)
+            viewer.load(Payload("b.cube", b"x"), periodic=True)
+            viewer.load(Payload("c.cube", b"x"))
+            loads = [args for command, args, _ in host.commands if command == "load"]
+            self.assertIs(loads[0]["periodic"], False)
+            self.assertIs(loads[1]["periodic"], True)
+            self.assertNotIn("periodic", loads[2])
+            for bad in ("false", 0, 1):
+                with self.assertRaises(TypeError):
+                    viewer.load(Payload("d.cube", b"x"), periodic=bad)  # type: ignore[arg-type]
+            self.assertEqual(len([c for c, _, _ in host.commands if c == "load"]), 3)
+        finally:
+            viewer.close()
+
     def test_concurrent_commands_are_demultiplexed(self):
         client, server = _pair()
         host = _Host(server)

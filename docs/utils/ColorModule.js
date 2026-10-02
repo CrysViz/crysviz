@@ -1,5 +1,5 @@
 import {fileBrowser} from '../state/store.js';
-import { readStructurePrefs, saveStructurePref, scheduleStructurePrefSave } from '../state/structurePrefs.js';
+import { readStructurePrefs, saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
 
 
 // Get the color for an atom (custom or default). Guards against a stale index —
@@ -102,6 +102,10 @@ export function restoreAtomColors(container) {
   });
   return applied;
 }
+
+// Colours go on BEFORE the row is selected (and rendered) so the first
+// rebuild already paints them (state/structurePrefs.js restorer registry).
+registerStructurePrefField('colors', (container) => restoreAtomColors(container), { phase: 'beforeSelect' });
 
 export function clearAtomColor(atom) {
   return atom.resetColor();

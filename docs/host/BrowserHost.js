@@ -77,6 +77,13 @@ function commandError(code, message, details = undefined) {
   return error;
 }
 
+/** `periodic` is an optional literal boolean; the string "false", 0 and null are all rejected. */
+function requirePeriodicOption(value) {
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw commandError('INVALID_ARGS', 'load.periodic must be boolean');
+  }
+}
+
 function safeName(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -249,10 +256,12 @@ export function createBrowserHost({
         if (input.binary !== undefined && typeof input.binary !== 'boolean') {
           throw commandError('INVALID_ARGS', 'load.binary must be boolean');
         }
+        requirePeriodicOption(input.periodic);
         const data = input.data instanceof Uint8Array
           ? input.data.buffer.slice(input.data.byteOffset, input.data.byteOffset + input.data.byteLength)
           : input.data;
-        const result = await loadStructure(data, input.name, false, input.format || '');
+        const result = await loadStructure(data, input.name, false, input.format || '', { periodic: input.periodic });
+        if (result?.cancelled) throw commandError('LOAD_CANCELLED', 'Load cancelled by the user');
         const container = result?.container || null;
         if (!container) throw commandError('LOAD_FAILED', 'The structure loader returned no structure');
         emit('structure_loaded', snapshotForContainer(container, getActiveStructure()));
@@ -456,6 +465,7 @@ export function createBrowserHost({
         || typeof descriptor.request !== 'object') return;
       const request = descriptor.request;
       if (request.args?.inputUrl !== undefined) {
+        if (request.command === 'load') requirePeriodicOption(request.args.periodic);
         const inputUrl = sameOriginURL(request.args.inputUrl, window.location.origin);
         if (!inputUrl || inputUrl.username || inputUrl.password) {
           throw commandError('INVALID_INPUT_URL', 'Managed input URL must be same-origin');
@@ -614,9 +624,31 @@ function completionError(original, completion) {
   });
 }
 
+// Whether this session was launched by the desktop host (a _crysviz_manifest
+// capability in the launch URL; host/early.js strips it before anything else
+// runs). The Share dialog reads it: a desktop session is served from
+// 127.0.0.1, which a share link must not name.
+let launchedByHost = false;
+
+/** True when the desktop/CLI host launched this session. */
+export function wasLaunchedByHost() {
+  return launchedByHost;
+}
+
+// A share link carries its payload in the fragment (#z= / #q=, ui/ShareModule.js).
+const SHARE_FRAGMENT = /^#(z|q)=/;
+
 /** @param {{host: any, launch: {present:boolean, capability:string|null}, initialize: Function, loadShared?: Function, loadHash?: Function, loadDefault?: Function}} deps */
 export async function bootstrapAuthoritative(deps) {
   const { host, launch, initialize } = deps;
+  launchedByHost = !!launch?.present;
+  // Opening a share link in a tab that already shows CrysViz only changes the
+  // fragment, which browsers treat as same-document navigation: no reload, so
+  // the link would do nothing. Reload so it boots like a fresh open. The app's
+  // own URL cleanup uses history.replaceState, which fires no hashchange.
+  window.addEventListener('hashchange', () => {
+    if (SHARE_FRAGMENT.test(window.location.hash)) window.location.reload();
+  });
   if (launch?.present) {
     const capability = launch.capability;
     host.setBridgeCapability(undefined);
@@ -683,17 +715,20 @@ export async function bootstrapAuthoritative(deps) {
   const loadHash = initialized?.loadHash || deps.loadHash;
   const loadDefault = initialized?.loadDefault || deps.loadDefault;
 
-  // ?z= is the deflated share payload, ?state= the plain one, ?e= the
-  // password-encrypted one; ShareModule owns all three and loadShared() picks
-  // whichever is present (?e= prompts for the password).
+  // Share links: #z= / #q= in the fragment, or one of the pre-#144 query forms
+  // (?z= deflated, ?state= plain, ?e= encrypted). ShareModule owns them all and
+  // loadShared() picks whichever is present (encrypted ones prompt for the
+  // password).
   const query = new URLSearchParams(window.location.search);
-  if (query.has('state') || query.has('z') || query.has('e')) {
+  if (SHARE_FRAGMENT.test(window.location.hash)
+    || query.has('state') || query.has('z') || query.has('e')) {
     const result = await loadShared();
     if (!result) throw manifestError('SHARED_STATE_FAILED', 'Shared state was present but could not be loaded');
     return { source: 'shared' };
   }
   if (window.location.hash.startsWith('#load-file=')) {
     const result = await loadHash();
+    if (result === 'cancelled') throw manifestError('LOAD_CANCELLED', 'Load cancelled by the user');
     if (!result) throw manifestError('HASH_LOAD_FAILED', 'The load-file hash was present but could not be loaded');
     return { source: 'hash' };
   }

@@ -121,6 +121,7 @@ export function latticeDirsNorm() { return cachedLatticeDirs; }
 // Defaults to the classic unit cell [0,1] per axis. Shared by the JS wrapper,
 // the WASM caller, and the hash so all three agree.
 export function normalizePeriodicBounds(b) {
+  /** @returns {[number, number]} */
   const axis = (lo, hi) => {
     let a = Number.isFinite(lo) ? lo : 0;
     let z = Number.isFinite(hi) ? hi : 1;
@@ -133,6 +134,13 @@ export function normalizePeriodicBounds(b) {
     axis(b.ymin, b.ymax),
     axis(b.zmin, b.zmax),
   ];
+}
+
+// The display boundary actually in force: general.periodicBounds while "Show
+// Periodic Images" is on, the plain unit cell otherwise (no boundary applies
+// to the atoms then either, so nothing else should follow one).
+export function activePeriodicBounds() {
+  return normalizePeriodicBounds(general.showPeriodic ? general.periodicBounds : null);
 }
 
 function periodicWrappedJS(general, frac, elements, lattice) {

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Highlights
+
+- **Spins from a VASP INCAR:** load an `INCAR` onto the selected structure to replace its spins with the file's `MAGMOM`.
+- **Settings remembered per structure:** atom colours, atom and bond sizes, changed bond lengths, focus regions, field isosurface value/colour/opacity, crystal planes (with their field and colour map), spin and force arrow settings, the supercell and the cell boundary are stored in this browser and come back when the same file is loaded again.
+
+### Fixes
+
+- "Clear local data" in the Settings window now really clears everything: pending saves are cancelled and nothing is written back afterwards (focus regions were re-saved during trajectory playback).
+- Bonds now end more closely to the atom surface instead of reaching 20% into the atom.
+- Fewer transparency ghosts in large structures: the default number of depth-peeling layers is now 15 (was 10).
+- Large structures and fields no longer get cut away depending on camera angle and pan: the orthographic camera is kept outside the structure (loading a big molecule after a small cell used to leave it inside), and the far clipping plane now grows with the scene.
+
 ## 0.10.0
 
 ### Highlights

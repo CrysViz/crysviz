@@ -4,7 +4,7 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { fileBrowser, groups, general } from '../state/store.js';
-import { readStructurePrefs, scheduleStructurePrefSave } from '../state/structurePrefs.js';
+import { readStructurePrefs, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
 import { cartToFrac, fracToCart, invert3x3, transpose3x3 } from '../math/index.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { requestRender } from './AnimateModule.js';
@@ -203,7 +203,7 @@ export function setFocusRegionCenterFractional(region, fractional,
   region.centerOffsetFrac = next.map((value, axis) => value - anchor[axis]);
   region.centerFractional = next;
   region.center = fracToCart([next], structure.lattice)[0];
-  applyFocusRegions(structure);
+  applyFocusRegionEdit(structure);
   return true;
 }
 
@@ -211,7 +211,7 @@ export function resetFocusRegionCenter(region, structure = fileBrowser.selectedS
   if (!region) return;
   region.centerOffsetFrac = [0, 0, 0];
   prepareFocusRegions(structure);
-  applyFocusRegions(structure);
+  applyFocusRegionEdit(structure);
 }
 
 export function getFocusOpacityForInstance(instanceIndex, structure = fileBrowser.selectedStructure) {
@@ -283,7 +283,7 @@ export function createFocusRegion(centerAtoms, structure = fileBrowser.selectedS
     excludedSourceIndices: [],
   };
   (structure.focusRegions ??= []).push(region);
-  applyFocusRegions();
+  applyFocusRegionEdit(structure);
   return region;
 }
 
@@ -321,22 +321,37 @@ export function restoreFocusRegions(container, structure = fileBrowser.selectedS
 export function removeFocusRegion(id, structure = fileBrowser.selectedStructure) {
   if (!structure?.focusRegions) return;
   structure.focusRegions = structure.focusRegions.filter((region) => region.id !== id);
-  applyFocusRegions();
+  applyFocusRegionEdit(structure);
 }
 
 export function clearFocusRegions(structure = fileBrowser.selectedStructure) {
   if (structure) structure.focusRegions = [];
-  applyFocusRegions();
+  applyFocusRegionEdit(structure);
+}
+
+/**
+ * Persist the regions for the next session (state/structurePrefs.js;
+ * debounced — the panel sliders fire per pointer move). Called ONLY from
+ * user edits (the panel, create/remove/clear, centre edits): never from
+ * applyFocusRegions itself, which frame playback (render/FastFrameModule.js)
+ * and the reload restore run programmatically — a write from there would
+ * put the regions straight back after "Clear local data" (issue #18).
+ * @param {any} [structure]
+ */
+export function persistFocusRegions(structure = fileBrowser.selectedStructure) {
+  if (structure) scheduleStructurePrefSave(structure, 'focusRegions', () => serializeFocusRegions(structure));
+}
+
+/** A user edit of the regions: repaint and persist. */
+export function applyFocusRegionEdit(structure = fileBrowser.selectedStructure) {
+  applyFocusRegions(structure);
+  persistFocusRegions(structure);
 }
 
 export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
-  // Every focus-region edit (panel sliders/toggles, create/remove/clear,
-  // centre edits) ends here, so this is the one place the regions get
-  // persisted for the next session (state/structurePrefs.js; debounced —
-  // sliders fire per pointer move and fast-frame playback calls this per
-  // frame). Stored by structure content, so the same file re-opened after a
-  // reload gets its regions back (restoreFocusRegions below).
-  if (structure) scheduleStructurePrefSave(structure, 'focusRegions', () => serializeFocusRegions(structure));
+  // Every focus-region change (user edits, frame playback, the reload
+  // restore) ends here to repaint the per-instance opacity. Persistence is
+  // deliberately NOT here — see persistFocusRegions.
   const mesh = groups.atomsMesh;
   const wrapped = structure?.periodic?.visibleWrapped;
   const opacityAttr = mesh?.geometry?.attributes?.instanceOpacity;
@@ -486,3 +501,7 @@ export function applyFocusToArrows(structure = fileBrowser.selectedStructure, ki
   syncArrowTransparency(shaft, transparent);
   syncArrowTransparency(tip, transparent);
 }
+
+// Regions live on the displayed frame, so they are restored AFTER the row is
+// selected (state/structurePrefs.js restorer registry).
+registerStructurePrefField('focusRegions', (container, _value, structure) => restoreFocusRegions(container, structure));

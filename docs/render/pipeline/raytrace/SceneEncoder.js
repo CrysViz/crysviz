@@ -21,7 +21,7 @@ import { bondKey } from '../../BondsFracUpdateModule.js';
 import { normalizePeriodicBounds } from '../../LatticeModule.js';
 import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
 import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
-import { getCutPlaneMaskSign, Plane } from '../../../model/index.js';
+import { getCutPlaneMaskSign, Plane, gridToWorld, blockCellRange } from '../../../model/index.js';
 import { wedgeDataForAtom, MAX_WEDGES } from '../../WedgeAtoms.js';
 import { DATA_TEX_WIDTH } from './sceneFragment.js';
 
@@ -288,7 +288,8 @@ export class SceneEncoder {
   // translated + clipped copies (model/Isosurface.js setPeriodicBounds).
   fieldBoundsMin = new THREE.Vector3(0, 0, 0);
   fieldBoundsMax = new THREE.Vector3(1, 1, 1);
-  fieldWrap = false; // sample periodically (only needed outside the unit cell)
+  /** @type {number} 0|1|2 (uniform int) */
+  fieldWrap = 0; // 0 direct, 1 fold into the unit cell (periodic), 2 block cell images
   fieldIso = 0;
   fieldAbsMode = false;
   fieldPosColor = new THREE.Color(0x33aaff);
@@ -300,9 +301,10 @@ export class SceneEncoder {
   _fieldDimsKey = '';
 
   // ---- crystallographic lattice planes ------------------------------------
-  // planesTexture holds 6 texels/plane (see planeChunk.js); planeAtlasTexture
+  // planesTexture holds 8 texels/plane (see planeChunk.js); planeAtlasTexture
   // is the shared RGBA8 colormap atlas for Field-mode planes (a 1x1 dummy when
-  // no Field plane is present). cellWorldToFrac clips planes to the unit cell.
+  // no Field plane is present). cellWorldToFrac takes hit points to fractional
+  // cell coords, where each plane is clipped to its own box (Plane.bounds).
   planesTexture = makeDataTexture(1);
   planeCount = 0;
   cellWorldToFrac = new THREE.Matrix4();
@@ -417,7 +419,11 @@ export class SceneEncoder {
         iso.meshes?.positive?.material?.color?.getHexString(),
         iso.meshes?.negative?.material?.color?.getHexString(),
         iso.meshes?.positive?.material?.opacity,
-        vals?.length, vals ? vals[0] : 0, vals ? vals[(vals.length / 2) | 0] : 0);
+        vals?.length, vals ? vals[0] : 0, vals ? vals[(vals.length / 2) | 0] : 0,
+        // placement: a moved origin, a new step or the block flag changes the
+        // world->grid map without touching dims or values
+        field.periodic === false ? 'block' : 'periodic',
+        (field.origin ?? []).join(','), (field.voxel ?? []).flat().join(','));
     }
     // crystallographic lattice planes: geometry (n/d), mode, flat colour +
     // opacity, colormap name + range, and a cheap field-identity probe so a
@@ -429,6 +435,7 @@ export class SceneEncoder {
       const f = plane.field;
       const vals = f?.values;
       parts.push('pl', plane.mode, n.x, n.y, n.z, plane.planeD,
+        plane.bounds.flat().join(','),
         mat?.color?.getHex?.(), mat?.opacity,
         plane.colormap, plane.colormapMin, plane.colormapMax,
         f ? `${f.label}|${f.nx}|${f.ny}|${f.nz}|${f.minValue}|${f.maxValue}` : 'nofield',
@@ -505,6 +512,8 @@ export class SceneEncoder {
     if (!field || !field.values || !(field.nx > 0) || !(field.ny > 0) || !(field.nz > 0)) return null;
     if (!iso.parent) return null; // removed from the scene (clearField)
     if (field.isVisible === false) return null;
+    // a block needs two points per axis to have an extent (the raster draws nothing either)
+    if (field.periodic === false && Math.min(field.nx, field.ny, field.nz) < 2) return null;
     return field;
   }
 
@@ -1396,14 +1405,9 @@ export class SceneEncoder {
 
     // world -> fractional [0,1]^3: invert the SAME origin + voxel*dims mapping
     // Isosurface builds for its group matrix (columns = lattice vectors).
-    const v = field.voxel;
-    const o = field.origin ?? [0, 0, 0];
-    _m.set(
-      v[0][0], v[1][0], v[2][0], o[0] ?? 0,
-      v[0][1], v[1][1], v[2][1], o[1] ?? 0,
-      v[0][2], v[1][2], v[2][2], o[2] ?? 0,
-      0, 0, 0, 1);
-    _m.scale(_scale.set(field.nx, field.ny, field.nz));
+    // (fieldGeometry.gridToWorld: voxel*n for a periodic field, voxel*(n-1)
+    // for a block, so block spacing matches the raster exactly).
+    _m.fromArray(gridToWorld(field));
     this.fieldWorldToFrac.copy(_m).invert();
 
     // The display boundary is in the STRUCTURE lattice's fractional space. The
@@ -1427,10 +1431,33 @@ export class SceneEncoder {
     this.fieldCellToFrac.multiplyMatrices(this.fieldWorldToFrac, cellToWorld);
     this._fieldForward = cellToWorld; // cell fractions -> world (scene-bounds corners)
 
-    const [bxLo, bxHi, byLo, byHi, bzLo, bzHi] = this._fieldBounds();
+    let [bxLo, bxHi, byLo, byHi, bzLo, bzHi] = this._fieldBounds();
+    const widened = bxLo < 0 || bxHi > 1 || byLo < 0 || byHi > 1 || bzLo < 0 || bzHi > 1;
+    // fieldWrap: 0 = sample the cell point directly, 1 = fold it into the unit
+    // cell (periodic field, widened bounds), 2 = test the cell images of the
+    // block (block field, widened bounds). A block at the plain unit bounds is
+    // drawn once at its true place, like the raster: no fold, no clipping, and
+    // the march box is the block's own extent in the cell (it may cross a face).
+    if (field.periodic === false) {
+      // same 1e-6 tolerance as the raster's isUnitBounds, so both agree on 1.0000001
+      const plain = [[bxLo, bxHi], [byLo, byHi], [bzLo, bzHi]]
+        .every(([lo, hi]) => Math.abs(lo) < 1e-6 && Math.abs(hi - 1) < 1e-6);
+      if (plain) {
+        let range;
+        try {
+          range = blockCellRange(field, hasLattice ? lat : null);
+        } catch (error) {
+          console.warn(`raytrace: ${error.message}; treating the block as one cell`);
+          range = [[0, 1], [0, 1], [0, 1]];
+        }
+        [[bxLo, bxHi], [byLo, byHi], [bzLo, bzHi]] = range;
+      }
+      this.fieldWrap = plain ? 0 : 2;
+    } else {
+      this.fieldWrap = widened ? 1 : 0;
+    }
     this.fieldBoundsMin.set(bxLo, byLo, bzLo);
     this.fieldBoundsMax.set(bxHi, byHi, bzHi);
-    this.fieldWrap = bxLo < 0 || bxHi > 1 || byLo < 0 || byHi > 1 || bzLo < 0 || bzHi > 1;
     // Step budget: the span in field-grid cells, so a supercell (structure
     // cell = several grid cells) is marched as finely per grid cell as before.
     const gridLen = (k) => Math.hypot(_m.elements[4 * k], _m.elements[4 * k + 1], _m.elements[4 * k + 2]);
@@ -1498,9 +1525,10 @@ export class SceneEncoder {
     this.fieldDims = [nx, ny, nz];
   }
 
-  /** Encode the visible crystallographic planes for the tracers: 6 texels per
+  /** Encode the visible crystallographic planes for the tracers: 8 texels per
    *  plane (see planeChunk.js), the cell world->fractional matrix (from the
-   *  lattice basis, for exact cell clipping), and — for Field-mode planes — a
+   *  lattice basis, for exact clipping to each plane's fractional box), and —
+   *  for Field-mode planes — a
    *  CPU-baked colormap atlas (each plane gets its own tile, so planes may
    *  reference different fields). The bake reuses Plane.bakeFieldAtlasTile, the
    *  same sampling path as the raster updateColorMap. */
@@ -1513,7 +1541,7 @@ export class SceneEncoder {
     }
 
     // world -> fractional cell coords: invert the lattice-vector basis (columns
-    // = a, b, c; origin 0), matching makeCellClippingPlanes' cell faces.
+    // = a, b, c; origin 0), matching makeFractionalBoundsClippingPlanes' faces.
     const lattice = fileBrowser.selectedStructure?.lattice;
     if (Array.isArray(lattice) && lattice.length === 3) {
       _m.set(
@@ -1555,10 +1583,10 @@ export class SceneEncoder {
       this.planeAtlasTexture = this._dummyAtlas;
     }
 
-    const texture = this._ensureCapacity('planesTexture', planes.length * 6);
+    const texture = this._ensureCapacity('planesTexture', planes.length * 8);
     const data = texture.image.data;
     planes.forEach((plane, p) => {
-      const d = p * 24;
+      const d = p * 32;
       const n = plane.planeNormal;
       const isField = atlasRects.has(plane);
       // texel 0: normal.xyz, d
@@ -1579,6 +1607,10 @@ export class SceneEncoder {
       // texel 5: atlas rect (uMin, vMin, uSize, vSize)
       const rect = atlasRects.get(plane) ?? [0, 0, 0, 0];
       data[d + 20] = rect[0]; data[d + 21] = rect[1]; data[d + 22] = rect[2]; data[d + 23] = rect[3];
+      // texel 6/7: fractional box the plane is trimmed to (min.xyz, max.xyz)
+      const b = plane.bounds;
+      data[d + 24] = b[0][0]; data[d + 25] = b[1][0]; data[d + 26] = b[2][0]; data[d + 27] = 0;
+      data[d + 28] = b[0][1]; data[d + 29] = b[1][1]; data[d + 30] = b[2][1]; data[d + 31] = 0;
     });
     texture.needsUpdate = true;
   }

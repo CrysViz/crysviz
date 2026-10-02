@@ -87,16 +87,20 @@ function subject(fileName, capitalized) {
 
 /**
  * Show the load-FAILED warning.
- * @param {{ fileName?: string, message?: string }} [info]
+ * @param {{ fileName?: string, message?: string, title?: string, summary?: string }} [info]
  *   fileName — the file that failed; message — the technical reason (optional).
+ *   title / summary — replace the generic headline and first paragraph, for a
+ *   file that was read fine but could not be used (the default wording blames
+ *   the file's format, which would then be wrong).
  */
-export function showLoadErrorModal({ fileName = '', message = '' } = {}) {
+export function showLoadErrorModal({ fileName = '', message = '', title = '', summary = '' } = {}) {
   const name = String(fileName || '').trim();
+  const generic = name
+    ? `${subject(name, true)} could not be read. It may be corrupt, empty, or not in a supported format.`
+    : 'The file could not be read. It may be corrupt, empty, or not in a supported format.';
   openModal({
-    title: 'This file could not be loaded',
-    message: name
-      ? `${subject(name, true)} could not be read. It may be corrupt, empty, or not in a supported format.`
-      : 'The file could not be read. It may be corrupt, empty, or not in a supported format.',
+    title: title || 'This file could not be loaded',
+    message: summary ? `${name ? `${subject(name, true)}: ` : ''}${summary}` : generic,
     detail: String(message || '').trim(),
     tone: 'error',
   });

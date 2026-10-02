@@ -10,6 +10,7 @@ import { updateChargeBadges } from './ChargeBadgeModule.js'
 import { updateMeasurementLabelVisibility } from './MeasurementModule.js'
 import { renderScanlinePass, toggleScanlineMode } from './ScanlinePass.js'
 import { count as traceCount } from '../debug/debugTrace.js'
+import { updateCameraClipRange } from './CameraClipModule.js'
 
 
 let isRendering = true;
@@ -75,6 +76,8 @@ export function renderFrameNow({ interactive = false } = {}) {
   // there are none, and the loop only runs on frames that actually render.
   updateChargeBadges();
   updateMeasurementLabelVisibility();
+  // Large cells reach past the default far plane; keep it behind the scene.
+  updateCameraClipRange(app.camera);
   app.pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera, interactive });
   renderScanlinePass(app.renderer);
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {

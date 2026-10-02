@@ -1,9 +1,12 @@
+/** How far past a block's face (in grid fractions) a sample still counts as on it. */
+const BLOCK_FACE_EPS = 1e-9;
+
 export class Field {
   /**
    * @param {{nx?:number, ny?:number, nz?:number, origin?:number[], voxel?:any,
    *   values?:any, component?:number, isoValue?:number, absMinValue?:any,
    *   absMaxValue?:any, minValue?:any, maxValue?:any, label?:string,
-   *   useAbsoluteIsoValue?:any, isVisible?:boolean}} [opts]
+   *   useAbsoluteIsoValue?:any, isVisible?:boolean, periodic?:boolean}} [opts]
    */
   constructor({
     nx, // number of grid points along x
@@ -20,7 +23,8 @@ export class Field {
     maxValue = null, // maximum field value (can be computed from values)
     label = "", // optional label for the field (e.g., "Charge Density", "Magnetization Density", etc.)
     useAbsoluteIsoValue = null, // whether to use absolute values when determining isovalue
-    isVisible = true // whether this field should be rendered (can be toggled by user)
+    isVisible = true, // whether this field should be rendered (can be toggled by user)
+    periodic = true // false: a finite block of data (a molecular cube) that fills part of the cell
   } = {}) {
     this.nx = nx;
     this.ny = ny;
@@ -37,6 +41,17 @@ export class Field {
     this.label = label;
     this.useAbsoluteIsoValue = useAbsoluteIsoValue;
     this.isVisible = isVisible;
+
+    // A periodic field (CHGCAR, WAVECAR, a periodic-code cube) repeats with
+    // the cell and is drawn with the n-point spacing convention. A block
+    // (`periodic === false`) is a finite slab of data whose grid point i sits
+    // exactly at origin + i * voxel_i; it fills only part of the structure cell
+    // and holds no values outside its own grid (`getValueAtPoint` → null).
+    // The grid-to-world mapping for both lives in model/fieldGeometry.js.
+    // Anything but a literal `false` is periodic, so an untrusted (share)
+    // payload can only ever produce a block by saying so exactly.
+    /** @type {boolean} */
+    this.periodic = periodic !== false;
 
     // Set by model/WavefunctionSource.js when this field is one band of a
     // WAVECAR, so the UI can trace a field back to its (spin, k-point, band)
@@ -66,10 +81,27 @@ export class Field {
   getValueAtPoint(x_frac, y_frac, z_frac) {
     if (!this.values) return null;
 
+    // A block holds nothing outside its own grid. The tolerance keeps a point
+    // that a world -> grid inversion lands on a face by float noise inside.
+    // The periodic path below is deliberately untouched (out-of-range input
+    // behaves exactly as it always has).
+    if (!this.periodic && [x_frac, y_frac, z_frac].some((f) => !(f >= -BLOCK_FACE_EPS && f <= 1 + BLOCK_FACE_EPS))) {
+      return null;
+    }
+
     // Get the voxel indices containing the point
-    const x = x_frac * (this.nx - 1);
-    const y = y_frac * (this.ny - 1);
-    const z = z_frac * (this.nz - 1);
+    let x = x_frac * (this.nx - 1);
+    let y = y_frac * (this.ny - 1);
+    let z = z_frac * (this.nz - 1);
+
+    // Block only: a point admitted by the face tolerance just below 0 would floor
+    // to index -1; clamping the grid coordinate keeps the base index in range and
+    // returns the face value.
+    if (!this.periodic) {
+      x = Math.min(Math.max(x, 0), this.nx - 1);
+      y = Math.min(Math.max(y, 0), this.ny - 1);
+      z = Math.min(Math.max(z, 0), this.nz - 1);
+    }
 
     // Get the base indices (floor)
     const i0 = Math.floor(x);

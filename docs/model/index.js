@@ -13,6 +13,8 @@ export { Polyhedron } from './Polyhedron.js';
 export { Symmetry } from './Symmetry.js';
 export { Wyckoff } from './Wyckoff.js';
 export { Field } from './Field.js';
+// Grid -> world mapping shared by the isosurface, the cut planes and the tracer:
+export { gridToWorld, worldToGridFraction, blockCellRange, imageOffsets } from './fieldGeometry.js';
 export { Plane, getCutPlaneMaskSign } from './Plane.js';
 export { FieldContainer } from './FieldContainer.js';
 

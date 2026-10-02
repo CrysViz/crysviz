@@ -4,6 +4,7 @@ import { makeSectionHeadline } from './panels/sectionHeadline.js';
 import { general, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell } from './SuperCellModule.js';
+import { schedulePeriodicBoundsSave, saveSupercellPref, pinCellPrefsKey } from '../state/cellPrefs.js';
 import { resetView, recenterCamera } from './WindowAndSceneControls.js';
 import { fracToCart, cartToFrac } from '../render/index.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
@@ -719,6 +720,9 @@ function addPeriodicBoundarySection(container) {
 
   const axes = [];
 
+  // Only ever called from a user edit (an axis row's inputs/sliders, Reset),
+  // so it also persists the boundary for this structure (state/cellPrefs.js;
+  // debounced, the sliders fire per pointer move).
   const commit = () => {
     const [[xmin, xmax], [ymin, ymax], [zmin, zmax]] = axes.map((a) => a.get());
     general.periodicBounds = { xmin, xmax, ymin, ymax, zmin, zmax };
@@ -739,6 +743,7 @@ function addPeriodicBoundarySection(container) {
     // volumetric field, which is repeated into the cells the boundary reaches
     // and cut off where it stops part-way through one — have to follow it too.
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderPeriodic: true });
+    schedulePeriodicBoundsSave();
   };
 
   for (const { key, label } of PERIODIC_BOUNDS_AXES) {
@@ -753,6 +758,14 @@ function addPeriodicBoundarySection(container) {
   });
 
   container.append(axesBox, foot);
+}
+
+// Re-read general.periodicBounds into the boundary section (its inputs only
+// read it when built) — for the stored-preference restore (state/cellPrefs.js).
+// No-op while the window's content isn't built; it reads the value on build.
+export function refreshPeriodicBoundaryControls() {
+  const content = document.getElementById('periodicBoundaryContent');
+  if (content) addPeriodicBoundarySection(content);
 }
 
 export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
@@ -795,7 +808,8 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
     input.type = "number";
     input.min = "1";
     input.step = "1";
-    input.value = general.currentSupercell ? general.currentSupercell[axis] : 1;
+    // The selected structure's own factors (createSupercell records them there).
+    input.value = String(fileBrowser.selectedStructure?.supercell?.[axis] || 1);
     input.className = "lsc-supercell-input";
     supercellInputs[axis] = input;
     supercellInputRow.appendChild(input);
@@ -936,7 +950,9 @@ transformContent.appendChild(transformMatrixContainer);
     // createSupercell() derives the base unit cell from the live (user-modified)
     // structure and re-tiles it to the requested factors, so modifications
     // (colour, opacity, moved atoms, …) are preserved across supercell changes.
+    pinCellPrefsKey();
     createSupercell(newA, newB, newC);
+    saveSupercellPref();
     updateVisualization({
       reRenderAtoms: true,
       reRenderBonds: true,
@@ -946,7 +962,10 @@ transformContent.appendChild(transformMatrixContainer);
   };
 
   supercellResetBtn.onclick = () => {
+    pinCellPrefsKey();
     createSupercell(1, 1, 1);
+    saveSupercellPref();
+    Object.values(supercellInputs).forEach((input) => { input.value = '1'; });
     updateVisualization({
       reRenderAtoms: true,
       reRenderBonds: true,

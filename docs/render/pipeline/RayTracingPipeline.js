@@ -400,7 +400,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       // periodic display boundary (general.periodicBounds), fractional
       uFieldBoundsMin: { value: new THREE.Vector3(0, 0, 0) },
       uFieldBoundsMax: { value: new THREE.Vector3(1, 1, 1) },
-      uFieldWrap: { value: false },
+      uFieldWrap: { value: 0 }, // int: 0 direct, 1 periodic fold, 2 block images
       // the structure lattice's fractional space the boundary lives in
       uFieldWorldToCell: { value: new THREE.Matrix4() },
       uFieldCellToFrac: { value: new THREE.Matrix4() },
