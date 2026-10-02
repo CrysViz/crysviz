@@ -12,6 +12,7 @@
 - "Clear local data" in the Settings window now really clears everything: pending saves are cancelled and nothing is written back afterwards (focus regions were re-saved during trajectory playback).
 - Bonds now end more closely to the atom surface instead of reaching 20% into the atom.
 - Fewer transparency ghosts in large structures: the default number of depth-peeling layers is now 15 (was 10).
+- Large structures and fields no longer get cut away depending on camera angle and pan: the orthographic camera is kept outside the structure (loading a big molecule after a small cell used to leave it inside), and the far clipping plane now grows with the scene.
 
 ## 0.10.0
 
