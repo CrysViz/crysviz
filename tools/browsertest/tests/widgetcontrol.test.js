@@ -76,8 +76,9 @@ function trajectoryFixture() {
     await new Promise((r) => setTimeout(r, 300));
     return window.__cv.msgs.find((m) => m.type === 'state');
   });
-  H.check('control channel responds to getState with frame count',
-    !!ready && ready.frameCount === 5 && ready.index === 0 && ready.playing === false, JSON.stringify(ready));
+  H.check('control channel responds to getState with frame count (and the camera capability)',
+    !!ready && ready.frameCount === 5 && ready.index === 0 && ready.playing === false && ready.camera === true,
+    JSON.stringify(ready));
 
   // Helper: the fractional x of atom 0 identifies the shown frame (0.1 * frame).
   const atomX = async () => page.evaluate(async () => {

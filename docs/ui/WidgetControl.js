@@ -44,8 +44,9 @@
 // widget → host  { source:'crysviz-widget', type, ... }
 //   ready   { frameCount, index, camera:true }  posted once the trajectory is loaded; `camera`: this
 //                                    widget reports camera moves and takes setCamera
-//   state   { frameCount, index, playing }
-//   frame   { frameCount, index }    whenever the shown frame changes
+//   state   { frameCount, index, playing, camera:true }  (camera as in `ready`, for a host
+//                                    that attached its listener after `ready` was posted)
+//   frame   { frameCount, index }    after every setFrame and play step
 //   camera  { view }                 the user moved the camera (at most once per animation frame);
 //                                    moves made by host commands (setFrame, fitView, setCamera) are
 //                                    not reported, so two widgets linked through their host don't echo
@@ -217,7 +218,7 @@ function startPlay(fps, loop) {
 }
 
 function sendState() {
-  postToHost('state', { index: currentIndex, frameCount: frameCount(), playing: playTimer != null });
+  postToHost('state', { index: currentIndex, frameCount: frameCount(), playing: playTimer != null, camera: true });
 }
 
 function onMessage(event) {
