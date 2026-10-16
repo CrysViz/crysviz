@@ -5,7 +5,7 @@
 // pin down. No DOM here.
 
 import { latticeParameters, fracToCartPoint } from '../math/index.js';
-import { pressureGPa } from '../model/index.js';
+import { pressureGPa, tensorGPa } from '../model/index.js';
 
 const num = (v, digits = 6, width = 0) => {
   const text = Number.isFinite(v) ? v.toFixed(digits) : 'nan';
@@ -156,12 +156,23 @@ export function scalarPropertiesText(structure) {
     .map((r) => `${r.label} = ${num(r.value, r.digits)} ${r.unit}`).join('\n');
 }
 
+/**
+ * The stored stress tensor in GPa (compression positive), three rows of three,
+ * 4 decimals — '' when the structure carries no stress.
+ */
+export function stressTensorText(structure) {
+  const t = tensorGPa(structure?.stress?.tensor);
+  return t ? t.map((row) => row.map((v) => num(v, 4, 12)).join(' ')).join('\n') : '';
+}
+
 /** Everything the section shows, as one text for "Copy all". */
 export function structureSummaryText(structure, { name = '', cartesian = false, wyckoff = null } = {}) {
   const scalars = scalarPropertiesText(structure);
+  const stress = stressTensorText(structure);
   const parts = [
     `# ${name || 'structure'}: ${structure.atoms.length} atoms`,
     ...(scalars ? [scalars, ''] : []),
+    ...(stress ? ['# Stress tensor (GPa, compression positive)', stress, ''] : []),
     '# Lattice vectors (Å)', latticeText(structure.lattice), latticeParamsText(structure.lattice),
     '', positionsTable(structure, cartesian).text,
   ];
