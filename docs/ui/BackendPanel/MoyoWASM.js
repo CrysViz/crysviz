@@ -18,7 +18,7 @@ import {
   showAsymmetricUnit, hideAsymmetricUnit, isAsymmetricUnitVisible,
   asymmetricUnitNeedsCellBox, latticesMatch, requestRender,
   refreshAsuAppearance, setAsuAtomHighlight, isAsuAtomHighlightOn,
-  asuAtomsInside, ASU_DROPPED_EVENT,
+  asuAtomsInside, asymmetricUnitShift, ASU_DROPPED_EVENT,
 } from '../../render/index.js';
 import { openSwatchColorPicker } from '../SwatchColorPicker.js';
 
@@ -619,10 +619,18 @@ function renderAsuResult(asu, hallNumber) {
   // that transform did not take — the wedge is then still correct, but it is
   // correct about a cell that is not the one on screen, and saying nothing
   // would make it look misplaced instead of merely elsewhere.
-  const note = asymmetricUnitNeedsCellBox()
-    ? `<p class="sym-asu-note">Drawn in the conventional cell, which is not the
+  const boxNote = asymmetricUnitNeedsCellBox()
+    ? `<p class="sym-asu-note sym-asu-cellbox-note">Drawn in the conventional cell, which is not the
          cell on screen — the thin outline is that conventional cell.</p>`
     : '';
+  // The conditions below are the tables' own; the wedge on screen may be a
+  // lattice translation of them (moved into the cell — render/AsymmetricUnitModule.js).
+  const shift = asymmetricUnitShift();
+  const shiftNote = shift.some((v) => v !== 0)
+    ? `<p class="sym-asu-note sym-asu-shift-note">Shown shifted by (${shift.join(', ')}) into the cell —
+         a lattice translation, so the same asymmetric unit.</p>`
+    : '';
+  const note = boxNote + shiftNote;
 
   box.innerHTML = `
     <dl class="sym-kv">

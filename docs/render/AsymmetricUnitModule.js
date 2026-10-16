@@ -248,7 +248,24 @@ function buildWedgeGroup() {
  * @param {object} options.structure the structure this wedge was computed for;
  *   the wedge is dropped once that is no longer the selected structure
  */
-export function showAsymmetricUnit({ polyhedron, halfSpaces, lattice, structure }) {
+export function showAsymmetricUnit({ polyhedron: tabulated, halfSpaces: tabulatedHalfSpaces, lattice, structure }) {
+  // Drawn where the cell is, not where the tables put it. A lattice translation
+  // is a symmetry of the crystal, so the shifted region is an asymmetric unit
+  // just as much — but the tabulated one can sit wholly outside the [0,1) box
+  // the atoms are drawn in (Fd-3m origin choice 2: z <= y <= 0), and then the
+  // wedge floats beside the structure instead of in it.
+  const shift = shiftIntoCell(tabulated.vertices);
+  const polyhedron = {
+    ...tabulated,
+    vertices: tabulated.vertices.map((v) => [v[0] + shift[0], v[1] + shift[1], v[2] + shift[2]]),
+  };
+  // n.x + offset >= 0 holds at x - t on the tabulated wedge, so at x on the
+  // shifted one the offset loses n.t.
+  const halfSpaces = tabulatedHalfSpaces.map((h) => ({
+    ...h,
+    offset: h.offset - (h.normal[0] * shift[0] + h.normal[1] * shift[1] + h.normal[2] * shift[2]),
+  }));
+
   // Fractional bounding box, used to bound the lattice-translation search in
   // updateAsuAtomHighlight. Cheap to keep, and it makes that search exact
   // rather than a guessed +/-1 shell.
@@ -264,6 +281,7 @@ export function showAsymmetricUnit({ polyhedron, halfSpaces, lattice, structure 
   wedge = {
     polyhedron,
     halfSpaces,
+    shift,
     lo,
     hi,
     lattice: lattice.map((row) => [...row]),
@@ -274,6 +292,53 @@ export function showAsymmetricUnit({ polyhedron, halfSpaces, lattice, structure 
     showCellBox: !latticesMatch(lattice, structure?.lattice),
   };
   updateAsymmetricUnit();
+}
+
+/**
+ * The whole-lattice translation that brings a tabulated wedge into the cell:
+ * of the shifts around the one that puts its centroid in [0,1), the one that
+ * leaves the least of it outside the cell. Ties go to the smallest shift, so a
+ * wedge the tables already place inside the cell stays exactly where it is, and
+ * one straddling a cell face (Fd-3m origin choice 1: -y <= z <= y) is not
+ * pushed across to the opposite face for nothing.
+ *
+ * @param {number[][]} vertices fractional
+ * @returns {number[]} integer translation, fractional
+ */
+function shiftIntoCell(vertices) {
+  const centroid = [0, 1, 2].map((axis) =>
+    vertices.reduce((sum, v) => sum + v[axis], 0) / vertices.length);
+  const base = centroid.map((c) => -Math.floor(c + LATTICE_TOL));
+  const outside = (t) => vertices.reduce((sum, v) => sum + [0, 1, 2].reduce((acc, axis) => {
+    const x = v[axis] + t[axis];
+    return acc + Math.max(0, -x) + Math.max(0, x - 1);
+  }, 0), 0);
+  let best = [0, 0, 0];
+  let bestOutside = outside(best);
+  for (let dx = -1; dx <= 1; dx += 1) {
+    for (let dy = -1; dy <= 1; dy += 1) {
+      for (let dz = -1; dz <= 1; dz += 1) {
+        const t = [base[0] + dx, base[1] + dy, base[2] + dz];
+        const out = outside(t);
+        const smaller = t[0] ** 2 + t[1] ** 2 + t[2] ** 2 < best[0] ** 2 + best[1] ** 2 + best[2] ** 2;
+        if (out < bestOutside - LATTICE_TOL || (Math.abs(out - bestOutside) <= LATTICE_TOL && smaller)) {
+          best = t;
+          bestOutside = out;
+        }
+      }
+    }
+  }
+  return best.map((v) => v + 0); // no -0
+}
+
+/**
+ * The lattice translation the drawn wedge was moved by from where the tables
+ * define it (see showAsymmetricUnit), so the panel can say so next to the
+ * tabulated inequalities. [0,0,0] when it was not moved or nothing is drawn.
+ * @returns {number[]}
+ */
+export function asymmetricUnitShift() {
+  return wedge?.shift ? [...wedge.shift] : [0, 0, 0];
 }
 
 // The Wyckoff editor strains the cell without breaking the symmetry, so the
@@ -410,10 +475,10 @@ function ensureHalo(capacity) {
  *
  * Membership is tested MODULO LATTICE TRANSLATION, and that is not a detail:
  * 205 of the 527 tabulated settings have an asymmetric unit that reaches
- * outside the [0,1) box atoms are wrapped into — Fd-3m's origin-choice-2
- * wedge is entirely at y <= 0, for one — so a literal "is this atom's drawn
- * position inside the polyhedron" test would highlight nothing at all for
- * nearly half of all structures. A lattice translation is a symmetry of the
+ * outside the [0,1) box atoms are wrapped into. The drawn wedge is shifted into
+ * the cell (showAsymmetricUnit), but one straddling a cell face still pokes out
+ * of it (Fd-3m origin choice 1: -y <= z <= y), so a literal "is this atom's
+ * drawn position inside the polyhedron" test would still miss atoms. A lattice translation is a symmetry of the
  * crystal, so an atom at y = 0.875 is the same atom as one at y = -0.125, and
  * asking whether ANY of its lattice images lands in the wedge is the question
  * that means something: it identifies the symmetry-independent atoms.

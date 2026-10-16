@@ -76,7 +76,7 @@ export {
   showAsymmetricUnit, hideAsymmetricUnit, updateAsymmetricUnit,
   isAsymmetricUnitVisible, asymmetricUnitNeedsCellBox, latticesMatch,
   refreshAsuAppearance, setAsuAtomHighlight, isAsuAtomHighlightOn,
-  asuAtomsInside, updateAsuAtomHighlight, refreshAsymmetricUnitIfStale,
+  asuAtomsInside, updateAsuAtomHighlight, refreshAsymmetricUnitIfStale, asymmetricUnitShift,
   ASU_DROPPED_EVENT,
 } from './AsymmetricUnitModule.js';
 

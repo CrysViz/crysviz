@@ -112,7 +112,7 @@ async function waitForWedge(page, wanted) {
         });
         return hex;
       })(),
-      hasNote: !!box.querySelector('.sym-asu-note'),
+      hasNote: !!box.querySelector('.sym-asu-cellbox-note'),
       status: document.getElementById('calcResult').textContent.trim(),
       rows: document.querySelectorAll('#objectTable tbody tr').length,
     };
@@ -220,7 +220,7 @@ async function waitForWedge(page, wanted) {
     const s = fileBrowser.selectedStructure;
     return {
       needsCellBox: render.asymmetricUnitNeedsCellBox(),
-      hasNote: !!box.querySelector('.sym-asu-note'),
+      hasNote: !!box.querySelector('.sym-asu-cellbox-note'),
       cylinders,
       atoms: s.atoms.length,
       // The conventional Si cell is cubic with a = 5.43; the primitive one has
@@ -363,7 +363,13 @@ async function waitForWedge(page, wanted) {
     // it in the wedge, and per atom only the copies at that atom's shortest —
     // the ones in or on the wedge, else the nearest. Reused by the checks
     // below (same page). Returns the drawn-copy indices.
-    window.__expectedRings = (structure, halfSpaces) => {
+    // `halfSpaces` are the tables' own; the drawn wedge is that region moved
+    // by asymmetricUnitShift() into the cell, so they are moved the same way.
+    window.__expectedRings = (structure, tabulated) => {
+      const t = render.asymmetricUnitShift();
+      const halfSpaces = tabulated.map((h) => ({
+        ...h, offset: h.offset - (h.normal[0] * t[0] + h.normal[1] * t[1] + h.normal[2] * t[2]),
+      }));
       const w = structure.periodic.visibleWrapped;
       const L = structure.lattice;
       const toFrac = math.invert3x3(math.transpose3x3(L));
@@ -445,6 +451,28 @@ async function waitForWedge(page, wanted) {
   H.check('a wedge outside the [0,1) box still finds its atoms',
     highlighted.literal === 0 && highlighted.counts.instances > 0,
     `literal=${highlighted.literal} with-translation=${highlighted.counts.instances}`);
+  // That same wedge is DRAWN shifted into the cell, by the lattice translation
+  // that leaves the least of it outside: (0,1,1) here (x spans -1/8..3/8, so
+  // no x shift helps). The panel says so next to the tabulated inequalities.
+  const shifted = await page.evaluate(async (hall) => {
+    const geom = await import('./ui/BackendPanel/asuGeometry.js');
+    const render = await import('./render/index.js');
+    const t = render.asymmetricUnitShift();
+    const vertices = geom.asymmetricUnitForHallNumber(hall).polyhedron.vertices;
+    const outside = (u) => vertices.reduce((sum, v) => sum + [0, 1, 2].reduce((acc, a) =>
+      acc + Math.max(0, -(v[a] + u[a])) + Math.max(0, v[a] + u[a] - 1), 0), 0);
+    return {
+      shift: t,
+      outsideTabulated: outside([0, 0, 0]),
+      outsideDrawn: outside(t),
+      note: document.getElementById('asuResult').textContent.replace(/\s+/g, ' '),
+    };
+  }, highlighted.hall);
+  H.check('the wedge is drawn shifted into the cell, by (0,1,1) for Fd-3m origin choice 2',
+    JSON.stringify(shifted.shift) === '[0,1,1]' && shifted.outsideDrawn < shifted.outsideTabulated,
+    JSON.stringify(shifted));
+  H.check('the panel says it is shown shifted, a lattice translation of the tabulated one',
+    /shifted by \(0, 1, 1\)/.test(shifted.note), shifted.note);
   // Si is one orbit on a special position, so its atom sits exactly ON the
   // wedge boundary — the case where an unpadded translation search rounds the
   // only matching translation away and silently finds nothing.
