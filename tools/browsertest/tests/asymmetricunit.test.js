@@ -358,6 +358,39 @@ async function waitForWedge(page, wanted) {
     const wyck = await import('./ui/addToStructureModule/WyckoffProjector.js');
     const render = await import('./render/index.js');
 
+    // Which drawn copies the rings should sit on, recomputed independently of
+    // the module: for each copy the shortest lattice translation (Å) that puts
+    // it in the wedge, and per atom only the copies at that atom's shortest —
+    // the ones in or on the wedge, else the nearest. Reused by the checks
+    // below (same page). Returns the drawn-copy indices.
+    window.__expectedRings = (structure, halfSpaces) => {
+      const w = structure.periodic.visibleWrapped;
+      const L = structure.lattice;
+      const toFrac = math.invert3x3(math.transpose3x3(L));
+      const cost = [];
+      const minBy = new Map();
+      w.cart.forEach((c, i) => {
+        const f = math.multiplyMatVec(toFrac, c);
+        let best = Infinity;
+        for (let tx = -2; tx <= 2; tx += 1) {
+          for (let ty = -2; ty <= 2; ty += 1) {
+            for (let tz = -2; tz <= 2; tz += 1) {
+              if (!geom.containsFractional(halfSpaces, f[0] + tx, f[1] + ty, f[2] + tz)) continue;
+              best = Math.min(best, Math.hypot(
+                tx * L[0][0] + ty * L[1][0] + tz * L[2][0],
+                tx * L[0][1] + ty * L[1][1] + tz * L[2][1],
+                tx * L[0][2] + ty * L[1][2] + tz * L[2][2]));
+            }
+          }
+        }
+        cost[i] = best;
+        const src = w.srcIndex?.[i] ?? i;
+        if (best < (minBy.get(src) ?? Infinity)) minBy.set(src, best);
+      });
+      return w.cart.map((_, i) => i).filter((i) => Number.isFinite(cost[i])
+        && cost[i] <= minBy.get(w.srcIndex?.[i] ?? i) + 1e-6);
+    };
+
     document.getElementById('asuHighlightChk').click();
 
     const structure = fileBrowser.selectedStructure;
@@ -377,24 +410,14 @@ async function waitForWedge(page, wanted) {
     // Same lattice-translation search the module does: this wedge lies at
     // y <= 0 while the atoms are wrapped into [0,1), so a literal test finds
     // nothing and the feature would look broken.
-    let expected = 0;
-    const sources = new Set();
     let literal = 0;
     for (let i = 0; i < cart.length; i += 1) {
       const f = math.multiplyMatVec(toFrac, cart[i]);
       if (geom.containsFractional(halfSpaces, f[0], f[1], f[2])) literal += 1;
-      let inside = false;
-      for (let tx = -2; tx <= 2 && !inside; tx += 1) {
-        for (let ty = -2; ty <= 2 && !inside; ty += 1) {
-          for (let tz = -2; tz <= 2 && !inside; tz += 1) {
-            inside = geom.containsFractional(halfSpaces, f[0] + tx, f[1] + ty, f[2] + tz);
-          }
-        }
-      }
-      if (!inside) continue;
-      expected += 1;
-      sources.add(structure.periodic.visibleWrapped.srcIndex?.[i] ?? i);
     }
+    const rings = window.__expectedRings(structure, halfSpaces);
+    const expected = rings.length;
+    const sources = new Set(rings.map((i) => structure.periodic.visibleWrapped.srcIndex?.[i] ?? i));
 
     return {
       hall,
@@ -409,7 +432,7 @@ async function waitForWedge(page, wanted) {
       totalInstances: cart.length,
     };
   });
-  H.check('turning it on rings exactly the instances the inequalities select',
+  H.check('turning it on rings exactly the copies the inequalities select (each atom\'s nearest)',
     highlighted.counts.instances === highlighted.expectedInstances
     && highlighted.meshCount === highlighted.expectedInstances
     && highlighted.expectedInstances > 0,
@@ -463,21 +486,7 @@ async function waitForWedge(page, wanted) {
     const halfSpaces = geom.halfSpacesFromCuts(
       wyck.getSpaceGroupEntryByHallNumber(hall).asu.shape_only_cuts
     );
-    const cart = structure.periodic.visibleWrapped.cart;
-    const toFrac = math.invert3x3(math.transpose3x3(structure.lattice));
-    let expected = 0;
-    for (let i = 0; i < cart.length; i += 1) {
-      const f = math.multiplyMatVec(toFrac, cart[i]);
-      let inside = false;
-      for (let tx = -2; tx <= 2 && !inside; tx += 1) {
-        for (let ty = -2; ty <= 2 && !inside; ty += 1) {
-          for (let tz = -2; tz <= 2 && !inside; tz += 1) {
-            inside = geom.containsFractional(halfSpaces, f[0] + tx, f[1] + ty, f[2] + tz);
-          }
-        }
-      }
-      if (inside) expected += 1;
-    }
+    const expected = window.__expectedRings(structure, halfSpaces).length;
     return {
       counts: render.asuAtomsInside(),
       meshCount: groups.asuHaloMesh?.count ?? -1,
@@ -541,20 +550,8 @@ async function waitForWedge(page, wanted) {
       wyck.getSpaceGroupEntryByHallNumber(hall).asu.shape_only_cuts
     );
     const cart = structure.periodic.visibleWrapped.cart;
-    const toFrac = math.invert3x3(math.transpose3x3(structure.lattice));
-    const expected = [];
-    for (let i = 0; i < cart.length; i += 1) {
-      const f = math.multiplyMatVec(toFrac, cart[i]);
-      let inside = false;
-      for (let tx = -2; tx <= 2 && !inside; tx += 1) {
-        for (let ty = -2; ty <= 2 && !inside; ty += 1) {
-          for (let tz = -2; tz <= 2 && !inside; tz += 1) {
-            inside = geom.containsFractional(halfSpaces, f[0] + tx, f[1] + ty, f[2] + tz);
-          }
-        }
-      }
-      if (inside) expected.push(cart[i].map((v) => +v.toFixed(4)).join(','));
-    }
+    const expected = window.__expectedRings(structure, halfSpaces)
+      .map((i) => cart[i].map((v) => +v.toFixed(4)).join(','));
     return { before, after: halo(), expected: expected.sort() };
   });
 
@@ -828,6 +825,55 @@ async function waitForWedge(page, wanted) {
   H.check('all 530 Hall numbers resolve to a wedge',
     sweep.missing.length === 0,
     sweep.missing.length ? `missing ${sweep.missing.slice(0, 10).join(',')}` : '');
+
+  // --- which copies get the ring -----------------------------------------
+  // Each copy of an atom is the same atom (a lattice translation apart), but
+  // a ring on every copy puts most of them far from the wedge. The rings go on
+  // the copies in or on the wedge itself.
+  const ringCopies = async (name, text) => {
+    await page.evaluate(async ({ name, text }) => {
+      const cv = await import('./core/crystal-viewer.js');
+      await cv.loadStructure(text, name);
+    }, { name, text });
+    await page.waitForTimeout(1200);
+    await openSymmetry(page);
+    const shown = await page.evaluate(() => /Hide/.test(document.getElementById('showAsuBtn').textContent));
+    if (!shown) await H.clickById(page, 'showAsuBtn');
+    await waitForWedge(page, true);
+    return page.evaluate(async () => {
+      if (!document.getElementById('asuHighlightChk').checked) document.getElementById('asuHighlightChk').click();
+      const { fileBrowser, groups } = await import('./state/store.js');
+      const render = await import('./render/index.js');
+      const s = fileBrowser.selectedStructure;
+      const w = s.periodic.visibleWrapped;
+      const halo = groups.asuHaloMesh;
+      const rings = [];
+      for (let k = 0; k < (halo?.count ?? 0); k += 1) rings.push(Array.from(halo.instanceMatrix.array.slice(k * 16 + 12, k * 16 + 15)));
+      // Per element: copies drawn, and copies ringed, of the atom at the cell origin.
+      const atOrigin = s.atoms.findIndex((a) => a.position.every((v) => Math.min(v, 1 - v) < 1e-6));
+      const copies = w.cart.filter((_, i) => (w.srcIndex?.[i] ?? i) === atOrigin);
+      const ringed = copies.filter((c) => rings.some((r) => Math.hypot(r[0] - c[0], r[1] - c[1], r[2] - c[2]) < 1e-6));
+      return {
+        counts: render.asuAtomsInside(),
+        originDrawn: copies.length,
+        originRinged: ringed.length,
+        originRingAtZero: ringed.some((c) => Math.hypot(...c) < 1e-6),
+      };
+    });
+  };
+  const nacl = await ringCopies('NaCl', ['NaCl', '1.0', '5.64 0 0', '0 5.64 0', '0 0 5.64', 'Na Cl', '4 4', 'Direct',
+    '0 0 0', '0 0.5 0.5', '0.5 0 0.5', '0.5 0.5 0', '0.5 0.5 0.5', '0.5 0 0', '0 0.5 0', '0 0 0.5', ''].join('\n'));
+  H.check('NaCl: the Na drawn at all 8 corners is ringed once, at the wedge (origin); 2 atoms, 2 rings',
+    nacl.originDrawn === 8 && nacl.originRinged === 1 && nacl.originRingAtZero
+      && nacl.counts.atoms === 2 && nacl.counts.instances === 2,
+    JSON.stringify(nacl));
+  // P-1's wedge is half the cell, so a whole face of it is a cell face: the
+  // corner atom's 4 copies on that face are all in the wedge, the other 4 not.
+  const triclinic = await ringCopies('P-1', ['P-1', '1.0', '4.000000 0 0', '-1.034775 4.482102 0', '-0.633721 0.411540 5.144806', 'Na Cl', '1 2', 'Direct',
+    '0 0 0', '0.31 0.22 0.43', '0.69 0.78 0.57', ''].join('\n'));
+  H.check('P-1: the corner atom is ringed on the 4 corners of the wedge face, not all 8',
+    triclinic.originDrawn === 8 && triclinic.originRinged === 4 && triclinic.counts.atoms === 2,
+    JSON.stringify(triclinic));
 
   H.check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   await H.finish(browser);

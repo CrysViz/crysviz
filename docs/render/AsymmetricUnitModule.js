@@ -87,6 +87,10 @@ let inWedgeInstances = 0;
 // Reusable "have I already counted this source atom" flags, so counting
 // distinct atoms across periodic images costs no allocation per frame.
 let seenSource = new Uint8Array(0);
+/** Per source atom, the shortest translation (Å) that puts one of its copies in the wedge. */
+let minCost = new Float64Array(0);
+/** Copies whose translation is within this of the atom's shortest count as tied (Å). */
+const RING_COST_TOL = 1e-6;
 
 function colorValue() {
   return general.asuColor || FALLBACK_COLOR;
@@ -414,9 +418,13 @@ function ensureHalo(capacity) {
  * asking whether ANY of its lattice images lands in the wedge is the question
  * that means something: it identifies the symmetry-independent atoms.
  *
- * The halo is drawn on the atom itself, never on the image that satisfied the
- * test — a ring around an atom says something, a ring around empty space does
- * not.
+ * Which copies get the ring: those drawn in or on the wedge itself (an atom on
+ * a wedge face can have several), and when none is — the wedge drawn outside
+ * the cell — the copies nearest to it, by the length of the translation that
+ * takes them in. Not every copy: NaCl's Na is drawn at all eight corners, and
+ * eight rings for one atom, seven of them far from the wedge, read as eight
+ * atoms in it. The halo is drawn on a real atom, never on the translated point
+ * that satisfied the test — a ring around empty space says nothing.
  *
  * Called from updateVisualization (structure edits, frame changes) and from
  * FastFrameModule (MD/relax playback, which bypasses updateVisualization) so
@@ -460,15 +468,24 @@ export function updateAsuAtomHighlight() {
   if (seenSource.length < atomCount) seenSource = new Uint8Array(atomCount);
   else seenSource.fill(0, 0, atomCount);
 
-  let drawn = 0;
-  let distinct = 0;
-
   const { lo, hi, halfSpaces } = wedge;
+  const [la, lb, lc] = wedge.lattice;
+
+  // Pass 1: every drawn copy some lattice translation puts in the wedge, with
+  // the length (Å) of the shortest such translation — 0 for a copy drawn in or
+  // on the wedge itself.
+  const candIndex = [];
+  const candCost = [];
+  if (minCost.length < atomCount) minCost = new Float64Array(atomCount);
+  minCost.fill(Infinity, 0, atomCount);
 
   for (let i = 0; i < cart.length; i += 1) {
     const point = cart[i];
     if (opacity && opacity.getX(i) < HALO_MIN_ATOM_OPACITY) continue;
     if (cutPlanes.length && !(immune?.getX(i) >= 0.5) && isCutAway(point, cutPlanes)) continue;
+    // Zero means the element is hidden — AtomsFracUpdateModule zero-scales
+    // those — and there is nothing there to ring.
+    if (!(source[i * 16] > 0)) continue;
     const frac = [
       m0[0] * point[0] + m0[1] * point[1] + m0[2] * point[2],
       m1[0] * point[0] + m1[1] * point[1] + m1[2] * point[2],
@@ -485,28 +502,43 @@ export function updateAsuAtomHighlight() {
     // side of it sends Math.ceil to the neighbouring one and drops the only
     // translation that would have matched. Silently, and for exactly the
     // atoms that matter most.
-    let inside = false;
+    let best = Infinity;
     const txEnd = Math.floor(hi[0] - frac[0] + CONTAINS_TOLERANCE);
     const tyEnd = Math.floor(hi[1] - frac[1] + CONTAINS_TOLERANCE);
     const tzEnd = Math.floor(hi[2] - frac[2] + CONTAINS_TOLERANCE);
-    for (let tx = Math.ceil(lo[0] - frac[0] - CONTAINS_TOLERANCE); tx <= txEnd && !inside; tx += 1) {
-      for (let ty = Math.ceil(lo[1] - frac[1] - CONTAINS_TOLERANCE); ty <= tyEnd && !inside; ty += 1) {
-        for (let tz = Math.ceil(lo[2] - frac[2] - CONTAINS_TOLERANCE); tz <= tzEnd && !inside; tz += 1) {
-          inside = containsFractional(
-            halfSpaces, frac[0] + tx, frac[1] + ty, frac[2] + tz
+    for (let tx = Math.ceil(lo[0] - frac[0] - CONTAINS_TOLERANCE); tx <= txEnd; tx += 1) {
+      for (let ty = Math.ceil(lo[1] - frac[1] - CONTAINS_TOLERANCE); ty <= tyEnd; ty += 1) {
+        for (let tz = Math.ceil(lo[2] - frac[2] - CONTAINS_TOLERANCE); tz <= tzEnd; tz += 1) {
+          if (!containsFractional(halfSpaces, frac[0] + tx, frac[1] + ty, frac[2] + tz)) continue;
+          const cost = Math.hypot(
+            tx * la[0] + ty * lb[0] + tz * lc[0],
+            tx * la[1] + ty * lb[1] + tz * lc[1],
+            tx * la[2] + ty * lb[2] + tz * lc[2],
           );
+          if (cost < best) best = cost;
         }
       }
     }
-    if (!inside) continue;
+    if (best === Infinity) continue;
+    candIndex.push(i);
+    candCost.push(best);
+    const src = srcIndex ? srcIndex[i] : i;
+    if (src < atomCount && best < minCost[src]) minCost[src] = best;
+  }
 
+  // Pass 2: ring each atom's copies at its shortest translation — the ones in
+  // or on the wedge when it has any there.
+  let drawn = 0;
+  let distinct = 0;
+  for (let k = 0; k < candIndex.length; k += 1) {
+    const i = candIndex[k];
+    const src = srcIndex ? srcIndex[i] : i;
+    if (src < atomCount && candCost[k] > minCost[src] + RING_COST_TOL) continue;
+
+    const point = cart[i];
     // The atom's own drawn radius, straight off its instance matrix, so a halo
-    // tracks the size slider and any per-atom scaling for free. Zero means the
-    // element is hidden — AtomsFracUpdateModule zero-scales those — and there
-    // is nothing there to ring.
+    // tracks the size slider and any per-atom scaling for free.
     const radius = source[i * 16];
-    if (!(radius > 0)) continue;
-
     const offset = drawn * 16;
     // Pure scale + translation. Every other slot of a fresh InstancedMesh's
     // matrix array is already zero and nothing here ever writes one, so the
@@ -520,7 +552,6 @@ export function updateAsuAtomHighlight() {
     target[offset + 15] = 1;
     drawn += 1;
 
-    const src = srcIndex ? srcIndex[i] : i;
     if (src < atomCount && !seenSource[src]) {
       seenSource[src] = 1;
       distinct += 1;
