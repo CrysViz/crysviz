@@ -12,7 +12,7 @@
 // every plot's x axis becomes that instead of the frame number.
 
 import { latticeParameters } from '../math/index.js';
-import { stressMean } from '../atomistic/relaxer.js';
+import { pressureGPa } from '../model/index.js';
 
 /** One array per quantity, 1:1 with the points, plus the point count.
  *  @typedef {{a: number[], b: number[], c: number[], alpha: number[],
@@ -124,7 +124,7 @@ export async function latticePointSeries(points) {
     }
     out.energy.push(Number.isFinite(ph.energy) ? ph.energy : NaN);
     out.maxForce.push(maxForceOf(ph.forces));
-    const pressure = stressMean(ph.stress);
+    const pressure = pressureGPa(ph.stress);
     out.pressure.push(Number.isFinite(pressure) ? pressure : NaN);
   }
   return out;

@@ -28,6 +28,7 @@ import {
 import { ensureWorkerNEPReady, createWorkerNEPForceEvaluator } from '../../atomistic/nepWorkerClient.js';
 import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot, endLiveFeed } from '../TrajectoryPanel.js';
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
+import { withAppStressConvention } from '../../atomistic/calculatorStress.js';
 import { updateForces } from '../../render/index.js';
 import { updateRow, createRow, selectLastAddedRow, selectStructure } from '../FileBrowswerPanel.js';
 import { refreshActivePanels } from '../panels/PanelManager.js';
@@ -42,7 +43,7 @@ import {
 import { StructureContainer, TrajectoryContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
-import { Stress } from '../../model/index.js';
+import { Stress, fromTensionPositive } from '../../model/index.js';
 import { Structure } from '../../model/index.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 
@@ -83,12 +84,13 @@ async function initNEP() {
     await loadScript('./external/nep_wasm/nep_wasm.js');
     await loadScript('./external/nep_wasm/nep_simple.js');
 
-    nepRunner = new window.NEPWasmRunner({
+    const runner = new window.NEPWasmRunner({
       defaultModelUrl: './external/nep_wasm/nep89_20250409.txt',
     });
 
-    await nepRunner.init();
-    await nepRunner.loadDefaultModel();
+    await runner.init();
+    await runner.loadDefaultModel();
+    nepRunner = withAppStressConvention(runner);
     return nepRunner;
   })();
 
@@ -144,7 +146,7 @@ async function ensureMLIPReady(shell) {
       modelPromiseKey: null,
     };
     state.initPromise = (async () => {
-      const runner = new MLIPRunner({ backend });
+      const runner = withAppStressConvention(new MLIPRunner({ backend }));
       await runner.init();
       state.runner = runner;
       return runner;
@@ -298,9 +300,10 @@ export async function ensureCalculatorRunner(onStatus = () => {}) {
   return resolveCalculatorRunner(onStatus);
 }
 
-function convertStressEvA3ToGPa(stressTensor) {
-  const factor = 160.21766208;
-  return stressTensor.map((row) => row.map((value) => value * factor));
+// The ASE server sends ASE's get_stress(): eV/Å³, tension-positive. Stored in
+// the app convention (eV/Å³, compression positive — model/Stress.js).
+function stressFromASE(stressTensor) {
+  return fromTensionPositive(stressTensor);
 }
 
 function setCurrentEFS(out, keptIndices = null) {
@@ -313,7 +316,9 @@ function setCurrentEFS(out, keptIndices = null) {
     fileBrowser.selectedStructure.forces = forces.map((v) => new Force({ vector: [...v] }));
   }
   // Stress is optional — some calculators don't provide it. Don't throw when
-  // it's absent; just leave the structure without a stress tensor.
+  // it's absent; just leave the structure without a stress tensor. It arrives
+  // in the app convention (eV/Å³, compression positive; see
+  // atomistic/calculatorStress.js) and is stored as is.
   if (Array.isArray(out?.stress?.matrix3x3)) {
     fileBrowser.selectedStructure.stress = new Stress({
       tensor: out.stress.matrix3x3.map((row) => [...row]),
@@ -444,7 +449,7 @@ function bindASEHandlers(bound) {
         lattice: data.result.lattices[i],
         atoms,
         forces,
-        stress: new Stress({ tensor: convertStressEvA3ToGPa(data.result.stresses[i]) }),
+        stress: new Stress({ tensor: stressFromASE(data.result.stresses[i]) }),
       });
       container.structures.push(structure);
     }
@@ -471,9 +476,9 @@ function bindASEHandlers(bound) {
       lattice: data.result.lattice,
       positions: data.result.positions,
       forces: new Force({ vector: data.result.forces }),
-      stress: new Stress({ tensor: convertStressEvA3ToGPa(data.result.stress) }),
+      stress: new Stress({ tensor: stressFromASE(data.result.stress) }),
     }));
-    const pressure = structure.stress.pressure;
+    const pressure = structure.stress.pressureGPa;
     if (bound.efsMetricsEl) {
       bound.efsMetricsEl.innerHTML = `
         <div>energy / atom: server</div>
@@ -487,12 +492,12 @@ function bindASEHandlers(bound) {
   };
 
   const onStressUpdate = (data) => {
-    const stress = new Stress({ tensor: convertStressEvA3ToGPa(data.stress) });
+    const stress = new Stress({ tensor: stressFromASE(data.stress) });
     if (bound.efsMetricsEl) {
       bound.efsMetricsEl.innerHTML = `
         <div>energy / atom: server</div>
         <div>max force: ${Number(data.maxf).toFixed(5)} eV/A</div>
-        <div>pressure: ${stress.pressure.toFixed(2)} GPa</div>
+        <div>pressure: ${stress.pressureGPa.toFixed(2)} GPa</div>
       `;
     }
   };

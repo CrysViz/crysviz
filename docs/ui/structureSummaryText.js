@@ -5,7 +5,7 @@
 // pin down. No DOM here.
 
 import { latticeParameters, fracToCartPoint } from '../math/index.js';
-import { stressMean } from '../atomistic/relaxer.js';
+import { pressureGPa } from '../model/index.js';
 
 const num = (v, digits = 6, width = 0) => {
   const text = Number.isFinite(v) ? v.toFixed(digits) : 'nan';
@@ -130,9 +130,10 @@ function maxForceOf(structure) {
 
 /**
  * The scalar properties a structure carries, as display rows — only the ones
- * present: total and per-atom energy (eV), hydrostatic pressure (stress
- * trace / 3, GPa, the Trajectory plot's convention) and the largest per-atom
- * force (eV/Å). Empty when the structure has none.
+ * present: total and per-atom energy (eV), pressure (GPa, compression
+ * positive: the plain trace/3 of the stored stress, see model/Stress.js — the
+ * same number the Trajectory plot and the EFS readout show) and the largest
+ * per-atom force (eV/Å). Empty when the structure has none.
  * @returns {{key: string, label: string, value: number, unit: string, digits: number}[]}
  */
 export function scalarProperties(structure) {
@@ -142,7 +143,7 @@ export function scalarProperties(structure) {
     rows.push({ key: 'energy', label: 'Energy', value: structure.energy, unit: 'eV', digits: 6 });
     if (n > 0) rows.push({ key: 'energyPerAtom', label: 'Energy/atom', value: structure.energy / n, unit: 'eV', digits: 6 });
   }
-  const pressure = stressMean(structure?.stress?.tensor);
+  const pressure = pressureGPa(structure?.stress?.tensor);
   if (Number.isFinite(pressure)) rows.push({ key: 'pressure', label: 'Pressure', value: pressure, unit: 'GPa', digits: 4 });
   const maxForce = maxForceOf(structure);
   if (Number.isFinite(maxForce)) rows.push({ key: 'maxForce', label: 'Max force', value: maxForce, unit: 'eV/Å', digits: 4 });

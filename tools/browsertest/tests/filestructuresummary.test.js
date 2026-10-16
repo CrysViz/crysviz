@@ -174,7 +174,9 @@ const H = require('../harness');
     '      2.00000      0.00000      0.00000        -0.030000     -0.040000      0.000000',
     ' -----------------------------------------------------------------------------------',
     '    total drift:                                0.000000      0.000000      0.000000', '',
-    '  in kB      16.00000     16.00000     16.00000      0.00      0.00      0.00', '',
+    // VASP order XX YY ZZ XY YZ ZX, compression positive: 10/20/30 kB on the
+    // diagonal = 1/2/3 GPa, pressure 2 GPa; shears 0.1 (xy), 0.2 (yz), 0.3 (zx) GPa.
+    '  in kB      10.00000     20.00000     30.00000      1.00      2.00      3.00', '',
     '  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)',
     '  ---------------------------------------------------',
     '  free  energy   TOTEN  =      -42.50000000 eV', '',
@@ -186,11 +188,11 @@ const H = require('../harness');
   }, OUTCAR);
   await page.waitForTimeout(800);
   s = await read();
-  // Pressure = stress trace / 3 (the app's convention, same as the Lattice/Trajectory
-  // plots: the OUTCAR 'in kB' number is used as-is and labelled GPa) = 16; max force = 0.05.
+  // Pressure = trace / 3 of the compression-positive stress, in GPa (kB / 10):
+  // (1 + 2 + 3) / 3 = 2 GPa — the number VASP itself reports; max force = 0.05.
   H.check('an OUTCAR frame shows energy, energy/atom, pressure and max force as chips',
     s.propsHidden === false && /Energy = -42\.500000 eV/.test(s.props) && /Energy\/atom = -21\.250000 eV/.test(s.props)
-      && /Pressure = 16\.0000 GPa/.test(s.props) && /Max force = 0\.0500 eV\/Å/.test(s.props),
+      && /Pressure = 2\.0000 GPa/.test(s.props) && /Max force = 0\.0500 eV\/Å/.test(s.props),
     JSON.stringify(s.props));
 
   // ---- 7. pure builders -------------------------------------------------------------
@@ -208,7 +210,8 @@ const H = require('../harness');
       frac: positionsTable(structure).text, cart: positionsTable(structure, true).rows[1].xyz,
       label: siteLabel(structure.atoms[2], 'Cl'), info, text: wyckoffText(info),
       scalarsEmpty: scalarProperties(structure),
-      scalars: scalarProperties({ atoms: [{}, {}], energy: -10, stress: { tensor: [[3, 0, 0], [0, 3, 0], [0, 0, 3]] }, forces: [{ vector: [0.3, 0, 0.4] }] }),
+      // Stored stress is eV/Å³, compression positive: 0.01 eV/Å³ = 1.6022 GPa.
+      scalars: scalarProperties({ atoms: [{}, {}], energy: -10, stress: { tensor: [[0.01, 0, 0], [0, 0.01, 0], [0, 0, 0.01]] }, forces: [{ vector: [0.3, 0, 0.4] }] }),
     };
   });
   H.check('latticeText / latticeParamsText', pure.lattice.split('\n').length === 3 && /^\s+4\.000000\s+0\.000000\s+0\.000000$/.test(pure.lattice.split('\n')[0])
@@ -226,8 +229,9 @@ const H = require('../harness');
   H.check('scalarProperties: none for a bare structure; energy+per-atom+pressure+maxforce when present',
     pure.scalarsEmpty.length === 0
       && pure.scalars.map((r) => r.key).join(',') === 'energy,energyPerAtom,pressure,maxForce'
-      && near(pure.scalars[1].value, -5) && near(pure.scalars[2].value, 3) && near(pure.scalars[3].value, 0.5),
+      && near(pure.scalars[1].value, -5) && near(pure.scalars[2].value, 0.01 * 160.21766208) && near(pure.scalars[3].value, 0.5),
     JSON.stringify(pure.scalars));
+
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

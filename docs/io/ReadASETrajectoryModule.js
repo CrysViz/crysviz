@@ -12,7 +12,7 @@
 
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
-import { Stress } from "../model/index.js";
+import { Stress, fromTensionPositive } from "../model/index.js";
 import { StructureContainer, TrajectoryContainer } from "../model/index.js";
 import { Structure } from "../model/index.js";
 import { generateID } from "../utils/index.js";
@@ -192,16 +192,19 @@ export function parseASETrajectory(arrayBuffer, fileName) {
       }
     }
 
-    // Read stress (Voigt notation: 6 components)
-    let stressTensor = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    // Read stress (Voigt notation: 6 components). ASE's is eV/Å³ and
+    // tension-positive; the app stores it compression-positive
+    // (model/Stress.js). A frame without stress gets none rather than a zero
+    // tensor, which would read as a measured 0 GPa.
+    let stressTensor = null;
     const stressFlat = readFrameFloat64("stress", frameIndex, 6);
     if (stressFlat && stressFlat.length === 6) {
       // Voigt: [sxx, syy, szz, syz, sxz, sxy]
-      stressTensor = [
+      stressTensor = fromTensionPositive([
         [stressFlat[0], stressFlat[5], stressFlat[4]],
         [stressFlat[5], stressFlat[1], stressFlat[3]],
         [stressFlat[4], stressFlat[3], stressFlat[2]]
-      ];
+      ]);
     }
 
     // Read element symbols or numbers
@@ -232,7 +235,7 @@ export function parseASETrajectory(arrayBuffer, fileName) {
       new Force({ vector: f, scaling: 1.0 })
     );
 
-    const stress = new Stress({ tensor: stressTensor });
+    const stress = stressTensor ? new Stress({ tensor: stressTensor }) : null;
 
     structures.push(
       new Structure({

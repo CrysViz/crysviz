@@ -7,7 +7,10 @@ export { StructureContainer } from './StructureContainer.js';
 export { StructureShip } from './StructureShip.js';
 export { Spin } from './Spin.js';
 export { Force } from './Force.js';
-export { Stress } from './Stress.js';
+export {
+  Stress, EV_PER_A3_TO_GPA, KBAR_TO_EV_PER_A3, HARTREE_PER_BOHR3_TO_EV_PER_A3,
+  pressureEvA3, pressureGPa, tensorGPa, fromTensionPositive,
+} from './Stress.js';
 export { Polyhedra } from './Polyhedra.js';
 export { Polyhedron } from './Polyhedron.js';
 export { Symmetry } from './Symmetry.js';
