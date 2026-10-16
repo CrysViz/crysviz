@@ -1519,7 +1519,7 @@ body.panel-hidden #axesLegend {
 }
 
 /* Preformatted context block. Monospaced through --font-mono (the token, not a
- * literal stack — see STYLE.md invariant 2) so the two lattices line up
+ * literal stack — see agent_guides/STYLE.md invariant 2) so the two lattices line up
  * column-by-column and a discrepancy is visible at a glance. */
 .lock-confirm-modal .confirm-detail {
   margin: 0 0 var(--sp-3-5) 0;

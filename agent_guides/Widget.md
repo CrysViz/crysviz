@@ -10,9 +10,9 @@ everything widget-specific is gated on `body.widget-mode` or an opt-in URL
 parameter, so the full app is untouched.
 
 Companions: `docs/widget-embed-demo.html` is a working host page (trajectory
-player driving the widget). The README's "Widget mode / embedding" section has
-the payload examples (`frameKinds`, `menuLinks`), but predates the logo menu:
-where it and the code disagree, the code and this guide win.
+player driving the widget). The README's "Widget mode / embedding" section is
+the user-facing summary, with the `frameKinds` and `menuLinks` payload
+examples.
 
 ## What the viewer shows
 
@@ -21,13 +21,15 @@ where it and the code disagree, the code and this guide win.
 - **Axes gizmo** (lower left), a/b/c letters on the arrows.
 - **Camera control** (top right): view along a, b or c, and reset.
 - **The CrysViz logo** (top left) is the menu:
-  - **Open in CrysViz**: the same structure (current frame) in the full app,
-    new tab.
+  - **Open in CrysViz**: the launch data in the full app, new tab, on the
+    frame shown when it is a `.crysviz` session (a moyo-built Conventional or
+    Primitive cell, or any other file, opens as loaded).
   - **Structures**: As loaded / Conventional / Primitive. The cells are built
     in the browser with moyo, and the magnetic moments are rotated and
-    remapped onto the new cell (`ui/WidgetSpinRemap.js`); a cell the magnetic
-    order cannot live in (a magnetic supercell) is greyed out. A payload with
-    `frameKinds` lists its own precomputed cells instead, and no moyo runs.
+    remapped onto the new cell (`ui/WidgetSpinRemap.js`). The cells are built
+    lazily, on first pick; one the magnetic order cannot live in (a magnetic
+    supercell) is greyed out after that attempt. A payload with `frameKinds`
+    lists exactly its own precomputed frames instead, and no moyo runs.
   - **Shading**: Metallic / Matte / Cel shading, plus Ray tracing / Path
     tracing with `tracers=1`.
   - **Bonds**, **Polyhedra** toggles (polyhedra start off).
@@ -66,7 +68,7 @@ https://crysviz.org/index.html?widget=1[&control=1][&tracers=1][&theme=dark|ligh
 
 | Query | Effect |
 |---|---|
-| `widget=1` | widget mode (required) |
+| `widget=1` | widget mode (required; the check is for the parameter's presence, so any value turns it on) |
 | `control=1` | install the host control channel (otherwise no message listener exists) |
 | `tracers=1` | offer Ray/Path tracing in Shading (downloads the tracer pipelines; skipped by default) |
 | `theme=dark` / `light` | force the UI theme at boot (default: follow the OS); not persisted |
@@ -83,10 +85,12 @@ The hash says where the structure comes from:
 
 The file can be anything CrysViz reads (the format is detected from the
 contents: POSCAR, CIF, extended XYZ, OUTCAR, QE output, ASE `.traj`, ...) or a
-`.crysviz` session: JSON with `frames` (`elements`, `lattice`, `positions`,
-optional `spins`), `selectedFrameIndex`, `display` toggles, and the widget-only
-keys `frameKinds` and `menuLinks` (README). The full app ignores the
-widget-only keys.
+`.crysviz` session: JSON with `"format": "crysviz"` (required: without it the
+load fails), `frames` (`elements`, `lattice`, `positions`, optional `spins`),
+`selectedFrameIndex`, `display` toggles, and the widget-only keys `frameKinds`
+and `menuLinks` (README). `frameKinds` must be an array of strings with
+exactly one entry per frame, or it is silently dropped and the moyo path runs.
+The full app ignores the widget-only keys.
 
 ## Integrating into an existing application
 
@@ -123,7 +127,7 @@ window.addEventListener('message', (e) => {
   const d = e.data;
   if (!d || d.source !== 'crysviz-widget') return;
   if (d.type === 'awaitingSession') {
-    const bytes = new TextEncoder().encode(fileText);      // or an ArrayBuffer / Blob
+    const bytes = new TextEncoder().encode(fileText);      // or an ArrayBuffer (a Blob: drop the transfer list)
     viewer.contentWindow.postMessage(
       { target: 'crysviz-widget', type: 'loadSession', name: 'NaCl.cif', data: bytes.buffer },
       '*', [bytes.buffer]);                                 // transferred, not copied
@@ -132,10 +136,15 @@ window.addEventListener('message', (e) => {
 viewer.src = `${CRYSVIZ}?widget=1#load-message`;
 ```
 
-`loadSession` takes `name` (≤255 chars, its extension helps format detection),
-`data` (string, ArrayBuffer, typed array or Blob) and an optional `format`.
-The widget waits 60 s for it. Posting `loadSession` before `awaitingSession`
-also works: the receiver is installed before the app loads.
+`loadSession` takes `name` (required, non-empty, ≤255 chars; its extension
+helps format detection), `data` (string, ArrayBuffer, typed array or Blob) and
+an optional `format`. An invalid message is ignored with only a console
+warning, and the widget shows its boot error when the 60 s wait runs out.
+Posting `loadSession` from the iframe's `load` event without waiting for
+`awaitingSession` also works, since the receiver is installed before the app
+loads. Anything posted before the widget's document starts (right after
+setting `src`) goes to the old document and is lost, so prefer answering
+`awaitingSession`.
 
 **4. Optionally, drive it** (`control=1`): step a trajectory, show one of
 several structures, link cameras. See the protocol below and
@@ -148,7 +157,7 @@ Commands, host → widget: `{ target: 'crysviz-widget', type, ... }`
 | type | effect |
 |---|---|
 | `getState` | widget replies `state` |
-| `setFrame { index, recenter? }` | show frame `index` (clamped). The camera stays put (a trajectory step); `recenter: true` also refits it (the frames are different structures) |
+| `setFrame { index, recenter? }` | show frame `index` (clamped); stops `play`. The camera stays put (a trajectory step); `recenter: true` also refits it (the frames are different structures) |
 | `fitView` | recentre and refit the camera to the shown frame, keeping the viewing direction |
 | `play { fps? = 10, loop? = true }` | step through the frames (fps capped at 60) |
 | `pause` | stop |
@@ -160,8 +169,8 @@ Notifications, widget → host: `{ source: 'crysviz-widget', version: 1, type, .
 | type | when |
 |---|---|
 | `ready { frameCount, index, camera: true }` | once, after the structure loaded. `camera: true` advertises getCamera/setCamera/camera; hide camera features from widgets without it |
-| `state { frameCount, index, playing }` | reply to `getState` |
-| `frame { frameCount, index }` | whenever the shown frame changes |
+| `state { frameCount, index, playing, camera: true }` | reply to `getState` (carries the capability too, for a host that missed `ready`) |
+| `frame { frameCount, index }` | after every `setFrame` and `play` step. A frame picked from the widget's own Structures menu (`frameKinds` mode) is not reported |
 | `camera { view }` | the **user** moved the camera (at most once per animation frame), or reply to `getCamera`. Moves made by host commands are never reported |
 
 A `view` is relative, so it carries over between structures of different size:
@@ -193,8 +202,10 @@ cheaper than reloading the iframe per structure.
 ### What the widget trusts
 
 - Commands only from `window.parent` carrying `target: 'crysviz-widget'`;
-  everything else is ignored. Replies go to the first controller's origin
-  (`'*'` only for an opaque-origin host, still only to the parent).
+  everything else is ignored. Notifications go to `window.parent` only: with
+  target origin `'*'` until the first valid command (so `ready` and early
+  `camera` reports too), then that command's origin (an opaque-origin host
+  stays on `'*'`). Put nothing in a notification a host page must not see.
 - A `loadSession` only from the parent (`#load-message`) or the opener
   (`#load-opener`), checked by `event.source`, which the browser sets.
 - `#load-url` only http(s), without credentials. `menuLinks` only http(s) URLs
@@ -225,13 +236,16 @@ cheaper than reloading the iframe per structure.
 ## Traps
 
 - **A listener added after the iframe loads misses `ready` and
-  `awaitingSession`.** Attach before setting `src`, or ask with `getState`.
+  `awaitingSession`.** Attach before setting `src`, or ask with `getState`
+  (its reply carries the same `camera` capability).
 - **Different structures as frames need `recenter: true`.** Without it the
   camera keeps the last frame's framing and a larger or shifted cell can sit
   off-screen.
 - **URL length.** `#load-file=` fails silently in some browsers past their cap;
-  use `#load-message`. "Open in CrysViz" switches to a postMessage hand-over
-  above 1 MB for the same reason.
+  use `#load-message`. For the same reason "Open in CrysViz" reopens a
+  `#load-file=` launch by URL only up to 1,000,000 characters and hands it
+  over by postMessage (`#load-opener`) beyond that; `#load-url` and
+  `#load-message` launches are always handed over.
 - **`#load-url` without CORS headers** shows the boot error, not a hint about
   CORS. Check the data server's `Access-Control-Allow-Origin` first.
 - **A restored session can carry display state the widget overrides** (axes
@@ -244,7 +258,7 @@ cheaper than reloading the iframe per structure.
 ## Verifying a change
 
 ```
-tools/browsertest/run.sh tests/widget*.test.js        # all widget tests
+(cd tools/browsertest && ./run.sh tests/widget*.test.js)   # all widget tests
 make serve   # then open /widget-embed-demo.html (?transport=hash for #load-file)
 ```
 

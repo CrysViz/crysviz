@@ -187,7 +187,7 @@
    A fill that carries text must contrast with the text ramp; a control that
    is only ever looked at must contrast with the PANEL. On a dark theme one
    colour can do both. On a light theme it cannot, and --highlight-color was
-   the token caught in the middle. See STYLE.md for the target numbers. */
+   the token caught in the middle. See agent_guides/STYLE.md for the target numbers. */
 .theme-standard {
   --bg-color: #cfe1f0;
   --accent-color: #d3e4f2;

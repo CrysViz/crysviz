@@ -100,7 +100,7 @@ async function waitForWedge(page, wanted) {
       boxText: box.textContent.replace(/\s+/g, ' ').trim(),
       // The wedge hull's own colour must be the theme's --asu-color, not a
       // hardcoded one — that is the whole point of routing it through
-      // ThemeManager (STYLE.md's rule: no colour outside docs/themes/).
+      // ThemeManager (agent_guides/STYLE.md's rule: no colour outside docs/themes/).
       token: getComputedStyle(document.documentElement)
         .getPropertyValue('--asu-color').trim(),
       hullHex: (() => {
