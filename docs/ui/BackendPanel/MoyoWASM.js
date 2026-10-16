@@ -345,7 +345,7 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
       // invisibly under the user.
       let structure = fileBrowser.selectedStructure;
       let symmetrised = false;
-      if (!isConventionalCellDisplayed(result, structure)) {
+      if (!isConventionalCellDisplayed(result, structure, getTol())) {
         newContainerFromSymmetrisation(
           "conv", result.positions, result.lattice, result.elements
         );
@@ -552,36 +552,51 @@ function renderSymmetryResult(result) {
   box.hidden = false;
 }
 
-// Whether the selected structure already IS moyo's conventional cell, in which
-// case the wedge can be drawn straight onto it.
+// Whether the selected structure already IS in moyo's conventional setting, in
+// which case the wedge can be drawn straight onto it.
 //
-// Checked on the SITES as well as the lattice. An origin shift leaves the
-// lattice identical while moving every atom, and the asymmetric unit is
-// defined relative to the conventional cell's own origin — so a lattice-only
+// Checked on the SYMMETRY OPERATIONS as well as the lattice. An origin shift
+// leaves the lattice identical while moving every atom, and the asymmetric unit
+// is defined relative to the conventional cell's own origin — so a lattice-only
 // test would pass a structure whose wedge lands in the right box against the
 // wrong atoms, which is exactly the kind of quietly-wrong picture this
-// feature must not produce.
+// feature must not produce. The wedge is a fundamental domain of the group, so
+// "the structure's own operations are the standard cell's" is exactly the
+// condition under which it is right.
+//
+// Not the sites: moyo's standardisation is not idempotent. Run on 2H-MoS2's
+// conventional cell it returns the same cell with z -> -z (Mo on 2d instead of
+// 2c — an equally standard description of the same crystal, same group), and
+// a site comparison then failed on every click, committing another sym_conv_
+// copy each time — including straight after Conv. Cell.
 //
 // Deliberately errs towards saying "no": a false negative costs one extra
 // symmetrised structure, which is visible and harmless, while a false
 // positive is a misplaced wedge.
-function isConventionalCellDisplayed(result, structure) {
+function isConventionalCellDisplayed(result, structure, tolerance) {
   if (!structure || !latticesMatch(result.lattice, structure.lattice)) return false;
+  if ((structure.atoms?.length ?? 0) !== result.positions.length) return false;
 
-  const sites = structure.atoms ?? [];
-  if (sites.length !== result.positions.length) return false;
+  let standard;
+  try {
+    const numbers = result.elements.map((el) => PT_INVERTED[el]);
+    const cell = { positions: result.positions, lattice: { basis: result.lattice.flat() }, numbers };
+    standard = analyze_cell(JSON.stringify(cell), tolerance, 'Standard').operations ?? [];
+  } catch {
+    return false;
+  }
+  const own = result.operations ?? [];
+  if (own.length !== standard.length) return false;
 
-  // moyo is free to hand back the sites in a different order, so this compares
-  // them as a set rather than pairwise.
-  return result.positions.every((position, i) => sites.some((atom, j) => {
-    if (result.elements[i] !== structure.elements[j]) return false;
-    for (let axis = 0; axis < 3; axis += 1) {
-      let delta = position[axis] - atom.position[axis];
-      delta -= Math.round(delta); // fractional coordinates: compare modulo 1
-      if (Math.abs(delta) > 1e-6) return false;
-    }
-    return true;
-  }));
+  // Both lists come from moyo in the same (column-major) layout, so rotations
+  // compare as they are; translations only modulo a lattice vector, and moyo
+  // is free to list the operations in any order.
+  return standard.every((op) => own.some((mine) =>
+    op.rotation.every((v, k) => v === mine.rotation[k])
+    && op.translation.every((v, axis) => {
+      const delta = v - mine.translation[axis];
+      return Math.abs(delta - Math.round(delta)) <= 1e-6;
+    })));
 }
 
 // The asymmetric-unit conditions are inequalities, so the strings genuinely
@@ -677,7 +692,9 @@ function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec(), struct
       const flat = result.std_cell.lattice.basis;
       const lattice3x3 = [flat.slice(0,3), flat.slice(3,6), flat.slice(6,9)];
       const convElements = result.std_cell.numbers.map(el => PT[el]);
-      return {...info, lattice:lattice3x3, positions:result.std_cell.positions, elements:convElements};
+      // `operations` are the input cell's own, for isConventionalCellDisplayed.
+      return {...info, lattice:lattice3x3, positions:result.std_cell.positions, elements:convElements,
+        operations:result.operations};
   }
   else {
       console.warn("Unknown calculation type!");
