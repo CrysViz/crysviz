@@ -73,6 +73,14 @@ export {
 } from './LatticeModule.js';
 
 export {
+  showAsymmetricUnit, hideAsymmetricUnit, updateAsymmetricUnit,
+  isAsymmetricUnitVisible, asymmetricUnitNeedsCellBox, latticesMatch,
+  refreshAsuAppearance, setAsuAtomHighlight, isAsuAtomHighlightOn,
+  asuAtomsInside, updateAsuAtomHighlight, refreshAsymmetricUnitIfStale, asymmetricUnitShift,
+  ASU_DROPPED_EVENT,
+} from './AsymmetricUnitModule.js';
+
+export {
   updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
   resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
   polyhedronFaceColor, applyFocusToPolyhedra,

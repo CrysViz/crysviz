@@ -31,7 +31,7 @@ import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
 import { updateForces, removeForces } from '../../render/index.js';
-import { updateLattice } from '../../render/index.js';
+import { updateLattice, updateAsymmetricUnit, updateAsuAtomHighlight } from '../../render/index.js';
 import { rebuildAtoms } from '../../render/index.js';
 import { refreshAtomColors } from '../../render/index.js';
 import { reapplyAtomForceColors } from '../ColorPanel.js';
@@ -209,6 +209,7 @@ function fastUpdatePositions(cartPositions, lattice, elements, forces) {
     liveStructure.lattice = lattice.map(r => [...r]);
     updateLattice();
   }
+  updateAsuAtomHighlight();
 
   // Forces: needed for the force ARROWS (forcesActive) and/or for force-based
   // atom COLOURING (atomsColor === 'force'), so refresh the live structure's
@@ -271,6 +272,7 @@ function fullRebuild(nAtoms, lattice, cartPositions, elements, forces) {
   } else {
     liveContainer.structures[0] = liveStructure;
     fileBrowser.selectedStructure = liveStructure;
+    updateAsymmetricUnit();
   }
 
   // Temporarily disable periodic images and bonds so the mesh has exactly N instances

@@ -33,6 +33,7 @@ import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateOverlayBonds,rebuildOverlayBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
+import { updateAsymmetricUnit, updateAsuAtomHighlight } from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
 import {rebuildAtoms,updateAtoms,deriveVisibleWrapped} from '../render/index.js';
 import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
@@ -282,7 +283,13 @@ export function updateVisualization(options = {}) {
     // repeats the field's original sub-cell, gaps included), so re-seat them
     // whenever the lattice is rebuilt. Idempotent and cheap when unchanged.
     if (!reRenderPeriodic) applyFieldPeriodicBounds();
+    // Unconditional: this is also what drops a wedge whose structure is no
+    // longer selected.
+    updateAsymmetricUnit();
   }
+  // Atoms can move without the cell changing (Wyckoff editor), so the
+  // in-wedge highlight refreshes every pass; it is a no-op while off.
+  updateAsuAtomHighlight();
   console.timeEnd("uv:updateLattice");
   console.time("uv:updateOther");
   if (reRenderOther) updateOther();

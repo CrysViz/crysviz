@@ -1,6 +1,7 @@
 // "Parameters" section of the Files window: a collapsible block under the
 // structure table showing the SELECTED structure's scalar properties (energy,
-// pressure, max force — whichever it carries), its lattice (vectors,
+// pressure, max force — whichever it carries) and its full stress tensor in
+// GPa (compression positive, model/Stress.js), its lattice (vectors,
 // parameters, volume), its atomic positions (fractional or Cartesian) and
 // its Wyckoff positions (the site symmetry only in the copied text — the
 // sidebar is too narrow for a sixth column), all of it plain selectable text (drag-select and
@@ -30,7 +31,7 @@ import {
 import { hallEntry, symdataHallUrl } from './BackendPanel/hallSymbols.js';
 import {
   latticeText, latticeParamsText, positionsTable, wyckoffRows, wyckoffText, structureSummaryText,
-  scalarProperties,
+  scalarProperties, stressTensorText,
 } from './structureSummaryText.js';
 
 const ROOT_ID = 'fileStructureSummary';
@@ -121,6 +122,7 @@ function blockText(block) {
   if (block === 'lattice') return `${latticeText(structure.lattice)}\n${latticeParamsText(structure.lattice)}`;
   if (block === 'positions') return positionsTable(structure, state.cartesian).text;
   if (block === 'wyckoff') return state.wyckoff?.info ? wyckoffText(state.wyckoff.info) : '';
+  if (block === 'stress') return stressTensorText(structure);
   if (block === 'all') {
     return structureSummaryText(structure, { name: selectedName(), cartesian: state.cartesian, wyckoff: state.wyckoff?.info ?? null });
   }
@@ -136,21 +138,31 @@ function escapeHtml(text) {
   return String(text).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 }
 
+// Assign only when the markup changed, so a refresh that finds the same values
+// (most relax/MD viewer updates re-check) leaves any text selection alone.
+function setHtml(el, html) {
+  if (el.innerHTML !== html) el.innerHTML = html;
+}
+
 function renderProperties(structure) {
   const el = q('#fssProperties');
   if (!el) return;
   const rows = scalarProperties(structure);
   el.hidden = false;
-  if (!rows.length) {
-    // A plain geometry file (a POSCAR, a CIF) carries no energy, force or
-    // stress — say so rather than showing an empty gap.
-    el.innerHTML = '<span class="fss-muted">No energy, force or stress data for this structure.</span>';
-    return;
-  }
-  // Energy, pressure, max force — the scalars the frame carries — as chips
-  // at the top, plain selectable text like everything else.
-  el.innerHTML = rows.map((r) =>
-    `<span class="fss-chip">${escapeHtml(r.label)} = ${fmt(r.value, r.digits)} ${escapeHtml(r.unit)}</span>`).join('');
+  // Energy, pressure, max force — the scalars the frame carries — as chips at
+  // the top, plain selectable text like everything else. A plain geometry file
+  // (a POSCAR, a CIF) carries none — say so rather than showing an empty gap.
+  setHtml(el, rows.length
+    ? rows.map((r) =>
+      `<span class="fss-chip">${escapeHtml(r.label)} = ${fmt(r.value, r.digits)} ${escapeHtml(r.unit)}</span>`).join('')
+    : '<span class="fss-muted">No energy, force or stress data for this structure.</span>');
+  // The full stress tensor under the chips, when the structure carries one.
+  const block = q('#fssStressBlock');
+  const pre = q('#fssStress');
+  if (!block || !pre) return;
+  const stress = stressTensorText(structure);
+  block.hidden = !stress;
+  if (pre.textContent !== stress) pre.textContent = stress;
 }
 
 function renderLattice(structure) {
@@ -336,7 +348,13 @@ export function refreshFileStructureSummary() {
   if (structure === state.structure) {
     // Folded: nothing of this structure is shown, and the geometry is re-read
     // on the next unfold — skip the per-atom signature entirely.
-    if (!isOpen() || signatureOf(structure) === state.signature) return;
+    if (!isOpen()) return;
+    // Same geometry: only the energy / forces / stress can have changed (an
+    // EFS evaluation, a relax or MD step) — re-render just those.
+    if (signatureOf(structure) === state.signature) {
+      renderProperties(structure);
+      return;
+    }
   }
   render();
 }
@@ -361,6 +379,13 @@ export function addFileStructureSummary(body) {
     <div class="fss-empty" id="fssEmpty">No structure loaded.</div>
     <div class="fss-body" id="fssBody" hidden>
       <div class="fss-props" id="fssProperties"></div>
+      <section class="fss-block" id="fssStressBlock" hidden>
+        <div class="fss-block-head">
+          <span title="Compression positive: the pressure is the plain trace / 3">Stress tensor (GPa)</span>
+          <button type="button" class="fss-copy-btn" data-copy-block="stress" title="Copy the stress tensor (GPa)">⧉</button>
+        </div>
+        <pre class="fss-pre" id="fssStress"></pre>
+      </section>
       <section class="fss-block">
         <div class="fss-block-head">
           <span>Lattice vectors (Å)</span>

@@ -39,7 +39,8 @@ const H = require('../harness');
 // Four ionic steps of a 2-atom cell: cubic 4.0, cubic 4.1, tetragonal
 // 4.2/4.2/4.4, then the same cell sheared (b picks up an x component, so γ
 // leaves 90°). Each step carries an energy, a growing force on atom 2 and a
-// hydrostatic "in kB" stress. Only the lines the reader keys on are present.
+// hydrostatic "in kB" stress (100 kB = 10 GPa per step, so the series read in
+// GPa is 10, 20, 30, 40). Only the lines the reader keys on are present.
 const STEP = (lat, toten, fx, pkb) => [
   '  direct lattice vectors                 reciprocal lattice vectors',
   ...lat.map((row) => `     ${row.map((v) => v.toFixed(9)).join('  ')}     0.250000000  0.000000000  0.000000000`),
@@ -71,7 +72,7 @@ const LATTICES = [
   [[4.2, 0, 0], [0, 4.2, 0], [0, 0, 4.4]],
   [[4.2, 0, 0], [0.4, 4.2, 0], [0, 0, 4.4]],
 ];
-const OUTCAR = [...HEADER, ...LATTICES.flatMap((lat, i) => STEP(lat, -10 - i, -0.1 * (i + 1), 10 * (i + 1)))].join('\n');
+const OUTCAR = [...HEADER, ...LATTICES.flatMap((lat, i) => STEP(lat, -10 - i, -0.1 * (i + 1), 100 * (i + 1)))].join('\n');
 const GAMMA_SHEARED = Math.acos(0.4 / Math.hypot(0.4, 4.2)) * 180 / Math.PI;
 
 const PLOTLY_STUB = `
@@ -187,7 +188,7 @@ export default stub;
     JSON.stringify([s?.gamma, GAMMA_SHEARED]));
   H.check('volume of the sheared frame equals the unsheared (shear preserves volume)',
     s && near(s.volume[3], 4.2 * 4.2 * 4.4) && near(s.volume[0], 64), JSON.stringify(s?.volume));
-  H.check('per-frame energy, max force and pressure (trace/3) are read too',
+  H.check('per-frame energy, max force and pressure (GPa, from the kB stress) are read too',
     seq(s?.energy, [-10, -11, -12, -13]) && seq(s?.maxForce, [0.1, 0.2, 0.3, 0.4]) && seq(s?.pressure, [10, 20, 30, 40]),
     JSON.stringify([s?.energy, s?.maxForce, s?.pressure]));
   const p = pure.parsed;
@@ -270,7 +271,7 @@ export default stub;
   await page.waitForTimeout(300);
   const byPressure = await readAbc();
   H.check('Sort by pressure makes pressure the x axis',
-    byPressure.xTitle === 'Pressure (GPa)' && JSON.stringify(byPressure.x) === '[10,20,30,40]'
+    byPressure.xTitle === 'Pressure (GPa)' && seq(byPressure.x, [10, 20, 30, 40], 1e-9)
       && JSON.stringify(byPressure.custom) === '[0,1,2,3]' && JSON.stringify(byPressure.ringX) === '[40]'
       && /x axis: pressure/.test(byPressure.sourceMeta),
     JSON.stringify([byPressure.xTitle, byPressure.x, byPressure.ringX, byPressure.sourceMeta]));
@@ -519,7 +520,7 @@ export default stub;
   await page.waitForTimeout(300);
   const byPressureSel = await readAbc();
   H.check('Sort by a property only some points carry keeps just those points',
-    JSON.stringify(byPressureSel.x) === '[20]' && JSON.stringify(byPressureSel.custom) === JSON.stringify([trajRow]),
+    seq(byPressureSel.x, [20], 1e-9) && JSON.stringify(byPressureSel.custom) === JSON.stringify([trajRow]),
     JSON.stringify([byPressureSel.x, byPressureSel.custom]));
   await H.setSelect(page, 'laSortBy', 'order');
 

@@ -126,6 +126,16 @@ export const groups = {
   // THREE.Group of short cylinder dashes, rebuilt from the current structure on
   // every updateVisualization when any eligible pair is enabled.
   hydrogenBondsGroup: null,
+  // Real-space asymmetric unit ("irreducible wedge") of the detected space
+  // group (render/AsymmetricUnitModule.js). A THREE.Group holding the wedge
+  // hull, its outline, and — only when the displayed cell is not the
+  // conventional one — the conventional cell box the wedge is defined in.
+  asuGroup: null,
+  // Halo shells marking the atoms that fall inside the wedge. Its own mesh
+  // rather than a child of asuGroup: the wedge is static while this tracks
+  // atoms that move (MD playback), so it is refreshed in place — rewriting
+  // instance matrices and `count` — instead of being rebuilt with the group.
+  asuHaloMesh: null,
 };
 
 
@@ -193,6 +203,17 @@ export const general = {
   symmetryTolerance: 0.01,
   powerMode: true,
   currentLatticeColor:null,
+  // Asymmetric-unit wedge colour. Mirrored from --asu-color by
+  // ui/ThemeManager.js the same way currentLatticeColor mirrors
+  // --lattice-color, so a palette can retint the wedge.
+  asuColor:null,
+  // Set once the user picks a wedge colour by hand, which stops a later theme
+  // change from mirroring --asu-color over their choice. The picker's Reset
+  // clears it, and the next theme read takes over again.
+  asuColorUserSet:false,
+  // Wedge face opacity (Symmetry panel slider). The outline stays opaque —
+  // dropping this to 0 leaves a readable wireframe rather than nothing.
+  asuOpacity:0.22,
   defaultBackgroundColor:null,
   useDefaultColors:true,
   // "Element Materials Map" (Visual → Colors): per-species tracer-material

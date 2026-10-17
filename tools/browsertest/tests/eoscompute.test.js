@@ -31,10 +31,10 @@ const H = require('../harness');
     const V0 = latticeVolume(base.lattice);
     const frac0 = base.atoms.map((a) => [...a.position]);
 
-    // Synthetic potential: E = k(V-V0)²/V0 with tension-positive hydrostatic
-    // stress σ_ii = dE/dV, so pressureGPaFromStress = -dE/dV × 160.2 — a
-    // positive target pressure must COMPRESS the cell below V0, a negative
-    // one stretch it above. Plus springs pulling every atom to its base
+    // Synthetic potential: E = k(V-V0)²/V0 with hydrostatic stress in the
+    // app's compression-positive convention (model/Stress.js), S_ii = -dE/dV,
+    // so pressureGPaFromStress = -dE/dV × 160.2 — a positive target pressure
+    // must COMPRESS the cell below V0, a negative one stretch it above. Plus springs pulling every atom to its base
     // fractional site SHIFTED by 0.1 Å in x, so the relaxer has real atomic
     // work to do at every point, not just cell scaling.
     const k = 5;       // eV per (fractional volume deviation)²·V0
@@ -63,7 +63,7 @@ const H = require('../harness');
           energy_per_atom: energy / struct.positions.length,
           forces,
           stress: {
-            matrix3x3: [[dEdVol, 0, 0], [0, dEdVol, 0], [0, 0, dEdVol]],
+            matrix3x3: [[-dEdVol, 0, 0], [0, -dEdVol, 0], [0, 0, -dEdVol]],
             available: true,
           },
         };
