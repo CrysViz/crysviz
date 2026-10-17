@@ -33,11 +33,20 @@ export function countChecked() {
     .filter((cb) => cb.checked).length;
 }
 
-/** Enable the combine button only when there's something to combine. */
-export function updateCombineButtonState() {
-  const btn = document.getElementById('combineTrajectoriesButton');
-  if (!btn) return;
-  btn.disabled = countChecked() < 2;
+/** Selection changed. The ≡ selection menu is always openable and each of
+ *  its items derives its own enabled state from the live selection when the
+ *  menu is built, so there's nothing to toggle on the button itself. Kept as
+ *  a stable hook for the many callers that fire on selection changes. */
+export function updateCombineButtonState() {}
+
+/** Check or uncheck every row, then re-derive the dependent UI (overlay /
+ *  comparison) from the new selection. */
+function setAllRowsChecked(checked) {
+  document
+    .querySelectorAll('#objectTable tbody input[type="checkbox"]')
+    .forEach((cb) => { /** @type {HTMLInputElement} */ (cb).checked = checked; });
+  updateCombineButtonState();
+  syncOverlayFromCheckboxes();
 }
 
 /** Small centered modal asking for a name; calls onConfirm(name) if confirmed. */
@@ -135,23 +144,98 @@ async function combineCheckedRows(name) {
   selectRow(newRow);
 }
 
-/** Wire the static combine button (index.html) once at startup. */
+/** Prompt for a name and combine the checked rows into one trajectory. */
+function makeTrajectoryFromChecked() {
+  const count = countChecked();
+  if (count < 2) return; // guarded by the menu item's disabled state anyway
+  // Classic Comparison mode expects exactly one checked row; combining 3+
+  // rows while it's on would also trip its own "only one" error. Overlay
+  // mode has no such limit, so this only guards Comparison.
+  if (count > 2 && general.compareModeOn) {
+    showError('Comparison only supports one structure — turn off Comparison, or check only two rows to combine.');
+    return;
+  }
+  openCombineNamePopup((name) => combineCheckedRows(name));
+}
+
+/** The currently open ≡ selection dropdown's close fn, or null. Lets a second
+ *  click on the ≡ button toggle the menu shut instead of stacking a new one. */
+let closeSelectionMenu = null;
+
+/** Build and show the ≡ selection dropdown anchored under `btn`. Same chrome
+ *  as the window ≡ menu (panelWindow.css .cv-panel-menu*): portaled to
+ *  <body> (position:fixed) so #ui's scroll container can't clip it, closed on
+ *  outside click or Escape. Rebuilt on every open so item enable-state and
+ *  the checked count are always live. */
+function openSelectionMenu(btn) {
+  const VIEWPORT_MARGIN = 8;
+  const checked = countChecked();
+  const menu = document.createElement('div');
+  menu.className = 'cv-panel-menu';
+
+  const close = () => {
+    menu.remove();
+    closeSelectionMenu = null;
+    document.removeEventListener('pointerdown', onOutside, true);
+    document.removeEventListener('keydown', onKey, true);
+  };
+  closeSelectionMenu = close;
+  const onOutside = (ev) => {
+    const t = /** @type {Node} */ (ev.target);
+    if (menu.contains(t) || btn.contains(t)) return;
+    close();
+  };
+  const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+
+  const addItem = (label, disabled, onSelect) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'cv-panel-menu-item';
+    item.textContent = label;
+    item.disabled = disabled;
+    if (!disabled) {
+      item.addEventListener('click', () => { close(); onSelect(); });
+    }
+    menu.appendChild(item);
+  };
+  const addSep = () => {
+    const sep = document.createElement('div');
+    sep.className = 'cv-panel-menu-sep';
+    menu.appendChild(sep);
+  };
+
+  addItem('Deselect', checked === 0, () => setAllRowsChecked(false));
+  addItem('Select all', false, () => setAllRowsChecked(true));
+  addSep();
+  addItem('Make Trajectory', checked < 2, makeTrajectoryFromChecked);
+
+  document.body.appendChild(menu);
+  // Anchor under the ≡ button, kept inside the viewport (measure after append).
+  const r = btn.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  menu.style.left = `${Math.max(VIEWPORT_MARGIN, Math.min(r.left, window.innerWidth - mw - VIEWPORT_MARGIN))}px`;
+  menu.style.top = r.bottom + 4 + mh > window.innerHeight - VIEWPORT_MARGIN
+    ? `${Math.max(VIEWPORT_MARGIN, r.top - 4 - mh)}px`
+    : `${r.bottom + 4}px`;
+
+  // Capture-phase so a click some panel handler swallows still closes the
+  // menu; registered after this click finished bubbling.
+  document.addEventListener('pointerdown', onOutside, true);
+  document.addEventListener('keydown', onKey, true);
+}
+
+/** Wire the static ≡ selection button (index.html) once at startup. */
 export function initCombineTrajectoriesButton() {
   const btn = document.getElementById('combineTrajectoriesButton');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    const count = countChecked();
-    if (count < 2) return; // guarded by the disabled state anyway
-    // Classic Comparison mode expects exactly one checked row; combining 3+
-    // rows while it's on would also trip its own "only one" error. Overlay
-    // mode has no such limit, so this only guards Comparison.
-    if (count > 2 && general.compareModeOn) {
-      showError('Comparison only supports one structure — turn off Comparison, or check only two rows to combine.');
-      return;
-    }
-    openCombineNamePopup((name) => combineCheckedRows(name));
+    // A second click on the ≡ button toggles the open menu shut. (The
+    // outside-click handler ignores the button itself, so without this the
+    // click would just stack a fresh menu on top.)
+    if (closeSelectionMenu) closeSelectionMenu();
+    else openSelectionMenu(btn);
   });
-  updateCombineButtonState();
 }
 
 /** copy_<n>_<source>, n one past the highest copy of that source in the table. */

@@ -6,6 +6,17 @@
 
    Tokens only (no colour/font literals) per the CSS invariants (STYLE.md). */
 
+/* Widget-relative sizing. The embed IS the iframe viewport, so vmin (1% of its
+   shorter side) makes the floating furniture scale with the widget instead of
+   sitting at a fixed px size. Both the axes compass and the composition legend
+   derive their whole size from these two tokens — tune the compass and the
+   legend each from one place. The clamps keep them legible in a tiny embed and
+   from ballooning in a huge one. */
+body.widget-mode {
+  --widget-gizmo: clamp(48px, 17vmin, 150px);
+  --widget-legend-unit: clamp(4px, 1.5vmin, 9px);
+}
+
 /* Scene furniture and floating chrome that survive panel-hidden. The floating
    panel windows (.cv-panel) and non-legend colour bars re-parent to <body>, so
    they need their own hide rules. The composition legend and axes gizmo are
@@ -60,6 +71,32 @@ body.widget-mode #widgetLogo:focus-visible img {
   opacity: 1;
 }
 
+/* Reduced camera control, top-right. Built in WidgetMode.js from the same
+   .cv-tb / .cv-tb-btn control language as the full app's #cameraTools, so it
+   inherits their fill, seams and hover ring. It carries the a/b/c lattice-axis
+   view buttons plus a reset — no world axes, no step arrows, no lock. */
+body.widget-mode #widgetCamera {
+  position: fixed;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  z-index: var(--z-overlay-widget);
+}
+/* Slightly smaller than the full toolbar so it stays unobtrusive in the embed. */
+body.widget-mode #widgetCamera .cv-tb {
+  --tb-btn: 30px;
+  gap: var(--sp-2);
+}
+/* The letter shows through .camera-icon; the a11y span stays hidden (mirrors
+   the base #cameraTools rule, which is scoped away from the widget's tree). */
+body.widget-mode #widgetCamera .camera-tool-btn span {
+  display: none;
+}
+body.widget-mode #widgetCamera .camera-tool-reset-btn .reset-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
 body.widget-mode .widget-settings-menu {
   position: absolute;
   top: calc(40px + var(--sp-2));
@@ -88,6 +125,16 @@ body.widget-mode .widget-menu-group-label {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  color: var(--fg-3);
+}
+
+/* Small caption above a menu item (e.g. the tracer warning). Muted, wraps, and
+   aligns with the item labels (past the check column). */
+body.widget-mode .widget-menu-note {
+  padding: var(--sp-1) var(--sp-4);
+  padding-left: calc(var(--sp-4) + 1em + var(--sp-2));
+  font-size: var(--fs-xs);
+  line-height: var(--lh-tight);
   color: var(--fg-3);
 }
 
@@ -158,25 +205,29 @@ body.widget-mode .widget-boot-error {
    stays hidden above. pointer-events: none — same reasoning as the legend's
    lock below: purely decorative furniture in the embed, no dragging and no
    long-press menu. The extra body.widget-mode class makes this more specific
-   than the base #axesGizmo rule (styles.css), so no !important is needed. */
+   than the base #axesGizmo rule (styles.css); right:auto cancels the base's
+   left pin from taking precedence once we set our own left. */
 body.widget-mode #axesGizmo {
+  right: auto;
   left: var(--sp-3);
   bottom: var(--sp-3);
-  /* 2.5x the base size for the embed. The div's box is the single source of
-     scale: WidgetMode.js's resizeGizmoRenderer() sizes the renderer to it, the
-     arrows render proportionally larger, and the on-arrow labels are
-     viewport-relative sprites (sizeAttenuation:false), so they grow with it. */
-  width: calc(var(--gizmo-size) * 2.5);
-  height: calc(var(--gizmo-size) * 2.5);
+  /* Sized relative to the widget, not a fixed px multiple: --widget-gizmo is a
+     vmin fraction (see the token below), so the compass shrinks and grows with
+     the embed. The div's box is the single source of scale — resizeGizmoRenderer()
+     sizes the renderer to it, the arrows render proportionally, and the on-arrow
+     label sprites are world-scaled, so they track it too. */
+  width: var(--widget-gizmo);
+  height: var(--widget-gizmo);
   pointer-events: none;
 }
 
-/* Composition legend, widget-mode only: moderately smaller and on a fixed very
-   light-gray surface (--comp-legend-widget-bg) with fixed dark text
-   (--comp-legend-widget-fg), so the embed reads the same in every theme. The
-   px bases below stay multiplied by --legend-scale so the box still scales as
-   one; only the base sizes shrink. Pinned lower-right (the axes gizmo above
-   takes the lower-left). */
+/* Composition legend, widget-mode only: no surface — just swatches and text
+   over the scene. The wrapper's `color` is polled to a scene-contrast-safe value
+   (CompositionLegendWidget.js tickContrast, always running), so `inherit` here
+   keeps the labels legible against a light OR dark scene without a background
+   box. Every dimension below is a vmin fraction (--widget-legend-unit), so the
+   whole box scales with the widget rather than sitting at a fixed px size.
+   Pinned lower-right (the axes gizmo above takes the lower-left). */
 body.widget-mode .comp-legend-widget {
   top: auto !important;
   bottom: var(--sp-3) !important;
@@ -184,28 +235,32 @@ body.widget-mode .comp-legend-widget {
   left: auto !important;
 }
 body.widget-mode .comp-legend-body {
-  padding: var(--sp-2);
-  background: var(--comp-legend-widget-bg);
+  padding: calc(var(--widget-legend-unit) * 1.1);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
   /* Fully visible for any species count: cap to the canvas minus top/bottom
      gaps and scroll the rows internally past that. */
   max-height: calc(100dvh - 2 * var(--sp-3) - var(--sp-4));
   overflow-y: auto;
 }
 body.widget-mode .comp-legend-list {
-  gap: calc(4px * var(--legend-scale));
+  gap: calc(var(--widget-legend-unit) * 0.7);
 }
 body.widget-mode .comp-legend-row {
-  gap: calc(7px * var(--legend-scale));
+  gap: calc(var(--widget-legend-unit) * 1.2);
 }
 body.widget-mode .comp-legend-swatch {
-  width: calc(22px * var(--legend-scale));
-  height: calc(22px * var(--legend-scale));
+  width: calc(var(--widget-legend-unit) * 3.2);
+  height: calc(var(--widget-legend-unit) * 3.2);
 }
 body.widget-mode .comp-legend-label {
-  font-size: calc(13px * var(--legend-scale));
-  color: var(--comp-legend-widget-fg);
+  font-size: calc(var(--widget-legend-unit) * 2.3);
+  color: inherit;
 }
 body.widget-mode .comp-legend-sub {
-  font-size: calc(9px * var(--legend-scale));
-  color: var(--comp-legend-widget-fg);
+  font-size: calc(var(--widget-legend-unit) * 1.7);
+  color: inherit;
+  opacity: 0.78;
 }

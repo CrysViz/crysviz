@@ -382,6 +382,7 @@ export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
   }
   applyFocusToArrows(structure, 'forces');
   applyFocusToArrows(structure, 'spins');
+  applyFocusToArrows(structure, 'spins2');
   applyFocusToPolyhedra(structure);
   applyFocusToField(structure);
   applyFocusToChargeBadges(structure);
@@ -456,7 +457,7 @@ export function applyFocusToField(structure = fileBrowser.selectedStructure) {
 }
 
 export function applyFocusToArrows(structure = fileBrowser.selectedStructure, kind) {
-  const prefix = kind === 'forces' ? 'forces' : 'spin';
+  const prefix = kind === 'forces' ? 'forces' : kind === 'spins2' ? 'spin2' : 'spin';
   // arrow indices per source atom (SpinModule/ForceModule: one arrow per drawn
   // atom image, so a LIST per atom)
   const lists = groups[`${kind}InstancesBySrcIndex`];

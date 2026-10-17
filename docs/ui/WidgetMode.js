@@ -1,21 +1,29 @@
 // Widget mode (?widget=1): a stripped-down embed of the app showing only the
-// 3D structure view, a locked composition legend, and a top-left CrysViz logo
-// that IS the menu trigger — its dropdown carries Structures (cell choice),
-// Presets (render style), Bonds/Polyhedra toggles, and "Open in CrysViz"
-// (full UI, new tab). Everything here is additive and gated on body.widget-mode;
-// the full app is untouched. See docs/styles/widgetMode.css for the chrome rules.
+// 3D structure view, a locked composition legend (lower-right), a small axes
+// gizmo (lower-left), a reduced camera control (top-right), and a top-left
+// CrysViz logo that IS the menu trigger — its dropdown leads with "Open in
+// CrysViz" (full UI, new tab), then Structures (cell choice), Shading
+// (metallic/matte/cel — plus ray/path tracing when the embed opts in with
+// ?tracers=1), Bonds/Polyhedra toggles, and Download POSCAR/CIF. Everything
+// here is additive and gated on body.widget-mode; the full app is untouched.
+// See docs/styles/widgetMode.css for the chrome rules.
 
 import { fileBrowser, general, structureShip } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { setActivePipelineFromController } from './ColorPanel.js';
-import { updateSpins, updatePolyhedra, autoSpinScale } from '../render/index.js';
-import { recenterCamera, setGizmoLabelsOnArrows, resizeGizmoRenderer } from './WindowAndSceneControls.js';
+import { updateSpins, updatePolyhedra, autoSpinScale, latticeDirs } from '../render/index.js';
+import { recenterCamera, setGizmoLabelsOnArrows, resizeGizmoRenderer, setViewDirection, resetView, updateGizmoLabelScales } from './WindowAndSceneControls.js';
 import { selectStructure, createRow } from './FileBrowswerPanel.js';
 import { showTrajectoryFrame } from './TrajectoryPanel.js';
 import { toggleCompositionLegend, isCompositionLegendOpen } from './CompositionLegendWidget.js';
 import { ensureMoyoReady, moyoDataset, buildSymmetrisedContainer, PT } from './BackendPanel/MoyoWASM.js';
 import { Spin } from '../model/index.js';
 import { computeSpinRemap } from './WidgetSpinRemap.js';
+import { initWidgetControl } from './WidgetControl.js';
+import { getLaunchSource } from '../io/FileURLLoader.js';
+// Structure writers for the menu's Download items. SavePanel is already in the
+// widget graph (via ShareModule), so these add no extra download to the embed.
+import { poscartoFile, cifToFile, downloadTextFile, currentBaseName } from './SavePanel.js';
 
 const CHECK = '✓';
 
@@ -45,10 +53,17 @@ let framesContainer = null;
  *  CrysViz" menu item opens it, minus the widget param, in a new tab. */
 let capturedHref = '';
 
-/** The boot atom-size / bond-diameter, captured in initWidgetMode as the
- *  "Normal" preset's restore target (see the note there). */
+/** Ray/path tracing are opt-in via ?tracers=1 (they pull ~hundreds of KB of
+ *  tracer pipelines, so the default embed skips them). When enabled the Shading
+ *  menu gains Ray tracing / Path tracing and the boot atom/bond sizes are
+ *  captured so those presets can bump them and the raster shadings restore them. */
+let tracersEnabled = false;
 let defaultAtomSize = null;
 let defaultBondRadius = null;
+/** Ray/path tracing want larger spheres + fatter bonds (programmatic activation,
+ *  so no performance-warning modal — that only fires from ColorPanel's own select). */
+const PRESET_ATOM_SIZE = 0.50;
+const PRESET_BOND_RADIUS = 0.17;
 
 /**
  * Initialise widget-mode UI. Runs once, after the authoritative bootstrap has
@@ -58,7 +73,7 @@ let defaultBondRadius = null;
  *   strips the location hash — the logo links back to the full UI with the same
  *   structure (same URL minus the `widget` param).
  */
-export function initWidgetMode(opts) {
+export async function initWidgetMode(opts) {
   loadedStructure = fileBrowser.selectedStructure ?? null;
   loadedRowIndex = fileBrowser.selectedRowIndex ?? 0;
   // Force the feature locks on. With a persisted featuresLocked=false (from
@@ -69,12 +84,6 @@ export function initWidgetMode(opts) {
   // Magnetic unit cells from the database: show a spin arrow on every periodic
   // image, not just the primary atom (see general.showSpinsOnCopies).
   general.showSpinsOnCopies = true;
-  // Capture the boot atom-size / bond-diameter as the "Normal" preset target.
-  // (store.js's atomSize=1.0 / bondRadius=0.08 are overwritten at boot by the
-  // #atomSize / #bondWidth sliders in initApp, so the live values here — not
-  // the store constants — are the app defaults the widget actually shows.)
-  defaultAtomSize = general.atomSize;
-  defaultBondRadius = general.bondRadius;
   // Polyhedra default OFF in the embed regardless of the payload's display flag.
   general.showPolyhedra = false;
   updatePolyhedra();
@@ -88,13 +97,35 @@ export function initWidgetMode(opts) {
   const gizmoDiv = document.getElementById('axesGizmo');
   if (gizmoDiv) gizmoDiv.style.display = '';
   setGizmoLabelsOnArrows(true);
+  // Bigger a/b/c letters on the small embed compass — the arrows keep their
+  // geometry, only the label sprites grow (see general.gizmoLabelSizeFactor).
+  general.gizmoLabelSizeFactor = 1.7;
+  updateGizmoLabelScales();
   // Re-fit the renderer/camera to the div's actual box: a no-op on the common
   // boot path (initAxesGizmo already sized it correctly first paint), but
   // covers the display:'' clear above, which can change the box from 0x0.
   resizeGizmoRenderer();
 
+  // Ray/path tracing (?tracers=1): register the tracer pipelines before the menu
+  // is built so the Shading group can offer them and activation works. Dynamic
+  // import — like the full app at boot — so a default embed never downloads them.
+  try {
+    tracersEnabled = new URLSearchParams(window.location.search).get('tracers') === '1';
+  } catch { tracersEnabled = false; }
+  if (tracersEnabled) {
+    defaultAtomSize = general.atomSize;
+    defaultBondRadius = general.bondRadius;
+    try {
+      await import('../render/pipeline/tracers.js');
+    } catch (error) {
+      console.warn('[widget] tracer pipelines unavailable:', error);
+      tracersEnabled = false;
+    }
+  }
+
   setupFramesMode();
   buildSettings(opts?.href ?? '');
+  buildCameraControl();
   applyWidgetAutoScale();
   ensureSpinsRendered();
   openLockedLegend();
@@ -104,6 +135,11 @@ export function initWidgetMode(opts) {
   // (initWidgetMode runs only in widget mode, so full-app restored-camera
   // sessions are never touched.)
   recenterCamera();
+
+  // Live host control (?control=1): let the embedding page drive the loaded
+  // trajectory over postMessage. No-op unless the embed opted in. Runs last so
+  // the initial frame + camera are settled before the host can command frames.
+  initWidgetControl();
 }
 
 /**
@@ -167,20 +203,46 @@ function fullUiHref(href) {
   }
 }
 
-/** The launch URL with its payload's `selectedFrameIndex` rewritten to the
- *  frame currently on screen — the full app reloads FROM this payload (see
- *  ShareModule.applySharedState), so this is what makes "Open in CrysViz"
- *  open what the user is actually looking at instead of always the as-loaded
- *  frame. Moyo-built variants aren't in the launch payload at all (they're
- *  computed in-browser), so moyo fallback mode is out of scope and left
- *  unchanged; any parse hiccup also falls back to the unchanged href, since
- *  opening the as-loaded frame is a safe degradation and the menu action must
- *  never be blocked by it. */
-function hrefForCurrentFrame(href) {
-  if (!framesContainer) return href;
-  const index = framesContainer.structures.indexOf(fileBrowser.selectedStructure);
-  if (index < 0) return href;
+/** Index of the frame on screen within the launch container, or -1 when the
+ *  shown structure is not one of its frames (e.g. a moyo-built cell variant,
+ *  which is computed in-browser and is not in the launch payload at all). */
+function currentLaunchFrame() {
+  const container = framesContainer ?? structureShip.container[loadedRowIndex];
+  return container?.structures?.indexOf(fileBrowser.selectedStructure) ?? -1;
+}
 
+/** Decode a UTF-8 string from launch data (string or ArrayBuffer). */
+function launchText(data) {
+  if (typeof data === 'string') return data;
+  if (data instanceof ArrayBuffer) return new TextDecoder().decode(data);
+  return null;
+}
+
+/** The launch session with its `selectedFrameIndex` set to the frame on
+ *  screen — the full app reloads FROM the session (see
+ *  ShareModule.applySharedState), so this is what makes "Open in CrysViz" open
+ *  what the user is actually looking at instead of always the as-loaded frame.
+ *  Returns null when there is nothing to rewrite (no frame match, not a .crysviz
+ *  JSON session, or a parse hiccup); callers then pass the data on unchanged,
+ *  since opening the as-loaded frame is a safe degradation and the menu action
+ *  must never be blocked by it. */
+function sessionTextForCurrentFrame(text) {
+  const index = currentLaunchFrame();
+  if (index < 0 || text == null) return null;
+  try {
+    const state = JSON.parse(text);
+    if (!state || typeof state !== 'object' || !Array.isArray(state.frames)) return null;
+    if (state.selectedFrameIndex === index) return null; // already right — keep as is
+    state.selectedFrameIndex = index;
+    return JSON.stringify(state);
+  } catch {
+    return null;
+  }
+}
+
+/** The launch URL with its `#load-file=` payload rewritten to the frame on
+ *  screen (see sessionTextForCurrentFrame); unchanged if nothing to rewrite. */
+function hrefForCurrentFrame(href) {
   const hashIdx = href.indexOf('#load-file=');
   if (hashIdx < 0) return href;
   const rawHash = href.slice(hashIdx + '#load-file='.length);
@@ -195,10 +257,10 @@ function hrefForCurrentFrame(href) {
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const state = JSON.parse(new TextDecoder().decode(bytes));
-    state.selectedFrameIndex = index;
+    const rewritten = sessionTextForCurrentFrame(new TextDecoder().decode(bytes));
+    if (rewritten == null) return href;
 
-    const newBytes = new TextEncoder().encode(JSON.stringify(state));
+    const newBytes = new TextEncoder().encode(rewritten);
     // Chunked to dodge the String.fromCharCode argument-limit overflow on
     // large payloads (same pattern the altermagnets embedder uses).
     let binaryOut = '';
@@ -212,18 +274,23 @@ function hrefForCurrentFrame(href) {
   }
 }
 
-const PRESET_GROUP = {
-  key: 'preset',
-  label: 'Presets',
-  items: [
-    { value: 'normal', label: 'Normal' },
+/** The Shading group's entries: always the three material styles, plus the two
+ *  tracers when ?tracers=1 loaded them. */
+function presetItems() {
+  const items = [
+    { value: 'metallic', label: 'Metallic' },
+    { value: 'matte', label: 'Matte' },
     { value: 'cel', label: 'Cel shading' },
-    { value: 'raytrace', label: 'Ray tracing' },
-    { value: 'pathtrace', label: 'Path tracing' },
-  ],
-};
+  ];
+  if (tracersEnabled) {
+    // Caption above the tracer entries — they are progressive GPU renderers.
+    items.push({ value: 'raytrace', label: 'Ray tracing', note: 'Heavy computations · Requires GPU' });
+    items.push({ value: 'pathtrace', label: 'Path tracing' });
+  }
+  return items;
+}
 
-/** Live radio selection per group (Structures = 'cell', Presets = 'preset').
+/** Live radio selection per group (Structures = 'cell', Shading = 'preset').
  *  The check-toggles (Bonds/Polyhedra) read general.* directly instead. */
 const selection = { cell: 'loaded', preset: currentPresetValue() };
 
@@ -233,6 +300,7 @@ const selection = { cell: 'loaded', preset: currentPresetValue() };
 function buildSettings(href) {
   capturedHref = href;
   selection.cell = initialStructureValue();
+  selection.preset = currentPresetValue(); // reflect the live style/pipeline now
 
   const host = document.createElement('div');
   host.id = 'widgetSettings';
@@ -261,24 +329,28 @@ function buildSettings(href) {
   menu.hidden = true;
   menuEl = menu;
 
-  // a. Structures (radio) — the cells the payload provides.
+  // a. Open the same structure in the full UI (new tab) — the lead action.
+  menu.appendChild(makeActionRow('Open in CrysViz', openFullUi));
+  menu.appendChild(makeSep());
+  // b. Structures (radio) — the cells the payload provides.
   renderRadioGroup(menu, 'cell', 'Structures', structureItems());
   menu.appendChild(makeSep());
-  // b. Presets (radio) — render style; ray/path also bump atom + bond size.
-  renderRadioGroup(menu, 'preset', PRESET_GROUP.label, PRESET_GROUP.items);
+  // c. Shading (radio) — metallic / matte / cel, plus the tracers with ?tracers=1.
+  renderRadioGroup(menu, 'preset', 'Shading', presetItems());
   menu.appendChild(makeSep());
-  // c. Bonds / Polyhedra (check toggles, reflecting live state).
+  // d. Bonds / Polyhedra (check toggles, reflecting live state).
   menu.appendChild(makeToggleRow('bonds', 'Bonds', () => general.showBonds));
   menu.appendChild(makeToggleRow('poly', 'Polyhedra', () => general.showPolyhedra));
-  // d. Embedder-supplied links (validated in ShareModule), if any.
+  // e. Download the shown structure (generated in-browser from the live cell).
+  menu.appendChild(makeSep());
+  menu.appendChild(makeActionRow('Download POSCAR', () => downloadStructure('poscar'), 'download-poscar'));
+  menu.appendChild(makeActionRow('Download CIF', () => downloadStructure('cif'), 'download-cif'));
+  // f. Embedder-supplied links (validated in ShareModule), if any.
   const links = structureShip.container[fileBrowser.selectedRowIndex]?.menuLinks;
   if (Array.isArray(links) && links.length) {
     menu.appendChild(makeSep());
     for (const l of links) menu.appendChild(makeLinkRow(l.label, l.url));
   }
-  menu.appendChild(makeSep());
-  // e. Open the same structure in the full UI (new tab).
-  menu.appendChild(makeActionRow('Open in CrysViz', openFullUi));
 
   logo.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
 
@@ -323,6 +395,14 @@ function renderRadioGroup(menu, groupKey, title, items) {
   label.textContent = title;
   menu.appendChild(label);
   for (const item of items) {
+    // An item may carry a small caption shown just above it (e.g. the "heavy
+    // computations, requires GPU" note above the tracer entries).
+    if (item.note) {
+      const note = document.createElement('div');
+      note.className = 'widget-menu-note';
+      note.textContent = item.note;
+      menu.appendChild(note);
+    }
     const row = makeRow('menuitemradio', item.label);
     row.dataset.group = groupKey;
     row.dataset.value = item.value;
@@ -364,18 +444,144 @@ function makeLinkRow(label, url) {
   return row;
 }
 
-function makeActionRow(label, onClick) {
+function makeActionRow(label, onClick, action = 'open') {
   const row = makeRow('menuitem', label);
-  row.dataset.action = 'open';
+  row.dataset.action = action;
   row.addEventListener('click', (e) => { e.stopPropagation(); closeMenu(); onClick(); });
   return row;
+}
+
+/** Download the currently-shown structure as POSCAR or (P1) CIF, generated in
+ *  the browser from the live structure — the same writers the full app's Save
+ *  menu uses. In a sandboxed embed the iframe needs `allow-downloads` for the
+ *  browser to accept the download (see the README embedding notes). */
+function downloadStructure(kind) {
+  try {
+    const base = currentBaseName();
+    if (kind === 'poscar') downloadTextFile(`${base}.vasp`, poscartoFile());
+    else downloadTextFile(`${base}.cif`, cifToFile());
+  } catch (error) {
+    console.warn(`[widget] ${kind} download failed:`, error);
+  }
 }
 
 /** "Open in CrysViz": the logo is no longer an <a>, so open via window.open
  *  (same target=_blank/noopener the old link used; needs the iframe's
  *  allow-popups, which the old link already required). */
+/** Above this, "Open in CrysViz" hands the session over by postMessage instead
+ *  of a `#load-file=` URL: browsers cap URL length (~2 MB in Chromium, less
+ *  elsewhere), and the URL-loaded payload is also re-encoded once more here. */
+const MAX_OPEN_URL_LENGTH = 1_000_000;
+/** How long the opened tab has to ask for its session. */
+const HANDOFF_TIMEOUT_MS = 60000;
+
 function openFullUi() {
-  window.open(fullUiHref(hrefForCurrentFrame(capturedHref)), '_blank', 'noopener');
+  const source = getLaunchSource();
+  if (!source || source.kind === 'file') {
+    const href = fullUiHref(hrefForCurrentFrame(capturedHref));
+    if (href.length <= MAX_OPEN_URL_LENGTH || !source) {
+      window.open(href, '_blank', 'noopener');
+      return;
+    }
+  }
+  openFullUiWithHandoff(source);
+}
+
+/**
+ * Open the full app at `#load-opener` and post it the launch session once it
+ * asks (io/SessionReceiver.js). Used when the data arrived by postMessage or
+ * `#load-url=`, or is too big for a URL. The session is posted only to the tab
+ * we opened (event.source check) and only to the CrysViz origin (targetOrigin),
+ * so a tab that navigated away never receives it.
+ */
+function openFullUiWithHandoff(source) {
+  let target;
+  try {
+    target = new URL(fullUiHref(capturedHref || window.location.href));
+  } catch {
+    return;
+  }
+  target.hash = 'load-opener';
+  // No 'noopener': the new tab must be able to reach back to this window.
+  const tab = window.open(target.toString(), '_blank');
+  if (!tab) return; // popup blocked
+  const targetOrigin = target.origin === 'null' ? '*' : target.origin;
+  const text = launchText(source.data);
+  const rewritten = sessionTextForCurrentFrame(text);
+  const data = rewritten ?? source.data;
+
+  const onMessage = (/** @type {MessageEvent} */ event) => {
+    if (event.source !== tab) return;
+    const d = event.data;
+    if (!d || typeof d !== 'object' || d.source !== 'crysviz-app' || d.type !== 'awaitingSession') return;
+    done();
+    try {
+      tab.postMessage({ target: 'crysviz-app', type: 'loadSession', name: source.name, data, format: source.format || '' }, targetOrigin);
+    } catch (error) {
+      console.warn('[widget] could not hand the structure to the new tab:', error);
+    }
+  };
+  const timer = setTimeout(() => done(), HANDOFF_TIMEOUT_MS);
+  function done() {
+    clearTimeout(timer);
+    window.removeEventListener('message', onMessage);
+  }
+  window.addEventListener('message', onMessage);
+}
+
+// ── Reduced camera control (top-right) ──────────────────────────────────────
+//
+// A pared-down version of the full app's #cameraTools: the three lattice-axis
+// view buttons (a/b/c) fused into one segment, plus a standalone reset. No
+// world x/y/z triplet, no step-rotate arrows, no camera lock — just aim along a
+// crystal axis or snap back to the default view. It reuses the .cv-tb control
+// classes (styles.css) so it reads like the full app's toolbars, and calls the
+// same setViewDirection/resetView the full buttons wire up.
+
+function buildCameraControl() {
+  const host = document.createElement('div');
+  host.id = 'widgetCamera';
+
+  const bar = document.createElement('div');
+  bar.className = 'cv-tb';
+
+  const group = document.createElement('div');
+  group.className = 'cv-tb-group';
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', 'View along lattice axis');
+  for (const axis of ['a', 'b', 'c']) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cv-tb-btn camera-tool-btn';
+    btn.title = `View ${axis.toUpperCase()} axis`;
+    const icon = document.createElement('div');
+    icon.className = 'camera-icon';
+    icon.textContent = axis;
+    const label = document.createElement('span');
+    label.textContent = axis;
+    btn.append(icon, label);
+    btn.addEventListener('click', () => {
+      const dirs = latticeDirs();
+      setViewDirection(dirs[axis]);
+    });
+    group.appendChild(btn);
+  }
+  bar.appendChild(group);
+
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'cv-tb-btn camera-tool-reset-btn';
+  reset.title = 'Reset view';
+  const resetIcon = document.createElement('img');
+  resetIcon.className = 'reset-icon';
+  resetIcon.src = './data/icons/cube-icon.svg';
+  resetIcon.alt = '';
+  reset.appendChild(resetIcon);
+  reset.addEventListener('click', () => resetView());
+  bar.appendChild(reset);
+
+  host.appendChild(bar);
+  document.body.appendChild(host);
 }
 
 /** Reflect `selection[group]` onto that group's rows (aria-checked + tick). */
@@ -438,47 +644,40 @@ async function onSelect(groupKey, value) {
   }
 }
 
-// ── Presets ──────────────────────────────────────────────────────────────
+// ── Shading ────────────────────────────────────────────────────────────────
 
-/** The preset implied by the live pipeline/style (a restored session may boot
- *  into a non-default pair). */
+/** The shading value implied by the live pipeline/style (a restored session or a
+ *  tracer choice may boot into any of these). */
 function currentPresetValue() {
   if (general.renderPipeline === 'raytrace') return 'raytrace';
   if (general.renderPipeline === 'pathtrace') return 'pathtrace';
+  if (general.renderStyle === 'matte') return 'matte';
   if (general.renderStyle === 'cel') return 'cel';
-  return 'normal';
+  return 'metallic';
 }
 
-/** Ray/path tracing want larger spheres + fatter bonds; Normal restores the
- *  boot defaults. Cel shading deliberately does NOT touch sizes (per the user's
- *  letter) — so Ray→Cel keeps the big sizes until Normal is picked. */
-const PRESET_ATOM_SIZE = 0.50;
-const PRESET_BOND_RADIUS = 0.17;
-
+/**
+ * Apply a Shading choice. Metallic / matte / cel are material styles on the
+ * standard depth-peel pipeline; ray/path tracing (only present with ?tracers=1)
+ * switch the render pipeline and bump atom/bond sizes. Boot sizes are only
+ * captured when tracing is enabled, so a tracer-free embed never touches sizes.
+ */
 function applyPreset(value) {
   switch (value) {
-    case 'normal':
-      general.renderStyle = 'metallic';
-      general.atomSize = defaultAtomSize;
-      general.bondRadius = defaultBondRadius;
-      setActivePipelineFromController('depthpeel');
-      restyleAtomsBonds();
-      break;
+    case 'metallic':
+    case 'matte':
     case 'cel':
-      // Every preset carries its own look: Cel resets sizes to boot defaults too.
-      general.renderStyle = 'cel';
-      general.atomSize = defaultAtomSize;
-      general.bondRadius = defaultBondRadius;
+      general.renderStyle = value;
+      if (defaultAtomSize != null) general.atomSize = defaultAtomSize;
+      if (defaultBondRadius != null) general.bondRadius = defaultBondRadius;
       setActivePipelineFromController('depthpeel');
       restyleAtomsBonds();
       break;
     case 'raytrace':
     case 'pathtrace':
+      if (!tracersEnabled) return;
       general.atomSize = PRESET_ATOM_SIZE;
       general.bondRadius = PRESET_BOND_RADIUS;
-      // Programmatic path — tolerates the missing dropdown and does NOT raise
-      // the tracer performance-warning modal (that fires only from ColorPanel's
-      // own <select> change handler).
       setActivePipelineFromController(value);
       restyleAtomsBonds();
       break;

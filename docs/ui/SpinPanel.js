@@ -5,6 +5,8 @@ import { Spin } from '../model/index.js'; // Update path
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
 import { computeAutoRange, applySpinFrame, parseSaxis } from '../utils/index.js';
+import { isExperimentalMode } from '../debug/experimentalMode.js';
+import { buildSpinComparisonSection, removeSpinComparisonSection } from './SpinComparisonSection.js';
 
 const SPIN_COLORBAR_FLOATING_ID = 'spinColorBarFloating';
 
@@ -57,6 +59,7 @@ export function removeSpinPanel() {
   captureSpinColorBarState();
   spinColorBarInstance?.remove();
   spinColorBarInstance = null;
+  removeSpinComparisonSection();
   // Defensive fallback: covers a floating node somehow left behind without a
   // live spinColorBarInstance to reach it (shouldn't normally happen).
   document.getElementById(SPIN_COLORBAR_FLOATING_ID)?.remove();
@@ -360,7 +363,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   // calls; those only run at event time, when everything exists.)
   function reprojectSpins() {
     const structure = fileBrowser.selectedStructure;
-    if (!structure?.spins?.length) return;
+    if (!structure?.spins?.length && !structure?.spins2?.length) return;
     applySpinFrame(structure, {
       mode: general.spinFrameMode ?? "file",
       customSaxis: general.spinCustomSaxis ?? [0, 0, 1],
@@ -631,6 +634,23 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   buttonWrapper.appendChild(overwriteBtn);
   buttonWrapper.appendChild(restoreBtn);
   content.appendChild(buttonWrapper);
+
+  // --- Comparison spins (experimental) ---
+  // A second spin set from a vector file (structure.spins2), drawn alongside
+  // the primary one — see ui/SpinComparisonSection.js.
+  if (isExperimentalMode()) {
+    const compareSection = makeCollapsible("Comparison Spins (experimental)");
+    compareSection.details.id = "spinComparisonSection";
+    compareSection.details.classList.add("cv-spin-compare-section");
+    buildSpinComparisonSection(compareSection.body, {
+      colorMapOptions: colorMapSelect,
+      redraw: () => {
+        if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+      },
+      reproject: () => reprojectSpins(),
+    });
+    content.appendChild(compareSection.details);
+  }
 
   // --- Build hierarchy ---
   panel.appendChild(content);

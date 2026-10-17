@@ -25,6 +25,7 @@ export {
   atomImageKey, getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
   deriveVisibleWrapped, refreshAtomWedgeTexture, setSpeciesColorBulk,
+  refreshAtomColors,
 } from './AtomsFracUpdateModule.js';
 
 export {
@@ -54,7 +55,7 @@ export {
   hydrogenBondColorFor, applyFocusToHydrogenBonds,
 } from './HydrogenBondModule.js';
 
-export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail } from './FastFrameModule.js';
+export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail, isFrameDependentColorMode } from './FastFrameModule.js';
 
 export {
   DEFAULT_FOCUS_REGION, POLYHEDRA_FOCUS_MODES, focusOpacityAt, focusDistanceTo, gradientStartRadius,

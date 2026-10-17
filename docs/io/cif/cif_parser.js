@@ -885,14 +885,18 @@ export function cifblock_to_asu(cifblock, _opts = {}) {
     };
   }
 
+  // read_cif stores every tag lower-cased with its leading underscore stripped
+  // (cif_reader.js), so the keys queried here must be in that form — the old
+  // `_..._H-M` / `_..._IT_number` spellings never matched and these three fields
+  // always came back undefined.
   const space_group_name_hm =
-    cifblock.get("_space_group_name_H-M_alt") || cifblock.get("_symmetry_space_group_name_H-M");
+    cifblock.get("space_group_name_h-m_alt") || cifblock.get("symmetry_space_group_name_h-m");
 
   const space_group_name_hall =
-    cifblock.get("_space_group_name_Hall") || cifblock.get("_symmetry_space_group_name_Hall");
+    cifblock.get("space_group_name_hall") || cifblock.get("symmetry_space_group_name_hall");
 
   const space_group_nbr =
-    cifblock.get("_space_group_IT_number") || cifblock.get("symmetry_space_group_IT_number");
+    cifblock.get("space_group_it_number") || cifblock.get("symmetry_space_group_it_number");
 
   const icsd = cifblock.get("database_code_ICSD");
   const doi = cifblock.get("citation_doi");

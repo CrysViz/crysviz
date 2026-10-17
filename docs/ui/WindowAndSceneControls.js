@@ -42,13 +42,16 @@ function createGizmoCamera() {
 function gizmoLabelScale() {
   // SpriteMaterial.sizeAttenuation=false makes perspective sprites screen-
   // stable with respect to depth. The scale remains world-like here, so it
-  // grows with the gizmo canvas in both projection modes.
-  return app.gizmoCamera?.isOrthographicCamera
+  // grows with the gizmo canvas in both projection modes. The general factor
+  // (1 in the full app) lets widget mode enlarge the letters without touching
+  // the arrow geometry.
+  const factor = general.gizmoLabelSizeFactor ?? 1;
+  return factor * (app.gizmoCamera?.isOrthographicCamera
     ? GIZMO_LABEL_SCREEN_SIZE * 2 * GIZMO_ORTHO_HALF_HEIGHT / 90
-    : GIZMO_LABEL_SCREEN_SIZE * 2 * Math.tan(THREE.MathUtils.degToRad(GIZMO_FOV / 2)) / 90;
+    : GIZMO_LABEL_SCREEN_SIZE * 2 * Math.tan(THREE.MathUtils.degToRad(GIZMO_FOV / 2)) / 90);
 }
 
-function updateGizmoLabelScales() {
+export function updateGizmoLabelScales() {
   const scene = app.gizmoScene;
   if (!scene?.userData) return;
   const scale = gizmoLabelScale();

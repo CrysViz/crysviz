@@ -29,3 +29,12 @@ Currently it is possible to view the following file types:
 - **FHI-aims**:
     - `geometry.in`: structure and magnetism (`initial_moment`, collinear or non-collinear). A non-periodic geometry loads as a molecule in a centered box.
     - `aims.out` output: the full relaxation/MD trajectory with per-frame energy and forces, plus per-atom spin moments when the Mulliken analysis is present.
+
+## Parameters
+
+Under the structure table, **Parameters** unfolds the selected structure's scalar properties (energy, pressure, max force — whichever it carries), its lattice vectors,
+cell parameters and volume, its atomic positions (fractional or Cartesian) and its Wyckoff
+positions (space group and one row per crystallographic orbit, from the active Wyckoff lock or a
+symmetry analysis at a tight tolerance (1e-5 Å); the space group links to its symdata page, and the copied text also carries each orbit's
+site symmetry). Select any text to copy it, or use a block's ⧉ to copy that block. The ✎ opens
+the same Modify Structure panel as the pen in the Structure window.
