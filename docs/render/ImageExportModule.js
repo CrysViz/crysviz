@@ -816,7 +816,7 @@ export function computeContentScreenBox({ structureOnly = false } = {}) {
     groups.polyhedraGroup, groups.latticeGroup,
     groups.forcesShaftMesh, groups.forcesTipMesh,
     groups.spinShaftMesh, groups.spinTipMesh,
-    groups.fieldGroup, groups.isosurfaceGroup,
+    groups.fieldGroup, groups.isosurfaceGroup, groups.asuGroup,
   ];
   for (const entry of groups.overlayMeshes.values()) {
     objects.push(entry?.atomsMesh, entry?.bondsMesh);

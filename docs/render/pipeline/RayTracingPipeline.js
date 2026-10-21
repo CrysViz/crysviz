@@ -239,6 +239,8 @@ export class RayTracingPipeline extends ForwardPipeline {
   // renderer.compileAsync(); accumulation begins only once the program is
   // 'ready'. 'pending' -> 'compiling' (compile scheduled) -> 'ready'.
   _shaderState = 'pending';
+  /** @type {Promise<void> | null} the in-flight compileAsync chain */
+  _compiling = null;
   _compileWarned = false; // one-shot: log a compileAsync rejection at most once
   _disposed = false;      // set in dispose(): a late compile resolve must no-op
   // When true (set via beginPacedRender), render() traces at most ONE sample per
@@ -790,7 +792,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       // synchronous link inside compileAsync's compile() (Firefox fallback).
       setTimeout(() => {
         if (this._disposed || this._shaderState !== 'compiling') return;
-        Promise.resolve(renderer.compileAsync(this._rtScene, camera))
+        this._compiling = Promise.resolve(renderer.compileAsync(this._rtScene, camera))
           .then(markReady)
           .catch((e) => {
             if (!this._compileWarned) {
@@ -1459,7 +1461,11 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._encoder.dispose();
     this._blueNoise.dispose();
     this._rtMesh.geometry.dispose();
-    this._rtMesh.material.dispose();
+    // compileAsync polls this material's program on its own timer; freeing it
+    // mid-compile (a quick switch away from the tracer) makes that poll throw.
+    const material = this._rtMesh.material;
+    if (this._compiling) this._compiling.finally(() => material.dispose());
+    else material.dispose();
     this._copyQuad.material.dispose();
     this._copyQuad.dispose();
     this._outputQuad.material.dispose();

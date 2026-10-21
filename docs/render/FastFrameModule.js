@@ -8,6 +8,7 @@ import { updateForces } from './ForceModule.js';
 import { getActiveCutPlanes, isBondCutByPlanes, hideSingleBond } from './BondsFracUpdateModule.js';
 import { requestRender } from './AnimateModule.js';
 import { updateGroundPlane } from './GroundPlaneModule.js';
+import { updateAsuAtomHighlight, refreshAsymmetricUnitIfStale } from './AsymmetricUnitModule.js';
 
 // ── Render fast path for MD / relax frames ────────────────────────────────────
 //
@@ -37,6 +38,20 @@ let _lastBailReason = null;
 
 export function lastFastFrameBail() {
   return _lastBailReason;
+}
+
+/**
+ * Is a colour mode active whose colours change from frame to frame? Atoms
+ * coloured by force magnitude, or bonds coloured by length (bonds that merely
+ * follow force-coloured atoms are covered by the first). The fast path writes
+ * positions only, so these modes need the full rebuild every frame to stay
+ * correct: applyFrameFast bails on them, the trajectory player's Auto mode
+ * falls back to Full for them, and the player shows a "slower" note. One
+ * predicate so the three can't disagree about which modes count.
+ * @returns {boolean}
+ */
+export function isFrameDependentColorMode() {
+  return general.atomsColor === 'force' || general.bondsColor === 'length';
 }
 
 function bail(reason) {
@@ -160,6 +175,15 @@ function updateWrappedFromSources(wrapped, structure, shifts, lattice) {
  */
 export function applyFrameFast(structure) {
   if (!structure) return bail('no structure');
+
+  // Frame-dependent colour modes must recolour every frame and this path writes
+  // only positions — rather than re-plumb colour through it, bail and let the
+  // caller take its full rebuild path, which recolours correctly (crystal-
+  // viewer's updateVisualization re-applies force colours; buildBondObjects
+  // re-maps bond-length colours). Static modes (elements/white/solid) stay fast.
+  if (isFrameDependentColorMode()) {
+    return bail('frame-dependent colour mode (force/length) needs full render');
+  }
 
   const atomsMesh = groups.atomsMesh;
   if (!atomsMesh) return bail('no atomsMesh');
@@ -297,6 +321,11 @@ export function applyFrameFast(structure) {
   // MD/relax playback moves atoms and bypasses updateVisualization — reposition
   // the ground disc so it tracks the structure bottom each frame (O(1) when off).
   updateGroundPlane();
+
+  // Same reason: which atoms fall inside the asymmetric-unit wedge changes as
+  // they move. The wedge itself only changes if the cell does.
+  refreshAsymmetricUnitIfStale();
+  updateAsuAtomHighlight();
 
   requestRender();
   return true;

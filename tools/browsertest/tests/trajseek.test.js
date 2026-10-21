@@ -1,7 +1,7 @@
 // Plotly trajectory plot: the playback cursor (setCursor) draws a vertical
 // layout shape at the current frame, and clicking the plot seeks the trajectory
-// (onSeek) — the two directions of scrubber<->plot sync. Also checks the mean
-// stress-tensor pressure convention (mean of the diagonal, not the raw trace).
+// (onSeek) — the two directions of scrubber<->plot sync. Also checks the
+// pressure convention (the mean of the diagonal, not the raw trace or minus it).
 'use strict';
 const H = require('../harness');
 
@@ -54,13 +54,13 @@ const H = require('../harness');
     res.seeks.length >= 1 && res.seeks[res.seeks.length - 1] >= 4 && res.seeks[res.seeks.length - 1] <= 6,
     JSON.stringify(res));
 
-  // Pressure convention: stressMean is (σxx+σyy+σzz)/3, not the raw trace.
+  // Pressure convention: (S_xx+S_yy+S_zz)/3 of the compression-positive stress,
+  // not the raw trace and with no minus sign.
   const press = await page.evaluate(async () => {
-    const { stressMean, stressTrace } = await import('./atomistic/relaxer.js');
-    const sigma = [[3, 0, 0], [0, 6, 0], [0, 0, 9]];
-    return { mean: stressMean(sigma), trace: stressTrace(sigma) };
+    const { pressureEvA3 } = await import('./model/index.js');
+    return { mean: pressureEvA3([[3, 0, 0], [0, 6, 0], [0, 0, 9]]) };
   });
-  H.check('stressMean = trace/3 (6, not 18)', press.mean === 6 && press.trace === 18, JSON.stringify(press));
+  H.check('pressure = +trace/3 (6, not 18 or -6)', press.mean === 6, JSON.stringify(press));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

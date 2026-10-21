@@ -1,0 +1,235 @@
+/* Lattice Analysis control window (docs/ui/LatticeAnalysisPanel.js). Reuses
+   the app's .control-group and the side dock's .split-pane-btn; only the
+   rows unique to this window — the source line, the custom-axis form and
+   the parameter table — are defined here. The plots window reuses the
+   generic .split-item cards (sideDock.css) unchanged. */
+
+.la-source-line {
+  font-size: var(--fs-md);
+  color: var(--fg-85);
+}
+
+.la-source-name {
+  font-weight: var(--fw-bold);
+  overflow-wrap: anywhere;
+}
+
+.la-source-meta {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+}
+
+/* The window's buttons are the app's .btn-mini (styles.css: hover lift,
+   accent border); this only keeps them dense, like the Phonons window's
+   .ph-btn, so several fit one row. */
+.la-btn {
+  height: 30px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.la-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.la-btn:disabled:hover {
+  transform: none;
+  background: transparent;
+  border-color: var(--wash-2);
+}
+
+/* Points-source and Sort-by selects side by side under the source line. */
+.la-select-row {
+  display: flex;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+
+.la-select {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+}
+
+.la-select select {
+  width: 100%;
+  min-width: 0;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 3px var(--sp-2);
+  font-size: var(--fs-base);
+}
+
+.la-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* The Custom x axis button reads as a toggle: pressed while its form is out. */
+.la-actions-row .la-btn[aria-expanded="true"] {
+  background: var(--wash-0);
+  border-color: var(--accent-color);
+  color: var(--fg-1);
+}
+
+.la-table-actions {
+  margin-bottom: var(--sp-3);
+}
+
+.la-custom-axis {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-1);
+}
+
+.la-help {
+  margin: 0 0 var(--sp-3) 0;
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+  line-height: var(--lh-normal, 1.4);
+}
+
+.la-field-row {
+  display: flex;
+  gap: var(--sp-3);
+}
+
+.la-field-row .la-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.la-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+}
+
+.la-field input[type="text"],
+.la-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--input-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-sm);
+  padding: 3px var(--sp-2);
+  font-size: var(--fs-base);
+}
+
+/* Numbers pasted from a table line up in a monospace box. */
+.la-field textarea {
+  font-family: var(--font-mono);
+  resize: vertical;
+  min-height: 3.5em;
+}
+
+.la-status {
+  min-height: 1.2em;
+  margin-top: var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--muted-fg);
+  line-height: var(--lh-normal, 1.4);
+  overflow-wrap: anywhere;
+}
+
+.la-status-error {
+  color: var(--danger-bright);
+}
+
+/* Shown-frame value plus the min–max range, one row per cell parameter. */
+.la-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.la-table th,
+.la-table td {
+  border: 1px solid var(--panel-border);
+  padding: 4px var(--sp-2);
+  text-align: right;
+}
+
+.la-table th {
+  background: var(--wash-1-5);
+  font-weight: var(--fw-medium);
+  color: var(--muted-fg);
+}
+
+.la-table td:first-child {
+  text-align: left;
+  font-weight: var(--fw-medium);
+}
+
+.la-table td:last-child {
+  text-align: left;
+  color: var(--muted-fg);
+}
+
+/* The body (styles.css) switches text selection off everywhere; the table's
+   values exist to be selected and copied. */
+.la-table {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  user-select: text;
+}
+
+/* ---- plots window: user-resizable charts ------------------------------------
+   Same technique as the Bond Length Histogram cards (bondLengthHistogram.css
+   .blh-pair-plot): the plot div itself carries the browser's `resize:
+   vertical` handle at its bottom-right corner, so dragging it makes just
+   that chart taller or shorter; a ResizeObserver on the div refits Plotly
+   (LatticePlotsPanel.js). Cards therefore take their own height instead of
+   flex-sharing the stack, and the stack scrolls. `overflow` other than
+   visible is required for the native handle to appear at all. */
+.lattice-plot-stack {
+  overflow-y: auto;
+}
+
+.lattice-plot-stack .split-item {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.lattice-plot-stack .la-plot {
+  flex: 0 0 auto;
+  height: 240px;
+  min-height: 120px;
+  resize: vertical;
+  overflow: hidden;
+}
+
+/* !important on both: the native handle sets an INLINE height on the div,
+   which only a stylesheet !important rule can override — otherwise a chart
+   dragged short stays short when expanded to fullscreen. */
+.split-item.expanded .la-plot {
+  height: calc(100% - 60px) !important;
+  resize: none !important;
+}
+
+/* Docked to the bottom, every plot stack runs horizontally (EOSPanel.css's
+   rule for the wide-and-short pane). Five cards in one row would be
+   slivers — let this stack wrap into rows of about three and scroll. */
+#viewArea.split-dock-bottom .cv-panel.cv-side-docked .lattice-plot-stack {
+  flex-wrap: wrap;
+}
+
+#viewArea.split-dock-bottom .cv-panel.cv-side-docked .lattice-plot-stack .split-item {
+  flex: 1 1 30%;
+}

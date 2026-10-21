@@ -31,8 +31,10 @@ import { StructureContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
 import { updateForces, removeForces } from '../../render/index.js';
-import { updateLattice } from '../../render/index.js';
+import { updateLattice, updateAsymmetricUnit, updateAsuAtomHighlight } from '../../render/index.js';
 import { rebuildAtoms } from '../../render/index.js';
+import { refreshAtomColors } from '../../render/index.js';
+import { reapplyAtomForceColors } from '../ColorPanel.js';
 import { createRow, selectLastAddedRow } from '../FileBrowswerPanel.js';
 import { transpose3x3, invert3x3, matVec } from '../../atomistic/math.js';
 import { generateCompactTimeUUID } from '../../utils/index.js';
@@ -207,12 +209,20 @@ function fastUpdatePositions(cartPositions, lattice, elements, forces) {
     liveStructure.lattice = lattice.map(r => [...r]);
     updateLattice();
   }
+  updateAsuAtomHighlight();
 
-  // Forces (optional — only if user has enabled the Forces toggle)
-  if (forces && general.forcesActive) {
+  // Forces: needed for the force ARROWS (forcesActive) and/or for force-based
+  // atom COLOURING (atomsColor === 'force'), so refresh the live structure's
+  // forces when either is on, not only when the arrows are shown.
+  const colorByForce = general.atomsColor === 'force';
+  if (forces && (general.forcesActive || colorByForce)) {
     liveStructure.forces = forces.map(v => new Force({ vector: v }));
-    updateForces();
+    if (general.forcesActive) updateForces();
   }
+  // Colour-only re-push: this fast path writes instance positions but skips
+  // colour, so force colouring would freeze on the last full rebuild's colours
+  // as the run advances. Recompute from this frame's forces and push them.
+  if (colorByForce && reapplyAtomForceColors(liveStructure)) refreshAtomColors();
 }
 
 // ── First-frame / atom-count-changed rebuild ───────────────────────────────────
@@ -262,6 +272,7 @@ function fullRebuild(nAtoms, lattice, cartPositions, elements, forces) {
   } else {
     liveContainer.structures[0] = liveStructure;
     fileBrowser.selectedStructure = liveStructure;
+    updateAsymmetricUnit();
   }
 
   // Temporarily disable periodic images and bonds so the mesh has exactly N instances
@@ -282,12 +293,17 @@ function fullRebuild(nAtoms, lattice, cartPositions, elements, forces) {
   prevCellKey = cellKey(lattice);
   updateLattice();
 
-  if (forces && general.forcesActive) {
+  const colorByForce = general.atomsColor === 'force';
+  if (forces && (general.forcesActive || colorByForce)) {
     liveStructure.forces = forces.map(v => new Force({ vector: [...v] }));
-    updateForces();
+    if (general.forcesActive) updateForces();
+    else removeForces();
   } else {
     removeForces();
   }
+  // rebuildAtoms above painted element colours; recolour by this frame's forces
+  // when the Atoms colour mode is "force" so the newly built mesh shows them.
+  if (colorByForce && reapplyAtomForceColors(liveStructure)) refreshAtomColors();
 }
 
 // ── Main frame dispatcher ─────────────────────────────────────────────────────

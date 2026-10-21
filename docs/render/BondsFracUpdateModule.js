@@ -11,6 +11,7 @@ import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { requestRender } from './AnimateModule.js';
 import { getFocusOpacityForInstance } from './FocusRegionModule.js';
+import { refreshAsuHighlight } from './asuHighlightHook.js';
 
 
 
@@ -142,6 +143,8 @@ export function scheduleBondRebuild(delayMs = 200) {
   bondRebuildTimer = setTimeout(() => {
     bondRebuildTimer = null;
     rebuildBonds(general.mainOpacity ?? 1);
+    // The in-wedge rings are sized off the atoms, so they follow too.
+    refreshAsuHighlight();
     // Rendering is on demand, and this runs from a timer — after the input
     // event whose catch-all listener already painted its frame. Without this
     // the rebuilt bonds stay undrawn until something else (a camera move)
