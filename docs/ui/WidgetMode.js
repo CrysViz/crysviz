@@ -63,12 +63,8 @@ export function initWidgetMode(opts) {
   loadedRowIndex = fileBrowser.selectedRowIndex ?? 0;
   // Force the feature locks on. With a persisted featuresLocked=false (from
   // same-origin full-app use) a cell swap counts as a row change, and
-  // updateStructureFromRowAndStep would resolve the Features-switch cascade
-  // for the new row (FeatureLockModule.js) — for a variant without overrides
-  // that is the shared set or the defaults, which turn showSpinsToggle off
-  // and erase the arrows. Locked, a cell swap keeps the current switches.
-  // The load itself already ran under the persisted lock state: with
-  // `prefs=1` the stores were applied then, without it nothing was.
+  // updateStructureFromRowAndStep would run applyDefaultFeatureToggles —
+  // FEATURE_TOGGLE_DEFAULTS turns showSpinsToggle off and erases the arrows.
   general.featuresLocked = true;
   // Magnetic unit cells from the database: show a spin arrow on every periodic
   // image, not just the primary atom (see general.showSpinsOnCopies).

@@ -14,7 +14,7 @@ import { recenterCamera, captureCameraSnapshot, applyCameraSnapshot, fitCameraTo
 import { notifyActiveStructureChange } from '../state/structures.js';
 import { count as traceCount } from '../debug/debugTrace.js';
 import { generateID } from '../utils/index.js';
-import { applyEffectiveFeatureToggles } from './FeatureLockModule.js';
+import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
 import { captureContainerSizes, applyContainerSizes } from './SizePrefs.js';
 
 const rowObjects = new WeakMap();
@@ -857,8 +857,7 @@ function updateStructureFromRowAndStep(rowIndex) {
   const rowChanged = lastActiveContainer !== null && lastActiveContainer !== container;
   if (rowChanged) {
     if (!app.cameraLocked) lastActiveContainer.cameraSnapshot = captureCameraSnapshot();
-    // The Features switches need no capture here: a user flip while unlocked
-    // already updated the row's container.featureOverrides (FeatureLockModule.js).
+    if (general.featuresLocked === false) lastActiveContainer.featureSnapshot = snapshotFeatureToggles();
     captureContainerSizes(lastActiveContainer); // sizes are per-structure, no lock
   }
 
@@ -941,12 +940,14 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
       if (container.cameraSnapshot) applyCameraSnapshot(container.cameraSnapshot);
       else fitCameraToCurrentStructure({ resetDirection: true });
     }
-    // Unlocked: this container's own switch overrides, falling through to
-    // the shared set and then the app defaults (the cascade,
-    // FeatureLockModule.js) — never whatever the checkboxes currently read,
-    // which may reflect a DIFFERENT structure's customization. Locked: the
-    // switches are shared, nothing to do.
-    if (general.featuresLocked === false) applyEffectiveFeatureToggles(container);
+    if (general.featuresLocked === false) {
+      // Same reasoning as the camera fallback above: a container never
+      // individually saved falls back to the app's own declared defaults,
+      // not whatever the checkboxes currently read (which may reflect a
+      // DIFFERENT structure's customization made after unlocking).
+      if (container.featureSnapshot) applyFeatureToggles(container.featureSnapshot);
+      else applyDefaultFeatureToggles();
+    }
   }
   lastActiveContainer = container;
 
