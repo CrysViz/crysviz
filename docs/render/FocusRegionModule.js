@@ -399,6 +399,7 @@ export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
   }
   applyFocusToArrows(structure, 'forces');
   applyFocusToArrows(structure, 'spins');
+  applyFocusToPhononArrows(structure);
   applyFocusToPolyhedra(structure);
   applyFocusToField(structure);
   applyFocusToChargeBadges(structure);
@@ -500,6 +501,33 @@ export function applyFocusToArrows(structure = fileBrowser.selectedStructure, ki
   }
   if (shaftOpacity) shaftOpacity.needsUpdate = true;
   if (tipOpacity) tipOpacity.needsUpdate = true;
+  syncArrowTransparency(shaft, transparent);
+  syncArrowTransparency(tip, transparent);
+}
+
+/** Focus opacity for the phonon displacement arrows (PhononArrowModule.js).
+ *  They have one shaft and one tip per drawn atom image, in visibleWrapped
+ *  order, so each arrow takes its atom instance's opacity. Runs on every
+ *  animation tick, since the atoms (and so their distance from the centers)
+ *  move with the mode. */
+export function applyFocusToPhononArrows(structure = fileBrowser.selectedStructure) {
+  const shaft = groups.phononShaftMesh;
+  const tip = groups.phononTipMesh;
+  if (!shaft || !tip) return;
+  const shaftOpacity = shaft.geometry?.attributes?.instanceOpacity;
+  const tipOpacity = tip.geometry?.attributes?.instanceOpacity;
+  if (!shaftOpacity || !tipOpacity) return;
+  const active = focusRegionsActive(structure);
+  if (active) prepareFocusRegions(structure);
+  let transparent = false;
+  for (let i = 0; i < shaft.count; i++) {
+    const opacity = active ? getFocusOpacityForInstance(i, structure) : 1;
+    shaftOpacity.setX(i, opacity);
+    tipOpacity.setX(i, opacity);
+    if (opacity < 0.999) transparent = true;
+  }
+  shaftOpacity.needsUpdate = true;
+  tipOpacity.needsUpdate = true;
   syncArrowTransparency(shaft, transparent);
   syncArrowTransparency(tip, transparent);
 }
