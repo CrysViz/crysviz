@@ -29,7 +29,6 @@ export const DEFAULT_FOCUS_REGION = Object.freeze({
   // or the region rule evaluated at its own 'position' (centroid).
   polyhedraMode: 'average',
   excludedSourceIndices: [],
-  centerOffsetFrac: [0, 0, 0],
 });
 
 export const POLYHEDRA_FOCUS_MODES = Object.freeze(['average', 'position']);
@@ -172,45 +171,48 @@ export function focusRegionsActive(structure = fileBrowser.selectedStructure) {
   return getFocusRegions(structure).some((region) => region?.enabled !== false && region.center?.length);
 }
 
-/** Keep centers attached to their chosen periodic atom copies as coordinates
- * move. Stable image keys survive ordinary mesh rebuilds and trajectory frames. */
+/** A region's center is the centroid of the atoms it was created from,
+ * computed once; after that it is a plain point in fractional coordinates
+ * (centerFractional) and does not follow those atoms through trajectory
+ * frames or edits. This refreshes the Cartesian center from it for the
+ * current lattice. */
 export function prepareFocusRegions(structure = fileBrowser.selectedStructure) {
-  const wrapped = structure?.periodic?.visibleWrapped;
-  if (!wrapped) return;
+  if (!structure?.lattice) return;
   for (const region of getFocusRegions(structure)) {
-    const indices = (region.centerImageKeys ?? []).map((key) =>
-      structure.atomImageKeys?.indexOf(key)).filter((index) => index >= 0);
-    if (!indices.length) continue;
-    const anchor = [0, 1, 2].map((axis) =>
-      indices.reduce((sum, index) => sum + wrapped.cart[index][axis], 0) / indices.length);
-    region.anchorCenterFrac = cartToFrac(anchor, structure.lattice);
-    const offset = region.centerOffsetFrac?.length === 3 ? region.centerOffsetFrac : [0, 0, 0];
-    region.centerFractional = region.anchorCenterFrac.map((value, axis) => value + Number(offset[axis] || 0));
-    region.center = fracToCart([region.centerFractional], structure.lattice)[0];
+    const fractional = region.centerFractional;
+    if (fractional?.length !== 3 || !fractional.every(Number.isFinite)) continue;
+    region.center = fracToCart([fractional], structure.lattice)[0];
   }
 }
 
-/** Move a region center in fractional coordinates while keeping it attached
- * to the selected atom-image centroid through subsequent frame updates. */
+/** Move a region center to `fractional`. */
 export function setFocusRegionCenterFractional(region, fractional,
   structure = fileBrowser.selectedStructure) {
   if (!region || !structure?.lattice || fractional?.length !== 3) return false;
-  prepareFocusRegions(structure);
   const next = fractional.map(Number);
   if (!next.every(Number.isFinite)) return false;
-  const anchor = region.anchorCenterFrac?.length === 3
-    ? region.anchorCenterFrac : cartToFrac(region.center, structure.lattice);
-  region.centerOffsetFrac = next.map((value, axis) => value - anchor[axis]);
   region.centerFractional = next;
   region.center = fracToCart([next], structure.lattice)[0];
   applyFocusRegionEdit(structure);
   return true;
 }
 
+/** The center a region was created with. Regions saved before the center was
+ *  decoupled carry an offset from their atoms instead; subtracting it gives
+ *  the atom centroid as it was when they were saved. */
+function initialCenterFractional(region) {
+  if (region.initialCenterFractional?.length === 3) return region.initialCenterFractional;
+  const offset = region.centerOffsetFrac;
+  if (region.centerFractional?.length !== 3) return null;
+  return region.centerFractional.map((value, axis) => value - Number(offset?.[axis] || 0));
+}
+
+/** Move a region center back to where it was created. */
 export function resetFocusRegionCenter(region, structure = fileBrowser.selectedStructure) {
-  if (!region) return;
-  region.centerOffsetFrac = [0, 0, 0];
-  prepareFocusRegions(structure);
+  const initial = region ? initialCenterFractional(region) : null;
+  if (!initial || !structure?.lattice) return;
+  region.centerFractional = [...initial];
+  region.center = fracToCart([region.centerFractional], structure.lattice)[0];
   applyFocusRegionEdit(structure);
 }
 
@@ -275,11 +277,11 @@ export function createFocusRegion(centerAtoms, structure = fileBrowser.selectedS
     id: `focus-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     center,
     centerFractional: cartToFrac(center, structure.lattice),
-    centerOffsetFrac: [0, 0, 0],
+    initialCenterFractional: cartToFrac(center, structure.lattice),
+    // Which atoms the center came from, for the panel label only: the center
+    // does not follow them (see prepareFocusRegions).
     centerSourceIndices: [...new Set(centerAtoms.map((atom) => atom.sourceIndex)
       .filter(Number.isInteger))],
-    centerImageKeys: [...new Set(centerAtoms.map((atom) =>
-      structure.atomImageKeys?.[atom.instanceId]).filter(Boolean))],
     excludedSourceIndices: [],
   };
   (structure.focusRegions ??= []).push(region);
