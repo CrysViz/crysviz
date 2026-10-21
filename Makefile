@@ -1,4 +1,4 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard checks ci tests_full periodic-wasm browsertest browsertest-setup update_version
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard unittest checks ci tests_full periodic-wasm browsertest browsertest-setup update_version
 
 PYTHON ?= python3
 
@@ -12,7 +12,7 @@ PYTHON ?= python3
 #   - send Cache-Control. Without it Firefox caches modules heuristically and
 #     an edit resurfaces as a missing export from the previous version of a
 #     file. tools/devserver.py does all three.
-SERVE_HOST ?= 127.0.0.1
+SERVE_HOST ?= 0.0.0.0
 SERVE_PORT ?= 8000
 SERVE_TRIES ?= 20
 
@@ -57,8 +57,17 @@ check-imports:
 css-guard:
 	tools/ci/css_guard.sh
 
-# Fast source validation: lint + typecheck + import checks.
-checks: lint typecheck check-imports css-guard
+# Node unit tests (node:test, no dependencies) for modules that import cleanly
+# in plain Node — pure logic such as the share-link codec. Fast: no browser.
+# Add tests as tools/unittest/*.test.mjs.
+# NODE is resolved through the shell: make execs a bare `node` itself and
+# stops at the first PATH entry named node, even a directory (emsdk ships one).
+NODE ?= $(shell command -v node)
+unittest:
+	$(NODE) --test tools/unittest/
+
+# Fast source validation: lint + typecheck + import checks + unit tests.
+checks: lint typecheck check-imports css-guard unittest
 
 # Reproduce the complete headless GitHub Actions gate locally: dependency
 # setup, static and Python tests, package-content/install checks, and packaged

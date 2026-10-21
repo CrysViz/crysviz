@@ -154,6 +154,9 @@ class HostRuntime:
         if not isinstance(source.name, str) or (source.format is not None and not isinstance(source.format, str)) or not isinstance(source.binary, bool):
             source.close()
             raise ProtocolError("load arguments are invalid")
+        if "periodic" in args and not isinstance(args["periodic"], bool):
+            source.close()
+            raise ProtocolError("load periodic must be boolean")
         try:
             input_url = self.server.publish(source)
         except BaseException:
@@ -161,9 +164,12 @@ class HostRuntime:
             raise
         # Remove the attachment only after the server has accepted ownership.
         attachments.pop("data")
-        return {"id": request_id, "request": {"command": "load", "args": {
+        load_args: dict[str, object] = {
             "name": source.name, "format": source.format, "binary": source.binary, "inputUrl": input_url,
-        }}}
+        }
+        if "periodic" in args:
+            load_args["periodic"] = args["periodic"]
+        return {"id": request_id, "request": {"command": "load", "args": load_args}}
 
     def reader_loop(self) -> None:
         """Read IPC continuously so parent EOF can interrupt a browser call."""

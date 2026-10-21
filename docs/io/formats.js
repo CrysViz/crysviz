@@ -24,7 +24,8 @@
  * "does this look like my format?" from the markers each code cannot help
  * printing — `Invoking FHI-aims`, `Program PWSCF`, ` vasp.6`, `BEGIN header`,
  * `%BLOCK LATTICE_CART`, `data_` / `_cell_length_a`, the WAVECAR RTAG, and so
- * on. The rules are:
+ * on. (The exception is the VASP INCAR, which has no such marker and is found
+ * by name alone; see its entry.) The rules are:
  *
  *   1. Every descriptor whose `sniff` accepts the head is a candidate.
  *   2. Exactly one candidate: that is the format, whatever the name says.
@@ -490,6 +491,24 @@ export const FORMATS = [
     handledBy: HandledBy.PARSE_ANY,
     matchesName: (lower) => lower.includes('outcar') || lower.includes('.vasp.out'),
     sniff: sniffOUTCAR,
+  },
+  {
+    // Magnetic moments for the structure that is already loaded (MAGMOM read
+    // with LNONCOLLINEAR / SAXIS); see io/ReadIncarModule.js.
+    //
+    // The one format here that is identified by NAME ONLY. An INCAR has no
+    // signature of its own: it is nothing but `TAG = value` lines, and every
+    // one of those is echoed verbatim by the OUTCAR of the same run, so any
+    // marker that accepted an INCAR would make it a rival candidate for every
+    // OUTCAR too. `sniff` stays null — `detectFormat` skips such descriptors
+    // in the content pass and reaches this one through the filename fallback —
+    // and is the place to put a content test should a safe one turn up.
+    id: 'incar',
+    label: 'VASP INCAR',
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.VIEWER,
+    matchesName: (lower) => lower.includes('incar'),
+    sniff: null,
   },
   {
     id: 'xyz',

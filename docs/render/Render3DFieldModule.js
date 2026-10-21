@@ -1,6 +1,11 @@
-// ReadCubeModule.js
-// Parser for Gaussian .cube volumetric files + Marching Cubes isosurface extraction
-// Exports: readCubeFile(), updateField()
+// Render3DFieldModule.js
+// Scene-side handling of volumetric fields (cube, CHGCAR, WAVECAR): parsing
+// into fields, the active field's isosurface and slices, periodic display
+// bounds, and the field panel.
+// Exports: createSlice(), clearField(), deleteField(), setActiveField(),
+//   suggestIsoValue(), toggleFieldVisibility(), applyFieldPeriodicBounds(),
+//   updateField(), parseCubeFile(), parseCHGCARFile(),
+//   revealFieldPanelForCurrentStructure(), parseWavecarFile()
 
 import * as THREE from "../external/three/three.module.js";
 
@@ -9,7 +14,9 @@ import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";
 import { app, groups, fileBrowser, general, structureShip } from '../state/store.js';
 import { normalizePeriodicBounds } from './LatticeModule.js';
 import { readCHGCAR } from "../io/ReadChgcarModule.js";
-import { readCubeFile } from "../io/ReadCubeModule.js";
+import { buildCubeStructure } from "../io/ReadCubeModule.js";
+import { parseCube } from "../io/cubeParse.js";
+import { countAtomsOutsideGrid } from "../io/cubeLayout.js";
 import { applyFocusToField } from './FocusRegionModule.js';
 import { readWAVECAR } from "../io/ReadWavecarModule.js";
 import { Isosurface, FieldCatalog, FieldContainer, defaultIsoValue } from "../model/index.js";
@@ -284,10 +291,50 @@ function adoptEagerFieldContainer(container) {
   updateField();
 }
 
-export function parseCubeFile(content, fileName) {
-  // Parse the Cube file (volumetric fields are now included in the structure).
-  // Errors intentionally propagate to loadStructure and the host facade.
-  const result = readCubeFile(content, fileName);
+/**
+ * Open a cube. It is parsed once, before anything is asked. A file whose atoms
+ * lie outside its own grid box is a finite block rather than a periodic cell,
+ * so (unless `periodic` is given) the user chooses how to load it.
+ *
+ * @param {string} content
+ * @param {string} fileName
+ * @param {{ periodic?: boolean }} [options] `true` / `false` skip the dialog
+ * @returns {Promise<import('../model/index.js').StructureContainer | null>} null if cancelled
+ */
+export async function parseCubeFile(content, fileName, { periodic } = {}) {
+  // A file that does not parse throws here, before any dialog. Errors
+  // intentionally propagate to loadStructure and the host facade.
+  const cube = parseCube(content);
+
+  let asPeriodic = periodic;
+  if (typeof asPeriodic !== 'boolean') {
+    asPeriodic = true;
+    const { outside, total } = countAtomsOutsideGrid(cube);
+    if (outside > 0) {
+      const choice = await choiceDialog(
+        `${outside} of ${total} atoms in ${fileName} lie outside the grid box. `
+          + 'The file may be a finite block of data rather than a periodic cell.',
+        {
+          title: 'Cube atoms outside the grid',
+          choices: [
+            {
+              value: 'periodic', label: 'Periodic',
+              description: 'Use the grid box as the unit cell and wrap every atom into it.',
+            },
+            {
+              value: 'block', label: 'Not periodic',
+              description: 'Keep the atoms where they are, in a padded box around the atoms and the grid.',
+            },
+            { value: 'cancel', label: 'Cancel', description: 'Do not load the file.' },
+          ],
+          cancelValue: 'cancel',
+        });
+      if (choice !== 'periodic' && choice !== 'block') return null;
+      asPeriodic = choice === 'periodic';
+    }
+  }
+
+  const result = buildCubeStructure(cube, fileName, { periodic: asPeriodic });
 
   adoptEagerFieldContainer(result.structure_with_field.volumetricFields);
 

@@ -602,6 +602,58 @@ async function loadAnsweringUnitDialog(page, text, name, pick = 1) {
   H.check('displacement arrows are drawn', anim.arrows);
   H.check('stop returns the atoms to equilibrium', anim.maxAfterStop < 1e-12 && anim.selectedIsPhonon, `maxAfterStop=${anim.maxAfterStop}`);
 
+  // ---- 4b. focus regions fade the displacement arrows ----------------------
+  // A small region on the first atom: during the animation the arrow on that
+  // atom stays opaque, the others take the outer opacity, like the atoms
+  // themselves. Removing the region restores full opacity.
+  const focusAnim = await page.evaluate(async () => {
+    const S = await import('./phonon/phononSession.js');
+    const focus = await import('./render/FocusRegionModule.js');
+    const { groups } = await import('./state/store.js');
+    const st = S.phononState.structure;
+    const wrapped = st.periodic.visibleWrapped;
+    const region = focus.createFocusRegion([{
+      sourceIndex: wrapped.srcIndex[0], element: wrapped.elements[0], position: wrapped.cart[0],
+    }], st);
+    region.innerRadius = 0.5;
+    region.outerOpacity = 0.1;
+    region.gradientEnabled = false;
+    const iqM = S.phononState.dataset.qpoints.findIndex((qp) => Math.abs(qp.q[0] - 0.5) < 1e-6
+      && Math.abs(qp.q[1] - 0.5) < 1e-6 && Math.abs(qp.q[2]) < 1e-6);
+    S.selectMode(iqM, 0);
+    for (let t = 0; t < 30 && !S.phononState.playing; t++) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 400)); // a few animation ticks
+    // Each arrow must carry its own atom instance's focus opacity (the rule is
+    // periodic, so images of the focus atom one lattice vector away are
+    // inner too).
+    const read = () => {
+      const shaft = groups.phononShaftMesh.geometry.attributes.instanceOpacity;
+      const tip = groups.phononTipMesh.geometry.attributes.instanceOpacity;
+      const atoms = groups.atomsMesh.geometry.attributes.instanceOpacity;
+      let mismatch = 0;
+      const arrows = [];
+      for (let i = 0; i < shaft.count; i++) {
+        const atom = atoms.getX(i);
+        mismatch = Math.max(mismatch, Math.abs(shaft.getX(i) - atom), Math.abs(tip.getX(i) - atom));
+        arrows.push(+shaft.getX(i).toFixed(3));
+      }
+      return { mismatch, focusArrow: shaft.getX(0), minArrow: Math.min(...arrows), maxArrow: Math.max(...arrows),
+        transparent: groups.phononShaftMesh.material.transparent };
+    };
+    const during = read();
+    focus.removeFocusRegion(region.id);
+    await new Promise((r) => setTimeout(r, 300));
+    const removed = read();
+    S.stopAnimation();
+    return { during, removed };
+  });
+  H.check('focus region: each displacement arrow fades with its atom, the focus atom\'s stays opaque',
+    focusAnim.during.mismatch < 1e-6 && Math.abs(focusAnim.during.focusArrow - 1) < 1e-6
+      && Math.abs(focusAnim.during.minArrow - 0.1) < 1e-6 && focusAnim.during.transparent,
+    JSON.stringify(focusAnim));
+  H.check('removing the focus region restores full arrow opacity',
+    focusAnim.removed.minArrow === 1 && !focusAnim.removed.transparent, JSON.stringify(focusAnim.removed));
+
   // ---- 5. displacement maths vs phonopy's MPOSCAR -------------------------
   const mp = await page.evaluate(async (mposcar) => {
     const S = await import('./phonon/phononSession.js');

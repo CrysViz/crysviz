@@ -17,13 +17,14 @@ import {
 } from './StructureInfoPanel/components/utils.js';
 import {
   bondGroupKey, bondKey, updateSingleBondColor, updateSingleBondOpacity,
-  updateSingleBondDiameter,
+  applyBondRadius,
 } from '../render/index.js';
 import {
   updateHydrogenBonds, initHydrogenBondPairs, hydrogenBondAcceptorOf,
   resetHydrogenBondLengths, hydrogenBondColorFor,
 } from '../render/index.js';
 import { showInfoPanel } from './InfoPanel.js';
+import { saveBondLengths, scheduleBondLengthSave, saveBondStyles, scheduleBondStyleSave } from './SizePrefs.js';
 
 // The slider container is fluid (flex:1, see .bond-range-slider in
 // styles/bondLengthHistogram.css) so it shrinks to fit the Structure Info
@@ -277,6 +278,7 @@ export function resetBondLengths() {
   // neighbour (PBC-ghost) atom set when Neighbour Bonds is on, since the reset
   // cutoffs change which cross-cell neighbours exist.
   updateVisualization({ reRenderAtoms: !!general.showPBCBonds, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  saveBondLengths(); // drops the per-structure ranges (ui/SizePrefs.js)
 }
 
 /** Reset every bond COLOR customization (category + individual) on one
@@ -524,6 +526,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
       refreshHeader();
       refreshExpandedBondLists(bondControls);
+      scheduleBondStyleSave(structure());
     });
 
     const currentCatAlpha = clampOpacity(structure()?.bondCategoryStyles?.[pair]?.alpha ?? 1);
@@ -550,6 +553,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       catAlphaSlider.value = String(value);
       catAlphaValue.value = value.toFixed(2);
       catStyle().alpha = value;
+      scheduleBondStyleSave(structure());
       for (const b of memberBonds()) {
         if (structure().bondUserStyles?.[bondKey(b.indices)]?.alpha != null) continue;
         b.alpha = value;
@@ -589,13 +593,10 @@ export function createBondLengthControls(targetPanel='bondControls') {
       catSizeSlider.value = String(value);
       catSizeValue.value = value.toFixed(2);
       catStyle().radiusScale = value;
+      scheduleBondStyleSave(structure());
       for (const b of memberBonds()) {
         if (structure().bondUserStyles?.[bondKey(b.indices)]?.radiusScale != null) continue;
-        b.radius = general.bondRadius * value;
-        if (b.instanceIds && groups.bondsMesh) {
-          updateSingleBondDiameter(b.instanceIds[0], b.radius);
-          updateSingleBondDiameter(b.instanceIds[1], b.radius);
-        }
+        applyBondRadius(b, general.bondRadius * value);
       }
     }
     catSizeSlider.oninput = (e) => applyCatSize(/** @type {any} */ (e.target).value);
@@ -628,6 +629,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       onPress: (e) => {
         e.stopPropagation();
         resetPairOnFrame(structure());
+        saveBondStyles(structure());
         updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
         refreshExpandedBondLists(bondControls);
         refreshBondHeaders(bondControls);
@@ -639,6 +641,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
         // frame too, using each frame's OWN bond list/keys (not a copy of
         // this frame's), since wrapped-index bond keys can drift frame to frame.
         applyToOtherTrajectoryFrames(structure(), resetPairOnFrame);
+        saveBondStyles(structure());
         updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
         refreshExpandedBondLists(bondControls);
         refreshBondHeaders(bondControls);
@@ -676,6 +679,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       (material) => {
         if (material) catStyle().material = material;
         else delete catStyle().material;
+        saveBondStyles(structure());
       });
 
     catEditor.appendChild(catPicker.element);
@@ -854,6 +858,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
       general.bondLengths[pair].min = minVal;
       general.bondLengths[pair].max = maxVal;
+      scheduleBondLengthSave(fileBrowser.selectedStructure);
 
       updateVisualization({
         // Neighbour Bonds on: the cutoff drives which periodic neighbour
@@ -916,12 +921,14 @@ export function createBondLengthControls(targetPanel='bondControls') {
     holdLabel: 'Reset Trajectory',
     onPress: () => {
       resetAllBondColors(fileBrowser.selectedStructure);
+      saveBondStyles(fileBrowser.selectedStructure);
       updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     },
     onConfirm: () => {
       const structure = fileBrowser.selectedStructure;
       resetAllBondColors(structure);
       applyToOtherTrajectoryFrames(structure, resetAllBondColors);
+      saveBondStyles(structure);
       updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     },
   });

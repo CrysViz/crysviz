@@ -86,6 +86,8 @@ const H = require('../harness');
     const { app } = await import('./state/store.js');
     return {
       offset: app.camera.position.clone().sub(app.controls.target),
+      zoom: app.camera.zoom,
+      ortho: Boolean(app.camera.isOrthographicCamera),
     };
   });
   await page.evaluate(async () => {
@@ -97,14 +99,19 @@ const H = require('../harness');
   const after = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     const offset = app.camera.position.clone().sub(app.controls.target);
-    return { offset };
+    return { offset, zoom: app.camera.zoom };
   });
-  const dx = Math.abs(before.offset.x - after.offset.x);
-  const dy = Math.abs(before.offset.y - after.offset.y);
-  const dz = Math.abs(before.offset.z - after.offset.z);
+  // An orthographic camera's zoom is camera.zoom, and its distance is free:
+  // render/CameraClipModule.js backs it out of the structure when needed. So
+  // compare the view direction plus zoom there, the full offset in perspective.
+  const unit = (v) => { const n = Math.hypot(v.x, v.y, v.z); return [v.x / n, v.y / n, v.z / n]; };
+  const offsetDelta = before.ortho
+    ? Math.max(...unit(before.offset).map((v, k) => Math.abs(v - unit(after.offset)[k])))
+    : Math.max(Math.abs(before.offset.x - after.offset.x), Math.abs(before.offset.y - after.offset.y),
+      Math.abs(before.offset.z - after.offset.z));
   H.check('camera offset (rotation+zoom) survives a structure switch',
-    dx < 0.01 && dy < 0.01 && dz < 0.01,
-    `before=${JSON.stringify(before.offset)} after=${JSON.stringify(after.offset)}`);
+    offsetDelta < (before.ortho ? 1e-4 : 0.01) && Math.abs(before.zoom - after.zoom) < 1e-9,
+    `before=${JSON.stringify(before)} after=${JSON.stringify(after)}`);
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

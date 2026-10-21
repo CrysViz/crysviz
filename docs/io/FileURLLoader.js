@@ -21,6 +21,20 @@ export function getLaunchSource() {
   return launchSource;
 }
 
+/** Returned by loadFromFilePath() when the user cancels a load dialog (distinct from `false`, "nothing to load"). */
+export const LOAD_CANCELLED = 'cancelled';
+
+/** Optional ?cubePeriodic=true|false (search, not hash, so the hash payloads
+ *  are untouched): answers the cube "Periodic / Not periodic" question up
+ *  front, for any hash source. */
+function cubePeriodicOption() {
+  const periodicParams = new URL(window.location.href).searchParams.getAll('cubePeriodic');
+  if (periodicParams.length > 1 || (periodicParams.length === 1 && !['true', 'false'].includes(periodicParams[0]))) {
+    throw new Error('The cubePeriodic parameter must be exactly true or false.');
+  }
+  return periodicParams.length ? { periodic: periodicParams[0] === 'true' } : {};
+}
+
 function decodeFileHash(raw) {
   // Split the raw payload first. Decoding before splitting would turn an
   // encoded filename pipe (%7C) into a second separator.
@@ -62,6 +76,7 @@ async function fetchUrlHash(raw) {
   return { name: name || 'structure', data: await response.arrayBuffer(), format: '' };
 }
 
+/** @returns {Promise<boolean | typeof LOAD_CANCELLED>} true loaded, false no load hash, LOAD_CANCELLED user cancelled */
 export async function loadFromFilePath() {
   const hash = window.location.hash;
   /** @type {NonNullable<typeof launchSource>} */
@@ -80,12 +95,14 @@ export async function loadFromFilePath() {
     return false;
   }
 
-  await loadStructure(source.data, source.name, false, source.format);
-  launchSource = source;
-  general.sharedStructureLoaded = true;
+  const result = await loadStructure(source.data, source.name, false, source.format, cubePeriodicOption());
   const url = new URL(window.location.href);
   url.hash = '';
+  url.searchParams.delete('cubePeriodic'); // later share links must not carry it
   window.history.replaceState({}, document.title, url.toString());
+  if (result?.cancelled) return LOAD_CANCELLED;
+  launchSource = source;
+  general.sharedStructureLoaded = true;
   console.warn('Loaded structure from URL');
   return true;
 }

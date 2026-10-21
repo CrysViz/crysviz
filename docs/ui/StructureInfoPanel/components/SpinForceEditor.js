@@ -4,6 +4,7 @@ import { updateSpins, updateForces, computeSpinColor, computeForceColor, request
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { getLuminance } from '../../BackgroundPicker.js';
 import { createMaterialEditor, MATERIAL_TYPES } from './MaterialEditor.js';
+import { saveArrowOverride, scheduleArrowOverrideSave } from '../../ArrowStylePrefs.js';
 
 // Same lum>0.5 threshold BackgroundPicker.js's getContrastingBorder() uses,
 // applied to text instead of a border — a swatch's background can land
@@ -234,6 +235,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     if (!obj) return;
     obj.hidden = hideCheckbox.checked;
     refreshView();
+    saveArrowOverride(mode, atomIndex);
   };
 
   spinApplyBtn.onclick = () => {
@@ -266,6 +268,8 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
       obj.userColor = new THREE.Color(hex);
       applySwatch(obj.userColor);
       refreshView();
+      // Per-structure persistence (ui/ArrowStylePrefs.js), once per drag.
+      scheduleArrowOverrideSave(mode, atomIndex);
     });
     colorPickerSection.appendChild(picker.element);
     colorPickerSection.style.display = 'flex';
@@ -284,6 +288,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     refreshView();
     requestRender();
     refreshInputs();
+    saveArrowOverride(mode, atomIndex);
   };
 
   refreshInputs();
