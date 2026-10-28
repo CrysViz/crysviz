@@ -22,6 +22,10 @@ import { initRaytraceWarningModal } from '../ui/RaytraceWarningModal.js';
 import { initAddStructureButton, initModifyStructureButton } from '../ui/addToStructureModule/AddStructureModule.js';
 import { initCombineTrajectoriesButton } from '../ui/FileBrowswerPanel.js';
 import { initKeyboardShortcuts } from '../ui/KeyboardShortcuts.js';
+import { initFeatureStore } from '../ui/FeatureStoreModal.js';
+import { initFeatureSearch } from '../ui/FeatureSearch.js';
+import { initLeaveGuard } from '../ui/LeaveGuard.js';
+import { initReleaseNote } from '../ui/ReleaseNote.js';
 import { initProjectionOverlay } from '../ui/notagameatall.js';
 import { loadPhonopyFile } from '../phonon/phononSession.js';
 import { offerCifSymmetryChoice } from '../ui/CifSymmetryLoad.js';
@@ -54,4 +58,11 @@ export function initFullAppUI() {
   // mode never loads this module, so no widget guard is needed here.
   initKeyboardShortcuts();
   initProjectionOverlay();
+  // The sidebar's "Add panels" button and the Ctrl/Cmd+F search palette.
+  initFeatureStore();
+  initFeatureSearch();
+  // "Reload CrysViz? All loaded structures will be lost" on Cmd/Ctrl+R / F5.
+  initLeaveGuard();
+  // "New: Search everything" card until "Don't show this again".
+  initReleaseNote();
 }

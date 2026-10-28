@@ -23,6 +23,8 @@
 //   positionPanel(panel, mode)       ≡ menu Position action; mode is one of
 //                                    'float' | 'left' | 'right' | 'default'
 //   onClose(panel)                   close button pressed (closable panels)
+//   storeMenuItem(panel) -> item|null  ≡ menu "Remove from sidebar" for
+//                                    feature-store windows (featureStore.js)
 //   onLayoutChange()                 any persistable state changed
 //   beginDockReorder(panel, event)   drag started on a docked panel's title bar
 //   wantsDockDrop(event) -> boolean  floating drag is over the dock and the
@@ -391,6 +393,9 @@ export class PanelWindow {
     if (this.def.closable) {
       sections.push({ items: [{ label: 'Close', onSelect: () => this.hooks.onClose(this) }] });
     }
+    // Feature-store windows: back to the store (PanelManager decides which).
+    const storeItem = this.hooks.storeMenuItem?.(this);
+    if (storeItem) sections.push({ items: [storeItem] });
     return sections;
   }
 
