@@ -772,25 +772,35 @@
    SpinForceEditor.js — createSpinForceEditor
    ================================================================ */
 .spin-mode-switch {
-  display: inline-flex;
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
   background: var(--chrome-2); /* was #2d2d2d — Wave 2.6 near-dup fold */
   border-radius: var(--radius-md);
   padding: var(--sp-1);
   gap: var(--sp-1);
   font-size: var(--fs-sm);
-  min-width: 98%;
   margin-bottom: var(--sp-3-5);
 }
+/* Two equal halves that always fit (a 40% minimum plus padding overflowed a
+   narrow editor). The per-atom editor builds them from <div>s and the
+   per-element one (SpinForceCategoryEditor.js) from <button>s: no browser
+   button frame or font, so both look the same. */
 .spin-mode-switch-btn {
-  padding: var(--sp-2) 14px;
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
   border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: 0.15s ease;
   user-select: none;
-  font-weight: var(--fw-medium);
-  min-width: 40%;
-  justify-content: center;
-  display: flex;
 }
 /* Active/inactive state — was setSwitchActive()'s four inline style writes. */
 .spin-mode-switch-btn.active {

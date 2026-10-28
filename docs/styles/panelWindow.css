@@ -44,6 +44,18 @@
   animation: cv-shortcut-flash 0.5s ease-out;
 }
 
+/* The search's colour-dot results (ui/search/structureEntries.js) flash small
+   round targets: a full-strength orange ring with a glow, held a moment
+   before it fades (KeyboardShortcuts.js DOT_FLASH: 1 s). */
+@keyframes cv-dot-flash {
+  0%, 40% { box-shadow: 0 0 0 3px rgb(var(--danger-rgb)), 0 0 8px 3px rgb(var(--danger-rgb)); }
+  100% { box-shadow: 0 0 0 3px rgb(var(--danger-rgb) / 0), 0 0 8px 3px rgb(var(--danger-rgb) / 0); }
+}
+
+.cv-dot-flash {
+  animation: cv-dot-flash 1s ease-out;
+}
+
 /* The .cv-panel container itself is chrome-less: collapsed, a panel is just
    its title bar; expanded, the body hangs below the bar as the window
    surface. */

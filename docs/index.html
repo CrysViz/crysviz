@@ -41,6 +41,7 @@
     <link rel="stylesheet" href="./styles/focusRegionsPanel.css">
     <link rel="stylesheet" href="./styles/warningBanners.css">
     <link rel="stylesheet" href="./styles/notagameatall.css">
+    <link rel="stylesheet" href="./styles/featureStore.css">
     <!-- Loaded after component styles so native WebKit select chrome cannot
          override the app's compact dark dropdown appearance. -->
     <link rel="stylesheet" href="./styles/formControls.css">
@@ -104,7 +105,7 @@
             <button type="button" id="uploadButton" class="file-action-btn">📁 Upload</button>
             <button type="button" id="pasteTextButton" class="file-action-btn">Paste Text</button>
             <div class="download-dropdown">
-              <button type="button" id="downloadButton" class="file-action-btn">Download ▾</button>
+              <button type="button" id="downloadButton" class="file-action-btn" aria-haspopup="true" aria-controls="downloadMenu">Download ▾</button>
               <div class="download-menu" id="downloadMenu" hidden>
                 <button type="button" id="saveButton">POSCAR</button>
                 <button type="button" id="saveCifButton">CIF (P1)</button>
@@ -145,6 +146,25 @@
        </div>
     </div>
     
+    <!-- Feature search (ui/FeatureSearch.js): opens the search palette, same
+         as Ctrl/Cmd+F. Styled as a search field so it reads as one. -->
+    <button type="button" id="featureSearchButton" class="feature-search-trigger" aria-haspopup="dialog">
+      <svg class="feature-search-trigger-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M15.5 15.5 21 21" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+      <span class="feature-search-trigger-text">Search panels and controls…</span>
+      <kbd class="feature-search-trigger-key" id="featureSearchButtonKey"></kbd>
+    </button>
+    <!-- Add panels / Reset to Essentials (ui/FeatureStoreModal.js): pick which
+         optional windows sit in the dock, or go back to the first-run set.
+         The badge counts removed features the selected structure has data
+         for. -->
+    <div class="feature-store-actions">
+      <button type="button" id="featureStoreButton" class="feature-store-btn" aria-haspopup="dialog">
+        <span class="feature-store-btn-label">＋ Add panels</span>
+        <span class="feature-store-btn-badge" id="featureStoreBadge" hidden></span>
+      </button>
+      <button type="button" id="resetEssentialsButton" class="feature-store-reset-btn" aria-haspopup="dialog"
+        title="Keep only the essential windows in the sidebar (asks first)">Reset to Essentials</button>
+    </div>
     <!-- Unified panel dock (ui/panels/PanelManager.js). Docked panel windows
          stack inside; feature panels stay hidden until a structure loads. -->
     <div id="dock"></div>

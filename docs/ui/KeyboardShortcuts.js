@@ -32,6 +32,11 @@ import { openAboutPanel } from './AboutPanel.js';
 // intercepted by the OS/browser before a page's JS ever sees them. Alt is
 // comparatively free of reserved letter combos on both platforms (Alt+Left/
 // Right for history navigation is the one exception, and isn't used here).
+// The single deliberate exception lives outside this file: Ctrl/Cmd+F opens
+// the feature search palette (ui/FeatureSearch.js). Find-in-page is one of
+// the few Ctrl/Cmd letters a page CAN take over, it finds next to nothing in
+// a canvas app, and a second press while the palette is open falls through to
+// the browser's own find.
 //
 // Shortcuts match on KeyboardEvent.code (the PHYSICAL key), not .key (the
 // glyph the layout prints on it) — so a shortcut lands on the same finger
@@ -112,20 +117,33 @@ function isModifierOnlyCode(code) {
 const FLASH_CLASS = 'cv-shortcut-flash';
 const FLASH_MS = 500;
 
+// The stronger, longer variant for small round targets: the search's
+// colour-dot results (search/structureEntries.js).
+export const DOT_FLASH = { className: 'cv-dot-flash', ms: 1000 };
+
 /** Same orange flash, generalized to any element — used on panels (via
  *  flashPanel below) and on plain buttons that don't otherwise show any
  *  reaction to being "clicked" by a shortcut (camera alignment, Add
- *  Structure/Atoms). */
-function flashElement(el) {
+ *  Structure/Atoms). `style` picks a variant such as DOT_FLASH.
+ *  @param {Element|null|undefined} el
+ *  @param {{ className: string, ms: number }} [style] */
+export function flashElement(el, style = { className: FLASH_CLASS, ms: FLASH_MS }) {
   if (!el) return;
-  el.classList.remove(FLASH_CLASS);
-  void el.offsetWidth; // restart the animation if pressed again quickly
-  el.classList.add(FLASH_CLASS);
-  setTimeout(() => el.classList.remove(FLASH_CLASS), FLASH_MS);
+  el.classList.remove(style.className);
+  void (/** @type {HTMLElement} */ (el)).offsetWidth; // restart the animation if pressed again quickly
+  el.classList.add(style.className);
+  setTimeout(() => el.classList.remove(style.className), style.ms);
 }
 
-function flashPanel(panel) {
-  if (panel) flashElement(panel.el);
+/** Flash the part of a window the eye sees. With its title bar shrunk to the
+ *  thin strip (View / Measure / Structure by default) the window element
+ *  still spans the strip's row, so a ring round it would sit in empty space
+ *  above the visible box: flash the body then. A toolbar folded to its round
+ *  compact icon flashes the icon. Shared with the search palette. */
+export function flashPanel(panel) {
+  if (!panel) return;
+  if (panel.compact && panel.collapsed && panel.compactBtn) flashElement(panel.compactBtn);
+  else flashElement(panel.barCollapsed && !panel.collapsed ? panel.body : panel.el);
 }
 
 // Structure ('info'), Measure ('measure') and View ('view') never have their
@@ -250,7 +268,10 @@ function clickButton(selector, panelId) {
 // order they're listed here — grouped by function, not alphabetized — so
 // this array's order IS the display order; keep related commands adjacent.
 // Customizing a binding can move it to any modifier combo, independent of
-// its original tier/group.
+// its original tier/group. Windows-tier commands also name their `panel`, and
+// commands that press one control name its element id as `control`, so the
+// search palette shows the shortcut on that window's / control's result
+// instead of listing the same thing twice.
 const TIER = {
   SHIFT: { shift: true, space: false, alt: false, label: 'Shift' },
   SPACE: { shift: false, space: true, alt: false, label: 'Space' },
@@ -264,13 +285,13 @@ function bind(tier, extra) {
 
 const COMMANDS = [
   // -- Shift: camera alignment, navigation, help ------------------------------
-  { id: 'view-x', label: 'View X axis', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewX'), default: bind(TIER.SHIFT, { code: 'KeyX' }) },
-  { id: 'view-y', label: 'View Y axis', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewY'), default: bind(TIER.SHIFT, { key: 'y' }) },
-  { id: 'view-z', label: 'View Z axis', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewZ'), default: bind(TIER.SHIFT, { key: 'z' }) },
-  { id: 'view-a', label: 'View lattice a', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewA'), default: bind(TIER.SHIFT, { code: 'KeyA' }) },
-  { id: 'view-b', label: 'View lattice b', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewB'), default: bind(TIER.SHIFT, { code: 'KeyB' }) },
-  { id: 'view-c', label: 'View lattice c', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewC'), default: bind(TIER.SHIFT, { code: 'KeyC' }) },
-  { id: 'reset-view', label: 'Reset camera view', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#resetView'), default: bind(TIER.SHIFT, { code: 'KeyR' }) },
+  { id: 'view-x', label: 'View X axis', tier: 'SHIFT', group: 'Camera', control: 'viewX', action: () => clickButton('#viewX'), default: bind(TIER.SHIFT, { code: 'KeyX' }) },
+  { id: 'view-y', label: 'View Y axis', tier: 'SHIFT', group: 'Camera', control: 'viewY', action: () => clickButton('#viewY'), default: bind(TIER.SHIFT, { key: 'y' }) },
+  { id: 'view-z', label: 'View Z axis', tier: 'SHIFT', group: 'Camera', control: 'viewZ', action: () => clickButton('#viewZ'), default: bind(TIER.SHIFT, { key: 'z' }) },
+  { id: 'view-a', label: 'View lattice a', tier: 'SHIFT', group: 'Camera', control: 'viewA', action: () => clickButton('#viewA'), default: bind(TIER.SHIFT, { code: 'KeyA' }) },
+  { id: 'view-b', label: 'View lattice b', tier: 'SHIFT', group: 'Camera', control: 'viewB', action: () => clickButton('#viewB'), default: bind(TIER.SHIFT, { code: 'KeyB' }) },
+  { id: 'view-c', label: 'View lattice c', tier: 'SHIFT', group: 'Camera', control: 'viewC', action: () => clickButton('#viewC'), default: bind(TIER.SHIFT, { code: 'KeyC' }) },
+  { id: 'reset-view', label: 'Reset camera view', tier: 'SHIFT', group: 'Camera', control: 'resetView', action: () => clickButton('#resetView'), default: bind(TIER.SHIFT, { code: 'KeyR' }) },
   { id: 'next-structure', label: 'Next structure', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStructure(1), default: bind(TIER.SHIFT, { code: 'ArrowUp' }) },
   { id: 'prev-structure', label: 'Previous structure', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStructure(-1), default: bind(TIER.SHIFT, { code: 'ArrowDown' }) },
   { id: 'next-step', label: 'Next step', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStep(1), default: bind(TIER.SHIFT, { code: 'ArrowRight' }) },
@@ -283,38 +304,38 @@ const COMMANDS = [
   { id: 'structure-atoms', label: 'Structure: Atoms', tier: 'SPACE', group: 'Structure', action: () => focusStructureTab('atoms'), default: bind(TIER.SPACE, { code: 'KeyA' }) },
   { id: 'structure-bonds', label: 'Structure: Bonds', tier: 'SPACE', group: 'Structure', action: () => focusStructureTab('bonds'), default: bind(TIER.SPACE, { code: 'KeyB' }) },
   { id: 'structure-poly', label: 'Structure: Polyhedra', tier: 'SPACE', group: 'Structure', action: () => focusStructureTab('polyhedra'), default: bind(TIER.SPACE, { code: 'KeyP' }) },
-  { id: 'distance-mode', label: 'Distance mode', tier: 'SPACE', group: 'Measuring', action: () => selectMeasureMode('distance', 'distanceModeBtn'), default: bind(TIER.SPACE, { code: 'KeyD' }) },
-  { id: 'angle-mode', label: 'Angle mode', tier: 'SPACE', group: 'Measuring', action: () => selectMeasureMode('angle', 'angleModeBtn'), default: bind(TIER.SPACE, { code: 'KeyG' }) },
+  { id: 'distance-mode', label: 'Distance mode', tier: 'SPACE', group: 'Measuring', control: 'distanceModeBtn', action: () => selectMeasureMode('distance', 'distanceModeBtn'), default: bind(TIER.SPACE, { code: 'KeyD' }) },
+  { id: 'angle-mode', label: 'Angle mode', tier: 'SPACE', group: 'Measuring', control: 'angleModeBtn', action: () => selectMeasureMode('angle', 'angleModeBtn'), default: bind(TIER.SPACE, { code: 'KeyG' }) },
 
   // -- Shift+Space: Feature toggles --------------------------------------------
-  { id: 'toggle-atoms', label: 'Show Atoms', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showAtoms'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyA' }) },
-  { id: 'toggle-bonds', label: 'Show Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showBonds'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyB' }) },
-  { id: 'toggle-neighbour', label: 'Neighbour Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('PBCBondToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyN' }) },
-  { id: 'toggle-forces', label: 'Show Forces', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showForcesToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyF' }) },
-  { id: 'toggle-spins', label: 'Show Spins', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showSpinsToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyS' }) },
-  { id: 'toggle-polyhedra', label: 'Show Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showPolyhedra'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyP' }) },
-  { id: 'toggle-complete-polyhedra', label: 'Complete Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('completePolyhedraToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyC' }) },
-  { id: 'toggle-field', label: 'Show Volumetric Field', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showFieldToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyD' }) },
-  { id: 'toggle-planes', label: 'Show Planes', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showPlanesMasterToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyL' }) },
-  { id: 'add-atoms-vacuum', label: 'Modify Structure', tier: 'SHIFT_SPACE', group: 'Other', action: () => clickButton('#addButton', 'modifyStructure'), default: bind(TIER.SHIFT_SPACE, { codes: ['Equal', 'BracketRight'] }) },
+  { id: 'toggle-atoms', label: 'Show Atoms', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showAtoms', action: () => toggleFeature('showAtoms'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyA' }) },
+  { id: 'toggle-bonds', label: 'Show Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showBonds', action: () => toggleFeature('showBonds'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyB' }) },
+  { id: 'toggle-neighbour', label: 'Neighbour Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'PBCBondToggle', action: () => toggleFeature('PBCBondToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyN' }) },
+  { id: 'toggle-forces', label: 'Show Forces', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showForcesToggle', action: () => toggleFeature('showForcesToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyF' }) },
+  { id: 'toggle-spins', label: 'Show Spins', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showSpinsToggle', action: () => toggleFeature('showSpinsToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyS' }) },
+  { id: 'toggle-polyhedra', label: 'Show Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showPolyhedra', action: () => toggleFeature('showPolyhedra'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyP' }) },
+  { id: 'toggle-complete-polyhedra', label: 'Complete Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'completePolyhedraToggle', action: () => toggleFeature('completePolyhedraToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyC' }) },
+  { id: 'toggle-field', label: 'Show Volumetric Field', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showFieldToggle', action: () => toggleFeature('showFieldToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyD' }) },
+  { id: 'toggle-planes', label: 'Show Planes', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showPlanesMasterToggle', action: () => toggleFeature('showPlanesMasterToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyL' }) },
+  { id: 'add-atoms-vacuum', label: 'Modify Structure', tier: 'SHIFT_SPACE', group: 'Other', control: 'addButton', action: () => clickButton('#addButton', 'modifyStructure'), default: bind(TIER.SHIFT_SPACE, { codes: ['Equal', 'BracketRight'] }) },
 
   // -- Shift+Alt: Windows -------------------------------------------------------
-  { id: 'panel-files', label: 'Files', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('files'), default: bind(TIER.SHIFT_ALT, { code: 'KeyF' }) },
-  { id: 'panel-features', label: 'Features', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('features'), default: bind(TIER.SHIFT_ALT, { code: 'KeyU' }) },
-  { id: 'panel-atomistic', label: 'Atomistic', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('backend'), default: bind(TIER.SHIFT_ALT, { code: 'KeyA' }) },
-  { id: 'panel-trajectory', label: 'Trajectory', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('trajectory'), default: bind(TIER.SHIFT_ALT, { code: 'KeyT' }) },
-  { id: 'panel-comparison', label: 'Comparison', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('comparison'), default: bind(TIER.SHIFT_ALT, { code: 'KeyC' }) },
-  { id: 'panel-forces', label: 'Forces', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('forces'), default: bind(TIER.SHIFT_ALT, { code: 'KeyR' }) },
-  { id: 'panel-spins', label: 'Spins', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('spins'), default: bind(TIER.SHIFT_ALT, { code: 'KeyN' }) },
-  { id: 'panel-field', label: 'Volumetric Field', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('field'), default: bind(TIER.SHIFT_ALT, { code: 'KeyD' }) },
-  { id: 'panel-planes', label: 'Crystal Planes', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('planes'), default: bind(TIER.SHIFT_ALT, { code: 'KeyL' }) },
-  { id: 'panel-cell', label: 'Cell & Supercell', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('cell'), default: bind(TIER.SHIFT_ALT, { code: 'KeyX' }) },
-  { id: 'panel-symmetry', label: 'Symmetry', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('symmetry'), default: bind(TIER.SHIFT_ALT, { code: 'KeyK' }) },
-  { id: 'panel-visual', label: 'Visual', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('visual'), default: bind(TIER.SHIFT_ALT, { code: 'KeyI' }) },
-  { id: 'panel-eos', label: 'EOS Fitting', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('eos'), default: bind(TIER.SHIFT_ALT, { code: 'KeyE' }) },
-  { id: 'panel-landscape', label: 'Energy Landscape', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('landscape'), default: bind(TIER.SHIFT_ALT, { code: 'KeyQ' }) },
-  { id: 'panel-custom-settings', label: 'Custom User Settings', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('customSettings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyJ' }) },
-  { id: 'panel-settings', label: 'Settings', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('settings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyG' }) },
+  { id: 'panel-files', label: 'Files', tier: 'SHIFT_ALT', group: 'Windows', panel: 'files', action: () => focusPanel('files'), default: bind(TIER.SHIFT_ALT, { code: 'KeyF' }) },
+  { id: 'panel-features', label: 'Features', tier: 'SHIFT_ALT', group: 'Windows', panel: 'features', action: () => focusPanel('features'), default: bind(TIER.SHIFT_ALT, { code: 'KeyU' }) },
+  { id: 'panel-atomistic', label: 'Atomistic', tier: 'SHIFT_ALT', group: 'Windows', panel: 'backend', action: () => focusPanel('backend'), default: bind(TIER.SHIFT_ALT, { code: 'KeyA' }) },
+  { id: 'panel-trajectory', label: 'Trajectory', tier: 'SHIFT_ALT', group: 'Windows', panel: 'trajectory', action: () => focusPanel('trajectory'), default: bind(TIER.SHIFT_ALT, { code: 'KeyT' }) },
+  { id: 'panel-comparison', label: 'Comparison', tier: 'SHIFT_ALT', group: 'Windows', panel: 'comparison', action: () => focusPanel('comparison'), default: bind(TIER.SHIFT_ALT, { code: 'KeyC' }) },
+  { id: 'panel-forces', label: 'Forces', tier: 'SHIFT_ALT', group: 'Windows', panel: 'forces', action: () => focusPanel('forces'), default: bind(TIER.SHIFT_ALT, { code: 'KeyR' }) },
+  { id: 'panel-spins', label: 'Spins', tier: 'SHIFT_ALT', group: 'Windows', panel: 'spins', action: () => focusPanel('spins'), default: bind(TIER.SHIFT_ALT, { code: 'KeyN' }) },
+  { id: 'panel-field', label: 'Volumetric Field', tier: 'SHIFT_ALT', group: 'Windows', panel: 'field', action: () => focusPanel('field'), default: bind(TIER.SHIFT_ALT, { code: 'KeyD' }) },
+  { id: 'panel-planes', label: 'Crystal Planes', tier: 'SHIFT_ALT', group: 'Windows', panel: 'planes', action: () => focusPanel('planes'), default: bind(TIER.SHIFT_ALT, { code: 'KeyL' }) },
+  { id: 'panel-cell', label: 'Cell & Supercell', tier: 'SHIFT_ALT', group: 'Windows', panel: 'cell', action: () => focusPanel('cell'), default: bind(TIER.SHIFT_ALT, { code: 'KeyX' }) },
+  { id: 'panel-symmetry', label: 'Symmetry', tier: 'SHIFT_ALT', group: 'Windows', panel: 'symmetry', action: () => focusPanel('symmetry'), default: bind(TIER.SHIFT_ALT, { code: 'KeyK' }) },
+  { id: 'panel-visual', label: 'Visual', tier: 'SHIFT_ALT', group: 'Windows', panel: 'visual', action: () => focusPanel('visual'), default: bind(TIER.SHIFT_ALT, { code: 'KeyI' }) },
+  { id: 'panel-eos', label: 'EOS Fitting', tier: 'SHIFT_ALT', group: 'Windows', panel: 'eos', action: () => focusPanel('eos'), default: bind(TIER.SHIFT_ALT, { code: 'KeyE' }) },
+  { id: 'panel-landscape', label: 'Energy Landscape', tier: 'SHIFT_ALT', group: 'Windows', panel: 'landscape', action: () => focusPanel('landscape'), default: bind(TIER.SHIFT_ALT, { code: 'KeyQ' }) },
+  { id: 'panel-custom-settings', label: 'Custom User Settings', tier: 'SHIFT_ALT', group: 'Windows', panel: 'customSettings', action: () => focusPanel('customSettings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyJ' }) },
+  { id: 'panel-settings', label: 'Settings', tier: 'SHIFT_ALT', group: 'Windows', panel: 'settings', action: () => focusPanel('settings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyG' }) },
 ];
 
 // ---- user overrides (editable bindings) ------------------------------------
@@ -671,6 +692,24 @@ export function confirmResetAllShortcuts() {
  *  cleared shortcut. Embedded under the combined Custom User Settings JSON's
  *  own "shortcuts" key (see CustomUserSettingsPanel.js) rather than saved as
  *  a separate file. */
+/** Every command, for the search palette (ui/FeatureSearch.js): its label,
+ *  help-table group, the binding in effect as display text ('' when the user
+ *  cleared it), and the action itself. */
+export function listShortcutCommands() {
+  return COMMANDS.map((cmd) => {
+    const binding = activeBinding(cmd);
+    return {
+      id: cmd.id,
+      label: cmd.label,
+      group: cmd.group,
+      shortcut: binding ? bindingTokens(binding).join(IS_MAC ? '' : '+') : '',
+      panel: cmd.panel || null, // the window a Windows-tier command opens
+      control: cmd.control || null, // the element id a command presses
+      run: cmd.action,
+    };
+  });
+}
+
 export function getShortcutOverrides() {
   return { ...overrides };
 }

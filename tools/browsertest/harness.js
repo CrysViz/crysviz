@@ -37,7 +37,7 @@ function check(name, ok, detail = '') {
 
 /** Launch the app. Returns { browser, page, errors } — errors collects
  *  pageerror + console.error text for the "no errors" assertion. */
-async function launchApp({ navigate = true } = {}) {
+async function launchApp({ navigate = true, firstRunFeatures = false } = {}) {
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   // headless FF has no WebGL. Stale modules are handled at the server
   // (tools/devserver.py sends Cache-Control: no-store), not with browser prefs
@@ -58,9 +58,30 @@ async function launchApp({ navigate = true } = {}) {
     try {
       const prefs = JSON.parse(localStorage.getItem('panelPrefs') || '{}');
       prefs.hideRaytraceWarning = true;
+      // The reload guard (ui/LeaveGuard.js) would stop every test's
+      // page.reload() once a structure is loaded; leaveguard.test.js clears it.
+      if (!('hideLeaveWarning' in prefs)) prefs.hideLeaveWarning = true;
+      // The release-note card (ui/ReleaseNote.js) would sit over screenshots:
+      // '9999' is later than any note's date id. releasenote.test.js clears it.
+      if (!('releaseNoteSeen' in prefs)) prefs.releaseNoteSeen = '9999';
       localStorage.setItem('panelPrefs', JSON.stringify(prefs));
     } catch { /* storage unavailable */ }
   });
+  // Feature store (docs/ui/panels/featureStore.js): a fresh profile would
+  // start with only the essential windows in the sidebar. The suite was
+  // written against the full sidebar, so every store window starts in it —
+  // the same default a pre-store browser gets. Seeded only when absent, so a
+  // test's own choices survive its reloads. Store tests opt out with
+  // launchApp({ firstRunFeatures: true }) to see the real first-run sidebar.
+  if (!firstRunFeatures) {
+    await page.addInitScript(() => {
+      try {
+        if (!localStorage.getItem('featureStore')) {
+          localStorage.setItem('featureStore', JSON.stringify({ version: 1, allByDefault: true, enabled: {} }));
+        }
+      } catch { /* storage unavailable */ }
+    });
+  }
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.stack || e.message}`.slice(0, 1200)));
   page.on('console', (m) => {

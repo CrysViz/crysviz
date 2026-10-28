@@ -18,6 +18,7 @@ import {
   applySideDockLayout, resetSideDockLayout, wantsSideDockDrop,
   sideDockDropSideAt, updateSideDockHint,
 } from './SideDock.js';
+import { isStoreFeature, isStoreFeatureEnabled, setStoreFeatureEnabled } from './featureStore.js';
 
 const LS_KEY = 'panelLayout';
 // Historical persisted field name: panelLayout.rightDock predates the Side dock rename.
@@ -93,6 +94,8 @@ const panelPrefDefaults = {
   smallDragHandles: false, // collapsed-bar handles: original thin always-visible strip
   exportGpuMemoryGiB: 1, // PNG export render-surface GPU memory budget (GiB)
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
+  hideLeaveWarning: false, // Settings ▸ "Disable reload warning" (ui/LeaveGuard.js)
+  releaseNoteSeen: '', // id of the newest release note dismissed for good (ui/ReleaseNote.js)
   legendTransparent: false, // Composition Display: no window chrome, swatches+text only
   // The on-canvas background picker: a 54px drag-and-resize affordance that
   // competes with the scene's own gestures and takes the corner a phone
@@ -154,6 +157,18 @@ const activeDockGestures = new Map();
 // can be removed and re-registered during the same compact/large cycle.
 const removedPanelLayouts = new Map();
 let dockEl = null;
+// Hidden holder for feature-store windows removed from the sidebar
+// (featureStore.js, see shelvePanel). Unlike closePanel, which detaches the
+// element, a store window stays IN the document here: its builders and the
+// many modules that reach their controls by getElementById keep working
+// whether or not the user has the window in the sidebar.
+let shelfEl = null;
+// Store windows that registered docked without a remembered slot; placed at
+// their default order once every window is registered (see registerPanel).
+const pendingDefaultSlot = new Set();
+// Windows that have held a main-dock slot this session. A store window
+// re-added without one takes its default place (dockStorePanel), not the end.
+const hadDockSlot = new WeakSet();
 let stored = { dockOrder: [], panels: {}, rightDock: defaultSideDockLayout() };
 let revealed = false; // set once a structure is loaded (feature panels unhide)
 let saveTimer = 0;
@@ -230,6 +245,11 @@ const hooks = {
     else removePanel(panel.id);
   },
   onLayoutChange: scheduleSave,
+  // The ≡ menu's "Remove from sidebar" for feature-store windows.
+  storeMenuItem(panel) {
+    if (!isStoreFeature(panel.def)) return null;
+    return { label: 'Remove from sidebar', onSelect: () => removeStoreFeature(panel.id) };
+  },
   // A compact panel's icon<->toolbar height change moves anything stacked
   // below it; re-derive the stack the same frame.
   onCompactResize(panel) {
@@ -323,6 +343,7 @@ function dockPanelAtDefaultOrder(panel) {
   }
   dockEl.insertBefore(panel.el, before);
   panel.markDocked();
+  hadDockSlot.add(panel);
   resequenceSortKeys();
   scheduleSave();
 }
@@ -348,8 +369,14 @@ export function resetAllPanels() {
   for (const panel of all) applyPanelDefaults(panel, { resetCollapsed: true });
   // Windows whose default state is closed (EOS, Energy Landscape, ...) end
   // detached again — after placement, so their remembered dock is the default.
+  // Store windows keep the user's feature selection: Reset UI restores where
+  // windows sit, not which features are in the sidebar.
   for (const panel of all) {
-    if (panel.def.defaults?.closed) closePanel(panel.id);
+    if (isStoreFeature(panel.def)) {
+      if (!isStoreFeatureEnabled(panel.def)) shelvePanel(panel);
+    } else if (panel.def.defaults?.closed) {
+      closePanel(panel.id);
+    }
   }
   refreshCompactFloatingPanels();
   for (const fn of panelsResetHooks) {
@@ -360,6 +387,10 @@ export function resetAllPanels() {
 
 export function initPanelSystem() {
   dockEl = document.getElementById('dock');
+  shelfEl = document.createElement('div');
+  shelfEl.id = 'cvPanelShelf';
+  shelfEl.hidden = true;
+  document.body.appendChild(shelfEl);
   loadStoredLayout();
   loadPanelPrefs();
   compactViewport = isPhoneScreen();
@@ -424,6 +455,10 @@ export function initPanelSystem() {
  * are docked without the autoDocked marker. */
 export function finishPanelRegistration() {
   panelSystemReady = true;
+  for (const panel of pendingDefaultSlot) {
+    if (panel.dock === 'left' && panel.el.parentElement === dockEl) dockPanelAtDefaultOrder(panel);
+  }
+  pendingDefaultSlot.clear();
   reconcileCompactViewport();
 }
 
@@ -561,7 +596,12 @@ export function registerPanel(def) {
   removedPanelLayouts.delete(def.id);
   const defaults = def.defaults || {};
   const dock = persisted ? normalizeDock(persisted.dock, defaultDockOf(def)) : defaultDockOf(def);
-  const closed = persisted ? !!persisted.closed : !!defaults.closed;
+  // A feature-store window's presence is the store's call (featureStore.js),
+  // not the layout's: removed from the sidebar, it registers on the shelf.
+  const shelved = isStoreFeature(def) && !isStoreFeatureEnabled(def);
+  const closed = isStoreFeature(def)
+    ? shelved
+    : (persisted ? !!persisted.closed : !!defaults.closed);
   // Side-docked windows are always expanded while docked (the tab is the
   // only per-window chrome there); otherwise remembered/default state.
   const collapsed = dock === 'right'
@@ -592,8 +632,11 @@ export function registerPanel(def) {
   if (closed) {
     // Registered but detached (closeMode:'hide' windows, e.g. EOS): `dock`
     // remembers where openPanel should attach it; content build is deferred.
+    // A store window removed from the sidebar waits on the shelf instead,
+    // still in the document, and builds like an open one (see shelfEl).
     panel.closed = true;
     panel.dock = dock;
+    if (shelved) shelfEl.appendChild(panel.el);
   } else if (compactViewport && compactHomeOf(panel)) {
     // Ahead of the dock branches: the compact home also owns which edge the
     // dock hugs, which a plain 'right' restore would not re-apply.
@@ -611,8 +654,12 @@ export function registerPanel(def) {
   } else if (dock === 'left') {
     // A panel remembered as docked but with no remembered slot (e.g. an MD
     // monitor docked in a past run) goes to the top, like the dock button.
-    const atTop = !!persisted && !stored.dockOrder.includes(def.id);
-    dockPanel(panel, atTop);
+    // One remembered as closed never had a slot to lose — a store window
+    // added back to the sidebar before the next layout save — and takes its
+    // default place once every window has registered (finishPanelRegistration).
+    const slotless = !!persisted && !stored.dockOrder.includes(def.id);
+    dockPanel(panel, slotless && !persisted.closed);
+    if (slotless && persisted.closed && isStoreFeature(def)) pendingDefaultSlot.add(panel);
   } else if (compactViewport && !isMobileExempt(panel)) {
     // A newly registered floating-definition panel must never pass through a
     // real floating state on compact screens. Set the logical state first,
@@ -634,7 +681,7 @@ export function registerPanel(def) {
   // Build persistent content only after the panel is attached: builders
   // resolve their target container by id (document.getElementById), which
   // fails on a detached panel body.
-  if (def.lifecycle !== 'rebuild' && !closed && !waitsForStructure) buildContent(panel);
+  if (def.lifecycle !== 'rebuild' && (!closed || shelved) && !waitsForStructure) buildContent(panel);
 
   if (!closed && !collapsed && panel.collapsed) {
     if (waitsForStructure) panel.wantExpanded = true;
@@ -676,6 +723,19 @@ function applyPanelAvailability(panel) {
   return avail;
 }
 
+// Called after every availability re-sync (structure switch, data load) —
+// the feature store's button re-derives its "suggested for this structure"
+// count from it without the manager knowing about the button.
+const availabilityHooks = [];
+export function onPanelAvailabilityRefreshed(fn) {
+  if (typeof fn === 'function') availabilityHooks.push(fn);
+}
+function notifyAvailabilityRefreshed() {
+  for (const fn of availabilityHooks) {
+    try { fn(); } catch (e) { console.warn('panel availability hook failed', e); }
+  }
+}
+
 /**
  * Re-sync panels to a newly selected structure: rebuild the content of built
  * 'rebuild' panels (expanded ones immediately, collapsed ones lazily) and
@@ -697,6 +757,7 @@ export function refreshActivePanels() {
       }
     }
   }
+  notifyAvailabilityRefreshed();
 }
 
 /**
@@ -718,6 +779,14 @@ export function revealFeaturePanels() {
   refreshSideDock();
   refreshCompactFloatingPanels();
   for (const panel of panels.values()) {
+    // Persistent content is built once the window is in the dock
+    // (registerPanel); one that waited for this first structure is built now,
+    // folded or not — other code reads its controls (Visual's camera speed,
+    // render pipeline). A closed one (Visual removed from the sidebar) keeps
+    // deferring to its first open, as before.
+    if (panel.def.hiddenUntilStructure && panel.def.lifecycle !== 'rebuild' && !panel.built && !panel.closed) {
+      buildContent(panel);
+    }
     if (panel.wantExpanded && !panel.closed) {
       panel.wantExpanded = false;
       panel.expand();
@@ -730,11 +799,17 @@ export function revealFeaturePanels() {
  * Open a registered window: re-attach it if it was closed (closeMode:'hide'),
  * then bring it into view — a side-docked window becomes the front tab (and
  * the side dock un-collapses); others expand in place. The Features window's
- * EOS / Energy Landscape rows drive this.
+ * EOS / Energy Landscape rows drive this. `expand: false` only re-attaches
+ * (the feature store adding several windows at once); a side-docked window
+ * is always expanded regardless.
  */
-export function openPanel(id) {
+export function openPanel(id, { expand = true } = {}) {
   const panel = panels.get(id);
   if (!panel) return;
+  // Opening a store window puts it (back) in the sidebar, whoever asks: the
+  // store, the search palette, a shortcut, or the app surfacing it for data
+  // that just loaded (a field, phonopy output, a live MD run).
+  if (isStoreFeature(panel.def)) setStoreFeatureEnabled(panel.def, true);
   const wasClosed = panel.closed;
   panel.closed = false;
   // A manual open clears the auto-close flag so a later user-initiated close
@@ -744,16 +819,21 @@ export function openPanel(id) {
   if (panel.dock === 'right') {
     sideDockPanel(panel, { front: true, expand: false });
     setSideDockCollapsed(false);
-  } else if (!panel.el.isConnected) {
-    if (panel.dock === 'left') dockPanel(panel);
+  } else if (!isAttached(panel)) {
+    if (panel.dock === 'left') {
+      if (isStoreFeature(panel.def)) dockStorePanel(panel);
+      else dockPanel(panel);
+    }
     else if (compactViewport && compactHomeOf(panel)) sideHomePanel(panel);
     else if (compactViewport && !isMobileExempt(panel)) {
       if (!panel.autoDocked) panel.floatPos = null;
       positionPanelForDock(panel);
     } else floatPanel(panel, panel.floatPos);
   }
-  panel.expandBar();
-  panel.expand(); // builds deferred content via beforeExpand
+  if (expand || panel.dock === 'right') {
+    panel.expandBar();
+    panel.expand(); // builds deferred content via beforeExpand
+  }
   if (wasClosed && panel.def.onOpened) panel.def.onOpened(panel);
   refreshCompactFloatingPanels();
   scheduleSave();
@@ -774,6 +854,98 @@ export function closePanel(id) {
   if (panel.def.onClosed) panel.def.onClosed(panel);
   refreshCompactFloatingPanels();
   scheduleSave();
+}
+
+/** Is the window on screen somewhere (main dock, side dock, floating) — not
+ *  detached and not waiting on the store shelf? */
+function isAttached(panel) {
+  return panel.el.isConnected && panel.el.parentElement !== shelfEl;
+}
+
+/** Close a store window onto the shelf (out of the sidebar, still in the
+ *  document). An already-closed one — e.g. closed out of the side dock while
+ *  its feature was unavailable — is moved there too. */
+function shelvePanel(panel) {
+  closePanel(panel.id);
+  if (!panel.el.isConnected) shelfEl.appendChild(panel.el);
+}
+
+// ---- feature store ----------------------------------------------------------
+//
+// The store's choices live in featureStore.js; these are the window-side
+// actions. Adding is openPanel (which records the choice); removing records
+// it and closes the window onto the shelf.
+
+/** Put a store window in the sidebar; `expand: false` adds it folded. */
+export function addStoreFeature(id, { expand = true } = {}) {
+  openPanel(id, { expand });
+}
+
+/** Take a store window out of the sidebar (back to the store). */
+export function removeStoreFeature(id) {
+  const panel = panels.get(id);
+  if (!panel || !isStoreFeature(panel.def)) return;
+  setStoreFeatureEnabled(panel.def, false);
+  // An availability close (side dock, feature gone) would otherwise reopen
+  // the window the moment its feature returns.
+  panel._closedForUnavailable = false;
+  // Shelved collapsed, so a structure switch only marks its content stale
+  // (refreshActivePanels) and re-adding it rebuilds through expand().
+  if (panel.dock !== 'right') panel.collapse();
+  shelvePanel(panel);
+}
+
+/** Is this window in the sidebar? True for every window the store doesn't
+ *  manage; false for unknown ids. */
+export function isPanelInSidebar(id) {
+  const panel = panels.get(id);
+  if (!panel) return false;
+  return !isStoreFeature(panel.def) || isStoreFeatureEnabled(panel.def);
+}
+
+/** Every registered window, in registration order, for the search palette:
+ *  its plain-text title, search keywords, and store/sidebar/availability
+ *  state. Untitled windows are left out. */
+export function listPanels() {
+  const out = [];
+  for (const p of panels.values()) {
+    const title = String(p.def.title || '').replace(/<[^>]*>/g, '').trim();
+    if (!title) continue;
+    out.push({
+      id: p.id,
+      title,
+      keywords: Array.isArray(p.def.keywords) ? p.def.keywords : [],
+      store: isStoreFeature(p.def) ? (p.def.store.category || 'Other') : null,
+      inSidebar: !isStoreFeature(p.def) || isStoreFeatureEnabled(p.def),
+      available: p.available,
+      closed: p.closed,
+    });
+  }
+  return out;
+}
+
+/** The store's windows in their default dock order, for the store popup and
+ *  the search palette. `available` is the window's live availability (data
+ *  present, master toggle on); `suggested` is the store's own data hint. */
+export function listStoreFeatures() {
+  return [...panels.values()]
+    .filter((p) => isStoreFeature(p.def))
+    .sort((a, b) => ((a.def.defaults?.order) || 0) - ((b.def.defaults?.order) || 0))
+    .map((p) => {
+      let suggested = false;
+      try { suggested = !!p.def.store.suggest?.(); } catch { /* no data yet */ }
+      return {
+        id: p.id,
+        title: p.def.title || p.id,
+        infoMd: p.def.infoMd || null,
+        category: p.def.store.category || 'Other',
+        blurb: p.def.store.blurb || '',
+        essential: !!p.def.store.essential,
+        inSidebar: isStoreFeatureEnabled(p.def),
+        available: p.available,
+        suggested,
+      };
+    });
 }
 
 /**
@@ -823,6 +995,7 @@ export function refreshPanelAvailability() {
   for (const panel of panels.values()) {
     if (panel.def.available) applyPanelAvailability(panel);
   }
+  notifyAvailabilityRefreshed();
 }
 
 /**
@@ -833,7 +1006,7 @@ export function refreshPanelAvailability() {
  */
 export function revealPanel(id) {
   const panel = panels.get(id);
-  if (!panel || !panel.available || panel.el.hidden) return;
+  if (!panel || panel.closed || !panel.available || panel.el.hidden) return;
   panel.expandBar();
   panel.expand();
 }
@@ -958,7 +1131,17 @@ function dockPanel(panel, atTop = false) {
   }
   dockEl.insertBefore(panel.el, before);
   panel.markDocked();
+  hadDockSlot.add(panel);
   scheduleSave();
+}
+
+/** Main-dock placement for a store window joining the sidebar: back to the
+ *  slot it held earlier this session, else its default place among the
+ *  docked windows — a sort key from a remembered layout would otherwise put
+ *  it below every remembered window, Settings included. */
+function dockStorePanel(panel) {
+  if (hadDockSlot.has(panel) || stored.dockOrder.includes(panel.id)) dockPanel(panel);
+  else dockPanelAtDefaultOrder(panel);
 }
 
 /** The docked-sibling element this panel should be inserted before to honor
@@ -991,6 +1174,7 @@ function redockPanel(panel) {
   }
   dockEl.insertBefore(panel.el, before);
   panel.markDocked();
+  hadDockSlot.add(panel);
   resequenceSortKeys();
   scheduleSave();
 }
@@ -1022,6 +1206,7 @@ function dockAtPointer(panel, ev) {
   }
   dockEl.insertBefore(panel.el, before);
   panel.markDocked();
+  hadDockSlot.add(panel);
   resequenceSortKeys();
   beginDockReorder(panel, ev); // re-captures the pointer, gesture continues
 }
@@ -1196,7 +1381,7 @@ function updateFloatPlacements() {
   if (occupies) measureUiWidth();
   dockOccupies = occupies;
   for (const panel of panels.values()) {
-    if (panel.docked || panel.el.hidden || !panel.el.isConnected) continue;
+    if (panel.docked || panel.closed || panel.el.hidden || !panel.el.isConnected) continue;
     if (occupancyChanged) {
       panel.dockShifted = occupies && typeof panel.floatPos.left === 'number'
         && panel.floatPos.left < lastUiWidth + DOCK_GAP;
