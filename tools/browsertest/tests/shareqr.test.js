@@ -30,8 +30,10 @@ const H = require('../harness');
   H.check('Share no longer falls back to prompt()', opened.promptCalls === 0,
     JSON.stringify(opened.promptCalls));
   H.check('share dialog is open', opened.visible === true, JSON.stringify(opened.visible));
-  H.check('share URL carries the deflated state (?z=)',
-    /^https?:\/\/.+[?&]z=.+/.test(opened.url), opened.url.slice(0, 80));
+  H.check('share URL carries the envelope in the fragment (#z=)',
+    /^https?:\/\/[^#?]+#z=[A-Za-z0-9_-]+$/.test(opened.url), opened.url.slice(0, 80));
+  H.check('share URL drops index.html from the path',
+    !/index\.html/.test(opened.url), opened.url.slice(0, 80));
 
   // The QR half settles asynchronously: either a drawn symbol or a note saying
   // why there isn't one. "Generating…" still showing means it never resolved.
@@ -95,8 +97,19 @@ const H = require('../harness');
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
 
-  // The compressed link has to load back — deflating the state is only safe if
-  // ?z= round-trips, and this is the assertion that catches a broken encoder.
+  // The QR encodes the #q= base32 form of the same envelope: rebuild that URL
+  // the way the dialog does and check it loads too (after the #z= check).
+  const qURL = await page.evaluate(async (url) => {
+    const env = await import('./io/share/shareEnvelope.js');
+    const [base, z] = url.split('#z=');
+    return `${base}#q=${env.bytesToBase32(env.b64URLToBytes(z))}`;
+  }, opened.url);
+  H.check('the #q= form is uppercase base32 (QR alphanumeric mode)',
+    /#q=[A-Z2-7]+$/.test(qURL), qURL.slice(0, 80));
+
+  // The compressed link has to load back — this is the assertion that catches a
+  // broken encoder. Via about:blank: a fragment-only change would not reload.
+  await page.goto('about:blank');
   await page.goto(opened.url, { waitUntil: 'load' });
   await H.waitFor(page, async () => {
     const { getActiveStructure } = await import('./state/structures.js');
@@ -108,8 +121,23 @@ const H = require('../harness');
     const s = getActiveStructure();
     return { loaded: general.sharedStructureLoaded === true, atoms: s?.atoms?.length ?? 0 };
   });
-  H.check('a ?z= link restores the shared structure',
+  H.check('a #z= link restores the shared structure',
     restored.loaded === true && restored.atoms > 0, JSON.stringify(restored));
+  H.check('the payload is stripped from the address bar after loading',
+    await page.evaluate(() => !/#z=/.test(location.href)), '');
+
+  await page.goto('about:blank');
+  await page.goto(qURL, { waitUntil: 'load' });
+  await H.waitFor(page, async () => {
+    const { general } = await import('./state/store.js');
+    return general.sharedStructureLoaded === true;
+  }, { timeout: 40000, interval: 1000 });
+  const restoredQ = await page.evaluate(async () => {
+    const { getActiveStructure } = await import('./state/structures.js');
+    return getActiveStructure()?.atoms?.length ?? 0;
+  });
+  H.check('the #q= (QR) link restores the same structure',
+    restoredQ === restored.atoms, `${restoredQ} vs ${restored.atoms}`);
 
   await H.finish(browser);
 })().catch(H.crash);

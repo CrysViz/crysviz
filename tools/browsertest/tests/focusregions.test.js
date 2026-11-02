@@ -138,7 +138,6 @@ const H = require('../harness');
       originalCenterFrac,
       adjustedCenterFrac,
       actualCenterFrac: [...first.centerFractional],
-      centerOffsetFrac: [...first.centerOffsetFrac],
       authoredOpacity: atom0.getOpacity(),
       centerDisplayOpacity: attr.getX(0),
       farDisplayOpacity: farIndex >= 0 ? attr.getX(farIndex) : null,
@@ -162,8 +161,7 @@ const H = require('../harness');
       && !result.labels.includes('Beyond opacity'), JSON.stringify(result.labels));
   H.check('the active inner region exposes editable fractional center coordinates',
     result.centerInputs === 3
-      && result.actualCenterFrac.every((value, axis) => Math.abs(value - result.adjustedCenterFrac[axis]) < 1e-9)
-      && result.centerOffsetFrac.every((value, axis) => Math.abs(value - (axis + 1) * 0.01) < 1e-9),
+      && result.actualCenterFrac.every((value, axis) => Math.abs(value - result.adjustedCenterFrac[axis]) < 1e-9),
     JSON.stringify(result));
   // The shifted center leaves atom 0 outside the 0.1 Å inner sphere, so the
   // outer opacity (0.1) composes with its authored alpha (0.6) -> 0.06.
@@ -175,6 +173,34 @@ const H = require('../harness');
   H.check('force and spin arrows follow their atom focus opacity',
     result.forceArrowOpacity <= 0.1001 && result.spinArrowOpacity <= 0.1001,
     JSON.stringify(result));
+
+  // The center is computed from the selected atoms once, then decoupled from
+  // them: moving the source atom and rebuilding the atoms leaves it where it
+  // is, and Reset goes back to the centroid the region was created with.
+  const decoupled = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { updateVisualization } = await import('./core/crystal-viewer.js');
+    const focus = await import('./render/FocusRegionModule.js');
+    const structure = fileBrowser.selectedStructure;
+    const region = structure.focusRegions[0];
+    const atom = structure.atoms[region.centerSourceIndices[0]];
+    const saved = [...atom.position];
+    const before = [...region.centerFractional];
+    atom.position = [saved[0] + 0.05, saved[1], saved[2]];
+    await updateVisualization({ reRenderAtoms: true });
+    focus.applyFocusRegions();
+    const afterMove = [...region.centerFractional];
+    atom.position = saved;
+    await updateVisualization({ reRenderAtoms: true });
+    focus.resetFocusRegionCenter(region);
+    return { before, afterMove, afterReset: [...region.centerFractional], initial: region.initialCenterFractional };
+  });
+  H.check('moving the atoms a region was created from does not move its center',
+    decoupled.afterMove.every((value, axis) => Math.abs(value - decoupled.before[axis]) < 1e-9),
+    JSON.stringify(decoupled));
+  H.check('Reset returns the center to the centroid it was created with',
+    decoupled.afterReset.every((value, axis) => Math.abs(value - result.originalCenterFrac[axis]) < 1e-9),
+    JSON.stringify(decoupled));
 
   // Each card with an inner region carries the gradient toggle (on by default)
   // and every card the polyhedra rule. Widen the first inner sphere over the

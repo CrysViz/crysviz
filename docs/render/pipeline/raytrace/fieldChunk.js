@@ -41,7 +41,11 @@ uniform ivec3 uFieldDims;
 // original sub-cell, it is not duplicated), and the gaps repeat with the cell.
 uniform vec3 uFieldBoundsMin;
 uniform vec3 uFieldBoundsMax;
-uniform bool uFieldWrap;
+// 0: use the cell point as is. 1: fold it into the unit cell (periodic field).
+// 2: BLOCK field (finite data, may cross a cell face) — test the integer cell
+// images of the block against the point (see sampleBlockCell). At the plain
+// unit bounds a block uses 0 and uFieldBoundsMin/Max is the block's own extent.
+uniform int uFieldWrap;
 uniform mat4 uFieldWorldToCell; // world -> structure-cell fractions
 uniform mat4 uFieldCellToFrac;  // structure-cell fractions -> grid fractions [0,1]^3
 uniform float uFieldSpanCells;  // widest boundary span in grid-cell units (step budget)
@@ -85,18 +89,82 @@ float sampleField(vec3 frac)
 // through the cell -> grid transform.
 vec3 fieldFracOfCell(vec3 cell)
 {
-	vec3 cw = uFieldWrap ? cell - floor(cell) : cell;
+	vec3 cw = uFieldWrap == 1 ? cell - floor(cell) : cell;
 	return (uFieldCellToFrac * vec4(cw, 1.0)).xyz;
 }
 
-// Field value at a structure-cell-fraction point. Outside the grid's own cell
-// (the gap a supercell leaves around a non-duplicated field) there is no
-// field: 0, the same "nothing drawn" the raster copies show there.
-float sampleFieldCell(vec3 cell)
+// BLOCK extent in cell fractions [gBlockLo, gBlockHi] and the first/last cell
+// image reaching the display boundary (gImageLo..gImageHi, at most 5 per axis,
+// the raster's cap). Set once per ray by setupBlockImages; same rule as
+// fieldGeometry.imageOffsets. The extent is the box of the 8 grid corners,
+// read off the inverse of uFieldCellToFrac (an affine map).
+vec3 gBlockLo;
+vec3 gBlockHi;
+vec3 gImageLo;
+vec3 gImageHi;
+
+void setupBlockImages()
 {
-	vec3 frac = fieldFracOfCell(cell);
+	mat4 inv = inverse(uFieldCellToFrac); // grid fractions -> cell fractions
+	mat3 lin = mat3(inv);
+	vec3 lo = inv[3].xyz;
+	vec3 hi = lo;
+	for (int c = 0; c < 3; c++)
+	{
+		vec3 col = lin[c]; // cell-fraction change per unit grid fraction along grid axis c
+		lo += min(col, vec3(0.0));
+		hi += max(col, vec3(0.0));
+	}
+	gBlockLo = lo;
+	gBlockHi = hi;
+	gImageLo = floor(uFieldBoundsMin + 1e-6 - hi) + 1.0;
+	gImageHi = min(max(gImageLo, ceil(uFieldBoundsMax - lo - 1e-6) - 1.0), gImageLo + 4.0);
+}
+
+// Value of a block at a cell point, over every image that contains the point
+// (only the images covering it per axis are visited — one in the common case
+// of a block smaller than a cell; none is a gap and gives 0, like the raster
+// copies' gaps). Images overlap only where the block exceeds a cell; there the
+// surface that wins is the union the raster draws: the largest |f| in abs
+// mode, else the extreme value on the iso's side. frac receives the grid
+// fraction of the winning image.
+float sampleBlockCell(vec3 cell, out vec3 frac)
+{
+	vec3 nLo = max(ceil(cell - gBlockHi - 1e-5), gImageLo);
+	vec3 nHi = min(floor(cell - gBlockLo + 1e-5), gImageHi);
+	frac = (uFieldCellToFrac * vec4(cell - nLo, 1.0)).xyz;
+	if (any(greaterThan(nLo, nHi))) return 0.0;
+	float best = 0.0;
+	bool have = false;
+	for (float k = nLo.z; k <= nHi.z; k += 1.0)
+	for (float j = nLo.y; j <= nHi.y; j += 1.0)
+	for (float i = nLo.x; i <= nHi.x; i += 1.0)
+	{
+		vec3 g = (uFieldCellToFrac * vec4(cell - vec3(i, j, k), 1.0)).xyz;
+		float v = sampleField(g);
+		bool better = !have
+			|| (uFieldAbsMode ? abs(v) > abs(best) : (uFieldIso >= 0.0 ? v > best : v < best));
+		if (better) { best = v; frac = g; have = true; }
+	}
+	return best;
+}
+
+// Field value at a structure-cell-fraction point; frac receives the grid
+// fraction it was read at. Outside the grid's own cell (the gap a supercell
+// leaves around a non-duplicated field) there is no field: 0, the same
+// "nothing drawn" the raster copies show there.
+float sampleFieldCellFrac(vec3 cell, out vec3 frac)
+{
+	if (uFieldWrap == 2) return sampleBlockCell(cell, frac);
+	frac = fieldFracOfCell(cell);
 	if (any(lessThan(frac, vec3(-1e-4))) || any(greaterThan(frac, vec3(1.0 + 1e-4)))) return 0.0;
 	return sampleField(frac);
+}
+
+float sampleFieldCell(vec3 cell)
+{
+	vec3 frac;
+	return sampleFieldCellFrac(cell, frac);
 }
 
 // Ray-march the implicit isosurface. Returns true and fills outT (world-valid
@@ -121,6 +189,8 @@ bool intersectField(vec3 ro, vec3 rd, float bestT, out float outT, out vec3 outN
 	tNear = max(tNear, 0.0);
 	tFar = min(tFar, bestT);
 	if (tFar <= tNear) return false;
+
+	if (uFieldWrap == 2) setupBlockImages();
 
 	float A = abs(uFieldIso);
 	// Step count follows the grid resolution AND how many cells the display
@@ -176,7 +246,8 @@ bool intersectField(vec3 ro, vec3 rd, float bestT, out float outT, out vec3 outN
 	// space; the world normal is transpose(worldToFrac 3x3) * gradFrac
 	// (normals transform by the inverse-transpose of the model matrix, and
 	// fracToWorld = inverse(worldToFrac))
-	vec3 fh = fieldFracOfCell(fo + fd * outT);
+	vec3 fh;
+	sampleFieldCellFrac(fo + fd * outT, fh);
 	vec3 h = 1.0 / vec3(uFieldDims);
 	vec3 gradFrac = vec3(
 		sampleField(fh + vec3(h.x, 0.0, 0.0)) - sampleField(fh - vec3(h.x, 0.0, 0.0)),
