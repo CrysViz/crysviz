@@ -37,7 +37,6 @@ import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
 import { createFeatureLockSwitch } from '../FeatureLockModule.js';
-import { resetFeatureStoreToFirstRun } from './featureStore.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import { addFocusRegionsPanel, removeFocusRegionsPanel } from '../FocusRegionsPanel.js';
 import { isDebugMode } from '../../debug/debugMode.js';
@@ -1025,10 +1024,7 @@ export function registerDefaultPanels() {
       clearBtn.className = 'reset-btn reset-btn-danger';
       clearBtn.textContent = 'Clear local data';
       clearBtn.addEventListener('click', () => {
-        if (confirm('Clear all saved local data?')) {
-          clearLocalData();
-          resetFeatureStoreToFirstRun(); // next load: the first-run sidebar
-        }
+        if (confirm('Clear all saved local data?')) clearLocalData();
       });
       resetRow.appendChild(clearBtn);
       body.appendChild(resetRow);
