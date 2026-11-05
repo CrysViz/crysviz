@@ -9,7 +9,7 @@
     "lint:fix": "eslint docs --fix",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check-imports": "python3 tools/check_imports.py",
-    "test:unit": "node --test tools/unittest/",
+    "test:unit": "node --test tools/unittest/*.test.mjs",
     "check": "npm run lint && npm run typecheck && npm run check-imports && npm run test:unit"
   },
   "devDependencies": {
