@@ -51,6 +51,28 @@ const LONG_PRESS_MS = 500; // press-and-hold before a touch gesture fires
 let floatZ = 1200;
 
 /**
+ * Swallow the click that ends a window drag. A window drag moves the window
+ * to another parent mid-gesture (float -> main dock, dock or side-dock tab ->
+ * float), and the browser then sends the release's click to whatever is under
+ * the pointer, pointer capture or not: a window dropped into the dock clicked
+ * the control it landed on (it opened the Files window's structure summary).
+ * Call once the press has become a drag; the guard ends right after that
+ * gesture's release.
+ */
+export function swallowClickAfterDrag() {
+  const guard = new AbortController();
+  const opts = { capture: true, signal: guard.signal };
+  window.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+  }, opts);
+  // The click follows the pointerup in the same task: drop the guard after it.
+  const disarm = () => setTimeout(() => guard.abort(), 0);
+  window.addEventListener('pointerup', disarm, { ...opts, once: true });
+  window.addEventListener('pointercancel', disarm, { ...opts, once: true });
+}
+
+/**
  * Anchor a fixed-position element by edges: any of {left, right, top, bottom},
  * numbers are px and strings pass through; the opposite edge of each axis is
  * released to `auto` so the element grows away from the anchored one. Free
@@ -732,6 +754,7 @@ export class PanelWindow {
       if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD &&
           Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
       cleanup();
+      swallowClickAfterDrag();
       if (this.dock === 'left') {
         // Hand the whole gesture over to the manager's reorder logic.
         releaseCapture();
