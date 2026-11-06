@@ -2,6 +2,7 @@ import { Structure } from "../model/index.js";
 import { StructureContainer } from '../model/index.js';
 import { Atom, Spin } from '../model/index.js';
 import { cif_to_struct, mcif_to_magstruct } from './cif.js';
+import { buildCifErrors } from './cif/cif_errors.js';
 import { parsePWSCFin } from './ReadPWSCFinModule.js';
 import { parsePWSCFout } from './ReadPWSCFoutModule.js';
 import { parseOUTCAR } from './ReadOutcarModule.js';
@@ -188,6 +189,13 @@ export async function parse_cif(content, fileName = '', mcif = false) {
     hall: cif_struct["space_group_name_hall"] ?? null,
   };
 
+  // The file's standard uncertainties ("CIF errors"), when it gives any: kept
+  // as an offer until the load dialog (ui/CifSymmetryLoad.js) asks whether to
+  // read them. Each atom carries which site it is a copy of; an atom made
+  // anew later (supercell, editor) has no such record and so no error.
+  const errors = buildCifErrors(cif_struct);
+  if (errors) atoms.forEach((atom, i) => { atom.cifSite = errors.atoms[i]; });
+
   const structure = new Structure({
     elements,
     uniqueElements: [...new Set(elements)].sort(),
@@ -195,6 +203,7 @@ export async function parse_cif(content, fileName = '', mcif = false) {
     atoms,
     spins,
     cifSymmetry,
+    cifErrors: errors ? { cell: errors.cell, sites: errors.sites, pending: true } : null,
   });
 
   const container = new StructureContainer({

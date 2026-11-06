@@ -10,6 +10,8 @@
  * smaller/less capable screen":
  *
  *   compact  max-width: 1024px   tablet / narrow desktop — dock collapses
+ *            + pointer: coarse   (compact touch) finger-sized checkboxes,
+ *                                slider thumbs and buttons — touch only
  *   mobile   max-width: 720px    side panel becomes a full-width sheet
  *   tiny     max-width: 420px    single-column controls
  *   short    max-height: 480px   landscape phone — chrome shrinks
@@ -163,26 +165,6 @@
     margin: 0 0 20px 0;
   }
 
-  /* Make touch targets larger */
-  input[type="checkbox"] {
-    transform: scale(1.5);
-  }
-
-  input[type="range"] {
-    height: 8px;
-    margin:  0;
-  }
-
-  input[type="range"]::-webkit-slider-thumb {
-    width: 24px;
-    height: 24px;
-  }
-
-  input[type="range"]::-moz-range-thumb {
-    width: 24px;
-    height: 24px;
-  }
-
   /* Adjust bond controls for mobile */
   .bond-control {
     padding: var(--sp-5);
@@ -224,26 +206,6 @@
     border: 1px solid var(--wash-4);
   }
 
-  /* Measure panel improvements.
-     The .si-action-* variants are excluded: they are dense in-row actions
-     (Apply/Reset, Spin/Force) sized against the row they sit in, not
-     standalone taps. Bumped to --fs-xl, the category Spin/Force label
-     needed three lines and pushed its row off a phone-width panel.
-     .lsc-panel-btn (Cell & Supercell / Transform "Apply") is likewise a dense
-     panel button with its own fixed 32px height and --fs-sm sizing; the big-tap
-     rung zoomed its font to --fs-xl and stretched it, offsetting it in its row.
-     .bond-cat-btn (per-pair Reset/Apply in the bond-length panel) is the same
-     case again: a 32px x 50px box sized to its row, so the --fs-xl rung spilled
-     both labels straight out of their borders. .ph-btn (the Phonons window's
-     transport / Apply / Compute buttons) are dense row buttons in the same
-     sense — four of them share one row with number inputs. */
-  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn):not(.bond-cat-btn):not(.ph-btn) {
-    padding: var(--sp-4) var(--sp-5);
-    font-size: var(--fs-xl);
-    align-self: stretch;
-    text-align: center;
-  }
-
   /* Adjust scroll areas */
   #bondControls {
     max-height: 200px;
@@ -264,6 +226,66 @@
   /* ---- panelWindow.css: floating panels ---- */
   .cv-panel.cv-floating {
     max-width: calc(100vw - 16px);
+  }
+}
+
+/* ================================================================
+   compact touch — max-width: 1024px and pointer: coarse
+   ----------------------------------------------------------------
+   Finger-sized checkboxes, slider thumbs and buttons on a tablet or phone.
+   These sat in the compact rung itself, so a desktop window merely made
+   narrow (mouse, pointer: fine) got them too: 1.5x checkboxes, 24px
+   slider thumbs and 16px button text spilling out of fixed-size row
+   buttons (the Polyhedra window's Reset/Apply squares, the inspectors'
+   control rows). Width says how much room there is, not what points.
+   ================================================================ */
+
+@media screen and (max-width: 1024px) and (pointer: coarse) {
+
+  /* Make touch targets larger */
+  input[type="checkbox"] {
+    transform: scale(1.5);
+  }
+
+  input[type="range"] {
+    height: 8px;
+    margin:  0;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Bigger buttons.
+     The .si-action-* variants are excluded: they are dense in-row actions
+     (Apply/Reset, Spin/Force) sized against the row they sit in, not
+     standalone taps. Bumped to --fs-xl, the category Spin/Force label
+     needed three lines and pushed its row off a phone-width panel.
+     .lsc-panel-btn (Cell & Supercell / Transform "Apply") is likewise a dense
+     panel button with its own fixed 32px height and --fs-sm sizing; the big-tap
+     rung zoomed its font to --fs-xl and stretched it, offsetting it in its row.
+     .bond-cat-btn (per-pair Reset/Apply in the bond-length panel) is the same
+     case again: a 32px x 50px box sized to its row, so the --fs-xl rung spilled
+     both labels straight out of their borders. .ph-btn (the Phonons window's
+     transport / Apply / Compute buttons) are dense row buttons in the same
+     sense — four of them share one row with number inputs. .pi-btn (the
+     Selection/Polyhedron Inspector control rows) likewise: fixed-height row
+     buttons whose text the --fs-xl rung spilled out of their borders, and
+     which squashed the add-neighbour icon to a dot; on touch screens they get
+     the touch height instead (pointer: coarse, below). .phl-cat-square-btn
+     (the Polyhedra window's category Reset/Apply squares, 50px x 32px) is
+     the bond-cat-btn case once more. */
+  .btn-mini:not(.si-action-btn):not(.si-action-btn-narrow):not(.si-action-btn-wide):not(.lsc-panel-btn):not(.bond-cat-btn):not(.ph-btn):not(.pi-btn):not(.phl-cat-square-btn) {
+    padding: var(--sp-4) var(--sp-5);
+    font-size: var(--fs-xl);
+    align-self: stretch;
+    text-align: center;
   }
 }
 
@@ -579,6 +601,14 @@
    ================================================================ */
 
 @media (pointer: coarse) {
+
+  /* ---- analysisPanels.css: the inspectors' control rows ----
+     Fixed-height row controls (left out of the large-tap rung above): one
+     finger-sized height for every button and colour swatch in a row. */
+  .pi-ctl-row .pi-btn,
+  .pi-ctl-row .pi-color {
+    height: var(--control-h-touch);
+  }
 
   /* ---- backendPanel.css / controlPanel.css: every --control-h consumer ---- */
   .calcButton,

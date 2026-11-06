@@ -7,27 +7,32 @@
 // the right dock, mirroring the other AnalysisPanels — but unlike those,
 // content here is selection-driven ('crysviz:polyhedron-selection-changed',
 // dispatched by SelectAndHighlightModule.js) rather than a redraw-on-data-
-// refresh chart.
+// refresh chart. A selection of several atoms is the Selection Inspector's
+// (SelectionInspector.js).
 //
-// A top "Angles" toggle shows/hides the arc labels, and double-clicking the
-// mini view glows the same polyhedron back in the main structure (without
+// Lengths/Angles switches hide a kind of label, a click hides one label, and
+// "Show all labels" brings them back (inspectorLabels.js). Double-clicking
+// the mini view glows the same polyhedron back in the main structure (without
 // opening the Structure Info panel).
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
 import { createPolyhedronMiniRenderer } from './PolyhedronMiniRenderer.js';
-import { computePolyhedronDetail } from '../../render/PolyhedraAnalysisModule.js';
+import { createLabelState, labelToolbarHtml, wireLabelToolbar } from './inspectorLabels.js';
+import { computePolyhedronDetail, convexHullVolume, polyhedronDistortion } from '../../render/PolyhedraAnalysisModule.js';
+import { placedAtomKey, bondLabelKey, angleLabelKey } from '../../render/SelectionAnalysisModule.js';
 import { subscribeToAtomSelection, getSelectedAtoms, highlightPolyhedronByKey } from '../SelectAndHighlightModule.js';
 import { fileBrowser, highlightHover, general } from '../../state/store.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
+import { modelErrors, placedSu, formatWithSu } from '../../model/cifErrors.js';
 
 const PANEL_ID = 'polyhedronInspector';
 
-let view = null; // { update(opts) } while the window is open
+let view = null; // { update(opts), state() } while the window is open
 
 // ---------------------------------------------------------------------------
 // Force "Show Polyhedra" + "Complete Polyhedra" on while the inspector is
 // open: the analysis (bond-length/angle metrics, and the bond half-colors
-// mirrored into the mini render — see findBondHalfColors in
+// mirrored into the mini render — see renderedBondLookup in
 // PolyhedraAnalysisModule.js) needs the completed coordination shell, and
 // gives wrong bond colors/metrics for an edge polyhedron whose shell is cut
 // off at the unit-cell boundary when Complete Polyhedra is off.
@@ -109,47 +114,62 @@ function resolveInspectedPoly() {
   return null;
 }
 
-function currentDetail() {
+/** A polyhedron detail as a mini-view model: centre + vertices, centre–vertex
+ *  bonds, the angles its metric is defined over (trans pairs, a near-constant
+ *  180°, would only clutter), and the hull. Label keys are the same ones the
+ *  Selection Inspector uses (render/SelectionAnalysisModule.js). */
+function polyhedronModel(detail) {
+  if (!detail) return null;
+  const atoms = [];
+  const bonds = [];
+  const angles = [];
+  const centred = !!detail.centerCart;
+  if (centred) {
+    atoms.push({
+      key: placedAtomKey(detail.centerIndex, detail.centerCart), pos: detail.centerCart, srcIndex: detail.centerIndex,
+      color: detail.centerColor, element: detail.centerElement, radius: detail.centerRadius,
+    });
+  }
+  const off = atoms.length;
+  detail.vertices.forEach((v) => {
+    atoms.push({
+      key: placedAtomKey(v.srcIndex ?? -1, v.pos), pos: v.pos, srcIndex: v.srcIndex,
+      color: v.color, element: v.element, radius: v.radius,
+    });
+  });
+  if (centred) {
+    detail.vertices.forEach((v, i) => {
+      bonds.push({
+        key: bondLabelKey(atoms[0].key, atoms[off + i].key), a: 0, b: off + i,
+        colorA: v.bondColorNear, colorB: v.bondColorFar, length: v.bondLength,
+        trimA: v.bondTrimNear, trimB: v.bondTrimFar,
+        // Toward the vertex, clear of the arc cluster at the centre.
+        labelAt: 0.62,
+      });
+    });
+    for (const a of detail.angles) {
+      if (a.kind === 'trans') continue;
+      angles.push({
+        key: angleLabelKey(atoms[0].key, atoms[off + a.i].key, atoms[off + a.j].key),
+        at: 0, i: off + a.i, j: off + a.j, angleDeg: a.angleDeg,
+      });
+    }
+  }
+  // The CIF errors of the lengths and angles (model/cifErrors.js), while
+  // "Show CIF Errors" is on and the atoms are still the CIF's.
   const structure = fileBrowser.selectedStructure;
-  const poly = resolveInspectedPoly();
-  return poly ? computePolyhedronDetail(structure, poly) : null;
+  const errors = general.showCifErrors !== false && structure?.cifErrors
+    ? modelErrors(structure, atoms, bonds, angles) : null;
+  return {
+    atoms,
+    bonds: bonds.map((b, k) => ({ ...b, lengthSu: errors?.bonds[k] ?? null })),
+    angles: angles.map((g, k) => ({ ...g, angleSu: errors?.angles[k] ?? null })),
+    hull: detail.vertices.length >= 4 ? {
+      points: detail.vertices.map((v) => v.pos),
+      faceColor: detail.faceColor, faceOpacity: detail.faceOpacity, edgeColor: detail.edgeColor,
+    } : null,
+  };
 }
-
-function refreshAll(opts = {}) {
-  view?.update(opts);
-}
-
-// The key of the polyhedron currently shown in the mini viewport — lets a
-// selection-changed event that resolves to the SAME polyhedron (e.g. the
-// inspector's own double-click highlighting it in the main view) refresh
-// without snapping the user's mini-view orbit/zoom back to the framed angle.
-let shownPolyKey = null;
-
-document.addEventListener('crysviz:polyhedron-selection-changed', (ev) => {
-  const key = /** @type {CustomEvent} */ (ev).detail?.key ?? null;
-  refreshAll({ keepCamera: key != null && key === shownPolyKey });
-});
-// Selecting the central atom (rather than the polyhedron body) inspects the
-// same polyhedron — driven off the atom-selection subscription instead.
-subscribeToAtomSelection(() => refreshAll());
-// A rebuild can shift the selected polyhedron's exact geometry (or drop it
-// entirely) without a selection-change event firing — refresh either way.
-// keepCamera:true: most rebuilds (e.g. an Element Color Map switch, which
-// goes through updateVisualization()'s reRenderPolyhedra default) don't
-// actually move this polyhedron's geometry, so don't snap the mini
-// viewport's camera back to the auto-framed view for those. setDetail()
-// still resets the camera on its own if the polyhedron was dropped by the
-// rebuild and a later one brings it back (hasFramed resets to false when
-// detail goes null), so a genuine reappearance still reframes correctly.
-document.addEventListener('crysviz:polyhedra-rebuilt', () => refreshAll({ keepCamera: true }));
-// Recolouring an atom or a polyhedron (individually or by element/category)
-// doesn't touch geometry or selection, so neither event above fires — but
-// currentDetail() resolves colours fresh every call, so a plain refresh is
-// enough to pick the new colour up. keepCamera:true so a pure colour change
-// doesn't reset the orbit/zoom the user has dialed into this mini viewport.
-document.addEventListener('crysviz:colors-changed', () => refreshAll({ keepCamera: true }));
-
-function fmt(n, digits = 4) { return Number.isFinite(n) ? n.toFixed(digits) : '—'; }
 
 // Local polyhedron-face opacity for the mini render only — independent of the
 // main structure's polyhedra opacity setting, persisted across selections and
@@ -157,9 +177,8 @@ function fmt(n, digits = 4) { return Number.isFinite(n) ? n.toFixed(digits) : '�
 // whatever opacity you dialed in here).
 let localFaceOpacity = 0.4;
 
-// Whether the mini view draws the bond-angle arcs/labels — persisted the same
-// way (survives selection changes and closing/reopening the window).
-let showAngles = true;
+// The label switches and the clicked-away labels, persisted the same way.
+const labels = createLabelState();
 
 /** Slider controlling just the mini view's polyhedron face opacity. */
 function buildOpacityControl(container, mini) {
@@ -179,8 +198,29 @@ function buildOpacityControl(container, mini) {
   });
 }
 
-/** Fills the small text summary above/below the mini render. */
-function renderSummary(container, detail) {
+/**
+ * The CIF errors of the summary's numbers (model/cifErrors.js), each through
+ * the same function that computes it: the volume of the vertices' hull, and
+ * the distortion index and angle variance of centre + vertices. Null while
+ * "Show CIF Errors" is off or the structure has none.
+ */
+function summaryErrors(detail) {
+  const structure = fileBrowser.selectedStructure;
+  if (!detail || general.showCifErrors === false || !structure?.cifErrors) return null;
+  const vertices = detail.vertices.map((v) => ({ srcIndex: v.srcIndex, pos: v.pos }));
+  const volume = detail.volume != null ? placedSu(structure, vertices, (P) => convexHullVolume(P)) : null;
+  let bld = null, angleVariance = null;
+  if (detail.centerCart) {
+    const placed = [{ srcIndex: detail.centerIndex, pos: detail.centerCart }, ...vertices];
+    const metric = (key) => placedSu(structure, placed, (P) => polyhedronDistortion(P[0], P.slice(1), detail.angles)[key]);
+    if (detail.bld != null) bld = metric('bld');
+    if (detail.angleVariance != null) angleVariance = metric('angleVariance');
+  }
+  return { volume, bld, angleVariance };
+}
+
+/** Fills the small text summary above the mini render. */
+function renderSummary(container, detail, errors = null) {
   if (!detail) {
     container.innerHTML = '<div class="pi-summary-empty">Click a polyhedron (or its centre atom) in the 3D view to inspect it.</div>';
     return;
@@ -188,11 +228,13 @@ function renderSummary(container, detail) {
   const rows = [
     ['Category', detail.catLabel ?? '—'],
     ['Coordination number', String(detail.cn)],
-    ['Volume', detail.volume != null ? `${fmt(detail.volume, 3)} Å³` : 'n/a (degenerate hull)'],
-    ['Bond-length distortion', detail.bld != null ? fmt(detail.bld, 4) : 'n/a (cage — no centre)'],
+    ['Volume', detail.volume != null ? `${formatWithSu(detail.volume, errors?.volume, 3)} Å³` : 'n/a (degenerate hull)'],
+    ['Bond-length distortion', detail.bld != null ? formatWithSu(detail.bld, errors?.bld, 4) : 'n/a (cage — no centre)'],
     [detail.angleLabel ? `${detail.angleLabel} (angle variance, °²)` : 'Angle variance',
-      detail.angleVariance != null ? fmt(detail.angleVariance, 2) : 'n/a (only CN4/CN6)'],
+      detail.angleVariance != null ? formatWithSu(detail.angleVariance, errors?.angleVariance, 2) : 'n/a (only CN4/CN6)'],
   ];
+  // Say where the numbers in parentheses come from, once any are shown.
+  if (errors && Object.values(errors).some((v) => v > 0)) rows.push(['Errors', 's.u. from the CIF']);
   container.innerHTML = `
     <div class="pi-summary-grid">
       ${rows.map(([k, v]) => `<span class="pi-summary-key">${k}</span><span class="pi-summary-val">${v}</span>`).join('')}
@@ -204,6 +246,11 @@ export function removePolyhedronInspectorPanel() {
   view = null;
   removePanel(PANEL_ID);
   releaseForcedPolyhedraSettings();
+}
+
+/** The current inspection, for tests and the console. */
+export function getInspectorState() {
+  return view?.state() ?? null;
 }
 
 /** The single entry point (the Polyhedra window's "Inspector" button): opens
@@ -239,16 +286,8 @@ export function addPolyhedronInspectorPanel() {
           <div class="split-item" id="polyhedron-inspector-item">
             <h4>Polyhedron Inspector</h4>
             ${FORCED_NOTICE_HTML}
-            <div class="pi-toolbar">
-              <label class="eos-mini-toggle toggle_row toggle_container" title="Show bond-angle arcs and labels">
-                <span class="toggle_switch">
-                  <input type="checkbox" id="piAnglesToggle" ${showAngles ? 'checked' : ''}>
-                  <span class="toggle_slider"></span>
-                </span>
-                <span class="toggle_text">Angles</span>
-              </label>
-              <span class="pi-toolbar-hint">Double-click the polyhedron to highlight it in the structure.</span>
-            </div>
+            <div class="pi-controls">${labelToolbarHtml('pi', labels)}</div>
+            <div class="pi-hint" id="piHint"></div>
             <div id="piSummary"></div>
             <div id="piViewport" class="split-item-body pi-viewport"></div>
             <div id="piOpacityControl"></div>
@@ -258,17 +297,18 @@ export function addPolyhedronInspectorPanel() {
 
       const viewport = body.querySelector('#piViewport');
       const summaryEl = body.querySelector('#piSummary');
+      const hintEl = body.querySelector('#piHint');
       mini = createPolyhedronMiniRenderer(viewport);
-      mini.setShowAngles(showAngles); // sync a persisted "off" before the first build
+      const POLY_HINT = 'Point at a label (tap, on touch) and press its × to hide it. Double-click the polyhedron to highlight it in the structure.';
+      let hintShown = false;
+      const setHint = () => {
+        hintEl.textContent = !hintShown ? ''
+          : labels.placing ? 'Drag a label to place it. Press Move labels again to rotate the view.' : POLY_HINT;
+      };
+      const labelBar = wireLabelToolbar(body, 'pi', labels, mini, undefined, setHint);
       mini.resize();
       mini.start();
       buildOpacityControl(body.querySelector('#piOpacityControl'), mini);
-
-      const anglesToggle = /** @type {HTMLInputElement} */ (body.querySelector('#piAnglesToggle'));
-      anglesToggle.addEventListener('change', () => {
-        showAngles = anglesToggle.checked;
-        mini.setShowAngles(showAngles);
-      });
 
       // Double-click the mini viewport → glow this polyhedron in the main 3D
       // view (no Structure panel opened). The inspector only ever shows one
@@ -279,16 +319,30 @@ export function addPolyhedronInspectorPanel() {
       });
 
       function update(opts = {}) {
-        const detail = currentDetail();
+        const poly = resolveInspectedPoly();
+        const detail = poly ? computePolyhedronDetail(fileBrowser.selectedStructure, poly) : null;
         shownPolyKey = detail?.key ?? null;
-        renderSummary(summaryEl, detail);
-        mini.setDetail(detail, { faceOpacity: localFaceOpacity, keepCamera: opts.keepCamera });
+        renderSummary(summaryEl, detail, summaryErrors(detail));
+        hintShown = !!detail;
+        setHint();
+        mini.setModel(polyhedronModel(detail), { faceOpacity: localFaceOpacity, keepCamera: opts.keepCamera });
+        labelBar.refresh();
       }
 
       resizeObserver = new ResizeObserver(() => mini?.resize());
       resizeObserver.observe(viewport);
 
-      view = { update };
+      view = {
+        update,
+        state: () => ({
+          polyKey: shownPolyKey,
+          summary: summaryEl.textContent,
+          hiddenLabels: [...labels.hidden],
+          labels: mini?.getLabels() ?? [],
+          atomScreen: mini?.getAtomScreenPositions() ?? [],
+          viewport: (({ left, top, right, bottom }) => ({ left, top, right, bottom }))(viewport.getBoundingClientRect()),
+        }),
+      };
       update();
     },
     defaults: {
@@ -298,3 +352,40 @@ export function addPolyhedronInspectorPanel() {
   });
   openPanel(PANEL_ID);
 }
+
+function refreshAll(opts = {}) {
+  view?.update(opts);
+}
+
+// The key of the polyhedron currently shown in the mini viewport — lets a
+// selection-changed event that resolves to the SAME polyhedron (e.g. the
+// inspector's own double-click highlighting it in the main view) refresh
+// without snapping the user's mini-view orbit/zoom back to the framed angle.
+let shownPolyKey = null;
+
+document.addEventListener('crysviz:polyhedron-selection-changed', (ev) => {
+  const key = /** @type {CustomEvent} */ (ev).detail?.key ?? null;
+  refreshAll({ keepCamera: key != null && key === shownPolyKey });
+});
+// Selecting the central atom (rather than the polyhedron body) inspects the
+// same polyhedron — driven off the atom-selection subscription instead.
+subscribeToAtomSelection(() => refreshAll());
+// A rebuild can shift the selected polyhedron's exact geometry (or drop it
+// entirely) without a selection-change event firing — refresh either way.
+// keepCamera:true: most rebuilds (e.g. an Element Color Map switch, which
+// goes through updateVisualization()'s reRenderPolyhedra default) don't
+// actually move this polyhedron's geometry, so don't snap the mini
+// viewport's camera back to the auto-framed view for those. setModel()
+// still resets the camera on its own if the polyhedron was dropped by the
+// rebuild and a later one brings it back (hasFramed resets to false when
+// the model goes empty), so a genuine reappearance still reframes correctly.
+document.addEventListener('crysviz:polyhedra-rebuilt', () => refreshAll({ keepCamera: true }));
+// Recolouring an atom or a polyhedron (individually or by element/category)
+// doesn't touch geometry or selection, so neither event above fires — but
+// computePolyhedronDetail() resolves colours fresh every call, so a plain
+// refresh is enough to pick the new colour up. keepCamera:true so a pure
+// colour change doesn't reset the orbit/zoom the user has dialed into this
+// mini viewport.
+document.addEventListener('crysviz:colors-changed', () => refreshAll({ keepCamera: true }));
+// "Show CIF Errors" switched, or a CIF's errors were read.
+document.addEventListener('crysviz:cif-errors-changed', () => refreshAll({ keepCamera: true }));

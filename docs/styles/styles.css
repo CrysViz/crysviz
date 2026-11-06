@@ -1579,6 +1579,32 @@ body.panel-hidden #axesLegend {
   font-size: var(--fs-md);
 }
 
+/* "Also read the errors" tick box above the choices (ui/CifSymmetryModal.js),
+ * with a one-line note on what the file gives errors for. */
+.cif-sym-errors-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0 0 var(--sp-3-5) 0;
+}
+
+.cif-sym-errors-row[hidden] {
+  display: none;
+}
+
+.cif-sym-errors-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.cif-sym-errors-note {
+  font-size: var(--fs-xs);
+  color: var(--fg-2);
+}
+
 /* Small Main-dock triggers, positioned immediately left of .theme-switch
  * (ui/KeyboardShortcuts.js; the About trigger is the left sibling of the
  * keyboard-shortcuts trigger). */

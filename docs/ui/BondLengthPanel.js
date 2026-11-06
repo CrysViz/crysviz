@@ -25,6 +25,7 @@ import {
 } from '../render/index.js';
 import { showInfoPanel } from './InfoPanel.js';
 import { saveBondLengths, scheduleBondLengthSave, saveBondStyles, scheduleBondStyleSave } from './SizePrefs.js';
+import { createToggleRow } from './ToggleSwitch.js';
 
 // The slider container is fluid (flex:1, see .bond-range-slider in
 // styles/bondLengthHistogram.css) so it shrinks to fit the Structure Info
@@ -275,9 +276,9 @@ export function resetBondLengths() {
   // the 3D bond SET (which pairs qualify at the just-reset min/max) actually
   // recomputes — bondsUpdate (the default) only repaints existing bonds, it
   // doesn't re-filter by length range. reRenderAtoms recomputes the periodic
-  // neighbour (PBC-ghost) atom set when Neighbour Bonds is on, since the reset
-  // cutoffs change which cross-cell neighbours exist.
-  updateVisualization({ reRenderAtoms: !!general.showPBCBonds, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  // neighbour (PBC-ghost) atom set when Neighbour Bonds or Complete Rings & Fragments
+  // is on, since the reset cutoffs change which cross-cell neighbours exist.
+  updateVisualization({ reRenderAtoms: !!(general.showPBCBonds || general.completeFragments), reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
   saveBondLengths(); // drops the per-structure ranges (ui/SizePrefs.js)
 }
 
@@ -296,6 +297,49 @@ function resetAllBondColors(structure) {
       }
     }
   }
+}
+
+// "Complete Rings & Fragments" settings (Features window toggle). They decide which of
+// the bonds above hold a fragment together, so they sit with them — and only
+// while the option is on, which is when they do anything.
+function createFragmentSettings() {
+  const group = document.createElement('div');
+  group.className = 'blp-fragments';
+  const head = document.createElement('div');
+  head.className = 'blp-fragments-head';
+  head.textContent = 'Complete Rings & Fragments';
+  group.appendChild(head);
+
+  const refresh = () => updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false });
+
+  group.appendChild(createToggleRow({
+    id: 'fragmentIgnoreMetalBonds',
+    label: 'Ignore bonds to metals',
+    checked: general.fragmentIgnoreMetalBonds !== false,
+    small: true,
+    onChange: (on) => { general.fragmentIgnoreMetalBonds = on; refresh(); },
+  }).row);
+
+  const ringRow = document.createElement('label');
+  ringRow.className = 'blp-fragments-row';
+  const ringText = document.createElement('span');
+  ringText.textContent = 'Close rings in networks up to';
+  const ringSelect = document.createElement('select');
+  ringSelect.id = 'fragmentMaxRing';
+  for (const size of [0, 3, 4, 5, 6, 7, 8]) {
+    const option = document.createElement('option');
+    option.value = String(size);
+    option.textContent = size ? `${size} atoms` : 'off';
+    ringSelect.appendChild(option);
+  }
+  ringSelect.value = String(general.fragmentMaxRing ?? 6);
+  ringSelect.addEventListener('change', () => {
+    general.fragmentMaxRing = Number(ringSelect.value);
+    refresh();
+  });
+  ringRow.append(ringText, ringSelect);
+  group.appendChild(ringRow);
+  return group;
 }
 
 export function createBondLengthControls(targetPanel='bondControls') {
@@ -353,8 +397,9 @@ export function createBondLengthControls(targetPanel='bondControls') {
       // freshly emptied container). Go through reRenderComposition instead.
       updateVisualization({
         // A new pair cutoff can pull in periodic neighbour (PBC-ghost) atoms,
-        // so recompute the atom set when Neighbour Bonds is on.
-        reRenderAtoms: !!general.showPBCBonds,
+        // so recompute the atom set when Neighbour Bonds or Complete Rings &
+        // Fragments is on.
+        reRenderAtoms: !!(general.showPBCBonds || general.completeFragments),
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: "open",
@@ -404,11 +449,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
     checkbox.onchange = (e) => {
       general.bondVisibility[pair] = /** @type {any} */ (e.target).checked;
       updateVisualization({
-        // With "Neighbour Bonds" on, the periodic neighbour (PBC-ghost) atom
-        // set depends on which pairs are visible, so it must be recomputed
+        // With "Neighbour Bonds" or "Complete Rings & Fragments" on, the periodic
+        // image set depends on which pairs are visible, so it must be recomputed
         // (rebuildAtoms → runPeriodicWrapped) — reRenderBonds alone rebuilds
         // bonds against a stale ghost set.
-        reRenderAtoms: !!general.showPBCBonds,
+        reRenderAtoms: !!(general.showPBCBonds || general.completeFragments),
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: false,
@@ -861,11 +906,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
       scheduleBondLengthSave(fileBrowser.selectedStructure);
 
       updateVisualization({
-        // Neighbour Bonds on: the cutoff drives which periodic neighbour
-        // (PBC-ghost) atoms exist, so recompute the atom set on the fly rather
+        // Neighbour Bonds / Complete Rings & Fragments on: the cutoff drives which
+        // periodic image atoms exist, so recompute the atom set on the fly rather
         // than rebuilding bonds against a stale one (see the visibility toggle
         // above for the same reasoning).
-        reRenderAtoms: !!general.showPBCBonds,
+        reRenderAtoms: !!(general.showPBCBonds || general.completeFragments),
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: false,
@@ -896,6 +941,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
     div.appendChild(bondsContainer);
     bondControls.appendChild(div);
   });
+
+  if (general.completeFragments) bondControls.appendChild(createFragmentSettings());
 
   // Below every individual bond category — same placement as the Atoms tab's
   // Reset Colors/Reset Styling row below the composition list.

@@ -407,6 +407,11 @@ export const general = {
   // Off by default: most structures have no charge data, and on those that do
   // a badge per atom is a lot of extra ink to opt into rather than inherit.
   showCharges:false,
+  // Standard uncertainties read from a CIF ("CIF errors", model/cifErrors.js),
+  // written after measured lengths and angles: 2.3456(12) Å. They are only
+  // read when the user says so at load; this switch (Features window) hides
+  // or shows them afterwards.
+  showCifErrors:true,
   showAxes:true,
   // Shaft radius of the a/b/c axes-gizmo arrows, in gizmo-scene units
   // (WindowAndSceneControls.initAxesGizmo; arrow length is 1).
@@ -483,6 +488,15 @@ export const general = {
   periodicBounds:{ xmin:0, xmax:1, ymin:0, ymax:1, zmin:0, zmax:1 },
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   completePolyhedra:false, // Show the out-of-cell atoms needed to complete the polyhedra
+  // Complete Rings & Fragments: draw whole every finite bonded fragment (dimer,
+  // molecule, molecular ion) that a cell face cuts, and in chains/layers/
+  // frameworks every ring of up to fragmentMaxRing atoms through a bond leaving
+  // the cell. Built into the
+  // periodic image set (render/LatticeModule.js periodicWrapped; JS twin in
+  // render/FragmentCompletion.js, WASM in periodic_wasm_src/src/fragments.rs).
+  completeFragments:false,
+  fragmentIgnoreMetalBonds:true, // bonds to metals do not hold a fragment together
+  fragmentMaxRing:6, // largest ring completed in extended networks (0 = none)
   useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)
   useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   useWasmPolyhedra:true, // Use compiled WASM for computePolyhedra (false = pure JS fallback)

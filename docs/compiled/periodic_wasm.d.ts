@@ -124,8 +124,12 @@ export function compute_polyhedra(frac: Float64Array, elem_idx: Uint32Array, lat
  * * `bounds`      – VESTA-style fractional display bounds, packed as
  *   `[xmin,xmax,ymin,ymax,zmin,zmax]`. Defaults to `[0,1]` per axis (classic
  *   face-mirror behaviour). An empty/short slice falls back to `[0,1]`.
+ * * `fragment_table` – "Complete Rings & Fragments": the `n_elem × n_elem` cutoff table of
+ *   the bonds that define fragments (the bond table with bonds to metals zeroed when
+ *   the caller filters them). Empty = off. See `fragments.rs`.
+ * * `max_ring`    – largest ring (atoms) completed in extended networks; 0 = none.
  */
-export function periodic_wrapped(show_periodic: boolean, show_pbc_bonds: boolean, elements_in: Uint32Array, frac_in: Float64Array, lattice_flat: Float64Array, bond_table: Float64Array, n_elem: number, face_tol: number, bounds: Float64Array): PeriodicResult;
+export function periodic_wrapped(show_periodic: boolean, show_pbc_bonds: boolean, elements_in: Uint32Array, frac_in: Float64Array, lattice_flat: Float64Array, bond_table: Float64Array, n_elem: number, face_tol: number, bounds: Float64Array, fragment_table: Float64Array, max_ring: number): PeriodicResult;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -153,7 +157,7 @@ export interface InitOutput {
     readonly compute_bond_pairs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
     readonly compute_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number) => number;
     readonly compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number) => number;
-    readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => number;
+    readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number) => number;
     readonly periodicresult_cart: (a: number) => [number, number];
     readonly periodicresult_elements: (a: number) => [number, number];
     readonly periodicresult_frac: (a: number) => [number, number];

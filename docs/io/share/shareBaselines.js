@@ -110,9 +110,96 @@ export const BASELINES = deepFreeze({
       background: '#ffffff'
     }
   },
+  // 1 + the settings added by the Selection Inspector / CIF errors work
+  // (show CIF errors, complete rings & fragments): their boot defaults.
+  2: {
+    colors: {
+      useDefaultColors: true,
+      elementMaterialsMap: 'standard'
+    },
+    display: {
+      atomSize: 0.399903512,
+      bondRadius: 0.100003595,
+      showAtoms: true,
+      showBonds: true,
+      showCharges: false,
+      showLattice: true,
+      showPeriodic: true,
+      linkPeriodicCopies: true,
+      periodicFaceTol: 0.001,
+      periodicBounds: {
+        xmin: 0,
+        xmax: 1,
+        ymin: 0,
+        ymax: 1,
+        zmin: 0,
+        zmax: 1
+      },
+      showPBCBonds: false,
+      showAxes: true,
+      showPolyhedra: false,
+      completePolyhedra: false,
+      axesLineWidth: 0.015,
+      latticeLineWidth: 0.015,
+      forcesActive: false,
+      forceScale: 1,
+      forceRadius: 0.08,
+      forceMin: 0,
+      forceMax: 2,
+      forceColorScale: 'linear',
+      forceLengthLogScale: false,
+      forceColorMap: 'heatmap',
+      spinsActive: false,
+      spinScale: 1,
+      spinRadius: 0.08,
+      spinMin: 0,
+      spinMax: 2,
+      spinColorScale: 'linear',
+      spinLengthLogScale: false,
+      spinColorMap: 'none',
+      showCifErrors: true,
+      completeFragments: false,
+      fragmentIgnoreMetalBonds: true,
+      fragmentMaxRing: 6
+    },
+    style: {
+      renderStyle: 'metallic',
+      renderPipeline: 'depthpeel',
+      depthPeelLayers: 15,
+      rtResolutionScale: 0.95,
+      rtTiledRender: true,
+      rtRasterPreview: true,
+      rtBackgroundMatch: true,
+      rtToneMapLegacy: false,
+      rtReflectivity: 0.15,
+      ptDenoise: true,
+      ptLightSoftness: 0.3,
+      rtDofAperture: 0,
+      rtDofFocus: 1,
+      rtGroundPlane: false,
+      rtGroundPattern: 'solid',
+      rtGroundColor1: null,
+      rtGroundColor2: null,
+      rtGroundScale: 2,
+      rtGroundOffset: 0.75,
+      rtGroundSize: 2.5,
+      rtGroundReflect: 0,
+      rtLightIntensity: 1.2,
+      rtAmbient: 0.3,
+      rtSaturation: 1,
+      celOutlineWidth: 0.025,
+      celHullWidth: 0.025,
+      celOutlineColorMode: 'auto',
+      celOutlineColor: '#000000',
+      polyEdgeWidth: 1,
+      atomsColor: 'elements',
+      bondsColor: 'elements',
+      background: '#ffffff'
+    }
+  },
 });
 
-export const LATEST_BASELINE_ID = 1;
+export const LATEST_BASELINE_ID = 2;
 
 /**
  * [settings path, short key] — append-only (see RULES above).
@@ -185,6 +272,10 @@ export const SETTING_KEYS = deepFreeze([
   ['style.atomsColor', 'ac'],
   ['style.bondsColor', 'bc'],
   ['style.background', 'bg'],
+  ['display.showCifErrors', 'ce'],
+  ['display.completeFragments', 'cp'],
+  ['display.fragmentIgnoreMetalBonds', 'mb'],
+  ['display.fragmentMaxRing', 'mr'],
 ]);
 
 /**

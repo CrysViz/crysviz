@@ -481,8 +481,10 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         // the built-in default so startup stays promptless. Routed through the
         // full-app hook (like the phonopy loader) so the symmetry modal loads at
         // boot in the full app but never in the widget embed, which only opens
-        // .crysviz sessions and has no panel chrome anyway.
-        if (descriptor.id === 'cif' && !isDefault) {
+        // .crysviz sessions and has no panel chrome anyway. An mCIF declares
+        // no space group here but may still give errors (standard
+        // uncertainties), which the same hook offers to read.
+        if ((descriptor.id === 'cif' || descriptor.id === 'mcif') && !isDefault) {
           await fullAppHooks.offerCifSymmetryChoice?.(fileBrowser.selectedStructure, fileName);
         }
         break;
@@ -497,6 +499,9 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     }
 
     if (!structureContainer) throw new Error('Structure loader returned no structure container');
+    // The start-up demo: reloading loses nothing the user made, so the reload
+    // guard (ui/LeaveGuard.js) does not count it.
+    if (isDefault) structureContainer.isBootDefault = true;
 
    revealFeaturePanels();
 

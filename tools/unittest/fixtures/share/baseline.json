@@ -16,6 +16,7 @@
   "showAtoms": true,
   "showBonds": true,
   "showCharges": false,
+  "showCifErrors": true,
   "showLattice": true,
   "showPeriodic": true,
   "linkPeriodicCopies": true,
@@ -29,6 +30,9 @@
    "zmax": 1
   },
   "showPBCBonds": false,
+  "completeFragments": false,
+  "fragmentIgnoreMetalBonds": true,
+  "fragmentMaxRing": 6,
   "showAxes": true,
   "showPolyhedra": false,
   "completePolyhedra": false,

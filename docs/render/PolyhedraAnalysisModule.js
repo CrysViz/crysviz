@@ -16,7 +16,7 @@ import { general } from '../state/store.js';
 /** Rendered radius of a source atom, matching AtomsFracUpdateModule's
  *  updateSingleAtomDiameter so the inspector's spheres are sized like the main
  *  view's. */
-function renderedAtomRadius(structure, srcIndex, element) {
+export function renderedAtomRadius(structure, srcIndex, element) {
   const scale = structure?.atoms?.[srcIndex]?.getRadiusScale?.() ?? 1;
   return (atomicRadii[element] || 1.0) * (general.atomSize ?? 1) * scale;
 }
@@ -37,7 +37,7 @@ function normalizeColorHex(raw) {
 
 /** Current colour of a source atom as a hex number (per-atom/user colour wins,
  *  else the element default) — same source the main atom mesh reads. */
-function atomColorHex(structure, srcIndex) {
+export function atomColorHex(structure, srcIndex) {
   return normalizeColorHex(structure?.atoms?.[srcIndex]?.getColor?.());
 }
 
@@ -60,35 +60,45 @@ function centroidOf(points) {
 // coincide to floating-point precision (exact lattice translations) — round to
 // collapse them into one key without merging genuinely distinct atoms.
 const POS_DECIMALS = 3;
-function posKey(p) {
+export function posKey(p) {
   return `${p[0].toFixed(POS_DECIMALS)},${p[1].toFixed(POS_DECIMALS)},${p[2].toFixed(POS_DECIMALS)}`;
 }
 
-/** The real rendered colour of each half of the bond connecting `centerPos`
- *  to `vertexPos` (matched by position, since a bond's two periodic-image
- *  positions ARE the two atoms' exact cartesian coordinates) — respects
- *  whatever produced it (element/force/length colour mode, category style, or
- *  a per-bond override), same as the main view, rather than assuming a bond
- *  is always coloured by its endpoint atoms. Returns null if no matching bond
- *  is found (e.g. bonds hidden/not yet built), so callers can fall back. */
-function findBondHalfColors(structure, centerPos, vertexPos) {
-  const bonds = structure?.bonds;
-  if (!bonds?.length) return null;
-  const ck = posKey(centerPos);
-  const vk = posKey(vertexPos);
-  for (const bond of bonds) {
+/** Look up the main view's own drawn bond between two placed atoms (matched
+ *  by position, since a bond's two periodic-image positions ARE the two
+ *  atoms' exact cartesian coordinates), for the inspectors to draw it the
+ *  same way: the real rendered colour of each half — whatever produced it
+ *  (element/force/length colour mode, category style, a per-bond override) —
+ *  and where the main render starts the bond at each atom (model/Bond.js
+ *  r1/r2, the distance from the atom's centre). Reusing those, rather than
+ *  re-deriving them, keeps the inspectors in step with the main view's bond
+ *  geometry. Builds an index of structure.bonds once; the returned function
+ *  gives null for a pair with no drawn bond (e.g. bonds hidden/not yet built)
+ *  so callers can fall back.
+ *  @returns {(posA:number[], posB:number[]) => null | {hexA:number|null, hexB:number|null, trimA:number|null, trimB:number|null}} */
+export function renderedBondLookup(structure) {
+  const index = new Map();
+  for (const bond of structure?.bonds ?? []) {
     const pos = bond?.positions;
     if (!pos || pos.length !== 2) continue;
-    const k0 = posKey(pos[0]);
-    const k1 = posKey(pos[1]);
-    const colorAt = (i) => normalizeColorHex(bond.userColor?.[i] ?? bond.color?.[i]);
-    if (k0 === ck && k1 === vk) return { centerHex: colorAt(0), vertexHex: colorAt(1) };
-    if (k0 === vk && k1 === ck) return { centerHex: colorAt(1), vertexHex: colorAt(0) };
+    index.set(`${posKey(pos[0])}|${posKey(pos[1])}`, bond);
   }
-  return null;
+  const colorAt = (bond, i) => normalizeColorHex(bond.userColor?.[i] ?? bond.color?.[i]);
+  const trimAt = (bond, i) => {
+    const t = i === 0 ? bond.r1 : bond.r2;
+    return Number.isFinite(t) ? t : null;
+  };
+  return (posA, posB) => {
+    const ka = posKey(posA), kb = posKey(posB);
+    let bond = index.get(`${ka}|${kb}`);
+    if (bond) return { hexA: colorAt(bond, 0), hexB: colorAt(bond, 1), trimA: trimAt(bond, 0), trimB: trimAt(bond, 1) };
+    bond = index.get(`${kb}|${ka}`);
+    if (bond) return { hexA: colorAt(bond, 1), hexB: colorAt(bond, 0), trimA: trimAt(bond, 1), trimB: trimAt(bond, 0) };
+    return null;
+  };
 }
 
-function angleAtCenterDeg(center, p, q) {
+export function angleAtCenterDeg(center, p, q) {
   const v1 = [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
   const v2 = [q[0] - center[0], q[1] - center[1], q[2] - center[2]];
   const dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
@@ -106,7 +116,7 @@ function angleAtCenterDeg(center, p, q) {
  *  centring is needed. Returns null for fewer than 4 points or a degenerate
  *  (coplanar/collinear) set that has no hull.
  *  @param {number[][]} vertexPositions cartesian [x,y,z] per vertex */
-function convexHullVolume(vertexPositions) {
+export function convexHullVolume(vertexPositions) {
   if (!vertexPositions || vertexPositions.length < 4) return null;
   let geom;
   try {
@@ -149,6 +159,30 @@ function sampleVariance(values, ideal) {
   if (values.length < 2) return null;
   const sq = values.reduce((s, v) => s + (v - ideal) ** 2, 0);
   return sq / (values.length - 1);
+}
+
+/**
+ * Bond-length distortion index and bond-angle variance of a centred
+ * polyhedron, from positions. One function for the inspector's numbers and
+ * for their CIF errors (ui/AnalysisPanels/PolyhedronInspector.js propagates
+ * through it with model/cifErrors.js), so both follow exactly the same maths.
+ * @param {number[]} center cartesian centre
+ * @param {number[][]} vertices cartesian vertices
+ * @param {Array<{i:number, j:number, kind?:string|null}>} anglePairs the
+ *   vertex pairs the variance is defined over (tetrahedralAngles /
+ *   octahedralAngles: all for CN4, the cis ones for CN6)
+ * @returns {{ bld: number|null, angleVariance: number|null }}
+ */
+export function polyhedronDistortion(center, vertices, anglePairs) {
+  const cn = vertices.length;
+  const dists = vertices.map((v) => Math.hypot(v[0] - center[0], v[1] - center[1], v[2] - center[2]));
+  const avg = dists.reduce((a, b) => a + b, 0) / dists.length;
+  const bld = avg > 1e-9 ? dists.reduce((acc, d) => acc + Math.abs(d - avg), 0) / dists.length / avg : null;
+  const at = (a) => angleAtCenterDeg(center, vertices[a.i], vertices[a.j]);
+  let angleVariance = null;
+  if (cn === 4) angleVariance = sampleVariance(anglePairs.map(at), TETRAHEDRAL_IDEAL_DEG);
+  else if (cn === 6) angleVariance = sampleVariance(anglePairs.filter((a) => a.kind === 'cis').map(at), OCTAHEDRAL_IDEAL_DEG);
+  return { bld, angleVariance };
 }
 
 /** All 6 vertex-centre-vertex angles of a tetrahedral (CN4) shell, each tagged
@@ -328,10 +362,11 @@ export function computePolyhedronDetail(structure, poly) {
   const centerCart = isCentered ? polyhedronCenterCart(structure, poly, lattice, latInv) : null;
 
   const vertexSrcList = poly.vertexSrcList ?? [];
+  const drawnBond = centerCart ? renderedBondLookup(structure) : null;
   const vertices = poly.vertices.map((pos, i) => {
     const srcIndex = vertexSrcList[i];
     const element = Number.isInteger(srcIndex) ? (structure.elements?.[srcIndex] ?? null) : null;
-    const bondColors = centerCart ? findBondHalfColors(structure, centerCart, pos) : null;
+    const drawn = drawnBond ? drawnBond(centerCart, pos) : null;
     return {
       pos, srcIndex, element,
       bondLength: centerCart ? dist3(pos, centerCart) : null,
@@ -339,9 +374,12 @@ export function computePolyhedronDetail(structure, poly) {
       radius: Number.isInteger(srcIndex) ? renderedAtomRadius(structure, srcIndex, element) : 0.5,
       // The actual rendered bond half-colours (may differ from the endpoint
       // atoms' own colours — bond length/category/user-override colouring),
-      // null when no matching bond is found so callers fall back to atom colour.
-      bondColorNear: bondColors?.centerHex ?? null,
-      bondColorFar: bondColors?.vertexHex ?? null,
+      // and where the main render starts the bond at each atom; null when no
+      // matching bond is found so callers fall back.
+      bondColorNear: drawn?.hexA ?? null,
+      bondColorFar: drawn?.hexB ?? null,
+      bondTrimNear: drawn?.trimA ?? null,
+      bondTrimFar: drawn?.trimB ?? null,
     };
   });
 
@@ -353,18 +391,11 @@ export function computePolyhedronDetail(structure, poly) {
   }
 
   let bld = null;
-  if (centerCart) {
-    const dists = vertices.map((v) => v.bondLength);
-    const avg = dists.reduce((a, b) => a + b, 0) / dists.length;
-    bld = avg > 1e-9 ? dists.reduce((s, d) => s + Math.abs(d - avg), 0) / dists.length / avg : null;
-  }
   let angleVariance = null, angleLabel = null;
-  if (cn === 4 && centerCart) {
-    angleVariance = sampleVariance(angles.map((a) => a.angleDeg), TETRAHEDRAL_IDEAL_DEG);
-    angleLabel = 'TAV';
-  } else if (cn === 6 && centerCart) {
-    angleVariance = sampleVariance(angles.filter((a) => a.kind === 'cis').map((a) => a.angleDeg), OCTAHEDRAL_IDEAL_DEG);
-    angleLabel = 'OAV';
+  if (centerCart) {
+    ({ bld, angleVariance } = polyhedronDistortion(centerCart, poly.vertices, angles));
+    if (cn === 4) angleLabel = 'TAV';
+    else if (cn === 6) angleLabel = 'OAV';
   }
 
   const style = resolvePolyhedronStyle(
