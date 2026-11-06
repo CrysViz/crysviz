@@ -35,7 +35,7 @@ export {
 
 export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,
-  updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
+  updateSingleBondDiameter, applyBondRadius, disposeBondsMesh, updateSingleBondColor,
   updateSingleBondOpacity, bondKey, bondGroupKey, refreshBondColorsForAtoms,
 } from './BondsFracUpdateModule.js';
 
@@ -61,7 +61,8 @@ export {
   DEFAULT_FOCUS_REGION, POLYHEDRA_FOCUS_MODES, focusOpacityAt, focusDistanceTo, gradientStartRadius,
   combinedFocusOpacity, focusOpacityForPolyhedron, getFocusOpacityForPolyhedron, getFocusRegions,
   focusRegionsActive, getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion,
-  removeFocusRegion, clearFocusRegions, applyFocusRegions, setFocusRegionCenterFractional,
+  removeFocusRegion, clearFocusRegions, applyFocusRegions, applyFocusRegionEdit, persistFocusRegions,
+  setFocusRegionCenterFractional,
   resetFocusRegionCenter, applyFocusToArrows, applyFocusToField,
 } from './FocusRegionModule.js';
 

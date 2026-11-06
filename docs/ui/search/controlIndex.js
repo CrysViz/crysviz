@@ -138,7 +138,7 @@ export const CONTROL_INDEX = [
   {"panel":"spins","label":"Rotation about Z (°)","kind":"input"},
   {"panel":"spins","label":"Reset","kind":"button"},
   {"panel":"spins","label":"Spin Source","section":"Species Visibility","kind":"select"},
-  {"panel":"spins","label":"Color Map","section":"Species Visibility","kind":"select"},
+  {"panel":"spins","label":"Color Map","section":"Species Visibility","kind":"select","id":"spinColorMapSelect"},
   {"panel":"spins","label":"x y z [scale] [color] Example: 1 1 1 1 1 1 1.0 teal 0 0 1 2.0 #0000ff","section":"Manual Spin Vectors (x y z [scale] [color])","kind":"input","id":"spinTextInput"},
   {"panel":"spins","label":"Draw","section":"Manual Spin Vectors (x y z [scale] [color])","kind":"button"},
   {"panel":"spins","label":"Overwrite Structure","section":"Manual Spin Vectors (x y z [scale] [color])","kind":"button"},

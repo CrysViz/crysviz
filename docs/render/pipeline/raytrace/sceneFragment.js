@@ -29,10 +29,12 @@
 //   polyhedra  header (planeOffset, planeCount, matType, roughness),
 //              (rgb, alpha), (aabbMin, typeParam), (aabbMax, reflectivity),
 //              then planeCount (normal.xyz, d)
-//   planes     6 texels/plane: (normal.xyz, d), (flatColor.rgb, alpha),
+//   planes     8 texels/plane: (normal.xyz, d), (flatColor.rgb, alpha),
 //              (centroid.xyz, mode), (uAxis.xyz, halfU), (vAxis.xyz, halfV),
-//              (atlas uMin, vMin, uSize, vSize). mode 0 = None (flat grey),
-//              1 = Field (colormap atlas). See raytrace/planeChunk.js.
+//              (atlas uMin, vMin, uSize, vSize), (boundsMin.xyz, -),
+//              (boundsMax.xyz, -). mode 0 = None (flat grey), 1 = Field
+//              (colormap atlas); bounds = the fractional box the plane is
+//              trimmed to. See raytrace/planeChunk.js.
 // typeParam = IoR for glass / intensity for emissive; reflectivity < 0 means
 // "use the global uReflectivity slider".
 // The single light is directional (the app's camera-relative key light);

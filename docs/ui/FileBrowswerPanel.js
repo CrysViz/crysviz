@@ -15,6 +15,7 @@ import { notifyActiveStructureChange } from '../state/structures.js';
 import { count as traceCount } from '../debug/debugTrace.js';
 import { generateID } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
+import { captureContainerSizes, applyContainerSizes } from './SizePrefs.js';
 import { captureSelectionSnapshot, restoreSelectionSnapshot } from './SelectAndHighlightModule.js';
 
 const rowObjects = new WeakMap();
@@ -976,6 +977,7 @@ function updateStructureFromRowAndStep(rowIndex) {
   if (rowChanged) {
     if (!app.cameraLocked) lastActiveContainer.cameraSnapshot = captureCameraSnapshot();
     if (general.featuresLocked === false) lastActiveContainer.featureSnapshot = snapshotFeatureToggles();
+    captureContainerSizes(lastActiveContainer); // sizes are per-structure, no lock
     // The atom selection is per structure too: its instance numbers mean
     // other atoms in another structure. Kept here, restored on the way back.
     lastActiveContainer.selectionSnapshot = captureSelectionSnapshot();
@@ -1008,6 +1010,9 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
   void step;
   traceCount('frameApplied'); // Debug panel's playback counter (proper loads)
   fileBrowser.selectedStructure = structure;
+  // Atom Size / Bond Diameter of the structure being entered (ui/SizePrefs.js),
+  // before anything below rebuilds atoms or bonds with them.
+  if (container !== lastActiveContainer) applyContainerSizes(container);
   syncPlanesForSelectedStructure();
   refreshBackendTheme();
   let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
