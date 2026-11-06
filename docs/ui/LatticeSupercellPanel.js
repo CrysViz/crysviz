@@ -527,7 +527,7 @@ function addVacuumSection(container) {
     </div>
     <div class="lsc-vacuum-status-row">
       <span id="vacuumAppliedText"></span>
-      <button id="resetVacuum" class="btn-mini lsc-reset-vacuum-btn">Reset Vacuum</button>
+      <button id="resetVacuum" class="reset-btn lsc-reset-vacuum-btn">Reset Vacuum</button>
     </div>
   `;
 
@@ -713,7 +713,7 @@ function addPeriodicBoundarySection(container) {
   const hint = document.createElement('span');
   hint.className = 'pbnd-hint';
   const resetBtn = document.createElement('button');
-  resetBtn.className = 'btn-mini lsc-reset-vacuum-btn';
+  resetBtn.className = 'reset-btn lsc-reset-vacuum-btn';
   resetBtn.textContent = 'Reset';
   resetBtn.title = 'Reset the boundary to the unit cell (0–1 on every axis).';
   foot.append(hint, resetBtn);
