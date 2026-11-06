@@ -126,6 +126,10 @@ const panelPrefDefaults = {
   // answer last given (ui/CifSymmetryLoad.js), offered as the next default.
   // Reading them is the default until the user says no once.
   readCifErrors: true,
+  // Files ▸ structure list: the height (px) it may grow to before it
+  // scrolls, set by dragging its bottom bar; 0 = the default
+  // (ui/FileBrowswerPanel.js LIST_DEFAULT_PX).
+  fileListMaxHeight: 0,
 };
 const panelPrefs = { ...panelPrefDefaults };
 

@@ -21,6 +21,62 @@
   border-collapse: collapse;
   }
 
+  /* The structure list grows with its rows up to a height the user sets with
+     the bar along its bottom (FileBrowswerPanel.js initFileListResize), then
+     scrolls — with a visible scrollbar, so a cut-off row reads as "more". */
+  #structureTablePanel {
+    max-height: var(--cv-fb-list-max, 240px);
+    scrollbar-width: thin;
+  }
+  .cv-fb-list-resize {
+    position: sticky;
+    bottom: 0;
+    height: 12px;
+    cursor: ns-resize;
+    touch-action: none;
+    background: var(--surface-bg);
+    border-top: 1px solid var(--line-2);
+  }
+  /* A grip pill in the middle, so the bar reads as something to drag. */
+  .cv-fb-list-resize::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 36px;
+    height: 4px;
+    transform: translate(-50%, -50%);
+    border-radius: 2px;
+    background: var(--fg-2);
+    opacity: 0.6;
+  }
+  .cv-fb-list-resize:hover::after {
+    opacity: 1;
+  }
+
+  /* The name is what matters: it takes all the spare width, every other
+     column shrinks to its content. max-width: 0 lets the name cell shrink
+     below its text so the ellipsis applies instead of widening the table. */
+  #objectTable .fth:not(:nth-child(2)),
+  #objectTable .ftd:not(:nth-child(2)) {
+    width: 1%;
+    white-space: nowrap;
+  }
+  #objectTable .ftd:nth-child(2) {
+    width: 100%;
+    max-width: 0;
+  }
+
+  /* Drag-to-reorder (FileBrowswerPanel.js onRowPointerDown). */
+  #objectTable tbody.cv-fb-reordering {
+    user-select: none;
+    cursor: grabbing;
+  }
+  #objectTable .ftr.cv-fb-row-dragging {
+    outline: 2px dashed var(--accent-fg);
+    outline-offset: -2px;
+  }
+
   #objectTable .fth,
   #objectTable .ftd {
   border: 1px solid var(--line-2);
@@ -98,7 +154,6 @@
   /* Name scrolling behavior */
   .name-cell {
     position: relative;
-    width: 100px; /* about 10 characters */
     overflow: hidden;
   }
 

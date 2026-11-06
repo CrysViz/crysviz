@@ -7,6 +7,7 @@ import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, g
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
 import { clearLocalData } from '../../state/structurePrefs.js';
+import { initFileListResize } from '../FileBrowswerPanel.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender, setAxisStepButtonsMode } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
@@ -448,6 +449,7 @@ export function registerDefaultPanels() {
       if (upload) body.appendChild(upload);
       const table = document.getElementById('structureTablePanel');
       if (table) body.appendChild(table);
+      initFileListResize();
       // (The Share button lives in #uploadSection's action row and moves with
       // it; see ShareModule.createShareButton.)
       // The selected structure's lattice / positions / Wyckoff positions,
