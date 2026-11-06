@@ -247,7 +247,16 @@ export const CONCEPTS = [
   { to: { control: 'showAxes' }, phrases: ['coordinate axes', 'axis indicator', 'abc axes', 'xyz axes'] },
   { to: { control: 'showPeriodic' }, phrases: ['periodic images', 'boundary atoms', 'image atoms'] },
   { to: { control: 'PBCBondToggle' }, phrases: ['bonds across boundary', 'bonds to periodic images'] },
+  { to: { control: 'completeFragmentsToggle' }, phrases: [
+    'whole molecules', 'molecules across boundary', 'broken molecules', 'cut molecules', 'unwrap molecules',
+    'complete rings', 'rings across boundary', 'broken rings', 'complete fragments', 'whole fragments',
+    'complete molecules',
+  ] },
   { to: { control: 'showCharges' }, phrases: ['oxidation states', 'formal charges', 'charge labels', 'ionic charges'] },
+  { to: { control: 'showCifErrorsToggle' }, phrases: [
+    'standard uncertainty', 'standard uncertainties', 'esd', 'estimated standard deviation', 'error bars',
+    'measurement errors', 'bond length error', 'uncertainty', 'hide errors',
+  ] },
   { to: { control: 'atomsMenu' }, phrases: [
     'atom colours', 'colour atoms', 'colour atoms by', 'colour by force', 'colour by property', 'colour scheme',
   ] },
@@ -306,6 +315,11 @@ export const CONCEPTS = [
   // ---- the app ------------------------------------------------------------------------------------
   { to: { action: 'Add panels' }, phrases: [
     'more panels', 'more features', 'show all features', 'hidden features', 'missing panel', 'missing window', 'add window',
+  ] },
+  { to: { action: 'Selection Inspector' }, phrases: [
+    'inspect selection', 'inspect atoms', 'inspect selected atoms', 'selection geometry',
+    'local geometry', 'fragment inspector',
+    'compare bond lengths', 'compare bond angles', 'experiment vs dft', 'experiment versus dft',
   ] },
   { to: { action: 'Reset to Essentials' }, phrases: ['simplify sidebar', 'fewer panels', 'too many panels', 'clean sidebar'] },
   { to: { action: 'Light mode' }, phrases: ['white mode', 'bright theme'] },

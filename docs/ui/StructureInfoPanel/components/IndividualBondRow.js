@@ -1,12 +1,11 @@
 import { fileBrowser, groups, general } from '../../../state/store.js';
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
-import { updateSingleBondColor, updateSingleBondOpacity, applyBondRadius, bondKey } from '../../../render/BondsFracUpdateModule.js';
+import { updateSingleBondColor, updateSingleBondOpacity, updateSingleBondDiameter, bondKey } from '../../../render/BondsFracUpdateModule.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { notifyColorsChanged } from '../../../render/index.js';
 import { getElementAtomIndices, clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
-import { saveBondStyles, scheduleBondStyleSave } from '../../SizePrefs.js';
 import { selectBondFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight } from '../../SelectAndHighlightModule.js';
 
 // Helper: Ensure color is always a valid CSS hex string
@@ -130,7 +129,6 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
     }
     if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
     colorBtn.style.background = hexToRgba(hex, 0.8);
-    scheduleBondStyleSave(structure); // per-structure pref (ui/SizePrefs.js)
     // Nothing else here calls updateVisualization() (it's a direct instance-color
     // mutation, cheaper than a full re-render) — notify separately so anything
     // depending on live colours (e.g. the Polyhedron Inspector) still refreshes.
@@ -172,7 +170,6 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
         updateSingleBondOpacity(b.instanceIds[1], value);
       }
     }
-    scheduleBondStyleSave(structure);
   }
   alphaSlider.oninput = (e) => applyBondAlpha(/** @type {any} */ (e.target).value);
   alphaValue.oninput = (e) => applyBondAlpha(/** @type {any} */ (e.target).value);
@@ -208,10 +205,12 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
       stylesEntryFor(b).radiusScale = value;
       // b.radius drives every repaint (updateSingleBond), so the live change
       // sticks; buildBondObjects re-derives it from the persisted scale.
-      // applyBondRadius also re-clips the length, which depends on the radius.
-      applyBondRadius(b, general.bondRadius * value);
+      b.radius = general.bondRadius * value;
+      if (b.instanceIds && groups.bondsMesh) {
+        updateSingleBondDiameter(b.instanceIds[0], b.radius);
+        updateSingleBondDiameter(b.instanceIds[1], b.radius);
+      }
     }
-    scheduleBondStyleSave(structure);
   }
   sizeSlider.oninput = (e) => applyBondRadiusScale(/** @type {any} */ (e.target).value);
   sizeValue.oninput = (e) => applyBondRadiusScale(/** @type {any} */ (e.target).value);
@@ -250,7 +249,6 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
     onPress: (e) => {
       e.stopPropagation();
       for (const b of memberBonds()) delete structure.bondUserStyles[bondKey(b.indices)];
-      saveBondStyles(structure);
       // Rebuild bonds so the mode coloring (element/solid/length/...) reapplies.
       updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
       // The rebuild invalidated every Bond object this list references — refresh
@@ -264,7 +262,6 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
       applyToOtherTrajectoryFrames(structure, (frame) => {
         for (const k of keys) delete frame.bondUserStyles?.[k];
       });
-      saveBondStyles(structure);
       updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
       /** @type {any} */ (row.closest('.individual-bonds'))?._populateBondRows?.();
     },
@@ -284,7 +281,6 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
         if (material) stylesEntryFor(b).material = material;
         else delete stylesEntryFor(b).material;
       }
-      saveBondStyles(structure);
     });
 
   editor.appendChild(picker.element);

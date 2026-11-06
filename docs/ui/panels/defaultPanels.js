@@ -6,7 +6,6 @@
 import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref, setForcedIconMode } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
-import { clearLocalData } from '../../state/structurePrefs.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender, setAxisStepButtonsMode } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
@@ -37,6 +36,8 @@ import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
 import { createFeatureLockSwitch } from '../FeatureLockModule.js';
+import { setCifErrorsShown } from '../CifErrorsDisplay.js';
+import { resetFeatureStoreToFirstRun } from './featureStore.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import { addFocusRegionsPanel, removeFocusRegionsPanel } from '../FocusRegionsPanel.js';
 import { isDebugMode } from '../../debug/debugMode.js';
@@ -137,7 +138,7 @@ function stashStaticRows(inputIds) {
 // Bonds toggle lives in the Features window, next to Show Bonds.)
 const CELL_ROWS = ['showPeriodic'];
 const FEATURE_STATIC_ROWS = ['showAtoms', 'showBonds', 'showCharges', 'PBCBondToggle',
-  'showPolyhedra', 'completePolyhedraToggle'];
+  'completeFragmentsToggle', 'showPolyhedra', 'completePolyhedraToggle'];
 
 // ---- Features window toggle rows ---------------------------------------------
 
@@ -176,6 +177,9 @@ function buildFeaturesBody(body) {
 
   const neighbourBonds = detachStaticRow('PBCBondToggle');
   if (neighbourBonds) group.appendChild(neighbourBonds);
+
+  const completeFragments = detachStaticRow('completeFragmentsToggle');
+  if (completeFragments) group.appendChild(completeFragments);
 
   // Turning a master toggle on re-greys/un-greys its feature panel; on ON it
   // also reveals that panel (restores a shrunk title bar + expands the body)
@@ -221,6 +225,15 @@ function buildFeaturesBody(body) {
     setPlanesVisible(on);
     onToggle('planes', on);
   }));
+
+  // The standard uncertainties read from a CIF (offered when one is loaded,
+  // ui/CifSymmetryLoad.js), written after measured lengths and angles, in the
+  // measurement labels and the inspectors: 2.3456(12) Å. Off hides them;
+  // nothing is lost, on brings them back.
+  const cifErrorsRow = makeToggleRow('showCifErrorsToggle', 'Show CIF Errors', general.showCifErrors !== false,
+    (on) => setCifErrorsShown(on));
+  cifErrorsRow.title = 'Write measured lengths and angles with the standard uncertainty (s.u.) the CIF gives, e.g. 2.3456(12) Å. Read when the CIF is loaded.';
+  group.appendChild(cifErrorsRow);
 
   body.appendChild(group);
 
@@ -1014,17 +1027,18 @@ export function registerDefaultPanels() {
       resetBtn.textContent = 'Reset UI';
       resetBtn.addEventListener('click', () => resetAllPanels());
       resetRow.appendChild(resetBtn);
-      // Wipe every localStorage key the app uses (layout, prefs, theme, the
-      // per-structure preferences, export prefs, font scale). No reload —
-      // changes take effect next load. state/structurePrefs.js clearLocalData
-      // also cancels the pending debounced saves so nothing is written back.
+      // Wipe every localStorage key the app uses (layout, prefs, theme, colors,
+      // export prefs, font scale). No reload — changes take effect next load.
       const clearBtn = document.createElement('button');
       clearBtn.id = 'clearLocalDataButton';
       clearBtn.type = 'button';
       clearBtn.className = 'reset-btn reset-btn-danger';
       clearBtn.textContent = 'Clear local data';
       clearBtn.addEventListener('click', () => {
-        if (confirm('Clear all saved local data?')) clearLocalData();
+        if (confirm('Clear all saved local data?')) {
+          localStorage.clear();
+          resetFeatureStoreToFirstRun(); // next load: the first-run sidebar
+        }
       });
       resetRow.appendChild(clearBtn);
       body.appendChild(resetRow);

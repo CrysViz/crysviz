@@ -20,8 +20,6 @@
 // No DOM here: the popup (ui/FeatureStoreModal.js), the search palette and
 // PanelManager all read and write through this module.
 
-import { onClearLocalData } from '../../state/structurePrefs.js';
-
 const LS_KEY = 'featureStore';
 const STORE_VERSION = 1;
 // The layout blob PanelManager persists (PanelManager.js LS_KEY). Only its
@@ -102,25 +100,15 @@ export function setStoreFeatureEnabled(def, on) {
   return was !== !!on;
 }
 
-/** Write the current state now. PanelManager.saveLayout calls this before it
- *  stores the layout, so a panelLayout is never saved without a featureStore
- *  record beside it: load() can then read a layout with no record as a
- *  pre-store browser, and as nothing else — not a layout the page saved after
- *  Settings ▸ Clear local data, which would bring the full sidebar back. */
-export function recordFeatureStore() {
-  load();
-  save();
-}
-
-// Settings ▸ Clear local data (state/structurePrefs.js clearLocalData): this
-// page becomes a first-run browser. Nothing is written — the wipe leaves the
-// storage empty; the next layout save records the state (recordFeatureStore),
-// and an untouched next load starts as a first-run browser by itself.
-onClearLocalData(() => {
+/** Settings ▸ Clear local data: record a first-run browser. Without it the
+ *  layout the running page re-saves after the wipe would make the next load
+ *  read as a pre-store browser and bring the full sidebar back. */
+export function resetFeatureStoreToFirstRun() {
   loaded = true;
   choices = {};
   allByDefault = false;
-});
+  save();
+}
 
 /** Subscribe to sidebar membership changes: fn(panelId, inSidebar). */
 export function onFeatureStoreChange(fn) {

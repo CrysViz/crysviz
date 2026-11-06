@@ -95,6 +95,10 @@ async function scrollSettled(el, timeoutMs = 1200) {
 }
 
 /** App-level actions that are not keyboard-shortcut commands. */
+async function openSelectionInspector() {
+  (await import('./AnalysisPanels/SelectionInspector.js')).openSelectionInspector();
+}
+
 function appActions() {
   const click = (sel) => () => /** @type {HTMLElement|null} */ (document.querySelector(sel))?.click();
   return [
@@ -105,6 +109,7 @@ function appActions() {
     { label: 'Follow system theme', path: 'Theme', keywords: ['auto', 'theme', 'system'], run: click('[data-theme-option="auto"]') },
     { label: 'Colour palette', path: 'Theme', keywords: ['color', 'palette', 'theme'], run: click('#themeMenuToggle') },
     { label: 'About CrysViz', path: 'Help', keywords: ['version', 'help', 'license', 'credits'], run: click('#aboutTrigger') },
+    { label: 'Selection Inspector', path: 'The selected atoms in their own view (also: Inspect on the selection bar)', keywords: ['inspect', 'inspector', 'selection', 'selected atoms'], run: openSelectionInspector },
   ].map((a) => ({ ...a, type: 'action', curated: true }));
 }
 

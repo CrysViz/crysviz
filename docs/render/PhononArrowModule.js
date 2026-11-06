@@ -11,7 +11,6 @@ import * as THREE from '../external/three/three.module.js';
 import { app, groups } from '../state/store.js';
 import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
 import { getColorFromMap } from '../defaults/color_texture_defaults.js';
-import { applyFocusToPhononArrows } from './FocusRegionModule.js';
 
 const SHAFT_SEGS = 12;
 const TIP_SEGS = 12;
@@ -176,8 +175,6 @@ export function updatePhononArrows(structure, vectors, {
   shaftMesh.instanceColor.needsUpdate = true;
   tipMesh.instanceMatrix.needsUpdate = true;
   tipMesh.instanceColor.needsUpdate = true;
-  // Fade with the atoms they start on, like the force/spin arrows.
-  applyFocusToPhononArrows(structure);
 }
 
 export function hasPhononArrows() {

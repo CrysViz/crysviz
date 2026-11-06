@@ -21,17 +21,15 @@ function cloneAtom(src, element, position) {
   });
   // userColor is intentionally not a constructor argument, copy it directly.
   atom.userColor = src.userColor;
+  // A copy of a CIF site keeps its errors (model/cifErrors.js): the record
+  // is in the CIF's own cell, which createSupercell's toCif keeps in reach.
+  if (src.cifSite) atom.cifSite = src.cifSite;
   return atom;
 }
 
-/**
- * Re-tile `sel` in place to an nx×ny×nz supercell of its base cell (the model
- * only: atoms, elements, lattice, `supercell`; nothing is rendered). Split out
- * of createSupercell so the stored-preference restore (state/cellPrefs.js) can
- * tile a freshly loaded structure before it is first selected and drawn.
- * @param {any} sel a Structure
- */
-export function tileSupercell(sel, nx = 1, ny = 1, nz = 1) {
+export function createSupercell(nx = 1, ny = 1, nz = 1) {
+
+  const sel = fileBrowser.selectedStructure;
 
   // Current supercell factors of the *live* structure (defaults to 1×1×1).
   const cur = sel.supercell || {};
@@ -53,7 +51,12 @@ export function tileSupercell(sel, nx = 1, ny = 1, nz = 1) {
   let baseAtoms;
   let baseElements;
   let baseLattice;
+  // The base cell's factors relative to the live one (for the CIF errors'
+  // cell mapping below): the live factors, or 1 when the whole live cell is
+  // the base.
+  let baseFactors = [1, 1, 1];
   if (Number.isInteger(rawBaseCount) && rawBaseCount > 0) {
+    baseFactors = [cx, cy, cz];
     baseLattice = sel.lattice.map((row, idx) => {
       const f = [cx, cy, cz][idx];
       return row.map(x => x / f);
@@ -99,15 +102,20 @@ export function tileSupercell(sel, nx = 1, ny = 1, nz = 1) {
     baseLattice[2].map(x => x * nz)
   ];
 
+  // CIF errors: new fractional coordinates are the base's divided by n, the
+  // base's the live ones times its factors, so the map to the CIF's cell
+  // (f_cif = f · toCif) scales row i by n_i / baseFactor_i.
+  if (sel.cifErrors) {
+    const toCif = sel.cifErrors.toCif ?? [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const n = [nx, ny, nz];
+    sel.cifErrors.toCif = toCif.map((row, i) => row.map((v) => (v * n[i]) / baseFactors[i]));
+  }
+
   // Commit the new (modification-preserving) supercell to the live structure.
   sel.elements = newElements;
   sel.atoms = newAtoms;
   sel.lattice = newLattice;
   sel.supercell = { nx, ny, nz };
-}
-
-export function createSupercell(nx = 1, ny = 1, nz = 1) {
-  tileSupercell(fileBrowser.selectedStructure, nx, ny, nz);
 
   // Re-render
   //

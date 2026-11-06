@@ -14,7 +14,6 @@
 
 import { fileBrowser, groups, mode, general } from '../../state/store.js';
 import { getAtomColor, setAtomColor, colorHexToCss, createPieDot, updatePieDot, saveAtomColors, scheduleAtomColorSave } from '../../utils/ColorModule.js';
-import { saveAtomRadiusScales, scheduleAtomRadiusScaleSave } from '../SizePrefs.js';
 import {
   updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter,
   clearAtomImageStylesForAtom, setAtomImageStyle, clearAtomImageStyle,
@@ -29,7 +28,7 @@ import {
   getSelectedAtoms, subscribeToAtomSelection, clearSelectedAtoms,
   suppressSelectionHighlightFor3D, restoreSelectionHighlight,
 } from '../SelectAndHighlightModule.js';
-import { setStructurePanelOpen } from './General.js';
+import { isPanelActive } from '../panels/PanelManager.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
 import { clampOpacity, clampRadiusScale } from './components/utils.js';
 
@@ -246,7 +245,6 @@ function applyBulkRadiusScale(selected, value) {
       clearAtomImageStylesForAtom(structure, idx, 'radiusScale');
       structure.atomImages[idx]?.forEach((imgIndex) => updateSingleAtomDiameter(imgIndex, structure.elements[idx], value));
     });
-    scheduleAtomRadiusScaleSave(structure); // per-structure pref (ui/SizePrefs.js)
   } else {
     selected.forEach((atom) => {
       setAtomImageStyle(structure, atom.instanceId, { radiusScale: value });
@@ -287,7 +285,6 @@ function resetBulkStyle(selected) {
       });
     });
     saveAtomColors(structure); // drops the cleared overrides from storage too
-    saveAtomRadiusScales(structure);
     if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, null);
   } else {
     // Drop only the selected copies' per-image overrides and repaint them from
@@ -394,9 +391,21 @@ function refreshSelectionActionBar() {
     coordinatesExpanded = !coordinatesExpanded;
     refreshSelectionActionBar();
   };
+  // Opens the Selection Inspector: these atoms in their own 3D view with
+  // bond lengths and angles. Loaded on demand — it imports the selection
+  // module this bar is reached from, and nothing needs it until clicked.
+  const inspectBtn = document.createElement('button');
+  inspectBtn.className = 'btn-mini si-selbar-inspect';
+  inspectBtn.id = 'selectionInspectBtn';
+  inspectBtn.textContent = 'Inspect';
+  inspectBtn.title = 'Selection Inspector: show the selected atoms in their own 3D view, with the bonds between them, every bond length and every bond angle. It follows the selection — Shift-click adds atoms, Ctrl/⌘-click removes them.';
+  inspectBtn.onclick = async () => {
+    const { openSelectionInspector } = await import('../AnalysisPanels/SelectionInspector.js');
+    openSelectionInspector();
+  };
   const headerActions = document.createElement('div');
   headerActions.className = 'si-selbar-header-actions';
-  headerActions.append(coordinatesBtn, clearBtn);
+  headerActions.append(inspectBtn, coordinatesBtn, clearBtn);
   header.appendChild(summary);
   header.appendChild(headerActions);
   container.appendChild(header);
@@ -478,19 +487,23 @@ let subscribed = false;
 let prevSelectionCount = 0;
 
 // On every selection change: when a 3D pick/marquee grows the selection into a
-// MULTI-atom one (1 -> 2+), fold the per-atom lists and reveal the panel so the
-// bulk bar (the "top section") is what the user sees — the per-atom rows aren't
-// the right tool for a group edit. A single selection stays quiet (no panel
-// pop), and additions made by clicking panel rows are left alone so the list
-// the user is working in doesn't collapse under them.
+// MULTI-atom one (1 -> 2+) while the Structure window's formula box is already
+// showing, fold the per-atom lists so the bulk bar (the "top section") is what
+// the user sees — the per-atom rows aren't the right tool for a group edit.
+// It never OPENS the window: Ctrl/Shift-picking in the 3D view builds a
+// selection there (for the Selection Inspector, the Planes panel, ...), and a
+// window popping up on the second atom is in the way. A single selection
+// stays quiet too, and additions made by clicking panel rows are left alone so
+// the list the user is working in doesn't collapse under them.
 function onSelectionChanged(payload) {
   const count = getSelectedAtoms().length;
   const reason = payload?.event?.reason;
   const from3D = reason === 'pick' || reason === 'marquee';
-  if (from3D && count >= 2 && prevSelectionCount < 2) {
+  const showing = isPanelActive('info')
+    && !!document.getElementById('composition')?.classList.contains('open');
+  if (from3D && showing && count >= 2 && prevSelectionCount < 2) {
     collapseAllAtomExpansions();
-    setStructurePanelOpen(true);
-    document.getElementById(BAR_ID)?.scrollIntoView({ block: 'start' });
+    document.getElementById(BAR_ID)?.scrollIntoView({ block: 'nearest' });
   }
   prevSelectionCount = count;
   refreshSelectionActionBar();

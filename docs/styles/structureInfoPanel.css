@@ -1084,6 +1084,7 @@
 /* Compact Clear/Reset — smaller than the shared .btn-mini so they read as
    secondary actions on the bar rather than primary buttons. Scoped through
    .si-selection-bar to out-rank .cv-panel-body button's font-size (panelWindow.css). */
+.si-selection-bar .si-selbar-inspect,
 .si-selection-bar .si-selbar-clear,
 .si-selection-bar .si-selbar-reset,
 .si-selection-bar .si-selbar-coordinates-toggle,

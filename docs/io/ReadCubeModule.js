@@ -1,6 +1,6 @@
 // ReadCubeModule.js
-// Gaussian .cube files → Structure + Fields (format parsing in cubeParse.js)
-// Exports: readCubeFile(), buildCubeStructure(), readCubeStructure()
+// Parser for Gaussian .cube volumetric files + Marching Cubes isosurface extraction
+// Exports: readCubeFile(), updateField()
 //
 import { Structure } from '../model/index.js';
 import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from '../math/index.js';
@@ -10,8 +10,6 @@ import { FieldContainer } from '../model/index.js';
 import { computeFieldStats } from '../model/index.js';
 import { Atom } from '../model/index.js';
 import { generateID } from '../utils/index.js';
-import { parseCube } from './cubeParse.js';
-import { boxedCubeLayout } from './cubeLayout.js';
 
 
 //------------------------------------------------------------
@@ -45,116 +43,153 @@ export const PT = {
   118: "Og"
 };
 
-//------------------------------------------------------------
-//  readCubeFile(content, fileName) → { fileName, structure_with_field }
-//
-//  Units and layout are handled by io/cubeParse.js; everything it returns is
-//  in Angstrom. The system is shifted so the grid origin sits at the cell
-//  corner (Field origin [0,0,0]), which is where the renderer draws the grid.
-//  The cell is the grid box n_i * step_i: exact for periodic codes (CP2K,
-//  Quantum ESPRESSO), and for a molecular Gaussian cube a box one voxel wider
-//  than the sampled points, with the same spacing.
-//------------------------------------------------------------
-export function readCubeFile(content, fileName) {
-  return buildCubeStructure(parseCube(content), fileName, { periodic: true });
-}
+export const Bohr2Angstrom = 0.529177249; // conversion factor from Bohr to Angstroms
 
-/**
- * Build the structure and its fields from an already-parsed cube.
- *
- * `periodic: true` is the historical behaviour (grid box = cell, atoms wrapped).
- * `periodic: false` treats the file as a finite block: the cell is a padded
- * orthorhombic box around every atom and the whole grid (io/cubeLayout.js),
- * atoms keep their Cartesian positions, and each field keeps its own grid with
- * an `origin` inside that box and `periodic: false`. No array is padded.
- *
- * @param {import('./cubeParse.js').CubeData} cube
- * @param {string} fileName
- * @param {{ periodic: boolean }} options
- */
-export function buildCubeStructure(cube, fileName, { periodic }) {
-  const isBlock = periodic === false;
-  const layout = isBlock ? boxedCubeLayout(cube) : null;
-  const structure = isBlock ? structureFromLayout(cube, layout) : readCubeStructure(cube);
-  const origin = layout ? layout.fieldOrigin : [0, 0, 0];
+//------------------------------------------------------------
+//  readCubeFile(file) → { lattice, positions_cart, field }
+//------------------------------------------------------------
+export function readCubeFile(content,fileName) {
 
-  const fields = cube.values.map((values, index) => new Field({
-    nx: cube.grid[0],
-    ny: cube.grid[1],
-    nz: cube.grid[2],
-    origin: [...origin],
-    voxel: cube.voxel,
-    values,
-    component: index,
-    label: datasetLabel(cube, index),
-    periodic: !isBlock,
-    // One pass instead of the four separate `reduce` walks this used to do
-    // over an array that runs to millions of entries.
-    ...computeFieldStats(values),
+  const lines = content.trim().split(/\r?\n/).filter(l => l.trim());
+  const label = lines.slice(0, 2).map(l => l.trim()).join(" ");
+  let i = 2; // skip first 2 comment lines
+
+  let line = lines[i].trim().split(/\s+/);
+  const natoms = parseInt(line[0]);
+
+  const density_lines = lines.slice(5 + natoms + 1, lines.length);
+  const structure_lines = lines.slice(0, 5 + natoms + 1);
+
+  let structure = readCubeStructure(structure_lines, fileName);
+
+  let isBorh = [];
+  let grid = [];
+  for (let j = 0; j < 3; j++) {
+    i++;
+    line = lines[i].trim().split(/\s+/);
+    const n = parseInt(line[0]);
+    grid.push(n);
+    isBorh.push(n >= 0); // If n is positive, it indicates that the units are in Bohr
+  }
+  const voxel = structure.lattice.map((vec, row) => vec.map(c => c / grid[row]));
+  const npoints = grid.reduce((a, b) => a * b, 1);
+  const zd = grid[0] * grid[1];
+  const yd = grid[0];
+  
+  let lineIndex = 0;
+  let indexInLine = 0;
+  let gridIndex = 0;
+  let element = 0;
+  const field_values = new Float32Array(npoints); 
+  line = density_lines[lineIndex].trim().split(/\s+/);
+  // marching cubes expects iteration order of z,y,x (slowest to fastest)
+  for (let x = 0; x < grid[0]; x++) {
+    for (let y = 0; y < grid[1]; y++) {
+      for (let z = 0; z < grid[2]; z++) {
+        gridIndex = z * zd + y * yd + x;
+        if (lineIndex >= density_lines.length) {
+          console.error("Not enough lines in density data");
+          break;
+        }
+        if (indexInLine >= line.length) {
+          lineIndex++;
+          indexInLine = 0;
+          line = density_lines[lineIndex].trim().split(/\s+/);
+        }
+        element = parseFloat(line[indexInLine]);
+        field_values[gridIndex] = element;
+        indexInLine++;
+      }
+    }
+  }
+
+  let fields = [];
+  fields.push(new Field({
+      nx: grid[0],
+      ny: grid[1],
+      nz: grid[2],
+      origin: [0, 0, 0],
+      voxel: voxel, 
+      values: field_values,
+      component: 0, 
+      label: label,
+      // One pass instead of the four separate `reduce` walks this used to do
+      // over an array that runs to millions of entries.
+      ...computeFieldStats(field_values),
   }));
 
-  structure.volumetricFields = new FieldContainer({
-    fileName,
+  const container = new FieldContainer({
+    fileName: fileName,
     source: "Cube",
-    fields,
+    fields: fields,
     fieldCount: fields.length
-  }); // attached to the structure for easy access in rendering
-  return { fileName, structure_with_field: structure };
-}
-
-/** The comment label, qualified by orbital id / value index when the file
- *  holds more than one dataset. */
-function datasetLabel(cube, index) {
-  if (cube.datasetIds) return `${cube.label} (MO ${cube.datasetIds[index]})`.trim();
-  if (cube.values.length > 1) return `${cube.label} (value ${index + 1})`.trim();
-  return cube.label;
-}
-
-/** Periodic structure: atoms shifted so the grid origin is the cell corner, then wrapped. */
-export function readCubeStructure(cube) {
-  const lattice = cube.lattice;
-  const elements = cube.atoms.map((a) => PT[a.atomicNumber] || "X");
-  // Shift by the grid origin so atoms and field share the cell-corner frame.
-  const positions_cart = cube.atoms.map((a) => a.position.map((c, k) => c - cube.origin[k]));
-  return assembleStructure(lattice, elements, positions_cart, true);
-}
-
-/** Block structure: Cartesian positions already inside the padded box, never wrapped. */
-function structureFromLayout(cube, layout) {
-  const elements = cube.atoms.map((a) => PT[a.atomicNumber] || "X");
-  return assembleStructure(layout.lattice, elements, layout.positions, false);
-}
-
-function assembleStructure(lattice, elements, positions_cart, wrap) {
-  // --- convert cart → frac
-  const latticeInverse = invert3x3(transpose3x3(lattice));
-  const fractional = positions_cart.map(vec => cartToFractional(vec, lattice, latticeInverse));
-  const positions = wrap ? fractional.map(pos => pos.map(normalizeFractional)) : fractional;
-
-  const atoms = [];
-
-  positions.forEach((pos, i) => {
-    atoms.push(new Atom({
-      position: pos,
-      element: elements[i],
-      uuid: generateID([elements[i]])
-    }));
   });
 
-  let periodic = runPeriodicWrapped(
-    { hash: "None", wrapped: {} },
-    positions,
-    elements,
-    lattice
-  );
+  structure.volumetricFields = container; // Attach field container to structure for easy access in rendering
+  return {
+    fileName,
+    structure_with_field: structure
+  };
+}
 
-  const structure = new Structure({
-    elements: elements,
-    uniqueElements: [...new Set(elements)],
-    lattice: lattice,
-    atoms: atoms,
-    periodic: periodic
-  });
+export function readCubeStructure(lines, filename) {
+  let i = 2; // skip first 2 comment lines
+  let line = lines[i].trim().split(/\s+/);
+  const natoms = parseInt(line[0]);
+  const origin = line.slice(1, 4).map(parseFloat);
 
-  return structure;
+  let isBorh = [];
+  let lattice = [];
+  for (let j = 0; j < 3; j++) {
+    i++;
+    line = lines[i].trim().split(/\s+/);
+    const n = parseInt(line[0]);
+    const vec = line.slice(1, 4).map(parseFloat);
+    isBorh.push(n >= 0); // If n is positive, it indicates that the units are in Bohr
+    lattice.push(vec.map(c => c * n * (isBorh[j] ? Bohr2Angstrom : 1))); // Store lattice vectors in Cartesian coordinates
+  }
+
+  const elements = [];
+  const positions_cart = [];
+  for (let j = 0; j < natoms; j++) {
+    i++;
+    line = lines[i].trim().split(/\s+/);
+    const elementNum = parseInt(line[0]);
+    const position = line.slice(2, 5).map((l, index) => (parseFloat(l) - origin[index]) * (isBorh[index] ? Bohr2Angstrom : 1)); // Convert to Cartesian coordinates and shift by origin
+    positions_cart.push(position);
+    elements.push(PT[elementNum] || "X");
+  }
+
+  // --- convert cart → frac if needed
+    const latticeInverse = invert3x3(transpose3x3(lattice));
+    const positions = (
+      positions_cart.map(vec => cartToFractional(vec, lattice, latticeInverse))
+    ).map(pos => pos.map(normalizeFractional));
+  
+    const atoms = [];
+  
+    positions.forEach((pos, i) => {
+      atoms.push(new Atom({
+        position: pos,
+        element: elements[i],
+        uuid: generateID([elements[i]])
+      }));
+    });
+  
+    let periodic = runPeriodicWrapped(
+      { hash: "None",wrapped: {}},
+      positions,  
+      elements,
+      lattice
+    );
+
+    const structure = new Structure({
+      elements: elements,
+      uniqueElements: [...new Set(elements)],
+      lattice: lattice,
+      atoms: atoms,
+      periodic: periodic
+    });
+
+    return structure;
 }

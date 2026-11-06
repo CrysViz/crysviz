@@ -11,7 +11,6 @@
 // plumbing (tabs, resize handle, drop zone) lives in SideDock.js.
 
 import { PanelWindow, applyEdgeAnchors } from './PanelWindow.js';
-import { onClearLocalData } from '../../state/structurePrefs.js';
 import {
   initSideDock, sideDockPanel, sideUndockPanel,
   setSideDockCollapsed, setSideDockSide, refreshSideDock, getSideDockLayout,
@@ -19,7 +18,7 @@ import {
   applySideDockLayout, resetSideDockLayout, wantsSideDockDrop,
   sideDockDropSideAt, updateSideDockHint,
 } from './SideDock.js';
-import { isStoreFeature, isStoreFeatureEnabled, setStoreFeatureEnabled, recordFeatureStore } from './featureStore.js';
+import { isStoreFeature, isStoreFeatureEnabled, setStoreFeatureEnabled } from './featureStore.js';
 
 const LS_KEY = 'panelLayout';
 // Historical persisted field name: panelLayout.rightDock predates the Side dock rename.
@@ -122,6 +121,10 @@ const panelPrefDefaults = {
   // Files ▸ Structure info: whether the section is unfolded
   // (ui/FileStructureSummary.js).
   fileStructureInfoOpen: false,
+  // Loading a CIF that gives standard uncertainties: the "read the errors"
+  // answer last given (ui/CifSymmetryLoad.js), offered as the next default.
+  // Reading them is the default until the user says no once.
+  readCifErrors: true,
 };
 const panelPrefs = { ...panelPrefDefaults };
 
@@ -1070,7 +1073,6 @@ export function saveLayout() {
   // Refresh the in-memory snapshot so panels registered later in the session
   // (e.g. the MD monitor on its next run) resolve against the latest state.
   stored = { dockOrder: data.dockOrder, panels: data.panels, rightDock: data.rightDock };
-  recordFeatureStore(); // never a layout without its featureStore record (featureStore.js)
   try { localStorage.setItem(LS_KEY, JSON.stringify(data)); } catch { /* storage unavailable */ }
 }
 
@@ -1878,13 +1880,6 @@ function scheduleSave() {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveTimer = 0; saveLayout(); }, SAVE_DEBOUNCE_MS);
 }
-
-// "Clear local data" (state/structurePrefs.js clearLocalData): a layout save
-// still in its debounce window would otherwise land after the wipe.
-onClearLocalData(() => {
-  if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = 0;
-});
 
 /**
  * Validate a stored/default floating position without altering its values:

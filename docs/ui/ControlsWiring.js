@@ -8,11 +8,10 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, applyBondRadius, updateLattice, getAtomImageStyle, scheduleBondRebuild, rebuildChargeBadges, updateChargeBadges, requestRender, updateAsuAtomHighlight } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, scheduleBondRebuild, rebuildChargeBadges, updateChargeBadges, requestRender, updateAsuAtomHighlight } from '../render/index.js';
 import { bondKey } from '../render/BondsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
-import { scheduleAtomSizeSave, scheduleBondRadiusSave } from './SizePrefs.js';
 
 // ---- size-slider mapping ---------------------------------------------------
 // The Atom Size / Bond Diameter sliders are continuous [0,1] positions with a
@@ -123,6 +122,21 @@ export function setupControlsWiring() {
     };
   }
 
+  const completeFragmentsToggle = document.getElementById('completeFragmentsToggle');
+  if (completeFragmentsToggle) {
+    completeFragmentsToggle.onchange = (e) => {
+      general.completeFragments = e.target.checked;
+      // The completing atoms are periodic images, which only exist while
+      // periodic images are shown — turn those on rather than do nothing.
+      if (general.completeFragments && !general.showPeriodic) {
+        general.showPeriodic = true;
+        if (showPeriodicToggle) showPeriodicToggle.checked = true;
+      }
+      // reRenderComposition: the Bonds tab shows the option's settings while it is on.
+      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true, reRenderComposition:"open"});
+    };
+  }
+
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = sizeSliderToValue(parseFloat(e.target.value), ATOM_SIZE_RANGE);
     document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(2);
@@ -138,7 +152,6 @@ export function setupControlsWiring() {
     updateMeasurementMarkers(); // Update ring markers when atom size changes
     // Bond visible lengths bake the atom radii in — refresh once settled.
     scheduleBondRebuild();
-    scheduleAtomSizeSave(); // per-structure pref (ui/SizePrefs.js)
   };
 
 
@@ -154,18 +167,20 @@ export function setupControlsWiring() {
       // Update BOTH the Bond objects and the mesh instances: everything that
       // repaints later (double-click atom expansion, updateBonds, …) re-derives
       // matrices from bond.radius — instance-only updates would be reverted.
-      // Per-bond/per-pair size scales stay respected. applyBondRadius also
-      // re-clips the bond length, which depends on the radius.
+      // Per-bond/per-pair size scales stay respected.
       const structure = fileBrowser.selectedStructure;
       for (const bond of structure?.bonds ?? []) {
         const [e1, e2] = bond.elements;
         const scale = structure.bondUserStyles?.[bondKey(bond.indices)]?.radiusScale
           ?? structure.bondCategoryStyles?.[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]?.radiusScale
           ?? 1;
-        applyBondRadius(bond, general.bondRadius * scale);
+        bond.radius = general.bondRadius * scale;
+        if (bond.instanceIds && groups.bondsMesh) {
+          updateSingleBondDiameter(bond.instanceIds[0], bond.radius);
+          updateSingleBondDiameter(bond.instanceIds[1], bond.radius);
+        }
       }
       if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
-      scheduleBondRadiusSave(); // per-structure pref (ui/SizePrefs.js)
     };
   }
   // Unit-cell outline line width control (rebuilds the 12 outline cylinders)
@@ -197,6 +212,9 @@ export function setupControlsWiring() {
 
     let checkbox_completePolyhedra = document.getElementById("completePolyhedraToggle");
       if (checkbox_completePolyhedra) checkbox_completePolyhedra.checked = general.completePolyhedra;
+
+    let checkbox_completeFragments = document.getElementById("completeFragmentsToggle");
+      if (checkbox_completeFragments) checkbox_completeFragments.checked = general.completeFragments;
 
  //     let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
  //     checkbox_showComparisonInfo.checked = false; // explicitly untick

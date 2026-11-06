@@ -15,7 +15,7 @@ import { notifyActiveStructureChange } from '../state/structures.js';
 import { count as traceCount } from '../debug/debugTrace.js';
 import { generateID } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
-import { captureContainerSizes, applyContainerSizes } from './SizePrefs.js';
+import { captureSelectionSnapshot, restoreSelectionSnapshot } from './SelectAndHighlightModule.js';
 
 const rowObjects = new WeakMap();
 
@@ -628,6 +628,37 @@ export function overlayEntryLabel(entry) {
   return entry.row?.querySelector('.name-inner')?.textContent || 'Structure';
 }
 
+/**
+ * The rows ticked in the Files list (their checkboxes), whatever the
+ * Comparison/Overlay mode — for views with their own comparison, like the
+ * Selection Inspector's Compare. `step` is the row's shown step (0-based).
+ * @returns {Array<{row: HTMLElement, rowIndex: number, name: string, step: number, steps: number}>}
+ */
+export function tickedStructureRows() {
+  const rows = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('#objectTable tbody tr')]);
+  return rows.map((row, rowIndex) => ({ row, rowIndex }))
+    .filter(({ row }) => /** @type {HTMLInputElement|null} */ (row.querySelector('input[type="checkbox"]'))?.checked)
+    .map(({ row, rowIndex }) => ({
+      row,
+      rowIndex,
+      name: row.querySelector('.name-inner')?.textContent || 'Structure',
+      step: Math.max(0, (parseInt(/** @type {HTMLInputElement|null} */ (row.querySelector('input[type="number"]'))?.value ?? '1', 10) || 1) - 1),
+      steps: structureShip.container[rowIndex]?.structures.length ?? 0,
+    }));
+}
+
+/** The structure container behind a Files row (its frames: frameAtDetached). */
+export function rowContainer(rowIndex) {
+  return structureShip.container[rowIndex] ?? null;
+}
+
+/** The compared/overlaid structures changed (ticked, unticked, a frame
+ *  arrived or was stepped) — for views that measure against them, like the
+ *  Selection Inspector's comparison. */
+function notifyComparisonChanged() {
+  document.dispatchEvent(new CustomEvent('crysviz:comparison-changed'));
+}
+
 /** Drop every overlay entry's meshes and empty fileBrowser.overlayEntries. */
 export function clearAllOverlayStructures() {
   if (!fileBrowser.overlayEntries.length) {
@@ -705,6 +736,7 @@ function addOverlayEntryForRow(row, defaultOpacity) {
       // always starts with bonds shown (each row has its own toggle to turn off).
       showBonds: general.compareModeOn ? general.showSecondBond : true,
     });
+    notifyComparisonChanged();
     if (rerenderNow) {
       updateVisualization({
         atomsUpdate: false,
@@ -737,6 +769,7 @@ function addOverlayEntryForRow(row, defaultOpacity) {
       const applyFrame = (structure) => {
         if (!structure) return;
         entry.structure = structure;
+        notifyComparisonChanged();
         updateVisualization({
           atomsUpdate: false,
           bondsUpdate: false,
@@ -785,6 +818,7 @@ export function syncOverlayFromCheckboxes() {
   const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
 
   const finish = () => {
+    notifyComparisonChanged();
     refreshPanelAvailability();
     // Single unified panel now (both tabs live in the same DOM subtree) — see
     // ui/ComparisonOverlayPanel.js.
@@ -942,7 +976,9 @@ function updateStructureFromRowAndStep(rowIndex) {
   if (rowChanged) {
     if (!app.cameraLocked) lastActiveContainer.cameraSnapshot = captureCameraSnapshot();
     if (general.featuresLocked === false) lastActiveContainer.featureSnapshot = snapshotFeatureToggles();
-    captureContainerSizes(lastActiveContainer); // sizes are per-structure, no lock
+    // The atom selection is per structure too: its instance numbers mean
+    // other atoms in another structure. Kept here, restored on the way back.
+    lastActiveContainer.selectionSnapshot = captureSelectionSnapshot();
   }
 
   // The frame may need materialising (store-backed trajectory) and can even
@@ -972,9 +1008,6 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
   void step;
   traceCount('frameApplied'); // Debug panel's playback counter (proper loads)
   fileBrowser.selectedStructure = structure;
-  // Atom Size / Bond Diameter of the structure being entered (ui/SizePrefs.js),
-  // before anything below rebuilds atoms or bonds with them.
-  if (container !== lastActiveContainer) applyContainerSizes(container);
   syncPlanesForSelectedStructure();
   refreshBackendTheme();
   let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
@@ -1032,6 +1065,9 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
       if (container.featureSnapshot) applyFeatureToggles(container.featureSnapshot);
       else applyDefaultFeatureToggles();
     }
+    // This structure's own selection (none, the first time), now that its
+    // atoms are drawn.
+    restoreSelectionSnapshot(container.selectionSnapshot);
   }
   lastActiveContainer = container;
 

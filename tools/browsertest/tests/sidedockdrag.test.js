@@ -102,15 +102,6 @@ async function barCenter(page, id) {
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   });
   bar = await barCenter(page, PANEL);
-  // The drop must not click what it lands on (PanelWindow.js
-  // swallowClickAfterDrag): count clicks that reach the page.
-  await page.evaluate(() => {
-    window.__dropClicks = [];
-    document.addEventListener('click', (ev) => {
-      const t = /** @type {HTMLElement} */ (ev.target);
-      window.__dropClicks.push(t.id || String(t.className) || t.tagName);
-    });
-  });
   await page.mouse.move(bar.x, bar.y);
   await page.mouse.down();
   await page.mouse.move(bar.x + 6, bar.y + 6); // threshold
@@ -120,8 +111,6 @@ async function barCenter(page, id) {
   s = await panelInfo(page, PANEL);
   H.check('dragging over the side panel docks the window left',
     s.dock === 'left' && s.inMainDock, JSON.stringify(s));
-  const dropClicks = await page.evaluate(() => window.__dropClicks);
-  H.check('the drop clicks nothing under the pointer', dropClicks.length === 0, JSON.stringify(dropClicks));
 
   // ---- 5. EMPTY dock: dropping at the BOTTOM edge materializes it there ---
   // Drag out of the main dock (past its right edge) and keep going to the

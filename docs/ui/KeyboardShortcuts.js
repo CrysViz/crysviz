@@ -311,6 +311,7 @@ const COMMANDS = [
   { id: 'toggle-atoms', label: 'Show Atoms', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showAtoms', action: () => toggleFeature('showAtoms'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyA' }) },
   { id: 'toggle-bonds', label: 'Show Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showBonds', action: () => toggleFeature('showBonds'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyB' }) },
   { id: 'toggle-neighbour', label: 'Neighbour Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'PBCBondToggle', action: () => toggleFeature('PBCBondToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyN' }) },
+  { id: 'toggle-complete-fragments', label: 'Complete Rings & Fragments', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'completeFragmentsToggle', action: () => toggleFeature('completeFragmentsToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyR' }) },
   { id: 'toggle-forces', label: 'Show Forces', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showForcesToggle', action: () => toggleFeature('showForcesToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyF' }) },
   { id: 'toggle-spins', label: 'Show Spins', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showSpinsToggle', action: () => toggleFeature('showSpinsToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyS' }) },
   { id: 'toggle-polyhedra', label: 'Show Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showPolyhedra', action: () => toggleFeature('showPolyhedra'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyP' }) },

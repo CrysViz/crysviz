@@ -53,6 +53,7 @@ export class Structure {
     atoms = [],
     symmetry = null,
     cifSymmetry = null,
+    cifErrors = null,
     spins = [],
     spinFrame = null,
     forces = [],
@@ -86,6 +87,16 @@ export class Structure {
     // own setting and operations are preserved instead of Moyo's standardised
     // ones. null for every non-CIF source and for CIFs that declare no symmetry.
     this.cifSymmetry = cifSymmetry;
+    // Standard uncertainties a source CIF gave ("CIF errors"):
+    // { cell: { values:[a,b,c,α,β,γ], su:[...], resolution:[...] },
+    //   sites: [{ label, frac, su:[σx,σy,σz], resolution }], pending, toCif? }.
+    // Each atom copied from a site carries atom.cifSite = { site, R, frac }
+    // (io/cif/cif_errors.js). `pending` until the load dialog's answer: read
+    // (pending false) or not (the record is dropped). `toCif` maps a
+    // supercell's fractional coordinates to the CIF cell's. model/cifErrors.js
+    // propagates them into distances and angles and saves them with a session
+    // (ui/ShareModule.js). null for every other source.
+    this.cifErrors = cifErrors;
     this.spins = spins;           // list of spins
     // How the loaded spins' raw components map to global Cartesian, so the
     // Spins panel can re-project them (utils/spinFrame.js). Currently carries

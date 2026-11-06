@@ -8,7 +8,6 @@ Currently it is possible to view the following file types:
 - **VASP**:
     - POSCAR: structure only.
     - OUTCAR: structure, forces, and spin for the complete trajectory of a MD or relaxation.
-    - INCAR: magnetic moments only. Load the structure first, select it, then load the INCAR (the file name must contain `INCAR`): its `MAGMOM` is read together with `LNONCOLLINEAR`/`LSORBIT` and `SAXIS` — one signed moment per atom for a collinear run, a 3-vector per atom for a non-collinear one, repeat counts such as `4*1.5` included — and, after you confirm, replaces the structure's spins. The number of values must fit the selected structure. A `MAGMOM` written with variables (`m -m`) can be loaded with the variables set to unit magnitude.
 
 - **Quantum Espresso**:
     - Input file: structure only.
@@ -16,7 +15,15 @@ Currently it is possible to view the following file types:
     - Output relax: not implemented at the moment 
     - Output md: implemented but experimental
 
-- **CIF**: CrysViz provides a CIF reader.
+- **CIF** and magnetic **mCIF**: CrysViz provides a CIF reader. A CIF that declares a space group
+  asks whether to keep its symmetry (Wyckoff editor), symmetrise, or load it as a plain structure.
+  A CIF or mCIF that gives **errors** (standard uncertainties, the digits in parentheses:
+  `5.4307(2)`) for its cell or coordinates also asks whether to read them — a tick box in the
+  symmetry dialog (ticked unless you said no last time), or a dialog of its own for a CIF without
+  symmetry and for an mCIF. With the errors read, measured lengths and angles (the measurement
+  labels, the Selection and Polyhedron Inspectors) are written with their error, `2.3456(12) Å`;
+  **Show CIF Errors** in the Features window hides them again. The errors are kept in a supercell
+  and saved with a `.crysviz` file or a share link.
 
 - **CASTEP**:
     - `.cell` input file: structure only (reads `LATTICE_CART`/`LATTICE_ABC` and `POSITIONS_FRAC`/`POSITIONS_ABS`). An AIRSS `buildcell` seed with absolute positions and no lattice loads as a molecule in a centered box.

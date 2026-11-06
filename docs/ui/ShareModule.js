@@ -83,7 +83,6 @@ function captureFields(structure) {
       label: f.label,
       nx: f.nx, ny: f.ny, nz: f.nz,
       origin: f.origin, voxel: f.voxel,
-      periodic: f.periodic,
       component: f.component,
       isoValue: f.isoValue,
       useAbsoluteIsoValue: f.useAbsoluteIsoValue,
@@ -107,6 +106,7 @@ import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, se
 import { showTrajectoryFrame } from './TrajectoryPanel.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
+import { serializeCifErrors, restoreCifErrors } from '../model/cifErrors.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
@@ -115,22 +115,9 @@ import { fracToCart, cartToFractional, normalizeFractional } from '../math/index
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
 import { showShareLink, promptSharePassword } from './ShareLinkModal.js';
-import {
-  bytesToB64URL, b64URLToBytes, bytesToBase32, base32ToBytes,
-  CODEC_FULL_JSON, CODEC_COMPACT_V3, sealEnvelope, openEnvelope, openLegacyEncrypted,
-  inflateRaw, cryptoAvailable,
-} from '../io/share/shareEnvelope.js';
-import { encodeCompact, expandCompact, compactReference } from '../io/share/shareCodec.js';
-import { fetchAlexandriaStructure, fetchOptimadeStructure } from '../io/OptimadeModule.js';
-import { wasLaunchedByHost } from '../host/BrowserHost.js';
 
-// Share links carry their payload in the URL fragment, which browsers never
-// send to the server — so there is no server URL limit (crysviz.org answers 414
-// above ~8 190 query characters) and no structure lands in server logs. What
-// remains are the limits of chat apps and browsers: note long links, and ask
-// before handing out one that Safari (~80 000 characters) may refuse.
-const URL_NOTE_CHARS = 8000;
-const URL_CONFIRM_CHARS = 64000;
+const URL_WARN_CHARS = 4000;
+const URL_HARD_CHARS = 10000;
 let lastRestorePromise = Promise.resolve();
 
 // ---------------------------------------------------------------------------
@@ -237,9 +224,15 @@ export function captureState({ includeFrames = false, includeFields = false } = 
     selectedFrameIndex = Math.max(0, activeContainer ? activeContainer.frameIndexOf(structure) : 0);
   }
 
+  // The errors read from a CIF (model/cifErrors.js), for the viewed
+  // structure, aligned with its atoms (`frames[selectedFrameIndex]` or
+  // `structure`). Sparse: only when there are any.
+  const cifErrors = serializeCifErrors(structure);
+
   return {
     version: '2.16',
     ...(frames ? { frames, selectedFrameIndex } : {}),
+    ...(cifErrors ? { cifErrors } : {}),
     ...(fields ? { fields } : {}),
     // The viewed frame lives in `frames[selectedFrameIndex]` when frames are
     // present (the .crysviz file save); only the share-URL / frame-less capture
@@ -279,12 +272,16 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       showAtoms: general.showAtoms,
       showBonds: general.showBonds,
       showCharges: general.showCharges,
+      showCifErrors: general.showCifErrors,
       showLattice: general.showLattice,
       showPeriodic: general.showPeriodic,
       linkPeriodicCopies: general.linkPeriodicCopies,
       periodicFaceTol: general.periodicFaceTol,
       periodicBounds: general.periodicBounds,
       showPBCBonds: general.showPBCBonds,
+      completeFragments: general.completeFragments,
+      fragmentIgnoreMetalBonds: general.fragmentIgnoreMetalBonds,
+      fragmentMaxRing: general.fragmentMaxRing,
       showAxes: general.showAxes,
       showPolyhedra: general.showPolyhedra,
       completePolyhedra: general.completePolyhedra,
@@ -416,150 +413,129 @@ function buildPOSCAR(state) {
 // Share (capture → encode → clipboard)
 // ---------------------------------------------------------------------------
 
-// A share link is https://<base>/#z=<base64url(envelope)>; the QR code carries
-// the same envelope as #q=<base32> so it fits QR alphanumeric mode. The
-// envelope (io/share/shareEnvelope.js) is a codec byte + deflate-raw(JSON),
-// optionally AES-GCM encrypted under a password.
+// Share URLs carry the state as JSON -> raw deflate -> base64url. Uncompressed
+// it runs ~3.7 KB for a plain structure, past the ~2.9 KB a QR code can hold at
+// ALL; deflate brings a typical state to well under a kilobyte, which is what
+// makes the share dialog's QR useful rather than a permanent "too long" note.
 //
-// Links made before issue #144 put the payload in the query instead: ?z=
-// (deflated JSON), ?state= (plain JSON) and ?e= (encrypted). They are still
-// read, forever; they are just no longer written.
-const LEGACY_PARAMS = ['state', 'z', 'e'];
-// A desktop-app session is served from 127.0.0.1, which a recipient can't
-// reach, so its links name the public site; the decoder ignores the domain.
-const PUBLIC_BASE = 'https://crysviz.org/';
+// Compressed payloads travel as ?z=, uncompressed as ?state=. Old links keep
+// working, and a browser without CompressionStream simply emits the old form.
+const STATE_PARAM = 'state';
+const PACKED_PARAM = 'z';
+// Password-encrypted payloads travel as ?e= (salt || iv || AES-GCM ciphertext,
+// see encryptBytes). Distinct param so the loader knows to ask for a password.
+const ENC_PARAM = 'e';
 
-// Database references (a link that names the database entry instead of carrying
-// the coordinates) are only written for, and only fetched from, these hosts —
-// https only. A crafted link therefore cannot make a recipient's browser
-// contact an arbitrary server.
-export const SHARE_REFERENCE_HOSTS = Object.freeze([
-  'alexandria.icams.rub.de',
-  'optimade.materialsproject.org',
-]);
+// AES-256-GCM with a PBKDF2-derived key. All standard Web Crypto, no deps.
+const PBKDF2_ITERS = 250000; // ~a few hundred ms on a phone; a real brute-force cost
+const SALT_BYTES = 16;
+const IV_BYTES = 12;  // 96-bit nonce, the size AES-GCM is defined for
 
-/** Whether a database provenance record may be shared (and fetched) by reference. */
-function referenceAllowed(ref) {
-  if (ref?.kind === 'alexandria') return typeof ref.id === 'string';
-  if (ref?.kind !== 'optimade' || typeof ref.url !== 'string') return false;
+function bytesToB64URL(bytes) {
+  // Chunked so a large payload can't blow the argument limit of String.fromCharCode.
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+/** Raw-deflate `bytes`, or null when the browser has no CompressionStream. */
+async function deflateRaw(bytes) {
+  if (typeof CompressionStream === 'undefined') return null;
   try {
-    const url = new URL(ref.url);
-    return url.protocol === 'https:' && SHARE_REFERENCE_HOSTS.includes(url.hostname);
+    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
   } catch {
-    return false;
+    return null; // unsupported format string on older engines
   }
 }
 
-/** Human name of a reference's source, for the dialog and error messages. */
-function referenceSource(ref) {
-  return ref.kind === 'alexandria' ? 'Alexandria' : 'the OPTIMADE provider';
+async function inflateRaw(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/** The database provenance of the selected structure's file row (set by the
- *  Paste Text box when a structure is fetched from OPTIMADE or Alexandria), or
- *  null. The codec decides whether the structure still matches it. */
-function selectedProvenance() {
-  const container = structureShip.container?.[fileBrowser.selectedRowIndex];
-  const ref = container?.provenance;
-  return referenceAllowed(ref) ? ref : null;
+/** Whether the Web Crypto API is usable — false on insecure (plain http)
+ *  origins, where crypto.subtle is undefined. localhost and https are fine. */
+function cryptoAvailable() {
+  return typeof crypto !== 'undefined' && !!crypto.subtle;
 }
 
-/**
- * Payload of a share link for `state`. The one place that picks the codec.
- * @returns {Promise<{ codec: number, jsonBytes: Uint8Array, reference: any }>}
- *   reference: the database reference the link uses instead of coordinates,
- *   or null when the structure is embedded.
- */
-async function buildSharePayload(state) {
-  const sc = fileBrowser.selectedStructure?.supercell;
-  const supercell = sc && (sc.nx || 1) * (sc.ny || 1) * (sc.nz || 1) > 1
-    ? { nx: sc.nx || 1, ny: sc.ny || 1, nz: sc.nz || 1 }
-    : null;
-  const provenance = selectedProvenance();
-  const compact = encodeCompact(state, { supercell, reference: provenance });
-  return {
-    codec: CODEC_COMPACT_V3,
-    jsonBytes: new TextEncoder().encode(JSON.stringify(compact)),
-    reference: compact.r ? provenance : null,
-  };
+/** PBKDF2(password, salt) -> a 256-bit AES-GCM key. */
+async function deriveKey(password, salt) {
+  const base = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERS, hash: 'SHA-256' },
+    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
 }
 
-/** Fetch the database structure a compact link refers to, as plain arrays. */
-async function fetchReferenceStructure(ref) {
-  if (!referenceAllowed(ref)) {
-    throw new Error('This link refers to a structure database CrysViz does not load share links from.');
-  }
-  const label = ref.kind === 'alexandria' ? ref.id : ref.url;
-  let result;
-  try {
-    result = ref.kind === 'alexandria'
-      ? await fetchAlexandriaStructure(ref.id)
-      : await fetchOptimadeStructure(ref.url);
-  } catch (error) {
-    throw new Error(`Could not load ${label} from ${referenceSource(ref)}: ${error.message}`);
-  }
-  const structure = readPOSCAR(result.content, result.fileName);
-  return {
-    elements: [...structure.elements],
-    lattice: structure.lattice.map((row) => [...row]),
-    positions: structure.atoms.map((atom) => [...atom.position]),
-  };
+/** Encrypt `bytes` under `password`, returning salt || iv || ciphertext. The
+ *  salt and IV are non-secret and fresh per call, so they ride in front of the
+ *  ciphertext; GCM's auth tag is appended by subtle.encrypt itself. */
+async function encryptBytes(bytes, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
+  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
+  const key = await deriveKey(password, salt);
+  const ct = new Uint8Array(
+    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
+  const out = new Uint8Array(SALT_BYTES + IV_BYTES + ct.length);
+  out.set(salt, 0);
+  out.set(iv, SALT_BYTES);
+  out.set(ct, SALT_BYTES + IV_BYTES);
+  return out;
 }
 
-/** Inverse of buildSharePayload: a decoded payload object -> a full state for
- *  applySharedState. Compact links that name a database entry fetch it first. */
-async function expandSharePayload(codec, obj) {
-  if (codec === CODEC_FULL_JSON) return obj;
-  if (codec === CODEC_COMPACT_V3) {
-    const ref = compactReference(obj);
-    if (!ref) return expandCompact(obj);
-    setShareStatus(`Loading ${ref.kind === 'alexandria' ? ref.id : 'the structure'} from ${referenceSource(ref)}...`);
-    return expandCompact(obj, { referenceStructure: await fetchReferenceStructure(ref) });
-  }
-  throw new Error(`Share format ${codec} is not supported by this version of CrysViz.`);
-}
-
-/** Write to the app's status line (#status), if present. */
-function setShareStatus(text) {
-  const el = document.getElementById('status');
-  if (el) el.textContent = text;
-}
-
-/** The URL a share link is built on: this page without share/debug params,
- *  fragment or trailing index.html — or the public site for desktop sessions. */
-function shareBaseURL() {
-  if (wasLaunchedByHost()) return new URL(PUBLIC_BASE);
-  const url = new URL(window.location.href);
-  for (const p of LEGACY_PARAMS) url.searchParams.delete(p);
-  // A debugging session's ?debug (debug/debugMode.js) and ?experimental
-  // (debug/experimentalMode.js) are this tab's, not the recipient's.
-  url.searchParams.delete('debug');
-  url.searchParams.delete('experimental');
-  url.hash = '';
-  url.pathname = url.pathname.replace(/index\.html$/, '');
-  return url;
-}
-
-/** Copy link and QR parts for an envelope. */
-function shareURLs(envelope) {
-  const base = shareBaseURL().toString();
-  const text = `${base}#z=${bytesToB64URL(envelope)}`;
-  return { text, qr: { prefix: `${base}#q=`, payload: bytesToBase32(envelope) } };
+/** Reverse encryptBytes. Throws on the wrong password: GCM authentication
+ *  fails and subtle.decrypt rejects, which is exactly the wrong-password
+ *  signal the loader loops on — no separate integrity check needed. */
+async function decryptBytes(bytes, password) {
+  const salt = bytes.subarray(0, SALT_BYTES);
+  const iv = bytes.subarray(SALT_BYTES, SALT_BYTES + IV_BYTES);
+  const ct = bytes.subarray(SALT_BYTES + IV_BYTES);
+  const key = await deriveKey(password, salt);
+  return new Uint8Array(
+    await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct));
 }
 
 export async function shareStructure() {
   const state = captureState();
   if (!state) { alert('No structure loaded to share.'); return; }
 
-  const { codec, jsonBytes, reference } = await buildSharePayload(state);
-  const plain = shareURLs(await sealEnvelope(jsonBytes, { codec }));
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(state));
+  const packed = await deflateRaw(jsonBytes);
+  // The bytes that go on the wire, and whether they are deflated. The encrypted
+  // form carries this same payload behind a 1-byte "compressed?" flag (below),
+  // so an ?e= link is self-describing regardless of which browser opens it.
+  const payload = packed ?? jsonBytes;
+  const plainParam = packed ? PACKED_PARAM : STATE_PARAM;
 
-  if (plain.text.length > URL_CONFIRM_CHARS) {
-    const kb = (plain.text.length / 1024).toFixed(1);
+  // Build a share URL for `bytes` under `param`, replacing any state param the
+  // current location already carries (so re-sharing a shared link is clean).
+  const buildURL = (bytes, param) => {
+    const b64 = bytesToB64URL(bytes);
+    const url = new URL(window.location.href);
+    for (const p of [STATE_PARAM, PACKED_PARAM, ENC_PARAM]) url.searchParams.delete(p);
+    // A debugging session's ?debug (debug/debugMode.js) is this tab's, not
+    // the recipient's.
+    url.searchParams.delete('debug');
+    // Same for ?experimental (debug/experimentalMode.js).
+    url.searchParams.delete('experimental');
+    url.searchParams.set(param, b64);
+    return { text: url.toString(), chars: b64.length };
+  };
+
+  const plain = buildURL(payload, plainParam);
+
+  if (plain.chars > URL_HARD_CHARS) {
+    const kb = (plain.chars / 1024).toFixed(1);
     const ok = confirm(
-      `Warning: the share link is very large (${kb} KB). Some browsers (Safari) and messaging apps may not open it. Continue?`
+      `Warning: the share URL is very large (${kb} KB). It may not work in all browsers or messaging platforms. Continue?`
     );
     if (!ok) return;
+  } else if (plain.chars > URL_WARN_CHARS) {
+    console.warn(`Share URL is ${(plain.chars / 1024).toFixed(1)} KB — may be large for some platforms.`);
   }
 
   // A dialog, not the address bar: long URLs are truncated there, and the
@@ -569,19 +545,19 @@ export async function shareStructure() {
   // the path that always works.
   navigator.clipboard?.writeText(plain.text).catch(() => {});
 
-  // Handed to the dialog's optional password field: the same payload,
-  // encrypted, as the same kind of link. Null when Web Crypto is unavailable
-  // (insecure origin), which tells the dialog to hide the password field.
+  // Handed to the dialog's optional password field: encrypt the same payload
+  // and hand back the ?e= URL. Null when Web Crypto is unavailable (insecure
+  // origin), which tells the dialog to hide the password field entirely.
   const encryptURL = cryptoAvailable()
-    ? async (password) => shareURLs(await sealEnvelope(jsonBytes, { codec, password }))
+    ? async (password) => {
+        const flagged = new Uint8Array(1 + payload.length);
+        flagged[0] = packed ? 1 : 0; // reader inflates iff this bit is set
+        flagged.set(payload, 1);
+        return buildURL(await encryptBytes(flagged, password), ENC_PARAM).text;
+      }
     : null;
 
-  const notes = [];
-  if (reference) notes.push(`The structure loads from ${referenceSource(reference)} when the link is opened.`);
-  if (plain.text.length > URL_NOTE_CHARS) {
-    notes.push(`This link is ${plain.text.length.toLocaleString()} characters long; some chat apps shorten or break links this long.`);
-  }
-  showShareLink(plain, { encryptURL, lengthNote: notes.join(' ') });
+  showShareLink(plain.text, { encryptURL });
 }
 
 // ---------------------------------------------------------------------------
@@ -631,6 +607,7 @@ function applyDisplaySettings(display) {
   if (display.showAtoms != null)   { general.showAtoms   = display.showAtoms;   setToggle('showAtoms', display.showAtoms); }
   if (display.showBonds != null)   { general.showBonds   = display.showBonds;   setToggle('showBonds', display.showBonds); }
   if (display.showCharges != null) { general.showCharges = display.showCharges; setToggle('showCharges', display.showCharges); }
+  if (display.showCifErrors != null) { general.showCifErrors = display.showCifErrors; setToggle('showCifErrorsToggle', display.showCifErrors); }
   if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
   if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }
@@ -640,6 +617,9 @@ function applyDisplaySettings(display) {
   // The Atoms-tab toggle is rebuilt from `general` on the next renderComposition.
   if (display.linkPeriodicCopies != null){ general.linkPeriodicCopies = display.linkPeriodicCopies; }
   if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }
+  if (display.completeFragments != null){ general.completeFragments = display.completeFragments; setToggle('completeFragmentsToggle', display.completeFragments); }
+  if (display.fragmentIgnoreMetalBonds != null){ general.fragmentIgnoreMetalBonds = display.fragmentIgnoreMetalBonds; }
+  if (display.fragmentMaxRing != null){ general.fragmentMaxRing = display.fragmentMaxRing; }
   if (display.showAxes != null) {
     setToggle('showAxes', display.showAxes);
     // The change handler owns the gizmo/legend visibility (ControlsWiring).
@@ -887,8 +867,10 @@ function atomKey(element, position) {
   ].join('|');
 }
 
+/** Put the loaded atoms in the saved order; false when it could not (the
+ *  per-atom state that relies on the order is then best left alone). */
 function restoreAtomOrder(savedStructure, loadedStructure) {
-  if (!savedStructure || !loadedStructure?.atoms?.length) return;
+  if (!savedStructure || !loadedStructure?.atoms?.length) return false;
 
   const buckets = new Map();
   loadedStructure.atoms.forEach((atom, i) => {
@@ -908,7 +890,7 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
     const bucket = buckets.get(key);
     if (!bucket?.length) {
       console.warn('Failed to restore original atom order for shared structure at index', i, key);
-      return;
+      return false;
     }
 
     const match = bucket.shift();
@@ -919,6 +901,7 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
   loadedStructure.atoms = reorderedAtoms;
   loadedStructure.elements = reorderedElements;
   loadedStructure.uniqueElements = [...new Set(reorderedElements)];
+  return true;
 }
 
 /** Rebuild the Force/Spin arrow objects saved in a .crysviz frame and attach
@@ -966,8 +949,6 @@ function restoreFields(fieldState, structure) {
     label: f.label,
     nx: f.nx, ny: f.ny, nz: f.nz,
     origin: f.origin, voxel: f.voxel,
-    // Share payloads are untrusted: only a literal false restores a block.
-    periodic: f.periodic === false ? false : true,
     component: f.component,
     isoValue: f.isoValue,
     useAbsoluteIsoValue: f.useAbsoluteIsoValue,
@@ -1184,96 +1165,73 @@ function makeAtomProxy(wrapped, ref) {
 // Load from URL
 // ---------------------------------------------------------------------------
 
-/**
- * Where a share payload sits in `urlString`, whatever its domain: the fragment
- * (#z= base64url, #q= base32) or a legacy query param. Null for anything else,
- * including #load-file= and plain URLs.
- * @param {string} urlString
- * @returns {{ kind: 'z'|'q'|'state'|'legacy-z'|'e', value: string } | null}
- */
-export function findSharePayload(urlString) {
-  let url;
-  try { url = new URL(String(urlString).trim()); } catch { return null; }
-  const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
-  if (fragment.get('z')) return { kind: 'z', value: fragment.get('z') };
-  if (fragment.get('q')) return { kind: 'q', value: fragment.get('q') };
-  if (url.searchParams.get('e')) return { kind: 'e', value: url.searchParams.get('e') };
-  if (url.searchParams.get('z')) return { kind: 'legacy-z', value: url.searchParams.get('z') };
-  if (url.searchParams.get('state')) return { kind: 'state', value: url.searchParams.get('state') };
-  return null;
-}
-
-/** Decode a payload found by findSharePayload to a full state, or null when
- *  the user cancelled the password prompt. */
-async function decodeSharePayload({ kind, value }) {
-  const normalized = value.trim().replace(/\s+/g, '');
-  if (normalized.includes('...')) {
-    throw new Error('Shared URL appears truncated (contains "..."). Copy the full link from the share dialog.');
-  }
-  const parse = (bytes) => JSON.parse(new TextDecoder().decode(bytes));
-  if (kind === 'z' || kind === 'q') {
-    const bytes = kind === 'z' ? b64URLToBytes(normalized) : base32ToBytes(normalized);
-    const opened = await openEnvelope(bytes, { requestPassword: promptSharePassword });
-    if (!opened) return null;
-    return expandSharePayload(opened.codec, parse(opened.json));
-  }
-  // Legacy query forms. URLSearchParams turned any '+' of old standard-base64
-  // links into spaces; b64URLToBytes maps them back.
-  const bytes = b64URLToBytes(value);
-  if (kind === 'e') {
-    const json = await openLegacyEncrypted(bytes, { requestPassword: promptSharePassword });
-    return json ? parse(json) : null;
-  }
-  if (kind === 'legacy-z') return parse(await inflateRaw(bytes));
-  return parse(bytes);
-}
-
-/**
- * Open a share link in this session: decode its payload (any domain — the
- * link may name crysviz.org, a local server or the desktop app) and apply it.
- * Used at boot for the page's own URL and by the Paste Text box.
- * @param {string} urlString
- * @returns {Promise<boolean>} false when there is no payload or the password
- *   prompt was cancelled; throws when the payload can't be decoded or applied
- */
-export async function openShareLink(urlString) {
-  const found = findSharePayload(urlString);
-  if (!found) return false;
+export async function loadSharedStructure() {
+  const params = new URLSearchParams(window.location.search);
+  // ?z= is the deflated payload written since the QR code landed; ?state= is the
+  // plain form, still emitted where CompressionStream is missing and still
+  // present in every link shared before that.
+  const encParam = params.get(ENC_PARAM);
+  const packedParam = params.get(PACKED_PARAM);
+  const stateParam = encParam ?? packedParam ?? params.get(STATE_PARAM);
+  if (!stateParam) return false;
 
   let state;
   try {
-    state = await decodeSharePayload(found);
+    const normalized = stateParam.trim().replace(/\s+/g, '');
+    if (normalized.includes('...')) {
+      throw new Error('Shared URL appears truncated (contains "..."). Copy the full link from the share dialog.');
+    }
+
+    // Accept both current base64url and older plain base64 forms.
+    const padded = normalized
+      .replace(/ /g, '+')
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const pad = padded.length % 4;
+    const b64 = pad ? padded + '='.repeat(4 - pad) : padded;
+    const binary = atob(b64);
+    let bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    if (encParam) {
+      if (!cryptoAvailable()) {
+        throw new Error('This share link is password-encrypted, which needs a secure (https) context. Open the link over https and try again.');
+      }
+      // Ask, decrypt, repeat until the password is right or the user cancels.
+      // A wrong password makes AES-GCM's auth check fail (decryptBytes throws),
+      // so it never reaches the outer catch — we just re-prompt.
+      let plain = null;
+      for (let attempt = 0; ; attempt++) {
+        const password = await promptSharePassword({ retry: attempt > 0 });
+        if (password === null) return false; // cancelled: fall back to default load
+        try { plain = await decryptBytes(bytes, password); break; }
+        catch { /* wrong password — loop */ }
+      }
+      const raw = plain[0] === 1 ? await inflateRaw(plain.subarray(1)) : plain.subarray(1);
+      state = JSON.parse(new TextDecoder().decode(raw));
+    } else {
+      if (packedParam) bytes = await inflateRaw(bytes);
+      state = JSON.parse(new TextDecoder().decode(bytes));
+    }
   } catch (e) {
-    const invalidChars = [...found.value].filter(c => !/[A-Za-z0-9\-_+/= ]/.test(c));
+    const invalidChars = [...stateParam].filter(c => !/[A-Za-z0-9\-_]/.test(c));
     console.error('Failed to decode shared state:', e,
-      'kind:', found.kind, 'length:', found.value.length,
+      'param length:', stateParam.length,
       'invalid chars:', invalidChars.slice(0, 10));
     throw new Error(`Failed to decode shared state: ${e.message}`);
   }
-  if (state === null) return false; // password prompt cancelled
 
-  const warnings = Array.isArray(state.shareWarnings) ? state.shareWarnings : [];
   if (!applySharedState(state, 'shared.vasp')) {
     throw new Error('Shared state could not be applied.');
   }
   await waitForStateRestoration();
+
   general.sharedStructureLoaded = true;
-  if (warnings.length) {
-    console.warn('Share link:', warnings.join(' '));
-    setShareStatus(warnings.join(' '));
-  }
-  return true;
-}
 
-/** Boot-time loader for a share link in the page's own URL. */
-export async function loadSharedStructure() {
-  const loaded = await openShareLink(window.location.href);
-  if (!loaded) return false;
-
-  // Clean URL: drop the payload so a reload or bookmark doesn't re-apply it.
+  // Clean URL
   const newUrl = new URL(window.location.href);
-  for (const p of LEGACY_PARAMS) newUrl.searchParams.delete(p);
-  if (/^#(z|q)=/.test(newUrl.hash)) newUrl.hash = '';
+  newUrl.searchParams.delete(STATE_PARAM);
+  newUrl.searchParams.delete(PACKED_PARAM);
+  newUrl.searchParams.delete(ENC_PARAM);
   window.history.replaceState({}, document.title, newUrl.toString());
   return true;
 }
@@ -1309,6 +1267,9 @@ export function applySharedState(state, fileName = 'shared.vasp') {
     return false;
   }
   let trajectoryContainer = null;
+  // Whether the viewed frame's atoms are back in the saved order (the CIF
+  // errors below are aligned with it).
+  let viewedOrdered = false;
 
   // Load structure (synchronous — triggers updateVisualization internally)
   try {
@@ -1316,9 +1277,10 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       // Rebuild each frame's Structure, restoring its native atom order (buildPOSCAR
       // groups by element) so per-atom indices stay stable across the trajectory,
       // then re-attach that frame's force/spin arrows (index-aligned to atoms).
-      const structures = frames.map((f) => {
+      const structures = frames.map((f, i) => {
         const s = readPOSCAR(buildPOSCAR({ structure: f }), fileName);
-        restoreAtomOrder(f, s);
+        const ordered = restoreAtomOrder(f, s);
+        if (i === selectedFrameIndex) viewedOrdered = ordered;
         applyArrows(f, s);
         return s;
       });
@@ -1361,9 +1323,13 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   // indices, then re-attach the arrows. (Multi-frame frames were already
   // restored above.)
   if (!multiFrame) {
-    restoreAtomOrder(viewed, structure);
+    viewedOrdered = restoreAtomOrder(viewed, structure);
     applyArrows(viewed, structure);
   }
+
+  // The errors read from a CIF, back on their atoms before the measurements
+  // below are rebuilt (their labels carry them).
+  if (state.cifErrors && viewedOrdered) restoreCifErrors(structure, state.cifErrors);
 
   revealFeaturePanels();
   // A share-URL boot restores through here instead of loadStructure(), so the

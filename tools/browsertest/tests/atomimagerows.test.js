@@ -177,6 +177,10 @@ const H = require('../harness');
     sel3d.highlightedImage === sel3d.expected, JSON.stringify(sel3d));
 
   // --- Toggle back on: source rows return, per-copy style still wins ----------------
+  // The toggle keeps the selection, and a linked selection glows every copy
+  // (the edited one too, in the highlight colour): deselect so the copy's own
+  // colour is what shows.
+  await page.evaluate(async () => (await import('./ui/SelectAndHighlightModule.js')).clearSelectedAtoms());
   await H.clickById(page, 'linkPeriodicCopiesToggle');
   await page.waitForTimeout(300);
   const relinked = await page.evaluate(async ({ img1 }) => {
