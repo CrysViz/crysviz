@@ -165,6 +165,13 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     }
     setStatus(`${files.length} structure(s) loaded!`);
   }
+  openLaunchedFiles = async (files) => {
+    try {
+      await loadFiles(files);
+    } catch (error) {
+      reportFileLoadError(error);
+    }
+  };
 
   function reportFileLoadError(error) {
     console.error('Error loading structures:', error);
@@ -410,19 +417,25 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
       reportFileLoadError(error);
     }
   });
+}
 
-  // ---- Opened from the OS: the installed app is a file handler -------------
-  // manifest.webmanifest file_handlers make the installed CrysViz an "Open
-  // with" choice (or the default app) for its formats. The browser queues the
-  // files until a consumer is set and, with launch_handler focus-existing,
-  // delivers later ones to the window that is already open. Chromium only;
-  // elsewhere launchQueue does not exist and this is skipped.
+// The shared file loader, once setupStructureInput has built it.
+let openLaunchedFiles = null;
+
+/**
+ * Opened from the OS: manifest.webmanifest file_handlers make the installed
+ * CrysViz an "Open with" choice (or the default app) for its formats, and the
+ * browser hands the files over through window.launchQueue. Called by
+ * host/early.js once start-up is over: the browser holds the files until a
+ * consumer is set, and delivers them at once when it is — set during start-up
+ * (it used to be), the file loaded first and the default structure loaded
+ * after it took the view. With launch_handler focus-existing, files opened
+ * later arrive here in the window that is already open. Chromium only;
+ * elsewhere launchQueue does not exist and this does nothing.
+ */
+export function acceptLaunchedFiles() {
   window.launchQueue?.setConsumer(async ({ files }) => {
-    if (!files?.length) return;
-    try {
-      await loadFiles(await Promise.all(files.map((handle) => handle.getFile())));
-    } catch (error) {
-      reportFileLoadError(error);
-    }
+    if (!files?.length || !openLaunchedFiles) return;
+    await openLaunchedFiles(await Promise.all(files.map((handle) => handle.getFile())));
   });
 }
