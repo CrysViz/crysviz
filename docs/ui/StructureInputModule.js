@@ -410,4 +410,19 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
       reportFileLoadError(error);
     }
   });
+
+  // ---- Opened from the OS: the installed app is a file handler -------------
+  // manifest.webmanifest file_handlers make the installed CrysViz an "Open
+  // with" choice (or the default app) for its formats. The browser queues the
+  // files until a consumer is set and, with launch_handler focus-existing,
+  // delivers later ones to the window that is already open. Chromium only;
+  // elsewhere launchQueue does not exist and this is skipped.
+  window.launchQueue?.setConsumer(async ({ files }) => {
+    if (!files?.length) return;
+    try {
+      await loadFiles(await Promise.all(files.map((handle) => handle.getFile())));
+    } catch (error) {
+      reportFileLoadError(error);
+    }
+  });
 }
