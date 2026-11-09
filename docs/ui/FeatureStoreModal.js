@@ -2,7 +2,7 @@
 // in the sidebar. Never called a "store" or "features" on screen — the
 // Features panel already owns that word.
 //
-// The solid "＋ Add panels" button under the search field (#featureStoreButton,
+// The solid "+ Add panels" button under the search field (#featureStoreButton,
 // index.html, beside "Reset to Essentials") opens a card list of every feature-store window
 // (panels/featureStore.js), grouped by category. Add/Remove go through
 // PanelManager's addStoreFeature/removeStoreFeature, so the popup is only a
@@ -186,7 +186,7 @@ export async function resetSidebarToEssentials() {
   const parts = [];
   if (going.length) parts.push(`Removing ${panels(going.length)} from the sidebar: ${names(going)}.`);
   if (coming.length) parts.push(`Adding back ${names(coming)}.`);
-  if (going.length) parts.push('They stay reachable through the search, and ＋ Add panels brings them back.');
+  if (going.length) parts.push('They stay reachable through the search, and + Add panels brings them back.');
   const choice = await choiceDialog(parts.join(' '), {
     title: 'Reset to Essentials?',
     choices: [
