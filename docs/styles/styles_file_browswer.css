@@ -16,9 +16,15 @@
   display: none;            /* Chrome, Safari, Opera */
   }
 
+  /* Separate, not collapsed, borders: with border-collapse Chrome paints the
+     rows over the sticky header below (the header turned see-through while
+     the list scrolled). Each cell draws its right and bottom line, the first
+     column and the header the outer left and top ones, so every line is
+     still drawn once. */
   #objectTable {
   border: 2px solid transparent;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   }
 
   /* The structure list grows with its rows up to a height the user sets with
@@ -31,10 +37,13 @@
   .cv-fb-list-resize {
     position: sticky;
     bottom: 0;
+    z-index: 2;
     height: 12px;
     cursor: ns-resize;
     touch-action: none;
-    background: var(--surface-bg);
+    /* --bg-color is translucent: laid over the solid panel colour so the row
+       scrolling under the bar does not show through. */
+    background: linear-gradient(var(--bg-color), var(--bg-color)), var(--panel-bg);
     border-top: 1px solid var(--line-2);
   }
   /* A grip pill in the middle, so the bar reads as something to drag. */
@@ -79,9 +88,25 @@
 
   #objectTable .fth,
   #objectTable .ftd {
-  border: 1px solid var(--line-2);
+  border: 0;
+  border-right: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line-2);
   padding: var(--sp-3);
  }
+  #objectTable tr > :first-child {
+    border-left: 1px solid var(--line-2);
+  }
+
+  /* The column titles stay at the top while the rows scroll under them
+     (#83), on a solid fill (the list's own faint wash over the panel
+     colour) so no row shows through. */
+  #objectTable thead .fth {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    border-top: 1px solid var(--line-2);
+    background: linear-gradient(var(--wash-1), var(--wash-1)), var(--panel-bg);
+  }
 
   /* Center the first column so each row's select checkbox lines up under the
      ≡ selection button in the header (which fills its cell, centered). */

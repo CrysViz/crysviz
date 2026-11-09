@@ -112,6 +112,16 @@ async function rowCenter(page, i) {
     JSON.stringify({ before, ...shrunk }));
   H.check('the height is remembered', Math.abs(shrunk.pref - shrunk.h) <= 2, JSON.stringify(shrunk));
 
+  // Scrolled to the bottom, the column titles are still at the top (#83).
+  const header = await page.evaluate(() => {
+    const list = document.getElementById('structureTablePanel');
+    list.scrollTop = list.scrollHeight;
+    const th = document.querySelector('#objectTable thead .fth');
+    return { scrollTop: list.scrollTop, offset: Math.round(th.getBoundingClientRect().top - list.getBoundingClientRect().top) };
+  });
+  H.check('the header stays at the top while the rows scroll', header.scrollTop > 0 && Math.abs(header.offset) <= 1,
+    JSON.stringify(header));
+
   await page.reload({ waitUntil: 'load' });
   await page.waitForTimeout(4000);
   const reloaded = await page.evaluate(() => getComputedStyle(document.getElementById('structureTablePanel')).maxHeight);
