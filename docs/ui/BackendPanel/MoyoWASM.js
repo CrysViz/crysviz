@@ -465,16 +465,16 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
 
 function gcd(a, b) { return b ? gcd(b, a % b) : a; }
 
-// AFLOW anonymous formula from per-element atom counts of the conventional
-// cell: stoichiometry reduced by its gcd, sorted ascending, labelled A, B, C...
-// with a count of 1 written as nothing (Al2O3 -> "A2B3", TiO2 -> "AB2").
+// AFLOW anonymous formula from per-element atom counts given in the label's
+// element order (alphabetical, the same order as the Wyckoff groups and the
+// ":C-N" suffix): stoichiometry reduced by its gcd, labelled A, B, C... with
+// a count of 1 written as nothing (Al2O3 -> "A2B3", TiO2 = O2Ti -> "A2B",
+// C11N4 -> "A11B4"). The counts are NOT sorted: letter i is element i.
 function anonymousFormula(counts) {
   if (!counts.length) return '';
   const g = counts.reduce((acc, c) => gcd(acc, c));
   return counts
-    .map(c => c / g)
-    .sort((a, b) => a - b)
-    .map((c, i) => String.fromCharCode(65 + i) + (c > 1 ? c : ''))
+    .map((c, i) => String.fromCharCode(65 + i) + (c / g > 1 ? c / g : ''))
     .join('');
 }
 
@@ -489,8 +489,9 @@ function anonymousFormula(counts) {
 // raw per-atom Wyckoff list.
 //
 // `elements` is the per-atom element list of the input cell, parallel to
-// `result.orbits` / `result.wyckoffs`. The anonymous formula is counted on the
-// conventional standard cell (`result.std_cell.numbers`).
+// `result.orbits` / `result.wyckoffs`. The anonymous formula is counted on that
+// cell too (any cell of the crystal has the same reduced stoichiometry), per
+// element in the label's alphabetical order.
 function buildProtostructureLabel(result, elements) {
   const reps = [...new Set(result.orbits)]; // one representative atom per orbit
   const lettersByElement = new Map();
@@ -511,11 +512,7 @@ function buildProtostructureLabel(result, elements) {
       .join('');
   });
 
-  const convCounts = new Map();
-  for (const z of (result.std_cell?.numbers || [])) {
-    convCounts.set(z, (convCounts.get(z) || 0) + 1);
-  }
-  const anon = anonymousFormula([...convCounts.values()]);
+  const anon = anonymousFormula(sortedElements.map(el => elements.filter(e => e === el).length));
   const pearson = result.pearson_symbol || '';
 
   return `${anon}_${pearson}_${result.number}_${wyckParts.join('_')}:${sortedElements.join('-')}`;

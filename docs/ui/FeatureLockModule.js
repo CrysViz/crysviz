@@ -20,12 +20,14 @@ const FEATURE_TOGGLE_DEFAULTS = {
   showBonds: true,
   showCharges: false,
   PBCBondToggle: false,
+  completeFragmentsToggle: false,
   showPolyhedra: false,
   completePolyhedraToggle: false,
   showForcesToggle: false,
   showSpinsToggle: false,
   showFieldToggle: true,
   showPlanesMasterToggle: true,
+  showCifErrorsToggle: true,
 };
 const FEATURE_TOGGLE_IDS = Object.keys(FEATURE_TOGGLE_DEFAULTS);
 

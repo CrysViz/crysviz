@@ -6,10 +6,13 @@
 // ConfirmModal already defines, and adds a tolerance input for the symmetrise
 // path — so the user can choose the symprec the cell is snapped to.
 //
-// Resolves to { action, tolerance }: action is 'keep' (lock in the CIF's own
-// setting), 'symmetrize' (snap onto the symmetry Moyo detects at `tolerance`),
-// or 'normal' (load as plain, editable atoms). Escape / backdrop click resolve
-// the same value the modal was opened with as its cancel default.
+// Resolves to { action, tolerance, readErrors }: action is 'keep' (lock in the
+// CIF's own setting), 'symmetrize' (snap onto the symmetry Moyo detects at
+// `tolerance`), or 'normal' (load as plain, editable atoms). Escape / backdrop
+// click resolve the same value the modal was opened with as its cancel default.
+// When the file gives errors (standard uncertainties), a tick box above the
+// choices asks whether to read them too; `readErrors` is its state, whichever
+// way the dialog closes.
 
 let modal = null;
 let titleEl = null;
@@ -17,6 +20,9 @@ let messageEl = null;
 let detailEl = null;
 let tolRowEl = null;
 let tolInputEl = null;
+let errorsRowEl = null;
+let errorsInputEl = null;
+let errorsNoteEl = null;
 let actionsEl = null;
 let previousFocus = null;
 let resolveCurrent = null;
@@ -38,6 +44,13 @@ function build() {
         <label for="cifSymmetryModalTol">Symmetrise tolerance (Å)</label>
         <input type="number" id="cifSymmetryModalTol" min="0" step="0.001">
       </div>
+      <div id="cifSymmetryModalErrorsRow" class="cif-sym-errors-row" hidden>
+        <label class="cif-sym-errors-label">
+          <input type="checkbox" id="cifSymmetryModalErrors">
+          <span>Also read the errors (standard uncertainties)</span>
+        </label>
+        <span class="cif-sym-errors-note" id="cifSymmetryModalErrorsNote"></span>
+      </div>
       <div class="paste-modal-actions confirm-choices" id="cifSymmetryModalActions"></div>
     </div>
   `;
@@ -49,9 +62,17 @@ function build() {
   tolRowEl = document.getElementById('cifSymmetryModalTolRow');
   tolInputEl = /** @type {HTMLInputElement} */ (document.getElementById('cifSymmetryModalTol'));
   actionsEl = document.getElementById('cifSymmetryModalActions');
+  errorsRowEl = document.getElementById('cifSymmetryModalErrorsRow');
+  errorsInputEl = /** @type {HTMLInputElement} */ (document.getElementById('cifSymmetryModalErrors'));
+  errorsNoteEl = document.getElementById('cifSymmetryModalErrorsNote');
 
-  modal.addEventListener('click', (e) => { if (e.target === modal) finish(cancelValueCurrent); });
-  modal.addEventListener('keydown', (e) => { if (e.key === 'Escape') finish(cancelValueCurrent); });
+  modal.addEventListener('click', (e) => { if (e.target === modal) finish(withErrors(cancelValueCurrent)); });
+  modal.addEventListener('keydown', (e) => { if (e.key === 'Escape') finish(withErrors(cancelValueCurrent)); });
+}
+
+/** A choice plus the errors tick box, as it stands (false when not offered). */
+function withErrors(value) {
+  return value ? { ...value, readErrors: !errorsRowEl.hidden && !!errorsInputEl.checked } : value;
 }
 
 function readTolerance(fallback) {
@@ -90,9 +111,11 @@ function formatGroup({ number = null, hm = null } = {}) {
  * @param {boolean} opts.hasCifOps    the CIF carried explicit operations that close on the loaded atoms, so they can be kept
  * @param {string} [opts.detectError] Moyo failure message, when detection failed
  * @param {number} opts.tolerance     symprec Moyo was run at / the input's default
- * @returns {Promise<{action:'keep'|'symmetrize'|'normal', tolerance:number}>}
+ * @param {{summary:string, read:boolean}|null} [opts.errors] the file gives
+ *   errors for `summary`; `read` is the tick box's starting state
+ * @returns {Promise<{action:'keep'|'symmetrize'|'normal', tolerance:number, readErrors:boolean}>}
  */
-export function promptCifSymmetry({ fileName, cif, detected, match, hasCifOps, detectError = '', tolerance }) {
+export function promptCifSymmetry({ fileName, cif, detected, match, hasCifOps, detectError = '', tolerance, errors = null }) {
   build();
   if (resolveCurrent) finish(cancelValueCurrent);
 
@@ -169,6 +192,12 @@ export function promptCifSymmetry({ fileName, cif, detected, match, hasCifOps, d
     tolRowEl.hidden = !showTol;
     if (showTol) tolInputEl.value = String(tolerance);
 
+    errorsRowEl.hidden = !errors;
+    if (errors) {
+      errorsInputEl.checked = !!errors.read;
+      errorsNoteEl.textContent = `The file gives them for ${errors.summary}: measured lengths and angles then show them, e.g. 2.3456(12) Å.`;
+    }
+
     actionsEl.innerHTML = '';
     let firstButton = null;
     for (const choice of choices) {
@@ -183,7 +212,7 @@ export function promptCifSymmetry({ fileName, cif, detected, match, hasCifOps, d
       description.className = 'confirm-choice-desc';
       description.textContent = choice.description;
       button.appendChild(description);
-      button.addEventListener('click', () => finish({ action: choice.action, tolerance: readTolerance(tolerance) }));
+      button.addEventListener('click', () => finish(withErrors({ action: choice.action, tolerance: readTolerance(tolerance) })));
       actionsEl.appendChild(button);
       if (!firstButton) firstButton = button;
     }

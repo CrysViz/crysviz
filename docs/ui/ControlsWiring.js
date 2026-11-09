@@ -123,6 +123,21 @@ export function setupControlsWiring() {
     };
   }
 
+  const completeFragmentsToggle = document.getElementById('completeFragmentsToggle');
+  if (completeFragmentsToggle) {
+    completeFragmentsToggle.onchange = (e) => {
+      general.completeFragments = e.target.checked;
+      // The completing atoms are periodic images, which only exist while
+      // periodic images are shown — turn those on rather than do nothing.
+      if (general.completeFragments && !general.showPeriodic) {
+        general.showPeriodic = true;
+        if (showPeriodicToggle) showPeriodicToggle.checked = true;
+      }
+      // reRenderComposition: the Bonds tab shows the option's settings while it is on.
+      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true, reRenderComposition:"open"});
+    };
+  }
+
   document.getElementById('atomSize').oninput = (e) => {
     general.atomSize = sizeSliderToValue(parseFloat(e.target.value), ATOM_SIZE_RANGE);
     document.getElementById('atomSizeValue').textContent = general.atomSize.toFixed(2);
@@ -197,6 +212,9 @@ export function setupControlsWiring() {
 
     let checkbox_completePolyhedra = document.getElementById("completePolyhedraToggle");
       if (checkbox_completePolyhedra) checkbox_completePolyhedra.checked = general.completePolyhedra;
+
+    let checkbox_completeFragments = document.getElementById("completeFragmentsToggle");
+      if (checkbox_completeFragments) checkbox_completeFragments.checked = general.completeFragments;
 
  //     let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
  //     checkbox_showComparisonInfo.checked = false; // explicitly untick

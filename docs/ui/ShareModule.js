@@ -107,6 +107,7 @@ import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, se
 import { showTrajectoryFrame } from './TrajectoryPanel.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
+import { serializeCifErrors, restoreCifErrors } from '../model/cifErrors.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
@@ -237,9 +238,15 @@ export function captureState({ includeFrames = false, includeFields = false } = 
     selectedFrameIndex = Math.max(0, activeContainer ? activeContainer.frameIndexOf(structure) : 0);
   }
 
+  // The errors read from a CIF (model/cifErrors.js), for the viewed
+  // structure, aligned with its atoms (`frames[selectedFrameIndex]` or
+  // `structure`). Sparse: only when there are any.
+  const cifErrors = serializeCifErrors(structure);
+
   return {
     version: '2.16',
     ...(frames ? { frames, selectedFrameIndex } : {}),
+    ...(cifErrors ? { cifErrors } : {}),
     ...(fields ? { fields } : {}),
     // The viewed frame lives in `frames[selectedFrameIndex]` when frames are
     // present (the .crysviz file save); only the share-URL / frame-less capture
@@ -279,12 +286,16 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       showAtoms: general.showAtoms,
       showBonds: general.showBonds,
       showCharges: general.showCharges,
+      showCifErrors: general.showCifErrors,
       showLattice: general.showLattice,
       showPeriodic: general.showPeriodic,
       linkPeriodicCopies: general.linkPeriodicCopies,
       periodicFaceTol: general.periodicFaceTol,
       periodicBounds: general.periodicBounds,
       showPBCBonds: general.showPBCBonds,
+      completeFragments: general.completeFragments,
+      fragmentIgnoreMetalBonds: general.fragmentIgnoreMetalBonds,
+      fragmentMaxRing: general.fragmentMaxRing,
       showAxes: general.showAxes,
       showPolyhedra: general.showPolyhedra,
       completePolyhedra: general.completePolyhedra,
@@ -631,6 +642,7 @@ function applyDisplaySettings(display) {
   if (display.showAtoms != null)   { general.showAtoms   = display.showAtoms;   setToggle('showAtoms', display.showAtoms); }
   if (display.showBonds != null)   { general.showBonds   = display.showBonds;   setToggle('showBonds', display.showBonds); }
   if (display.showCharges != null) { general.showCharges = display.showCharges; setToggle('showCharges', display.showCharges); }
+  if (display.showCifErrors != null) { general.showCifErrors = display.showCifErrors; setToggle('showCifErrorsToggle', display.showCifErrors); }
   if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
   if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }
@@ -640,6 +652,9 @@ function applyDisplaySettings(display) {
   // The Atoms-tab toggle is rebuilt from `general` on the next renderComposition.
   if (display.linkPeriodicCopies != null){ general.linkPeriodicCopies = display.linkPeriodicCopies; }
   if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }
+  if (display.completeFragments != null){ general.completeFragments = display.completeFragments; setToggle('completeFragmentsToggle', display.completeFragments); }
+  if (display.fragmentIgnoreMetalBonds != null){ general.fragmentIgnoreMetalBonds = display.fragmentIgnoreMetalBonds; }
+  if (display.fragmentMaxRing != null){ general.fragmentMaxRing = display.fragmentMaxRing; }
   if (display.showAxes != null) {
     setToggle('showAxes', display.showAxes);
     // The change handler owns the gizmo/legend visibility (ControlsWiring).
@@ -887,8 +902,10 @@ function atomKey(element, position) {
   ].join('|');
 }
 
+/** Put the loaded atoms in the saved order; false when it could not (the
+ *  per-atom state that relies on the order is then best left alone). */
 function restoreAtomOrder(savedStructure, loadedStructure) {
-  if (!savedStructure || !loadedStructure?.atoms?.length) return;
+  if (!savedStructure || !loadedStructure?.atoms?.length) return false;
 
   const buckets = new Map();
   loadedStructure.atoms.forEach((atom, i) => {
@@ -908,7 +925,7 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
     const bucket = buckets.get(key);
     if (!bucket?.length) {
       console.warn('Failed to restore original atom order for shared structure at index', i, key);
-      return;
+      return false;
     }
 
     const match = bucket.shift();
@@ -919,6 +936,7 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
   loadedStructure.atoms = reorderedAtoms;
   loadedStructure.elements = reorderedElements;
   loadedStructure.uniqueElements = [...new Set(reorderedElements)];
+  return true;
 }
 
 /** Rebuild the Force/Spin arrow objects saved in a .crysviz frame and attach
@@ -1309,6 +1327,9 @@ export function applySharedState(state, fileName = 'shared.vasp') {
     return false;
   }
   let trajectoryContainer = null;
+  // Whether the viewed frame's atoms are back in the saved order (the CIF
+  // errors below are aligned with it).
+  let viewedOrdered = false;
 
   // Load structure (synchronous — triggers updateVisualization internally)
   try {
@@ -1316,9 +1337,10 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       // Rebuild each frame's Structure, restoring its native atom order (buildPOSCAR
       // groups by element) so per-atom indices stay stable across the trajectory,
       // then re-attach that frame's force/spin arrows (index-aligned to atoms).
-      const structures = frames.map((f) => {
+      const structures = frames.map((f, i) => {
         const s = readPOSCAR(buildPOSCAR({ structure: f }), fileName);
-        restoreAtomOrder(f, s);
+        const ordered = restoreAtomOrder(f, s);
+        if (i === selectedFrameIndex) viewedOrdered = ordered;
         applyArrows(f, s);
         return s;
       });
@@ -1361,9 +1383,13 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   // indices, then re-attach the arrows. (Multi-frame frames were already
   // restored above.)
   if (!multiFrame) {
-    restoreAtomOrder(viewed, structure);
+    viewedOrdered = restoreAtomOrder(viewed, structure);
     applyArrows(viewed, structure);
   }
+
+  // The errors read from a CIF, back on their atoms before the measurements
+  // below are rebuilt (their labels carry them).
+  if (state.cifErrors && viewedOrdered) restoreCifErrors(structure, state.cifErrors);
 
   revealFeaturePanels();
   // A share-URL boot restores through here instead of loadStructure(), so the

@@ -30,7 +30,7 @@ import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot, endLiveFeed 
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
 import { withAppStressConvention } from '../../atomistic/calculatorStress.js';
 import { updateForces } from '../../render/index.js';
-import { updateRow, createRow, selectLastAddedRow, selectStructure } from '../FileBrowswerPanel.js';
+import { updateRow, createRow, selectLastAddedRow, selectStructure, selectContainer } from '../FileBrowswerPanel.js';
 import { refreshActivePanels } from '../panels/PanelManager.js';
 import { refreshFileStructureSummary } from '../FileStructureSummary.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
@@ -1078,7 +1078,8 @@ async function runLocalRelax(shell, params, potential) {
       restoreStructureInPlace(originalStructure, relaxContainer.frameAtDetached(0));
     } catch { /* safety net only */ }
     try {
-      selectLastAddedRow();
+      // By container, not "last row": rows may have been reordered meanwhile.
+      selectContainer(relaxContainer);
       refreshActivePanels(); // rebuild the Trajectory panel for the new container
     } catch { /* non-fatal: leave selection as-is */ }
   }
@@ -1509,13 +1510,13 @@ function bindMDBody(panel, shell, potential) {
       // alone doesn't, so the scrubber otherwise stayed put until a manual row
       // click).
       try {
+        // By container, not by position: the user may have selected or
+        // reordered rows while the run was going.
         if (isContinuation) {
           // Same row as before the run — jump it to the newly appended tip.
-          // selectLastAddedRow() would pick whatever row is last in the table,
-          // which isn't necessarily this one.
-          selectStructure(fileBrowser.selectedRowIndex, mdContainer.structures.length - 1);
+          selectStructure(structureShip.container.indexOf(mdContainer), mdContainer.structures.length - 1);
         } else {
-          selectLastAddedRow();
+          selectContainer(mdContainer);
         }
         refreshActivePanels();
       } catch { /* non-fatal: leave selection as-is */ }

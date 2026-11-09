@@ -21,6 +21,9 @@ function cloneAtom(src, element, position) {
   });
   // userColor is intentionally not a constructor argument, copy it directly.
   atom.userColor = src.userColor;
+  // A copy of a CIF site keeps its errors (model/cifErrors.js): the record
+  // is in the CIF's own cell, which createSupercell's toCif keeps in reach.
+  if (src.cifSite) atom.cifSite = src.cifSite;
   return atom;
 }
 
@@ -53,7 +56,12 @@ export function tileSupercell(sel, nx = 1, ny = 1, nz = 1) {
   let baseAtoms;
   let baseElements;
   let baseLattice;
+  // The base cell's factors relative to the live one (for the CIF errors'
+  // cell mapping below): the live factors, or 1 when the whole live cell is
+  // the base.
+  let baseFactors = [1, 1, 1];
   if (Number.isInteger(rawBaseCount) && rawBaseCount > 0) {
+    baseFactors = [cx, cy, cz];
     baseLattice = sel.lattice.map((row, idx) => {
       const f = [cx, cy, cz][idx];
       return row.map(x => x / f);
@@ -98,6 +106,15 @@ export function tileSupercell(sel, nx = 1, ny = 1, nz = 1) {
     baseLattice[1].map(x => x * ny),
     baseLattice[2].map(x => x * nz)
   ];
+
+  // CIF errors: new fractional coordinates are the base's divided by n, the
+  // base's the live ones times its factors, so the map to the CIF's cell
+  // (f_cif = f · toCif) scales row i by n_i / baseFactor_i.
+  if (sel.cifErrors) {
+    const toCif = sel.cifErrors.toCif ?? [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const n = [nx, ny, nz];
+    sel.cifErrors.toCif = toCif.map((row, i) => row.map((v) => (v * n[i]) / baseFactors[i]));
+  }
 
   // Commit the new (modification-preserving) supercell to the live structure.
   sel.elements = newElements;

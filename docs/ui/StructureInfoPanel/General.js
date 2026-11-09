@@ -8,7 +8,7 @@ import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow, clearCompositionRowRegistry} from './Species.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
 import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
-import { clearAllHighlights } from '../SelectAndHighlightModule.js'
+import { captureAnySelection, reapplySelection } from '../SelectAndHighlightModule.js'
 import { getPanel, isCompactViewport } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
@@ -521,15 +521,22 @@ export function renderComposition(panelState="closed") {
     label: 'Link colors of periodic copies',
     checked: general.linkPeriodicCopies !== false,
     onChange: (checked) => {
+      // The selection is kept: once the lists are rebuilt it is selected
+      // again under the new setting (its rows are new nodes, and a linked
+      // pick glows every copy while an unlinked one glows only its own).
+      const kept = captureAnySelection();
       general.linkPeriodicCopies = checked;
-      // Selection rows go stale across the list rebuilds.
-      clearAllHighlights({ reason: 'link-copies-toggle' });
       // Rebuilding immediately replaces this very switch with a fresh node
       // already rendered in its new state, so the knob never visibly slid.
       // Let the pill's 0.25s transition play out first. Kept under the 300ms
       // the browser tests wait between clicking this toggle and asserting on
       // the rebuilt rows.
-      setTimeout(() => renderComposition("open"), 260);
+      setTimeout(() => {
+        renderComposition("open");
+        reapplySelection(kept, 'link-copies-toggle');
+        // E.g. the Selection Inspector's note on linked copies.
+        document.dispatchEvent(new CustomEvent('crysviz:link-copies-changed'));
+      }, 260);
     },
   });
   linkCopiesRow.className = 'si-link-copies-row';

@@ -655,6 +655,12 @@ export function _parse_atoms(block, resolution = true) {
 
   const positions = [];
   const coord_resolutions = [];
+  // Per atom: the standard uncertainty ("esd", the digits in parentheses) of
+  // each fractional coordinate, 0 where the file gives none, and the
+  // resolution of the number as written (0.1234 -> 1e-4). Read for the
+  // optional "CIF errors" (io/cif/cif_errors.js); nothing else uses them.
+  const coord_esds = [];
+  const coord_res_per_atom = [];
 
   for (let i = 0; i < n; i++) {
     const [vx, mx] = parse_cif_float(xs[i], { meta: true, pragmatic: false });
@@ -667,6 +673,8 @@ export function _parse_atoms(block, resolution = true) {
       (my && my.resolution != null) ? my.resolution : 0.0,
       (mz && mz.resolution != null) ? mz.resolution : 0.0
     );
+    coord_esds.push([mx?.esd ?? 0, my?.esd ?? 0, mz?.esd ?? 0]);
+    coord_res_per_atom.push([mx?.resolution ?? 0, my?.resolution ?? 0, mz?.resolution ?? 0]);
   }
 
   // 1) Data-implied resolution: coarsest (largest) non-zero resolution.
@@ -717,7 +725,7 @@ export function _parse_atoms(block, resolution = true) {
     res = Math.min(data_resolution, separation_resolution);
   }
 
-  return [symbols, labels, positions, occs, res, oxidation_states, disorder_groups];
+  return [symbols, labels, positions, occs, res, oxidation_states, disorder_groups, coord_esds, coord_res_per_atom];
 }
 
 /**
@@ -734,6 +742,27 @@ export function _parse_uc(block) {
   const beta = parse_cif_float(block.get("cell_angle_beta"), { meta: false, pragmatic: false });
   const gamma = parse_cif_float(block.get("cell_angle_gamma"), { meta: false, pragmatic: false });
   return [a, b, c, alpha, beta, gamma];
+}
+
+/**
+ * The cell parameters with their standard uncertainties and the resolution of
+ * each number as written: { values: [a,b,c,alpha,beta,gamma],
+ * esd: [...] (0 where the file gives none), resolution: [...] }.
+ * @param {Map<string, any>} block
+ */
+export function _parse_uc_meta(block) {
+  const keys = ["cell_length_a", "cell_length_b", "cell_length_c",
+    "cell_angle_alpha", "cell_angle_beta", "cell_angle_gamma"];
+  const values = [];
+  const esd = [];
+  const resolution = [];
+  for (const key of keys) {
+    const [v, meta] = parse_cif_float(block.get(key), { meta: true, pragmatic: false });
+    values.push(v);
+    esd.push(meta?.esd ?? 0);
+    resolution.push(meta?.resolution ?? 0);
+  }
+  return { values, esd, resolution };
 }
 
 /**
@@ -774,7 +803,7 @@ export function _basis_from_lengths_angles(a, b, c, alpha, beta, gamma) {
 export function parse_asu_cell(cifblock) {
   const [a, b, c, alpha, beta, gamma] = _parse_uc(cifblock);
   const basis = _basis_from_lengths_angles(a, b, c, alpha, beta, gamma);
-  const [symbols, labels, positions, occs, res, oxidation_states, disorder_groups] =
+  const [symbols, labels, positions, occs, res, oxidation_states, disorder_groups, position_esds, position_resolutions] =
     _parse_atoms(cifblock, true);
 
   // equivalent atoms based on labels
@@ -793,7 +822,7 @@ export function parse_asu_cell(cifblock) {
   // of this return value (mcif_parser.js) is unaffected.
   return [
     basis, positions, res, symbols, labels, equivalent_atoms,
-    occs, oxidation_states, disorder_groups,
+    occs, oxidation_states, disorder_groups, position_esds, position_resolutions,
   ];
 }
 
@@ -853,8 +882,13 @@ export function cifblock_to_asu(cifblock, _opts = {}) {
   // basic atom-site parsing
   const [
     basis, positions, resolution, symbols, labels, equivalent_atoms,
-    occupancies, oxidation_states, disorder_groups,
+    occupancies, oxidation_states, disorder_groups, position_esds, position_resolutions,
   ] = parse_asu_cell(cifblock);
+  // Cell parameters with their standard uncertainties, for the optional CIF
+  // errors. A cell whose numbers cannot be read with their metadata simply
+  // has none.
+  let cell = null;
+  try { cell = _parse_uc_meta(cifblock); } catch { cell = null; }
 
   // standard space group symmetry
   let symops_xyz = cifblock.get("space_group_symop.operation_xyz");
@@ -898,6 +932,14 @@ export function cifblock_to_asu(cifblock, _opts = {}) {
   const space_group_nbr =
     cifblock.get("space_group_it_number") || cifblock.get("symmetry_space_group_it_number");
 
+  // How many operations leave each site in place, when the file says so
+  // (SHELXL writes it): the optional CIF errors use it to confirm a special
+  // position (io/cif/cif_errors.js). null where absent or not a number.
+  const order_col = cifblock.get("atom_site_site_symmetry_order");
+  const site_symmetry_orders = order_col
+    ? order_col.map((v) => { const n = Number.parseInt(String(v), 10); return Number.isFinite(n) && n > 0 ? n : null; })
+    : null;
+
   const icsd = cifblock.get("database_code_ICSD");
   const doi = cifblock.get("citation_doi");
 
@@ -918,6 +960,10 @@ export function cifblock_to_asu(cifblock, _opts = {}) {
     occupancies,
     oxidation_states,
     disorder_groups,
+    position_esds,
+    position_resolutions,
+    site_symmetry_orders,
+    cell,
   };
 }
 

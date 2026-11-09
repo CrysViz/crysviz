@@ -1,6 +1,7 @@
 import {app, general, structureShip, fileBrowser} from '../state/store.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
-import { refreshActivePanels, refreshPanelAvailability, rebuildPanel } from './panels/PanelManager.js';
+import { refreshActivePanels, refreshPanelAvailability, rebuildPanel, getPanelPref, setPanelPref } from './panels/PanelManager.js';
+import { swallowClickAfterDrag } from './panels/PanelWindow.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../render/index.js';
 import {updateForces} from '../render/index.js';
@@ -16,6 +17,7 @@ import { count as traceCount } from '../debug/debugTrace.js';
 import { generateID } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
 import { captureContainerSizes, applyContainerSizes } from './SizePrefs.js';
+import { captureSelectionSnapshot, restoreSelectionSnapshot } from './SelectAndHighlightModule.js';
 
 const rowObjects = new WeakMap();
 
@@ -390,6 +392,9 @@ export function createRow(obj) {
     refreshActivePanels();
   });
 
+  // Drag the row up or down to reorder the list (see onRowPointerDown).
+  row.addEventListener('pointerdown', (e) => onRowPointerDown(row, e));
+
 
 // Duplicate (copy) logic
 row.querySelector(".copy").addEventListener("click", (e) => {
@@ -609,6 +614,149 @@ export function selectLastAddedRow() {
   updateStructureFromRowAndStep(rowIndex);
 }
 
+/** Select the row of `container`, wherever it sits in the table now (the
+ *  user may have dragged rows while a run was filling it). Returns false
+ *  when the container is not in the list. */
+export function selectContainer(container) {
+  const index = structureShip.container.indexOf(container);
+  const row = document.querySelectorAll('#objectTable tbody tr')[index];
+  if (index < 0 || !row) return false;
+  selectRow(row);
+  return true;
+}
+
+// ---- drag a row to reorder ---------------------------------------------------
+//
+// The table rows and structureShip.container are parallel lists: a row's
+// position IS its container's index everywhere else in the app. A drag moves
+// the row live and, on release, moves the container to the same place, then
+// re-derives the selected row's cached index. Mouse and pen only: a finger on
+// the list scrolls it.
+
+const ROW_DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
+const ROW_DRAG_EDGE_PX = 24; // autoscroll band at the list's top/bottom edge
+const rowOrderListeners = new Set();
+
+/** Run fn() after the user reorders the Files table. */
+export function onRowOrderChange(fn) {
+  rowOrderListeners.add(fn);
+  return () => rowOrderListeners.delete(fn);
+}
+
+function onRowPointerDown(row, e) {
+  if (e.pointerType === 'touch' || e.button !== 0) return;
+  const target = /** @type {HTMLElement} */ (e.target);
+  if (target.closest('input, button, .icon')) return;
+  const tbody = row.parentElement;
+  const scroller = document.getElementById('structureTablePanel');
+  const from = Array.from(tbody.children).indexOf(row);
+  const startX = e.clientX;
+  const startY = e.clientY;
+  let dragging = false;
+
+  const onMove = (mv) => {
+    if (!dragging) {
+      if (Math.abs(mv.clientX - startX) < ROW_DRAG_THRESHOLD
+          && Math.abs(mv.clientY - startY) < ROW_DRAG_THRESHOLD) return;
+      dragging = true;
+      row.classList.add('cv-fb-row-dragging');
+      tbody.classList.add('cv-fb-reordering');
+      window.getSelection()?.removeAllRanges();
+      // The row moves under the pointer: its release must not click the row
+      // it lands on (that would select it).
+      swallowClickAfterDrag();
+    }
+    if (scroller) {
+      const r = scroller.getBoundingClientRect();
+      if (mv.clientY < r.top + ROW_DRAG_EDGE_PX) scroller.scrollTop -= 8;
+      else if (mv.clientY > r.bottom - ROW_DRAG_EDGE_PX) scroller.scrollTop += 8;
+    }
+    // Before the first row whose midpoint is below the pointer.
+    let before = null;
+    for (const sib of tbody.children) {
+      if (sib === row) continue;
+      const r = sib.getBoundingClientRect();
+      if (mv.clientY < r.top + r.height / 2) { before = sib; break; }
+    }
+    if (row.nextElementSibling !== before) tbody.insertBefore(row, before);
+  };
+
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    if (!dragging) return;
+    row.classList.remove('cv-fb-row-dragging');
+    tbody.classList.remove('cv-fb-reordering');
+    const to = Array.from(tbody.children).indexOf(row);
+    if (to === from) return;
+    const [moved] = structureShip.container.splice(from, 1);
+    structureShip.container.splice(to, 0, moved);
+    const selected = fileBrowser.selectedRow;
+    const selectedIndex = selected ? Array.from(tbody.children).indexOf(selected) : -1;
+    if (selectedIndex >= 0) {
+      fileBrowser.selectedRowIndex = selectedIndex;
+      selected.dataset.index = String(selectedIndex);
+    }
+    for (const fn of rowOrderListeners) {
+      try { fn(); } catch (err) { console.warn('row order listener failed', err); }
+    }
+  };
+
+  // On window, not pointer capture: moving the row in the DOM drops capture.
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+}
+
+// ---- list height ---------------------------------------------------------------
+//
+// The list grows with its rows up to a height the user sets by dragging the
+// bar along its bottom edge (double-click: back to the default), then
+// scrolls. Remembered in the panel prefs.
+
+const LIST_MIN_PX = 80; // the header and about one row
+const LIST_DEFAULT_PX = 240;
+
+function applyFileListMaxHeight(px) {
+  const list = document.getElementById('structureTablePanel');
+  if (list) list.style.setProperty('--cv-fb-list-max', `${Math.round(px)}px`);
+}
+
+/** Wire the list's resize bar and apply the remembered height. Called once
+ *  the Files window adopts the list (panels/defaultPanels.js). */
+export function initFileListResize() {
+  const list = document.getElementById('structureTablePanel');
+  const bar = list?.querySelector('.cv-fb-list-resize');
+  if (!list || !bar) return;
+  applyFileListMaxHeight(getPanelPref('fileListMaxHeight') || LIST_DEFAULT_PX);
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = list.getBoundingClientRect().height;
+    try { bar.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
+    let px = startH;
+    const onMove = (mv) => {
+      px = Math.min(Math.max(startH + (mv.clientY - startY), LIST_MIN_PX), window.innerHeight * 0.9);
+      applyFileListMaxHeight(px);
+    };
+    const onUp = () => {
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      bar.removeEventListener('pointercancel', onUp);
+      if (px !== startH) setPanelPref('fileListMaxHeight', Math.round(px));
+    };
+    bar.addEventListener('pointermove', onMove);
+    bar.addEventListener('pointerup', onUp);
+    bar.addEventListener('pointercancel', onUp);
+  });
+  bar.addEventListener('dblclick', () => {
+    applyFileListMaxHeight(LIST_DEFAULT_PX);
+    setPanelPref('fileListMaxHeight', 0);
+  });
+}
+
 // Checkboxes in the file browser are a plain multi-select (needed so several
 // rows can be picked for "combine into one trajectory"). They drive
 // fileBrowser.overlayEntries only when one of two mutually-exclusive modes is
@@ -626,6 +774,37 @@ const DEFAULT_OVERLAY_OPACITY = 0.6; // Multi-Structure Overlay: translucent by 
  *  lattice-overlay plots — the row's display name in the Files list. */
 export function overlayEntryLabel(entry) {
   return entry.row?.querySelector('.name-inner')?.textContent || 'Structure';
+}
+
+/**
+ * The rows ticked in the Files list (their checkboxes), whatever the
+ * Comparison/Overlay mode — for views with their own comparison, like the
+ * Selection Inspector's Compare. `step` is the row's shown step (0-based).
+ * @returns {Array<{row: HTMLElement, rowIndex: number, name: string, step: number, steps: number}>}
+ */
+export function tickedStructureRows() {
+  const rows = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('#objectTable tbody tr')]);
+  return rows.map((row, rowIndex) => ({ row, rowIndex }))
+    .filter(({ row }) => /** @type {HTMLInputElement|null} */ (row.querySelector('input[type="checkbox"]'))?.checked)
+    .map(({ row, rowIndex }) => ({
+      row,
+      rowIndex,
+      name: row.querySelector('.name-inner')?.textContent || 'Structure',
+      step: Math.max(0, (parseInt(/** @type {HTMLInputElement|null} */ (row.querySelector('input[type="number"]'))?.value ?? '1', 10) || 1) - 1),
+      steps: structureShip.container[rowIndex]?.structures.length ?? 0,
+    }));
+}
+
+/** The structure container behind a Files row (its frames: frameAtDetached). */
+export function rowContainer(rowIndex) {
+  return structureShip.container[rowIndex] ?? null;
+}
+
+/** The compared/overlaid structures changed (ticked, unticked, a frame
+ *  arrived or was stepped) — for views that measure against them, like the
+ *  Selection Inspector's comparison. */
+function notifyComparisonChanged() {
+  document.dispatchEvent(new CustomEvent('crysviz:comparison-changed'));
 }
 
 /** Drop every overlay entry's meshes and empty fileBrowser.overlayEntries. */
@@ -705,6 +884,7 @@ function addOverlayEntryForRow(row, defaultOpacity) {
       // always starts with bonds shown (each row has its own toggle to turn off).
       showBonds: general.compareModeOn ? general.showSecondBond : true,
     });
+    notifyComparisonChanged();
     if (rerenderNow) {
       updateVisualization({
         atomsUpdate: false,
@@ -737,6 +917,7 @@ function addOverlayEntryForRow(row, defaultOpacity) {
       const applyFrame = (structure) => {
         if (!structure) return;
         entry.structure = structure;
+        notifyComparisonChanged();
         updateVisualization({
           atomsUpdate: false,
           bondsUpdate: false,
@@ -785,6 +966,7 @@ export function syncOverlayFromCheckboxes() {
   const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
 
   const finish = () => {
+    notifyComparisonChanged();
     refreshPanelAvailability();
     // Single unified panel now (both tabs live in the same DOM subtree) — see
     // ui/ComparisonOverlayPanel.js.
@@ -943,6 +1125,9 @@ function updateStructureFromRowAndStep(rowIndex) {
     if (!app.cameraLocked) lastActiveContainer.cameraSnapshot = captureCameraSnapshot();
     if (general.featuresLocked === false) lastActiveContainer.featureSnapshot = snapshotFeatureToggles();
     captureContainerSizes(lastActiveContainer); // sizes are per-structure, no lock
+    // The atom selection is per structure too: its instance numbers mean
+    // other atoms in another structure. Kept here, restored on the way back.
+    lastActiveContainer.selectionSnapshot = captureSelectionSnapshot();
   }
 
   // The frame may need materialising (store-backed trajectory) and can even
@@ -1032,6 +1217,9 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
       if (container.featureSnapshot) applyFeatureToggles(container.featureSnapshot);
       else applyDefaultFeatureToggles();
     }
+    // This structure's own selection (none, the first time), now that its
+    // atoms are drawn.
+    restoreSelectionSnapshot(container.selectionSnapshot);
   }
   lastActiveContainer = container;
 

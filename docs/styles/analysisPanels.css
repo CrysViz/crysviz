@@ -86,26 +86,230 @@
 }
 
 .pi-viewport {
-  min-height: 260px;
+  min-height: 300px;
   border-radius: var(--radius-sm);
   overflow: hidden;
   background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
 }
 
-/* Inspector top toolbar: the Angles toggle + a short double-click hint. */
-.pi-toolbar {
+/* The inspectors' controls (SelectionInspector.js, PolyhedronInspector.js,
+   inspectorLabels.js): one row per purpose, each a wrapping line of controls
+   that share one height and text size. In a narrow window a row wraps whole
+   controls onto a next line; a button never wraps its own text or changes
+   size, and a note (the neighbour count, what Compare compares with) moves
+   to the next line when it no longer fits beside them. */
+.pi-controls {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--sp-2) 12px;
+  flex-direction: column;
+  gap: var(--sp-1);
   margin-bottom: var(--sp-2);
 }
 
-.pi-toolbar-hint {
+.pi-ctl-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  min-width: 0;
   font-size: var(--fs-sm);
   color: var(--ink-2);
-  flex: 1 1 auto;
+}
+
+/* Two classes: .cv-panel-body button would otherwise set its own size (and
+   styles/responsive.css leaves .pi-btn out of its large-tap rung). */
+.pi-ctl-row .pi-btn {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+/* A note (the neighbour count, what Compare compares with) keeps its whole
+   text: when the row has no room left for it, it moves to the next line
+   rather than being squeezed beside the buttons (its flex basis is its
+   one-line width), and there it wraps if it is longer than the line. */
+.pi-ctl-note {
+  flex: 0 1 auto;
   min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pi-ctl-row .eos-mini-toggle.toggle_container {
+  flex: 0 0 auto;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+
+.pi-ctl-row .pi-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pi-colors-text {
+  flex: 0 0 auto;
+}
+
+/* A colour swatch + its caption is one button opening the app's colour picker. */
+.pi-ctl-row .pi-color {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--sp-1);
+  height: 28px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pi-ctl-row .pi-color:hover {
+  color: var(--fg-1);
+}
+
+.pi-color-swatch {
+  display: inline-block;
+  width: 20px;
+  height: 14px;
+  border-radius: var(--radius-3);
+}
+
+/* Selection Inspector: the note under the view while periodic copies are
+   linked — the amber of the warning banners over the 3D view
+   (warningBanners.css), as a line in the panel. */
+.pi-warn {
+  flex: 0 0 auto;
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: var(--warn-banner-bg);
+  border: 1px solid rgb(var(--warn-rgb) / 0.6);
+  color: var(--warn);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.pi-warn[hidden] {
+  display: none;
+}
+
+/* One line under the controls. */
+.pi-hint {
+  flex: 0 0 auto;
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+}
+
+/* Selection Inspector comparison: the status line and the legend in the
+   view's top-left corner (names editable in place). */
+.si-compare {
+  color: var(--ink-3);
+}
+
+.si-legend {
+  position: absolute;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.si-legend[hidden] {
+  display: none;
+}
+
+/* The legend's ⦀ grip (ui/ColorBarDrag.js, .cv-colorbar-grip). */
+.si-legend .cv-colorbar-grip {
+  font-size: var(--fs-lg);
+}
+
+/* The legend is a label: the length labels' pill (background set from JS)
+   with the two names in the two value colours, bold like the labels. */
+.si-legend-pill {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 1px var(--sp-2);
+  border-radius: var(--radius-3);
+  box-shadow: 0 1px 3px rgb(var(--shadow-rgb) / 0.35);
+}
+
+/* As wide as its text (the size attribute, set from JS). */
+.si-legend-name {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  line-height: 1.7;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  cursor: text;
+  user-select: text;
+}
+
+.si-legend-name:hover,
+.si-legend-name:focus {
+  border-bottom-color: currentColor;
+  outline: none;
+}
+
+/* Icon-only tool button (the Selection Inspector's add-neighbour tool), sized
+   like the main toolbar's measure tools; the full-colour SVG needs no filter.
+   The icon has an explicit size: an SVG without width/height attributes can
+   otherwise collapse to nothing in a flex button (seen in Safari). */
+/* The icon buttons keep one size at every window width: fixed box, no
+   shrinking, and an image that may not be scaled down to fit (a global
+   max-width or a flex squeeze would otherwise shrink it before the row
+   wraps). */
+.pi-ctl-row .pi-icon-btn {
+  justify-content: center;
+  box-sizing: border-box;
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  padding: 2px;
+}
+
+.pi-icon-btn img {
+  display: block;
+  flex: 0 0 auto;
+  width: 28px;
+  min-width: 28px;
+  max-width: none;
+  height: 21px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 0.6px rgb(var(--shadow-rgb) / 0.7));
+}
+
+/* The Add neighbours tool while on: the same ring as an active measure tool
+   in the main toolbar (.cv-tb-btn.active), so it reads as a mode, not a
+   one-off action. */
+.pi-tool-btn.active,
+.pi-tool-btn.active:hover {
+  color: var(--tool-active);
+  border-color: var(--tool-active);
+  box-shadow: 0 0 0 1px var(--tool-active), 0 0 6px 1px rgb(var(--tool-active-rgb) / 0.4);
+}
+
+.pi-tool-count {
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
 }
 
 /* Volume histogram bin-width control (mirrors bondLengthHistogram's row). */
@@ -1764,8 +1968,10 @@
   flex: 1;
 }
 
-/* Shared by the Alpha and Edge-alpha number inputs (identical rule). */
-.phl-alpha-value-input {
+/* Shared by the Alpha and Edge-alpha number inputs (identical rule). The
+   attribute selector outranks the bare input[type="number"] rule in
+   styles_file_browswer.css, which pinned these to 45px and cut "0.50" off. */
+.phl-alpha-value-input[type="number"] {
   width: 56px;
   height: 28px;
   padding: var(--sp-1) var(--sp-2);
@@ -1879,4 +2085,82 @@
 #planesColorBarContainer {
   width: 100%;
   display: none; /* closed-state default; refreshPlaneColorBar() still sets 'block'/'none' at runtime */
+}
+
+/* The inspector labels' buttons (PolyhedronMiniRenderer.js): a box the mini
+   view keeps over a label, with a round chip just outside one end — hide ×
+   on the right, put-back ↺ (while placing labels) on the left — so neither
+   ever covers a value. Only the chip takes pointer events, so orbiting from
+   a label still works. Size: --pi-label-btn-size, set from the label's
+   on-screen height. */
+.pi-label-hotspot {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  --pi-label-btn-gap: 3px;
+}
+
+.pi-label-hotspot[hidden] {
+  display: none;
+}
+
+.pi-label-btn {
+  position: absolute;
+  top: 50%;
+  width: var(--pi-label-btn-size, 18px);
+  height: var(--pi-label-btn-size, 18px);
+  margin: calc(var(--pi-label-btn-size, 18px) / -2) 0 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid var(--popup-border);
+  background: var(--popup-bg);
+  color: var(--fg-1);
+  box-shadow: 0 1px 3px rgb(var(--shadow-rgb) / 0.45);
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.pi-label-btn svg {
+  width: 62%;
+  height: 62%;
+  display: block;
+  pointer-events: none; /* the button itself is what a click or tap lands on */
+}
+
+.pi-label-remove {
+  left: calc(100% + var(--pi-label-btn-gap));
+}
+
+.pi-label-return {
+  right: calc(100% + var(--pi-label-btn-gap));
+}
+
+/* Hide is destructive: danger on hover; put back is not: the accent. */
+.pi-label-remove:hover {
+  background: var(--danger-fill);
+  border-color: var(--danger-fill);
+}
+
+.pi-label-return:hover {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: var(--on-accent);
+}
+
+/* Move labels mode (PolyhedronMiniRenderer.js setPlacing): the view does not
+   turn; a label under the pointer can be grabbed. */
+.pi-placing .pi-mini-canvas {
+  cursor: default;
+}
+
+.pi-placing.pi-over-label .pi-mini-canvas {
+  cursor: grab;
+}
+
+.pi-placing.pi-dragging-label .pi-mini-canvas {
+  cursor: grabbing;
 }

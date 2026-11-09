@@ -583,6 +583,11 @@ async function waitForHostFailure(page) {
       panels: { visual: { dock: 'left', closed: true, collapsed: false, bar: false } },
       rightDock: { order: [], front: null, collapsed: false, fraction: null, side: 'right' },
     }));
+    // Visual is a feature-store panel: whether it is closed (out of the
+    // sidebar) is the store's record, not the layout's (ui/panels/featureStore.js).
+    localStorage.setItem('featureStore', JSON.stringify({
+      version: 1, allByDefault: true, enabled: { visual: false },
+    }));
   });
   await deferredPage.goto(`${origin}/index.html`, { waitUntil: 'load', timeout: 90000 });
   await deferredPage.waitForTimeout(5000);

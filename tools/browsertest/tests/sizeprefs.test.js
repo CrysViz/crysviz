@@ -171,7 +171,8 @@ const near = (a, b, eps = 1e-6) => Math.abs(Number(a) - Number(b)) < eps;
   await reload(page);
   const cleared = await page.evaluate(STATE);
   H.check('sizes back at default', near(cleared.atomSize, base.atomSize) && near(cleared.bondRadius, base.bondRadius)
-    && cleared.atomSlider === cleared.atomSliderDefault && cleared.bondSlider === cleared.bondSliderDefault,
+    // As numbers: a range input's value is "0.309" where its HTML default is "0.3090".
+    && near(cleared.atomSlider, cleared.atomSliderDefault) && near(cleared.bondSlider, cleared.bondSliderDefault),
   JSON.stringify({ ...cleared, stored: undefined }));
   H.check('radius scales / bond styles / cutoff back at default', Object.keys(cleared.scales).length === 0
     && cleared.cat == null && near(cleared.cnRange.max, base.cnRange.max) && cleared.cnBonds === base.cnBonds,

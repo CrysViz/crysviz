@@ -228,6 +228,52 @@ const H = require('../harness');
     bondsHidden.polys > 0 && bondsHidden.bondsDrawn === false,
     JSON.stringify(bondsHidden));
 
+  // --- Narrow window: the category editor keeps its sizes -----------------------
+  // Below 1024px the app used to give every small button 16px text, slider
+  // thumbs 24px and checkboxes 1.5x, by width alone: in a desktop window made
+  // narrow, "Reset"/"Apply" spilled out of their 50px squares. Touch sizes
+  // now need a touch screen (pointer: coarse), and the squares are exempt.
+  await page.setViewportSize({ width: 900, height: 1000 });
+  await page.waitForTimeout(800);
+  const editorSizes = () => page.evaluate(async () => {
+    (await import('./ui/StructureInfoPanel/General.js')).setStructurePanelOpen(true);
+    /** @type {HTMLElement} */ (document.querySelector('#atomBondControlSwitch button[data-mode="polyhedra"]')).click();
+    await new Promise((r) => setTimeout(r, 200));
+    const row = document.querySelector('#infoPolyControls .phl-cat-button-row');
+    if (!(/** @type {HTMLElement} */ (row)?.offsetParent)) {
+      /** @type {HTMLElement} */ (document.querySelector('#infoPolyControls .poly-control canvas')).click();
+    }
+    const visible = (sel) => [...document.querySelectorAll(sel)].filter((e) => /** @type {HTMLElement} */ (e).offsetParent);
+    const fits = (e) => e.scrollWidth <= e.clientWidth + 1 && e.scrollHeight <= e.clientHeight + 1;
+    const buttons = visible('#infoPolyControls .phl-cat-square-btn');
+    const fields = visible('#infoPolyControls .phl-alpha-value-input');
+    const checkbox = visible('#infoPolyControls input[type="checkbox"]')[0];
+    return {
+      coarse: matchMedia('(pointer: coarse)').matches,
+      buttons: buttons.map((b) => ({ font: getComputedStyle(b).fontSize, fits: fits(b) })),
+      fields: fields.map((f) => ({ value: /** @type {HTMLInputElement} */ (f).value, fits: fits(f) })),
+      checkbox: checkbox ? getComputedStyle(checkbox).transform : null,
+    };
+  });
+  const mouse = await editorSizes();
+  H.check('narrow window, mouse: Reset/Apply text fits its squares, no touch-sized checkboxes',
+    !mouse.coarse && mouse.buttons.length === 2 && mouse.buttons.every((b) => b.fits && b.font !== '16px')
+      && !String(mouse.checkbox).startsWith('matrix(1.5'),
+    JSON.stringify(mouse));
+  H.check('the Alpha and Edge alpha fields show their whole value',
+    mouse.fields.length === 2 && mouse.fields.every((f) => f.fits), JSON.stringify(mouse.fields));
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }, { name: 'hover', value: 'none' }] });
+  await page.waitForTimeout(300);
+  const touch = await editorSizes();
+  H.check('narrow window, touch: checkboxes grow for fingers, Reset/Apply still fit',
+    touch.coarse && String(touch.checkbox).startsWith('matrix(1.5')
+      && touch.buttons.length === 2 && touch.buttons.every((b) => b.fits),
+    JSON.stringify(touch));
+  await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);
