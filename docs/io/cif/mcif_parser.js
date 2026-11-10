@@ -2,6 +2,7 @@ import { read_cif } from "./cif_reader.js";
 import {
   Fraction,
   parse_asu_cell,
+  _parse_uc_meta,
   parse_cif_float,
   parse_structural_modulation,
   parse_linear_expr,
@@ -442,7 +443,8 @@ export function crystal_to_cartesian(moments_cryst, basis) {
 export function _parse_mag_asu_cell(cifblock, opts = {}) {
   const moment_equalization = opts.moment_equalization !== undefined ? !!opts.moment_equalization : true;
 
-  const [basis, positions, res, symbols, labels, equivalent_atoms] = parse_asu_cell(cifblock);
+  const [basis, positions, res, symbols, labels, equivalent_atoms, , , , position_esds, position_resolutions] =
+    parse_asu_cell(cifblock);
 
   const [cif_moments0, momlabels, spin_basis0, magres] = _parse_moments(cifblock, {
     equalize: moment_equalization,
@@ -454,7 +456,8 @@ export function _parse_mag_asu_cell(cifblock, opts = {}) {
   if (cif_moments0 == null || momlabels == null || spin_basis0 == null) {
     const zero = [0.0, 0.0, 0.0];
     const magmoms = labels.map(() => zero.slice());
-    return [basis, positions, res, magmoms, "cartesian", null, symbols, labels, equivalent_atoms];
+    return [basis, positions, res, magmoms, "cartesian", null, symbols, labels, equivalent_atoms,
+      position_esds, position_resolutions];
   }
 
   let cif_moments = cif_moments0;
@@ -474,7 +477,8 @@ export function _parse_mag_asu_cell(cifblock, opts = {}) {
 
   const magmoms = labels.map((lab) => (moments_map.has(lab) ? moments_map.get(lab) : [0.0, 0.0, 0.0]));
 
-  return [basis, positions, res, magmoms, spin_basis, magres, symbols, labels, equivalent_atoms];
+  return [basis, positions, res, magmoms, spin_basis, magres, symbols, labels, equivalent_atoms,
+    position_esds, position_resolutions];
 }
 
 /**
@@ -885,7 +889,8 @@ function _limitDenominator(x, maxDen) {
 export function cifblock_to_mag_asu(cifblock, opts = {}) {
   const error_on_nonmag = !!opts.error_on_nonmag;
 
-  const [basis, positions, res, magmoms, spin_basis, magres, symbols, labels, equivalent_atoms] = _parse_mag_asu_cell(
+  const [basis, positions, res, magmoms, spin_basis, magres, symbols, labels, equivalent_atoms,
+    position_esds, position_resolutions] = _parse_mag_asu_cell(
     cifblock,
     { moment_equalization: true }
   );
@@ -951,6 +956,11 @@ export function cifblock_to_mag_asu(cifblock, opts = {}) {
 
   const symops = _compose_ops_with_centerings(base_symops, cent_symops);
 
+  // The standard uncertainties of the cell and coordinates, for the optional
+  // CIF errors (io/cif/cif_errors.js), as cifblock_to_asu keeps them.
+  let cell = null;
+  try { cell = _parse_uc_meta(cifblock); } catch { cell = null; }
+
   const bns_nbr = cifblock.get("space_group_magn.number_bns");
   const bns_name = cifblock.get("space_group_magn.name_bns");
 
@@ -979,6 +989,9 @@ export function cifblock_to_mag_asu(cifblock, opts = {}) {
     resolution: res,
     magmom_resolution: magres,
     labels,
+    position_esds,
+    position_resolutions,
+    cell,
   };
 }
 

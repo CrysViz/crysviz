@@ -7,12 +7,17 @@ export { StructureContainer } from './StructureContainer.js';
 export { StructureShip } from './StructureShip.js';
 export { Spin } from './Spin.js';
 export { Force } from './Force.js';
-export { Stress } from './Stress.js';
+export {
+  Stress, EV_PER_A3_TO_GPA, KBAR_TO_EV_PER_A3, HARTREE_PER_BOHR3_TO_EV_PER_A3,
+  pressureEvA3, pressureGPa, tensorGPa, fromTensionPositive,
+} from './Stress.js';
 export { Polyhedra } from './Polyhedra.js';
 export { Polyhedron } from './Polyhedron.js';
 export { Symmetry } from './Symmetry.js';
 export { Wyckoff } from './Wyckoff.js';
 export { Field } from './Field.js';
+// Grid -> world mapping shared by the isosurface, the cut planes and the tracer:
+export { gridToWorld, worldToGridFraction, blockCellRange, imageOffsets } from './fieldGeometry.js';
 export { Plane, getCutPlaneMaskSign } from './Plane.js';
 export { FieldContainer } from './FieldContainer.js';
 

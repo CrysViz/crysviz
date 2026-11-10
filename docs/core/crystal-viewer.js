@@ -12,9 +12,7 @@ import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
 import { showLoadErrorModal, showLoadWarningModal } from '../ui/LoadErrorModal.js';
-// Side-effect import: AboutPanel wires the "about" trigger at module load.
-// (Its named exports are unused, so keep it as a bare import.)
-import '../ui/AboutPanel.js';
+import { loadIncarSpins } from '../ui/IncarSpinImport.js';
 
 // ........................................................................................................
 // Import Modules
@@ -30,12 +28,13 @@ import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
 import { pauseRendering, resumeRendering,animation_update,requestRender,runPeriodicWrapped,
   applyRotationFromUI, captureSceneToPng } from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
-import { setActivePipelineFromController } from '../ui/ColorPanel.js';
+import { setActivePipelineFromController, reapplyAtomForceColors } from '../ui/ColorPanel.js';
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateOverlayBonds,rebuildOverlayBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
+import { updateAsymmetricUnit, updateAsuAtomHighlight } from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
 import {rebuildAtoms,updateAtoms,deriveVisibleWrapped} from '../render/index.js';
 import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
@@ -45,20 +44,26 @@ import {updateHydrogenBonds} from '../render/index.js';
 import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render/MeasurementModule.js' // not all imports might be needed in this file
 
 
-import {initAddStructureButton, initModifyStructureButton} from '../ui/addToStructureModule/AddStructureModule.js'
-import {initCombineTrajectoriesButton, selectStructure} from '../ui/FileBrowswerPanel.js'
-import {initPanelSystem, finishPanelRegistration, revealFeaturePanels, refreshActivePanels} from '../ui/panels/PanelManager.js'
-import {registerDefaultPanels} from '../ui/panels/defaultPanels.js'
-import {isDebugMode} from '../debug/debugMode.js'
-import {openDebugPanel} from '../ui/DebugPanel.js'
+import { initModifyStructureButton } from '../ui/addToStructureModule/AddStructureModule.js'
+import { refreshFileStructureSummary } from '../ui/FileStructureSummary.js';
+import { selectStructure } from '../ui/FileBrowswerPanel.js'
+// PanelManager stays in the shared graph (getPanelPref etc. are used by modules
+// widget mode keeps, like TrajectoryPanel). revealFeaturePanels is called from
+// the structure-load path below; in widget mode no panels are registered, so it
+// is a safe no-op. The rest of the panel setup moved to core/fullApp.js.
+import { revealFeaturePanels } from '../ui/panels/PanelManager.js'
 import {initFontScale} from '../ui/FontScaleModule.js'
-import {initKeyboardShortcuts} from '../ui/KeyboardShortcuts.js'
-import { initProjectionOverlay } from '../ui/notagameatall.js';
 
 import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
 import { applyFieldPeriodicBounds, updateForces, updateSpins } from '../render/index.js';
-import { loadPhonopyFile } from '../phonon/phononSession.js';
+import { applyPlanesPeriodicBounds } from '../ui/PlanesPanel.js';
+
+// Full-app-only UI (panels, backend/save/export/debug, phonopy, keyboard,
+// projection) is loaded lazily from core/fullApp.js — during boot for the full
+// app (so it stays offline-complete), never in widget mode. `fullAppHooks` holds
+// the callbacks the shared load path needs from it (currently the phonopy loader).
+let fullAppHooks = {};
 
 // .........................................................................................................
 // Import Panels
@@ -70,11 +75,6 @@ import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType, recente
 } from '../ui/WindowAndSceneControls.js'
 import {initGizmoDrag} from '../ui/GizmoDrag.js'
 import {renderComposition} from '../ui/StructureInfoPanel/General.js';
-import {addBackendModeSwitch} from '../ui/BackendPanel/BackendSwitchPanel.js';
-
-import {addSavePanel} from '../ui/SavePanel.js'
-import {initImageExportPanel} from '../ui/ImageExportPanel.js'
-import {initRaytraceWarningModal} from '../ui/RaytraceWarningModal.js'
 
 // NOTE: share-related import utils still need to move into the "share" module.
 
@@ -191,6 +191,15 @@ export function updateVisualization(options = {}) {
   // Cheap: same-reference no-op unless an atom is actually hidden.
   deriveVisibleWrapped(fileBrowser.selectedStructure);
 
+  // Honor the active Atoms colour MODE before the atoms render below reads
+  // atom.color. "Force" colouring is frame-dependent (magnitudes change every
+  // step) and each new trajectory/MD frame is materialised with atom.color reset
+  // to the element default (materializeFrame.applyFrameStyles), so without this
+  // the force colour map would only ever paint the frame it was switched on.
+  // Central here so every full-render caller — trajectory settle loads, the
+  // scrub path, panel refreshes — keeps it alive; no-op unless force mode is on.
+  reapplyAtomForceColors(fileBrowser.selectedStructure);
+
   // Main Structure
   if (reRenderAtoms) {
     console.warn("Calling rebuildAtoms")
@@ -228,6 +237,7 @@ export function updateVisualization(options = {}) {
     if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
     applyFieldPeriodicBounds();
+    applyPlanesPeriodicBounds();
   }
 
   // Overlay structures — one rebuild/update pass per fileBrowser.overlayEntries
@@ -264,6 +274,10 @@ export function updateVisualization(options = {}) {
     // updateVisualization() call — avoids stacking duplicate click listeners
     // on the same live button node.
     initModifyStructureButton();
+    // The Files window's Structure info section shows this structure's
+    // geometry; a live edit (Modify Structure) or a relaxation step lands
+    // here, so let it re-check (cheap when nothing changed).
+    refreshFileStructureSummary();
   }
   console.time("uv:updateLattice");
   if (reRenderLattice) {
@@ -272,7 +286,13 @@ export function updateVisualization(options = {}) {
     // repeats the field's original sub-cell, gaps included), so re-seat them
     // whenever the lattice is rebuilt. Idempotent and cheap when unchanged.
     if (!reRenderPeriodic) applyFieldPeriodicBounds();
+    // Unconditional: this is also what drops a wedge whose structure is no
+    // longer selected.
+    updateAsymmetricUnit();
   }
+  // Atoms can move without the cell changing (Wyckoff editor), so the
+  // in-wedge highlight refreshes every pass; it is a no-op while off.
+  updateAsuAtomHighlight();
   console.timeEnd("uv:updateLattice");
   console.time("uv:updateOther");
   if (reRenderOther) updateOther();
@@ -360,7 +380,7 @@ async function updateHostLattice(lattice) {
   return true;
 }
 
-export async function loadStructure(content, fileName = '', isDefault = false, format = '') {
+export async function loadStructure(content, fileName = '', isDefault = false, format = '', options = {}) {
   try {
 
     const parserFileName = format && !String(fileName).toLowerCase().endsWith(`.${String(format).toLowerCase()}`)
@@ -402,7 +422,7 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         break;
 
       case 'cube':
-        structureContainer = await parseCubeFile(payload, fileName);
+        structureContainer = await parseCubeFile(/** @type {string} */ (payload), fileName, { periodic: options?.periodic });
         break;
 
       case 'chgcar':
@@ -415,9 +435,25 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
       case 'phonopy-cells':
       case 'phonopy-dos':
         // phonopy output: the phonon session builds (or joins) the supercell
-        // row the modes are shown on and opens the Phonon windows.
-        structureContainer = await loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id);
+        // row the modes are shown on and opens the Phonon windows. Reached only
+        // in the full app (via fullApp's hook) — widget mode loads .crysviz, not
+        // phonopy, so the phonon module is never pulled into the embed.
+        if (!fullAppHooks.loadPhonopyFile) throw new Error('Phonopy loading is unavailable in this mode');
+        structureContainer = await fullAppHooks.loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id);
         break;
+
+      case 'incar': {
+        // No atoms in an INCAR: its MAGMOM is offered to the selected structure
+        // as spins, behind a dialog. Nothing about the scene's geometry changes,
+        // so this returns before the camera/measurement resets below. A file
+        // with no usable moments throws and reaches the modal in the catch.
+        const imported = await loadIncarSpins(/** @type {string} */ (payload), fileName);
+        if (!imported) {
+          setStatus('Load cancelled.');
+          return { ok: false, cancelled: true, name: fileName, format: format || undefined };
+        }
+        return { ok: true, container: imported.container, name: fileName, format: format || undefined };
+      }
 
       // Everything else is a structure file and goes through the single pure
       // pipeline. parse_any picks the format (POSCAR is its fallback) and
@@ -440,18 +476,32 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
           throw new Error('No atoms or structures were found in this file.');
         }
         initializeUIOnLoad(structureContainer);
+        // A CIF carries a declared space group. Offer to keep it (Wyckoff editor
+        // in the file's own setting) once the structure is selected — skipped for
+        // the built-in default so startup stays promptless. Routed through the
+        // full-app hook (like the phonopy loader) so the symmetry modal loads at
+        // boot in the full app but never in the widget embed, which only opens
+        // .crysviz sessions and has no panel chrome anyway. An mCIF declares
+        // no space group here but may still give errors (standard
+        // uncertainties), which the same hook offers to read.
+        if ((descriptor.id === 'cif' || descriptor.id === 'mcif') && !isDefault) {
+          await fullAppHooks.offerCifSymmetryChoice?.(fileBrowser.selectedStructure, fileName);
+        }
         break;
     }
 
-    // A WAVECAR whose dialog was cancelled deliberately loads nothing. That is a
+    // A WAVECAR or cube whose dialog was cancelled deliberately loads nothing. That is a
     // user decision, not a failure, so return quietly instead of falling into
     // the "loader returned no container" error below.
-    if (structureContainer === null && descriptor.id === 'wavecar') {
+    if (structureContainer === null && (descriptor.id === 'wavecar' || descriptor.id === 'cube')) {
       setStatus('Load cancelled.');
       return { ok: false, cancelled: true, name: fileName, format: format || undefined };
     }
 
     if (!structureContainer) throw new Error('Structure loader returned no structure container');
+    // The start-up demo: reloading loses nothing the user made, so the reload
+    // guard (ui/LeaveGuard.js) does not count it.
+    if (isDefault) structureContainer.isBootDefault = true;
 
    revealFeaturePanels();
 
@@ -503,7 +553,15 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // Lead with the file name: a bare Error object serialises to just "Error"
     // in captured console text, which says nothing about what failed.
     console.error(`Failed to load structure "${fileName}":`, error);
-    showLoadErrorModal({ fileName, message: error?.message });
+    // An error may bring its own headline (`modalTitle` / `modalSummary`) for a
+    // failure the generic "corrupt or unsupported" wording would misdescribe,
+    // e.g. a valid INCAR whose MAGMOM does not fit the selected structure.
+    showLoadErrorModal({
+      fileName,
+      message: error?.message,
+      title: error?.modalTitle,
+      summary: error?.modalSummary,
+    });
     throw error;
   }
 }
@@ -537,7 +595,7 @@ export async function initializeCore(browserHostController) {
     },
     loadHash: async () => {
       const result = await loadFromFilePath();
-      if (result) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
+      if (result === true) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
       return result;
     },
     loadDefault: async () => {
@@ -659,32 +717,18 @@ async function initUIPanels() {
   initFontScale();
   createBackgroundControl();
   await setupThemeSystem();
-  initPanelSystem();
-  registerDefaultPanels();
-  finishPanelRegistration();
-  // ?debug: the Debug window opens in front of the side dock straight away —
-  // it exists to be looked at, and a remembered side-dock front tab from an
-  // ordinary session would otherwise hide it behind the EOS plots.
-  if (isDebugMode()) openDebugPanel();
-  // Apply availability (grey-out) once now that panels exist. On first load the
-  // default structure is loaded before panels are registered, so its own
-  // revealFeaturePanels() refresh ran against no panels; this makes the initial
-  // greyed/available state match what a file-selector click would produce.
-  refreshActivePanels();
-  addBackendModeSwitch();
-  addSavePanel();
-  initImageExportPanel();
-  initRaytraceWarningModal();
-  initModifyStructureButton();
-  initAddStructureButton();
-  initCombineTrajectoriesButton();
-  // Widget mode has no keyboard: it is an embed with no focusable app chrome,
-  // and its global key handlers (delete-atom, arrow-step, …) would fire against
-  // the host page's own shortcuts. The projection overlay's chord is a keyboard
-  // feature too, so it stays out of widget mode for the same reason.
+
+  // Full-app chrome — the panel system and every panel, plus the
+  // backend/save/export/debug panels, phonopy loading, keyboard shortcuts and
+  // the projection overlay. It is a lot of code the embed never shows, so it
+  // lives in core/fullApp.js and is imported ONLY in full-app mode: widget mode
+  // never downloads it. The full app loads it here, during boot, so it stays
+  // offline-complete (nothing is fetched on demand later). Widget mode already
+  // had no keyboard/projection, so nothing regresses there.
   if (!document.body.classList.contains('widget-mode')) {
-    initKeyboardShortcuts();
-    initProjectionOverlay(); // Shift+4+2, see ui/notagameatall.js
+    const fullApp = await import('./fullApp.js');
+    fullAppHooks = fullApp.hooks;
+    fullApp.initFullAppUI();
   }
 
   // Add viewport meta tag if not present for proper mobile scaling

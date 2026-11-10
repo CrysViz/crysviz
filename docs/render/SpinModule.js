@@ -27,9 +27,30 @@ const ARROW_LEN_MAX = 2.0;
 // so the auto scale sizes off exactly the arrows that actually appear — a spin
 // below this never draws, so it must not drag the scale down either.
 const SPIN_DRAW_THRESHOLD = 0.05;
+// Glow for a set's "Highlight" toggle — same orange and strength as the
+// selection glow (ui/SelectAndHighlightModule.js's HIGHLIGHT_EMISSIVE).
+const SET_HIGHLIGHT_EMISSIVE = { r: 1, g: 0.549, b: 0 };
+const SET_HIGHLIGHT_INTENSITY = 2.0;
 
-function disposeSpinMeshes() {
-  for (const key of ['spinShaftMesh', 'spinTipMesh']) {
+// The two spin arrow sets: the structure's own spins and the optional
+// comparison set (structure.spins2, loaded from the Spins panel's
+// experimental "Comparison Spins" section). Each owns its own mesh pair and
+// per-atom instance maps in `groups`; `focusKind` is FocusRegionModule's key.
+// `highlightKey` names the `general` flag that makes every arrow of the set
+// glow (Spins panel "Highlight" toggles), to tell the two sets apart.
+const PRIMARY_SET = {
+  shaftKey: 'spinShaftMesh', tipKey: 'spinTipMesh', highlightKey: 'spinHighlightAll',
+  bySrcKey: 'spinsInstancesBySrcIndex', byInstanceKey: 'spinsArrowByInstance',
+  focusKind: 'spins',
+};
+const COMPARE_SET = {
+  shaftKey: 'spin2ShaftMesh', tipKey: 'spin2TipMesh', highlightKey: 'spin2HighlightAll',
+  bySrcKey: 'spins2InstancesBySrcIndex', byInstanceKey: 'spins2ArrowByInstance',
+  focusKind: 'spins2',
+};
+
+function disposeSpinMeshes(set = PRIMARY_SET) {
+  for (const key of [set.shaftKey, set.tipKey]) {
     if (groups[key]) {
       groups[key].geometry.dispose();
       groups[key].material.dispose();
@@ -37,17 +58,22 @@ function disposeSpinMeshes() {
       groups[key] = null;
     }
   }
-  groups.spinsInstancesBySrcIndex = null;
-  groups.spinsArrowByInstance = null;
+  groups[set.bySrcKey] = null;
+  groups[set.byInstanceKey] = null;
+}
+
+function disposeAllSpinMeshes() {
+  disposeSpinMeshes(PRIMARY_SET);
+  disposeSpinMeshes(COMPARE_SET);
 }
 
 export function removeSpins() {
-  disposeSpinMeshes();
+  disposeAllSpinMeshes();
   requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
 }
 
 export function deleteSpins() {
-  disposeSpinMeshes();
+  disposeAllSpinMeshes();
   requestRender(); // see removeSpins() above
 }
 
@@ -116,38 +142,79 @@ export function computeSpinColor(vector, scaling, {
 
 export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpins = [], colorMap = "none") {
   const structure = fileBrowser.selectedStructure;
-  if (!structure?.periodic?.wrapped) { disposeSpinMeshes(); requestRender(); return; }
+  if (!structure?.periodic?.wrapped) { disposeAllSpinMeshes(); requestRender(); return; }
 
+  drawSpinSet(PRIMARY_SET, structure, {
+    spins: useManualSpins ? manualSpins : structure.spins,
+    useManualSpins,
+    spinFactor,
+    colorMap,
+    minValue: general.spinMin || 0,
+    maxValue: general.spinMax || 2,
+    useLog: general.spinColorScale === "log",
+    shaftDiameter: general.spinRadius ?? 0.08,
+    useCategoryStyles: true,
+  });
+
+  // The comparison set shares every LENGTH control with the primary set
+  // (spinFactor, log length and its range, arrowhead length) so the two stay
+  // directly comparable; colormap, colour range and diameter are its own.
+  // Its colormap is always read from `general` — callers only ever pass the
+  // primary set's.
+  if (structure.spins2?.length && general.spin2Visible !== false) {
+    drawSpinSet(COMPARE_SET, structure, {
+      spins: structure.spins2,
+      useManualSpins: false,
+      spinFactor,
+      colorMap: general.spin2ColorMap ?? "none",
+      minValue: general.spin2Min || 0,
+      maxValue: general.spin2Max || 2,
+      useLog: general.spin2ColorScale === "log",
+      shaftDiameter: general.spin2Radius ?? 0.08,
+      useCategoryStyles: false,
+    });
+  } else {
+    disposeSpinMeshes(COMPARE_SET);
+  }
+
+  requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
+}
+
+/**
+ * Draw one spin arrow set into its own mesh pair (see PRIMARY_SET /
+ * COMPARE_SET).
+ *
+ * @param {typeof PRIMARY_SET} set
+ * @param {any} structure
+ * @param {{spins:any[], useManualSpins:boolean, spinFactor:number, colorMap:string,
+ *   minValue:number, maxValue:number, useLog:boolean, shaftDiameter:number,
+ *   useCategoryStyles:boolean}} opts
+ */
+function drawSpinSet(set, structure, {
+  spins, useManualSpins, spinFactor, colorMap, minValue, maxValue, useLog, shaftDiameter, useCategoryStyles,
+}) {
   const wrapped = structure.periodic.visibleWrapped;
-  const shaftDiameter = general.spinRadius ?? 0.08;
   const tipDiameter = TIP_RADIUS * (shaftDiameter / 0.08);
   const tipLength = (general.spinTipLength ?? TIP_LENGTH / 2) * (shaftDiameter / 0.08);
 
-  let spins;
-  if (useManualSpins) {
-    spins = manualSpins;
-  } else {
-    spins = structure.spins;
-  }
+  if (!spins?.length) { disposeSpinMeshes(set); return; }
 
-  if (!spins?.length) { disposeSpinMeshes(); requestRender(); return; }
-
-  // Update spin colors based on colormap
-  const minValue = general.spinMin || 0;
-  const maxValue = general.spinMax || 2;
-  const useLog = general.spinColorScale === "log";
   // Arrow LENGTH can follow its own log/linear switch (Spins panel "log
   // length" toggle), independent of the color scale above — though turning
   // it on also forces+locks useLog on (ui/SpinPanel.js), same one-directional
   // coupling as ForceModule.js's forceLengthLogScale.
   const useLogLength = general.spinLengthLogScale === true;
+  // Log-length normalizes against the PRIMARY set's range for every set, so
+  // the same magnitude draws the same length in both (length is global).
+  const lengthMin = general.spinMin || 0;
+  const lengthMax = general.spinMax || 2;
 
   // Same shape as ForceModule.js's normalizeMag() — only used for length
   // here (in log-length mode; color keeps its own inline normalization
   // above/below since it also needs to handle "none"/direction/plusminus).
   function normalizeMag(mag) {
-    const lo = Math.log10(Math.max(minValue, LOG_EPS));
-    const hi = Math.log10(Math.max(maxValue, LOG_EPS));
+    const lo = Math.log10(Math.max(lengthMin, LOG_EPS));
+    const hi = Math.log10(Math.max(lengthMax, LOG_EPS));
     const v = Math.log10(Math.max(mag, LOG_EPS));
     return hi > lo ? Math.min(Math.max((v - lo) / (hi - lo), 0), 1) : 0;
   }
@@ -163,7 +230,9 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     // structure.spins is — each entry carries its own atomIndex instead.
     const atomIdx = useManualSpins ? (spin.atomIndex ?? idx) : idx;
 
-    const categoryColor = structure.spinCategoryStyles?.[structure.elements[atomIdx]]?.color;
+    const categoryColor = useCategoryStyles
+      ? structure.spinCategoryStyles?.[structure.elements[atomIdx]]?.color
+      : null;
     if (categoryColor != null) {
       spin.color = new THREE.Color(categoryColor);
       return;
@@ -291,9 +360,9 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
   // --- Rendering logic ---
   const count = arrows.length;
 
-  if (!groups.spinShaftMesh || groups.spinShaftMesh.count !== count * 2) {
-    disposeSpinMeshes();
-    if (count === 0) { requestRender(); return; }
+  if (!groups[set.shaftKey] || groups[set.shaftKey].count !== count * 2) {
+    disposeSpinMeshes(set);
+    if (count === 0) return;
 
     const shaftGeo = new THREE.CylinderGeometry(1, 1, 1, SHAFT_SEGS, 1);
     // Same PBR preset atoms/bonds use (render/MaterialStyles.js) — a
@@ -301,10 +370,10 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     // roughness/metalness and no clearcoat, so the same per-instance color
     // as an atom's rendered visibly duller/paler instead of matching it.
     const shaftMat = createArrowMaterial();
-    groups.spinShaftMesh = new THREE.InstancedMesh(shaftGeo, shaftMat, count * 2);
-    groups.spinShaftMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
-    groups.spinShaftMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    groups.spinShaftMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    groups[set.shaftKey] = new THREE.InstancedMesh(shaftGeo, shaftMat, count * 2);
+    groups[set.shaftKey].instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 2 * 3), 3);
+    groups[set.shaftKey].instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    groups[set.shaftKey].instanceColor.setUsage(THREE.DynamicDrawUsage);
     // The mesh sits at the world origin and every instance is placed via
     // setMatrixAt below, so three.js's per-instance auto bounding sphere (see
     // InstancedMesh.computeBoundingSphere) is only ever computed once, lazily,
@@ -314,19 +383,19 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     // arrangement culled the whole batch until camera motion produced a
     // frustum that happened to still intersect it. Same fix/precedent as
     // RayTracingPipeline.js's meshes.
-    groups.spinShaftMesh.frustumCulled = false;
-    addArrowEmissiveAttributes(groups.spinShaftMesh, count * 2);
-    app.scene.add(groups.spinShaftMesh);
+    groups[set.shaftKey].frustumCulled = false;
+    addArrowEmissiveAttributes(groups[set.shaftKey], count * 2);
+    app.scene.add(groups[set.shaftKey]);
 
     const tipGeo = new THREE.ConeGeometry(1, 1, TIP_SEGS);
     const tipMat = createArrowMaterial();
-    groups.spinTipMesh = new THREE.InstancedMesh(tipGeo, tipMat, count);
-    groups.spinTipMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
-    groups.spinTipMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    groups.spinTipMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
-    groups.spinTipMesh.frustumCulled = false; // see spinShaftMesh above
-    addArrowEmissiveAttributes(groups.spinTipMesh, count);
-    app.scene.add(groups.spinTipMesh);
+    groups[set.tipKey] = new THREE.InstancedMesh(tipGeo, tipMat, count);
+    groups[set.tipKey].instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    groups[set.tipKey].instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    groups[set.tipKey].instanceColor.setUsage(THREE.DynamicDrawUsage);
+    groups[set.tipKey].frustumCulled = false; // see spinShaftMesh above
+    addArrowEmissiveAttributes(groups[set.tipKey], count);
+    app.scene.add(groups[set.tipKey]);
   }
 
   // Which arrow-instance indices (shaft i*2/i*2+1, tip i) belong to which
@@ -345,11 +414,12 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     if (list) list.push(i); else instancesBySrcIndex.set(srcIdx, [i]);
     arrowByInstance.set(i, useManualSpins ? structure.spins[srcIdx] : spins[srcIdx]);
   });
-  groups.spinsInstancesBySrcIndex = instancesBySrcIndex;
-  groups.spinsArrowByInstance = arrowByInstance;
-  groups.spinShaftMesh.userData.arrowStylesByInstance = arrowByInstance;
+  groups[set.bySrcKey] = instancesBySrcIndex;
+  groups[set.byInstanceKey] = arrowByInstance;
+  groups[set.shaftKey].userData.arrowStylesByInstance = arrowByInstance;
 
   const dummy = new THREE.Object3D();
+  const highlightAll = general[set.highlightKey] === true;
 
   arrows.forEach(({ origin, dir, shaftHalfLen, color }, i) => {
     const quat = new THREE.Quaternion();
@@ -373,46 +443,49 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
     dummy.scale.set(shaftDiameter, shaftHalfLen, shaftDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
-    groups.spinShaftMesh.setMatrixAt(i * 2, dummy.matrix);
-    groups.spinShaftMesh.instanceColor.setXYZ(i * 2, color.r, color.g, color.b);
+    groups[set.shaftKey].setMatrixAt(i * 2, dummy.matrix);
+    groups[set.shaftKey].instanceColor.setXYZ(i * 2, color.r, color.g, color.b);
 
     // Shaft-
     dummy.position.copy(center).addScaledVector(dir, -shaftHalfLen / 2);
     dummy.scale.set(shaftDiameter, shaftHalfLen, shaftDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
-    groups.spinShaftMesh.setMatrixAt(i * 2 + 1, dummy.matrix);
-    groups.spinShaftMesh.instanceColor.setXYZ(i * 2 + 1, color.r, color.g, color.b);
+    groups[set.shaftKey].setMatrixAt(i * 2 + 1, dummy.matrix);
+    groups[set.shaftKey].instanceColor.setXYZ(i * 2 + 1, color.r, color.g, color.b);
 
     // Tip cone
     dummy.position.copy(center).addScaledVector(dir, shaftHalfLen + tipLength / 2);
     dummy.scale.set(tipDiameter, tipLength, tipDiameter);
     dummy.quaternion.copy(quat);
     dummy.updateMatrix();
-    groups.spinTipMesh.setMatrixAt(i, dummy.matrix);
-    groups.spinTipMesh.instanceColor.setXYZ(i, color.r, color.g, color.b);
+    groups[set.tipKey].setMatrixAt(i, dummy.matrix);
+    groups[set.tipKey].instanceColor.setXYZ(i, color.r, color.g, color.b);
 
     // Reset any selection glow from a previous highlight — a redraw that
     // reuses the mesh (no count change) would otherwise leave a stale
     // highlighted arrow glowing after its atom is deselected or the arrows
-    // are rebuilt for an unrelated reason (scale/colormap change).
-    groups.spinShaftMesh.geometry.attributes.instanceEmissive.setXYZ(i * 2, 0, 0, 0);
-    groups.spinShaftMesh.geometry.attributes.instanceEmissive.setXYZ(i * 2 + 1, 0, 0, 0);
-    groups.spinShaftMesh.geometry.attributes.instanceEmissiveIntensity.setX(i * 2, 0);
-    groups.spinShaftMesh.geometry.attributes.instanceEmissiveIntensity.setX(i * 2 + 1, 0);
-    groups.spinTipMesh.geometry.attributes.instanceEmissive.setXYZ(i, 0, 0, 0);
-    groups.spinTipMesh.geometry.attributes.instanceEmissiveIntensity.setX(i, 0);
+    // are rebuilt for an unrelated reason (scale/colormap change). A set
+    // whose "Highlight" toggle is on glows as a whole instead.
+    const { r: er, g: eg, b: eb } = highlightAll ? SET_HIGHLIGHT_EMISSIVE : { r: 0, g: 0, b: 0 };
+    const ei = highlightAll ? SET_HIGHLIGHT_INTENSITY : 0;
+    groups[set.shaftKey].geometry.attributes.instanceEmissive.setXYZ(i * 2, er, eg, eb);
+    groups[set.shaftKey].geometry.attributes.instanceEmissive.setXYZ(i * 2 + 1, er, eg, eb);
+    groups[set.shaftKey].geometry.attributes.instanceEmissiveIntensity.setX(i * 2, ei);
+    groups[set.shaftKey].geometry.attributes.instanceEmissiveIntensity.setX(i * 2 + 1, ei);
+    groups[set.tipKey].geometry.attributes.instanceEmissive.setXYZ(i, er, eg, eb);
+    groups[set.tipKey].geometry.attributes.instanceEmissiveIntensity.setX(i, ei);
   });
 
   // Update matrices and colors
-  groups.spinShaftMesh.instanceMatrix.needsUpdate = true;
-  groups.spinShaftMesh.instanceColor.needsUpdate = true;
-  groups.spinShaftMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
-  groups.spinShaftMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
-  groups.spinTipMesh.instanceMatrix.needsUpdate = true;
-  groups.spinTipMesh.instanceColor.needsUpdate = true;
-  groups.spinTipMesh.geometry.attributes.instanceEmissive.needsUpdate = true;
-  groups.spinTipMesh.geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  groups[set.shaftKey].instanceMatrix.needsUpdate = true;
+  groups[set.shaftKey].instanceColor.needsUpdate = true;
+  groups[set.shaftKey].geometry.attributes.instanceEmissive.needsUpdate = true;
+  groups[set.shaftKey].geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
+  groups[set.tipKey].instanceMatrix.needsUpdate = true;
+  groups[set.tipKey].instanceColor.needsUpdate = true;
+  groups[set.tipKey].geometry.attributes.instanceEmissive.needsUpdate = true;
+  groups[set.tipKey].geometry.attributes.instanceEmissiveIntensity.needsUpdate = true;
 
   // An InstancedMesh caches the bounding sphere the renderer's frustum test
   // computes on its FIRST cull check, and three.js never invalidates it when
@@ -427,16 +500,14 @@ export function updateSpins(spinFactor = 1.0, useManualSpins = false, manualSpin
   // zooming in tightens the frustum and every arrow disappears at once.
   // Nulling both defers the recompute to the next cull test, which is where
   // three.js wants it.
-  groups.spinShaftMesh.boundingSphere = null;
-  groups.spinShaftMesh.boundingBox = null;
-  groups.spinTipMesh.boundingSphere = null;
-  groups.spinTipMesh.boundingBox = null;
+  groups[set.shaftKey].boundingSphere = null;
+  groups[set.shaftKey].boundingBox = null;
+  groups[set.tipKey].boundingSphere = null;
+  groups[set.tipKey].boundingBox = null;
 
   // Fresh arrows: re-derive their focus-region opacity (the instanceOpacity
   // attribute is reset to 1 on every mesh rebuild).
-  applyFocusToArrows(structure, 'spins');
-
-  requestRender(); // on-demand rendering (AnimateModule.js) needs a nudge to repaint
+  applyFocusToArrows(structure, set.focusKind);
 }
 
 /**

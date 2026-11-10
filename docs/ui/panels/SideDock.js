@@ -29,6 +29,7 @@ import { resizeRenderer } from '../WindowAndSceneControls.js';
 import { requestRender } from '../../render/index.js';
 import { app } from '../../state/store.js';
 import { showInfoPanel } from '../InfoPanel.js';
+import { swallowClickAfterDrag } from './PanelWindow.js';
 
 const DEFAULT_PANE_FRACTION = 1 / 3;
 const MIN_PANE_PX = 220; // dragged narrower than this -> snap collapsed
@@ -283,6 +284,7 @@ function onTabPointerDown(panel, tab, e) {
           && Math.abs(mv.clientY - startY) < DRAG_THRESHOLD) return;
       dragging = true;
       tab.classList.add('cv-tab-dragging');
+      swallowClickAfterDrag();
     }
     // Left the strip band: pull the window out of the dock and continue the
     // same gesture as a floating title-bar drag (from there the main dock's
@@ -601,13 +603,18 @@ export function expandSplitItem(wrapper) {
   overlay?.classList.add('active');
   viewArea?.classList.add('split-item-expanded');
   wrapper.closest('.cv-panel')?.classList.add('cv-has-expanded-item');
+  // Main-docked hosts sit inside #ui, whose own backdrop-filter would make it
+  // the fixed-position containing block too — the item then renders clipped
+  // and scrolling INSIDE the side panel instead of over the viewport. Tag #ui
+  // as well so panelWindow.css can lift that filter for the duration.
+  wrapper.closest('#ui')?.classList.add('cv-has-expanded-item');
 }
 
 export function closeExpandedSplitItem() {
   const { viewArea, overlay } = els();
   document.querySelectorAll('.split-item.expanded, .trajPlot.expanded')
     .forEach((w) => w.classList.remove('expanded'));
-  document.querySelectorAll('.cv-panel.cv-has-expanded-item')
+  document.querySelectorAll('.cv-panel.cv-has-expanded-item, #ui.cv-has-expanded-item')
     .forEach((el) => el.classList.remove('cv-has-expanded-item'));
   overlay?.classList.remove('active');
   viewArea?.classList.remove('split-item-expanded');

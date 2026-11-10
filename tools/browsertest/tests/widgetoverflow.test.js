@@ -1,6 +1,6 @@
 // Widget overflow: the grown dropdown and a many-species legend must both stay
 // on the canvas. Menu caps its height below the anchor and scrolls; the legend
-// is pinned lower-left by its bottom edge (grows upward), capped + scrollable.
+// is pinned lower-right by its bottom edge (grows upward), capped + scrollable.
 'use strict';
 const H = require('../harness');
 const BASE = process.env.CRYSVIZ_URL || 'http://localhost:8123/index.html';

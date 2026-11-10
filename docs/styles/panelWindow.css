@@ -44,6 +44,18 @@
   animation: cv-shortcut-flash 0.5s ease-out;
 }
 
+/* The search's colour-dot results (ui/search/structureEntries.js) flash small
+   round targets: a full-strength orange ring with a glow, held a moment
+   before it fades (KeyboardShortcuts.js DOT_FLASH: 1 s). */
+@keyframes cv-dot-flash {
+  0%, 40% { box-shadow: 0 0 0 3px rgb(var(--danger-rgb)), 0 0 8px 3px rgb(var(--danger-rgb)); }
+  100% { box-shadow: 0 0 0 3px rgb(var(--danger-rgb) / 0), 0 0 8px 3px rgb(var(--danger-rgb) / 0); }
+}
+
+.cv-dot-flash {
+  animation: cv-dot-flash 1s ease-out;
+}
+
 /* The .cv-panel container itself is chrome-less: collapsed, a panel is just
    its title bar; expanded, the body hangs below the bar as the window
    surface. */
@@ -109,6 +121,17 @@
    !important because raise() sets an inline z-index. */
 .cv-panel.cv-has-expanded-item > .cv-panel-body {
   backdrop-filter: none;
+}
+
+/* Same containing-block trap one level up: a main-docked host lives inside
+   #ui, whose backdrop-filter (styles.css) would otherwise pin the fixed-
+   position item to the side panel's box — clipped by its overflow and
+   scrolling with it. SideDock.expandSplitItem tags #ui too; lift the filter
+   while it hosts an expanded item, and raise it in case a responsive rung has
+   it positioned below the scrim (harmless when it is not positioned). */
+#ui.cv-has-expanded-item {
+  backdrop-filter: none;
+  z-index: var(--z-dock-expanded);
 }
 
 .cv-panel.cv-floating.cv-has-expanded-item {
@@ -315,8 +338,14 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
   cursor: pointer;
 }
 
-.cv-panel-menu-item:hover {
+.cv-panel-menu-item:hover:not(:disabled) {
   background: var(--hover-color);
+}
+
+/* Greyed-out action (e.g. "Deselect" with nothing selected). */
+.cv-panel-menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* Thin separator before an untitled section (e.g. the Close item). */

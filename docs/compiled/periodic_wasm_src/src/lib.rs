@@ -2,6 +2,7 @@ mod bonds;
 mod cell_list;
 mod convex_hull;
 mod linalg;
+mod fragments;
 mod polyhedra;
 
 use linalg::{cart_to_frac, lattice_from_flat, Vec3};
@@ -429,7 +430,12 @@ fn get_bond_cutoff(bond_table: &[f64], n_elem: usize, ei: usize, ej: usize) -> f
 /// * `bounds`      – VESTA-style fractional display bounds, packed as
 ///   `[xmin,xmax,ymin,ymax,zmin,zmax]`. Defaults to `[0,1]` per axis (classic
 ///   face-mirror behaviour). An empty/short slice falls back to `[0,1]`.
+/// * `fragment_table` – "Complete Rings & Fragments": the `n_elem × n_elem` cutoff table of
+///   the bonds that define fragments (the bond table with bonds to metals zeroed when
+///   the caller filters them). Empty = off. See `fragments.rs`.
+/// * `max_ring`    – largest ring (atoms) completed in extended networks; 0 = none.
 #[wasm_bindgen]
+#[allow(clippy::too_many_arguments)]
 pub fn periodic_wrapped(
     show_periodic: bool,
     show_pbc_bonds: bool,
@@ -440,6 +446,8 @@ pub fn periodic_wrapped(
     n_elem: usize,
     face_tol: f64,
     bounds: &[f64],
+    fragment_table: &[f64],
+    max_ring: u32,
 ) -> PeriodicResult {
     let n = elements_in.len();
     assert_eq!(frac_in.len(), 3 * n);
@@ -532,6 +540,56 @@ pub fn periodic_wrapped(
         }
     }
 
+    // NOTE: `lattice` here is Lᵀ — periodicWasm.js sends the lattice transposed so
+    // `mul_vec` yields correct Cartesian coords. The real lattice vectors a/b/c are
+    // therefore the *columns* of `lattice.data`, not its rows. (The JS reference uses
+    // the untransposed rows directly.)
+    let real = lattice.transpose();
+    let rows = [
+        Vec3::new(real.data[0][0], real.data[0][1], real.data[0][2]),
+        Vec3::new(real.data[1][0], real.data[1][1], real.data[1][2]),
+        Vec3::new(real.data[2][0], real.data[2][1], real.data[2][2]),
+    ];
+
+    // The boundary set: what the cell and its display bounds show. Neighbour Bonds
+    // grows from these atoms only, so turning Complete Rings & Fragments on does not change
+    // which ghosts it adds.
+    let base_len = new_cart.len();
+
+    // ------------------------------------------------------------------
+    // Complete Rings & Fragments  →  the atoms cut fragments and rings need
+    // ------------------------------------------------------------------
+    if n_elem > 0 && fragment_table.len() == n_elem * n_elem {
+        let primary: Vec<Vec3> = (0..n)
+            .map(|i| Vec3::new(frac_in[3 * i], frac_in[3 * i + 1], frac_in[3 * i + 2]))
+            .collect();
+        let seeds: Vec<(u32, fragments::Shift)> = (0..base_len)
+            .map(|k| {
+                let s = new_src[k];
+                let p = primary[s as usize];
+                let f = new_frac[k];
+                (s, [(f.x - p.x).round() as i32, (f.y - p.y).round() as i32, (f.z - p.z).round() as i32])
+            })
+            .collect();
+        let added = fragments::complete_fragments(
+            &primary,
+            elements_in,
+            rows,
+            fragment_table,
+            n_elem,
+            &seeds,
+            max_ring as usize,
+        );
+        for (m, s) in added {
+            let p = primary[m as usize];
+            let f = Vec3::new(p.x + s[0] as f64, p.y + s[1] as f64, p.z + s[2] as f64);
+            new_elements.push(elements_in[m as usize]);
+            new_frac.push(f);
+            new_cart.push(lattice.mul_vec(f));
+            new_src.push(m);
+        }
+    }
+
     // ------------------------------------------------------------------
     // showPBCBonds  →  ghost atoms for cross-boundary bonds
     // ------------------------------------------------------------------
@@ -542,14 +600,7 @@ pub fn periodic_wrapped(
             .fold(0.0_f64, f64::max);
 
         if max_cutoff > 1e-6 {
-            // NOTE: `lattice` here is Lᵀ — periodicWasm.js sends the lattice
-            // transposed so `mul_vec` yields correct Cartesian coords. The real
-            // lattice vectors a/b/c are therefore the *columns* of `lattice.data`,
-            // not its rows. (The JS reference uses the untransposed rows directly.)
-            let real = lattice.transpose();
-            let a = Vec3::new(real.data[0][0], real.data[0][1], real.data[0][2]);
-            let b = Vec3::new(real.data[1][0], real.data[1][1], real.data[1][2]);
-            let c = Vec3::new(real.data[2][0], real.data[2][1], real.data[2][2]);
+            let [a, b, c] = rows;
 
             let ax = (max_cutoff / a.norm().max(1e-6)).ceil().clamp(1.0, 2.0) as i32;
             let by = (max_cutoff / b.norm().max(1e-6)).ceil().clamp(1.0, 2.0) as i32;
@@ -574,7 +625,8 @@ pub fn periodic_wrapped(
                 }
             }
 
-            // Snapshot the wrapped atoms before we start appending ghosts
+            // Snapshot the atoms drawn so far (boundary set + completed fragments)
+            // before we start appending ghosts.
             let wrapped_len = new_cart.len();
 
             // Pre-compute original atoms in Cartesian
@@ -590,7 +642,7 @@ pub fn periodic_wrapped(
                 .map(|e| (0..n_elem).map(|f| bond_table[e * n_elem + f]).fold(0.0, f64::max))
                 .collect();
 
-            // Spatial grid (cell list) over the wrapped atoms. Cell size =
+            // Spatial grid (cell list) over the boundary atoms. Cell size =
             // max_cutoff, so any atom within a pair's cutoff of a query point
             // lives in the query cell or one of its 26 neighbours. This turns
             // the ghost search from O(wrapped × atoms × shifts) into roughly
@@ -604,7 +656,7 @@ pub fn periodic_wrapped(
                 )
             };
             let mut grid: HashMap<(i32, i32, i32), Vec<u32>> = HashMap::new();
-            for i in 0..wrapped_len {
+            for i in 0..base_len {
                 grid.entry(cell_of(new_cart[i])).or_default().push(i as u32);
             }
 

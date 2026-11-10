@@ -6,6 +6,7 @@ import { groups } from '../state/store.js';
 import { MarchingCubesWrapper, MarchingCubesBackend } from './MarchingCubesWrapper.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { makeFractionalBoundsClippingPlanes } from './Plane.js';
+import { gridToWorld, blockCellRange, imageOffsets, BOUND_EPS, isUnitBounds } from './fieldGeometry.js';
 
 
 // Transparency flags (transparent, depthWrite, renderOrder) are owned by the
@@ -22,6 +23,15 @@ export let surface_options = {
 export let defaultPosColor = new THREE.Color(0x33aaff);
 export let defaultNegColor = new THREE.Color(0xff3333);
 export let isosurfaceTriangleSortingEnabled = true;
+
+// The out-of-the-box isosurface material, frozen so edits to the live
+// settings above never move it. The Field panel treats a value equal to one of
+// these as "reset" and drops it from the per-structure prefs (issue #18).
+export const DEFAULT_ISOSURFACE_MATERIAL = Object.freeze({
+    positiveColor: `#${defaultPosColor.getHexString()}`,
+    negativeColor: `#${defaultNegColor.getHexString()}`,
+    opacity: surface_options.opacity,
+});
 
 
 const _sortCameraPosition = new THREE.Vector3();
@@ -188,43 +198,27 @@ export function updateStoredIsosurfaceRenderOrder(camera, isosurfaceGroup) {
 //  and every copy is CLIPPED to the region, so a boundary that stops
 //  part-way through a cell cuts the surface there instead of showing a whole
 //  extra cell of it.
+//
+//  A BLOCK field (field.periodic === false — a molecular cube drawn as finite
+//  data, see model/fieldGeometry.js) fills only part of the structure cell
+//  and may cross a cell face. At the plain unit bounds it is drawn exactly
+//  once, whole, at its real place: no copies and no clipping, because the
+//  block IS the file's data and cutting it at a cell face it happens to cross
+//  would hide real values. Once the boundary is widened it behaves like the
+//  periodic supercell case: copies repeat the block (gaps included) with the
+//  structure lattice, and every copy is clipped to the region. Which copies
+//  are needed comes from the block's fractional extent in the cell, so a
+//  block straddling a face gets the image on the far side too.
 // ---------------------------------------------------------------------------
 
 /** @type {[number, number][]} */
 const UNIT_BOUNDS = [[0, 1], [0, 1], [0, 1]];
 // Bounds are user-typed, so a value a hair over an integer (1.0000001) must
 // not conjure a whole extra cell of field.
-const BOUND_EPS = 1e-6;
 // Safety net for a restored/shared state with wild bounds: the panel itself
 // clamps to +/-2 cells (5 per axis), and 5^3 copies of one mesh is already a
 // lot of geometry to push per frame.
 const MAX_IMAGES_PER_AXIS = 5;
-
-/** True for the plain unit cell [0,1] on every axis — the default, in which
- *  the field is exactly one copy and needs no clipping at all. */
-function isUnitBounds(bounds) {
-    return bounds.every(([lo, hi]) => Math.abs(lo) < BOUND_EPS && Math.abs(hi - 1) < BOUND_EPS);
-}
-
-/** Integer cell translations n whose own cell [n, n+1] overlaps [lo, hi].
- *  [0,1] -> [0] (today's single copy); [0,1.2] -> [0,1]; [-0.5,1] -> [-1,0]. */
-function axisImageRange([lo, hi]) {
-    const first = Math.floor(lo + BOUND_EPS);
-    // max(): a zero-thickness region (lo === hi) still resolves to one cell,
-    // which the clipping then reduces to nothing — better than no mesh at all.
-    const last = Math.min(Math.max(first, Math.ceil(hi - BOUND_EPS) - 1), first + MAX_IMAGES_PER_AXIS - 1);
-    const out = [];
-    for (let n = first; n <= last; n++) out.push(n);
-    return out;
-}
-
-/** Every integer cell translation [i,j,k] the display boundary reaches. */
-function boundsImageOffsets(bounds) {
-    const [ri, rj, rk] = bounds.map(axisImageRange);
-    const out = [];
-    for (const i of ri) for (const j of rj) for (const k of rk) out.push([i, j, k]);
-    return out;
-}
 
 export class Isosurface extends THREE.Group{
 
@@ -253,16 +247,14 @@ export class Isosurface extends THREE.Group{
 
         this.addMeshes();
 
+        // The marching-cubes mesh is in grid fractions ([0,1] across the n
+        // points, dx = 1/(n-1)); the group matrix places that in the world.
+        // Columns are voxel * n for a periodic field (the cell) and
+        // voxel * (n-1) plus the origin for a block, so a block's point i sits
+        // at origin + i * step. One mapping shared with the planes and the
+        // tracer, so all three draw the field in the same place.
         this.matrixAutoUpdate = false;
-        const transform_cell = new THREE.Matrix4();
-        transform_cell.set(
-            this.field.voxel[0][0], this.field.voxel[1][0], this.field.voxel[2][0], 0,
-            this.field.voxel[0][1], this.field.voxel[1][1], this.field.voxel[2][1], 0,
-            this.field.voxel[0][2], this.field.voxel[1][2], this.field.voxel[2][2], 0,
-            0, 0, 0, 1
-        );
-        transform_cell.scale(new THREE.Vector3(this.field.nx, this.field.ny, this.field.nz));
-        this.applyMatrix4(transform_cell);
+        this.applyMatrix4(new THREE.Matrix4().fromArray(gridToWorld(this.field)));
     }
 
     sortTrianglesByCameraDistance(cameraPosition) {
@@ -408,8 +400,33 @@ export class Isosurface extends THREE.Group{
             && lattice.every((row) => Array.isArray(row) && row.length === 3 && row.every(Number.isFinite));
         this._periodicBounds = safe;
         this._lattice = validLattice ? lattice.map((row) => [...row]) : null;
-        this._syncImageMeshes(boundsImageOffsets(safe));
+        this._syncImageMeshes(this._imageOffsets(safe));
         this._applyBoundsClipping(safe);
+    }
+
+    /** Which cell translations to draw. A periodic field always counts as
+     *  filling one cell (today's rule, whatever the lattice). A block counts
+     *  its real extent in the structure cell, so one straddling a face gets
+     *  the image on the far side — except at the plain unit bounds, where it
+     *  is drawn once, whole. With no structure lattice the block's own cell is
+     *  the reference and it fills that exactly. */
+    _imageOffsets(bounds) {
+        if (this.field.periodic !== false) {
+            return imageOffsets(UNIT_BOUNDS, bounds, { maxPerAxis: MAX_IMAGES_PER_AXIS, eps: BOUND_EPS });
+        }
+        if (isUnitBounds(bounds)) return [[0, 0, 0]];
+        let range = UNIT_BOUNDS;
+        if (this._lattice) {
+            try {
+                range = blockCellRange(this.field, this._lattice);
+            } catch (error) {
+                // A degenerate structure lattice: draw the block as one cell
+                // rather than failing the whole field update. The clipping
+                // planes were already meaningless for such a lattice.
+                console.warn(`Isosurface: ${error.message}; treating the block as one cell`);
+            }
+        }
+        return imageOffsets(range, bounds, { maxPerAxis: MAX_IMAGES_PER_AXIS, eps: BOUND_EPS });
     }
 
     /** The lattice the boundary repeats the field with: the structure's when
@@ -419,9 +436,17 @@ export class Isosurface extends THREE.Group{
     }
 
     /** True when the boundary lattice is this field's own grid cell (within
-     *  rounding), i.e. the field fills exactly one boundary cell. */
+     *  rounding), i.e. the field fills exactly one boundary cell starting at
+     *  the world origin. Never for a block with a structure lattice: even one
+     *  whose extent equals the cell is displaced by its origin, and keeping
+     *  every block on the general (range + clipping) path means one code path
+     *  to reason about. With no lattice at all the field's own cell is the
+     *  boundary by definition, block or not. */
     _latticeIsOwnCell() {
         if (!this._lattice) return true;
+        if (this.field.periodic === false) return false;
+        const e = this.matrix.elements;
+        if (Math.hypot(e[12], e[13], e[14]) > 1e-6) return false;
         const own = this._cellVectors();
         return own.every((vec, i) => vec.every((v, k) => Math.abs(v - this._lattice[i][k]) < 1e-6));
     }
@@ -514,11 +539,23 @@ export class Isosurface extends THREE.Group{
      *  the field's own grid — the field already ends at the cell faces there,
      *  so the default costs no clipping planes in the shader at all. With a
      *  different structure lattice even the unit cell clips, because the grid
-     *  may reach past it (a cell reduced after the field was loaded). */
+     *  may reach past it (a cell reduced after the field was loaded). A block
+     *  at unit bounds is the exception: it is drawn whole even where it
+     *  crosses a cell face (see the header). */
     _applyBoundsClipping(bounds) {
-        const planes = isUnitBounds(bounds) && this._latticeIsOwnCell()
+        const wholeBlock = this.field.periodic === false && isUnitBounds(bounds);
+        const planes = isUnitBounds(bounds) && (wholeBlock || this._latticeIsOwnCell())
             ? null
             : makeFractionalBoundsClippingPlanes(this._boundaryVectors(), bounds);
+        // The planes assume a cell anchored at the world origin. With no
+        // structure lattice the boundary cell is this field's own grid cell,
+        // which starts at the field origin — zero for every periodic field,
+        // so this moves nothing for them.
+        if (planes && !this._lattice) {
+            const e = this.matrix.elements;
+            const origin = new THREE.Vector3(e[12], e[13], e[14]);
+            for (const plane of planes) plane.translate(origin);
+        }
         for (const key of ['positive', 'negative']) {
             const material = this.meshes?.[key]?.material;
             if (!material) continue;

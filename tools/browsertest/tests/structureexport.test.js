@@ -103,7 +103,20 @@ const H = require('../harness');
     const lines = text.split('\n');
     const ops = lines.filter((l) => /^\s+\d+ '[^']*'$/.test(l)).length;
     const siteRows = lines.filter((l) => /^  [A-Z][a-z]?\d+\s/.test(l)).map((l) => l.trim().split(/\s+/));
-    await cv.loadStructure(text, 'roundtrip_sym.cif');
+    // A CIF declaring a group makes the loader ask keep / symmetrise / plain
+    // (ui/CifSymmetryLoad.js) and wait on the answer; take "Load as a normal
+    // structure" so the round trip reads the file as written. A file that
+    // declares nothing past P1 loads without asking — either way, until done.
+    let loaded = false;
+    const loading = cv.loadStructure(text, 'roundtrip_sym.cif').finally(() => { loaded = true; });
+    while (!loaded) {
+      const modal = document.getElementById('cifSymmetryModal');
+      const plain = modal && !modal.hidden
+        && [...modal.querySelectorAll('.confirm-choice')].find((b) => /Load as a normal structure/.test(b.textContent));
+      if (plain) { plain.click(); break; }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    await loading;
     const rt = structureShip.container[fileBrowser.selectedRowIndex].structures[0];
     return {
       head: text.split('data_')[0],

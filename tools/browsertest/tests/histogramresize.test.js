@@ -9,6 +9,12 @@
 // single `bondLengthHistogramPlot` any more — and every card starts collapsed.
 // This drives the combined card, which is always present, and expands it first:
 // a collapsed card's chart is display:none and has no width to measure.
+//
+// The card's dual-range slider fill is checked alongside: it used to be
+// painted once while the card was collapsed (slider 0 px wide -> a made-up
+// 120 px geometry, so the green bar came out too short) and never repainted
+// until the whole window changed width. It must match the slider's real
+// width right after expanding and after every dock move.
 'use strict';
 const H = require('../harness');
 
@@ -29,13 +35,31 @@ async function pickPosition(page, panelId, label) {
 }
 
 function histState(page) {
-  return page.evaluate(async (plotId) => {
+  return page.evaluate(async ({ plotId, cardId }) => {
     const { getPanel } = await import('./ui/panels/PanelManager.js');
     const p = getPanel('bondLengthHistogram');
     const el = p?.el;
     const body = el?.querySelector('.cv-panel-body');
     const plot = document.getElementById(plotId);
+    // Expected fill geometry from the slider's live width: thumbs travel
+    // between half a thumb (6 px) in from either edge.
+    const card = document.getElementById(cardId);
+    const slider = card?.querySelector('.blh-range-slider');
+    const fill = card?.querySelector('.blh-range-fill');
+    const minIn = card?.querySelector('.blh-range-min');
+    const maxIn = card?.querySelector('.blh-range-max');
+    let fillOk = null;
+    if (slider && fill && minIn && maxIn && slider.clientWidth) {
+      const w = slider.clientWidth;
+      const pos = (v) => 6 + ((v - Number(minIn.min)) / (Number(minIn.max) - Number(minIn.min))) * (w - 12);
+      const expLeft = pos(Number(minIn.value));
+      const expWidth = pos(Number(maxIn.value)) - expLeft;
+      fillOk = Math.abs(parseFloat(fill.style.left) - expLeft) < 1.5 && Math.abs(parseFloat(fill.style.width) - expWidth) < 1.5;
+    }
     return {
+      fillOk,
+      sliderW: slider?.clientWidth ?? 0,
+      fillW: fill ? parseFloat(fill.style.width) : null,
       dock: p?.dock ?? null,
       bodyW: body?.getBoundingClientRect().width ?? 0,
       plotW: plot?.getBoundingClientRect().width ?? 0,
@@ -43,7 +67,7 @@ function histState(page) {
       inSideDock: !!document.querySelector('#splitPaneBody > .cv-panel[data-panel-id="bondLengthHistogram"]'),
       floating: !!el?.classList.contains('cv-floating'),
     };
-  }, ALL_PAIRS_PLOT);
+  }, { plotId: ALL_PAIRS_PLOT, cardId: ALL_PAIRS_CARD });
 }
 
 (async () => {
@@ -70,6 +94,8 @@ function histState(page) {
   let s = await histState(page);
   H.check('histogram opens side-docked with a wide chart',
     s.dock === 'right' && s.inSideDock && s.plotW > 300, JSON.stringify(s));
+  H.check('the range slider\'s green fill spans the real slider width right after expanding the card',
+    s.fillOk === true && s.sliderW > 150, `slider=${s.sliderW} fill=${s.fillW} ok=${s.fillOk}`);
   const wideW = s.plotW;
 
   // ≡ Position ▸ Main dock: the chart must squeeze to the side panel's width.
@@ -82,6 +108,8 @@ function histState(page) {
     `plot=${s.plotW} body=${s.bodyW}`);
   H.check('chart shrank from its side-dock width', s.plotW < wideW - 20,
     `plot=${s.plotW} was=${wideW}`);
+  H.check('the fill followed the slider into the narrow dock', s.fillOk === true,
+    `slider=${s.sliderW} fill=${s.fillW} ok=${s.fillOk}`);
 
   // ≡ Position ▸ Float: pops out over the scene.
   await pickPosition(page, 'bondLengthHistogram', 'Float');
@@ -96,6 +124,8 @@ function histState(page) {
   H.check('Position ▸ Side dock returns the window to the side dock',
     s.dock === 'right' && s.inSideDock, JSON.stringify(s));
   H.check('chart grew back to the wide dock', s.plotW > 300, `plot=${s.plotW}`);
+  H.check('the fill followed the slider back to the wide dock', s.fillOk === true,
+    `slider=${s.sliderW} fill=${s.fillW} ok=${s.fillOk}`);
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

@@ -5,6 +5,7 @@ import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from '../render/index.js';
 import {updateBonds, bondKey, bondGroupKey, polyhedronGroupKey, isTracerPipelineActive} from '../render/index.js';
 import {updateForces, updateSpins} from '../render/index.js';
+import {onAtomsRebuilt} from '../render/atomsRebuildHook.js';
 
 const ATOM_HIGHLIGHT_COLOR = new THREE.Color(0xFF8C00);
 // Same emissive glow atoms/bonds get when selected (AtomsFracUpdateModule.js/
@@ -327,7 +328,13 @@ export function highlightAtomsIn3D(sourceIndices) {
  * for the selected atom/bond shows the real, live color underneath instead
  * of the orange highlight overlay. Pair with restoreSelectionHighlight().
  */
+// While a colour editor has the glow off (suppressSelectionHighlightFor3D),
+// a rebuild of the atoms mesh must not bring it back (carrySelectionAcross-
+// Rebuild below); restoreSelectionHighlight or a new selection ends it.
+let glowSuppressed = false;
+
 export function suppressSelectionHighlightFor3D() {
+  glowSuppressed = true;
   clearHighlightAtom();
   clearHighlightBond();
 }
@@ -335,6 +342,7 @@ export function suppressSelectionHighlightFor3D() {
 /** Undo suppressSelectionHighlightFor3D(): reapplies the 3D glow for the
  *  current atom or bond selection. */
 export function restoreSelectionHighlight() {
+  glowSuppressed = false;
   if (atomSelection.selectedAtoms.length) {
     applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   } else if (highlightHover.currentlyHighlightedBond) {
@@ -896,6 +904,7 @@ function closeSpinForceEditorDom(atomIndex) {
 }
 
 function commitSelection(nextSelection, eventInfo, options = {}) {
+  glowSuppressed = false; // the glow is applied again just below
   atomSelection.selectedAtoms = reindexSelection(nextSelection);
   // An open Spin/Force editor belongs to whichever atom it was opened for —
   // if the selection just moved to a different atom (or away entirely),
@@ -1064,6 +1073,130 @@ export function addAtomsToSelectionByInstances(instanceIds, options = {}) {
     },
     { scrollToLast: false, revealPanel: options.revealPanel ?? false },
   );
+}
+
+/**
+ * The atom selection in a form that outlives the current mesh: each selected
+ * atom's source index and on-screen copy. The Files list keeps one per
+ * structure row (ui/FileBrowswerPanel.js), so switching structures neither
+ * carries one structure's atoms over to another — the same instance numbers
+ * are different atoms there — nor loses them when switching back.
+ * @returns {Array<{sourceIndex: number, instanceId: number}>}
+ */
+export function captureSelectionSnapshot() {
+  return atomSelection.selectedAtoms.map((a) => ({ sourceIndex: a.sourceIndex, instanceId: a.instanceId }));
+}
+
+/**
+ * Restore a snapshot taken on the now-active structure (captureSelectionSnapshot),
+ * or clear the selection when there is none. Each atom comes back as the same
+ * copy if that copy is still displayed, otherwise as its first copy.
+ * @param {Array<{sourceIndex: number, instanceId: number}>|null|undefined} snapshot
+ */
+export function restoreSelectionSnapshot(snapshot, { reason = 'structure-switch' } = {}) {
+  const structure = fileBrowser.selectedStructure;
+  const src = structure?.periodic?.visibleWrapped?.srcIndex;
+  const ids = (snapshot ?? []).map(({ sourceIndex, instanceId }) => {
+    if (src ? src[instanceId] === sourceIndex : instanceId === sourceIndex) return instanceId;
+    return structure?.atomImages?.[sourceIndex]?.[0];
+  }).filter((i) => Number.isInteger(i));
+  if (!ids.length) {
+    clearSelectedAtoms({ reason });
+    return;
+  }
+  selectAtomsByInstances(ids, { reason });
+}
+
+/**
+ * rebuildAtoms() replaced the main atoms mesh (render/atomsRebuildHook.js):
+ * Neighbour Bonds, Show Periodic Images, the display boundary, Complete
+ * Polyhedra, ... The selection entries still name the old mesh's instances,
+ * whose glow went with it, and the new mesh may number the copies
+ * differently. Each selected copy is found again by its source atom and
+ * periodic offset; a copy no longer shown falls back to the atom's first
+ * copy, and an atom no longer shown at all leaves the selection. Panels hear
+ * of it only when something changed; otherwise the glow is just put back.
+ * A rebuild for another structure (prevImageKeys null) is left alone: the
+ * Files list restores that structure's own selection (restoreSelectionSnapshot).
+ */
+function carrySelectionAcrossRebuild({ prevMesh, prevImageKeys }) {
+  if (!atomSelection.selectedAtoms.length || !prevImageKeys || !groups.atomsMesh) return;
+  const structure = fileBrowser.selectedStructure;
+  const byKey = new Map();
+  (structure?.atomImageKeys ?? []).forEach((key, i) => { if (key != null && !byKey.has(key)) byKey.set(key, i); });
+  const previous = snapshotSelectedAtoms();
+  const next = [];
+  let changed = false;
+  for (const atom of atomSelection.selectedAtoms) {
+    if (atom.object && atom.object !== prevMesh && atom.object !== groups.atomsMesh) {
+      next.push(atom); // picked on some other mesh: not this rebuild's business
+      continue;
+    }
+    const key = prevImageKeys[atom.instanceId];
+    let id = key != null ? byKey.get(key) : undefined;
+    if (id === undefined) id = structure?.atomImages?.[atom.sourceIndex]?.[0];
+    const carried = id === undefined ? null : buildSelectionAtomFromHit({ instanceId: id, object: groups.atomsMesh });
+    if (!carried || carried.sourceIndex !== atom.sourceIndex || next.some((a) => sameSelectionAtom(a, carried))) {
+      changed = true;
+      continue;
+    }
+    if (id !== atom.instanceId) changed = true;
+    next.push(carried);
+  }
+  if (!changed) {
+    atomSelection.selectedAtoms = reindexSelection(next);
+    if (!glowSuppressed) syncSelectedAtomHighlights({ revealPanel: false });
+    return;
+  }
+  const removedAtoms = previous.filter((a) => !next.some((b) => a.sourceIndex === b.sourceIndex));
+  commitSelection(next, {
+    action: 'replaced',
+    atom: null,
+    atoms: removedAtoms,
+    addedAtoms: [],
+    removedAtoms,
+    modifiers: getEventModifiers(null),
+    sourceEvent: null,
+    reason: 'atoms-rebuilt',
+  }, { scrollToLast: false, revealPanel: false });
+}
+onAtomsRebuilt(carrySelectionAcrossRebuild);
+
+/**
+ * Whatever is selected now (the atoms, or the one bond or polyhedron) in a
+ * form that survives a rebuild of the Structure window's lists and a change
+ * of "Link periodic copies" (reapplySelection).
+ */
+export function captureAnySelection() {
+  const bond = highlightHover.currentlyHighlightedBond;
+  const poly = highlightHover.currentlyHighlightedPolyhedron;
+  return {
+    atoms: captureSelectionSnapshot(),
+    bondIndex: bond ? bond.bondIndex : null,
+    poly: poly ? { key: poly.key, catKey: poly.catKey } : null,
+  };
+}
+
+/**
+ * Select again what captureAnySelection() kept, under the CURRENT "Link
+ * periodic copies" setting: each atom stays the copy it was picked on (when
+ * linking is switched on, copies of one atom merge into one entry, as a linked
+ * pick would), and a bond or polyhedron becomes its group of copies, or its one
+ * copy. Its row is marked in the rebuilt lists only when its tab is the one
+ * shown, so this never switches tabs or opens the window.
+ * @param {ReturnType<typeof captureAnySelection>} kept
+ * @param {string} reason
+ */
+export function reapplySelection(kept, reason) {
+  if (kept.atoms.length) {
+    restoreSelectionSnapshot(kept.atoms, { reason });
+  } else if (kept.bondIndex != null) {
+    clearBondSelection();
+    selectBondByIndex(kept.bondIndex, { openPanel: general.structurePanelMode === 'bonds' });
+  } else if (kept.poly) {
+    clearPolyhedronSelection();
+    selectPolyhedronByKey(kept.poly.key, kept.poly.catKey, { openPanel: general.structurePanelMode === 'polyhedra' });
+  }
 }
 
 /** Replace the current atom selection with a set of visible mesh instances.

@@ -58,8 +58,26 @@ function savePrefs(prefs) {
   catch { /* storage unavailable */ }
 }
 
+// Another view exporting through this dialog (openImageExportDialog — the
+// Selection Inspector): its render/ImageExportModule.js ExportSource, file
+// base name and title. Null for the main 3D view.
+let activeSource = null;
+let activeBaseName = null;
+let openDialogImpl = null;
+
+/**
+ * Open the image dialog for another view than the main one: same sizes,
+ * aspect presets, margin, transparency and PNG/SVG formats, rendered from
+ * `source`. What only makes sense for the main view — choosing a region over
+ * it, framing only the structure, vector shapes — is not offered.
+ * @param {{source: import('../render/ImageExportModule.js').ExportSource, baseName?: string}} opts
+ */
+export function openImageExportDialog({ source, baseName } = /** @type {any} */ ({})) {
+  openDialogImpl?.({ source, baseName });
+}
+
 function viewAspect() {
-  const v = document.getElementById('view');
+  const v = activeSource?.viewEl ?? document.getElementById('view');
   const w = (v && v.clientWidth) || 16;
   const h = (v && v.clientHeight) || 9;
   return w / h;
@@ -210,12 +228,22 @@ export function initImageExportPanel() {
 
   /** The capture for the selected format. */
   function captureImage(opts) {
-    if (!isSvg()) return captureSceneToPng(opts);
-    return captureSceneToSvg({ ...opts, structure: svgStructureSelect.value });
+    const source = activeSource ?? undefined;
+    if (!isSvg()) return captureSceneToPng({ ...opts, source });
+    return captureSceneToSvg({ ...opts, source, structure: source ? 'raster' : svgStructureSelect.value });
   }
 
   function outputFileName() {
-    return currentBaseName() + (isSvg() ? '.svg' : '.png');
+    return (activeBaseName ?? currentBaseName()) + (isSvg() ? '.svg' : '.png');
+  }
+
+  // The main-view-only controls, hidden while another view exports.
+  const structureOnlyRow = structureOnlyInput.closest('.png-row');
+  function syncSourceControls() {
+    const other = !!activeSource;
+    structureOnlyRow.hidden = other;
+    downloadBtn.hidden = other;
+    if (other) svgStructureRow.hidden = true;
   }
 
   function openModal() {
@@ -236,6 +264,7 @@ export function initImageExportPanel() {
     marginInput.value = String(p.margin != null ? p.margin : 0);
     transparentInput.checked = !!p.transparent;
     structureOnlyInput.checked = !!p.structureOnly;
+    syncSourceControls();
 
     const longEdge = Math.max(Number(p.width) || 0, Number(p.height) || 0) || DEFAULT_LONG_EDGE;
     if (aspectSelect.value === 'free') {
@@ -254,9 +283,11 @@ export function initImageExportPanel() {
   function closeModal() {
     savePrefs(currentPrefs());
     modal.hidden = true;
+    activeSource = null;
+    activeBaseName = null;
   }
 
-  formatSelect.addEventListener('change', syncFormat);
+  formatSelect.addEventListener('change', () => { syncFormat(); syncSourceControls(); });
   svgStructureSelect.addEventListener('change', syncFormat);
 
   aspectSelect.addEventListener('change', () => {
@@ -323,7 +354,7 @@ export function initImageExportPanel() {
       const blob = await captureImage({
         width: dims.width, height: dims.height, margin,
         transparent: transparentInput.checked,
-        structureOnly: structureOnlyInput.checked, signal: activeAbort.signal,
+        structureOnly: !activeSource && structureOnlyInput.checked, signal: activeAbort.signal,
         onProgress: ({ current, target }) => {
           saveBtn.textContent = `Rendering… ${current} / ${target}`;
         },
@@ -448,7 +479,12 @@ export function initImageExportPanel() {
     });
   }
 
-  trigger.addEventListener('click', () => openModal());
+  openDialogImpl = ({ source = null, baseName = null } = {}) => {
+    activeSource = source;
+    activeBaseName = baseName;
+    openModal();
+  };
+  trigger.addEventListener('click', () => openDialogImpl());
   cancelBtn.addEventListener('click', () => {
     // While a Save capture runs, Cancel is "Abort": cancel it, stay open.
     if (activeAbort) { activeAbort.abort(); return; }

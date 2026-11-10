@@ -6,6 +6,7 @@ import { fracToCart } from '../math/index.js';
 import { updateAtoms } from './AtomsFracUpdateModule.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { getBondByInstanceId } from './BondsFracUpdateModule.js';
+import { distanceSu, angleSu, formatWithSu } from '../model/cifErrors.js';
 
 // Angle measurements used to render green (atom rings all 0x00ff00-ish,
 // separate from the dashed legs' own orange) — unified to the same orange as
@@ -845,7 +846,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   // Angle value label — just the angle itself; the "∠O-Ba-O:" element-name
   // prefix is dropped, since the arc and the three rings already show which
   // atoms the angle is between.
-  const label = makeMeasureLabelSprite(`${angle.toFixed(1)}°`, labelStyleFor('angle'));
+  const label = makeMeasureLabelSprite(angleLabelText(angle, [atom1Ref, atom2Ref, atom3Ref]), labelStyleFor('angle'));
   label.position.copy(p2);
   label.userData.anchor = p2.clone();
   // Direction/length to slide along IF this label ends up sharing its point
@@ -936,7 +937,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   // Compact black-and-white value pill, as a depth-tested sprite.
   const mid = pa.clone().add(pb).multiplyScalar(0.5);
   const d = pa.distanceTo(pb);
-  const label = makeMeasureLabelSprite(`${formatÅ(d)} Å`, labelStyleFor('distance'));
+  const label = makeMeasureLabelSprite(distanceLabelText(d, [atom1Ref, atom2Ref]), labelStyleFor('distance'));
   label.position.copy(mid);
   label.userData.anchor = mid.clone();
   label.userData.anchorClearance = 0; // only its own thin dashed line sits here
@@ -1033,6 +1034,42 @@ export function clearMeasure(){
 
 function formatÅ(x){ return (Math.round(x*1000)/1000).toFixed(3); }
 
+// --- CIF errors on the value labels ------------------------------------------
+// A structure read from a CIF with its errors (model/cifErrors.js) shows each
+// value with its standard uncertainty, 2.3456(12) Å / 109.47(3)°, while the
+// Features window's "Show CIF Errors" is on and the atoms are still where the
+// CIF put them. Otherwise the plain value, exactly as before.
+
+/** The measured atoms as {atomIndex, frac} (frac: the copy measured, with its
+ *  lattice translation), from refs or resolved atoms. */
+function suPoint(atomOrRef) {
+  if (!atomOrRef) return null;
+  const atomIndex = atomOrRef.atomIndex ?? atomOrRef.userData?.atomIndex;
+  const frac = atomOrRef.lastResolvedFrac ?? atomOrRef.userData?.wrappedFrac;
+  return Number.isInteger(atomIndex) && Array.isArray(frac) ? { atomIndex, frac } : null;
+}
+
+function measurementSu(kind, items) {
+  if (general.showCifErrors === false) return null;
+  const structure = fileBrowser.selectedStructure;
+  if (!structure?.cifErrors) return null;
+  const pts = items.map(suPoint);
+  if (pts.some((p) => !p)) return null;
+  return kind === 'distance' ? distanceSu(structure, pts[0], pts[1]) : angleSu(structure, pts[0], pts[1], pts[2]);
+}
+
+/** "2.3456(12) Å", or "2.346 Å" without an error. */
+function distanceLabelText(d, items) {
+  const su = measurementSu('distance', items);
+  return `${su > 0 ? formatWithSu(d, su, 3) : formatÅ(d)} Å`;
+}
+
+/** "109.47(3)°", or "109.5°" without an error. Items: end, vertex, end. */
+function angleLabelText(angle, items) {
+  const su = measurementSu('angle', items);
+  return `${su > 0 ? formatWithSu(angle, su, 1) : angle.toFixed(1)}°`;
+}
+
 
 export function updateAllMeasurements() {
   if (!fileBrowser.selectedStructure?.atoms || !fileBrowser.selectedStructure?.lattice) return;
@@ -1095,7 +1132,7 @@ export function updateAllMeasurements() {
         (label.userData.anchor ??= midpoint.clone()).copy(midpoint);
         label.userData.lineDir = pb.clone().sub(pa).normalize();
   label.userData.separationLength = label.scale.y * DISTANCE_LABEL_OFFSET;
-        setMeasureLabelText(label, `${formatÅ(pa.distanceTo(pb))} Å`, labelStyleFor('distance'));
+        setMeasureLabelText(label, distanceLabelText(pa.distanceTo(pb), [atom1, atom2]), labelStyleFor('distance'));
       }
     } else if (label.userData && label.userData.type === 'angle') {
       const atom1 = resolveMeasurementAtom(label.userData.atom1Ref, label.userData.atom1Position);
@@ -1108,7 +1145,7 @@ export function updateAllMeasurements() {
         (label.userData.anchor ??= new THREE.Vector3()).copy(atom2.position);
         label.userData.anchorClearance = markerClearance(vr);
         label.userData.separation = angleSeparation(toA, toB, vertexArcRadius(vr, toA.length(), toB.length()));
-        setMeasureLabelText(label, `${calculateAngle(atom1, atom2, atom3).toFixed(1)}°`, labelStyleFor('angle'));
+        setMeasureLabelText(label, angleLabelText(calculateAngle(atom1, atom2, atom3), [atom1, atom2, atom3]), labelStyleFor('angle'));
       }
     }
     label.userData?.removeHotspot?.position.copy(label.userData.anchor ?? label.position);

@@ -105,10 +105,9 @@ const QE_OUT = [
     await cv.loadStructure(text, 'AgN5.scf.in.out');
     const container = structureShip.container[fileBrowser.selectedRowIndex];
     const frames = await Promise.resolve(container.framesSlice());
-    const pressure = (s) => {
-      const t = s.stress && s.stress.tensor;
-      return t ? (t[0][0] + t[1][1] + t[2][2]) / 3 : null;
-    };
+    const { pressureGPa } = await import('./model/index.js');
+    // Stored eV/Å³, compression positive (model/Stress.js); QE's P= in GPa.
+    const pressure = (s) => (s.stress ? pressureGPa(s.stress.tensor) : null);
 
     // Plotly draws asynchronously; poll rather than guess a delay.
     openPanel('trajectory');

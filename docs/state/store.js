@@ -108,6 +108,10 @@ export const groups = {
   forcesTipMesh: null,
   spinShaftMesh: null,
   spinTipMesh: null,
+  // Comparison spin set (structure.spins2, experimental), drawn by
+  // render/SpinModule.js alongside the primary spins.
+  spin2ShaftMesh: null,
+  spin2TipMesh: null,
   // Phonon-mode displacement arrows (render/PhononArrowModule.js), owned by
   // phonon/phononSession.js and rebuilt per animation tick.
   phononShaftMesh: null,
@@ -122,6 +126,16 @@ export const groups = {
   // THREE.Group of short cylinder dashes, rebuilt from the current structure on
   // every updateVisualization when any eligible pair is enabled.
   hydrogenBondsGroup: null,
+  // Real-space asymmetric unit ("irreducible wedge") of the detected space
+  // group (render/AsymmetricUnitModule.js). A THREE.Group holding the wedge
+  // hull, its outline, and — only when the displayed cell is not the
+  // conventional one — the conventional cell box the wedge is defined in.
+  asuGroup: null,
+  // Halo shells marking the atoms that fall inside the wedge. Its own mesh
+  // rather than a child of asuGroup: the wedge is static while this tracks
+  // atoms that move (MD playback), so it is refreshed in place — rewriting
+  // instance matrices and `count` — instead of being rebuilt with the group.
+  asuHaloMesh: null,
 };
 
 
@@ -132,7 +146,7 @@ export const RENDERING_DEFAULTS = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
   renderPipeline: 'depthpeel', // active rendering pipeline id; depthpeel self-optimizes to a plain forward pass when the scene has no transparency (DepthPeelPass fast path)
   showAllRenderPipelines: false, // HIDDEN (config-only, no GUI): list superseded/debug pipelines in the rendering dropdown
-  depthPeelLayers: 10, // peel passes for the 'depthpeel' pipeline (1-50; more = deeper transparency, slower)
+  depthPeelLayers: 15, // peel passes for the 'depthpeel' pipeline (1-50; more = deeper transparency, slower)
   rtResolutionScale: 0.95, // raytrace/pathtrace pipelines: internal resolution as a fraction of the canvas
   rtTiledRender: true, // raytrace/pathtrace: render each sample in scissored tiles (one/frame) to keep the shared GPU responsive; untiled half-res while the camera moves
   rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)
@@ -189,6 +203,17 @@ export const general = {
   symmetryTolerance: 0.01,
   powerMode: true,
   currentLatticeColor:null,
+  // Asymmetric-unit wedge colour. Mirrored from --asu-color by
+  // ui/ThemeManager.js the same way currentLatticeColor mirrors
+  // --lattice-color, so a palette can retint the wedge.
+  asuColor:null,
+  // Set once the user picks a wedge colour by hand, which stops a later theme
+  // change from mirroring --asu-color over their choice. The picker's Reset
+  // clears it, and the next theme read takes over again.
+  asuColorUserSet:false,
+  // Wedge face opacity (Symmetry panel slider). The outline stays opaque —
+  // dropping this to 0 leaves a readable wireframe rather than nothing.
+  asuOpacity:0.22,
   defaultBackgroundColor:null,
   useDefaultColors:true,
   // "Element Materials Map" (Visual → Colors): per-species tracer-material
@@ -258,6 +283,19 @@ export const general = {
   // independent of spinColorScale — same one-directional lock as
   // forceLengthLogScale above (render/SpinModule.js's normalizeMag()).
   spinLengthLogScale: false,
+  // Comparison spin set (structure.spins2; Spins panel "Comparison Spins",
+  // experimental). Length controls are shared with the primary set above;
+  // these are the per-set colour and diameter settings.
+  spin2Visible: true,
+  // "Highlight" toggles (Comparison Spins section): make every arrow of the
+  // primary / comparison set glow, to tell the two sets apart.
+  spinHighlightAll: false,
+  spin2HighlightAll: false,
+  spin2Radius: 0.08,
+  spin2ColorMap: 'none',
+  spin2Min: 0,
+  spin2Max: 2,
+  spin2ColorScale: 'linear',
   // Force colormap range (Forces panel min/max inputs; read with ||-defaults).
   forceMin: 0,
   forceMax: 2,
@@ -369,6 +407,11 @@ export const general = {
   // Off by default: most structures have no charge data, and on those that do
   // a badge per atom is a lot of extra ink to opt into rather than inherit.
   showCharges:false,
+  // Standard uncertainties read from a CIF ("CIF errors", model/cifErrors.js),
+  // written after measured lengths and angles: 2.3456(12) Å. They are only
+  // read when the user says so at load; this switch (Features window) hides
+  // or shows them afterwards.
+  showCifErrors:true,
   showAxes:true,
   // Shaft radius of the a/b/c axes-gizmo arrows, in gizmo-scene units
   // (WindowAndSceneControls.initAxesGizmo; arrow length is 1).
@@ -384,6 +427,10 @@ export const general = {
   // arrow's tip inside the gizmo's own 3D scene instead of in the separate
   // #axesLegend box (WindowAndSceneControls.initAxesGizmo).
   gizmoLabelsOnArrows: false,
+  // Multiplier on the on-arrow a/b/c label sprite size (WindowAndSceneControls
+  // gizmoLabelScale). 1 = the app default; widget mode bumps it so the letters
+  // stay legible on the small embed compass without enlarging the arrows.
+  gizmoLabelSizeFactor: 1,
   // Side length in px of the #axesGizmo box (ui/GizmoDrag.js's resize
   // handle), or null to use the CSS default (--gizmo-size, theme.css).
   gizmoSize: null,
@@ -441,6 +488,15 @@ export const general = {
   periodicBounds:{ xmin:0, xmax:1, ymin:0, ymax:1, zmin:0, zmax:1 },
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   completePolyhedra:false, // Show the out-of-cell atoms needed to complete the polyhedra
+  // Complete Rings & Fragments: draw whole every finite bonded fragment (dimer,
+  // molecule, molecular ion) that a cell face cuts, and in chains/layers/
+  // frameworks every ring of up to fragmentMaxRing atoms through a bond leaving
+  // the cell. Built into the
+  // periodic image set (render/LatticeModule.js periodicWrapped; JS twin in
+  // render/FragmentCompletion.js, WASM in periodic_wasm_src/src/fragments.rs).
+  completeFragments:false,
+  fragmentIgnoreMetalBonds:true, // bonds to metals do not hold a fragment together
+  fragmentMaxRing:6, // largest ring completed in extended networks (0 = none)
   useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)
   useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   useWasmPolyhedra:true, // Use compiled WASM for computePolyhedra (false = pure JS fallback)

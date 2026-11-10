@@ -27,6 +27,7 @@
 
 import { StructureContainer } from './StructureContainer.js';
 import { TrajectoryFrameStore } from './TrajectoryFrameStore.js';
+import { pressureGPa } from './Stress.js';
 import {
   materializeFrame, applyFramePhysics, extractFrameStyles, applyFrameStyles,
 } from './materializeFrame.js';
@@ -447,7 +448,7 @@ export class TrajectoryContainer extends StructureContainer {
    * Per-frame {etotEv, meanForce, pressure} series straight from the typed
    * arrays — the store-backed answer to the Trajectory panel's "Compute step
    * stats", without building a single frame. Formulas match the panel's
-   * eager path: mean per-atom |F|, and stress trace / 3 (relaxer.stressMean).
+   * eager path: mean per-atom |F|, and the pressure in GPa (model/Stress.js).
    * @returns {{etotEv: number[], meanForce: number[] | null, pressure: number[] | null}}
    */
   stepStatsSeries() {
@@ -469,7 +470,7 @@ export class TrajectoryContainer extends StructureContainer {
         anyForce = true;
       }
       if (ph.stress) {
-        pressure[f] = (ph.stress[0][0] + ph.stress[1][1] + ph.stress[2][2]) / 3;
+        pressure[f] = pressureGPa(ph.stress);
         anyStress = true;
       }
     }

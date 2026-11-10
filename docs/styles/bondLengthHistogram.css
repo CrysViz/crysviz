@@ -101,7 +101,7 @@
   /* Drag the bottom edge down to make just this one chart taller — a plain
      block-level resize handle, independent of Plotly's own sizing (a
      ResizeObserver on this div calls Plotly.Plots.resize() whenever it
-     changes, see watchPlotResize in BondLengthHistogram.js). overflow other
+     changes, see watchCardResize in BondLengthHistogram.js). overflow other
      than visible is required for the native handle to appear at all. */
   resize: vertical;
   overflow: hidden;
@@ -520,6 +520,32 @@
   color: var(--fg-50);
   padding: var(--sp-1) 0;
 }
+
+/* ---- Complete Rings & Fragments settings (only while the option is on) ---- */
+.blp-fragments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-1);
+}
+
+.blp-fragments-head {
+  font-size: var(--fs-sm);
+  color: var(--fg-50);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.blp-fragments-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.blp-fragments-row select { padding: 2px 6px; }
 
 /* ---- bottom row: Reset Bond Lengths / Reset Colors ---- */
 .blp-reset-colors-row {

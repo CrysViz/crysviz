@@ -127,7 +127,7 @@ const SEED = [
         forceCount: s.forces ? s.forces.length : 0,
         naForceX: s.forces && s.forces[0] ? s.forces[0].vector[0] : null,
         stressXX: s.stress ? s.stress.tensor[0][0] : null,
-        pressure: s.stress ? s.stress.pressure : null,
+        pressure: s.stress ? s.stress.pressureGPa : null,
       })),
     };
   }, { text, name });
@@ -177,10 +177,12 @@ const SEED = [
   H.check('geom: Hartree/Bohr -> eV/Å force',
     near(geom.frames[0].naForceX, 0.1 * (27.211386245988 / 0.52917721067), 1e-3),
     JSON.stringify(geom.frames[0].naForceX));
-  // Stress: 1e-3 Hartree/Bohr^3 diagonal -> 29.421 GPa; pressure = -tr/3.
-  H.check('geom: stress tensor Hartree/Bohr^3 -> GPa',
-    near(geom.frames[0].stressXX, 1e-3 * 29421.02648, 1e-2), JSON.stringify(geom.frames[0].stressXX));
-  H.check('geom: pressure = -tr/3 (GPa)',
+  // Stress: CASTEP's is tension-positive, so +1e-3 Hartree/Bohr^3 on the
+  // diagonal is a cell under TENSION. Stored eV/Å³, compression positive
+  // (model/Stress.js): -1e-3 × 183.63 eV/Å³, i.e. a pressure of -29.421 GPa.
+  H.check('geom: stress tensor Hartree/Bohr^3 -> eV/Å³, sign flipped to compression-positive',
+    near(geom.frames[0].stressXX, -1e-3 * 27.211386245988 / 0.52917721067 ** 3, 1e-6), JSON.stringify(geom.frames[0].stressXX));
+  H.check('geom: tension reads as negative pressure (GPa)',
     near(geom.frames[0].pressure, -1e-3 * 29421.02648, 1e-2), JSON.stringify(geom.frames[0].pressure));
   H.check('geom: frame without S has no stress',
     geom.frames[1].stressXX === null, JSON.stringify(geom.frames[1].stressXX));

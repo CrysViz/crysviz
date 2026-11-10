@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90">
+  <!-- Selection Inspector, bonded-neighbours tool: the selected atom (orange) bonded to a faint (dashed) neighbour, with a plus: add bonded atoms. -->
+  <line x1="38" y1="50" x2="84" y2="30" stroke="#231f20" stroke-width="15" stroke-linecap="round"/>
+  <line x1="38" y1="50" x2="84" y2="30" stroke="#fff" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="86" cy="29" r="18" fill="#fff" stroke="#231f20" stroke-width="6" stroke-dasharray="8 6"/>
+  <circle cx="36" cy="51" r="23" fill="#f7941d" stroke="#231f20" stroke-width="8"/>
+  <g stroke-linecap="round">
+    <g stroke="#231f20" stroke-width="15"><line x1="92" y1="60" x2="92" y2="84"/><line x1="80" y1="72" x2="104" y2="72"/></g>
+    <g stroke="#fff" stroke-width="6"><line x1="92" y1="60" x2="92" y2="84"/><line x1="80" y1="72" x2="104" y2="72"/></g>
+  </g>
+</svg>
