@@ -14,6 +14,7 @@ import {
 } from './math.js';
 import { symmetrizeCartesianPositions, symmetrizeCartesianVectors, isWyckoffModeActive } from '../ui/SymmetryEditModule.js';
 import { isVacancy } from '../render/VacancyMarkerModule.js';
+import { EV_PER_A3_TO_GPA, pressureEvA3, pressureGPa } from '../model/index.js';
 
 function symbolCase(sym) {
   const s = String(sym ?? '').trim();
@@ -22,13 +23,14 @@ function symbolCase(sym) {
 
 // TODO: everything here is implemented elsewhere; refactor into a math module.
 
-const EV_A3_TO_GPA = 160.21766208;
-
 // Cell relaxation: FIRE on the 6 Voigt strain components, independent of the
 // atomic FIRE state (no combined atom+cell vector, so no ASE-style cell-factor
-// norm balancing is needed). Generalized force on strain is
-// g = -(sym(σ) + P_target·I); the first step reproduces the legacy fixed step
-// dε = -cellStep·g, and velocity accumulation grows it adaptively from there.
+// norm balancing is needed). The stress S is in the app's convention (eV/Å³,
+// compression positive, see model/Stress.js), so the generalized force on
+// strain is g = sym(S) - P_target·I: a cell squeezed beyond the target
+// (S > P_target) gets a positive strain and expands. The first step
+// reproduces the legacy fixed step dε = cellStep·g, and velocity accumulation
+// grows it adaptively from there.
 // That matters: a sensible strain step is ~σ/B (B = bulk modulus, ~0.6 eV/Å³
 // for Si), i.e. an effective cellStep of ~1/B ≈ 1.6 — the legacy 0.002 was
 // ~800× under-stepped. dtMax is chosen so dtMax² ≈ 900·cellStep ≈ 1/B.
@@ -45,13 +47,13 @@ function deformationFromStress(stress, cellFire, targetPressureEvA3 = 0) {
     }
   }
 
-  //the update acts on (sigma - sigma_target) = (sigma + P_target * I).
+  // The update acts on the excess over the target, S - P_target·I.
   for (let i = 0; i < 3; i += 1) {
-    sym[i][i] += targetPressureEvA3;
+    sym[i][i] -= targetPressureEvA3;
   }
 
   // Voigt [xx, yy, zz, yz, xz, xy]
-  const g = [-sym[0][0], -sym[1][1], -sym[2][2], -sym[1][2], -sym[0][2], -sym[0][1]];
+  const g = [sym[0][0], sym[1][1], sym[2][2], sym[1][2], sym[0][2], sym[0][1]];
   const v = cellFire.v;
   let power = 0;
   let v2 = 0;
@@ -170,32 +172,14 @@ export function maxForce(forces) {
   return Math.max(...forces.map((v) => Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2)));
 }
 
+// Pressure of a calculator/stored stress tensor (app convention: eV/Å³,
+// compression positive, P = +trace/3 — see model/Stress.js).
 export function pressureFromStress(stress) {
-  // Pressure conventio -trace(stress)/3 - not sure if this is right but the cell moves in the right direction
-  return -(stress[0][0] + stress[1][1] + stress[2][2]) / 3.0;
+  return pressureEvA3(stress);
 }
 
 export function pressureGPaFromStress(stress) {
-  return pressureFromStress(stress) * EV_A3_TO_GPA;
-}
-
-// Trace of a 3×3 stress tensor (σxx+σyy+σzz), in whatever units the tensor is.
-// Guarded: returns NaN for a missing/malformed tensor instead of throwing, so
-// callers can plot pressure only when stress data actually exists.
-export function stressTrace(stress) {
-  if (!Array.isArray(stress) || stress.length < 3) return NaN;
-  const xx = stress[0]?.[0];
-  const yy = stress[1]?.[1];
-  const zz = stress[2]?.[2];
-  if (!Number.isFinite(xx) || !Number.isFinite(yy) || !Number.isFinite(zz)) return NaN;
-  return xx + yy + zz;
-}
-
-// Mean of the stress-tensor diagonal, (σxx+σyy+σzz)/3 — the isotropic (scalar)
-// stress plotted as "pressure" on the trajectory chart. NaN for missing data.
-export function stressMean(stress) {
-  const tr = stressTrace(stress);
-  return Number.isFinite(tr) ? tr / 3 : NaN;
+  return pressureGPa(stress);
 }
 
 // FIRE — Fast Inertial Relaxation Engine (Bitzek et al., PRL 97, 170201
@@ -373,7 +357,7 @@ export async function relaxUntilConverged(nepRunner, initial, opts = {}) {
   const cellStep = Number(opts.cellStep ?? 0.002);
   const targetPressureGPa = Number(opts.targetPressureGPa ?? 0.0);
   const pressureTolGPa = Number(opts.pressureTolGPa ?? 0.2);
-  const targetPressureEvA3 = targetPressureGPa / EV_A3_TO_GPA;
+  const targetPressureEvA3 = targetPressureGPa / EV_PER_A3_TO_GPA;
   // Fixed-cell relax: skip the cell deformation entirely and gate convergence
   // on forces alone (the pressure can't converge if the cell may not move).
   const relaxCell = opts.relaxCell ?? true;

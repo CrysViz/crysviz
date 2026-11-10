@@ -8,6 +8,8 @@
  * far more than it saves.
  */
 
+import { stressToAppConvention } from './calculatorStress.js';
+
 const WASM_BASE = new URL('../external/nep_wasm/', import.meta.url).href;
 
 let worker = null;
@@ -103,7 +105,7 @@ export function createWorkerNEPForceEvaluator() {
       const o = i * 3;
       forces[i] = [result.forces[o], result.forces[o + 1], result.forces[o + 2]];
     }
-    return { forces, total_energy: result.total_energy, stress: result.stress };
+    return { forces, total_energy: result.total_energy, stress: stressToAppConvention(result.stress) };
   };
 }
 

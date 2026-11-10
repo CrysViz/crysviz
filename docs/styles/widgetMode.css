@@ -4,7 +4,7 @@
    (styles.css); this file removes the floating scene furniture that panel-hidden
    leaves behind and adds the widget's own logo + settings control.
 
-   Tokens only (no colour/font literals) per the CSS invariants (STYLE.md). */
+   Tokens only (no colour/font literals) per the CSS invariants (agent_guides/STYLE.md). */
 
 /* Widget-relative sizing. The embed IS the iframe viewport, so vmin (1% of its
    shorter side) makes the floating furniture scale with the widget instead of

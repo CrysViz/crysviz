@@ -12,7 +12,7 @@
  *   <-- R   "El idx x y z" position (Bohr, Cartesian)
  *   <-- F   "El idx fx fy fz" force (Hartree/Bohr)
  *   <-- E   energies; first value is the total energy (Hartree)
- *   <-- S   stress tensor row (Hartree/Bohr^3 -> GPa)
+ *   <-- S   stress tensor row (Hartree/Bohr^3, tension-positive)
  *           <-- V velocity / <-- T,P … (ignored here)
  *
  * Values are in atomic units and converted to the app's Å / eV / (eV/Å). Each
@@ -22,16 +22,16 @@
  * frame in file order.
  */
 
-import { Structure, StructureContainer, Atom, Force, Stress } from '../model/index.js';
+import {
+  Structure, StructureContainer, Atom, Force, Stress,
+  fromTensionPositive, HARTREE_PER_BOHR3_TO_EV_PER_A3,
+} from '../model/index.js';
 import { transpose3x3, invert3x3, cartToFractional, normalizeFractional } from '../math/index.js';
 import { generateID } from '../utils/index.js';
 
 const BOHR_TO_ANG = 0.52917721067;
 const HARTREE_TO_EV = 27.211386245988;
 const HARTREE_PER_BOHR_TO_EV_PER_ANG = HARTREE_TO_EV / BOHR_TO_ANG;
-// Atomic unit of pressure (Hartree/Bohr^3) -> GPa. The app stores stress in GPa
-// (the QE reader converts kbar->GPa the same way), so pressure = -tr/3 is GPa.
-const HARTREE_PER_BOHR3_TO_GPA = 29421.02648438959;
 
 /** The trailing `<-- X` tag of a line, or null. Matches the exact tag token so
  *  `hv` (lattice velocity) is not mistaken for the lattice tag `h`. */
@@ -55,7 +55,7 @@ function parseBlock(block) {
   const elements = [];
   const positionsCart = [];
   const forces = [];
-  const stressRows = []; // 3 rows of the stress tensor, converted to GPa
+  const stressRows = []; // 3 rows of the stress tensor, as printed (Hartree/Bohr^3)
   let energy = null;
 
   for (const line of block) {
@@ -68,11 +68,11 @@ function parseBlock(block) {
         latticeRows.push(v.slice(0, 3).map((x) => x * BOHR_TO_ANG));
       }
     } else if (tag === 'S' && stressRows.length < 3) {
-      // Stress tensor rows, Hartree/Bohr^3 -> GPa. `S` is exact (not `Sxx`), so
+      // Stress tensor rows (Hartree/Bohr^3, converted below). `S` is exact (not `Sxx`), so
       // it is not confused with any other tag.
       const v = dataTokens(line).map(Number);
       if (v.length >= 3 && v.slice(0, 3).every(Number.isFinite)) {
-        stressRows.push(v.slice(0, 3).map((x) => x * HARTREE_PER_BOHR3_TO_GPA));
+        stressRows.push(v.slice(0, 3));
       }
     } else if (tag === 'R') {
       const t = dataTokens(line);
@@ -94,7 +94,11 @@ function parseBlock(block) {
   }
 
   if (positionsCart.length === 0 || latticeRows.length !== 3) return null;
-  const stress = stressRows.length === 3 ? stressRows : null;
+  // CASTEP's stress is tension-positive (ASE's CASTEP reader passes it through
+  // to ASE's convention unchanged); the app stores eV/Å³, compression positive.
+  const stress = stressRows.length === 3
+    ? fromTensionPositive(stressRows, HARTREE_PER_BOHR3_TO_EV_PER_A3)
+    : null;
   return { lattice: latticeRows, elements, positionsCart, forces, energy, stress };
 }
 

@@ -4,7 +4,8 @@
 //   - the section, titled "Parameters", sits in the Files window body under the
 //     table, folded by default, with no file name or atom count in the header
 //   - a structure carrying energy / stress / forces (an OUTCAR frame) shows
-//     those as chips at the top; a bare POSCAR shows a "no EFS data" note
+//     those as chips at the top, plus the full stress tensor in GPa
+//     (compression positive); a bare POSCAR shows a "no EFS data" note
 //   - unfolding renders the lattice (3 vectors, parameters, volume), the
 //     positions table (one row per atom, fractional; the frac/cart pair
 //     switches to Cartesian) and, from a local moyo analysis, the space group
@@ -34,6 +35,9 @@ const H = require('../harness');
       hasName: !!d.querySelector('#fssName'),
       propsHidden: d.querySelector('#fssProperties').hidden,
       props: d.querySelector('#fssProperties').textContent,
+      stressHidden: d.querySelector('#fssStressBlock').hidden,
+      stressRows: d.querySelector('#fssStress').textContent.split('\n').filter(Boolean)
+        .map((line) => line.trim().split(/\s+/).map(Number)),
       latticeLines: d.querySelector('#fssLattice').textContent.split('\n').filter(Boolean),
       params: d.querySelector('#fssParams').textContent,
       paramChips: [...d.querySelectorAll('#fssParams .fss-chip')].map((c) => c.textContent),
@@ -79,8 +83,8 @@ const H = require('../harness');
       && [2, 3, 4].every((k) => near(parseFloat(s.row2[k]), structure.positions[1][k - 2])) && s.fits,
     JSON.stringify([s.nRows, s.positionsHead, s.row2, s.fits]));
   H.check('unfolding is remembered in the panel prefs', s.pref === true, String(s.pref));
-  H.check('a bare POSCAR (no energy/stress/forces) shows the "no EFS data" note',
-    s.propsHidden === false && /No energy, force or stress data/.test(s.props)
+  H.check('a bare POSCAR (no energy/stress/forces) shows the "no EFS data" note and no stress tensor',
+    s.propsHidden === false && /No energy, force or stress data/.test(s.props) && s.stressHidden === true
       && !/Energy = /.test(s.props), JSON.stringify([s.propsHidden, s.props]));
 
   const wy = await H.waitFor(page, async () => {
@@ -174,7 +178,9 @@ const H = require('../harness');
     '      2.00000      0.00000      0.00000        -0.030000     -0.040000      0.000000',
     ' -----------------------------------------------------------------------------------',
     '    total drift:                                0.000000      0.000000      0.000000', '',
-    '  in kB      16.00000     16.00000     16.00000      0.00      0.00      0.00', '',
+    // VASP order XX YY ZZ XY YZ ZX, compression positive: 10/20/30 kB on the
+    // diagonal = 1/2/3 GPa, pressure 2 GPa; shears 0.1 (xy), 0.2 (yz), 0.3 (zx) GPa.
+    '  in kB      10.00000     20.00000     30.00000      1.00      2.00      3.00', '',
     '  FREE ENERGIE OF THE ION-ELECTRON SYSTEM (eV)',
     '  ---------------------------------------------------',
     '  free  energy   TOTEN  =      -42.50000000 eV', '',
@@ -186,16 +192,21 @@ const H = require('../harness');
   }, OUTCAR);
   await page.waitForTimeout(800);
   s = await read();
-  // Pressure = stress trace / 3 (the app's convention, same as the Lattice/Trajectory
-  // plots: the OUTCAR 'in kB' number is used as-is and labelled GPa) = 16; max force = 0.05.
+  // Pressure = trace / 3 of the compression-positive stress, in GPa (kB / 10):
+  // (1 + 2 + 3) / 3 = 2 GPa — the number VASP itself reports; max force = 0.05.
   H.check('an OUTCAR frame shows energy, energy/atom, pressure and max force as chips',
     s.propsHidden === false && /Energy = -42\.500000 eV/.test(s.props) && /Energy\/atom = -21\.250000 eV/.test(s.props)
-      && /Pressure = 16\.0000 GPa/.test(s.props) && /Max force = 0\.0500 eV\/Å/.test(s.props),
+      && /Pressure = 2\.0000 GPa/.test(s.props) && /Max force = 0\.0500 eV\/Å/.test(s.props),
     JSON.stringify(s.props));
+  const wantStress = [[1, 0.1, 0.3], [0.1, 2, 0.2], [0.3, 0.2, 3]];
+  H.check('the full stress tensor is shown in GPa, VASP components in place, same sign as VASP',
+    s.stressHidden === false && s.stressRows.length === 3
+      && wantStress.every((row, i) => row.every((v, j) => near(s.stressRows[i][j], v, 1e-4))),
+    JSON.stringify([s.stressHidden, s.stressRows]));
 
   // ---- 7. pure builders -------------------------------------------------------------
   const pure = await page.evaluate(async () => {
-    const { latticeText, latticeParamsText, positionsTable, wyckoffRows, wyckoffText, siteLabel, scalarProperties } = await import('./ui/structureSummaryText.js');
+    const { latticeText, latticeParamsText, positionsTable, wyckoffRows, wyckoffText, siteLabel, scalarProperties, stressTensorText } = await import('./ui/structureSummaryText.js');
     const lattice = [[4, 0, 0], [0, 4, 0], [0, 0, 4]];
     const structure = {
       lattice, elements: ['Na', 'Cl', 'Cl'],
@@ -208,7 +219,10 @@ const H = require('../harness');
       frac: positionsTable(structure).text, cart: positionsTable(structure, true).rows[1].xyz,
       label: siteLabel(structure.atoms[2], 'Cl'), info, text: wyckoffText(info),
       scalarsEmpty: scalarProperties(structure),
-      scalars: scalarProperties({ atoms: [{}, {}], energy: -10, stress: { tensor: [[3, 0, 0], [0, 3, 0], [0, 0, 3]] }, forces: [{ vector: [0.3, 0, 0.4] }] }),
+      // Stored stress is eV/Å³, compression positive: 0.01 eV/Å³ = 1.6022 GPa.
+      scalars: scalarProperties({ atoms: [{}, {}], energy: -10, stress: { tensor: [[0.01, 0, 0], [0, 0.01, 0], [0, 0, 0.01]] }, forces: [{ vector: [0.3, 0, 0.4] }] }),
+      stressText: stressTensorText({ stress: { tensor: [[0.01, 0, 0], [0, -0.02, 0], [0, 0, 0]] } }),
+      stressTextNone: stressTensorText({}),
     };
   });
   H.check('latticeText / latticeParamsText', pure.lattice.split('\n').length === 3 && /^\s+4\.000000\s+0\.000000\s+0\.000000$/.test(pure.lattice.split('\n')[0])
@@ -226,8 +240,13 @@ const H = require('../harness');
   H.check('scalarProperties: none for a bare structure; energy+per-atom+pressure+maxforce when present',
     pure.scalarsEmpty.length === 0
       && pure.scalars.map((r) => r.key).join(',') === 'energy,energyPerAtom,pressure,maxForce'
-      && near(pure.scalars[1].value, -5) && near(pure.scalars[2].value, 3) && near(pure.scalars[3].value, 0.5),
+      && near(pure.scalars[1].value, -5) && near(pure.scalars[2].value, 0.01 * 160.21766208) && near(pure.scalars[3].value, 0.5),
     JSON.stringify(pure.scalars));
+  H.check('stressTensorText: eV/Å³ in, GPa out (4 decimals, sign kept); empty without stress',
+    pure.stressText.split('\n').map((l) => l.trim().split(/\s+/).join(' ')).join('|')
+      === '1.6022 0.0000 0.0000|0.0000 -3.2044 0.0000|0.0000 0.0000 0.0000'
+      && pure.stressTextNone === '',
+    JSON.stringify(pure.stressText));
 
   H.check('no console/page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

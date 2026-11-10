@@ -27,6 +27,7 @@ import {
   multiplyMatVec,
   invert3x3,
 } from '../math/backend-js.js';
+import { KBAR_TO_EV_PER_A3 } from '../model/Stress.js';
 
 /**
  * Parse an OUTCAR Blob into plain per-step trajectory data.
@@ -203,10 +204,12 @@ export async function parseOutcarBlob(blob, onProgress) {
 
     // Stress: the "in kB" line gives the Voigt stress (XX YY ZZ XY YZ ZX) and
     // prints after the POSITION block for the step, so attach it to the
-    // most-recently pushed step. Build a symmetric 3x3 tensor.
+    // most-recently pushed step. Build a symmetric 3x3 tensor. VASP prints it
+    // compression-positive (its external pressure is the plain trace/3), the
+    // app's own sign, so only the unit changes: kB -> eV/Å³ (model/Stress.js).
     const kbMatch = line.match(/^\s*in kB\s+(.*)$/i);
     if (kbMatch && steps.length > 0) {
-      const sv = parseFloats(kbMatch[1]);
+      const sv = parseFloats(kbMatch[1]).map((v) => v * KBAR_TO_EV_PER_A3);
       if (sv.length >= 6) {
         const xx = sv[0], yy = sv[1], zz = sv[2], xy = sv[3], yz = sv[4], zx = sv[5];
         steps[steps.length - 1].stress = [[xx, xy, zx], [xy, yy, yz], [zx, yz, zz]];

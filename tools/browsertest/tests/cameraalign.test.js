@@ -12,13 +12,15 @@ const H = require('../harness');
   // Simulate a user who has zoomed in and orbited to an arbitrary, non-fit
   // framing: zoom away from 1, and a distance well under the fit distance so
   // a re-fit (which recomputes distance too) is distinguishable from a pure
-  // re-aim (which must keep it exactly).
+  // re-aim (which must keep it exactly). Not so close that the camera sits
+  // inside the structure: render/CameraClipModule.js backs an orthographic
+  // camera out of it on the next frame.
   const before = await page.evaluate(async () => {
     const { app } = await import('./state/store.js');
     const THREE = await import('./external/three/three.module.js');
     app.camera.zoom = 2.5;
     app.camera.updateProjectionMatrix();
-    const dist = app.camera.position.distanceTo(app.controls.target) * 0.4;
+    const dist = app.camera.position.distanceTo(app.controls.target) * 0.8;
     app.camera.position.copy(
       app.controls.target.clone().add(new THREE.Vector3(3, 5, 7).normalize().multiplyScalar(dist))
     );

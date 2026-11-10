@@ -1,8 +1,8 @@
 // Widget menuLinks: the embedder may inject dropdown items that open URLs.
 // Top-level `menuLinks: [{label,url}]` (same channel as frameKinds); ShareModule
 // validates strictly (nonempty label ≤40 chars, http/https URL), WidgetMode
-// renders the valid ones as role=menuitem entries between the toggles and
-// "Open in CrysViz". Full app ignores the field.
+// renders the valid ones as role=menuitem entries after the Download items.
+// Full app ignores the field.
 'use strict';
 const H = require('../harness');
 const BASE = process.env.CRYSVIZ_URL || 'http://localhost:8123/index.html';

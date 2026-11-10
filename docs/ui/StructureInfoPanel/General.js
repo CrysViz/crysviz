@@ -1,4 +1,6 @@
 import { saveAtomColors } from '../../utils/ColorModule.js';
+import { saveAtomRadiusScales, saveBondStyles } from '../SizePrefs.js';
+import { saveArrowOverridesFromStructure } from '../ArrowStylePrefs.js';
 import {fileBrowser, general, structureShip} from '../../state/store.js';
 
 
@@ -6,7 +8,7 @@ import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow, clearCompositionRowRegistry} from './Species.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
 import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
-import { clearAllHighlights } from '../SelectAndHighlightModule.js'
+import { captureAnySelection, reapplySelection } from '../SelectAndHighlightModule.js'
 import { getPanel, isCompactViewport } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
@@ -67,6 +69,12 @@ function resetAllColorStyling(structure) {
 /** Re-render force/spin arrows (if shown) and any currently-open Structure
  *  Info Spin/Force row editor after a bulk edit to structure.forces/spins —
  *  shared by the Reset Colors and Reset Styling buttons below. */
+/** The stored per-arrow / category arrow styles follow a reset (drops them). */
+function saveArrowOverrides(structure) {
+  saveArrowOverridesFromStructure('spin', structure);
+  saveArrowOverridesFromStructure('force', structure);
+}
+
 function refreshForceSpinArrows() {
   if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
   if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
@@ -513,15 +521,22 @@ export function renderComposition(panelState="closed") {
     label: 'Link colors of periodic copies',
     checked: general.linkPeriodicCopies !== false,
     onChange: (checked) => {
+      // The selection is kept: once the lists are rebuilt it is selected
+      // again under the new setting (its rows are new nodes, and a linked
+      // pick glows every copy while an unlinked one glows only its own).
+      const kept = captureAnySelection();
       general.linkPeriodicCopies = checked;
-      // Selection rows go stale across the list rebuilds.
-      clearAllHighlights({ reason: 'link-copies-toggle' });
       // Rebuilding immediately replaces this very switch with a fresh node
       // already rendered in its new state, so the knob never visibly slid.
       // Let the pill's 0.25s transition play out first. Kept under the 300ms
       // the browser tests wait between clicking this toggle and asserting on
       // the rebuilt rows.
-      setTimeout(() => renderComposition("open"), 260);
+      setTimeout(() => {
+        renderComposition("open");
+        reapplySelection(kept, 'link-copies-toggle');
+        // E.g. the Selection Inspector's note on linked copies.
+        document.dispatchEvent(new CustomEvent('crysviz:link-copies-changed'));
+      }, 260);
     },
   });
   linkCopiesRow.className = 'si-link-copies-row';
@@ -621,6 +636,7 @@ wirePressHoldPopup(resetAllColorsBtn, {
   onPress: () => {
     resetAllColorStyling(fileBrowser.selectedStructure);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -632,6 +648,7 @@ wirePressHoldPopup(resetAllColorsBtn, {
     // colors and alpha/size overrides, which this reset must leave untouched.
     applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllColorStyling);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -648,6 +665,9 @@ wirePressHoldPopup(resetAtomsBtn, {
   onPress: () => {
     resetAllStyling(fileBrowser.selectedStructure);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveAtomRadiusScales(fileBrowser.selectedStructure); // ... and the stored sizes / bond styles
+    saveBondStyles(fileBrowser.selectedStructure);
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -658,6 +678,9 @@ wirePressHoldPopup(resetAtomsBtn, {
     // the color-only reset there's no per-frame data it could clobber.
     applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllStyling);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveAtomRadiusScales(fileBrowser.selectedStructure);
+    saveBondStyles(fileBrowser.selectedStructure);
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },

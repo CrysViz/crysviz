@@ -6,6 +6,8 @@
 import { registerPanel, resetAllPanels, refreshPanelAvailability, revealPanel, getPanelPref, setPanelPref, setForcedIconMode } from './PanelManager.js';
 import { handleStructurePanelToggle, setStructurePanelOpen } from '../StructureInfoPanel/General.js';
 import { general, fileBrowser, structureShip } from '../../state/store.js';
+import { clearLocalData } from '../../state/structurePrefs.js';
+import { initFileListResize } from '../FileBrowswerPanel.js';
 import { updateForces, removeForces, updateSpins, removeSpins, updateField, toggleFieldVisibility, setPolyEdgeWidth, requestRender, setAxisStepButtonsMode } from '../../render/index.js';
 import { addCameraPanel } from '../CameraPanel.js';
 import { addColorPanel } from '../ColorPanel.js';
@@ -36,6 +38,7 @@ import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
 import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
 import { createFeatureLockSwitch } from '../FeatureLockModule.js';
+import { setCifErrorsShown } from '../CifErrorsDisplay.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import { addFocusRegionsPanel, removeFocusRegionsPanel } from '../FocusRegionsPanel.js';
 import { isDebugMode } from '../../debug/debugMode.js';
@@ -136,7 +139,7 @@ function stashStaticRows(inputIds) {
 // Bonds toggle lives in the Features window, next to Show Bonds.)
 const CELL_ROWS = ['showPeriodic'];
 const FEATURE_STATIC_ROWS = ['showAtoms', 'showBonds', 'showCharges', 'PBCBondToggle',
-  'showPolyhedra', 'completePolyhedraToggle'];
+  'completeFragmentsToggle', 'showPolyhedra', 'completePolyhedraToggle'];
 
 // ---- Features window toggle rows ---------------------------------------------
 
@@ -175,6 +178,9 @@ function buildFeaturesBody(body) {
 
   const neighbourBonds = detachStaticRow('PBCBondToggle');
   if (neighbourBonds) group.appendChild(neighbourBonds);
+
+  const completeFragments = detachStaticRow('completeFragmentsToggle');
+  if (completeFragments) group.appendChild(completeFragments);
 
   // Turning a master toggle on re-greys/un-greys its feature panel; on ON it
   // also reveals that panel (restores a shrunk title bar + expands the body)
@@ -221,6 +227,15 @@ function buildFeaturesBody(body) {
     onToggle('planes', on);
   }));
 
+  // The standard uncertainties read from a CIF (offered when one is loaded,
+  // ui/CifSymmetryLoad.js), written after measured lengths and angles, in the
+  // measurement labels and the inspectors: 2.3456(12) Å. Off hides them;
+  // nothing is lost, on brings them back.
+  const cifErrorsRow = makeToggleRow('showCifErrorsToggle', 'Show CIF Errors', general.showCifErrors !== false,
+    (on) => setCifErrorsShown(on));
+  cifErrorsRow.title = 'Write measured lengths and angles with the standard uncertainty (s.u.) the CIF gives, e.g. 2.3456(12) Å. Read when the CIF is loaded.';
+  group.appendChild(cifErrorsRow);
+
   body.appendChild(group);
 
   // The moved static toggles (Show Bonds / Show Polyhedra) also grey/reveal
@@ -230,6 +245,35 @@ function buildFeaturesBody(body) {
     const cb = document.getElementById(id);
     if (cb) cb.addEventListener('change', () => onToggle(panelId, cb.checked));
   }
+}
+
+/** The selected row is a multi-frame trajectory (Trajectory window, and its
+ *  feature-store suggestion). */
+function trajectoryAvailable() {
+  const container = structureShip.container[fileBrowser.selectedRowIndex];
+  return !!container && container.structures.length > 1;
+}
+
+/** A per-atom vector list with any non-zero entry (parsers fill a structure
+ *  without magnetic data with zero moments, which is no reason to suggest
+ *  the Spins window). */
+function hasNonZero(list) {
+  if (!Array.isArray(list)) return false;
+  return list.some((entry) => {
+    // Spin entries are { rawVector, scaling, color } (io/outcarParse.js).
+    const v = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry.rawVector : entry;
+    return Array.isArray(v) ? v.some((x) => Number(x) !== 0) : v != null && Number(v) !== 0;
+  });
+}
+
+/** The selected structure carries volumetric data. Gates on the CATALOG
+ *  having entries, not on `fields` being non-empty: a WAVECAR's `fields` array
+ *  is empty by design — its bands exist but none is expanded until the user
+ *  asks — and gating on it would hide the only panel from which a band can be
+ *  loaded. */
+function fieldDataAvailable() {
+  const container = fileBrowser.selectedStructure?.volumetricFields;
+  return (container?.catalog?.nodes?.length ?? 0) > 0;
 }
 
 export function registerDefaultPanels() {
@@ -243,6 +287,7 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'measure',
     title: 'Measure',
+    keywords: ['distance', 'angle', 'hide atoms', 'restore atoms', 'ruler'],
     lifecycle: 'persistent',
     infoMd: './data/measureInfo.md',
     compactIcon: './data/icons/tool-icon.svg',
@@ -262,6 +307,7 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'view',
     title: 'View',
+    keywords: ['camera', 'axis', 'rotate', 'reset view', 'orientation'],
     lifecycle: 'persistent',
     infoMd: './data/viewInfo.md',
     compactIcon: './data/icons/camera-icon.svg',
@@ -314,6 +360,7 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'info',
     title: 'Structure',
+    keywords: ['formula', 'composition', 'atoms', 'wyckoff', 'elements'],
     lifecycle: 'persistent',
     infoMd: './data/structureInfo.md',
     // Unfolding this window in place fills a phone screen, so below the
@@ -368,6 +415,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'backend',
     title: 'Atomistic',
+    store: { category: 'Simulation', blurb: 'Relaxations and molecular dynamics on your device (NEP) or through a calculation backend.' },
+    keywords: ['relax', 'relaxation', 'md', 'molecular dynamics', 'nep', 'ase', 'mace', 'calculator', 'potential', 'simulation'],
     lifecycle: 'persistent',
     infoMd: './data/backendInfo.md',
     // Interatomic potentials/ML force fields need one definite species per
@@ -388,6 +437,7 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'files',
     title: 'Files',
+    keywords: ['upload', 'open', 'load', 'paste', 'download', 'export', 'save', 'poscar', 'cif', 'outcar'],
     lifecycle: 'persistent',
     infoMd: './data/uploadInfo.md',
     buildContent(body) {
@@ -399,6 +449,7 @@ export function registerDefaultPanels() {
       if (upload) body.appendChild(upload);
       const table = document.getElementById('structureTablePanel');
       if (table) body.appendChild(table);
+      initFileListResize();
       // (The Share button lives in #uploadSection's action row and moves with
       // it; see ShareModule.createShareButton.)
       // The selected structure's lattice / positions / Wyckoff positions,
@@ -411,6 +462,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'features',
     title: 'Features',
+    store: { category: 'Display', essential: true, blurb: 'Master switches for atoms, bonds, charges, forces, spins, polyhedra, fields and planes.' },
+    keywords: ['show', 'hide', 'toggle', 'visibility', 'lock'],
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     infoMd: './data/analysisInfo.md',
@@ -428,6 +481,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'trajectory',
     title: 'Trajectory',
+    store: { category: 'Analysis', blurb: 'Play relaxations and MD runs back frame by frame.', suggest: () => trajectoryAvailable() },
+    keywords: ['player', 'play', 'animation', 'frames', 'steps', 'outcar', 'md', 'movie'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/trajectoryInfo.md',
@@ -436,8 +491,7 @@ export function registerDefaultPanels() {
       // streaming (the MD container starts with one seed frame, so this is what
       // makes the panel pop up immediately for live feedback).
       if (isLivePlotActive()) return true;
-      const container = structureShip.container[fileBrowser.selectedRowIndex];
-      return !!container && container.structures.length > 1;
+      return trajectoryAvailable();
     },
     buildContent(body) { addTrajectoryPlayer(body.id); },
     onDestroyContent() { removeTrajectoryPlayer(); },
@@ -453,6 +507,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'comparison',
     title: 'Structure Overlay & Comparison',
+    store: { category: 'Structure', blurb: 'Overlay two structures, or compare them atom by atom.' },
+    keywords: ['overlay', 'compare', 'difference', 'displacement'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/overlayInfo.md',
@@ -468,6 +524,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'forces',
     title: 'Forces',
+    store: { category: 'Vectors & fields', blurb: 'Per-atom force arrows and their scale.', suggest: () => !!fileBrowser.selectedStructure?.forces?.length },
+    keywords: ['force', 'arrows', 'vectors', 'outcar'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/forcesInfo.md',
@@ -489,6 +547,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'spins',
     title: 'Spins',
+    store: { category: 'Vectors & fields', blurb: 'Magnetic-moment arrows and their scale.', suggest: () => hasNonZero(fileBrowser.selectedStructure?.spins) },
+    keywords: ['spin', 'magnetic', 'moment', 'magnetisation', 'magnetization', 'arrows', 'mcif'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/spinsInfo.md',
@@ -509,17 +569,13 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'field',
     title: 'Volumetric Field',
+    store: { category: 'Vectors & fields', blurb: 'Isosurfaces of charge densities, ELF and wavefunctions (cube, CHGCAR, WAVECAR).', suggest: () => fieldDataAvailable() },
+    keywords: ['volumetric', 'isosurface', 'chgcar', 'elfcar', 'wavecar', 'cube', 'charge density', 'elf', 'wavefunction'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/fieldInfo.md',
     available() {
-      // Gate on the CATALOG having entries, not on `fields` being non-empty.
-      // A WAVECAR's `fields` array is empty by design — its bands exist but none
-      // is expanded until the user asks — and gating on it would hide the only
-      // panel from which a band can be loaded.
-      const container = fileBrowser.selectedStructure?.volumetricFields;
-      return (container?.catalog?.nodes?.length ?? 0) > 0
-        && general.fieldActive !== false;
+      return fieldDataAvailable() && general.fieldActive !== false;
     },
     // Field meshes are managed by the Features "Show Volumetric Field" toggle
     // and the row/step switch logic (FileBrowswerPanel), not by panel teardown.
@@ -530,6 +586,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'planes',
     title: 'Crystal Planes',
+    store: { category: 'Display', blurb: 'Cut through the structure with crystallographic (hkl) planes.' },
+    keywords: ['hkl', 'miller', 'cut', 'slice', 'slab', 'plane'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/planesInfo.md',
@@ -542,6 +600,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'bonds',
     title: 'Bonds',
+    store: { category: 'Display', blurb: 'Bond length ranges per element pair, bond colours and bond histograms.' },
+    keywords: ['bond length', 'cutoff', 'histogram', 'coordination number', 'neighbours', 'neighbors'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/bondsInfo.md',
@@ -561,6 +621,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'cell',
     title: 'Cell & Supercell',
+    store: { category: 'Structure', essential: true, blurb: 'Lattice vectors, supercells and lattice transformations.' },
+    keywords: ['supercell', 'lattice', 'transform', 'matrix', 'unit cell', 'repeat'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/cellInfo.md',
@@ -579,6 +641,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'symmetry',
     title: 'Symmetry',
+    store: { category: 'Structure', blurb: 'Space-group detection and symmetrisation, running in your browser (Moyo).' },
+    keywords: ['space group', 'spglib', 'moyo', 'primitive', 'conventional', 'symmetrize', 'symmetrise', 'wyckoff'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/symmetryInfo.md',
@@ -591,6 +655,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'focusRegions',
     title: 'Focus Regions',
+    store: { category: 'Display', blurb: 'Make one atom, molecule or defect stand out in a large structure.' },
+    keywords: ['defect', 'molecule', 'highlight', 'focus', 'region', 'selection'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/focusRegionsInfo.md',
@@ -603,6 +669,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'polyhedra',
     title: 'Polyhedra',
+    store: { category: 'Display', blurb: 'Coordination polyhedra, their colours, and the polyhedra analysis windows.' },
+    keywords: ['octahedra', 'tetrahedra', 'coordination', 'polyhedron'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/polyhedraInfo.md',
@@ -619,6 +687,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'visual',
     title: 'Visual',
+    store: { category: 'Display', essential: true, blurb: 'Atom and bond sizes, unit cell and axes, background, rendering style, colours and camera.' },
+    keywords: ['size', 'radius', 'background', 'render', 'ray tracing', 'path tracing', 'colour', 'color', 'camera', 'perspective', 'shading'],
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     infoMd: './data/visualInfo.md',
@@ -682,7 +752,7 @@ export function registerDefaultPanels() {
       body.appendChild(cameraSection);
       addCameraPanel(cameraSection.id);
     },
-    defaults: { dock: 'left', order: 5, collapsed: false },
+    defaults: { dock: 'left', order: 5, collapsed: true },
   });
 
   // ---- controls + plots window pairs (Lattice Analysis, EOS, Energy Landscape) --
@@ -709,6 +779,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'latticeAnalysis',
     title: 'Lattice Analysis',
+    store: { category: 'Analysis', blurb: 'Plot a, b, c, α, β, γ across a trajectory or a series of files.', suggest: () => latticeAnalysisAvailable() },
+    keywords: ['cell parameters', 'lattice parameters', 'angles', 'plot'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/latticeAnalysisInfo.md',
@@ -734,6 +806,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'eos',
     title: 'EOS Fitting',
+    store: { category: 'Analysis', blurb: 'Fit an equation of state to energy–volume data.' },
+    keywords: ['equation of state', 'birch', 'murnaghan', 'vinet', 'bulk modulus', 'volume', 'pressure', 'fit'],
     lifecycle: 'rebuild',
     hiddenUntilStructure: true,
     infoMd: './data/eosInfo.md',
@@ -774,6 +848,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'landscape',
     title: 'Energy Landscape',
+    store: { category: 'Analysis', blurb: 'Explore an energy landscape built from a set of related structures.' },
+    keywords: ['energy surface', 'heatmap', 'scan', 'landscape'],
     lifecycle: 'persistent',
     infoMd: './data/landscapeInfo.md',
     available() { return true; },
@@ -802,6 +878,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'phonon',
     title: 'Phonons',
+    store: { category: 'Analysis', blurb: 'Phonopy band structures and DOS; animate modes on the atoms.', suggest: () => phononAvailable() },
+    keywords: ['phonopy', 'band structure', 'dos', 'modes', 'vibration', 'frequencies'],
     lifecycle: 'persistent',
     infoMd: './data/phononInfo.md',
     // Both windows follow the selected row: they are available only while it
@@ -829,6 +907,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'customSettings',
     title: 'Custom User Settings',
+    store: { category: 'Customisation', blurb: 'Your own element colours, radii and bond lengths, from a file or the periodic table.' },
+    keywords: ['colors', 'colours', 'radii', 'json', 'periodic table', 'element', 'shortcuts', 'keyboard'],
     lifecycle: 'persistent',
     infoMd: './data/customUserSettingsInfo.md',
     buildContent(body) { buildCustomUserSettingsPanel(body); },
@@ -838,6 +918,7 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'settings',
     title: 'Settings',
+    keywords: ['preferences', 'reset ui', 'font size', 'gpu memory', 'clear data', 'drag'],
     lifecycle: 'persistent',
     hiddenUntilStructure: true,
     infoMd: './data/storageInfo.md',
@@ -877,6 +958,11 @@ export function registerDefaultPanels() {
       warnGroup.appendChild(makeToggleRow('disableRaytraceWarningToggle',
         'Disable raytracing warning', !!getPanelPref('hideRaytraceWarning'),
         (on) => setPanelPref('hideRaytraceWarning', on)));
+      // Cmd/Ctrl+R, F5 and leaving the page while structures are loaded
+      // (ui/LeaveGuard.js).
+      warnGroup.appendChild(makeToggleRow('disableLeaveWarningToggle',
+        'Disable reload warning', !!getPanelPref('hideLeaveWarning'),
+        (on) => setPanelPref('hideLeaveWarning', on)));
       body.appendChild(warnGroup);
       // Graphics: GPU memory the PNG export may allocate for its render
       // surface (render/ImageExportModule.js reads it live). WebGL cannot
@@ -943,20 +1029,22 @@ export function registerDefaultPanels() {
       resetBtn.textContent = 'Reset UI';
       resetBtn.addEventListener('click', () => resetAllPanels());
       resetRow.appendChild(resetBtn);
-      // Wipe every localStorage key the app uses (layout, prefs, theme, colors,
-      // export prefs, font scale). No reload — changes take effect next load.
+      // Wipe every localStorage key the app uses (layout, prefs, theme, the
+      // per-structure preferences, export prefs, font scale). No reload —
+      // changes take effect next load. state/structurePrefs.js clearLocalData
+      // also cancels the pending debounced saves so nothing is written back.
       const clearBtn = document.createElement('button');
       clearBtn.id = 'clearLocalDataButton';
       clearBtn.type = 'button';
       clearBtn.className = 'reset-btn reset-btn-danger';
       clearBtn.textContent = 'Clear local data';
       clearBtn.addEventListener('click', () => {
-        if (confirm('Clear all saved local data?')) localStorage.clear();
+        if (confirm('Clear all saved local data?')) clearLocalData();
       });
       resetRow.appendChild(clearBtn);
       body.appendChild(resetRow);
     },
     // The very last window in the dock.
-    defaults: { dock: 'left', order: 100, collapsed: false },
+    defaults: { dock: 'left', order: 100, collapsed: true },
   });
 }

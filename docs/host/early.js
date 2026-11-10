@@ -67,6 +67,11 @@ async function start() {
     if (widget.present) {
       const { initWidgetMode } = await import('../ui/WidgetMode.js');
       await initWidgetMode({ href: widget.href });
+    } else {
+      // Files the OS opened with the installed app: after start-up, so they
+      // load after the default structure and are the one shown.
+      const { acceptLaunchedFiles } = await import('../ui/StructureInputModule.js');
+      acceptLaunchedFiles();
     }
   } catch (error) {
     hostController.reportError(error);

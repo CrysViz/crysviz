@@ -189,7 +189,7 @@ function initialStructureValue() {
 // ── Logo trigger + dropdown menu ───────────────────────────────────────────
 //
 // The CrysViz logo (top-left) IS the menu trigger — no separate cog. Clicking
-// it opens the dropdown below-left; the menu's last item ("Open in CrysViz")
+// it opens the dropdown below-left; the menu's first item ("Open in CrysViz")
 // does what the old logo link did.
 
 /** The launch URL with the widget param removed — same structure, full UI. */

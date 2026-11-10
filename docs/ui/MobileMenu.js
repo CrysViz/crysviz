@@ -33,6 +33,26 @@ export function closeMobilePanel() {
   resizeRenderer(app.orthographicFrustumSize);
 }
 
+/** Bring the panel into view if it is folded away (the desktop hide state,
+ *  or the closed mobile sheet). Used by the feature search before it jumps to
+ *  a control in a docked window. No-op when it is already showing. */
+export function showMobilePanel() {
+  const ui = document.getElementById('ui');
+  if (!ui) return;
+  let changed = false;
+  if (ui.classList.contains('panel-hidden')) {
+    ui.classList.remove('panel-hidden');
+    document.body.classList.remove('panel-hidden');
+    changed = true;
+  }
+  if (isCompactViewport() && !ui.classList.contains('panel-open')) {
+    ui.classList.add('panel-open');
+    document.getElementById('mobileOverlay')?.classList.add('active');
+    changed = true;
+  }
+  if (changed) resizeRenderer(app.orthographicFrustumSize);
+}
+
 export function setupMobileMenu() {
   const hamburger = document.getElementById('mobileMenuToggle');
   const overlay = document.getElementById('mobileOverlay');

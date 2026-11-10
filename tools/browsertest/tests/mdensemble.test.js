@@ -56,9 +56,10 @@ direct
 
     const idealGas = md.instantaneousPressureGPa(state);
 
-    // Add an isotropic virial: sigma = -P I means +P of pressure on top.
+    // Add an isotropic virial. Stress is compression-positive (model/Stress.js),
+    // so S = +P I adds +P of pressure on top.
     const extra = 1.5 / EV_A3_TO_GPA;
-    state.stress = [[-extra, 0, 0], [0, -extra, 0], [0, 0, -extra]];
+    state.stress = [[extra, 0, 0], [0, extra, 0], [0, 0, extra]];
     const withVirial = md.instantaneousPressureGPa(state);
 
     return {
@@ -161,7 +162,7 @@ direct
     const refreshStress = (state) => {
       const v = md.cellVolume(state.lattice);
       const p = BULK_GPa * (V0 / v - 1) / EV_A3_TO_GPA;
-      state.stress = [[-p, 0, 0], [0, -p, 0], [0, 0, -p]];
+      state.stress = [[p, 0, 0], [0, p, 0], [0, 0, p]]; // compression positive
     };
 
     const settle = (targetPressureGPa, steps, trailingWindow = 0, disableCoupling = false) => {
@@ -248,7 +249,7 @@ direct
       ]),
       velocities: s.atoms.map(() => [0, 0, 0]),
       masses: s.atoms.map(() => 12),
-      stress: [[-0.05, 0, 0], [0, -0.05, 0], [0, 0, -0.05]],
+      stress: [[0.05, 0, 0], [0, 0.05, 0], [0, 0, 0.05]], // compressed: P = +8 GPa
       currentTargetTemperatureK: 300,
       symmetryConstrained: true,
       constrainedDof: symMod.getSymmetryDegreesOfFreedom(s),

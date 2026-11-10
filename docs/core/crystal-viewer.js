@@ -12,6 +12,7 @@ import {defaultPOSCAR4} from '../defaults/structure_defaults.js'
 // import from the old file structure that need to be combined and ported to the new structure
 import { setupStructureInput } from '../ui/StructureInputModule.js';
 import { showLoadErrorModal, showLoadWarningModal } from '../ui/LoadErrorModal.js';
+import { loadIncarSpins } from '../ui/IncarSpinImport.js';
 
 // ........................................................................................................
 // Import Modules
@@ -33,6 +34,7 @@ import {loadFromFilePath} from '../io/index.js';
 import {updateBonds,rebuildBonds,disposeBondsMesh} from '../render/index.js'
 import {updateOverlayBonds,rebuildOverlayBonds} from '../render/index.js'
 import { updateLattice,recomputeLatticeDirs} from '../render/index.js'
+import { updateAsymmetricUnit, updateAsuAtomHighlight } from '../render/index.js'
 import { updatePolyhedra, notifyColorsChanged } from '../render/index.js'
 import {rebuildAtoms,updateAtoms,deriveVisibleWrapped} from '../render/index.js';
 import {rebuildOverlayAtoms,updateOverlayAtoms} from '../render/index.js';
@@ -55,6 +57,7 @@ import {initFontScale} from '../ui/FontScaleModule.js'
 import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
 import { updateGroundPlane } from '../render/index.js';
 import { applyFieldPeriodicBounds, updateForces, updateSpins } from '../render/index.js';
+import { applyPlanesPeriodicBounds } from '../ui/PlanesPanel.js';
 
 // Full-app-only UI (panels, backend/save/export/debug, phonopy, keyboard,
 // projection) is loaded lazily from core/fullApp.js — during boot for the full
@@ -234,6 +237,7 @@ export function updateVisualization(options = {}) {
     if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
     applyFieldPeriodicBounds();
+    applyPlanesPeriodicBounds();
   }
 
   // Overlay structures — one rebuild/update pass per fileBrowser.overlayEntries
@@ -282,7 +286,13 @@ export function updateVisualization(options = {}) {
     // repeats the field's original sub-cell, gaps included), so re-seat them
     // whenever the lattice is rebuilt. Idempotent and cheap when unchanged.
     if (!reRenderPeriodic) applyFieldPeriodicBounds();
+    // Unconditional: this is also what drops a wedge whose structure is no
+    // longer selected.
+    updateAsymmetricUnit();
   }
+  // Atoms can move without the cell changing (Wyckoff editor), so the
+  // in-wedge highlight refreshes every pass; it is a no-op while off.
+  updateAsuAtomHighlight();
   console.timeEnd("uv:updateLattice");
   console.time("uv:updateOther");
   if (reRenderOther) updateOther();
@@ -370,7 +380,7 @@ async function updateHostLattice(lattice) {
   return true;
 }
 
-export async function loadStructure(content, fileName = '', isDefault = false, format = '') {
+export async function loadStructure(content, fileName = '', isDefault = false, format = '', options = {}) {
   try {
 
     const parserFileName = format && !String(fileName).toLowerCase().endsWith(`.${String(format).toLowerCase()}`)
@@ -412,7 +422,7 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         break;
 
       case 'cube':
-        structureContainer = await parseCubeFile(payload, fileName);
+        structureContainer = await parseCubeFile(/** @type {string} */ (payload), fileName, { periodic: options?.periodic });
         break;
 
       case 'chgcar':
@@ -431,6 +441,19 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         if (!fullAppHooks.loadPhonopyFile) throw new Error('Phonopy loading is unavailable in this mode');
         structureContainer = await fullAppHooks.loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id);
         break;
+
+      case 'incar': {
+        // No atoms in an INCAR: its MAGMOM is offered to the selected structure
+        // as spins, behind a dialog. Nothing about the scene's geometry changes,
+        // so this returns before the camera/measurement resets below. A file
+        // with no usable moments throws and reaches the modal in the catch.
+        const imported = await loadIncarSpins(/** @type {string} */ (payload), fileName);
+        if (!imported) {
+          setStatus('Load cancelled.');
+          return { ok: false, cancelled: true, name: fileName, format: format || undefined };
+        }
+        return { ok: true, container: imported.container, name: fileName, format: format || undefined };
+      }
 
       // Everything else is a structure file and goes through the single pure
       // pipeline. parse_any picks the format (POSCAR is its fallback) and
@@ -458,22 +481,27 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         // the built-in default so startup stays promptless. Routed through the
         // full-app hook (like the phonopy loader) so the symmetry modal loads at
         // boot in the full app but never in the widget embed, which only opens
-        // .crysviz sessions and has no panel chrome anyway.
-        if (descriptor.id === 'cif' && !isDefault) {
+        // .crysviz sessions and has no panel chrome anyway. An mCIF declares
+        // no space group here but may still give errors (standard
+        // uncertainties), which the same hook offers to read.
+        if ((descriptor.id === 'cif' || descriptor.id === 'mcif') && !isDefault) {
           await fullAppHooks.offerCifSymmetryChoice?.(fileBrowser.selectedStructure, fileName);
         }
         break;
     }
 
-    // A WAVECAR whose dialog was cancelled deliberately loads nothing. That is a
+    // A WAVECAR or cube whose dialog was cancelled deliberately loads nothing. That is a
     // user decision, not a failure, so return quietly instead of falling into
     // the "loader returned no container" error below.
-    if (structureContainer === null && descriptor.id === 'wavecar') {
+    if (structureContainer === null && (descriptor.id === 'wavecar' || descriptor.id === 'cube')) {
       setStatus('Load cancelled.');
       return { ok: false, cancelled: true, name: fileName, format: format || undefined };
     }
 
     if (!structureContainer) throw new Error('Structure loader returned no structure container');
+    // The start-up demo: reloading loses nothing the user made, so the reload
+    // guard (ui/LeaveGuard.js) does not count it.
+    if (isDefault) structureContainer.isBootDefault = true;
 
    revealFeaturePanels();
 
@@ -525,7 +553,15 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // Lead with the file name: a bare Error object serialises to just "Error"
     // in captured console text, which says nothing about what failed.
     console.error(`Failed to load structure "${fileName}":`, error);
-    showLoadErrorModal({ fileName, message: error?.message });
+    // An error may bring its own headline (`modalTitle` / `modalSummary`) for a
+    // failure the generic "corrupt or unsupported" wording would misdescribe,
+    // e.g. a valid INCAR whose MAGMOM does not fit the selected structure.
+    showLoadErrorModal({
+      fileName,
+      message: error?.message,
+      title: error?.modalTitle,
+      summary: error?.modalSummary,
+    });
     throw error;
   }
 }
@@ -559,7 +595,7 @@ export async function initializeCore(browserHostController) {
     },
     loadHash: async () => {
       const result = await loadFromFilePath();
-      if (result) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
+      if (result === true) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
       return result;
     },
     loadDefault: async () => {

@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest import mock
 
+from crysviz._protocol import ProtocolError
 from crysviz._host import HostRuntime, _BridgeAPI
 
 
@@ -63,6 +64,33 @@ class BridgeSurfaceTests(unittest.TestCase):
 
         runtime._prepare_request("invalid", "save_image", None, {})
         runtime.server.discard_output.assert_called_once_with(runtime.server.reserve_output.return_value)
+
+    def _load_runtime(self):
+        runtime = HostRuntime(mock.Mock(), [])
+        runtime.server = mock.Mock()
+        runtime.server.publish.return_value = "http://127.0.0.1:1/_crysviz/input/x"
+        return runtime
+
+    def _attachment(self):
+        return {"data": mock.Mock(stream=mock.Mock())}
+
+    def test_DW_6_2_load_rewrite_carries_periodic(self):
+        for value in (True, False):
+            runtime = self._load_runtime()
+            args = {"name": "a.cube", "format": None, "binary": False, "periodic": value}
+            descriptor = runtime._prepare_request("r", "load", args, self._attachment())
+            self.assertIs(descriptor["request"]["args"]["periodic"], value)
+        runtime = self._load_runtime()
+        descriptor = runtime._prepare_request("r", "load", {"name": "a.cube", "format": None, "binary": False}, self._attachment())
+        self.assertNotIn("periodic", descriptor["request"]["args"])
+
+    def test_DW_6_2_load_rewrite_rejects_non_boolean_periodic(self):
+        for bad in ("false", 0, None):
+            runtime = self._load_runtime()
+            attachments = self._attachment()
+            with self.assertRaises(ProtocolError):
+                runtime._prepare_request("r", "load", {"name": "a", "format": None, "binary": False, "periodic": bad}, attachments)
+            runtime.server.publish.assert_not_called()
 
 
 if __name__ == "__main__":

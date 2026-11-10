@@ -8,7 +8,7 @@ import { createTrajectoryPlot } from './TrajectoryPlot.js';
 import { openPanel, refreshPanelAvailability, getPanelPref, setPanelPref } from './panels/PanelManager.js';
 import { recenterCamera } from './WindowAndSceneControls.js';
 import { selectStructure, setRowStepJumpHandler } from './FileBrowswerPanel.js';
-import { stressMean } from '../atomistic/relaxer.js';
+import { pressureGPa } from '../model/index.js';
 import { applyFrameFast, BOND_TOPOLOGY_STRIDE, isFrameDependentColorMode } from '../render/FastFrameModule.js';
 import { count as traceCount, markEvent } from '../debug/debugTrace.js';
 import { isDebugMode } from '../debug/debugMode.js';
@@ -141,8 +141,8 @@ function computeStepStats(container) {
       meanForce[i] = Number.isFinite(mean) ? mean : NaN;
       if (Number.isFinite(mean)) hasForce = true;
 
-      // Pressure = mean of the frame's stress-tensor diagonal (NaN when absent).
-      const p = stressMean(s?.stress?.tensor);
+      // Pressure in GPa, compression positive (model/Stress.js; NaN when absent).
+      const p = pressureGPa(s?.stress?.tensor);
       pressure[i] = Number.isFinite(p) ? p : NaN;
       if (Number.isFinite(p)) hasPressure = true;
     }

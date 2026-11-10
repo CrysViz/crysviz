@@ -29,6 +29,7 @@ import { resizeRenderer } from '../WindowAndSceneControls.js';
 import { requestRender } from '../../render/index.js';
 import { app } from '../../state/store.js';
 import { showInfoPanel } from '../InfoPanel.js';
+import { swallowClickAfterDrag } from './PanelWindow.js';
 
 const DEFAULT_PANE_FRACTION = 1 / 3;
 const MIN_PANE_PX = 220; // dragged narrower than this -> snap collapsed
@@ -283,6 +284,7 @@ function onTabPointerDown(panel, tab, e) {
           && Math.abs(mv.clientY - startY) < DRAG_THRESHOLD) return;
       dragging = true;
       tab.classList.add('cv-tab-dragging');
+      swallowClickAfterDrag();
     }
     // Left the strip band: pull the window out of the dock and continue the
     // same gesture as a floating title-bar drag (from there the main dock's

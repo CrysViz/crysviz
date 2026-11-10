@@ -23,6 +23,8 @@
 //   positionPanel(panel, mode)       ≡ menu Position action; mode is one of
 //                                    'float' | 'left' | 'right' | 'default'
 //   onClose(panel)                   close button pressed (closable panels)
+//   storeMenuItem(panel) -> item|null  ≡ menu "Remove from sidebar" for
+//                                    feature-store windows (featureStore.js)
 //   onLayoutChange()                 any persistable state changed
 //   beginDockReorder(panel, event)   drag started on a docked panel's title bar
 //   wantsDockDrop(event) -> boolean  floating drag is over the dock and the
@@ -47,6 +49,28 @@ const LONG_PRESS_MS = 500; // press-and-hold before a touch gesture fires
 // Runtime z-order for floating windows. Base sits above the legacy fixed
 // panels (z-index 1000) and below the About overlay.
 let floatZ = 1200;
+
+/**
+ * Swallow the click that ends a window drag. A window drag moves the window
+ * to another parent mid-gesture (float -> main dock, dock or side-dock tab ->
+ * float), and the browser then sends the release's click to whatever is under
+ * the pointer, pointer capture or not: a window dropped into the dock clicked
+ * the control it landed on (it opened the Files window's structure summary).
+ * Call once the press has become a drag; the guard ends right after that
+ * gesture's release.
+ */
+export function swallowClickAfterDrag() {
+  const guard = new AbortController();
+  const opts = { capture: true, signal: guard.signal };
+  window.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+  }, opts);
+  // The click follows the pointerup in the same task: drop the guard after it.
+  const disarm = () => setTimeout(() => guard.abort(), 0);
+  window.addEventListener('pointerup', disarm, { ...opts, once: true });
+  window.addEventListener('pointercancel', disarm, { ...opts, once: true });
+}
 
 /**
  * Anchor a fixed-position element by edges: any of {left, right, top, bottom},
@@ -391,6 +415,9 @@ export class PanelWindow {
     if (this.def.closable) {
       sections.push({ items: [{ label: 'Close', onSelect: () => this.hooks.onClose(this) }] });
     }
+    // Feature-store windows: back to the store (PanelManager decides which).
+    const storeItem = this.hooks.storeMenuItem?.(this);
+    if (storeItem) sections.push({ items: [storeItem] });
     return sections;
   }
 
@@ -727,6 +754,7 @@ export class PanelWindow {
       if (Math.abs(ev.clientX - startX) < DRAG_THRESHOLD &&
           Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
       cleanup();
+      swallowClickAfterDrag();
       if (this.dock === 'left') {
         // Hand the whole gesture over to the manager's reorder logic.
         releaseCapture();

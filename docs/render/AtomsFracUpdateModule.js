@@ -19,6 +19,8 @@ import {
 import {setAtomColor}  from '../utils/ColorModule.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { getFocusOpacityForInstance, prepareFocusRegions } from './FocusRegionModule.js';
+import { refreshAsuHighlight } from './asuHighlightHook.js';
+import { atomsRebuilt } from './atomsRebuildHook.js';
 
 
 // Module-scope scratch colour reused across the per-atom colour loop in updateAtoms
@@ -254,7 +256,17 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 //-------------------------------------------------------------------------------
 
 
+// The structure the current main atoms mesh was built for (buildAtoms), so a
+// rebuild can tell whether it shows the same structure again.
+let builtFor = null;
+
 export function rebuildAtoms(opacity) {
+  // The old mesh's copies by stable name, for carrying the selection over
+  // (atomsRebuildHook.js) — only meaningful when the same structure is rebuilt.
+  const prevMesh = groups.atomsMesh;
+  const prevImageKeys = prevMesh && builtFor === fileBrowser.selectedStructure
+    ? fileBrowser.selectedStructure.atomImageKeys ?? null
+    : null;
   if (groups.atomsMesh) {
     // A pipeline-owned transparent-instance overlay (userData.transparentOverlay)
     // goes down with the mesh; remove it from its parent (it may be a scene-root
@@ -285,6 +297,7 @@ export function rebuildAtoms(opacity) {
   console.log("updating atoms")
   let ok = updateAtoms(opacity);
   console.log("status updateAtoms", ok)
+  atomsRebuilt({ prevMesh, prevImageKeys });
  }
 
 // Shared mesh finalization for atom InstancedMeshes (main + overlay structures).
@@ -554,6 +567,7 @@ export function createAtomsMaterial() {
 export function buildAtoms() {
   let atoms=fileBrowser.selectedStructure.atoms
   let structure = fileBrowser.selectedStructure
+  builtFor = structure;
   //perdic.wrapped
 
   let wrapped = fileBrowser.selectedStructure.periodic.visibleWrapped
@@ -710,6 +724,7 @@ export function updateAtomCutPlaneState() {
     updateSingleAtomCutPlaneImmunity(i, atom?.cutPlaneImmune);
   }
   applyAtomCutPlaneUniforms(mesh.material);
+  refreshAsuHighlight();
 }
 
 function syncAtomMaterialTransparency(baseOpacity = 1.0) {

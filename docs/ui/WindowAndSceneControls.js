@@ -743,7 +743,7 @@ export function setViewDirection(dir, { refit = false } = {}) {
  * "my rotation doesn't stick, I have to switch away and back again" (the
  * extra round trip just gives the decay time to fully settle first).
  */
-function stopCameraMomentum() {
+export function stopCameraMomentum() {
   const c = app.controls;
   if (!c) return;
   c._lastAngle = 0;

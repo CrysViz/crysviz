@@ -222,12 +222,17 @@ function drawBackgroundLayer(painter, width, height, bgCss, transparent) {
  *   structureOnly?:boolean, structure?:'raster'|'vector',
  *   crop?:{x0:number, y0:number, x1:number, y1:number},
  *   onProgress?:(p:{current:number, target:number})=>void,
- *   signal?:AbortSignal}} opts
+ *   signal?:AbortSignal, source?:import('./ImageExportModule.js').ExportSource}} opts
  *   Everything captureSceneToPng takes, plus `structure`: 'raster' (default)
  *   embeds the rendered structure as one <image>; 'vector' emits shapes.
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToSvg(opts) {
+  // Another view (opts.source, e.g. the Selection Inspector) has no vector
+  // decoder: only the main view's atoms/bonds meshes are turned into shapes.
+  if (opts.source && !opts.source.isMain && opts.structure === 'vector') {
+    throw new Error('Vector shapes are only available for the main view; use "Embedded image".');
+  }
   return opts.structure === 'vector'
     ? captureVectorSvg(opts)
     : captureRasterSvg(opts);
@@ -256,6 +261,9 @@ function cullMeasurementSpritesFromRender() {
 }
 
 async function captureRasterSvg(opts) {
+  // Another view keeps its label sprites in the image: its overlays do not
+  // re-emit them as text.
+  if (opts.source && !opts.source.isMain) return captureRasterSvgImpl(opts);
   const restoreSprites = cullMeasurementSpritesFromRender();
   try {
     return await captureRasterSvgImpl(opts);
@@ -274,12 +282,14 @@ function captureRasterSvgImpl(opts) {
     painter.beginGroup('Structure (raster)', 'layer-structure');
     painter.image(ex.canvas, 0, 0, ex.width, ex.height, { label: 'Rendered structure' });
     painter.endGroup();
-    drawOverlayLayers(painter, ex, opts);
+    if (ex.source.isMain) drawOverlayLayers(painter, ex, opts);
+    else ex.source.overlays?.(painter, ex, opts);
+    const title = ex.source.title ?? structureName();
     return svgBlob(svgDocument({
       width: ex.width,
       height: ex.height,
-      title: structureName(),
-      desc: `CrysViz export of ${structureName()} — structure embedded as a `
+      title,
+      desc: `CrysViz export of ${title} — structure embedded as a `
         + `${ex.width}x${ex.height} raster image; overlays are editable vector layers.`,
       defs: painter.defs(),
       body: painter.body(),

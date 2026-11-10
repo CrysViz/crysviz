@@ -8,6 +8,7 @@ import { updateForces } from './ForceModule.js';
 import { getActiveCutPlanes, isBondCutByPlanes, hideSingleBond } from './BondsFracUpdateModule.js';
 import { requestRender } from './AnimateModule.js';
 import { updateGroundPlane } from './GroundPlaneModule.js';
+import { updateAsuAtomHighlight, refreshAsymmetricUnitIfStale } from './AsymmetricUnitModule.js';
 
 // ── Render fast path for MD / relax frames ────────────────────────────────────
 //
@@ -320,6 +321,11 @@ export function applyFrameFast(structure) {
   // MD/relax playback moves atoms and bypasses updateVisualization — reposition
   // the ground disc so it tracks the structure bottom each frame (O(1) when off).
   updateGroundPlane();
+
+  // Same reason: which atoms fall inside the asymmetric-unit wedge changes as
+  // they move. The wedge itself only changes if the cell does.
+  refreshAsymmetricUnitIfStale();
+  updateAsuAtomHighlight();
 
   requestRender();
   return true;

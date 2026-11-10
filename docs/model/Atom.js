@@ -96,6 +96,11 @@ export class Atom extends ColoredObject {
     // other. structure.elements[i] remains the element source of truth for now;
     // see PLAN_occupancy_charges_vacancies.md D3 for the intended projection.
     this.species = normalizeSpecies(species, element, occupancy, oxidationState);
+    // The CIF site this atom is a copy of, when it was read from a CIF with
+    // its errors (io/cif/cif_errors.js, model/cifErrors.js): { site, R, frac }.
+    // Never set by construction — an atom made anew has no error.
+    /** @type {{site:number, R:number[][], frac:number[]}|null} */
+    this.cifSite = null;
     this.original = Object.freeze({
       element,
       species: this.species.map((s) => Object.freeze({ ...s })),

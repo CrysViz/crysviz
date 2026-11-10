@@ -27,7 +27,7 @@ import { downloadBlob } from './SavePanel.js';
 import { plotLatticeSeries, onLatticePointClick } from '../lattice/latticePlots.js';
 import { setRedrawHandler, LATTICE_PLOT_CARDS, LATTICE_PLOT_IDS } from './LatticePlotsPanel.js';
 import { openPanel, refreshPanelAvailability } from './panels/PanelManager.js';
-import { selectStructure } from './FileBrowswerPanel.js';
+import { selectStructure, onRowOrderChange } from './FileBrowswerPanel.js';
 import { onActiveStructureChange } from '../state/structures.js';
 import { fileBrowser, structureShip } from '../state/store.js';
 
@@ -443,6 +443,12 @@ document.addEventListener('input', (e) => {
   const target = /** @type {HTMLElement} */ (e.target);
   if (!(target instanceof HTMLInputElement) || target.type !== 'number') return;
   if (!target.closest('#objectTable tbody')) return;
+  scheduleFilesTableSync();
+});
+// A row dragged to a new place changes the order of the checked structures
+// and which row each point belongs to.
+onRowOrderChange(() => {
+  refreshPanelAvailability();
   scheduleFilesTableSync();
 });
 function scheduleFilesTableSync() {

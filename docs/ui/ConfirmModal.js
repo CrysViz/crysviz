@@ -174,7 +174,8 @@ export function noticeDialog(message, { title = 'Notice', okLabel = 'OK', detail
  * @param {string} message
  * @param {object} [options]
  * @param {string} [options.title]
- * @param {Array<{value: any, label: string, description?: string}>} [options.choices]
+ * @param {Array<{value: any, label: string, description?: string, id?: string}>} [options.choices]
+ *   `id` names the button element (styling hooks, tests)
  * @param {string} [options.detail] preformatted extra context shown above the buttons
  * @param {any} [options.cancelValue]
  * @returns {Promise<any>}

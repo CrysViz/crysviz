@@ -12,3 +12,12 @@ Click one of the buttons below to open the panel with the respective feature. Th
 
 - **Bonds|Lattice|Polyhedra**: This section allows to view histograms for bonds (currently lengths, future: angles, coordiation number; an option to draw extra bonds is comming soon) and to modify the lattice on the fly and create supercells. Polyhedra option is currently under developement and will be active soon!
 
+## Show CIF Errors
+
+For a structure read from a CIF together with its errors (the standard uncertainties the file
+gives in parentheses; you are asked when the CIF is loaded), measured lengths and angles are
+written with their error: `2.3456(12) Å` in the measurement labels and in the Selection and
+Polyhedron Inspectors, including the values they derive (mean bond length; polyhedron volume,
+distortion index and angle variance). **Show CIF Errors** switches that off (plain values) and on
+again; nothing is lost either way. It does nothing for structures loaded without errors. The
+Bonds tab, the histograms, the atom tooltip and the Files window's Parameters show plain values.

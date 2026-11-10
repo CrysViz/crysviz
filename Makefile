@@ -1,4 +1,4 @@
-.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard checks ci tests_full periodic-wasm browsertest browsertest-setup update_version
+.PHONY: serve install_devtools lint lint-fix typecheck check-imports css-guard unittest checks ci tests_full periodic-wasm browsertest browsertest-setup search-index update_version
 
 PYTHON ?= python3
 
@@ -57,8 +57,19 @@ check-imports:
 css-guard:
 	tools/ci/css_guard.sh
 
-# Fast source validation: lint + typecheck + import checks.
-checks: lint typecheck check-imports css-guard
+# Node unit tests (node:test, no dependencies) for modules that import cleanly
+# in plain Node — pure logic such as the share-link codec. Fast: no browser.
+# Add tests as tools/unittest/*.test.mjs.
+# NODE is resolved through the shell: make execs a bare `node` itself and
+# stops at the first PATH entry named node, even a directory (emsdk ships one).
+NODE ?= $(shell command -v node)
+# The shell expands the glob: Node 22 reads a bare directory argument as a
+# file to run, and Node 20 does not expand globs itself.
+unittest:
+	$(NODE) --test tools/unittest/*.test.mjs
+
+# Fast source validation: lint + typecheck + import checks + unit tests.
+checks: lint typecheck check-imports css-guard unittest
 
 # Reproduce the complete headless GitHub Actions gate locally: dependency
 # setup, static and Python tests, package-content/install checks, and packaged
@@ -85,6 +96,12 @@ browsertest-setup:
 
 browsertest:
 	tools/browsertest/run.sh
+
+# Regenerate docs/ui/search/controlIndex.js, the feature search's control
+# list, from the running app (tools/browsertest/gen_search_index.js). Run it
+# after adding or renaming a control; searchindex.test.js fails until then.
+search-index:
+	tools/browsertest/run.sh gen_search_index.js
 
 # Rebuild the periodic_wasm module from its Rust source
 # (docs/compiled/periodic_wasm_src/). Requires wasm-pack and the

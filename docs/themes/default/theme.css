@@ -380,6 +380,14 @@
   /* ---- 3D scene (read by ThemeManager → three.js) ----------------------- */
   --scene-bg: #ffffff;               /* WebGL canvas clear color */
   --lattice-color: #090a09;          /* unit-cell lines */
+  /* Asymmetric-unit ("irreducible wedge") hull and outline, mirrored into
+     three.js by ThemeManager exactly like --lattice-color. Deliberately a hue
+     nothing else in the scene owns: --lattice-color is near-black or near-white
+     in every palette, the axis legend owns red/green/blue, and --tool-active
+     owns orange, so a violet is the one thing the wedge cannot be confused
+     with. It reads against both the light and dark scenes, which is why no
+     palette needs to restate it. */
+  --asu-color: #a05cd6;
   /* Background-color picker dot (styles.css .background-dot) border — dark on
      this theme's light-ish scene, for the same contrast reason --lattice-color
      is dark here. Used to be a raw `@media (prefers-color-scheme: dark)` rule
