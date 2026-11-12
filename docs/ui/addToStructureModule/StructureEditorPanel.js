@@ -373,6 +373,10 @@ function buildFreeformModifyEditor(body, structure) {
   }
 
   let lastUnique = structure.uniqueElements.join(',');
+  // Set while liveApply re-renders: the colors-changed / atoms-changed events
+  // it fires echo the table's own values back, and syncing every row from the
+  // structure on each of them was a large part of an edit's cost.
+  let applyingEdit = false;
   function liveApply() {
     const atoms = editor.getAtoms();
     const lattice = latticePanel.getLattice();
@@ -387,7 +391,7 @@ function buildFreeformModifyEditor(body, structure) {
       || structure.atoms.some((a) => !tableUuids.has(a.uuid));
     if (setChanges) clearSelectedAtoms();
 
-    applyStructureEdits(structure, { atoms, lattice });
+    const change = applyStructureEdits(structure, { atoms, lattice });
 
     // A restored / re-added atom is back in the structure - it is no longer a
     // pending removal.
@@ -398,20 +402,34 @@ function buildFreeformModifyEditor(body, structure) {
     const uniqueNow = structure.uniqueElements.join(',');
     if (uniqueNow !== lastUnique) { createBondLengthControls(); lastUnique = uniqueNow; }
 
-    updateVisualization({
-      reRenderAtoms: true,
-      reRenderBonds: true,
-      reRenderLattice: true,
-      reRenderOther: true,
-      reRenderComposition: 'open',
-    });
-    renderSummary();
-    runCollisionWarning(atoms, lattice);
-    // An element/count/occupancy edit here changes the composition — announce it
-    // the same way a coordinate edit does (applyAtomCoordinates), so panels that
-    // aren't part of the composition rebuild (e.g. Order Structure's size
-    // options) can react instead of showing stale numbers.
-    document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+    // Re-render only what this edit can have touched. Atoms always (an
+    // occupancy edit re-slices the wedges) and the composition always (the
+    // formula); bonds, polyhedra, measurements and the cell only when the
+    // geometry, the representative elements or the colours actually changed —
+    // a pure occupancy edit on a large structure was paying for all of them.
+    const geometry = Boolean(change.added || change.removed || change.reordered
+      || change.positionsChanged || change.latticeChanged);
+    const appearance = change.elementsChanged || change.colorsChanged;
+    applyingEdit = true;
+    try {
+      updateVisualization({
+        reRenderAtoms: true,
+        reRenderBonds: geometry || appearance,
+        reRenderLattice: geometry,
+        reRenderOther: geometry,
+        reRenderPolyhedra: geometry || appearance,
+        reRenderComposition: 'open',
+      });
+      renderSummary();
+      runCollisionWarning(atoms, lattice);
+      // An element/count/occupancy edit here changes the composition — announce it
+      // the same way a coordinate edit does (applyAtomCoordinates), so panels that
+      // aren't part of the composition rebuild (e.g. Order Structure's size
+      // options) can react instead of showing stale numbers.
+      document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+    } finally {
+      applyingEdit = false;
+    }
   }
 
   // Splice a "Newly added" label row into the table just above the first atom
@@ -526,6 +544,9 @@ function buildFreeformModifyEditor(body, structure) {
   // Structure Info panel writes straight into structure.atoms, so mirror those
   // values into the matching (untouched) table rows.
   function syncFromStructure() {
+    if (applyingEdit) return;
+    /** @type {Array<[string, any]>} */
+    const entries = [];
     structure.atoms.forEach((atom) => {
       if (!atom.uuid) return;
       // A disordered atom has more than one table row (one per species,
@@ -534,15 +555,16 @@ function buildFreeformModifyEditor(body, structure) {
       // per-species colour edit made elsewhere (the Structure Info panel).
       const species = atom.species?.length ? atom.species : [{ element: '', color: null }];
       species.forEach((s, k) => {
-        editor.syncRow(k === 0 ? atom.uuid : `${atom.uuid}#${k}`, {
+        entries.push([k === 0 ? atom.uuid : `${atom.uuid}#${k}`, {
           x: round4(atom.position[0]),
           y: round4(atom.position[1]),
           z: round4(atom.position[2]),
           color: tableRowColor(atom, species, k),
           autoColor: tableRowAutoColor(atom, species, k),
-        });
+        }]);
       });
     });
+    editor.syncRows(entries);
   }
   document.addEventListener('crysviz:atoms-changed', syncFromStructure);
   document.addEventListener('crysviz:colors-changed', syncFromStructure);

@@ -91,13 +91,22 @@ export function removeSessionAddedAtom(structure, uuid) {
 //
 // Caller re-renders (createBondLengthControls() + updateVisualization({
 // reRenderAtoms:true, reRenderBonds:true, reRenderComposition:"open" })).
-// Returns { added, removed } counts.
+// Returns { added, removed } counts plus what kind of change this was, so the
+// live editor can skip re-rendering what an edit cannot have touched (an
+// occupancy edit moves nothing, so bonds, measurements and the cell stay):
+//   reordered        - same atoms, different order (index-keyed state moves)
+//   positionsChanged - some kept atom moved
+//   latticeChanged   - the cell changed
+//   elementsChanged  - structure.elements (each site's representative) changed
+//   colorsChanged    - some atom's or species' colour changed
 /**
  * @param {any} structure
  * @param {{atoms: Array<{uuid: string|null, element: string, x: number, y: number, z: number, occupancy?: number, color?: string}>, lattice?: number[][]}} edits
  */
 export function applyStructureEdits(structure, { atoms, lattice }) {
   const byUuid = new Map(structure.atoms.map((atom) => [atom.uuid, atom]));
+  let positionsChanged = false;
+  let colorsChanged = false;
 
   // The table carries one row per SPECIES, so several rows can describe one
   // site (a half-Na/half-K site is two rows sharing a position). Rows of a site
@@ -124,17 +133,40 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
   // would have been, and must become one site rather than a coincident
   // atom-plus-implicit-vacancy pair. Mirrors mergeCoLocatedAtoms's rule for
   // the Add Atom panel: merge only while it would not over-fill the site.
+  //
+  // Clusters are bucketed on a periodic SITE_TOLERANCE grid so each row only
+  // looks at clusters in the neighbouring buckets — a plain scan over every
+  // cluster made each keystroke O(N²). Same rule as that scan: the earliest
+  // cluster that is the same site and has room wins.
   const clusters = [];
+  const binsPerAxis = Math.max(1, Math.floor(1 / SITE_TOLERANCE));
+  const binOf = (v) => {
+    const w = v - Math.floor(v);
+    return Math.min(binsPerAxis - 1, Math.floor(w * binsPerAxis));
+  };
+  const wrapBin = (b) => ((b % binsPerAxis) + binsPerAxis) % binsPerAxis;
+  /** @type {Map<string, number[]>} */
+  const buckets = new Map();
   for (const group of uuidGroups) {
     const first = group.entries[0];
     const pos = [first.x, first.y, first.z];
     const occ = group.entries.reduce((sum, e) => sum + (e.occupancy ?? 1), 0);
-    const host = clusters.find((c) =>
-      sameSite(c.position, pos, SITE_TOLERANCE) && (c.occupancy + occ) <= 1 + 1e-3);
-    if (host) {
-      host.occupancy += occ;
-      host.groups.push(group);
+    const [bx, by, bz] = pos.map(binOf);
+    let hostIndex = -1;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      for (const index of buckets.get(`${wrapBin(bx + dx)},${wrapBin(by + dy)},${wrapBin(bz + dz)}`) ?? []) {
+        if (hostIndex !== -1 && index >= hostIndex) continue;
+        const c = clusters[index];
+        if (sameSite(c.position, pos, SITE_TOLERANCE) && (c.occupancy + occ) <= 1 + 1e-3) hostIndex = index;
+      }
+    }
+    if (hostIndex !== -1) {
+      clusters[hostIndex].occupancy += occ;
+      clusters[hostIndex].groups.push(group);
     } else {
+      const key = `${bx},${by},${bz}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(clusters.length);
       clusters.push({ position: pos, occupancy: occ, groups: [group] });
     }
   }
@@ -172,26 +204,30 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
       return { element: e.element, occupancy: e.occupancy ?? 1, oxidationState, color };
     });
 
-    // Colour and charge deliberately excluded here: a colour/charge-only
-    // change must still reuse the existing atom (below) rather than
+    // Occupancy, colour and charge deliberately excluded here: an edit to
+    // any of them must still reuse the existing atom (below) rather than
     // reconstruct a new one, so opacity/radius/immunity survive it the same
-    // as any other edit.
+    // as any other edit — and so an occupancy edit stays cheap.
     const sameSpeciesShape = existing
       && existing.species.length === species.length
-      && existing.species.every((s, i) =>
-        s.element === species[i].element
-        && Math.abs(s.occupancy - species[i].occupancy) < 1e-6);
+      && existing.species.every((s, i) => s.element === species[i].element);
 
     let atom;
     if (existing && sameSpeciesShape) {
       atom = existing;
-      // Species identity/occupancy are already right; sync just the colour
-      // and charge, since this branch never gets `species` (the freshly
-      // resolved copy) applied any other way.
+      // Ordered <-> disordered changes which colour bonds and polyhedra use
+      // (Atom.getRepresentativeColor), so it counts as a colour change.
+      const wasDisordered = atom.isDisordered();
+      // Species identity is already right; sync occupancy, colour and charge,
+      // since this branch never gets `species` (the freshly resolved copy)
+      // applied any other way.
       species.forEach((sp, i) => {
+        if (atom.species[i].color !== sp.color) colorsChanged = true;
+        atom.species[i].occupancy = sp.occupancy;
         atom.species[i].color = sp.color;
         atom.species[i].oxidationState = sp.oxidationState;
       });
+      if (atom.isDisordered() !== wasDisordered) colorsChanged = true;
     } else if (existing) {
       // A different element (or a species added/removed): the colour
       // defaults belong to the new element, so the atom is rebuilt — but the
@@ -207,6 +243,7 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
         cutPlaneImmune: existing.cutPlaneImmune,
       });
       atom.hidden = existing.hidden;
+      colorsChanged = true;
     } else {
       atom = new Atom({
         position: [first.x, first.y, first.z],
@@ -221,6 +258,7 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
       });
     }
 
+    if (existing && existing.position.some((v, i) => v !== [first.x, first.y, first.z][i])) positionsChanged = true;
     atom.position = [first.x, first.y, first.z];
     // Only write the colour when the user actually picked a different one,
     // and only for an ORDERED site (one species, no ambiguity about which
@@ -238,6 +276,7 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
     if (species.length === 1 && first.color && first.color.toLowerCase() !== colorToHex(atom.getColor()).toLowerCase()) {
       atom.userColor = first.color;
       atom.setColor(first.color);
+      colorsChanged = true;
     }
 
     // Every uuid this cluster consumed is accounted for, even one merged into
@@ -255,6 +294,14 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
   // site is a modification, not an addition.
   const added = clusters.filter((c) => !c.groups.some((g) => g.base && byUuid.has(g.base))).length;
 
+  const previousAtoms = structure.atoms;
+  const reordered = !added && !removed
+    && nextAtoms.some((atom, i) => atom.uuid !== previousAtoms[i]?.uuid);
+  const elementsChanged = nextElements.length !== structure.elements.length
+    || nextElements.some((element, i) => element !== structure.elements[i]);
+  const latticeChanged = Boolean(lattice)
+    && lattice.some((row, i) => row.some((v, j) => v !== structure.lattice?.[i]?.[j]));
+
   structure.atoms = nextAtoms;
   structure.elements = nextElements;
   structure.uniqueElements = [...new Set(structure.elements)];
@@ -267,7 +314,7 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
   // letting the composition panel index past the end of structure.atoms.
   if ((added || removed) && structure.symmetry?.mode === 'wyckoff') structure.symmetry = null;
 
-  return { added, removed };
+  return { added, removed, reordered, positionsChanged, latticeChanged, elementsChanged, colorsChanged };
 }
 
 // Restore a structure to its as-loaded state (Structure.original, the frozen

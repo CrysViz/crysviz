@@ -228,12 +228,18 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     scroller.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
   }
 
-  function notifyChange() {
-    // Re-evaluate site grouping on every change, not just on load: editing a
-    // coordinate can move a row on or off another site's position, and the
-    // synced/disabled state of a mixed site's follower rows has to track that
-    // live rather than only being right immediately after (re)load.
-    groupSiteRows();
+  /**
+   * @param {{regroup?: boolean}} [options] `regroup: false` for an edit that
+   *   cannot move a row on or off a site (occupancy, charge, element, colour):
+   *   site grouping only depends on the rows' positions and on which rows exist.
+   */
+  function notifyChange({ regroup = true } = {}) {
+    // Re-evaluate site grouping on every change that can affect it, not just
+    // on load: editing a coordinate can move a row on or off another site's
+    // position, and the synced/disabled state of a mixed site's follower rows
+    // has to track that live rather than only being right immediately after
+    // (re)load.
+    if (regroup) groupSiteRows();
     applyRowFilter();
     onChange?.();
   }
@@ -296,16 +302,36 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
 
     /** @type {Array<{x:number,y:number,z:number,rows:HTMLElement[]}>} */
     const clusters = [];
+    // Clusters bucketed on a SITE_TOLERANCE grid, so finding a row's host
+    // looks at the neighbouring buckets only instead of every cluster (that
+    // scan made each keystroke O(N²) on a large table). Same first-match rule
+    // as before: the earliest-created cluster within tolerance wins.
+    /** @type {Map<string, number[]>} */
+    const buckets = new Map();
+    const bucketOf = (v) => Math.floor(v / SITE_TOLERANCE);
     for (const row of clusterableRows) {
       const x = parseFloat(/** @type {HTMLInputElement} */(row.querySelector('.atom-x'))?.value) || 0;
       const y = parseFloat(/** @type {HTMLInputElement} */(row.querySelector('.atom-y'))?.value) || 0;
       const z = parseFloat(/** @type {HTMLInputElement} */(row.querySelector('.atom-z'))?.value) || 0;
-      const host = clusters.find((c) =>
-        Math.abs(c.x - x) <= SITE_TOLERANCE
-        && Math.abs(c.y - y) <= SITE_TOLERANCE
-        && Math.abs(c.z - z) <= SITE_TOLERANCE);
-      if (host) host.rows.push(/** @type {HTMLElement} */ (row));
-      else clusters.push({ x, y, z, rows: [/** @type {HTMLElement} */ (row)] });
+      const bx = bucketOf(x), by = bucketOf(y), bz = bucketOf(z);
+      let hostIndex = -1;
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+        for (const index of buckets.get(`${bx + dx},${by + dy},${bz + dz}`) ?? []) {
+          const c = clusters[index];
+          if ((hostIndex === -1 || index < hostIndex)
+            && Math.abs(c.x - x) <= SITE_TOLERANCE
+            && Math.abs(c.y - y) <= SITE_TOLERANCE
+            && Math.abs(c.z - z) <= SITE_TOLERANCE) hostIndex = index;
+        }
+      }
+      if (hostIndex !== -1) {
+        clusters[hostIndex].rows.push(/** @type {HTMLElement} */ (row));
+        continue;
+      }
+      const key = `${bx},${by},${bz}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(clusters.length);
+      clusters.push({ x, y, z, rows: [/** @type {HTMLElement} */ (row)] });
     }
 
     for (const cluster of clusters) {
@@ -409,7 +435,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     const swatch = createColorSwatch(initialColor, () => {
       newRow.dataset.autoColor = ''; // a hand-picked colour must not be overwritten
       newRow.dataset.dirty = '1';
-      notifyChange();
+      notifyChange({ regroup: false });
     });
     colorCell.appendChild(swatch);
 
@@ -424,7 +450,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     elementInput.addEventListener('input', () => {
       addRowHint.classList.remove('visible');
       refreshAutoColor();
-      notifyChange();
+      // The generic listener below marks the row dirty and drives the apply.
     });
 
     // Any typed edit pins the row: an inbound sync (the Structure Info panel's
@@ -432,12 +458,11 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     // user is in the middle of entering here. It also drives the live apply -
     // a coordinate keystroke moves the atom in the scene immediately.
     newRow.querySelectorAll('input').forEach((input) => {
+      const isCoordinate = input.classList.contains('atom-x') || input.classList.contains('atom-y') || input.classList.contains('atom-z');
       input.addEventListener('input', () => {
         newRow.dataset.dirty = '1';
-        if (input.classList.contains('atom-x') || input.classList.contains('atom-y') || input.classList.contains('atom-z')) {
-          newRow.dataset.positionDirty = '1';
-        }
-        notifyChange();
+        if (isCoordinate) newRow.dataset.positionDirty = '1';
+        notifyChange({ regroup: isCoordinate });
       });
     });
 
@@ -455,7 +480,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
         newRow.dataset.dirty = '1';
         addRowHint.classList.remove('visible');
         refreshAutoColor();
-        notifyChange();
+        notifyChange({ regroup: false });
       });
     });
 
@@ -541,11 +566,10 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
   // the atom's colour is still the element default, so a colour picked in the
   // Structure Info panel pins the row and a reset un-pins it.
   /**
-   * @param {string} uuid
+   * @param {HTMLElement | undefined | null} row
    * @param {{x?: number, y?: number, z?: number, color?: string, autoColor?: boolean}} values
    */
-  function syncRow(uuid, { x, y, z, color, autoColor }) {
-    const row = tbody.querySelector(`tr[data-uuid="${uuid}"]`);
+  function syncRowElement(row, { x, y, z, color, autoColor }) {
     if (!row || row.dataset.dirty) return;
     if (Number.isFinite(x)) row.querySelector('.atom-x').value = String(x);
     if (Number.isFinite(y)) row.querySelector('.atom-y').value = String(y);
@@ -556,6 +580,26 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
       swatch.style.background = color;
     }
     if (typeof autoColor === 'boolean') row.dataset.autoColor = autoColor ? '1' : '';
+  }
+
+  /** @param {string} uuid @param {{x?: number, y?: number, z?: number, color?: string, autoColor?: boolean}} values */
+  function syncRow(uuid, values) {
+    syncRowElement(/** @type {HTMLElement | null} */ (tbody.querySelector(`tr[data-uuid="${uuid}"]`)), values);
+  }
+
+  /**
+   * syncRow for many rows at once: one uuid lookup table instead of a
+   * selector query per row, which made a full-structure sync O(N²).
+   * @param {Array<[string, {x?: number, y?: number, z?: number, color?: string, autoColor?: boolean}]>} entries
+   */
+  function syncRows(entries) {
+    /** @type {Map<string, HTMLElement>} */
+    const byUuid = new Map();
+    for (const row of tbody.querySelectorAll('tr')) {
+      const uuid = /** @type {HTMLElement} */ (row).dataset.uuid;
+      if (uuid) byUuid.set(uuid, /** @type {HTMLElement} */ (row));
+    }
+    for (const [uuid, values] of entries) syncRowElement(byUuid.get(uuid), values);
   }
 
   /**
@@ -729,7 +773,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
   }
 
   return {
-    getAtoms, getDeleted, restoreAtom, syncRow, setActiveUuid, setSelectedUuids,
+    getAtoms, getDeleted, restoreAtom, syncRow, syncRows, setActiveUuid, setSelectedUuids,
     clear, reload, addAtom, highlightConflicts, clearConflicts,
   };
 }

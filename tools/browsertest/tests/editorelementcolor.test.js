@@ -1,7 +1,8 @@
 // Modify Structure atom table: changing an atom's element recolours it to the
 // new element's default colour when the atom has no colour of its own, and
 // keeps a user-picked colour otherwise, and the atom's own styling (opacity,
-// size) survives the change.
+// size) survives the change. An occupancy edit updates the site in place, so
+// that styling survives it too.
 'use strict';
 const H = require('../harness');
 
@@ -57,11 +58,21 @@ const MODIFY = '[data-panel-id="modifyStructure"]';
     await setElement(styledUuid, 'Fe');
     const styled = atomOf(styledUuid);
 
+    const occInput = /** @type {HTMLInputElement} */ (rowOf(styledUuid).querySelector('.atom-occ'));
+    occInput.value = '0.6';
+    occInput.dispatchEvent(new Event('input', { bubbles: true }));
+    await frame();
+    const afterOcc = atomOf(styledUuid);
+
     return {
       plain: { color: hex(plain.getColor()), userColor: plain.userColor, expected: hex(getElementDefaultColor('Fe')), swatch: plainSwatch },
       plainAgain: { color: hex(plainAgain.getColor()), userColor: plainAgain.userColor, expected: hex(getElementDefaultColor('Ni')) },
       custom: { color: hex(custom.getColor()), element: custom.species[0].element },
       styled: { element: styled.species[0].element, opacity: styled.opacity, radiusScale: styled.radiusScale },
+      occupancy: {
+        sameAtom: afterOcc === styled, occupancy: afterOcc.species[0].occupancy,
+        opacity: afterOcc.opacity, radiusScale: afterOcc.radiusScale,
+      },
     };
   }, MODIFY);
 
@@ -77,6 +88,11 @@ const MODIFY = '[data-panel-id="modifyStructure"]';
     result.styled.element === 'Fe'
     && Math.abs(result.styled.opacity - 0.4) < 1e-9 && Math.abs(result.styled.radiusScale - 1.7) < 1e-9,
     JSON.stringify(result.styled));
+
+  H.check('an occupancy edit updates the site in place and keeps its styling',
+    result.occupancy.sameAtom && Math.abs(result.occupancy.occupancy - 0.6) < 1e-9
+    && Math.abs(result.occupancy.opacity - 0.4) < 1e-9 && Math.abs(result.occupancy.radiusScale - 1.7) < 1e-9,
+    JSON.stringify(result.occupancy));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);
