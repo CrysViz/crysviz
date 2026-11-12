@@ -1,5 +1,5 @@
 import { app, fileBrowser, general } from '../state/store.js';
-import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getPlaneDefinitionNormalAndD, getPlaneDRangeInCell, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
+import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, MIN_COLORMAP_RESOLUTION, MAX_COLORMAP_RESOLUTION, sanitizeColormapResolution, getPlaneDefinitionNormalAndD, getPlaneDRangeInCell, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../render/AtomsFracUpdateModule.js';
 import { activePeriodicBounds } from '../render/LatticeModule.js';
@@ -77,6 +77,8 @@ function serializePlanes(structure) {
     };
     const fieldLabel = p.field?.label || p.fieldLabel;
     if (fieldLabel) out.fieldLabel = fieldLabel;
+    const resolution = planeResolutionSetting(p);
+    if (resolution) out.colormapResolution = resolution;
     // The color bar writes its default legend (the field's name) back onto
     // the plane; only a user-edited legend is worth storing.
     if (p.legendText != null && p.legendText !== fieldLabel) out.legendText = p.legendText;
@@ -93,6 +95,19 @@ function persistPlanes({ debounce = false } = {}) {
   if (!structure) return;
   if (debounce) scheduleStructurePrefSave(structure, PLANES_PREF_FIELD, () => serializePlanes(structure));
   else saveStructurePref(structure, PLANES_PREF_FIELD, serializePlanes(structure));
+}
+
+/**
+ * A plane's user-set colormap resolution as `{ u, v }` (each a clamped integer
+ * or null = derived from the plane's aspect ratio), or null when neither axis
+ * is set — the plane then uses DEFAULT_COLORMAP_RESOLUTION.
+ */
+function planeResolutionSetting(plane) {
+  const raw = plane?.colormapResolution;
+  if (!raw || typeof raw !== 'object') return null;
+  const u = sanitizeColormapResolution(raw.u);
+  const v = sanitizeColormapResolution(raw.v);
+  return (u === null && v === null) ? null : { u, v };
 }
 
 /** The loaded field a plane's `fieldLabel` names, or null. */
@@ -151,6 +166,7 @@ function restorePlanes(container, value, structure) {
     const copy = JSON.parse(JSON.stringify(stored));
     const plane = { ...createDefaultPlane(copy.params, copy.label ?? planeLabelForParams(copy.params)), ...copy, field: null };
     plane.cutMode = normalizePlaneCutMode(plane.cutMode);
+    plane.colormapResolution = planeResolutionSetting(plane);
     if (plane.visualization === PLANE_VIS_FIELD) plane.field = findFieldByLabel(plane.fieldLabel);
     structure.planes.push(plane);
     existing.add(keyOf(plane.params));
@@ -216,11 +232,10 @@ function replacePlaneMesh(structure, planeDef) {
     // Trimmed to the periodic display boundary (the Cell & Supercell panel's
     // "Active Cell Boundary"), like the atoms and the field, not just the cell.
     bounds: activePeriodicBounds(),
-    // Mesh tessellation density is no longer a user-exposed setting (it
-    // never actually controlled color smoothness — the LUT sampling was
-    // always a fixed 256 steps regardless — just the geometry's own vertex
-    // density), so this is now always the same default everyone gets.
-    resolution: DEFAULT_COLORMAP_RESOLUTION,
+    // The field colormap is written as vertex colours, so the vertex grid
+    // density IS the colormap's sampling resolution. Per plane, user-set
+    // from the Field & Colormap section; unset axes follow the aspect ratio.
+    resolution: planeResolutionSetting(planeDef) ?? DEFAULT_COLORMAP_RESOLUTION,
     mode: planeDef.visualization || 'None',
     field: planeDef.field || null,
     colormap: planeDef.colormap || 'heatmap',
@@ -232,6 +247,52 @@ function replacePlaneMesh(structure, planeDef) {
   planeMesh.visible = Boolean(planesData.showPlanes && planeDef.enabled);
   app.scene.add(planeMesh);
   getStructureMeshMap(structure).set(planeDef, planeMesh);
+  // A parameter edit can change the aspect ratio, and with it the derived
+  // (unset) resolution axis shown in the boxes.
+  if (structure === getSelectedStructure() && structure.planes?.[selectedPlaneIndex] === planeDef) {
+    syncPlaneResolutionInputs();
+  }
+}
+
+/**
+ * Show the selected plane's colormap resolution in the u/v boxes: the
+ * segment counts its mesh actually uses, so an axis the user never set shows
+ * the aspect-derived value rather than a blank.
+ */
+function syncPlaneResolutionInputs() {
+  const inputU = document.getElementById('planesResolutionU');
+  const inputV = document.getElementById('planesResolutionV');
+  if (!inputU || !inputV) return;
+  const structure = getSelectedStructure();
+  const plane = hasSelectedPlane() ? structure.planes[selectedPlaneIndex] : null;
+  const mesh = plane ? getStructureMeshMap(structure).get(plane) : null;
+  const setting = planeResolutionSetting(plane);
+  inputU.value = `${setting?.u ?? mesh?.resolutionU ?? ''}`;
+  inputV.value = `${setting?.v ?? mesh?.resolutionV ?? ''}`;
+}
+
+/**
+ * Apply the u/v resolution boxes to the selected plane. Both boxes are stored
+ * together so the pair sticks even if a later d/normal edit changes the
+ * plane's aspect ratio; an emptied box returns that axis to the derived value.
+ * @returns {boolean} whether the plane's setting changed
+ */
+function applyPlaneResolutionInputs() {
+  const structure = getSelectedStructure();
+  if (!hasSelectedPlane()) return false;
+  const plane = structure.planes[selectedPlaneIndex];
+  const inputU = document.getElementById('planesResolutionU');
+  const inputV = document.getElementById('planesResolutionV');
+  if (!inputU || !inputV) return false;
+
+  const next = planeResolutionSetting({
+    colormapResolution: { u: inputU.value.trim(), v: inputV.value.trim() },
+  });
+  const changed = JSON.stringify(next) !== JSON.stringify(planeResolutionSetting(plane));
+  plane.colormapResolution = next;
+  if (changed) replacePlaneMesh(structure, plane);
+  else syncPlaneResolutionInputs(); // normalise a clamped/rounded entry
+  return changed;
 }
 
 function clearRenderedPlanesForStructure(structure) {
@@ -529,7 +590,7 @@ function updateFieldControlsAvailability(enabled) {
   const fieldSection = document.getElementById('planesFieldSection');
   const fieldCard = fieldSection?.querySelector('.planes-field-colormap-container');
   const fieldControls = document.querySelectorAll(
-    '#planesFieldSelect, #planesColormapSelect, #planesColormapRangeMin, #planesColormapRangeMax, #planesLogScaleCheckbox, #planesAutoRangeBtn'
+    '#planesFieldSelect, #planesColormapSelect, #planesResolutionU, #planesResolutionV, #planesColormapRangeMin, #planesColormapRangeMax, #planesLogScaleCheckbox, #planesAutoRangeBtn'
   );
   const hasFields = fieldBrowser.availableFields && fieldBrowser.availableFields.length > 0;
   const controlsEnabled = Boolean(enabled && hasFields);
@@ -1065,6 +1126,24 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
           </div>
           </div>
 
+          <!-- Colormap sampling density along the plane's two in-plane axes
+               (vertex grid the field is sampled on), per plane. -->
+          <div class="planes-field-control planes-field-resolution-control">
+            <label title="Colormap samples along the plane's two in-plane axes. Clear a box to use the default.">Resolution:</label>
+            <div class="planes-labeled-input">
+              <span class="planes-input-label">u</span>
+              <input type="number" id="planesResolutionU" class="planes-num-input"
+                     min="${MIN_COLORMAP_RESOLUTION}" max="${MAX_COLORMAP_RESOLUTION}" step="1" disabled
+                     title="Colormap samples along the plane's first in-plane axis (${MIN_COLORMAP_RESOLUTION}–${MAX_COLORMAP_RESOLUTION})">
+            </div>
+            <div class="planes-labeled-input">
+              <span class="planes-input-label">v</span>
+              <input type="number" id="planesResolutionV" class="planes-num-input"
+                     min="${MIN_COLORMAP_RESOLUTION}" max="${MAX_COLORMAP_RESOLUTION}" step="1" disabled
+                     title="Colormap samples along the plane's second in-plane axis (${MIN_COLORMAP_RESOLUTION}–${MAX_COLORMAP_RESOLUTION})">
+            </div>
+          </div>
+
           <div class="planes-field-control planes-field-range-control">
             <label>Range:</label>
             <div class="planes-range-container">
@@ -1249,6 +1328,20 @@ function setupPlanesEvents(container) {
       persistPlanes();
     });
   }
+
+  // Colormap resolution: committed on change (blur / Enter / spinner), not
+  // per keystroke — every commit rebuilds and resamples the plane mesh.
+  container.querySelectorAll('#planesResolutionU, #planesResolutionV').forEach(input => {
+    input.addEventListener('change', () => {
+      if (applyPlaneResolutionInputs()) persistPlanes();
+    });
+    input.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        event.target.blur();
+      }
+    });
+  });
 
   const rangeMin = container.querySelector('#planesColormapRangeMin');
   const rangeMax = container.querySelector('#planesColormapRangeMax');
@@ -1494,6 +1587,7 @@ function loadSelectedPlaneParameters() {
   if (document.getElementById('planesColormapSelect')) {
     document.getElementById('planesColormapSelect').value = plane.colormap || 'jet';
   }
+  syncPlaneResolutionInputs();
   const logScaleCheckbox = document.getElementById('planesLogScaleCheckbox');
   if (logScaleCheckbox) logScaleCheckbox.checked = plane.colormapScale === 'log';
   if (document.getElementById('planesColormapRangeMin')) {
