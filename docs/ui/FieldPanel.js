@@ -436,7 +436,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
 
   container.innerHTML = `
     <div class="field-info">
-      <p><strong>Source:</strong> ${structure.volumetricFields.source}${summary}</p>
+      <p><strong>Source:</strong> ${catalog.combined ? catalog.source : structure.volumetricFields.source}${summary}</p>
     </div>
     ${mismatch ? `
     <div class="field-cell-mismatch">

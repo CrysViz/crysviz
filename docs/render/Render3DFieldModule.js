@@ -474,6 +474,55 @@ function promptForStructureFile() {
 }
 
 /**
+ * Put a lazily-loaded field catalog (a WAVECAR's) on a structure and point the
+ * field browser at it.
+ *
+ * A structure that already holds fields (a CHGCAR, a cube, an earlier
+ * WAVECAR) keeps them: the new tree is added next to them, each file under its
+ * own group (FieldCatalog.combine), instead of replacing the structure's
+ * FieldContainer. The container's `fields` — what a .crysviz save stores —
+ * stay the host file's own, and the field on screen stays selected. A
+ * structure without fields gets a new container holding just this catalog.
+ *
+ * @param {any} structure
+ * @param {import('../model/FieldCatalog.js').FieldCatalog} catalog
+ * @param {{fileName: string, source: string, proxySource?: any,
+ *          cellMismatch?: {structureLattice: number[][], fileLattice: number[][], deviation: number} | null}} options
+ * @returns {FieldContainer} the structure's container afterwards
+ */
+export function attachFieldCatalog(structure, catalog, { fileName, source, proxySource = null, cellMismatch = null }) {
+  const existing = structure.volumetricFields;
+  if (existing?.catalog?.nodes?.length) {
+    const previousSelection = fieldBrowser.selectedField;
+    const combined = FieldCatalog.combine([
+      { catalog: existing.catalog, label: existing.fileName },
+      { catalog, label: fileName },
+    ]);
+    existing.catalog = combined;
+    if (proxySource) existing.proxySource = proxySource;
+    if (cellMismatch) existing.cellMismatch = cellMismatch;
+    fieldBrowser.setCatalog(combined);
+    // Keep showing whatever field was on screen (setCatalog picks the first).
+    if (previousSelection && previousSelection !== fieldBrowser.selectedField) {
+      fieldBrowser.selectField(previousSelection);
+    }
+    return existing;
+  }
+
+  const container = new FieldContainer({
+    fileName,
+    source,
+    fields: [],          // nothing is loaded yet; the catalog is the source of truth
+    catalog,
+    proxySource,
+  });
+  container.cellMismatch = cellMismatch;
+  structure.volumetricFields = container;
+  fieldBrowser.setCatalog(catalog);
+  return container;
+}
+
+/**
  * Open a WAVECAR.
  *
  * Unlike the other field formats this does not parse anything up front — it
@@ -588,27 +637,20 @@ export async function parseWavecarFile(source, fileName) {
           + ' at any time, it simply has to be recomputed.',
       });
   };
-  const container = new FieldContainer({
-    fileName,
-    source: 'WAVECAR',
-    fields: [],          // nothing is loaded yet; the catalog is the source of truth
-    catalog,
-    proxySource: wf,
-  });
-  if (usingHostCell) {
-    container.cellMismatch = {
-      structureLattice: attachTo.lattice,
-      fileLattice: wf.lattice,
-      deviation: largestLatticeDeviation(attachTo.lattice, wf.lattice),
-    };
-  }
+  const cellMismatch = usingHostCell ? {
+    structureLattice: attachTo.lattice,
+    fileLattice: wf.lattice,
+    deviation: largestLatticeDeviation(attachTo.lattice, wf.lattice),
+  } : null;
 
-  fieldBrowser.setCatalog(catalog);
+  // The structure the field ends up in: the host, or (no host) the WAVECAR's
+  // own cell, registered below.
+  const attachOptions = { fileName, source: 'WAVECAR', proxySource: wf, cellMismatch };
+  attachFieldCatalog(attachTo ?? result.structure, catalog, attachOptions);
 
   if (attachTo) {
     // No new file-browser row: the wavefunctions belong to a structure that is
     // already listed, so hand back that structure's existing container.
-    attachTo.volumetricFields = container;
     const owner = containerForStructure(attachTo);
     if (owner) {
       console.log(`WAVECAR opened and attached to the selected structure — ${wf.describe()}`);
@@ -621,9 +663,9 @@ export async function parseWavecarFile(source, fileName) {
     // which loadStructure would report as a failed load.
     console.warn('WAVECAR: the selected structure is not registered in the file browser; '
       + 'loading the file as its own entry instead.');
+    attachFieldCatalog(result.structure, catalog, { ...attachOptions, cellMismatch: null });
   }
 
-  result.structure.volumetricFields = container;
   const structureContainer = initializeWithPOSCAR(result.structure, fileName);
   console.log(`WAVECAR opened as its own structure — ${wf.describe()}`);
   announceWavecarLoaded(fileName, `${fileName} (its own cell, no atoms)`, wf);
