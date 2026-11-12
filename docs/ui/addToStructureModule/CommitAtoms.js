@@ -193,12 +193,20 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
         atom.species[i].oxidationState = sp.oxidationState;
       });
     } else if (existing) {
+      // A different element (or a species added/removed): the colour
+      // defaults belong to the new element, so the atom is rebuilt — but the
+      // per-atom styling that has nothing to do with the element carries over.
       atom = new Atom({
         position: existing.position,
         element: species[0].element,
         species,
         uuid: existing.uuid,
+        opacity: existing.opacity,
+        elementOpacity: existing.elementOpacity,
+        radiusScale: existing.radiusScale,
+        cutPlaneImmune: existing.cutPlaneImmune,
       });
+      atom.hidden = existing.hidden;
     } else {
       atom = new Atom({
         position: [first.x, first.y, first.z],

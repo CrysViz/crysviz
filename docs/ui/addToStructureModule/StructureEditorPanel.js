@@ -96,6 +96,25 @@ function tableRowColor(atom, species, speciesIndex) {
   return colorToHex(s.color ?? getElementDefaultColor(s.element));
 }
 
+/**
+ * Whether a row's colour is still the element default rather than one the
+ * user picked — such a row follows the new element's default colour when its
+ * element is changed (AtomTableInput's autoColor). An ordered atom's custom
+ * colour lives in userColor (the editor's own swatch and the Structure Info
+ * panel's colour picker both set it); `color` differing from `elementColor`
+ * covers a per-atom colour restored from a saved session. A disordered row's
+ * colour is its own species' `color`, null meaning the default.
+ *
+ * @param {any} atom
+ * @param {Array<{element:string,color?:number|null}>} species
+ * @param {number} speciesIndex
+ * @returns {boolean}
+ */
+function tableRowAutoColor(atom, species, speciesIndex) {
+  if (species.length === 1) return !atom.userColor && atom.color === atom.elementColor;
+  return species[speciesIndex].color == null;
+}
+
 // Every atom of `structure` as an atom-table row. The uuid is the handle the
 // commit uses to tell "this is the atom that was already there" from "this is
 // new", so an atom that somehow arrived without one (a structure built by a
@@ -125,6 +144,7 @@ export function structureToTableAtoms(structure) {
         occupancy: round4(s.occupancy),
         oxidationState: s.oxidationState,
         color: tableRowColor(atom, species, k),
+        autoColor: tableRowAutoColor(atom, species, k),
       });
     });
   });
@@ -519,6 +539,7 @@ function buildFreeformModifyEditor(body, structure) {
           y: round4(atom.position[1]),
           z: round4(atom.position[2]),
           color: tableRowColor(atom, species, k),
+          autoColor: tableRowAutoColor(atom, species, k),
         });
       });
     });

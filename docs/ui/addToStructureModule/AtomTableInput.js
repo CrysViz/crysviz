@@ -355,17 +355,19 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
   }
 
   function buildRow(atom) {
-    const { uuid = null, element = '', x = 0, y = 0, z = 0, color = null, occupancy = 1, oxidationState = null } = atom || {};
+    const { uuid = null, element = '', x = 0, y = 0, z = 0, color = null, occupancy = 1, oxidationState = null, autoColor: tracksDefault = false } = atom || {};
     // Blank input for "unspecified" - see readRow()'s matching parse.
     const chargeValue = Number.isFinite(oxidationState) ? oxidationState : '';
     // A row added without an explicit colour (a fresh "Add New Atom" row, a bulk
     // line with no colour) tracks the element's default colour instead of a flat
     // black swatch, matching how a new atom looks everywhere else. A loaded atom
-    // arrives with its own colour, so it opts out; picking a colour by hand stops
-    // the tracking too.
-    let autoColor = color == null;
-    const initialColor = autoColor ? colorToHex(getElementDefaultColor(element)) : color;
+    // arrives with the colour it is drawn in; it keeps tracking the element
+    // default only when that colour was not set by the user (`autoColor` from
+    // structureToTableAtoms), so changing its element recolours it to the new
+    // element's default. Picking a colour by hand stops the tracking.
+    const initialColor = color ?? colorToHex(getElementDefaultColor(element));
     const newRow = document.createElement('tr');
+    newRow.dataset.autoColor = (color == null || tracksDefault) ? '1' : '';
     // Every row carries a uuid, not just prefilled ones: the live Modify
     // editor rebuilds the structure from this table on each change, and a
     // stable per-row uuid is the identity that keeps a just-added atom the
@@ -405,7 +407,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
 
     const colorCell = newRow.querySelector('.atom-color-cell');
     const swatch = createColorSwatch(initialColor, () => {
-      autoColor = false; // a hand-picked colour must not be overwritten
+      newRow.dataset.autoColor = ''; // a hand-picked colour must not be overwritten
       newRow.dataset.dirty = '1';
       notifyChange();
     });
@@ -414,7 +416,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     const elementInput = newRow.querySelector('.atom-element');
     // Follow the element's default colour while the row is still auto-coloured.
     function refreshAutoColor() {
-      if (!autoColor) return;
+      if (newRow.dataset.autoColor !== '1') return;
       const hex = colorToHex(getElementDefaultColor(elementInput.value.trim()));
       swatch.dataset.hex = hex;
       swatch.style.background = hex;
@@ -535,8 +537,14 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
 
   // Refresh one existing row's coordinates/color from outside (the Structure
   // Info panel edited the same atom). Rows the user has typed into are left
-  // alone - see the dirty flag above.
-  function syncRow(uuid, { x, y, z, color }) {
+  // alone - see the dirty flag above. `autoColor` (when given) says whether
+  // the atom's colour is still the element default, so a colour picked in the
+  // Structure Info panel pins the row and a reset un-pins it.
+  /**
+   * @param {string} uuid
+   * @param {{x?: number, y?: number, z?: number, color?: string, autoColor?: boolean}} values
+   */
+  function syncRow(uuid, { x, y, z, color, autoColor }) {
     const row = tbody.querySelector(`tr[data-uuid="${uuid}"]`);
     if (!row || row.dataset.dirty) return;
     if (Number.isFinite(x)) row.querySelector('.atom-x').value = String(x);
@@ -547,6 +555,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
       swatch.dataset.hex = color;
       swatch.style.background = color;
     }
+    if (typeof autoColor === 'boolean') row.dataset.autoColor = autoColor ? '1' : '';
   }
 
   /**
