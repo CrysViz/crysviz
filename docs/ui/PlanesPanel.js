@@ -9,6 +9,7 @@ import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
 import { computeAutoRange, roundToSigFigs } from '../utils/index.js';
 import { saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
+import { setViewDirection } from './WindowAndSceneControls.js';
 
 export const planesData = {
   activeInputMode: 'hkl', // 'hkl' or 'uvwd'
@@ -1016,6 +1017,16 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
             </span>
             <span class="toggle_text">Show Plane</span>
           </label>
+          <!-- Camera aligned with the selected plane's normal. Same convention
+               as the View window's a/b/c buttons: "along" puts the normal
+               pointing at the viewer, "opposite" turns the view round. -->
+          <div class="planes-view-row">
+            <span class="planes-view-label">View:</span>
+            <button type="button" id="planeViewAlongBtn" class="file-action-btn planes-view-btn" disabled
+                    title="Align the camera with the plane normal (the normal points towards you)">Along normal</button>
+            <button type="button" id="planeViewOppositeBtn" class="file-action-btn planes-view-btn" disabled
+                    title="Align the camera opposite to the plane normal (the normal points away from you)">Opposite normal</button>
+          </div>
         </div>
 
         <div class="planes-input-section">
@@ -1206,6 +1217,9 @@ function setupPlanesEvents(container) {
     }
   });
 
+  container.querySelector('#planeViewAlongBtn').addEventListener('click', () => viewAlongSelectedPlaneNormal(1));
+  container.querySelector('#planeViewOppositeBtn').addEventListener('click', () => viewAlongSelectedPlaneNormal(-1));
+
   const radioUVWD = container.querySelector('#radioUVWD');
   const radioHKL  = container.querySelector('#radioHKL');
 
@@ -1395,6 +1409,31 @@ function setupPlanesEvents(container) {
       persistPlanes();
     });
   }
+}
+
+/**
+ * Align the camera with the selected plane's Cartesian normal: `sign` 1 views
+ * along it (the normal points at the viewer, like the View window's a/b/c
+ * buttons), -1 opposite to it. Re-aims only — target, distance and zoom stay.
+ * @param {1|-1} sign
+ * @returns {boolean} whether the camera moved
+ */
+export function viewAlongSelectedPlaneNormal(sign = 1) {
+  const structure = getSelectedStructure();
+  if (!hasSelectedPlane() || !Array.isArray(structure.lattice)) return false;
+  const { normal } = getPlaneDefinitionNormalAndD(structure.planes[selectedPlaneIndex], structure.lattice);
+  if (!Array.isArray(normal) || normal.length !== 3) return false;
+  const length = Math.hypot(...normal);
+  if (!(length > 1e-12)) return false;
+  // Snap float noise to exact zeros: setViewDirection picks the camera's up
+  // vector by testing for exactly-axial directions, and a (0, 1e-17, 1)
+  // normal would otherwise miss that test.
+  const dir = normal.map((v) => {
+    const unit = (sign * v) / length;
+    return Math.abs(unit) < 1e-9 ? 0 : unit;
+  });
+  setViewDirection(dir);
+  return true;
 }
 
 function addPlaneFromCurrentInputs() {
@@ -1638,7 +1677,7 @@ function updateSelectedPlaneFromInputs() {
  */
 function enablePlaneControls(enabled) {
   const inputs = document.querySelectorAll(
-    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode'
+    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode, #planeViewAlongBtn, #planeViewOppositeBtn'
   );
   inputs.forEach(inp => {
     inp.disabled = !enabled;
@@ -1652,7 +1691,7 @@ function enablePlaneControls(enabled) {
  */
 function disablePlaneControls() {
   const inputs = document.querySelectorAll(
-    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode'
+    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode, #planeViewAlongBtn, #planeViewOppositeBtn'
   );
   inputs.forEach(inp => {
     inp.disabled = true;
