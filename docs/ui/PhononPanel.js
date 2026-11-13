@@ -704,6 +704,7 @@ function captureColorBarState() {
   bar.flipSide = settings.flipSide;
   bar.size = settings.size;
   bar.legend = settings.legend;
+  bar.legendOffset = settings.legendOffset;
   bar.floating = colorBarInstance.isFloating();
   if (bar.floating) bar.floatPos = colorBarInstance.getAnchor();
 }
@@ -858,6 +859,8 @@ function buildArrowSection(host) {
       onScaleChange: (scale) => applyLogScale(scale === 'log'),
       onAutoRange: () => applyAutoRange(),
       onLegendChange: (text) => { bar.legend = text; },
+      legendOffset: bar.legendOffset ?? null,
+      onLegendOffsetChange: (offset) => { bar.legendOffset = offset; },
       isScaleLocked: () => phononState.arrowLengthLog,
     });
     if (bar.floating && bar.floatPos) colorBarInstance.floatAtAnchor(bar.floatPos);

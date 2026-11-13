@@ -154,6 +154,18 @@ const LEGEND_GAP = 5; // tick label's far edge -> near edge of the legend
 // emptied legend went display:none along with its own click handler, and the
 // user had no way back in.
 const LEGEND_PLACEHOLDER = "Click to add legend";
+// Movement before a press on the legend becomes a drag of the legend (rather
+// than a click that starts editing it). Same threshold as ColorBarDrag.js.
+const LEGEND_DRAG_THRESHOLD = 4;
+
+/** A legend offset `{x, y}` in CSS px, or null for "none". */
+function sanitizeLegendOffset(value) {
+  const x = Number(value?.x);
+  const y = Number(value?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) return null;
+  return { x: Math.round(x), y: Math.round(y) };
+}
 
 // Min/Max are positioned like tick labels now (renderMinMax, at frac 0/1
 // on the bar — the same row the numbers renderTicks() computes actually
@@ -194,7 +206,9 @@ export function currentContrastColor() {
  *   onScaleChange?: (scale: string) => void, onAutoRange?: () => void,
  *   onLegendChange?: (legend: string) => void, isScaleLocked?: () => boolean,
  *   isLocked?: () => boolean, onLockChange?: (locked: boolean) => void,
- *   orientation?: string, flipSide?: boolean, size?: number }} [opts]
+ *   orientation?: string, flipSide?: boolean, size?: number,
+ *   legendOffset?: {x: number, y: number} | null,
+ *   onLegendOffsetChange?: (offset: {x: number, y: number} | null) => void }} [opts]
  *   legend: axis title shown alongside the bar (e.g. "Force (eV/Å)"), rotated
  *   to read bottom-to-top when the bar is vertical. Click-to-edit: the raw
  *   text can contain a few HTML tags (<b>, <i>, <sup>, <sub>) and/or LaTeX/
@@ -231,12 +245,21 @@ export function currentContrastColor() {
  *   rebuilds this widget (e.g. on a colormap switch) can carry over the
  *   user's current layout instead of resetting to horizontal/near-side/default
  *   length.
+ *   legendOffset: how far (CSS px, screen x/y) the user dragged the legend
+ *   text away from its default place beside the ticks. A floating bar's
+ *   legend can be dragged on its own; the offset applies only while the bar
+ *   floats (a docked bar has no room to move it in) and is cleared when the
+ *   orientation or side changes, since it was measured for the old layout.
+ *   onLegendOffsetChange: called with the new offset (null = back in its
+ *   default place) after a legend drag or reset; persist it like the legend
+ *   text and pass it back as `legendOffset`. getSettings().legendOffset
+ *   reflects it too.
  */
 export function createColorBar(container, colormap, minValue, maxValue, opts = {}) {
   const {
     floatingId, onLimitsCommit, onScaleChange, onAutoRange, onLegendChange,
     isScaleLocked = () => false, isLocked = () => false, onLockChange,
-    fallbackMin = 0, fallbackMax = 2, legend = '',
+    fallbackMin = 0, fallbackMax = 2, legend = '', onLegendOffsetChange,
   } = opts;
   container.innerHTML = '';
 
@@ -283,6 +306,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   const menuResetSize = createElement("button", {
     type: "button", class: "cv-colorbar-menu-item"
   }, {}, "Reset Size");
+  const menuResetLegend = createElement("button", {
+    type: "button", class: "cv-colorbar-menu-item"
+  }, {}, "Reset Legend Position");
   const menuDock = createElement("button", {
     type: "button", class: "cv-colorbar-menu-item"
   }, {}, "Dock");
@@ -295,6 +321,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   menu.appendChild(menuLogScale);
   menu.appendChild(menuAutoRange);
   menu.appendChild(menuResetSize);
+  menu.appendChild(menuResetLegend);
   menu.appendChild(menuDock);
   menu.appendChild(menuLock);
   menuWrap.appendChild(menu);
@@ -324,6 +351,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // reset unconditionally by refreshLegendContent()/positionLegend() below
   // before this ever paints, so they're not worth setting twice here.
   let currentLegendRaw = legend;
+  let legendOffset = sanitizeLegendOffset(opts.legendOffset);
   const legendLabel = createElement("div", {
     class: "cv-colorbar-legend", spellcheck: "false", title: "Click to edit legend"
   });
@@ -400,8 +428,52 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // just below (barOuter is a whole-widget drag handle whose pointerdown
   // listener preventDefault()s unconditionally, which otherwise steals the
   // click-to-focus before it reaches this contentEditable div).
-  legendLabel.addEventListener("pointerdown", (e) => e.stopPropagation());
-  legendLabel.addEventListener("click", () => beginLegendEdit());
+  //
+  // On a floating bar the legend can also be dragged on its own, away from
+  // (or back toward) the ticks: a press that moves past LEGEND_DRAG_THRESHOLD
+  // moves the legend instead of starting an edit. Docked, a press is only
+  // ever a click to edit.
+  /** @type {{ id: number, x: number, y: number, from: {x: number, y: number}, moved: boolean } | null} */
+  let legendDrag = null;
+  let suppressLegendClick = false;
+  legendLabel.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    if (legendEditing || !dragCtl?.isFloating() || isLocked()) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    legendDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: legendOffset ?? { x: 0, y: 0 }, moved: false };
+    try { legendLabel.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
+  });
+  legendLabel.addEventListener("pointermove", (e) => {
+    if (!legendDrag || e.pointerId !== legendDrag.id) return;
+    const dx = e.clientX - legendDrag.x;
+    const dy = e.clientY - legendDrag.y;
+    if (!legendDrag.moved && Math.hypot(dx, dy) < LEGEND_DRAG_THRESHOLD) return;
+    if (!legendDrag.moved) {
+      legendDrag.moved = true;
+      legendLabel.classList.add("cv-colorbar-legend-dragging");
+    }
+    e.preventDefault();
+    legendOffset = { x: legendDrag.from.x + dx, y: legendDrag.from.y + dy };
+    positionLegend();
+    positionResizeHandle();
+  });
+  const endLegendDrag = (e) => {
+    if (!legendDrag || e.pointerId !== legendDrag.id) return;
+    const { moved } = legendDrag;
+    legendDrag = null;
+    try { legendLabel.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    if (!moved) return;
+    legendLabel.classList.remove("cv-colorbar-legend-dragging");
+    // The click that follows this pointerup must not open the editor.
+    suppressLegendClick = e.type === 'pointerup';
+    setLegendOffset(legendOffset);
+  };
+  legendLabel.addEventListener("pointerup", endLegendDrag);
+  legendLabel.addEventListener("pointercancel", endLegendDrag);
+  legendLabel.addEventListener("click", () => {
+    if (suppressLegendClick) { suppressLegendClick = false; return; }
+    beginLegendEdit();
+  });
   legendLabel.addEventListener("blur", () => finishLegendEdit(true));
   legendLabel.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); legendLabel.blur(); }
@@ -550,8 +622,28 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // (never docked, never hidden mid-expand), and tickLabelSpanV() above
   // measures via canvas rather than offsetWidth specifically to sidestep
   // this, so it doesn't have the same constraint.
+  // The user's legend drag (floating only), as a leading translate: first in
+  // the transform list, it moves the legend in screen x/y whatever rotation
+  // follows.
+  function legendOffsetTransform() {
+    if (!legendOffset || !dragCtl?.isFloating()) return "";
+    return `translate(${legendOffset.x}px, ${legendOffset.y}px) `;
+  }
+
+  /** Commit a new legend offset (null = default place) and tell the caller. */
+  function setLegendOffset(next) {
+    legendOffset = sanitizeLegendOffset(next);
+    positionLegend();
+    positionResizeHandle();
+    relayoutFloating();
+    onLegendOffsetChange?.(legendOffset);
+  }
+
   function positionLegend() {
     legendLabel.style.fontSize = `${scaledFont(LEGEND_BASE_FONT, DOCKED_LEGEND_FONT)}px`;
+    legendLabel.title = dragCtl?.isFloating()
+      ? "Click to edit legend, drag to move it"
+      : "Click to edit legend";
     const horizontal = orientation === 'horizontal';
     // TICK_LABEL_SPAN_V is a fallback approximation of the tick labels'
     // rendered WIDTH in vertical mode (they sit beside the bar, not below
@@ -576,7 +668,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       legendLabel.style.right = "";
       legendLabel.style.top = flipSide ? "" : offset;
       legendLabel.style.bottom = flipSide ? offset : "";
-      legendLabel.style.transform = "translateX(-50%)";
+      legendLabel.style.transform = `${legendOffsetTransform()}translateX(-50%)`;
       legendLabel.style.transformOrigin = "";
     } else {
       legendLabel.style.top = "50%";
@@ -605,9 +697,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       // actual center, not some other point, to land on the vertically-
       // centered `top: 50%` anchor after rotation).
       legendLabel.style.transformOrigin = "";
-      legendLabel.style.transform = flipSide
+      legendLabel.style.transform = legendOffsetTransform() + (flipSide
         ? "translateX(50%) translateY(-50%) rotate(-90deg)"
-        : "translateX(-50%) translateY(-50%) rotate(-90deg)";
+        : "translateX(-50%) translateY(-50%) rotate(-90deg)");
     }
   }
 
@@ -946,7 +1038,16 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   minInput.addEventListener("pointerdown", (e) => e.stopPropagation());
   maxInput.addEventListener("pointerdown", (e) => e.stopPropagation());
 
+  // A legend offset was measured against the old layout; in another
+  // orientation or on the other side it would point somewhere arbitrary.
+  function clearLegendOffsetForRelayout() {
+    if (!legendOffset) return;
+    legendOffset = null;
+    onLegendOffsetChange?.(null);
+  }
+
   function setOrientation(next) {
+    if (next !== orientation) clearLegendOffsetForRelayout();
     orientation = next;
     applyLayout();
     render(currentColormap);
@@ -982,6 +1083,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     menuLogScale.title = scaleLocked ? '"log length" requires Log Scale — turn it off first to change this' : '';
     menuAutoRange.style.display = onAutoRange ? '' : 'none';
     menuResetSize.style.display = floating ? '' : 'none';
+    menuResetLegend.style.display = floating && legendOffset ? '' : 'none';
     menuDock.style.display = floating ? '' : 'none';
     menuLock.style.display = floating ? '' : 'none';
     menuLock.textContent = isLocked() ? 'Unlock' : 'Lock';
@@ -1030,6 +1132,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   menuFlip.addEventListener("click", (e) => {
     e.stopPropagation();
     flipSide = !flipSide;
+    clearLegendOffsetForRelayout();
     applyLayout();
     render(currentColormap);
     relayoutFloating();
@@ -1058,6 +1161,11 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // every currently-showing bar resets together, not just this one.
     general.colorBarSize = DEFAULT_BAR_LENGTH;
     for (const bar of listActiveColorBars()) bar.instance.setSize?.(DEFAULT_BAR_LENGTH);
+    closeMenu();
+  });
+  menuResetLegend.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setLegendOffset(null);
     closeMenu();
   });
   menuDock.addEventListener("click", (e) => {
@@ -1246,6 +1354,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // canvas) without reaching into the widget's private closures.
     getSettings: () => ({
       orientation, flipSide, legend: currentLegendRaw,
+      legendOffset: legendOffset ? { ...legendOffset } : null,
       colormap: currentColormap,
       scale: currentScale,
       min: parseFloat(minInput.value),

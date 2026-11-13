@@ -83,6 +83,7 @@ function serializePlanes(structure) {
     // The color bar writes its default legend (the field's name) back onto
     // the plane; only a user-edited legend is worth storing.
     if (p.legendText != null && p.legendText !== fieldLabel) out.legendText = p.legendText;
+    if (p.legendOffset) out.legendOffset = { x: p.legendOffset.x, y: p.legendOffset.y };
     return out;
   });
 }
@@ -844,6 +845,7 @@ function refreshPlaneColorBar() {
     general.colorBarSize = settings.size;
     if (planesColorBarOwnerPlane) {
       planesColorBarOwnerPlane.legendText = settings.legend;
+      planesColorBarOwnerPlane.legendOffset = settings.legendOffset;
     }
     general.planeColorBarFloating = planesColorBarInstance.isFloating();
     if (general.planeColorBarFloating) {
@@ -875,6 +877,7 @@ function refreshPlaneColorBar() {
     fallbackMin: minValue,
     fallbackMax: maxValue,
     legend: plane.legendText ?? (plane.field.label || plane.fieldLabel || 'Field'),
+    legendOffset: plane.legendOffset ?? null,
     scale: plane.colormapScale || 'linear',
     orientation: general.planeColorBarOrientation,
     flipSide: general.planeColorBarFlipSide,
@@ -900,6 +903,10 @@ function refreshPlaneColorBar() {
     },
     onLegendChange: (legendText) => {
       plane.legendText = legendText;
+      if (getSelectedStructure()?.planes?.includes(plane)) persistPlanes();
+    },
+    onLegendOffsetChange: (offset) => {
+      plane.legendOffset = offset;
       if (getSelectedStructure()?.planes?.includes(plane)) persistPlanes();
     },
   });
