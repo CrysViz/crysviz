@@ -148,9 +148,22 @@ export class FieldCatalog {
     this.quantity = undefined;
     /** @type {FieldCatalogNode | null} lazily created "Derived" group */
     this._derivedGroup = null;
+    // Set by combine(): the per-file groups and what each part contributed,
+    // so combining a combined catalog again extends it rather than nesting.
+    /** @type {FieldCatalogNode[] | null} */
+    this._fileGroups = null;
+    /** @type {{value: number}[]} */
+    this._quantityRefs = [];
+    /** @type {string[]} */
+    this._sources = [];
+    /** @type {string[]} */
+    this._summaries = [];
     /** @type {Set<() => void>} redraw callbacks (the widget subscribes) */
     this._listeners = new Set();
   }
+
+  /** Whether this catalog spans several files (see combine()). */
+  get combined() { return this._fileGroups !== null; }
 
   /** @param {() => void} listener @returns {() => void} unsubscribe */
   subscribe(listener) {
@@ -251,6 +264,101 @@ export class FieldCatalog {
     const removed = prune(this.nodes);
     if (removed) this.notify();
     return removed;
+  }
+
+  /**
+   * One catalog over several files' catalogs, each under its own top-level
+   * group — how a WAVECAR is added to a structure that already holds a
+   * CHGCAR/cube field instead of replacing it.
+   *
+   * The parts' nodes are adopted, not copied, so their lazy loaders and the
+   * already-realised fields stay live; their ids are prefixed with the group
+   * id because two files' schemes collide (`field:0`, `wf:1:1:1`). A part that
+   * is itself combined contributes its file groups as they are, so attaching a
+   * third file does not nest. A part's existing "Derived" group is kept at the
+   * top level and becomes the combined catalog's, so derived fields built so
+   * far survive and later ones join them. With several wavefunction parts the
+   * Quantity dropdown drives all of them; `wavefunction` is the last one.
+   * A part's own `notify()` (a WAVECAR eviction) is forwarded.
+   *
+   * @param {{catalog: FieldCatalog, label: string}[]} parts
+   * @returns {FieldCatalog}
+   */
+  static combine(parts) {
+    const fileGroups = [];
+    const derivedGroups = [];
+    /** @type {{value: number}[]} */
+    const quantityRefs = [];
+    const sources = [];
+    const summaries = [];
+    let wavefunction = null;
+
+    for (const { catalog, label } of parts) {
+      if (catalog.wavefunction) wavefunction = catalog.wavefunction;
+      if (catalog._derivedGroup) derivedGroups.push(catalog._derivedGroup);
+      const own = catalog.nodes.filter((node) => node !== catalog._derivedGroup);
+      if (catalog._fileGroups) {
+        fileGroups.push(...catalog._fileGroups);
+        quantityRefs.push(...catalog._quantityRefs);
+        sources.push(...catalog._sources);
+        summaries.push(...catalog._summaries);
+        continue;
+      }
+      const id = `file:${fileGroups.length}`;
+      for (const top of own) for (const node of top.walk()) node.id = `${id}/${node.id}`;
+      fileGroups.push(new FieldCatalogNode({
+        id,
+        label,
+        kind: NodeKind.GROUP,
+        collapsed: false,
+        children: own,
+      }));
+      if (catalog.quantityRef) quantityRefs.push(catalog.quantityRef);
+      sources.push(catalog.source);
+      if (catalog.summary) summaries.push(catalog.summary);
+    }
+
+    // Keep the file groups' ids unique if a combined part was folded in after
+    // a plain one (its groups were numbered from 0 in their own catalog).
+    fileGroups.forEach((group, index) => {
+      const id = `file:${index}`;
+      if (group.id === id) return;
+      const old = group.id;
+      for (const node of group.walk()) node.id = id + node.id.slice(old.length);
+    });
+
+    let derivedGroup = derivedGroups[0] || null;
+    if (derivedGroup) {
+      for (const extra of derivedGroups.slice(1)) derivedGroup.children.push(...extra.children);
+    }
+
+    const combined = new FieldCatalog({
+      source: sources.join(' + '),
+      nodes: derivedGroup ? [...fileGroups, derivedGroup] : [...fileGroups],
+      hierarchical: true,
+      summary: summaries.join('; '),
+    });
+    combined._derivedGroup = derivedGroup;
+    combined._fileGroups = fileGroups;
+    combined._quantityRefs = quantityRefs;
+    combined._sources = sources;
+    combined._summaries = summaries;
+
+    if (wavefunction && quantityRefs.length) {
+      combined.wavefunction = wavefunction;
+      combined.quantityRef = quantityRefs[quantityRefs.length - 1];
+      Object.defineProperty(combined, 'quantity', {
+        get: () => combined.quantityRef.value,
+        set: (value) => {
+          for (const ref of quantityRefs) ref.value = value;
+          combined.notify();
+        },
+        enumerable: true,
+      });
+    }
+
+    for (const { catalog } of parts) catalog.subscribe(() => combined.notify());
+    return combined;
   }
 
   /**

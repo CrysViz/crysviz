@@ -13,6 +13,10 @@ import { openAboutPanel } from './AboutPanel.js';
 //   Shift+Alt+<key>           Everything else: opening a "window" panel
 //                             (Files, Trajectory, Settings, ...) — the least
 //                             frequent action, so it gets the clunkiest combo.
+//   <key> over the structure  Plain letters, only while the mouse is over the
+//                             3D view: lock mouse rotation to an axis
+//                             (ui/RotationLock.js). Scoped to the view so a
+//                             bare letter never does anything elsewhere.
 //
 // Space is not a real modifier as far as the browser is concerned (no
 // event.spaceKey the way there's event.shiftKey) — SPACE_HELD below is
@@ -64,6 +68,7 @@ import { getPanel, openPanel } from './panels/PanelManager.js';
 import { selectAdjacentStructure, selectAdjacentStep } from './FileBrowswerPanel.js';
 import { setStructurePanelOpen } from './StructureInfoPanel/General.js';
 import { setMeasureMode } from './MeasurementToolbar.js';
+import { initRotationLock, isPointerOverScene, setRotationLock } from './RotationLock.js';
 
 function isEditableTarget(el) {
   if (!el) return false;
@@ -261,7 +266,8 @@ function clickButton(selector, panelId) {
 //
 // One flat list. Each command's `default` binding is {code|key|codes, shift,
 // space, alt} (see the file header for why Y/Z use `key` and "+" uses
-// `codes`). `tier` is a display-only label (which of the four modifier
+// `codes`). `scene: true` commands only fire while the mouse is over the 3D
+// view, whatever they are bound to. `tier` is a display-only label (which of the four modifier
 // combos a command's DEFAULT belongs to); `group` further subdivides a
 // tier's column in the help/editor UI (e.g. Shift's column has Camera,
 // Measuring, Navigation, Other groups). The help UI renders commands in the
@@ -279,6 +285,11 @@ const TIER = {
   SHIFT_ALT: { shift: true, space: false, alt: true, label: 'Shift+Alt' },
 };
 
+// Plain keys (no modifier) for the `scene: true` commands. Not a TIER of its
+// own: those commands are camera controls, so the help lists them in the
+// Shift column under the Camera group rather than in a column of their own.
+const PLAIN = { shift: false, space: false, alt: false };
+
 function bind(tier, extra) {
   return { shift: tier.shift, space: tier.space, alt: tier.alt, ...extra };
 }
@@ -292,6 +303,23 @@ const COMMANDS = [
   { id: 'view-b', label: 'View lattice b', tier: 'SHIFT', group: 'Camera', control: 'viewB', action: () => clickButton('#viewB'), default: bind(TIER.SHIFT, { code: 'KeyB' }) },
   { id: 'view-c', label: 'View lattice c', tier: 'SHIFT', group: 'Camera', control: 'viewC', action: () => clickButton('#viewC'), default: bind(TIER.SHIFT, { code: 'KeyC' }) },
   { id: 'reset-view', label: 'Reset camera view', tier: 'SHIFT', group: 'Camera', control: 'resetView', action: () => clickButton('#resetView'), default: bind(TIER.SHIFT, { code: 'KeyR' }) },
+  // Rotation lock (ui/RotationLock.js): plain keys, only with the mouse over
+  // the 3D view. Y/Z by character, like Shift+Y/Z above (see the file header).
+  { id: 'lock-rotate-x', label: 'Rotate about X only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('x'), default: bind(PLAIN, { code: 'KeyX' }) },
+  { id: 'lock-rotate-y', label: 'Rotate about Y only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('y'), default: bind(PLAIN, { key: 'y' }) },
+  { id: 'lock-rotate-z', label: 'Rotate about Z only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('z'), default: bind(PLAIN, { key: 'z' }) },
+  { id: 'lock-rotate-a', label: 'Rotate about a only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('a'), default: bind(PLAIN, { code: 'KeyA' }) },
+  { id: 'lock-rotate-b', label: 'Rotate about b only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('b'), default: bind(PLAIN, { code: 'KeyB' }) },
+  { id: 'lock-rotate-c', label: 'Rotate about c only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('c'), default: bind(PLAIN, { code: 'KeyC' }) },
+  // Space+X/Y/Z: the screen axes as they are when pressed (x right, y up,
+  // z out of the screen). Space, not Ctrl+Shift: Ctrl+Shift+Z/Y/X are redo,
+  // Firefox's Downloads (Linux) and text direction; nor Alt: on a Mac
+  // Option+Y/Z types other characters, which the character match for Y/Z
+  // would miss. Space+X/Y/Z is used by nothing else.
+  { id: 'lock-rotate-screen-x', label: 'Rotate about screen x', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('screen-x'), default: bind(TIER.SPACE, { code: 'KeyX' }) },
+  { id: 'lock-rotate-screen-y', label: 'Rotate about screen y', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('screen-y'), default: bind(TIER.SPACE, { key: 'y' }) },
+  { id: 'lock-rotate-screen-z', label: 'Rotate about screen z', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('screen-z'), default: bind(TIER.SPACE, { key: 'z' }) },
+  { id: 'lock-rotate-free', label: 'Free rotation', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock(null), default: bind(PLAIN, { code: 'KeyR' }) },
   { id: 'next-structure', label: 'Next structure', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStructure(1), default: bind(TIER.SHIFT, { code: 'ArrowUp' }) },
   { id: 'prev-structure', label: 'Previous structure', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStructure(-1), default: bind(TIER.SHIFT, { code: 'ArrowDown' }) },
   { id: 'next-step', label: 'Next step', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStep(1), default: bind(TIER.SHIFT, { code: 'ArrowRight' }) },
@@ -337,6 +365,7 @@ const COMMANDS = [
   { id: 'panel-landscape', label: 'Energy Landscape', tier: 'SHIFT_ALT', group: 'Windows', panel: 'landscape', action: () => focusPanel('landscape'), default: bind(TIER.SHIFT_ALT, { code: 'KeyQ' }) },
   { id: 'panel-custom-settings', label: 'Custom User Settings', tier: 'SHIFT_ALT', group: 'Windows', panel: 'customSettings', action: () => focusPanel('customSettings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyJ' }) },
   { id: 'panel-settings', label: 'Settings', tier: 'SHIFT_ALT', group: 'Windows', panel: 'settings', action: () => focusPanel('settings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyG' }) },
+
 ];
 
 // ---- user overrides (editable bindings) ------------------------------------
@@ -442,6 +471,7 @@ function bindingKeyHtml(binding) {
 export function initKeyboardShortcuts() {
   loadOverrides();
   initSpaceTracking();
+  initRotationLock();
   addHelpTriggerButton();
 
   window.addEventListener('keydown', (event) => {
@@ -452,6 +482,7 @@ export function initKeyboardShortcuts() {
     if (recordingCommand) return; // the help modal's rebind capture handles this keydown instead
 
     for (const cmd of COMMANDS) {
+      if (cmd.scene && !isPointerOverScene()) continue;
       const binding = activeBinding(cmd);
       if (binding && bindingMatches(binding, event, spaceHeld)) {
         event.preventDefault();
@@ -737,7 +768,7 @@ function buildHelpModal() {
         <h3 id="shortcutsHelpTitle">Keyboard Shortcuts</h3>
         <button type="button" id="shortcutsHelpInfoToggle" class="shortcuts-help-info-btn" aria-expanded="false" aria-controls="shortcutsHelpNote" title="About these shortcuts">i</button>
       </div>
-      <p class="shortcuts-help-note" id="shortcutsHelpNote" hidden>Click any shortcut to rebind it — press the new key combo, or Escape to cancel. A combo already used elsewhere is rejected, not reassigned; use × to clear a shortcut entirely. Space is held like a modifier (not a real one the browser reports, so it's tracked manually). Keys match the physical key position on US, German and Swedish keyboards, except Y/Z (character-matched — German swaps their physical position) and "+" (matches both the US Equal key and the German/Nordic dedicated + key). Your customized bindings are saved automatically and included in the Custom User Settings panel's combined settings JSON, which also has a Reset to Defaults button.</p>
+      <p class="shortcuts-help-note" id="shortcutsHelpNote" hidden>Click any shortcut to rebind it — press the new key combo, or Escape to cancel. A combo already used elsewhere is rejected, not reassigned; use × to clear a shortcut entirely. Space is held like a modifier (not a real one the browser reports, so it's tracked manually). The "Camera · mouse over structure" keys take no modifier and only work while the mouse is over the 3D view: X/Y/Z or A/B/C restrict mouse rotation to that world or lattice axis, Space+X/Y/Z to the screen axis as it is when pressed (x right, y up, z out of the screen), and R frees it again. Keys match the physical key position on US, German and Swedish keyboards, except Y/Z (character-matched — German swaps their physical position) and "+" (matches both the US Equal key and the German/Nordic dedicated + key). Your customized bindings are saved automatically and included in the Custom User Settings panel's combined settings JSON, which also has a Reset to Defaults button.</p>
       <div class="shortcuts-help-columns">${columnsHtml()}</div>
       <div class="paste-modal-actions shortcuts-help-actions">
         <button type="button" id="shortcutsHelpReset">Reset to Defaults</button>

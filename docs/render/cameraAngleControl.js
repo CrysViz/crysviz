@@ -1,6 +1,7 @@
 import * as THREE from '../external/three/three.module.js';
 import { latticeDirs } from './LatticeModule.js'
 import { app } from '../state/store.js';
+import { requestRender } from './AnimateModule.js';
 
 // Degrees rotated per arrow-button click (a small, repeatable step).
 const STEP_DEG = 5;
@@ -85,6 +86,11 @@ export function applyRotationFromUI(directionDeg, axis) {
   app.camera.position.addScaledVector(cameraPanRight, panX);
   app.camera.position.addScaledVector(cameraPanUp, panY);
   app.camera.updateMatrixWorld(true);
+  // Draw the new view. controls.update() above only fires 'change' (the
+  // on-demand render trigger) when camera.position moved, and a turn about
+  // the axis through the camera (the line of sight: rolling the view) moves
+  // only camera.up — such a drag showed nothing until the mouse was released.
+  requestRender();
 }
 
 

@@ -811,6 +811,26 @@ font-size: var(--fs-xl);
 /* Cut mode sub-section — separated from the plane parameter inputs above by
    the same rule the Plane Parameters / Field sections are separated by, since
    it was reading as just another parameter row. */
+/* Camera-to-plane-normal buttons, under the Show Plane toggle. */
+.planes-view-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3-5);
+  margin-top: var(--sp-2);
+}
+
+.planes-view-label {
+  font-size: var(--fs-base);
+  color: var(--fg-75);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.planes-view-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .planes-cut-section {
   margin-top: var(--sp-3-5);
   padding-top: var(--sp-3-5);

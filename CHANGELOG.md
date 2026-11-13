@@ -1,5 +1,21 @@
 # Changelog
 
+### Unreleased
+
+### Highlights
+
+- Refined camera controls with shortcuts (desktop)
+- Setting view along/opposite plane normal
+- Added resolution control to plane colormaps
+
+### Fixes
+
+- CHGCAR loading made in parallel worker, with loading bar
+- Atoms with default colors being changed to different element, now changes color properly
+- Element change and occupation change made slightly faster
+- WAVECAR load no longer overwrites the field, but appends it
+
+
 ## 0.11.0
 
 ### Highlights

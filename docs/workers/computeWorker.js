@@ -100,6 +100,15 @@ const handlers = {
     const result = await parseOutcarBlob(payload.blob, progress);
     return { result, transfer: [] };
   },
+
+  // Parse a VASP CHGCAR / ELFCAR from its Blob, streamed in chunks like the
+  // OUTCAR above. Only the header text and the grid blocks go back, their
+  // value buffers transferred.
+  chgcarParse: async (payload, progress) => {
+    const { parseChgcarBlob } = await import('../io/chgcarParse.js');
+    const result = await parseChgcarBlob(payload.blob, payload.source, progress);
+    return { result, transfer: result.blocks.map((b) => b.values.buffer) };
+  },
 };
 
 self.onmessage = async (e) => {

@@ -62,8 +62,45 @@ const PLANE_BASE_COLOR = 0x8c8c99;
 const BLOCK_SAMPLE_EPS = 1e-6;
 const BLOCK_MAX_IMAGES_PER_AXIS = 5;
 
-// Resolution of the field colormap texture
+// Vertex-grid density the field colormap is sampled on: segments along the
+// plane's longer in-plane axis (the shorter one scales by the aspect ratio).
 export const DEFAULT_COLORMAP_RESOLUTION = 256;
+// Bounds for a user-set per-axis resolution (Planes panel). Above ~1024² the
+// per-vertex trilinear sampling in updateColorMap gets slow to rebuild.
+export const MIN_COLORMAP_RESOLUTION = 1;
+export const MAX_COLORMAP_RESOLUTION = 1024;
+
+/** Clamp a per-axis colormap resolution to an integer in range, or null. */
+export function sanitizeColormapResolution(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return null;
+  return Math.min(MAX_COLORMAP_RESOLUTION, Math.max(MIN_COLORMAP_RESOLUTION, n));
+}
+
+/**
+ * Segment counts along the plane's u and v axes. `resolution` is either a
+ * number (segments along the longer side, the other derived from `aspect` =
+ * width/height) or `{ u, v }` with explicit per-axis counts; a missing or
+ * invalid axis falls back to the derived count.
+ * @param {number|{u?: number|null, v?: number|null}} resolution
+ * @param {number} aspect
+ * @returns {{ resU: number, resV: number }}
+ */
+export function resolvePlaneResolution(resolution, aspect) {
+  const base = typeof resolution === 'number' && Number.isFinite(resolution)
+    ? resolution : DEFAULT_COLORMAP_RESOLUTION;
+  const safeAspect = Number.isFinite(aspect) && aspect > 0 ? aspect : 1;
+  const autoU = Math.max(1, Math.round(base * Math.min(safeAspect, 1)));
+  const autoV = Math.max(1, Math.round(base * Math.min(1 / safeAspect, 1)));
+  if (resolution && typeof resolution === 'object') {
+    return {
+      resU: sanitizeColormapResolution(resolution.u) ?? autoU,
+      resV: sanitizeColormapResolution(resolution.v) ?? autoV,
+    };
+  }
+  return { resU: autoU, resV: autoV };
+}
 
 // ---------------------------------------------------------------------------
 //  Colormap helpers
@@ -559,9 +596,10 @@ function planePolygon(n, d, cell, bounds = UNIT_BOUNDS) {
  * @param {THREE.Vector3[]} polygon    - convex polygon vertices in Cartesian space
  * @param {THREE.Vector3}   n          - unit plane normal
  * @param {Array}           [cell]     - lattice vectors [a, b, c] for clipping planes
- * @param {number}          [resolution=DEFAULT_COLORMAP_RESOLUTION]
+ * @param {number|{u?: number|null, v?: number|null}} [resolution=DEFAULT_COLORMAP_RESOLUTION]
+ *        see resolvePlaneResolution
  * @param {[number, number][]} [bounds] - per-axis [min, max], fractional, for clipping planes
- * @returns {{ geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes }}
+ * @returns {{ geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes, resU, resV }}
  */
 function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RESOLUTION, bounds = UNIT_BOUNDS) {
   // ── 1. Centroid ───────────────────────────────────────────────────────────
@@ -591,9 +629,7 @@ function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RE
   // ── 4. Build PlaneGeometry centred at the centroid in world space ─────────
   //    PlaneGeometry lies in local XY; the matrix maps:
   //      local X → uAxis,  local Y → vAxis,  local Z → n,  origin → centroid
-  const aspect = width / height;
-  const resU = Math.max(1, Math.round(resolution * Math.min(aspect, 1)));
-  const resV = Math.max(1, Math.round(resolution * Math.min(1 / aspect, 1)));
+  const { resU, resV } = resolvePlaneResolution(resolution, width / height);
   const geometry = new THREE.PlaneGeometry(width, height, resU, resV);
   const matrix = new THREE.Matrix4().makeBasis(uAxis, vAxis, n);
   matrix.setPosition(centroid);
@@ -604,7 +640,7 @@ function buildPolygonGeometry(polygon, n, cell, resolution = DEFAULT_COLORMAP_RE
     ? makeFractionalBoundsClippingPlanes(cell, bounds)
     : [];
 
-  return { geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes };
+  return { geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes, resU, resV };
 }
 
 /**
@@ -678,7 +714,8 @@ export class Plane extends THREE.Group {
    * @param {number}               [opts.d=0]       - plane offset so that n·x = d (Cartesian)
    * @param {Array}                [opts.cell]      - lattice vectors [[ax,ay,az],[bx,by,bz],[cx,cy,cz]]
    *                                                  or array of THREE.Vector3
-   * @param {number}               [opts.resolution=256] - colormap texture resolution
+   * @param {number|{u?: number|null, v?: number|null}} [opts.resolution=256] - colormap
+   *                                                  vertex-grid density (see resolvePlaneResolution)
    * @param {string}               [opts.mode]      - initial vis mode ('None' | 'Field')
   * @param {object}               [opts.field]     - initial field data for 'Field' mode
   * @param {string}               [opts.colormap]  - LUT name for field coloring
@@ -705,8 +742,9 @@ export class Plane extends THREE.Group {
 
     // ── Build geometry ─────────────────────────────────────────────────────
     let geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes;
+    let resU = 1, resV = 1;
     if (polygon.length >= 3) {
-      ({ geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes } =
+      ({ geometry, uAxis, vAxis, centroid, halfU, halfV, clippingPlanes, resU, resV } =
           buildPolygonGeometry(polygon, n, cell, resolution, safeBounds));
     } else {
       // Fallback: make plane outside of cell bounds
@@ -736,6 +774,9 @@ export class Plane extends THREE.Group {
     this._cellVectors    = (cell && cell.length === 3) ? cell.map(toVec3) : null;
 
     this._resolution     = resolution;
+    /** Colormap segments actually used along uAxis / vAxis. */
+    this.resolutionU     = resU;
+    this.resolutionV     = resV;
     this._mode           = null;
     this._field          = null;
     this._colormap       = colormap;

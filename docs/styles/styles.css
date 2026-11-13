@@ -1074,7 +1074,7 @@ body.panel-hidden #axesLegend {
 }
 
 .shortcuts-help-modal {
-  width: min(760px, calc(100vw - 32px));
+  width: min(980px, calc(100vw - 32px));
   max-height: 84dvh;
   display: flex;
   flex-direction: column;
@@ -2007,6 +2007,28 @@ input[type="checkbox"] {
   position: relative;
   border-radius: 0;
   overflow: hidden;
+}
+
+/* "Rotation locked to …" note over the 3D view while a rotation lock
+   (ui/RotationLock.js) is on. Informational only: never takes the pointer. */
+.cv-rotation-lock-badge {
+  position: absolute;
+  top: var(--sp-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-overlay-widget);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--popup-border);
+  border-radius: var(--radius);
+  background: var(--popup-bg);
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.cv-rotation-lock-badge[hidden] {
+  display: none;
 }
 
 #aboutOverlay {

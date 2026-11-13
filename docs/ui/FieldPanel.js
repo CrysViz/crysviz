@@ -12,9 +12,11 @@ import { createFieldCatalogWidget, fieldSelectionInfoDoc } from './FieldCatalogW
 import { createInfoButton } from './InfoPanel.js';
 import { DEFAULT_ISOSURFACE_MATERIAL } from '../model/Isosurface.js';
 import {
-  readStructurePrefs, scheduleStructurePrefSave, registerStructurePrefField, onClearLocalData,
+  readStructurePrefs, saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField,
+  onClearLocalData,
 } from '../state/structurePrefs.js';
 import { getContainerForStructure } from '../state/structures.js';
+import { rebuildPanel } from './panels/PanelManager.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 
@@ -36,6 +38,11 @@ let liveControls = null;
 //                  choice setActiveField makes, i.e. minValue < 0)
 //   fieldMaterial: { positiveColor?, negativeColor?, opacity? } (only keys that
 //                  differ from DEFAULT_ISOSURFACE_MATERIAL)
+//   fieldSelected: { key: "<source>|<label>", node?: "<catalog node id>" }
+//                  the field last picked in the field list. The node id is
+//                  what tells WAVECAR bands apart (their labels repeat across
+//                  k-points); a band that is not expanded yet is loaded again
+//                  when its file is.
 // Saved ONLY from the panel's user-edit handlers below. Fields arrive after
 // the structure (and a WAVECAR band only when picked), so the restore happens
 // when a field is selected (fieldBrowser.setSelectedField) or, for a file that
@@ -55,6 +62,8 @@ const materialRestored = new WeakSet();
  *  since the last flush (a snapshot, not the Field: a Field carries its
  *  whole voxel array and must not be kept alive by this bookkeeping). */
 let editedIsoFields = new WeakMap();
+/** Catalogs whose stored field selection has been looked up once already. */
+const selectionRestored = new WeakSet();
 /** Set while the colour/opacity widgets are moved programmatically. */
 let syncingMaterialWidgets = false;
 
@@ -131,6 +140,65 @@ function persistFieldMaterial() {
   scheduleStructurePrefSave(structure, 'fieldMaterial', collectFieldMaterial);
 }
 
+/** User pick in the field list: remember it for the next load of this file. */
+function persistFieldSelection(field) {
+  const owner = selectedFieldOwner(field);
+  if (!owner) return;
+  const { structure, container, fieldContainer } = owner;
+  fieldPrefsEnabled.add(container);
+  // The user has chosen; a stored selection must not override it later.
+  if (fieldContainer.catalog) selectionRestored.add(fieldContainer.catalog);
+  const entry = { key: fieldPrefKey(fieldContainer, field) };
+  const node = fieldContainer.catalog?.nodeForField?.(field);
+  if (node?.id) entry.node = node.id;
+  saveStructurePref(structure, 'fieldSelected', entry);
+}
+
+/** Make `field` the shown field, as a pick in the list would. */
+function showRestoredField(field) {
+  if (field === fieldBrowser.selectedField) return;
+  if (!fieldBrowser.selectField(field)) return;
+  updateField(field.isoValue || undefined);
+  rebuildPanel('field');
+  requestRender();
+}
+
+/**
+ * Select the field stored for the selected structure, once per catalog: on
+ * the load that brings the structure's fields (the afterSelect restorer
+ * below) and when another field file is attached to it
+ * (render/Render3DFieldModule.js attachFieldCatalog), since a stored WAVECAR
+ * band only exists once its file is back. A stored band that is not expanded
+ * yet is loaded first; it is shown only if nothing else was picked meanwhile.
+ * Never saves.
+ * @param {any} [structure]
+ */
+export function restoreStoredFieldSelection(structure = fileBrowser.selectedStructure) {
+  const fieldContainer = structure?.volumetricFields;
+  const catalog = fieldContainer?.catalog;
+  if (!catalog || structure !== fileBrowser.selectedStructure || fieldBrowser.catalog !== catalog) return;
+  if (selectionRestored.has(catalog)) return;
+  const stored = storedFieldRecord(getContainerForStructure(structure))?.fieldSelected;
+  if (!stored || typeof stored !== 'object') return;
+  selectionRestored.add(catalog);
+
+  const node = typeof stored.node === 'string' ? catalog.findNode(stored.node) : null;
+  let field = node?.peek() ?? null;
+  if (!field && typeof stored.key === 'string') {
+    field = loadedFieldsOf(fieldContainer).find((f) => fieldPrefKey(fieldContainer, f) === stored.key) ?? null;
+  }
+  if (field) {
+    showRestoredField(field);
+    return;
+  }
+  if (!node?.loadable) return;
+  const before = fieldBrowser.selectedField;
+  node.ensureLoaded().then((loaded) => {
+    if (fieldBrowser.catalog !== catalog || fieldBrowser.selectedField !== before) return;
+    showRestoredField(loaded);
+  }).catch((error) => console.warn('Field panel: could not load the stored field', error));
+}
+
 function applyStoredIso(fieldContainer, field, rec) {
   if (isoRestored.has(field)) return false;
   isoRestored.add(field);
@@ -198,6 +266,7 @@ export function restoreFieldPrefs(container, structure = fileBrowser.selectedStr
   if (activeChanged && groups.isosurfaceGroup) updateField(groups.activeField.isoValue);
   if (activeChanged) liveControls?.syncToSelection();
   if (activeChanged || materialChanged) requestRender();
+  restoreStoredFieldSelection(structure);
 }
 
 /**
@@ -302,6 +371,9 @@ export const fieldBrowser = {
   catalog: null,
   selectedField: null,
   selectedFieldIndex: 0,
+  /** catalog -> the field last selected in it, so switching rows in the file
+   *  browser and back keeps the field instead of falling back to the first. */
+  _lastSelected: new WeakMap(),
 
   /** @returns {import('../model/Field.js').Field[]} fields that actually hold data */
   get availableFields() {
@@ -314,6 +386,7 @@ export const fieldBrowser = {
       const previous = this.selectedField;
       this.selectedFieldIndex = fieldIndex;
       this.selectedField = fields[fieldIndex];
+      if (this.catalog) this._lastSelected.set(this.catalog, this.selectedField);
       this._repin(previous, this.selectedField);
       restoreFieldPrefsOnSelect(this.selectedField); // stored iso/material (issue #18)
       setActiveField(this.selectedField); // Update the active field in the Render3DFieldModule
@@ -365,7 +438,10 @@ export const fieldBrowser = {
     this.catalog = catalog || null;
     this.selectedField = null;
     this.selectedFieldIndex = -1;
-    if (this.availableFields.length > 0) this.setSelectedField(0);
+    const fields = this.availableFields;
+    const last = catalog ? this._lastSelected.get(catalog) : null;
+    const index = last ? fields.indexOf(last) : -1;
+    if (fields.length > 0) this.setSelectedField(index >= 0 ? index : 0);
   },
 
   /**
@@ -436,7 +512,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
 
   container.innerHTML = `
     <div class="field-info">
-      <p><strong>Source:</strong> ${structure.volumetricFields.source}${summary}</p>
+      <p><strong>Source:</strong> ${catalog.combined ? catalog.source : structure.volumetricFields.source}${summary}</p>
     </div>
     ${mismatch ? `
     <div class="field-cell-mismatch">
@@ -534,6 +610,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
       selectedField: fieldBrowser.selectedField,
       onSelect: (field) => {
         if (!fieldBrowser.selectField(field)) return;
+        persistFieldSelection(field);
         controls.syncToSelection();
         updateField(field.isoValue || undefined);
         // Rendering is on demand (render/AnimateModule.js). Picking an
@@ -986,3 +1063,4 @@ export function updateFieldPanel() {
 // reads the whole record (state/structurePrefs.js registry).
 registerStructurePrefField('fieldIso', (container, _value, structure) => restoreFieldPrefs(container, structure));
 registerStructurePrefField('fieldMaterial', (container, _value, structure) => restoreFieldPrefs(container, structure));
+registerStructurePrefField('fieldSelected', (container, _value, structure) => restoreFieldPrefs(container, structure));
