@@ -10,7 +10,7 @@
 import * as THREE from "../external/three/three.module.js";
 
 import { initializeWithPOSCAR } from '../ui/StructureInputModule.js';
-import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";
+import { fieldBrowser, updateFieldPanel, restoreStoredFieldSelection } from "../ui/FieldPanel.js";
 import { app, groups, fileBrowser, general, structureShip } from '../state/store.js';
 import { normalizePeriodicBounds } from './LatticeModule.js';
 import { readCHGCARAsync } from "../io/ReadChgcarModule.js";
@@ -531,6 +531,8 @@ export function attachFieldCatalog(structure, catalog, { fileName, source, proxy
     if (previousSelection && previousSelection !== fieldBrowser.selectedField) {
       fieldBrowser.selectField(previousSelection);
     }
+    // A band picked before a reload is back with its file.
+    restoreStoredFieldSelection(structure);
     return existing;
   }
 
@@ -544,6 +546,7 @@ export function attachFieldCatalog(structure, catalog, { fileName, source, proxy
   container.cellMismatch = cellMismatch;
   structure.volumetricFields = container;
   fieldBrowser.setCatalog(catalog);
+  restoreStoredFieldSelection(structure);
   return container;
 }
 
