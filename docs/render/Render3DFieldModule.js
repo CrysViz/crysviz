@@ -498,6 +498,11 @@ function promptForStructureFile() {
   });
 }
 
+/** The field lists changed (planes re-read them; see ui/PlanesPanel.js). */
+function notifyFieldsChanged() {
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('crysviz:fields-changed'));
+}
+
 /**
  * Put a lazily-loaded field catalog (a WAVECAR's) on a structure and point the
  * field browser at it.
@@ -533,6 +538,7 @@ export function attachFieldCatalog(structure, catalog, { fileName, source, proxy
     }
     // A band picked before a reload is back with its file.
     restoreStoredFieldSelection(structure);
+    notifyFieldsChanged();
     return existing;
   }
 
@@ -547,6 +553,7 @@ export function attachFieldCatalog(structure, catalog, { fileName, source, proxy
   structure.volumetricFields = container;
   fieldBrowser.setCatalog(catalog);
   restoreStoredFieldSelection(structure);
+  notifyFieldsChanged();
   return container;
 }
 

@@ -43,6 +43,9 @@ export class FieldCatalogNode {
    * @param {import('./Field.js').Field} [init.field] for an already-loaded leaf
    * @param {(() => Promise<import('./Field.js').Field>)} [init.load] for a lazy leaf
    * @param {(() => import('./Field.js').Field | null)} [init.peek] cheap "is it loaded?"
+   * @param {(() => import('./Field.js').Field[])} [init.peekAll] every field this
+   *   leaf currently holds, when it can hold more than the one `peek` sees (a
+   *   WAVECAR band expanded under several quantities)
    * @param {boolean} [init.collapsed]
    * @param {(() => boolean)} [init.available] whether the entry is offered at all
    *   right now — see the `available` accessor
@@ -58,6 +61,7 @@ export class FieldCatalogNode {
     this._field = init.field || null;
     this._load = init.load || null;
     this._peek = init.peek || null;
+    this._peekAll = init.peekAll || null;
     this._available = init.available || null;
     /** @type {Promise<import('./Field.js').Field> | null} in-flight load, so a
      * double click does not start the transform twice */
@@ -85,6 +89,18 @@ export class FieldCatalogNode {
     if (this._field) return this._field;
     if (this._peek) return this._peek();
     return null;
+  }
+
+  /**
+   * Every field this leaf holds right now: for a WAVECAR band, the grids of
+   * each quantity it has been expanded to, not only the current quantity's
+   * (`peek`). Cheap — never triggers a load.
+   * @returns {import('./Field.js').Field[]}
+   */
+  peekAll() {
+    if (this._peekAll) return this._peekAll();
+    const field = this.peek();
+    return field ? [field] : [];
   }
 
   /** Whether this leaf currently has data. */
@@ -197,11 +213,13 @@ export class FieldCatalog {
    * @returns {import('./Field.js').Field[]}
    */
   loadedFields() {
+    // Every quantity a band was expanded to, not just the current one:
+    // switching |psi|^2 to signed |psi| must not take the |psi|^2 grid out of
+    // the planes' field list while it is still loaded.
     const out = [];
     for (const node of this.walk()) {
       if (node.isGroup) continue;
-      const field = node.peek();
-      if (field) out.push(field);
+      for (const field of node.peekAll()) out.push(field);
     }
     return out;
   }
@@ -210,7 +228,7 @@ export class FieldCatalog {
   nodeForField(field) {
     if (!field) return null;
     for (const node of this.walk()) {
-      if (!node.isGroup && node.peek() === field) return node;
+      if (!node.isGroup && node.peekAll().includes(field)) return node;
     }
     return null;
   }
@@ -218,7 +236,7 @@ export class FieldCatalog {
   /** Whether anything at all is loaded (drives the panel's empty state). */
   hasLoadedFields() {
     for (const node of this.walk()) {
-      if (!node.isGroup && node.peek()) return true;
+      if (!node.isGroup && node.peekAll().length) return true;
     }
     return false;
   }
@@ -420,6 +438,20 @@ export class FieldCatalog {
      * reduction except Im collapses them onto the same grid; `available` puts
      * down × up back in the list exactly when Im is what is being drawn.
      */
+    // A band's grids under every quantity, the current one first.
+    const QUANTITIES = Object.values(WaveQuantity);
+    const peekQuantities = (spin, kpt, band, spinor = undefined) => {
+      const out = [];
+      const current = wf.peekField(spin, kpt, band, quantityRef.value, spinor);
+      if (current) out.push(current);
+      for (const q of QUANTITIES) {
+        if (q === quantityRef.value) continue;
+        const f = wf.peekField(spin, kpt, band, q, spinor);
+        if (f) out.push(f);
+      }
+      return out;
+    };
+
     const spinorLeaves = (spin, kpt, band) => SPINOR_COMPONENT_LABELS.map(
       ({ value: spinor, label }) => new FieldCatalogNode({
         id: `wf:${spin}:${kpt}:${band}:${spinor}`,
@@ -433,6 +465,7 @@ export class FieldCatalog {
           : undefined,
         load: () => wf.getField(spin, kpt, band, quantityRef.value, spinor),
         peek: () => wf.peekField(spin, kpt, band, quantityRef.value, spinor),
+        peekAll: () => peekQuantities(spin, kpt, band, spinor),
       }));
 
     const bandNode = (spin, kpt, band) => (wf.noncollinear
@@ -452,6 +485,7 @@ export class FieldCatalog {
         // tree (and without losing which groups the user had expanded).
         load: () => wf.getField(spin, kpt, band, quantityRef.value),
         peek: () => wf.peekField(spin, kpt, band, quantityRef.value),
+        peekAll: () => peekQuantities(spin, kpt, band),
       }));
 
     const kpointNode = (spin, kpt) => {

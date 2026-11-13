@@ -38,11 +38,13 @@ let liveControls = null;
 //                  choice setActiveField makes, i.e. minValue < 0)
 //   fieldMaterial: { positiveColor?, negativeColor?, opacity? } (only keys that
 //                  differ from DEFAULT_ISOSURFACE_MATERIAL)
-//   fieldSelected: { key: "<source>|<label>", node?: "<catalog node id>" }
+//   fieldSelected: { key: "<source>|<label>", node?: "<catalog node id>",
+//                    quantity?: <WaveQuantity> }
 //                  the field last picked in the field list. The node id is
 //                  what tells WAVECAR bands apart (their labels repeat across
-//                  k-points); a band that is not expanded yet is loaded again
-//                  when its file is.
+//                  k-points), the quantity which grid of the band it was; a
+//                  band that is not expanded yet is loaded again when its
+//                  file is.
 // Saved ONLY from the panel's user-edit handlers below. Fields arrive after
 // the structure (and a WAVECAR band only when picked), so the restore happens
 // when a field is selected (fieldBrowser.setSelectedField) or, for a file that
@@ -151,6 +153,7 @@ function persistFieldSelection(field) {
   const entry = { key: fieldPrefKey(fieldContainer, field) };
   const node = fieldContainer.catalog?.nodeForField?.(field);
   if (node?.id) entry.node = node.id;
+  if (Number.isFinite(field.wavefunction?.quantity)) entry.quantity = field.wavefunction.quantity;
   saveStructurePref(structure, 'fieldSelected', entry);
 }
 
@@ -183,6 +186,11 @@ export function restoreStoredFieldSelection(structure = fileBrowser.selectedStru
   selectionRestored.add(catalog);
 
   const node = typeof stored.node === 'string' ? catalog.findNode(stored.node) : null;
+  // A band is reloaded under the quantity it was shown in (the catalog's one
+  // quantity setting follows, as if the user had switched it back).
+  if (node && catalog.quantityRef && Number.isFinite(stored.quantity) && catalog.quantity !== stored.quantity) {
+    catalog.quantity = stored.quantity;
+  }
   let field = node?.peek() ?? null;
   if (!field && typeof stored.key === 'string') {
     field = loadedFieldsOf(fieldContainer).find((f) => fieldPrefKey(fieldContainer, f) === stored.key) ?? null;

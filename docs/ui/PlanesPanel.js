@@ -34,12 +34,6 @@ let atomSelectionUnsubscribe = null;
 // scale instead of a stale previous plane's.
 const PLANE_COLORBAR_FLOATING_ID = 'planeColorBarFloating';
 let planesColorBarInstance = null;
-// Which plane object planesColorBarInstance is currently showing — needed at
-// teardown time (refreshPlaneColorBar) because selectedPlaneIndex may have
-// already moved on to a different plane by then (e.g. the user just picked a
-// new plane), so the freshly-computed `plane` there is the NEW plane, not
-// the one whose legend text is actually being read off the outgoing bar.
-let planesColorBarOwnerPlane = null;
 
 registerColorBarSource('plane', 'Field', () => planesColorBarInstance);
 
@@ -78,6 +72,8 @@ function serializePlanes(structure) {
     };
     const fieldLabel = p.field?.label || p.fieldLabel;
     if (fieldLabel) out.fieldLabel = fieldLabel;
+    const wave = p.field ? waveBandOf(p.field) : (p.fieldWave ?? null);
+    if (wave) out.fieldWave = wave;
     const resolution = planeResolutionSetting(p);
     if (resolution) out.colormapResolution = resolution;
     // The color bar writes its default legend (the field's name) back onto
@@ -112,6 +108,52 @@ function planeResolutionSetting(plane) {
   return (u === null && v === null) ? null : { u, v };
 }
 
+/**
+ * Which WAVECAR band (and quantity) a field is, as plain JSON, or null for a
+ * field that is not a band. Stored with a plane so the band can be expanded
+ * again after a reload: a band is not in memory until someone loads it, so
+ * waiting for its label to show up would leave the plane without a field.
+ */
+function waveBandOf(field) {
+  const w = field?.wavefunction;
+  if (!w) return null;
+  const out = { spin: w.spin, kpt: w.kpt, band: w.band, quantity: w.quantity };
+  if (Number.isFinite(w.spinor) && w.spinor >= 0) out.spinor = w.spinor;
+  return out;
+}
+
+/** Planes whose stored band is being expanded right now. */
+const planeBandLoads = new WeakSet();
+
+/**
+ * Expand the stored band of a pending plane from the selected structure's
+ * WAVECAR, then bind the plane to it. Never saves.
+ */
+function loadPlaneBand(structure, plane) {
+  const wf = fieldBrowser.catalog?.wavefunction;
+  const w = plane.fieldWave;
+  if (!wf || !w || planeBandLoads.has(plane)) return;
+  const valid = (n, max) => Number.isInteger(n) && n >= 1 && n <= max;
+  if (!valid(w.spin, wf.nspin) || !valid(w.kpt, wf.nkpts) || !valid(w.band, wf.nbands)) return;
+  planeBandLoads.add(plane);
+  wf.getField(w.spin, w.kpt, w.band, w.quantity, w.spinor).then((field) => {
+    planeBandLoads.delete(plane);
+    if (!field || plane.field || plane.visualization !== PLANE_VIS_FIELD) return;
+    if (!structure.planes?.includes(plane)) return;
+    plane.field = field;
+    replacePlaneMesh(structure, plane);
+    if (structure === getSelectedStructure()) {
+      renderPlanesTable();
+      if (hasSelectedPlane()) updateFieldSelectionDropdown();
+    }
+    // The band is now loaded: let the field list and the other planes see it.
+    fieldBrowser.catalog?.notify?.();
+  }).catch((error) => {
+    planeBandLoads.delete(plane);
+    console.warn('Planes: could not load the band a plane shows', error);
+  });
+}
+
 /** The loaded field a plane's `fieldLabel` names, or null. */
 function findFieldByLabel(label) {
   if (!label) return null;
@@ -133,20 +175,25 @@ export function resolvePendingPlaneFields() {
   structure.planes.forEach(plane => {
     if (plane.field || plane.visualization !== PLANE_VIS_FIELD) return;
     const field = findFieldByLabel(plane.fieldLabel);
-    if (!field) return;
+    if (!field) {
+      if (plane.fieldWave) loadPlaneBand(structure, plane);
+      return;
+    }
     plane.field = field;
     replacePlaneMesh(structure, plane);
     resolved++;
   });
-  if (resolved) {
-    renderPlanesTable();
-    if (hasSelectedPlane()) updateFieldSelectionDropdown();
-  }
+  if (resolved) renderPlanesTable();
   return resolved;
 }
 
 if (typeof document !== 'undefined') {
-  document.addEventListener('crysviz:fields-changed', () => resolvePendingPlaneFields());
+  document.addEventListener('crysviz:fields-changed', () => {
+    resolvePendingPlaneFields();
+    // The field list changed (a band was loaded, a file attached): the
+    // selected plane's Field dropdown lists what is loaded now.
+    if (hasSelectedPlane()) updateFieldSelectionDropdown();
+  });
 }
 
 /**
@@ -238,7 +285,11 @@ function replacePlaneMesh(structure, planeDef) {
     // density IS the colormap's sampling resolution. Per plane, user-set
     // from the Field & Colormap section; unset axes follow the aspect ratio.
     resolution: planeResolutionSetting(planeDef) ?? DEFAULT_COLORMAP_RESOLUTION,
-    mode: planeDef.visualization || 'None',
+    // A Field plane whose field is not back yet (restored before its file,
+    // or a band still loading) is drawn plain: in Field mode with nothing to
+    // sample it would have no vertex colours at all and render black.
+    mode: (planeDef.visualization === PLANE_VIS_FIELD && !planeDef.field)
+      ? PLANE_VIS_NONE : (planeDef.visualization || PLANE_VIS_NONE),
     field: planeDef.field || null,
     colormap: planeDef.colormap || 'heatmap',
     colormapMin: planeDef.colormapMin,
@@ -843,17 +894,17 @@ function refreshPlaneColorBar() {
     general.planeColorBarOrientation = settings.orientation;
     general.planeColorBarFlipSide = settings.flipSide;
     general.colorBarSize = settings.size;
-    if (planesColorBarOwnerPlane) {
-      planesColorBarOwnerPlane.legendText = settings.legend;
-      planesColorBarOwnerPlane.legendOffset = settings.legendOffset;
-    }
+    // The plane's legend text and offset are not captured here: the bar's
+    // onLegendChange/onLegendOffsetChange already wrote any user edit onto
+    // the plane, and copying the displayed legend back would turn the OLD
+    // field's default name into a "custom" legend right after the field
+    // select cleared it for the new field.
     general.planeColorBarFloating = planesColorBarInstance.isFloating();
     if (general.planeColorBarFloating) {
       general.planeColorBarFloatPos = planesColorBarInstance.getAnchor();
     }
     planesColorBarInstance.remove();
     planesColorBarInstance = null;
-    planesColorBarOwnerPlane = null;
   }
   container.innerHTML = '';
 
@@ -910,7 +961,6 @@ function refreshPlaneColorBar() {
       if (getSelectedStructure()?.planes?.includes(plane)) persistPlanes();
     },
   });
-  planesColorBarOwnerPlane = plane;
 
   if (general.planeColorBarFloating && general.planeColorBarFloatPos) {
     planesColorBarInstance.floatAtAnchor(general.planeColorBarFloatPos);
@@ -1304,6 +1354,7 @@ function setupPlanesEvents(container) {
       const selectedFieldLabel = e.target.value;
       
       plane.fieldLabel = selectedFieldLabel;
+      plane.fieldWave = null; // derived from the bound field when saved
       // A previously-customized legend almost always describes the OLD
       // field ("Charge Density"); leaving it in place after switching to a
       // different field would silently mislabel the new one. Clearing it
