@@ -13,7 +13,8 @@ import { initializeWithPOSCAR } from '../ui/StructureInputModule.js';
 import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";
 import { app, groups, fileBrowser, general, structureShip } from '../state/store.js';
 import { normalizePeriodicBounds } from './LatticeModule.js';
-import { readCHGCAR } from "../io/ReadChgcarModule.js";
+import { readCHGCARAsync } from "../io/ReadChgcarModule.js";
+import { showLoadProgress, hideLoadProgress } from "./LoadProgressModule.js";
 import { buildCubeStructure } from "../io/ReadCubeModule.js";
 import { parseCube } from "../io/cubeParse.js";
 import { countAtomsOutsideGrid } from "../io/cubeLayout.js";
@@ -344,17 +345,41 @@ export async function parseCubeFile(content, fileName, { periodic } = {}) {
   return container;
 }
 
-export function parseCHGCARFile(content, fileName, source = 'CHGCAR') {
-  // Parse the CHGCAR file (volumetric fields are now included in the structure).
+/**
+ * Load a CHGCAR / ELFCAR. The numbers are read in a pool worker
+ * (io/chgcarParse.js), so the view stays responsive; the strip along the top
+ * of the view shows how far through the file it is.
+ *
+ * @param {import('../io/index.js').FileSource | Blob | string} content
+ * @param {string} fileName
+ * @param {string} [source] 'CHGCAR' or 'ELFCAR'
+ */
+export async function parseCHGCARFile(content, fileName, source = 'CHGCAR') {
   // Errors intentionally propagate to loadStructure and the host facade.
-  const result = readCHGCAR(content, fileName, source);
+  showLoadProgress(0);
+  try {
+    // The read is most of the time; the last stretch of the strip is left
+    // for building the scene, which runs here on the main thread.
+    const result = await readCHGCARAsync(content, fileName, source,
+      (percent) => showLoadProgress(0.9 * percent / 100));
+    showLoadProgress(0.95);
+    // Let that frame reach the screen before the main thread is busy again
+    // (with a timeout: a hidden tab runs no animation frames).
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+      setTimeout(resolve, 100);
+    });
 
-  adoptEagerFieldContainer(result.structure_with_field.volumetricFields);
+    adoptEagerFieldContainer(result.structure_with_field.volumetricFields);
 
-  const container = initializeWithPOSCAR(result.structure_with_field, fileName);
-  updateFieldPanel();
-  console.log(`CHGCAR file parsed successfully with ${result.structure_with_field.volumetricFields ? result.structure_with_field.volumetricFields.fields.length : 0} volumetric fields`);
-  return container;
+    const container = initializeWithPOSCAR(result.structure_with_field, fileName);
+    updateFieldPanel();
+    showLoadProgress(1);
+    console.log(`CHGCAR file parsed successfully with ${result.structure_with_field.volumetricFields ? result.structure_with_field.volumetricFields.fields.length : 0} volumetric fields`);
+    return container;
+  } finally {
+    hideLoadProgress();
+  }
 }
 
 //------------------------------------------------------------

@@ -427,8 +427,11 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
 
       case 'chgcar':
       case 'elfcar':
+        // Random-access, like WAVECAR: the FileSource's Blob goes to the parse
+        // worker by reference instead of being read into a string here.
         structureContainer = await parseCHGCARFile(
-          payload, fileName, descriptor.id === 'elfcar' ? 'ELFCAR' : 'CHGCAR');
+          /** @type {import('../io/index.js').FileSource} */ (payload), fileName,
+          descriptor.id === 'elfcar' ? 'ELFCAR' : 'CHGCAR');
         break;
 
       case 'phonopy-modes':
