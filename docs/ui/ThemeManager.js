@@ -36,6 +36,7 @@ import {
   updateLattice, requestRender, setCelOutlineColor, refreshAsuAppearance,
 } from '../render/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
+import { syncSceneTone } from './SceneTone.js';
 
 const THEMES_DIR = './themes/';
 // The mode key is the historical 'theme' key: every value it ever held
@@ -111,6 +112,7 @@ export function applySceneFromCSS() {
     if (swatch) swatch.style.background = '#' + app.scene.background.getHexString();
     // An 'auto' cel outline (hull mode) contrasts against the theme background.
     setCelOutlineColor();
+    syncSceneTone();
   }
   if (latticeColor) {
     general.currentLatticeColor = latticeColor;

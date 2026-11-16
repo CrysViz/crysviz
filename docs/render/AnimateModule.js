@@ -2,7 +2,7 @@
 import * as THREE from '../external/three/three.module.js';
 
 import { app, general} from '../state/store.js';
-import {latticeDirsNorm} from './LatticeModule.js'
+import {latticeDirsNorm, syncLatticeLineWidth} from './LatticeModule.js'
 import { syncGroundPlaneVisibility } from './GroundPlaneModule.js'
 
 import {updateRandomColors, startDisco, stopDisco} from '../ui/DiscoModule.js'
@@ -78,6 +78,8 @@ export function renderFrameNow({ interactive = false } = {}) {
   updateMeasurementLabelVisibility();
   // Large cells reach past the default far plane; keep it behind the scene.
   updateCameraClipRange(app.camera);
+  // The cell lines keep a minimum width on screen at every zoom level.
+  syncLatticeLineWidth(app.camera, app.renderer);
   app.pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera, interactive });
   renderScanlinePass(app.renderer);
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {

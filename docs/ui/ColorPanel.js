@@ -7,7 +7,8 @@ import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, updatePolyhedraColors, setCelHullWidth, setCelHullPolyWidth, setCelOutlineColor } from '../render/index.js'
-import { listPipelines, setActivePipeline, isPngCaptureInProgress, requestRender } from '../render/index.js'
+import { listPipelines, setActivePipeline, isPngCaptureInProgress, requestRender, restyleArrowMaterials, refreshArrowCelOutlines } from '../render/index.js'
+import { createToggleRow } from './ToggleSwitch.js'
 import { updateGroundPlane } from '../render/index.js'
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
@@ -15,7 +16,7 @@ import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_
 import { saveBondStyles } from './SizePrefs.js'
 import { createColorBar } from './ColorBarWidget.js'
 import { registerColorBarSource } from './ColorBarRegistry.js'
-import { computeAutoRange } from '../utils/index.js'
+import { computeAutoRange, logScaleFloor } from '../utils/index.js'
 
 let synchronizeControllerPipelineVisibility = () => {};
 
@@ -385,6 +386,9 @@ export function addColorPanel(target = "colorContainer") {
       SecondReRenderAtoms: hasComparison,
       SecondReRenderBonds: hasComparison,
     });
+    // Force, spin and phonon arrows take the new style too.
+    restyleArrowMaterials();
+    requestRender();
     // Hull outlines are children created at polyhedra build time — rebuild so
     // they appear/disappear with the style (no-op when polyhedra are off).
     if (general.celOutlineMode === "hull") updatePolyhedra();
@@ -793,14 +797,36 @@ export function addColorPanel(target = "colorContainer") {
       SecondReRenderBonds: hasComparison,
     });
     updatePolyhedra(); // add/remove polyhedra hull children
+    refreshArrowCelOutlines(); // and the arrows' (force/spin/phonon) hulls
+    requestRender();
   });
   outlineBlock.appendChild(outlineModeMenu);
 
   const screenControls = createElement("div", {},
     { display: general.celOutlineMode === "screen" ? "block" : "none" });
+  // Force, spin and phonon arrows get the screen-space outline too, unless
+  // switched off: thin arrows coloured by a colour map can read better bare.
+  // Either way an arrow hides the lines behind it. In 3D-hull mode the
+  // arrows get no outline at all (the shells never suited them, and lines
+  // around them clash with the atoms' and bonds' rings), so the switch
+  // lives with the screen-space controls.
+  const { row: outlineArrowsRow } = createToggleRow({
+    id: "celOutlineArrowsToggle",
+    label: "Outline arrows",
+    rowClass: "toggle_row toggle_container cv-outline-arrows-row",
+    checked: general.celOutlineArrows !== false,
+    onChange: (on) => {
+      general.celOutlineArrows = on;
+      refreshArrowCelOutlines();
+      requestRender();
+    },
+  });
+  screenControls.appendChild(outlineArrowsRow);
+
   // Quadratic slider response: most of the travel controls thin widths, where
-  // the differences matter; the top end caps at a moderate max thickness.
-  const CEL_OUTLINE_MAX = 0.1; // world units at slider max
+  // the differences matter; the top end caps at a moderate max thickness
+  // (0.05 Å; the default 0.0125 Å sits at the slider's middle).
+  const CEL_OUTLINE_MAX = 0.05; // world units at slider max
   const outlineSlider = createElement("input", {
     type: "range", id: "celOutlineWidth", min: "0", max: "1", step: "0.01",
     value: String(Math.sqrt(Math.min(general.celOutlineWidth, CEL_OUTLINE_MAX) / CEL_OUTLINE_MAX)),
@@ -931,6 +957,7 @@ export function addColorPanel(target = "colorContainer") {
     fire('celOutlineWidth', Math.sqrt(D.celOutlineWidth / CEL_OUTLINE_MAX), 'input'); // quadratic slider
     fire('celHullWidth', D.celHullWidth, 'input');
     fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
+    fireCheck('celOutlineArrowsToggle', D.celOutlineArrows);
     outlineCustomPicker.setHex(D.celOutlineColor); // fires onChange → state + render
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
     fireCheck('rtTiledToggle', D.rtTiledRender);
@@ -1113,7 +1140,8 @@ export function addColorPanel(target = "colorContainer") {
   function applyAtomLogScale(isLog) {
     general.atomColorScale = isLog ? "log" : "linear";
     if (isLog && general.ForceMin <= 0) {
-      general.ForceMin = 0.01;
+      // Where the log Auto Range would start (a fixed 0.01 sat above small forces).
+      general.ForceMin = logScaleFloor(general.ForceMax, atomForceMagnitudes());
       atomsColorBar?.setRange(general.ForceMin, general.ForceMax);
     }
     atomsLogCheckbox.checked = isLog;
@@ -1130,18 +1158,21 @@ export function addColorPanel(target = "colorContainer") {
   // Shared by atomsAutoRangeBtn and the layout menu's own "Auto Range" item.
   // Recomputes min/max from the structure's actual force magnitudes, padded
   // 20% of the data's own span on each side (computeAutoRange).
+  function atomForceMagnitudes() {
+    return (fileBrowser.selectedStructure?.forces ?? []).map((force) => {
+      if (!force?.vector) return NaN;
+      return Math.sqrt(force.vector[0] ** 2 + force.vector[1] ** 2 + force.vector[2] ** 2);
+    });
+  }
+
   function applyAtomAutoRange() {
     const structure = fileBrowser.selectedStructure;
-    if (!structure?.forces?.length) return;
-    const magnitudes = structure.forces.map((force) => {
-      if (!force?.vector) return NaN;
-      const mag = Math.sqrt(force.vector[0] ** 2 + force.vector[1] ** 2 + force.vector[2] ** 2);
-      return mag;
-    });
-    const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true });
+    const magnitudes = atomForceMagnitudes();
+    if (!magnitudes.length) return;
+    const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true, log: general.atomColorScale === "log" });
     if (!range) return;
     let { min, max } = range;
-    if (general.atomColorScale === "log" && min <= 0) min = 0.01;
+    if (general.atomColorScale === "log" && min <= 0) min = logScaleFloor(max);
     general.ForceMin = min;
     general.ForceMax = max;
     atomsColorBar?.setRange(min, max);
@@ -1336,7 +1367,7 @@ export function addColorPanel(target = "colorContainer") {
   function applyBondLogScale(isLog) {
     general.bondColorScale = isLog ? "log" : "linear";
     if (isLog && general.BondMin <= 0) {
-      general.BondMin = 0.01;
+      general.BondMin = logScaleFloor(general.BondMax, visibleBondLengths());
       bondsColorBar?.setRange(general.BondMin, general.BondMax);
     }
     bondsLogCheckbox.checked = isLog;
@@ -1350,16 +1381,19 @@ export function addColorPanel(target = "colorContainer") {
   // Shared by bondsAutoRangeBtn and the layout menu's own "Auto Range" item.
   // Recomputes min/max from the actual visible bond lengths, padded 20% of
   // the data's own span on each side (computeAutoRange).
-  function applyBondAutoRange() {
-    const bonds = fileBrowser.selectedStructure?.bonds;
-    if (!bonds?.length) return;
-    const lengths = bonds
+  function visibleBondLengths() {
+    return (fileBrowser.selectedStructure?.bonds ?? [])
       .filter((bond) => bond.visibleLen && bond.visibleLen > 1e-3)
       .map((bond) => bond.dist);
-    const range = computeAutoRange(lengths, 0.2, { clampMinAtZero: true });
+  }
+
+  function applyBondAutoRange() {
+    if (!fileBrowser.selectedStructure?.bonds?.length) return;
+    const lengths = visibleBondLengths();
+    const range = computeAutoRange(lengths, 0.2, { clampMinAtZero: true, log: general.bondColorScale === "log" });
     if (!range) return;
     let { min, max } = range;
-    if (general.bondColorScale === "log" && min <= 0) min = 0.01;
+    if (general.bondColorScale === "log" && min <= 0) min = logScaleFloor(max);
     general.BondMin = min;
     general.BondMax = max;
     bondsColorBar?.setRange(min, max);

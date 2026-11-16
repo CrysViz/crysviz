@@ -115,6 +115,7 @@ import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelMan
 import { fracToCart, cartToFractional, normalizeFractional } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
+import { syncSceneTone } from './SceneTone.js';
 import { showShareLink, promptSharePassword } from './ShareLinkModal.js';
 import {
   bytesToB64URL, b64URLToBytes, bytesToBase32, base32ToBytes,
@@ -824,6 +825,7 @@ function applyStyleSettings(style) {
     // Keep the lattice readable against the restored background, like the
     // background picker does (the lattice is built after this runs).
     general.currentLatticeColor = getContrastingBorder(style.background);
+    syncSceneTone();
   }
   // Refresh any existing hull outline materials for the restored color mode /
   // background ('auto' depends on the background just applied above).

@@ -308,7 +308,7 @@ async function loadOutcar(page) {
     JSON.stringify(arrowBase));
   await H.setSlider(page, 'spinLengthSlider', 2.5);
   await H.setSelect(page, 'spinColorMapSelect', 'viridis');
-  await H.setSlider(page, 'forceScaleSlider', 3);
+  await H.setSlider(page, 'forceScaleSlider', Math.log10(3)); // log slider
   await H.setSelect(page, 'forceColorMapSelect', 'jet');
   await page.waitForTimeout(400);
   await page.evaluate(async () => {

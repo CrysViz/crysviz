@@ -101,7 +101,7 @@
   "rtLightIntensity": 1.2,
   "rtAmbient": 0.3,
   "rtSaturation": 1,
-  "celOutlineWidth": 0.025,
+  "celOutlineWidth": 0.0125,
   "celHullWidth": 0.025,
   "celOutlineColorMode": "auto",
   "celOutlineColor": "#000000",

@@ -19,7 +19,7 @@ import { createColorSwatch } from './SwatchColorPicker.js';
 import { isExperimentalMode } from '../debug/experimentalMode.js';
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange } from '../utils/index.js';
+import { computeAutoRange, logScaleFloor } from '../utils/index.js';
 import { isScalarArrowMap } from '../render/PhononArrowModule.js';
 import { runModeMapScan, frozenGeometries, speciesToTypes } from '../phonon/modeMapScan.js';
 import { fitPolynomial, analyzeFit, amplitudeGrid, thzToOmega2 } from '../phonon/modeMapFit.js';
@@ -814,10 +814,10 @@ function buildArrowSection(host) {
 
   function applyAutoRange() {
     const mags = arrowMagnitudes().filter((m) => m > 1e-9);
-    const range = computeAutoRange(mags, 0.2, { clampMinAtZero: true });
+    const range = computeAutoRange(mags, 0.2, { clampMinAtZero: true, log: phononState.arrowColorScale === 'log' });
     if (!range) return;
     let { min, max } = range;
-    if (phononState.arrowColorScale === 'log' && min <= 0) min = Math.max(1e-3, max * 0.01);
+    if (phononState.arrowColorScale === 'log' && min <= 0) min = logScaleFloor(max);
     if (Math.abs(min - phononState.arrowMin) > 1e-12 || Math.abs(max - phononState.arrowMax) > 1e-12) {
       setArrowRange(min, max, { auto: true });
     } else {

@@ -15,7 +15,7 @@ import * as THREE from '../../external/three/three.module.js';
 import { app, general } from '../../state/store.js';
 import { DepthPeelPass } from '../../external/three-depthpeeling/DepthPeelPass.js';
 import { DepthPeelUtils } from '../../external/three-depthpeeling/DepthPeelUtils.js';
-import { renderCelOutlinePass } from '../CelOutlinePass.js';
+import { prepareCelOutlinePass, renderCelOutlinePass } from '../CelOutlinePass.js';
 import { StagedTransparencyPipeline } from './StagedTransparencyPipeline.js';
 
 export class DepthPeelPipeline extends StagedTransparencyPipeline {
@@ -35,6 +35,7 @@ export class DepthPeelPipeline extends StagedTransparencyPipeline {
     this._pass.camera = camera;
     this._pass.setLayerCount(general.depthPeelLayers ?? 15);
     this._syncOverlayVisibility();
+    prepareCelOutlinePass(renderer, scene, camera);
     this._pass.render(renderer);
     renderCelOutlinePass(renderer, scene, camera);
   }

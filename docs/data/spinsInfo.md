@@ -4,6 +4,11 @@ Visualizes per-atom magnetic moment vectors as arrows, scaled by the slider in t
 data comes from an uploaded file that includes it. Only one of Forces, Spins or Field can be
 shown at a time.
 
+An arrow's length is the moment times the length slider, or with **log length** the log of the
+moment (the file's smallest drawn moment 0.3 Å, its largest 2 Å). The colour bar's range only sets
+colours; moments outside it take its first or last colour. Moments under 0.05 μB aren't drawn, and
+the colour bar's range (and **Auto Range**, which it starts at) covers only the moments that are.
+
 The **Spin Reference Frame** and **Visual Rotation** controls live in collapsible sections
 (collapsed by default) since they're only occasionally needed — click a header to expand it.
 

@@ -2,10 +2,11 @@ import { updateForces } from '../render/index.js';
 import { fileBrowser, general } from '../state/store.js';
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange } from '../utils/index.js';
+import { logScaleFloor } from '../utils/index.js';
+import { arrowMagnitudes, autoArrowRange, ensureArrowRanges } from './ArrowRange.js';
 import { addForceHistogramPanel } from './AnalysisPanels/ForceHistogram.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js';
-import { saveArrowStyle, scheduleArrowStyleSave, applyUserArrowRange } from './ArrowStylePrefs.js';
+import { saveArrowStyle, scheduleArrowStyleSave } from './ArrowStylePrefs.js';
 
 const FORCE_COLORBAR_FLOATING_ID = 'forceColorBarFloating';
 
@@ -48,6 +49,11 @@ function captureColorBarState() {
     // every reload even though nothing about its placement changed.
     general.forceColorBarFloatPos = colorBarInstance.getAnchor();
   }
+}
+
+/** Global Scaling as shown next to its slider: 0.25, 3.00, 31.6, 316. */
+function formatScale(v) {
+  return v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v.toFixed(2);
 }
 
 export function removeForcePanel() {
@@ -154,14 +160,17 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   const sliderBottomRow = document.createElement("div");
   sliderBottomRow.className = "cv-force-split-row";
 
+  // Global Scaling is Å of arrow per eV/Å, so it has to reach far: 1 suits
+  // forces of ~1 eV/Å, a relaxed structure's 0.01 eV/Å needs ~100. The
+  // slider is logarithmic (its value is log10 of the factor), 0.1 .. 1000.
   const sliderValue = document.createElement("span");
   sliderValue.className = "cv-force-value";
-  sliderValue.textContent = (general.forceScale ?? 1.0).toFixed(2);
+  sliderValue.textContent = formatScale(general.forceScale ?? 1.0);
   const slider = /** @type {any} */ (document.createElement("input"));
   slider.id = "forceScaleSlider";
   slider.type = "range";
-  slider.min = 0.1; slider.max = 10; slider.step = 0.1;
-  slider.value = general.forceScale ?? 1.0;
+  slider.min = -1; slider.max = 3; slider.step = 0.001;
+  slider.value = Math.log10(general.forceScale ?? 1.0);
   sliderBottomRow.appendChild(sliderValue);
   sliderBottomRow.appendChild(slider);
   sliderWrapper.appendChild(sliderBottomRow);
@@ -316,30 +325,12 @@ export function addForcePanel(target = "cvPanelBody-forces") {
       const haveUsableRange = preserveRange && isFinite(minValue) && isFinite(maxValue) && minValue < maxValue;
 
       if (!haveUsableRange) {
-        minValue = 0;
-        maxValue = 2;
-
-        const structure = fileBrowser.selectedStructure;
-        if (structure?.forces) {
-          const lengths = structure.forces
-            .map(force => {
-              if (!force.vector) return 0;
-              const mag = Math.sqrt(force.vector[0] ** 2 + force.vector[1] ** 2 + force.vector[2] ** 2);
-              return mag * (force.scaling ?? 1.0);
-            })
-            .filter(len => len > 0.05);
-
-          if (lengths.length > 0) {
-            minValue = Math.min(...lengths);
-            maxValue = Math.max(...lengths);
-            minValue = Math.ceil(minValue * 10) / 10;
-            maxValue = Math.ceil(maxValue * 10) / 10;
-            maxValue = Math.ceil(maxValue * 1.05 * 10) / 10;
-            if (minValue >= maxValue) minValue = Math.floor(maxValue * 0.9 * 10) / 10;
-          }
-        }
-
-        if (minValue >= maxValue) { minValue = 0; maxValue = 2; }
+        // What Auto Range gives (ui/ArrowRange.js normally set it when the
+        // structure was entered; this covers a range left unusable).
+        const isLog = general.forceColorScale === "log";
+        const range = autoArrowRange(forceMagnitudes(), isLog);
+        minValue = range?.min ?? (isLog ? 0.01 : 0);
+        maxValue = range?.max ?? 2;
 
         general.forceMin = minValue;
         general.forceMax = maxValue;
@@ -409,11 +400,11 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   function applyLogScale(isLog, save = false) {
     general.forceColorScale = isLog ? "log" : "linear";
     // log10(0) is -Infinity, so a min of 0 (the usual "no forces yet"
-    // default, or just what the auto-computed range rounds down to) breaks
-    // the log color mapping and the tick math — floor it to a small
-    // positive value the moment log scale turns on.
+    // default, or a linear Auto Range) breaks the log color mapping and the
+    // tick math — floor it the moment log scale turns on, where the log
+    // Auto Range would start (a fixed 0.01 sat above all small forces).
     if (isLog && general.forceMin <= 0) {
-      general.forceMin = 0.01;
+      general.forceMin = logScaleFloor(general.forceMax, forceMagnitudes());
       colorBarInstance?.setRange(general.forceMin, general.forceMax);
     }
     logCheckbox.checked = isLog;
@@ -427,19 +418,14 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   // currently on the structure (not whatever was last typed/loaded), padded
   // 20% of the data's own span on each side (computeAutoRange) so values
   // right at the extremes don't read as clipped/off-scale.
+  function forceMagnitudes() {
+    return arrowMagnitudes('force', fileBrowser.selectedStructure?.forces);
+  }
+
   function applyAutoRange(save = false) {
-    const structure = fileBrowser.selectedStructure;
-    if (!structure?.forces?.length) return;
-    const magnitudes = structure.forces.map((force) => {
-      if (!force?.vector) return NaN;
-      const mag = Math.sqrt(force.vector[0] ** 2 + force.vector[1] ** 2 + force.vector[2] ** 2);
-      return mag * (force.scaling ?? 1.0);
-    });
-    const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true });
+    const range = autoArrowRange(forceMagnitudes(), general.forceColorScale === "log");
     if (!range) return;
-    let { min, max } = range;
-    // Same log10(0) = -Infinity guard applyLogScale uses.
-    if (general.forceColorScale === "log" && min <= 0) min = 0.01;
+    const { min, max } = range;
     general.forceMin = min;
     general.forceMax = max;
     colorBarInstance?.setRange(min, max);
@@ -450,10 +436,11 @@ export function addForcePanel(target = "cvPanelBody-forces") {
 
   // --- Event listeners ---
   slider.addEventListener("input", () => {
-    let val = parseFloat(slider.value);
-    if (Math.abs(val - 1) < 0.05) val = 1;
-    slider.value = val;
-    sliderValue.textContent = val.toFixed(2);
+    let p = parseFloat(slider.value);
+    if (Math.abs(p) < 0.02) p = 0; // snap to 1
+    slider.value = p;
+    const val = parseFloat((10 ** p).toPrecision(3));
+    sliderValue.textContent = formatScale(val);
     general.forceScale = val;
     redraw();
     scheduleArrowStyleSave('force', ['scale']);
@@ -577,6 +564,9 @@ export function addForcePanel(target = "cvPanelBody-forces") {
   createSpeciesVisibilityToggles();
   // A range the user set (or restored) for this structure wins over one
   // recomputed from the data (ui/ArrowStylePrefs.js).
-  refreshColorBarVisibility(applyUserArrowRange('force'));
+  // The structure's own range (stored, or its Auto Range) — set when it was
+  // entered; the bar shows it rather than computing another.
+  ensureArrowRanges(fileBrowser.selectedStructure);
+  refreshColorBarVisibility(true);
   updateNoForcesNote();
 }
