@@ -14,6 +14,7 @@
 - Atoms with default colors being changed to different element, now changes color properly
 - Element change and occupation change made slightly faster
 - WAVECAR load no longer overwrites the field, but appends it
+- Isosurfaces of very fine grids (e.g. a 300x300x324 CHGCAR) no longer crash the marching cubes: a field too large for its 4 GB memory is resampled onto a coarser grid first
 
 
 ## 0.11.0

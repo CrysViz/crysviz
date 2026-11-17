@@ -7,6 +7,11 @@ var MarchingCubesModule = await MarchCubes();
 
 // uncomment for Three.js built-in marching cubes
 import * as ThreeMarchingCubes from './JSMarchingCubes.js';
+import { createMarchingCubesInstance, marchingCubesBudget } from './marchingCubesMemory.js';
+
+// Bytes the live WASM instances have preallocated, all in the module's one
+// 4 GiB heap; a new instance is budgeted against what is left.
+let liveWasmBytes = 0;
 
 const MarchingCubesBackend = Object.freeze({
     THREE: 'three',
@@ -77,10 +82,20 @@ class MarchingCubesWrapper {
         //     backend_MC = new GPUMarchCubes.MarchCubes(field, field.nx, field.ny, field.nz);
         //     console.log("Using GPU-based Marching Cubes");
         // } 
+        /** Grid the WASM backend runs on; coarser than the field's when the
+         *  field would not fit the module's memory (model/marchingCubesMemory.js).
+         *  @type {{nx:number, ny:number, nz:number, bytes:number, downsampled:boolean} | null} */
+        this.grid = null;
         if (backend === MarchingCubesBackend.WASM) {
-            backend_MC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
-            const fieldPtr = backend_MC.getField();
-            MarchingCubesModule.HEAPF32.set(field.values, fieldPtr >> 2);
+            const { instance, grid } = createMarchingCubesInstance(
+                MarchingCubesModule, field, marchingCubesBudget(liveWasmBytes));
+            backend_MC = instance;
+            this.grid = grid;
+            liveWasmBytes += grid.bytes;
+            if (grid.downsampled) {
+                console.warn(`Marching cubes: ${field.nx}x${field.ny}x${field.nz} field resampled to `
+                    + `${grid.nx}x${grid.ny}x${grid.nz} to fit WASM memory`);
+            }
             console.log("Using WASM-based Marching Cubes");
         } else if (backend === MarchingCubesBackend.THREE) {
             backend_MC = new ThreeMarchingCubes.MarchingCubes([field.nx, field.ny, field.nz], false, false, field.nx*field.ny*field.nz);
@@ -109,6 +124,9 @@ class MarchingCubesWrapper {
         const backend = this.backend;
         if (backend === MarchingCubesBackend.WASM) {
             this.marchingCubes.updateVertices(isoValue);
+            if (this.marchingCubes.isTruncated()) {
+                console.warn('Marching cubes: vertex buffer full, isosurface truncated');
+            }
         }
         else if (backend === MarchingCubesBackend.THREE) {
             this.marchingCubes.isolation = isoValue;
@@ -151,7 +169,10 @@ class MarchingCubesWrapper {
         // }
         const backend = this.backend;
         if (backend === MarchingCubesBackend.WASM) {
+            if (!this.marchingCubes) return;
             this.marchingCubes.delete();
+            this.marchingCubes = null;
+            liveWasmBytes = Math.max(0, liveWasmBytes - (this.grid?.bytes ?? 0));
         }
         else if (backend === MarchingCubesBackend.THREE) {
             // Three.js built-in marching cubes does not require explicit deletion
@@ -184,7 +205,7 @@ class MarchingCubesWrapper {
             }
 
             const arrayPtr = MarchingCubesModule.mallocFloatArray(primaryArray.length);
-            MarchingCubesModule.HEAPF32.set(primaryArray, arrayPtr >> 2);
+            MarchingCubesModule.HEAPF32.set(primaryArray, arrayPtr >>> 2);
             const permutationPtr = MarchingCubesModule.mallocUIntArray(triangleCount);
 
             MarchingCubesModule.buildTriangleDistancePermutation(arrayPtr, vertexCount, cameraPosition.x, cameraPosition.y, cameraPosition.z, permutationPtr);
@@ -195,7 +216,7 @@ class MarchingCubesWrapper {
                 const itemSize = 3;
 
                 const extraArrayPtr = MarchingCubesModule.mallocFloatArray(array.length);
-                MarchingCubesModule.HEAPF32.set(array, extraArrayPtr >> 2);
+                MarchingCubesModule.HEAPF32.set(array, extraArrayPtr >>> 2);
                 MarchingCubesModule.reorderArrayByPermutation(extraArrayPtr, vertexCount, itemSize, permutationPtr);
                 const sortedExtra = new array.constructor(MarchingCubesModule.HEAPF32.buffer, extraArrayPtr, array.length).slice();
                 array.set(sortedExtra);
