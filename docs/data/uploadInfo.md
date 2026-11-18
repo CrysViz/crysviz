@@ -25,6 +25,8 @@ Currently it is possible to view the following file types:
   labels, the Selection and Polyhedron Inspectors) are written with their error, `2.3456(12) Å`;
   **Show CIF Errors** in the Features window hides them again. The errors are kept in a supercell
   and saved with a `.crysviz` file or a share link.
+  Partially occupied and mixed sites (`_atom_site_occupancy`) are saved with a `.crysviz` file or a
+  share link too: occupancies, oxidation states and per-species colours.
 
 - **CASTEP**:
     - `.cell` input file: structure only (reads `LATTICE_CART`/`LATTICE_ABC` and `POSITIONS_FRAC`/`POSITIONS_ABS`). An AIRSS `buildcell` seed with absolute positions and no lattice loads as a molecule in a centered box.

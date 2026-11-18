@@ -286,8 +286,12 @@
      count + Spin/Force + toggle beside a wide element name has no slack, and
      floored tracks pushed the button and toggle past the panel edge into a
      horizontal scrollbar. With .comp-right allowed to wrap, that case drops
-     the button + toggle (one unit, .comp-actions) under the count instead. */
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+     the button + toggle (one unit, .comp-actions) under the count instead.
+     The right track is floored at that wrapped width (its min-content), so
+     a wide left column — a mixed site's dots and "(Fe,K,Ni,Ta)" — has to
+     wrap instead: with both floors at 0 the left took its one-line width and
+     the button, right-aligned in a 31px track, hung over the label. */
+  grid-template-columns: minmax(0, auto) minmax(min-content, 1fr);
   align-items: center;
   column-gap: var(--sp-2);
   row-gap: var(--sp-2);
@@ -295,6 +299,35 @@
   transition: background-color 0.2s ease;
 }
 .comp-row:hover { background-color: var(--wash-0); } /* was 0.03 — Wave 2.6 */
+/* Smart line breaks for a wide left column: the toggle keeps its own slot,
+   and in the block after it (.comp-body) the label with its caret
+   (.comp-label) moves under the dots — which always stay on one line, six
+   or more of them — and only if it is still too wide does it break after a
+   comma (<wbr> in CompositionRow.js), never inside an element symbol. */
+.comp-row .comp-left { min-width: 0; }
+.comp-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--sp-2);
+  row-gap: 2px;
+  min-width: 0;
+}
+/* The label and its caret flow as text, so a wrapped label ends with the
+   caret right after its last symbol ("Mn,Ni,Ta) ▶"), and balance gives two
+   even lines ("(Co,Fe,K," / "Mn,Ni,Ta)") rather than a lone "Ta)". */
+.comp-label {
+  display: block;
+  min-width: 0;
+  text-wrap: balance;
+}
+.comp-label .comp-expand-icon {
+  display: inline-block;
+  margin-left: var(--sp-2);
+}
+/* More than three species (CompositionRow.js LABEL_UNDER_DOTS_FROM): the
+   label always takes its own line under the dots. */
+.comp-body--stacked .comp-label { flex-basis: 100%; }
 .comp-row-name {
   /* Explicit, scale-respecting size matching Bonds'/Poly's category labels
      (styles.css's global `label` rule) so all three tabs render identically

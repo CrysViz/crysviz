@@ -95,7 +95,7 @@ function captureFields(structure) {
   };
 }
 import * as THREE from '../external/three/three.module.js';
-import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
+import { initializeWithPOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import {
   StructureContainer, TrajectoryContainer, Field, FieldContainer, Force, Spin,
@@ -108,6 +108,7 @@ import { showTrajectoryFrame } from './TrajectoryPanel.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { serializeCifErrors, restoreCifErrors } from '../model/cifErrors.js';
+import { siteSpeciesRecord, restoreSiteSpecies } from '../model/siteSpecies.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
@@ -228,11 +229,15 @@ export function captureState({ includeFrames = false, includeFields = false } = 
         positions: structure.atoms.map(a => [...a.position]),
         forces: structure.forces?.length ? structure.forces : null,
         spins: structure.spins?.length ? structure.spins : null,
+        species: siteSpeciesRecord(structure.atoms.map(a => a.species)),
       }];
     frames = entries.map(frame => ({
       elements: frame.elements,
       lattice: frame.lattice,
       positions: frame.positions,
+      // Mixed / partially occupied sites (model/siteSpecies.js): sparse,
+      // only when the frame has any.
+      ...(frame.species ? { species: frame.species } : {}),
       ...(frame.forces?.length ? { forces: serializeArrows(frame.forces) } : {}),
       ...(frame.spins?.length ? { spins: serializeArrows(frame.spins, true) } : {}),
     }));
@@ -243,6 +248,9 @@ export function captureState({ includeFrames = false, includeFields = false } = 
   // structure, aligned with its atoms (`frames[selectedFrameIndex]` or
   // `structure`). Sparse: only when there are any.
   const cifErrors = serializeCifErrors(structure);
+  // Site occupancies of the viewed structure for the frame-less capture (the
+  // frames carry their own).
+  const viewedSpecies = frames ? null : siteSpeciesRecord(structure.atoms.map(a => a.species));
 
   return {
     version: '2.16',
@@ -257,6 +265,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
         elements: [...structure.elements],
         lattice: structure.lattice.map(r => [...r]),
         positions: structure.atoms.map(a => [...a.position]),
+        ...(viewedSpecies ? { species: viewedSpecies } : {}),
       },
     }),
     colors: {
@@ -904,6 +913,17 @@ function atomKey(element, position) {
   ].join('|');
 }
 
+/** Put the saved site occupancies (model/siteSpecies.js) back on a freshly
+ *  read structure. The record is aligned with the saved atoms; each atom is
+ *  matched by element and position first, so an atom the POSCAR round trip
+ *  moved or reordered is left alone rather than given another site's species. */
+function applySiteSpecies(saved, structure) {
+  if (!saved?.species || !structure?.atoms?.length) return;
+  restoreSiteSpecies(structure.atoms, saved.species, (i) => (
+    Array.isArray(saved.positions?.[i]) && structure.elements[i] === saved.elements?.[i]
+    && atomKey(structure.elements[i], structure.atoms[i].position) === atomKey(saved.elements[i], saved.positions[i])));
+}
+
 /** Put the loaded atoms in the saved order; false when it could not (the
  *  per-atom state that relies on the order is then best left alone). */
 function restoreAtomOrder(savedStructure, loadedStructure) {
@@ -1341,6 +1361,7 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       // then re-attach that frame's force/spin arrows (index-aligned to atoms).
       const structures = frames.map((f, i) => {
         const s = readPOSCAR(buildPOSCAR({ structure: f }), fileName);
+        applySiteSpecies(f, s);
         const ordered = restoreAtomOrder(f, s);
         if (i === selectedFrameIndex) viewedOrdered = ordered;
         applyArrows(f, s);
@@ -1366,7 +1387,11 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       // updateForces/updateSpins in updateStructureFromFrame).
       showTrajectoryFrame(selectedFrameIndex, trajectoryContainer);
     } else {
-      parsePOSCAR(buildPOSCAR({ structure: viewed }), fileName, { restoreStoredPrefs: false });
+      // The occupancies go on before the first render, so the composition,
+      // the wedges and the disorder warnings see the mixed sites from the start.
+      const s = readPOSCAR(buildPOSCAR({ structure: viewed }), fileName);
+      applySiteSpecies(viewed, s);
+      initializeWithPOSCAR(s, fileName, { restoreStoredPrefs: false });
     }
   } catch (e) {
     console.error('Failed to load structure from state:', e);

@@ -80,6 +80,52 @@ const WIDGET = '.comp-legend-widget.cv-colorbar-floating';
     !!site?.sub && site.sub.includes('Ba 50%') && site.sub.includes('K 40%') && site.sub.includes('Va 10%'),
     site?.sub ?? '');
 
+  // ---- three species: every slice on the swatch ----------------------------
+  // The swatch's wedges used to run around the vertical axis, so only the
+  // front half of the sphere faced the camera: a third species sat on the
+  // hidden back and a (Sn, Li, Mg) site read as two colours. Pure red, green
+  // and blue species make each slice countable by its dominant channel.
+  await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const cv = await import('./core/crystal-viewer.js');
+    const s = fileBrowser.selectedStructure;
+    const y = s.atoms.findIndex((a, i) => s.elements[i] === 'Y');
+    s.atoms[y].species = [
+      { element: 'Y', occupancy: 0.5, color: 0xff0000 },
+      { element: 'La', occupancy: 0.3, color: 0x00ff00 },
+      { element: 'Nd', occupancy: 0.2, color: 0x0000ff },
+    ];
+    cv.updateVisualization({ reRenderAtoms: true, reRenderComposition: true });
+    document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+  });
+  await page.waitForTimeout(1200);
+  const threeWay = await page.evaluate((sel) => {
+    const row = [...document.querySelectorAll(`${sel} .comp-legend-row`)]
+      .find((r) => (r.querySelector('.comp-legend-label')?.textContent ?? '').includes('La'));
+    const c = row?.querySelector('canvas');
+    if (!c) return null;
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    const n = { r: 0, g: 0, b: 0, drawn: 0 };
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] < 200) continue;
+      n.drawn++;
+      // Dominant channel, with a margin: tone mapping pulls the lit side of
+      // pure green towards yellow, so a strict "twice the others" test
+      // misses most of a slice that is plainly green on screen.
+      const ch = [d[i], d[i + 1], d[i + 2]];
+      const top = ch.indexOf(Math.max(...ch));
+      const rest = Math.max(...ch.filter((_, k) => k !== top), 8);
+      if (ch[top] > 1.2 * rest) n['rgb'[top]]++;
+    }
+    return { label: row.querySelector('.comp-legend-label').textContent, ...n };
+  }, WIDGET);
+  H.check('a three-species swatch shows all three colours',
+    !!threeWay && threeWay.drawn > 0
+    && threeWay.r / threeWay.drawn > 0.25
+    && threeWay.g / threeWay.drawn > 0.12
+    && threeWay.b / threeWay.drawn > 0.07,
+    JSON.stringify(threeWay));
+
   // ---- editable text -------------------------------------------------------
   // Edits are per-row overrides and must survive the refresh events that
   // rebuild the rows.

@@ -272,3 +272,73 @@ export const WEDGE_FRAGMENT_BODY = `
     }
   }
 `;
+
+// ---- One ordinary sphere (the inspectors' mini view) --------------------------
+// The same camera-facing split as WEDGE_FRAGMENT_BODY above, for a plain Mesh
+// whose wedge data arrives as two uniforms instead of a texel pair: the
+// Selection and Polyhedron Inspectors draw a few separate spheres, and drew a
+// disordered site in its single representative colour.
+
+const SINGLE_WEDGE_FRAGMENT_DECL = `
+  uniform vec4 uWedgeFracs;
+  uniform vec4 uWedgeCols;
+  varying vec3 vWedgeViewCenter;
+  varying vec3 vWedgeViewPos;
+  vec3 wedgeUnpack(float c) {
+    float v = abs(c);
+    float r = floor(v / 65536.0);
+    float g = floor(mod(v, 65536.0) / 256.0);
+    float b = mod(v, 256.0);
+    vec3 srgb = vec3(r, g, b) / 255.0;
+    return mix(
+      pow((srgb + 0.055) / 1.055, vec3(2.4)),
+      srgb / 12.92,
+      step(srgb, vec3(0.04045))
+    );
+  }
+`;
+
+const SINGLE_WEDGE_FRAGMENT_BODY = `
+  {
+    vec3 wd = vWedgeViewPos - vWedgeViewCenter;
+    float wt = (atan(wd.y, wd.x) + 3.14159265) / 6.28318531;
+    float packedSel = uWedgeCols.x;
+    if (wt >= uWedgeFracs.x) packedSel = uWedgeCols.y;
+    if (wt >= uWedgeFracs.y) packedSel = uWedgeCols.z;
+    if (wt >= uWedgeFracs.z) packedSel = uWedgeCols.w;
+    vec3 wedgeCol = wedgeUnpack(packedSel);
+    if (packedSel < 0.0) {
+      float hatch = step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) * 0.14));
+      wedgeCol = mix(wedgeCol, wedgeCol * 2.2 + 0.16, hatch);
+    }
+    diffuseColor.rgb = wedgeCol;
+  }
+`;
+
+/**
+ * Give one ordinary (non-instanced) sphere material the wedge split of
+ * `wedge` (wedgeDataForAtom's result): the pie faces the camera however the
+ * view turns, exactly as on the main view's atoms.
+ *
+ * @param {any} material a MeshPhysicalMaterial / MeshToonMaterial
+ * @param {{fracs: number[], packed: number[]}} wedge
+ */
+export function applySingleMeshWedge(material, wedge) {
+  const fracs = new THREE.Vector4(...wedge.fracs);
+  const cols = new THREE.Vector4(...wedge.packed);
+  const previous = material.onBeforeCompile;
+  const previousKey = material.customProgramCacheKey?.bind(material);
+  material.onBeforeCompile = (shader, renderer) => {
+    previous?.call(material, shader, renderer);
+    shader.uniforms.uWedgeFracs = { value: fracs };
+    shader.uniforms.uWedgeCols = { value: cols };
+    shader.vertexShader = 'varying vec3 vWedgeViewCenter;\nvarying vec3 vWedgeViewPos;\n'
+      + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        vWedgeViewCenter = (modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+        vWedgeViewPos = (modelViewMatrix * vec4(transformed, 1.0)).xyz;`);
+    shader.fragmentShader = SINGLE_WEDGE_FRAGMENT_DECL
+      + shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>' + SINGLE_WEDGE_FRAGMENT_BODY);
+  };
+  material.customProgramCacheKey = () => `${previousKey ? previousKey() : ''}|single-wedge`;
+  material.needsUpdate = true;
+}
