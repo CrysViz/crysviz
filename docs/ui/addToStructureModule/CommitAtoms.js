@@ -16,6 +16,7 @@ import { mergeCoLocatedAtoms, sameSite, SITE_TOLERANCE } from '../../io/cif/site
 import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
 import { createBondLengthControls } from '../BondLengthPanel.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
+import { clearHighlightAtom, clearSelectedAtoms } from '../SelectAndHighlightModule.js';
 
 // Parse a "#rrggbb" string to a numeric color, or undefined (=> element default).
 export function parseColorHexToInt(hex) {
@@ -72,25 +73,43 @@ export function commitAddedAtoms(structure, atoms) {
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: "open" });
 }
 
-// Undo one addAtomsToExistingStructure() addition, looked up by the uuid
-// recorded in structure._sessionAddedAtoms. Returns false (no-op) if that
-// uuid isn't a real atom right now — e.g. it was already removed, or merged
-// into a sibling site by mergeCoLocatedAtoms and no longer has its own
-// entry — so the caller can skip its re-render.
-export function removeSessionAddedAtom(structure, uuid) {
-  const index = structure.atoms.findIndex((a) => a.uuid === uuid);
-  if (index === -1) return false;
-  structure.atoms.splice(index, 1);
-  structure.elements.splice(index, 1);
+// Remove the atoms with these uuids from `structure` (no re-render; see
+// commitRemovedAtoms). Returns how many were removed: 0 when none of them is a
+// real atom right now — e.g. already removed, or merged into a sibling site by
+// mergeCoLocatedAtoms — so the caller can skip its re-render.
+export function removeAtomsByUuid(structure, uuids) {
+  const gone = new Set(uuids);
+  const keep = structure.atoms.map((a) => !gone.has(a.uuid));
+  const removed = keep.filter((k) => !k).length;
+  if (!removed) return 0;
+  structure.atoms = structure.atoms.filter((_, i) => keep[i]);
+  structure.elements = structure.elements.filter((_, i) => keep[i]);
   structure.uniqueElements = [...new Set(structure.elements)];
   structure._hasFractionalOccupancy = undefined;
   if (structure._sessionAddedAtoms) {
-    structure._sessionAddedAtoms = structure._sessionAddedAtoms.filter((e) => e.uuid !== uuid);
+    structure._sessionAddedAtoms = structure._sessionAddedAtoms.filter((e) => !gone.has(e.uuid));
   }
   // Same reasoning as applyStructureEdits below: a Wyckoff lock's
   // orbitGroups store raw atom indices, meaningless once an atom is removed.
   if (structure.symmetry?.mode === 'wyckoff') structure.symmetry = null;
-  return true;
+  return removed;
+}
+
+// Remove atoms and show the result: the Add Atom window's per-atom undo and the
+// host's remove_atoms. The highlight and selection go first: both index the
+// current mesh, and clearing them after the arrays shrink reads past them.
+export function commitRemovedAtoms(structure, uuids) {
+  clearHighlightAtom();
+  clearSelectedAtoms();
+  const removed = removeAtomsByUuid(structure, uuids);
+  if (!removed) return 0;
+  createBondLengthControls();
+  // As the structure editor re-renders a removal (StructureEditorPanel liveApply).
+  updateVisualization({
+    reRenderAtoms: true, reRenderBonds: true, reRenderOther: true, reRenderPolyhedra: true, reRenderComposition: 'open',
+  });
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+  return removed;
 }
 
 // Apply one round of edits from the Modify Structure panel's atom table.

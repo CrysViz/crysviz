@@ -15,11 +15,9 @@
 import { removePanel } from '../panels/PanelManager.js';
 import { createAtomTableEditor } from './AtomTableInput.js';
 import { checkAddedAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
-import { commitAddedAtoms, removeSessionAddedAtom } from './CommitAtoms.js';
+import { commitAddedAtoms, commitRemovedAtoms } from './CommitAtoms.js';
 import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
-import { createBondLengthControls } from '../BondLengthPanel.js';
 import { fileBrowser } from '../../state/store.js';
-import { updateVisualization } from '../../core/crystal-viewer.js';
 import { openEditorPanel } from './floatingPanelAnchor.js';
 import { highlightAtomsIn3D, clearHighlightAtom } from '../SelectAndHighlightModule.js';
 import { invalidElementMessage } from './ElementValidation.js';
@@ -93,19 +91,9 @@ function renderSessionAddedList(container) {
     removeBtn.className = 'btn-mini addstructure-icon-btn addstructure-icon-btn--shrink0';
     removeBtn.addEventListener('click', (e) => {
       e.stopPropagation(); // don't also trigger the row's highlight click
-      // Clear any 3D highlight BEFORE mutating structure.atoms: clearHighlightAtom()
-      // re-reads colors off the CURRENT (still atom-count-matched) mesh/structure
-      // pair, so it must run first. Doing it after removeSessionAddedAtom() reads
-      // structure.atoms against a mesh still built for the old (pre-removal) atom
-      // count/indices and throws - which then aborts the rest of this handler,
-      // silently skipping the actual removal's re-render (the atom looked "stuck").
-      // Any highlight is moot after this anyway - the reRenderAtoms rebuild below
-      // creates a brand new mesh with no highlight state.
-      clearHighlightAtom();
+      // commitRemovedAtoms clears the 3D highlight before the arrays shrink.
       highlightedUuid = null;
-      if (!removeSessionAddedAtom(structure, entry.uuid)) return;
-      createBondLengthControls();
-      updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: "open" });
+      if (!commitRemovedAtoms(structure, [entry.uuid])) return;
       renderSessionAddedList(container);
     });
     row.appendChild(removeBtn);

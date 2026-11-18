@@ -480,6 +480,27 @@ export const COMMAND_HANDLERS = Object.freeze({
     return { total: sites.length, voids: sites.slice(0, limit) };
   },
 
+  async remove_atoms(args) {
+    const input = requireArgs(args, 'remove_atoms');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    const query = await import('./query.js');
+    const resolved = input.selection === 'user' ? { atoms: await query.userSelection() } : input;
+    const indices = query.applyTargets(structure, resolved);
+    if (!indices.length) throw commandError('INVALID_ARGS', 'remove_atoms needs at least one atom');
+    if (indices.length >= structure.atoms.length) throw commandError('INVALID_ARGS', 'remove_atoms cannot remove every atom');
+    // What add_atoms needs to put them back.
+    const removed = indices.sort((p, q) => p - q).map((i) => ({
+      index: i,
+      element: structure.atoms[i].getRepresentativeElement?.() ?? structure.elements[i],
+      position: structure.atoms[i].position.map(round),
+      occupancy: structure.atoms[i].getTotalOccupancy?.() ?? 1,
+    }));
+    const { commitRemovedAtoms } = await import('../ui/addToStructureModule/CommitAtoms.js');
+    commitRemovedAtoms(structure, indices.map((i) => structure.atoms[i].uuid));
+    return { removed, atomCount: structure.atoms.length };
+  },
+
   async add_atoms(args) {
     const input = requireArgs(args, 'add_atoms');
     const structure = getActiveStructure();

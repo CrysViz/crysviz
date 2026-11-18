@@ -162,6 +162,19 @@
       }
     },
     {
+      "name": "remove_atoms",
+      "tier": "write",
+      "description": "Delete atoms from the active structure, as the structure editor does. Give atom indices (from get_state, find or your own script), a find selection id, or selection: \"user\" for what the user has selected. The result lists each removed atom's element, fractional position and occupancy, so add_atoms can put them back (undo). Indices of the atoms after them shift down.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "minItems": 1, "maxItems": 10000 },
+          "selection": { "type": "string", "description": "A find selection id, or \"user\"." }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "add_atoms",
       "tier": "write",
       "description": "Add atoms to the active structure at fractional positions, as the Add Atom window does. Refuses atoms closer than 0.5 Å to another atom unless force is true.",
