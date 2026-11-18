@@ -234,6 +234,59 @@
       }
     },
     {
+      "name": "run_relax",
+      "tier": "write",
+      "description": "Start relaxing the active structure with the Atomistic window's potential (default NEP89), as the Relax button does: atoms (and the cell, unless relaxCell is false) move until every force is below fmax and the pressure is within pressureTolGPa of pressureGPa. Returns a job at once: poll with wait_job. The result names the new relax_ trajectory (its last frame is the relaxed structure; the source row is unchanged), steps, converged, stopped, maxForce, energy and pressure. To compare before and after, export_structure both (select the frames) and diff them in a script.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "fmax": { "type": "number", "exclusiveMinimum": 0, "description": "Force tolerance, eV/Å. Default 0.01." },
+          "maxSteps": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "Default 200." },
+          "relaxCell": { "type": "boolean", "description": "Also relax the cell. Default true." },
+          "pressureGPa": { "type": "number", "description": "Target pressure for the cell, GPa. Default 0." },
+          "pressureTolGPa": { "type": "number", "exclusiveMinimum": 0, "description": "Default 0.2." }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "compute_energy",
+      "tier": "write",
+      "description": "Single-point energy, forces and pressure of the active structure with the Atomistic window's potential, as the window's EFS button does (forces are shown as arrows if Forces are on). Returns a job (it may first load the potential): poll with wait_job. Result: energyEv, energyPerAtomEv, maxForce (eV/Å), pressureGPa.",
+      "args": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "run_eos",
+      "tier": "write",
+      "description": "Equation of state of the active structure with the Atomistic window's potential, fitted (3rd-order Birch–Murnaghan) and shown in the EOS Fitting window. Scan by volume (volumeRangePct: cell volumes over ±that %, cell fixed, atoms relaxed) or by pressure (pMinGPa..pMaxGPa, cell relaxed to each, the window's own mode). Returns a job: poll with wait_job. The result has every point (V, E, P) and the fit: E0, V0 (Å³ per cell), B0 (GPa), B0' from the E–V and P–V fits. The fit needs SciPy via Pyodide, fetched from the network on first use.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "points": { "type": "integer", "minimum": 3, "maximum": 21, "description": "Default 7." },
+          "volumeRangePct": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 50, "description": "Scan by volume: ±this % around the current cell volume." },
+          "pMinGPa": { "type": "number", "description": "Scan by pressure (when volumeRangePct is not given). Default -2." },
+          "pMaxGPa": { "type": "number", "description": "Default 20." },
+          "fmax": { "type": "number", "exclusiveMinimum": 0, "description": "Force tolerance per point, eV/Å. Default 0.01." },
+          "maxSteps": { "type": "integer", "minimum": 1, "description": "Relax steps per point. Default 200." }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "order_structure",
+      "tier": "write",
+      "description": "Ordered approximants of a disordered structure (fractionally occupied sites), as the Order Structure section of Cell & Supercell does: `samples` random decorations in a cell `multiplier` times larger, each scored with a single-point energy (unless energies is false), kept as one new trajectory row sorted lowest energy first. Returns a job: poll with wait_job. The result lists each frame's seed and energy per atom; frame 0 is the lowest (select it with select).",
+      "args": {
+        "type": "object",
+        "properties": {
+          "samples": { "type": "integer", "minimum": 1, "maximum": 30, "description": "Default 5." },
+          "multiplier": { "type": "integer", "minimum": 1, "description": "Cell size factor, as the window's Size choice. Default 1." },
+          "energies": { "type": "boolean", "description": "Score each sample. Default true." }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "job_status",
       "tier": "read",
       "description": "A job's status (running, done, failed, cancelled), progress (step, steps, temperature) and, once it ends, its result or error.",

@@ -368,6 +368,40 @@ function cameraState() {
   };
 }
 
+/** One calculator job at a time: they share the potential and the selected structure. */
+function assertNoCalculatorJob() {
+  const busy = runningJob();
+  if (busy) throw commandError('JOB_BUSY', `Job ${busy.id} is still running; wait for it or cancel_job`);
+}
+
+/** Checks every calculator command makes before starting its job; resolves to the Atomistic module. */
+async function calculatorPrecheck() {
+  if (!getActiveStructure()) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+  assertNoCalculatorJob();
+  const atomistic = await import('../ui/BackendPanel/AtomisticPanels.js');
+  // Refused here, not inside the job, so a structure too big fails this call.
+  atomistic.assertStructureFitsPotential(general.atomisticPotential || 'nep');
+  return atomistic;
+}
+
+/**
+ * The EOS window's fit (fitEOS: E–V params [E0, V0, K0, K0'], P–V params
+ * [V0, K0, K0'], K0 in GPa) as plain named numbers.
+ * @param {{evResult: any, pvResult: any}} fit
+ */
+export function eosFitSummary({ evResult, pvResult }) {
+  const named = (r, keys) => (r ? {
+    ...Object.fromEntries(keys.map((k, i) => [k, round(r.params[i])])),
+    ...(r.failed ? { failed: r.failed } : {}),
+    rms: r.fitStats ? round(r.fitStats.rms) : null,
+  } : null);
+  return {
+    form: 'Birch–Murnaghan (3rd order)',
+    energyVolume: named(evResult, ['E0Ev', 'V0A3', 'B0GPa', 'B0Prime']),
+    pressureVolume: named(pvResult, ['V0A3', 'B0GPa', 'B0Prime']),
+  };
+}
+
 /**
  * Command handlers, keyed by the command name in commands.json. Each takes
  * (args, ctx): ctx.deps holds the app functions BrowserHost was configured
@@ -560,8 +594,7 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (input.pressureGPa !== undefined && !isFiniteNumber(input.pressureGPa)) throw commandError('INVALID_ARGS', 'run_md.pressureGPa must be a number');
     const structure = getActiveStructure();
     if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    const busy = runningJob('md');
-    if (busy) throw commandError('JOB_BUSY', `MD job ${busy.id} is still running; wait for it or cancel_job`);
+    assertNoCalculatorJob();
     const atomistic = await import('../ui/BackendPanel/AtomisticPanels.js');
     const { recommendedTimestepFs } = await import('../atomistic/MD.js');
     // Refused here, not inside the job, so a structure too big fails this call.
@@ -589,6 +622,137 @@ export const COMMAND_HANDLERS = Object.freeze({
         trajectory: { id: getContainerId(result.container), name: String(result.container.fileName), frames: result.frames },
         finalStep: result.finalStep,
         stopped: result.stopped,
+      };
+    });
+    return jobView(job);
+  },
+
+  async run_relax(args) {
+    const input = args ?? {};
+    requireOptionalArgs(args, 'run_relax');
+    const params = {
+      forceTol: input.fmax ?? 0.01,
+      maxSteps: input.maxSteps ?? 200,
+      relaxCell: input.relaxCell ?? true,
+      targetPressure: input.pressureGPa ?? 0,
+      stressTol: input.pressureTolGPa ?? 0.2,
+    };
+    if (!(isFiniteNumber(params.forceTol) && params.forceTol > 0)) throw commandError('INVALID_ARGS', 'run_relax.fmax must be a positive number');
+    if (!Number.isInteger(params.maxSteps) || params.maxSteps < 1 || params.maxSteps > 100000) throw commandError('INVALID_ARGS', 'run_relax.maxSteps must be 1 to 100000');
+    if (typeof params.relaxCell !== 'boolean') throw commandError('INVALID_ARGS', 'run_relax.relaxCell must be boolean');
+    if (!isFiniteNumber(params.targetPressure)) throw commandError('INVALID_ARGS', 'run_relax.pressureGPa must be a number');
+    if (!(isFiniteNumber(params.stressTol) && params.stressTol > 0)) throw commandError('INVALID_ARGS', 'run_relax.pressureTolGPa must be a positive number');
+    const atomistic = await calculatorPrecheck();
+    const job = startJob('relax', async (job) => {
+      job.progress = { text: 'getting the potential ready' };
+      const { runner, potential } = await atomistic.ensureActiveCalculator((text) => { job.progress = { text }; });
+      const result = await atomistic.runRelax(params, {
+        runner,
+        potential,
+        shouldStop: () => job.cancelled,
+        onProgress: ({ step, maxSteps, maxForce }) => { job.progress = { step, maxSteps, maxForce: round(maxForce) }; },
+      });
+      return {
+        potential,
+        trajectory: { id: getContainerId(result.container), name: String(result.container.fileName), frames: result.frames },
+        steps: result.steps,
+        converged: result.converged,
+        stopped: result.stopped,
+        maxForce: round(result.maxForce),
+        energyEv: round(result.energyEv),
+        energyPerAtomEv: round(result.energyPerAtomEv),
+        pressureGPa: result.pressureGPa === null ? null : round(result.pressureGPa),
+      };
+    });
+    return jobView(job);
+  },
+
+  async compute_energy(args) {
+    requireOptionalArgs(args, 'compute_energy');
+    const atomistic = await calculatorPrecheck();
+    const job = startJob('energy', async (job) => {
+      job.progress = { text: 'getting the potential ready' };
+      const { runner, potential } = await atomistic.ensureActiveCalculator((text) => { job.progress = { text }; });
+      const { out, maxForce, pressureGPa } = await atomistic.computeCurrentEFS(runner);
+      return {
+        potential,
+        energyEv: round(Number(out.total_energy)),
+        energyPerAtomEv: round(Number(out.energy_per_atom)),
+        maxForce: round(maxForce),
+        pressureGPa: pressureGPa === null ? null : round(pressureGPa),
+      };
+    });
+    return jobView(job);
+  },
+
+  async run_eos(args) {
+    const input = args ?? {};
+    requireOptionalArgs(args, 'run_eos');
+    const nPoints = input.points ?? 7;
+    if (!Number.isInteger(nPoints) || nPoints < 3 || nPoints > 21) throw commandError('INVALID_ARGS', 'run_eos.points must be 3 to 21');
+    const byVolume = input.volumeRangePct !== undefined;
+    if (byVolume && !(isFiniteNumber(input.volumeRangePct) && input.volumeRangePct > 0 && input.volumeRangePct < 50)) {
+      throw commandError('INVALID_ARGS', 'run_eos.volumeRangePct must be between 0 and 50');
+    }
+    const pMinGPa = input.pMinGPa ?? -2;
+    const pMaxGPa = input.pMaxGPa ?? 20;
+    if (!byVolume && !(isFiniteNumber(pMinGPa) && isFiniteNumber(pMaxGPa) && pMinGPa < pMaxGPa)) {
+      throw commandError('INVALID_ARGS', 'run_eos needs pMinGPa < pMaxGPa, or volumeRangePct');
+    }
+    await calculatorPrecheck();
+    const job = startJob('eos', async (job) => {
+      const { computeEOS } = await import('../ui/EOSPanel.js');
+      const { scan, fit } = await computeEOS({
+        nPoints, pMinGPa, pMaxGPa, fmaxTol: input.fmax ?? 0.01, maxSteps: input.maxSteps ?? 200,
+        ...(byVolume ? { volumeRangePct: input.volumeRangePct } : {}),
+      }, {
+        onProgress: (text) => { job.progress = { text }; },
+        shouldStop: () => job.cancelled,
+      });
+      if (!fit) throw commandError(scan.volumes.length < 3 ? 'TOO_FEW_POINTS' : 'FIT_FAILED',
+        scan.volumes.length < 3 ? `Only ${scan.volumes.length} point(s) computed; 3 are needed to fit`
+          : 'The EOS fit could not run (it needs SciPy via Pyodide from the network); see the EOS window');
+      return {
+        scan: { mode: byVolume ? 'volume' : 'pressure', points: scan.volumes.length, stopped: scan.stopped,
+          unconverged: scan.converged.filter((c) => !c).length,
+          volumesA3: scan.volumes.map(round), energiesEv: scan.energies.map(round), pressuresGPa: scan.pressures.map(round) },
+        fit: eosFitSummary(fit),
+      };
+    });
+    return jobView(job);
+  },
+
+  async order_structure(args) {
+    const input = args ?? {};
+    requireOptionalArgs(args, 'order_structure');
+    const count = input.samples ?? 5;
+    if (!Number.isInteger(count) || count < 1 || count > 30) throw commandError('INVALID_ARGS', 'order_structure.samples must be 1 to 30');
+    const multiplier = input.multiplier ?? 1;
+    if (!Number.isInteger(multiplier) || multiplier < 1) throw commandError('INVALID_ARGS', 'order_structure.multiplier must be a positive integer');
+    const withEnergies = input.energies ?? true;
+    if (typeof withEnergies !== 'boolean') throw commandError('INVALID_ARGS', 'order_structure.energies must be boolean');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    assertNoCalculatorJob();
+    const panel = await import('../ui/LatticeSupercellPanel.js');
+    // Built here, not in the job: "nothing to order" fails this call.
+    const samples = panel.buildOrderSamples(structure, count, multiplier);
+    const job = startJob('order', async (job) => {
+      let potential = null;
+      if (withEnergies) {
+        ({ potential } = await panel.scoreOrderSamples(samples, {
+          onProgress: (text) => { job.progress = { text }; },
+          shouldStop: () => job.cancelled,
+        }));
+      }
+      const { createTrajectoryFromFrames } = await import('../ui/addToStructureModule/CommitAtoms.js');
+      const container = createTrajectoryFromFrames(panel.orderSampleFrames(samples), 'ordered_structures');
+      return {
+        potential,
+        trajectory: { id: getContainerId(container), name: String(container.fileName), frames: samples.length },
+        atomsPerSample: samples[0].built.atoms.length,
+        // Frame i of the trajectory is samples[i]; lowest energy first when computed.
+        samples: samples.map((s, frame) => ({ frame, seed: s.seed, energyPerAtomEv: s.energyPerAtom === null ? null : round(s.energyPerAtom) })),
       };
     });
     return jobView(job);

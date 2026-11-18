@@ -53,9 +53,9 @@ export function getJob(id) {
   return job;
 }
 
-/** The running job of a kind, if any. */
-export function runningJob(kind) {
-  for (const job of jobs.values()) if (job.kind === kind && job.status === 'running') return job;
+/** The running job (of `kind`, or of any kind), if any. */
+export function runningJob(kind = null) {
+  for (const job of jobs.values()) if ((!kind || job.kind === kind) && job.status === 'running') return job;
   return null;
 }
 

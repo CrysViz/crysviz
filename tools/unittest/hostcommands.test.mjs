@@ -176,3 +176,14 @@ test('apply checks atom indices and selection ownership', async () => {
   assert.equal(code(() => applyTargets(structure, { selection: 's999' })), 'SELECTION_NOT_FOUND');
   assert.equal(code(() => applyTargets(structure, {})), 'INVALID_ARGS');
 });
+
+test('run_eos reports the EOS window fit as named numbers', async () => {
+  const { eosFitSummary } = await import('../../docs/host/commands.js');
+  const fit = eosFitSummary({
+    evResult: { params: [-10.8, 40.9, 97.6, 4.2], fitStats: { rms: 1e-4 } },
+    pvResult: { params: [40.8, 98.1, 4.1], fitStats: { rms: 0.02 }, failed: 'not-converged' },
+  });
+  assert.deepEqual(fit.energyVolume, { E0Ev: -10.8, V0A3: 40.9, B0GPa: 97.6, B0Prime: 4.2, rms: 0.0001 });
+  assert.equal(fit.pressureVolume.failed, 'not-converged');
+  assert.equal(eosFitSummary({ evResult: null, pvResult: { params: [1, 2, 3], fitStats: { rms: 0 } } }).energyVolume, null);
+});
