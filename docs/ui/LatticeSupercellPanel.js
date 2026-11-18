@@ -6,7 +6,7 @@ import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell, supercellAtomCount } from './SuperCellModule.js';
 import { setLoadStep, finishLoadProgress, nextPaint } from './BootProgress.js';
 import { schedulePeriodicBoundsSave, saveSupercellPref, pinCellPrefsKey } from '../state/cellPrefs.js';
-import { resetView, recenterCamera } from './WindowAndSceneControls.js';
+import { recenterView, recenterCamera } from './WindowAndSceneControls.js';
 import { fracToCart, cartToFrac } from '../render/index.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
@@ -820,7 +820,8 @@ export async function applySupercell(nx, ny, nz) {
       reRenderBonds: true,
       reRenderLattice: true,
     });
-    resetView();
+    // The cell changed size: keep the user's viewing direction, refit the zoom.
+    recenterView({ fit: true });
   } finally {
     if (large) finishLoadProgress();
   }
@@ -1051,7 +1052,7 @@ transformResetBtn.onclick = () => {
       reRenderLattice: true,
       reRenderOther: false,
     });
-    resetView();
+    recenterView({ fit: true }); // keep the viewing direction, refit the zoom
     console.log("Transformation reset to original.");
   }
 };

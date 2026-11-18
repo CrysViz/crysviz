@@ -940,6 +940,11 @@ export function fitCameraToCurrentStructure({ resetDirection = false } = {}) {
   if (resetDirection) app.camera.up.set(0, 1, 0);
   app.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
   app.controls.target.copy(center);
+  // A user's zoom (wheel, pinch) lives in camera.zoom; fitting means zoom 1
+  // with the frustum/distance sized to the structure, or a zoomed-in view
+  // stays zoomed and "fit" does not fit.
+  app.camera.zoom = 1;
+  app.camera.updateProjectionMatrix();
   refitOrthographicFrustum();
   stopCameraMomentum();
   app.controls.update();
