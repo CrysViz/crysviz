@@ -662,13 +662,13 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       <table class="addstructure-table">
         <thead>
           <tr>
-            <th class="wyckoff-site-th">Element</th>
-            <th class="wyckoff-site-th" title="Wyckoff letter, multiplicity and site symmetry as the lock reports them">Site</th>
-            <th class="wyckoff-site-th" title="Fractional coordinate of the orbit's representative">X</th>
-            <th class="wyckoff-site-th">Y</th>
-            <th class="wyckoff-site-th">Z</th>
-            <th class="wyckoff-site-th" title="Colour for every atom of this orbit">Col</th>
-            <th class="wyckoff-site-th"></th>
+            <th class="wyckoff-site-th wyckoff-col-element">Element</th>
+            <th class="wyckoff-site-th wyckoff-col-site" title="Wyckoff letter, multiplicity and site symmetry as the lock reports them">Site</th>
+            <th class="wyckoff-site-th wyckoff-col-coord" title="Fractional coordinate of the orbit's representative">X</th>
+            <th class="wyckoff-site-th wyckoff-col-coord">Y</th>
+            <th class="wyckoff-site-th wyckoff-col-coord">Z</th>
+            <th class="wyckoff-site-th wyckoff-col-color" title="Colour for every atom of this orbit">Col</th>
+            <th class="wyckoff-site-th wyckoff-col-icon"></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -686,6 +686,16 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   body.appendChild(status);
 
   let highlightedOrbitId = null;
+  // The orbit glow lives in the atoms mesh, which a move redraws with every
+  // glow off: light the highlighted orbit again afterwards, or drop it when
+  // the orbit is gone. Without this the glow vanished on a coordinate edit
+  // while the row still counted as lit (the next click turned it "off").
+  function reshowOrbitHighlight() {
+    if (highlightedOrbitId === null) return;
+    const orbit = getWyckoffOrbitGroups(structure).find((group) => group.orbitId === highlightedOrbitId);
+    if (orbit) highlightAtomsIn3D(orbit.atomIndices);
+    else highlightedOrbitId = null;
+  }
   /** @type {Array<{orbitId: number, representativeIndex: number, inputs: HTMLInputElement[]}>} */
   let rows = [];
 
@@ -798,6 +808,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
         // the move is projected onto the site's degrees of freedom, so the
         // typed value is rarely the value that results.
         syncCoordsFromStructure();
+        reshowOrbitHighlight();
       }
 
       coordInputs.forEach((input) => input.addEventListener('change', commitCoords));
@@ -926,15 +937,16 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   body.appendChild(makeSectionHeadline('Add Site'));
 
   const addHost = document.createElement('div');
+  addHost.className = 'wyckoff-add-scroll';
   addHost.innerHTML = `
     <table class="addstructure-table addstructure-table--spaced">
       <thead><tr>
-        <th class="wyckoff-site-th">Element</th>
-        <th class="wyckoff-site-th" title="Wyckoff site to place the new atom on">Site</th>
-        <th class="wyckoff-site-th">X</th>
-        <th class="wyckoff-site-th">Y</th>
-        <th class="wyckoff-site-th">Z</th>
-        <th class="wyckoff-site-th"></th>
+        <th class="wyckoff-site-th wyckoff-col-element">Element</th>
+        <th class="wyckoff-site-th wyckoff-col-site" title="Wyckoff site to place the new atom on">Site</th>
+        <th class="wyckoff-site-th wyckoff-col-coord">X</th>
+        <th class="wyckoff-site-th wyckoff-col-coord">Y</th>
+        <th class="wyckoff-site-th wyckoff-col-coord">Z</th>
+        <th class="wyckoff-site-th wyckoff-col-add"></th>
       </tr></thead>
       <tbody><tr>
         <td class="addstructure-cell">
@@ -1206,6 +1218,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
     renderSites();
     renderOrbitSummary();
     refreshAddPreview();
+    reshowOrbitHighlight();
   }
 
   function syncCoordsFromStructure() {
@@ -1229,6 +1242,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       return;
     }
     syncCoordsFromStructure();
+    reshowOrbitHighlight();
   }
   document.addEventListener('crysviz:atoms-changed', onExternalChange);
   document.addEventListener('crysviz:colors-changed', syncCoordsFromStructure);

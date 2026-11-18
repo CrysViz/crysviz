@@ -985,6 +985,17 @@ export async function asus_from_cif_file(stream) {
 }
 
 /**
+ * The load error for a CIF none of whose data blocks lists atoms: names the
+ * blocks it does have, so a file that is all publication or refinement data
+ * reads as such. Shared with mcif_parser.js.
+ * @param {Iterable<[string, any]>} cifblocks
+ */
+export function noAtomSitesMessage(cifblocks) {
+  const names = [...cifblocks].map(([name]) => `data_${name}`);
+  return `No atom positions in this CIF: none of its data blocks${names.length ? ` (${names.join(', ')})` : ''} has an _atom_site_label loop.`;
+}
+
+/**
  * Read CIF stream and return a single ASU from the first block with atom_site_label.
  * Mirrors single_asu_from_cif_file.
  *
@@ -1002,6 +1013,6 @@ export async function single_asu_from_cif_file(stream) {
       break;
     }
   }
-  if (!chosen) throw new Error("No structural block found in CIF.");
+  if (!chosen) throw new Error(noAtomSitesMessage(cifblocks));
   return cifblock_to_asu(chosen);
 }

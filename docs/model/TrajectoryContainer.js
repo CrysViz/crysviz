@@ -624,6 +624,9 @@ export class TrajectoryContainer extends StructureContainer {
       // keeps the species of every non-plain site).
       species: siteSpeciesRecord(Array.from({ length: n },
         (_, a) => /** @type {any} */ (rec?.atoms?.get(a))?.species ?? null)),
+      energy: Number.isFinite(ph.energy) ? ph.energy : null,
+      stress: ph.stress ? ph.stress.map(r => [...r]) : null,
+      dataSource: ph.dataSource ?? null,
     };
   }
 }

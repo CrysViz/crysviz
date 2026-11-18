@@ -40,9 +40,29 @@ let nextMeasurementId = 1;
 // leaking every segment's geometry on each clear.
 function disposeMeasureItem(item) {
   item.traverse?.((child) => {
-    if (child.geometry) child.geometry.dispose();
+    if (child.geometry) disposeOwnGeometry(child.geometry);
   });
-  if (item.geometry) item.geometry.dispose();
+  if (item.geometry) disposeOwnGeometry(item.geometry);
+}
+
+/** Dispose a geometry unless it is one of the shared dash cylinders below. */
+function disposeOwnGeometry(geometry) {
+  if (!geometry.userData?.sharedDash) geometry.dispose();
+}
+
+// One unit-length cylinder per line radius, shared by every dash of every
+// measurement line and stretched to each dash's length (mesh.scale.y). Each
+// dash used to build its own geometry: ~10 per line, a few hundred for a
+// share link with twenty measurements, all built while it opened.
+const dashGeometries = new Map();
+function dashGeometry(radius) {
+  let geometry = dashGeometries.get(radius);
+  if (!geometry) {
+    geometry = new THREE.CylinderGeometry(radius, radius, 1, 12);
+    geometry.userData.sharedDash = true;
+    dashGeometries.set(radius, geometry);
+  }
+  return geometry;
 }
 
 /** Removes just one measurement (all its lines/markers/label) by the shared
@@ -153,7 +173,7 @@ const LINE_SPECS = {
  *  carry can't drift apart. */
 function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
   for (const child of group.children.slice()) {
-    child.geometry?.dispose();
+    if (child.geometry) disposeOwnGeometry(child.geometry);
     child.material?.dispose?.();
     group.remove(child);
   }
@@ -186,11 +206,11 @@ function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
   const step = new THREE.Vector3().subVectors(end, start).normalize();
   const origin = start.clone().addScaledVector(step, usableStart);
   const addPiece = (length, centreAlong) => {
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(spec.radius, spec.radius, length, 12), material);
+    const mesh = new THREE.Mesh(dashGeometry(spec.radius), material);
     mesh.position.copy(origin).addScaledVector(step, centreAlong);
     mesh.lookAt(end);
     mesh.rotateX(Math.PI / 2);
+    mesh.scale.y = length;
     group.add(mesh);
   };
 
@@ -198,9 +218,16 @@ function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
     addPiece(distance, distance / 2);
     return;
   }
+  // Whole dashes at both ends: the count that fits best, with dash and gap
+  // stretched or shrunk together (by under half a period) to fill the line
+  // exactly. Laid from the first atom at the set lengths, the pattern ran out
+  // up to a period short of the second (a ~0.35 Å bare stretch there).
   const segmentLength = spec.dash + spec.gap;
-  const count = Math.floor(distance / segmentLength);
-  for (let i = 0; i < count; i++) addPiece(spec.dash, i * segmentLength + spec.dash / 2);
+  const count = Math.max(1, Math.round((distance + spec.gap) / segmentLength));
+  const scale = distance / (count * spec.dash + (count - 1) * spec.gap);
+  const dash = spec.dash * scale;
+  const period = (spec.dash + spec.gap) * scale;
+  for (let i = 0; i < count; i++) addPiece(dash, i * period + dash / 2);
 }
 
 // How far along the angle bisector the label sits, as a multiple of the arc's

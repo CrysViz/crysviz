@@ -30,11 +30,14 @@ const SHARING_LABELS = {
 const SHARING_KEYS = ['corner', 'edge', 'face', 'bond1', 'bond2'];
 const BOND_SHARING = new Set(['bond1', 'bond2']);
 
-let connections = []; // latest computePolyhedraConnectivity() rows
+// The latest analysis; its connectivity rows are worked out when first read
+// (polyhedraAnalysisHub.js), so only while this window is open.
+let latest = null;
 let view = null;
+const currentConnections = () => latest?.connectivity ?? [];
 
 subscribePolyhedraAnalysis((data) => {
-  connections = data.connectivity;
+  latest = data;
   view?.redraw();
 });
 
@@ -48,6 +51,7 @@ function highlightConnection(conn) {
 }
 
 function computeGroups() {
+  const connections = currentConnections();
   const pairLabels = [...new Set(connections.map(pairLabelOf))].sort();
   const groups = SHARING_KEYS.map((sharing) => {
     const y = new Array(pairLabels.length).fill(0);
@@ -84,6 +88,7 @@ function makeClickHandler() {
 
 /** Scrollable drill-down list of individual connections, one row each. */
 function buildPairList(container) {
+  const connections = currentConnections();
   container.innerHTML = '';
 
   if (!connections.length) {

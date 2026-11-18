@@ -31,7 +31,9 @@ import { WorkerMLIPRunner } from '../../atomistic/mlipWorkerClient.js';
 import { ASERunner, DEFAULT_ASE_URL } from '../../atomistic/aseClient.js';
 import { PET_MAD_BASE_URL, fetchPetModel, inspectPetModelFile, elementsOutside } from '../../atomistic/petModels.js';
 import { PET_LINK_OPTION, bindPetModelList, petModelFor, selectedPetModel } from './PetModelList.js';
-import { mountPotentialNotice, setPotentialLabel, notifyPotentialChange } from '../../atomistic/potentialNotice.js';
+import { mountPotentialNotice, setPotentialLabel, notifyPotentialChange, potentialSource } from '../../atomistic/potentialNotice.js';
+import { dataSourceOf } from '../../model/dataSource.js';
+import { getContainerForStructure } from '../../state/structures.js';
 import {
   isIsolated, isMultithreadRequested, canRequestIsolation, setMultithreadEnabled,
 } from '../../host/coi.js';
@@ -584,6 +586,11 @@ function setCurrentEFS(out, keptIndices = null) {
     // A new pressure: the NEP high-pressure warning may now apply.
     notifyPotentialChange();
   }
+  // Where these numbers came from, for the Parameters section's "Source:"
+  // and the .crysviz session (model/dataSource.js): the potential that ran.
+  if (Array.isArray(out?.forces) || Number.isFinite(Number(out?.total_energy)) || Array.isArray(out?.stress?.matrix3x3)) {
+    fileBrowser.selectedStructure.dataSource = potentialSource();
+  }
 
   if (general.forcesActive) {
     updateForces();
@@ -618,6 +625,9 @@ export function snapshotCurrentStructure() {
     forces,
     stress,
     energy: Number.isFinite(src.energy) ? src.energy : null,
+    // The source of that energy as this structure shows it (its own, else its
+    // file's), so a frame keeps it whatever trajectory it lands in.
+    dataSource: dataSourceOf(src, getContainerForStructure(src)),
     velocities,
     // MD/relax animate a snapshot, not the source, and every symmetrize call
     // in MD.js keys off `structure.symmetry.mode === 'wyckoff'`. Dropping it
@@ -648,6 +658,7 @@ function restoreStructureInPlace(target, src) {
   // source too; put back what the structure had before the run.
   target.stress = src.stress?.tensor ? new Stress({ tensor: src.stress.tensor.map((row) => [...row]) }) : null;
   target.energy = Number.isFinite(src.energy) ? src.energy : null;
+  target.dataSource = src.dataSource ?? null;
   // Drop the wrapped-position cache so the restored structure re-wraps from its
   // own positions instead of a leftover MD frame's.
   target.periodic = { hash: 'None', wrapped: null };
@@ -1366,7 +1377,7 @@ async function runLocalEFS(shell, metricsEl, potential) {
     : `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`;
   metricsEl.innerHTML = `
     <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
-    <div>max force: ${maxForce(out.forces).toFixed(5)} eV/A</div>
+    <div>max force: ${maxForce(out.forces).toFixed(5)} eV/Å</div>
     <div>pressure: ${pressureText}</div>
   `;
   shell.resultEl.textContent = '';

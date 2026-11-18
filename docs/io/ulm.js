@@ -134,7 +134,7 @@ function voigtToTensor(v) {
  * @param {ArrayBuffer} arrayBuffer
  * @returns {{tag: string, frames: Array<{elements: string[], lattice: number[][], positions: Float64Array,
  *   forces: Float64Array | null, spins: Float64Array | null, energy: number | null,
- *   stress: number[][] | null}>}}
+ *   stress: number[][] | null, calculator: string | null}>}}
  */
 export function readUlmTrajectory(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
@@ -218,9 +218,12 @@ export function readUlmTrajectory(arrayBuffer) {
     }
     const positions = cartesianToFractional(cart, lattice);
 
-    let forces = null, energy = null, stress = null;
+    let forces = null, energy = null, stress = null, calculator = null;
     const calc = get(data, 'calculator');
     if (calc && calc.kind === 'child') {
+      // ASE writes the calculator's name beside its results ("vasp", "mace").
+      const name = get(calc.value, 'name');
+      if (name?.kind === 'value' && typeof name.value === 'string') calculator = name.value;
       const fe = get(calc.value, 'forces');
       if (fe) {
         const arr = Float64Array.from(value(fe, littleEndian));
@@ -246,7 +249,7 @@ export function readUlmTrajectory(arrayBuffer) {
       }
     }
 
-    frames.push({ elements, lattice, positions, forces, spins, energy, stress });
+    frames.push({ elements, lattice, positions, forces, spins, energy, stress, calculator });
   }
   return { tag, frames };
 }

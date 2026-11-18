@@ -30,6 +30,14 @@
   color: var(--muted-fg);
 }
 
+/* The number boxes (the Compute settings) take the row's width: the app-wide
+   input[type="number"] rule left them 45px, Force tol 0.01 read "0.0". */
+.eos-unit-row input[type="number"] {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
 .eos-unit-row select {
   flex: 1;
   background: var(--input-bg);

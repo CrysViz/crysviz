@@ -7,6 +7,7 @@ import {getElementRadius} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import { getCutPlaneMaskSign } from '../model/Plane.js';
+import { CUT_PLANE_TOLERANCE_GLSL } from './cutPlaneTolerance.js';
 import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression, MAX_CUT_PLANES,
   acquirePersistentMaterial, isPersistentMaterial, packInstanceId} from './MaterialStyles.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
@@ -555,7 +556,7 @@ export function createAtomsMaterial({ imposter = false } = {}) {
       varying float vInstanceElementIndex;
       varying float vInstanceOpacity;
       varying float vInstanceCutPlaneImmune;
-      varying vec3 vInstanceWorldCenter;
+      flat varying vec3 vInstanceWorldCenter;
     ` + WEDGE_VERTEX_DECL + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
@@ -584,7 +585,7 @@ export function createAtomsMaterial({ imposter = false } = {}) {
       varying float vInstanceElementIndex;
       varying float vInstanceOpacity;
       varying float vInstanceCutPlaneImmune;
-      varying vec3 vInstanceWorldCenter;
+      flat varying vec3 vInstanceWorldCenter;
     ` + WEDGE_FRAGMENT_DECL + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -598,7 +599,7 @@ export function createAtomsMaterial({ imposter = false } = {}) {
           if (i >= uCutPlaneCount) break;
           vec4 cutPlane = uCutPlanes[i];
           float planeSide = (dot(vInstanceWorldCenter, cutPlane.xyz) - cutPlane.w) * uCutPlaneMaskSide[i];
-          if (planeSide > 0.0) {
+          if (planeSide > ${CUT_PLANE_TOLERANCE_GLSL}) {
             discard;
           }
         }

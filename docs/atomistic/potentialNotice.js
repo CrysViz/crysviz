@@ -74,6 +74,26 @@ export function potentialLabel(potential = activePotential()) {
 }
 
 /**
+ * The model a result computed with this potential came from, short, for the
+ * Parameters section's "Source:" (model/dataSource.js): "PET-MAD xs",
+ * "NEP89", "my-model.pt (local file)", "<model> (ASE server)" — never the
+ * server's address (a .crysviz session carries it).
+ * @param {string} [potential]
+ */
+export function potentialSource(potential = activePotential()) {
+  const p = normalize(potential);
+  const model = modelOf(p).trim();
+  if (p === 'ase') {
+    const connected = /^(.*\S) on \S+$/.exec(model);
+    return connected && !/\(not connected\)$/.test(model) ? `${connected[1]} (ASE server)` : 'ASE server';
+  }
+  const short = model
+    .replace(/\s*\(local file, in your browser\)$/, ' (local file)')
+    .replace(/\s*\(in your browser\)$/, '');
+  return short || NAMES[p];
+}
+
+/**
  * The Atomistic window reports the model behind a potential (the selected
  * PET-MAD model, the ASE server's model), as text or as a function read
  * whenever a notice renders.

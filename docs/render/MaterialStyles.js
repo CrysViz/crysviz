@@ -16,6 +16,7 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general, groups } from '../state/store.js';
+import { CUT_PLANE_TOLERANCE_GLSL } from './cutPlaneTolerance.js';
 
 // Every arrow mesh in groups: forces, spins (and the compared structure's),
 // phonon modes. Their cel outlines follow general.celOutlineArrows
@@ -202,7 +203,7 @@ function makeOutlineMaterial({ opacityDiscard = false, cutPlanes = false, axis =
       ${cutPlanes ? `
       attribute float instanceCutPlaneImmune;
       varying float vInstanceCutPlaneImmune;
-      varying vec3 vInstanceWorldCenter;` : ''}
+      flat varying vec3 vInstanceWorldCenter;` : ''}
     ` + shader.vertexShader;
 
     // Inflate along the (instance-transformed) normal by a fixed world width.
@@ -266,7 +267,7 @@ function makeOutlineMaterial({ opacityDiscard = false, cutPlanes = false, axis =
       uniform vec4 uCutPlanes[${MAX_CUT_PLANES}];
       uniform float uCutPlaneMaskSide[${MAX_CUT_PLANES}];
       varying float vInstanceCutPlaneImmune;
-      varying vec3 vInstanceWorldCenter;` : ''}
+      flat varying vec3 vInstanceWorldCenter;` : ''}
     ` + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -287,7 +288,7 @@ function makeOutlineMaterial({ opacityDiscard = false, cutPlanes = false, axis =
           if (i >= uCutPlaneCount) break;
           vec4 cutPlane = uCutPlanes[i];
           float planeSide = (dot(vInstanceWorldCenter, cutPlane.xyz) - cutPlane.w) * uCutPlaneMaskSide[i];
-          if (planeSide > 0.0) {
+          if (planeSide > ${CUT_PLANE_TOLERANCE_GLSL}) {
             discard;
           }
         }

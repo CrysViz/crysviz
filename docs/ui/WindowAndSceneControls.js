@@ -96,6 +96,7 @@ export function setupCameraButtons() {
   document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
+  setupResetLongPress(document.getElementById('resetView'));
 
   // Reset | divider | Lock, wrapped so the trio travels as one unit when the
   // panel wraps or goes to the mobile grid. The lock stands apart from the
@@ -793,6 +794,121 @@ export function resetView() {
   setViewDirection(new THREE.Vector3(1,1,1), { refit: true });
   refitOrthographicFrustum();
 } //CAMERA RESET
+
+/**
+ * Bring the structure back to the middle of the view without turning it: the
+ * rotation stays, and so does the zoom unless `fit` (then it is fitted to the
+ * structure, as Reset view does). Panning is cleared. Reset view's long-press
+ * menu (below) and the feature search's "Recenter view".
+ */
+export function recenterView({ fit = false } = {}) {
+  if (fit) {
+    fitCameraToCurrentStructure(); // keeps the direction, clears the pan
+  } else {
+    const panX = app.cameraPan.x;
+    const panY = app.cameraPan.y;
+    resetCameraPan();
+    removeCameraPanOffset(panX, panY);
+    const { center } = getCellCenterAndDist();
+    const offset = app.camera.position.clone().sub(app.controls.target);
+    app.controls.target.copy(center);
+    app.camera.position.copy(center.clone().add(offset));
+    stopCameraMomentum();
+    app.controls.update();
+  }
+  requestRender();
+}
+
+// ---- Reset view's long-press menu ---------------------------------------
+//
+// A click on Reset view goes back to the standard [1,1,1] view, fitted. A
+// long press (mouse hold or touch) opens a small menu under it instead, the
+// Hide/Restore pattern (MeasurementToolbar.js, same popover look): Recenter
+// brings the structure back to the middle with the rotation and zoom kept
+// (after panning away, editing, or building a supercell), Recenter and fit
+// also fits the zoom to the structure; Cancel, Escape or a click elsewhere
+// close it.
+
+const RESET_LONG_PRESS_MS = 550;
+let resetMenu = null;
+
+function hideResetMenu() {
+  if (resetMenu) resetMenu.hidden = true;
+}
+
+function buildResetMenu() {
+  if (resetMenu) return resetMenu;
+  const el = document.createElement('div');
+  el.id = 'cameraResetMenu';
+  el.className = 'restore-popover camera-reset-menu';
+  el.setAttribute('role', 'menu');
+  el.hidden = true;
+  el.innerHTML = `
+    <button type="button" id="cameraRecenterBtn" class="restore-popover-btn restore-popover-all" role="menuitem"
+      title="Bring the structure back to the middle — the rotation and zoom stay">Recenter</button>
+    <button type="button" id="cameraRecenterFitBtn" class="restore-popover-btn restore-popover-cancel" role="menuitem"
+      title="Bring the structure back to the middle and fit the zoom to it — the rotation stays">Recenter and fit</button>
+    <button type="button" id="cameraResetMenuCancel" class="restore-popover-btn restore-popover-cancel" role="menuitem">Cancel</button>
+  `;
+  document.body.appendChild(el);
+  const on = (id, run) => el.querySelector(`#${id}`).addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    hideResetMenu();
+    run();
+  });
+  on('cameraRecenterBtn', () => recenterView());
+  on('cameraRecenterFitBtn', () => recenterView({ fit: true }));
+  on('cameraResetMenuCancel', () => {});
+  document.addEventListener('pointerdown', (e) => {
+    if (!el.hidden && !el.contains(/** @type {Node} */ (e.target))) hideResetMenu();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !el.hidden) hideResetMenu();
+  });
+  resetMenu = el;
+  return el;
+}
+
+/** Open the menu under the button (above it if there is no room below),
+ *  inside the window. */
+function showResetMenu(btn) {
+  const el = buildResetMenu();
+  el.hidden = false;
+  const r = btn.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  const below = r.bottom + 6;
+  el.style.top = `${below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below}px`;
+  el.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+  el.style.right = 'auto';
+  /** @type {HTMLElement|null} */ (el.querySelector('#cameraRecenterBtn'))?.focus({ preventScroll: true });
+}
+
+function setupResetLongPress(btn) {
+  if (!btn || btn.dataset.longPressWired) return;
+  btn.dataset.longPressWired = '1';
+  let timer = 0;
+  let fired = false;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    fired = false;
+    cancel();
+    timer = window.setTimeout(() => { fired = true; showResetMenu(btn); }, RESET_LONG_PRESS_MS);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((type) => btn.addEventListener(type, cancel));
+  // A touch long-press would otherwise open the browser's own menu, which
+  // steals the pointerup this relies on.
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  // The click that ends a long press must not also reset the view (capture:
+  // before the button's own onclick).
+  btn.addEventListener('click', (e) => {
+    if (!fired) return;
+    fired = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+}
 
 /**
  * Fit distance/zoom to the currently selected structure. Default

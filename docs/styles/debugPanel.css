@@ -254,3 +254,27 @@
   align-items: center;
   gap: var(--sp-1);
 }
+
+/* ---- Tracer tab (ui/DebugTracerTab.js): old / new renders side by side ---- */
+.dbgTracerAB {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-3);
+}
+.dbgTracerShot {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.dbgTracerShot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+}
+.dbgTracerShot figcaption {
+  font-size: var(--fs-sm);
+  color: var(--fg-85);
+}

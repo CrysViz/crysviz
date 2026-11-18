@@ -28,9 +28,16 @@ platform instead of falling back to whatever the OS ships.
   under the `CrysViz Sans` @font-face name.
 - Symbol coverage for the UI's textual icons, all exposed as additional
   `CrysViz Sans` faces with narrow `unicode-range`s:
-  - `noto-sans-symbols2-400-normal.woff2` — unmodified "symbols" subset of
-    Noto Sans Symbols 2 from `@fontsource/noto-sans-symbols-2` 5.3.0
-    (`OFL-symbols2.txt`).
+  - `noto-sans-symbols2-ui-400-normal.woff2` — Modified Version of the
+    "symbols" subset of Noto Sans Symbols 2 from `@fontsource/noto-sans-symbols-2`
+    5.3.0 (`OFL-symbols2.txt`), subset with fonttools 4.68 (`pyftsubset
+    --flavor=woff2 --layout-features='*' --no-hinting`) to the glyphs it has
+    in U+2190–21FF (arrows), U+2300–23FF (technical), U+25A0–27FF (geometric
+    shapes, miscellaneous symbols, dingbats, supplemental arrows) and
+    U+2B00–2BFF (miscellaneous symbols and arrows): 44 kB instead of 373 kB,
+    every glyph the UI uses with room to spare. It was downloaded at every
+    start (the UI's ☰ ▾ ✎ … icons). Its `unicode-range` in `styles/fonts.css`
+    lists exactly the code points the file has.
   - `noto-sans-symbols1-extras-wght-normal.woff2` — Modified Version of
     Noto Sans Symbols (variable TTF from
     https://github.com/google/fonts/tree/main/ofl/notosanssymbols) subset

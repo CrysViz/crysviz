@@ -31,7 +31,7 @@ import { buildZip } from '../utils/zipWriter.js';
 import { openPanel } from './panels/PanelManager.js';
 import { setModeMapClickHandler, setModeMapCardHidden } from './PhononPlotsPanel.js';
 import { ensureCalculatorRunner } from './BackendPanel/AtomisticPanels.js';
-import { mountPotentialNotice } from '../atomistic/potentialNotice.js';
+import { mountPotentialNotice, potentialSource } from '../atomistic/potentialNotice.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
 import { initializeUIOnLoad } from './StructureInputModule.js';
 import { downloadBlob } from './SavePanel.js';
@@ -75,7 +75,7 @@ function fmt(v, digits = 3) { return Number.isFinite(v) ? Number(v).toFixed(digi
 // Frames / rows
 // ---------------------------------------------------------------------------
 
-function makeFrame(sc, frac, energy, forces) {
+function makeFrame(sc, frac, energy, forces, potential) {
   const elements = [...sc.species];
   const structure = new Structure({
     elements,
@@ -85,6 +85,8 @@ function makeFrame(sc, frac, energy, forces) {
     periodic: { hash: 'None', wrapped: null },
   });
   structure.energy = Number.isFinite(energy) ? energy : null;
+  // The potential the scan ran with (model/dataSource.js).
+  if (structure.energy !== null || structure.forces.length) structure.dataSource = potentialSource(potential);
   return structure;
 }
 
@@ -465,7 +467,7 @@ export function ingestScan(scan, {
     atEdge: (iMin === 0 || iMin === scan.Q.length - 1) && reference - scan.energies[iMin] > 1e-6,
   };
 
-  const frames = scan.fracs.map((frac, i) => makeFrame(sc, frac, scan.energies[i], scan.forces?.[i]));
+  const frames = scan.fracs.map((frac, i) => makeFrame(sc, frac, scan.energies[i], scan.forces?.[i], potential));
   registerScanRow(frames, potential, dims);
 
   const sel = phononState.selected;
@@ -519,7 +521,7 @@ function loadMinimumStructure(container) {
   if (!candidates.length) { setScanStatus(container, 'No off-centre minimum in the scanned range.'); return; }
   const deepest = candidates.reduce((a, b) => (b.depth > a.depth ? b : a));
   const [g] = frozenGeometries(sc, pattern, [deepest.Q]);
-  const frame = makeFrame(sc, g.frac, mm.reference - deepest.depth, null);
+  const frame = makeFrame(sc, g.frac, mm.reference - deepest.depth, null, mm.potential);
   const name = `phonon_min_${phononState.sourceName}_${modeTag()}_Q${deepest.Q.toFixed(2)}`;
   const minContainer = new StructureContainer({ fileName: name, structures: [frame] });
   adoptContainer(minContainer);

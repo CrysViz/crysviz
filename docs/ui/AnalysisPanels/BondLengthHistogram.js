@@ -141,11 +141,13 @@ function lengthText(entry) {
   return `${formatWithSu(entry.dist, su, 3)} Å`;
 }
 
-/** Short bond identity for the hover list: "Y13–O47". */
+/** Short bond identity for the hover list: "Y 13–O 47", the atoms numbered
+ *  from 1 as the selection bar and the Atoms tab rows number them (it read
+ *  from 0: "Y12–O46"). */
 function bondLabel(srcIndices) {
   const els = fileBrowser.selectedStructure?.elements ?? [];
   const [a, b] = srcIndices;
-  return `${els[a] ?? '?'}${a}–${els[b] ?? '?'}${b}`;
+  return `${els[a] ?? '?'} ${a + 1}–${els[b] ?? '?'} ${b + 1}`;
 }
 
 /** Every current card key, combined chart first. */

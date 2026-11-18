@@ -59,6 +59,7 @@ export class Structure {
     forces = [],
     stress = null,
     energy = null,
+    dataSource = null,
     velocities = null,
     polyhedra = null,
     polyhedraSettings = null,
@@ -120,6 +121,10 @@ export class Structure {
     }));
     this.stress = stress;
     this.energy = energy ?? null; // per-frame free energy in eV; null when unknown
+    // Where the energy, forces and stress came from ("VASP", "PET-MAD xs"):
+    // set by a computation in the app; null falls back to the container's
+    // (the file's), see model/dataSource.js.
+    this.dataSource = typeof dataSource === 'string' && dataSource ? dataSource : null;
     this.velocities = velocities ?? null; // per-atom [vx,vy,vz] in Å/fs; null when untracked (relax frames, loaded files)
     this.polyhedra = polyhedra;
     this.polyhedraSettings = normalizePolyhedraSettings(polyhedraSettings);

@@ -1,16 +1,20 @@
-#  Functions 
+# Features
 
-There is a growing zoo of features implemented in CrysViz. These are in particular following the needs of the Theoretical Physics Division at LiU. More features can be added on-the-fly.
+The master switches for what the 3D view draws; each feature's own settings are in its window
+(Forces, Spins, Fields, Crystal Planes, Polyhedra).
 
-
-Click one of the buttons below to open the panel with the respective feature. There are three difference categories:
-- **Trajectory|Comparison**: Trajectory opens a classic trajectory player that allows you to watch the uploaded trajectory from (currently) a OUTCAR or Quantum Espresso output file. Trajectories can be from molecular dynamics simulations or structural relaxations. For QE currently only *vc-relax* and not *relax* is supported (update is under development). 
-
-
-- **Force|Spin|Field**: These are exclusive,*i.e* only one can be visualised. Choose either forces, spin or 3D-fields (charge densities and ELFs from cube files or VASP output). Currently experimental. Info: High memory consumption for high resolution files!
-
-
-- **Bonds|Lattice|Polyhedra**: This section allows to view histograms for bonds (currently lengths, future: angles, coordiation number; an option to draw extra bonds is comming soon) and to modify the lattice on the fly and create supercells. Polyhedra option is currently under developement and will be active soon!
+- **Show Atoms**, **Show Bonds**, and **Show Charges**: the oxidation states the file gives, as
+  badges by the atoms (the same switch as **Aˣ⁺** in the Structure window).
+- **Neighbour Bonds**: also draw the atoms outside the cell that are bonded to atoms inside it.
+- **Complete Rings & Fragments**: molecules and rings that cross the cell boundary are drawn whole.
+- **Show Polyhedra**, and **Complete Polyhedra**: polyhedra cut by the cell boundary drawn whole.
+- **Show Forces** and **Show Spins**: arrows from a file that has them (an OUTCAR, a magnetic
+  CIF, …) or from a Relax/MD run. Both can be on at once; since both are arrows, a banner over the
+  view then says so.
+- **Show Volumetric Field**: charge densities, ELFs and other fields from cube files or VASP
+  output. High-resolution fields take a lot of memory.
+- **Show Planes**: the planes set up in the Crystal Planes window.
+- **Show CIF Errors**: below.
 
 ## Show CIF Errors
 

@@ -10,6 +10,7 @@ import { updatePolyhedra, updatePolyhedraColors, setCelHullWidth, setCelHullPoly
 import { listPipelines, setActivePipeline, isPngCaptureInProgress, requestRender, restyleArrowMaterials, refreshArrowCelOutlines } from '../render/index.js'
 import { createToggleRow } from './ToggleSwitch.js'
 import { updateGroundPlane } from '../render/index.js'
+import { GROUND_DIRECTIONS } from '../render/groundDirection.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
 import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
@@ -671,6 +672,11 @@ export function addColorPanel(target = "colorContainer") {
     rowEl.appendChild(select);
     return rowEl;
   };
+  // Which side of the structure the ground lies on: below (−y, the original),
+  // below or behind the view (follows the camera), or a fixed world or crystal
+  // side. Placement changes, so the raster disc is re-placed too.
+  groundOptions.appendChild(groundSelectRow('rtGroundDirection', 'Ground position', GROUND_DIRECTIONS,
+    general.rtGroundDirection ?? 'down', (v) => { general.rtGroundDirection = v; updateGroundPlane(); }));
   groundOptions.appendChild(groundSelectRow('rtGroundPattern', 'Ground pattern', [
     ['solid', 'Solid'],
     ['checker', 'Checkerboard'],
@@ -956,6 +962,7 @@ export function addColorPanel(target = "colorContainer") {
     fire('rtDofFocus', D.rtDofFocus, 'input');
     fireCheck('rtGroundToggle', D.rtGroundPlane);
     fire('rtGroundPattern', D.rtGroundPattern, 'change');
+    fire('rtGroundDirection', D.rtGroundDirection ?? 'down', 'change');
     // quadratic sliders: the ELEMENT holds a [0,1] position
     fire('rtGroundOffset', sizeValueToSlider(D.rtGroundOffset, GROUND_OFFSET_RANGE), 'input');
     fire('rtGroundSize', sizeValueToSlider(D.rtGroundSize, GROUND_SIZE_RANGE), 'input');

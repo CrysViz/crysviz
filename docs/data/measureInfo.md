@@ -1,11 +1,12 @@
 # Measure
 
-Click atoms in the 3D view to measure distances, angles and dihedrals between them.
+Turn on a measure tool in the toolbar over the 3D view, then click atoms:
 
-- **1 atom**: shows its element and fractional/cartesian coordinates.
-- **2 atoms**: distance between them.
-- **3 atoms**: angle at the middle atom.
-- **4 atoms**: dihedral angle.
+- **Distance**: two atoms, the distance between them.
+- **Angle**: three atoms, the angle at the middle one.
+
+Turn the tool off with its button when done. An atom's element and coordinates are in its
+tooltip and in the selection bar's **Coordinates**.
 
 Click a highlighted atom again to remove it from the current measurement.
 

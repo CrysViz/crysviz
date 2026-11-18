@@ -411,8 +411,10 @@ export function addDebugPanel(target = `cvPanelBody-${DEBUG_PANEL_ID}`) {
       <div class="backend-potential-toggle dbgTabs" role="tablist" aria-label="Debug views">
         <button type="button" role="tab" data-dbg-tab="monitor">Monitor</button>
         <button type="button" role="tab" data-dbg-tab="bench" title="Measure in-browser MD speed for NEP and PET-MAD on this machine">Benchmark</button>
+        <button type="button" role="tab" data-dbg-tab="tracer" title="Compare the old and new see-through objects and shadows in the ray/path tracer">Tracer</button>
       </div>
       <div class="dbgTabPane" data-dbg-pane="bench" role="tabpanel" hidden></div>
+      <div class="dbgTabPane" data-dbg-pane="tracer" role="tabpanel" hidden></div>
       <div class="dbgTabPane" data-dbg-pane="monitor" role="tabpanel">
       <div class="trajTransport dbgTransport">
         <button id="dbgRecordBtn" class="trajBtn dbgRecordBtn" type="button" title="Pause sampling">⏸</button>
@@ -623,6 +625,11 @@ function bindDebugTabs(body) {
     if (name === 'bench' && bench && !bench.dataset.built) {
       bench.dataset.built = '1';
       import('./DebugBenchmarkTab.js').then((m) => m.buildBenchmarkTab(bench));
+    }
+    const tracer = /** @type {HTMLElement|null} */ (body.querySelector('[data-dbg-pane="tracer"]'));
+    if (name === 'tracer' && tracer && !tracer.dataset.built) {
+      tracer.dataset.built = '1';
+      import('./DebugTracerTab.js').then((m) => m.buildTracerTab(tracer));
     }
     // The monitor's plots were skipped while hidden (panelVisible); catch up.
     if (name === 'monitor' && memPlot) replayHistory();

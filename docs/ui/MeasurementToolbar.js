@@ -175,6 +175,10 @@ function setupLongPressRestoreAll(btn) {
     clear();
     timer = setTimeout(() => {
       fired = true;
+      // The long press is a press on Restore too: switch to Restore mode
+      // (highlighted, ghosts clickable) unless it already is, then offer
+      // Restore All. It used to leave Hide mode on, with Restore unlit.
+      if (mode.measureMode !== 'restore') setMeasureMode('restore', btn);
       showRestorePopover(btn);
     }, LONG_PRESS_MS);
   });

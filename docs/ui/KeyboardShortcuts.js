@@ -65,10 +65,16 @@ import { selectAdjacentStructure, selectAdjacentStep } from './FileBrowswerPanel
 import { setStructurePanelOpen } from './StructureInfoPanel/General.js';
 import { setMeasureMode } from './MeasurementToolbar.js';
 
+// Inputs that take no typing: a shortcut pressed while one has focus (after
+// ticking a checkbox, say) is meant for the app, not for the control. Range
+// sliders and selects stay "editable": they use the arrow keys themselves.
+const NON_TEXT_INPUT_TYPES = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image']);
+
 function isEditableTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  if (tag === 'INPUT') return !NON_TEXT_INPUT_TYPES.has(String(el.type || 'text').toLowerCase());
+  return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
 
 // ---- Space held-state tracking -------------------------------------------

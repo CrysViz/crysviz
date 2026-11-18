@@ -259,7 +259,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // the keep-toggle, or the inside of an opened editor) highlights this atom
   // in the 3D view — the mirror of double-clicking the atom in 3D
   // highlighting this row.
-  nameContainer.title = `Highlight ${element}${displayNumber} in the 3D view`;
+  // A Wyckoff orbit row selects its whole orbit (SelectAndHighlightModule.js
+  // selectAtomFromRow), so its tooltip says so.
+  nameContainer.title = !perImage && linkedAtomIndices.length > 1
+    ? `Select all ${linkedAtomIndices.length} atoms of this orbit in the 3D view`
+    : `Highlight ${element}${displayNumber} in the 3D view`;
   row.addEventListener('click', (e) => {
     const target = /** @type {Element} */ (e.target);
     if (target.closest('button, label, input, select, textarea, .atom-color-editor, .atom-coord-editor, .atom-spin-editor')) return;

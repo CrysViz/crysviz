@@ -53,6 +53,7 @@ import { repaintSelectionGlow } from '../ui/SelectAndHighlightModule.js'
 // the structure-load path below; in widget mode no panels are registered, so it
 // is a safe no-op. The rest of the panel setup moved to core/fullApp.js.
 import { revealFeaturePanels } from '../ui/panels/PanelManager.js'
+import { exampleSignature } from '../state/exampleSignature.js';
 import {initFontScale} from '../ui/FontScaleModule.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
@@ -98,6 +99,7 @@ import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
 import { applyFrameFast } from '../render/FastFrameModule.js';
 import { getActiveStructure, getContainerForStructure } from '../state/structures.js';
+import { setLoadStep } from '../ui/BootProgress.js';
 
 // ........................................................................................................
 //
@@ -556,6 +558,10 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
       showLoadWarningModal({ fileName, message: warnings[0] });
     }
 
+    // The start-up example as loaded (with its saved preferences): the reload
+    // guard (ui/LeaveGuard.js) holds a reload once it differs from this.
+    if (isDefault) structureContainer.bootSignature = exampleSignature(structureContainer);
+
     return { ok: true, container: structureContainer, name: fileName, format: format || undefined };
   } catch (error) {
     // Cancelled at the memory-limit prompt: a user decision, not a failure.
@@ -586,10 +592,22 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
 
 async function loadDefaultStructure() {
   setStatus('Loading default structure...');
+  // No nextPaint() here: the example structure is quick, and waiting a frame
+  // let the render loop draw (and compile shaders for) the still-empty scene
+  // first — 0.5 s more start-up in the browser tests.
+  setLoadStep('Loading the example structure…', { fraction: 0.7 });
   await loadStructure(defaultPOSCAR4, 'oP28-C3N4', true);
 }
 
-export async function initializeCore(browserHostController) {
+/**
+ * @param {any} browserHostController
+ * @param {{ structureFirst?: boolean }} [options] structureFirst (a first
+ *   start-up in this browser, host/early.js): when the start-up only shows
+ *   the example structure, draw it before the windows are downloaded and
+ *   built (initFullAppChrome); a share link or a #load-… file still gets the
+ *   windows first, as its loading may use them.
+ */
+export async function initializeCore(browserHostController, { structureFirst = false } = {}) {
   browserHostController.configure({
     loadStructure,
     selectStructure,
@@ -604,19 +622,31 @@ export async function initializeCore(browserHostController) {
   await initApp();
   setupMobileMenu();
   await initUIPanels();
+  /** @type {Promise<void>|null} */
+  let chrome = null;
+  // The windows: once, before a share link or file loads, or after the
+  // example structure is drawn.
+  const windowsReady = (afterStructure = false) => (chrome ||= (async () => {
+    setLoadStep('Preparing the windows…', { fraction: afterStructure ? 0.85 : 0.75, compact: afterStructure });
+    await initFullAppChrome();
+  })());
+  if (!structureFirst) await windowsReady();
   return {
     loadShared: async () => {
+      await windowsReady();
       const result = await loadSharedStructure();
       if (result) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
       return result;
     },
     loadHash: async () => {
+      await windowsReady();
       const result = await loadFromFilePath();
       if (result === true) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
       return result;
     },
     loadDefault: async () => {
       await loadDefaultStructure();
+      if (structureFirst) await windowsReady(true);
       browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
     },
   };
@@ -729,12 +759,24 @@ async function initializeMathBackend() {
   window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
   window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
-// Panel toggle functionality for all screen sizes
+// The scene's look before the first structure (font scale, background,
+// theme), and the full-app windows (initFullAppChrome) — separate so a plain
+// start-up can draw its example structure in between (initializeCore).
 async function initUIPanels() {
   initFontScale();
   createBackgroundControl();
   await setupThemeSystem();
 
+  // Add viewport meta tag if not present for proper mobile scaling
+  if (!document.querySelector('meta[name="viewport"]')) {
+    const viewport = document.createElement('meta');
+    viewport.name = 'viewport';
+    viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
+    document.head.appendChild(viewport);
+  }
+}
+
+async function initFullAppChrome() {
   // Full-app chrome — the panel system and every panel, plus the
   // backend/save/export/debug panels, phonopy loading, keyboard shortcuts and
   // the projection overlay. It is a lot of code the embed never shows, so it
@@ -746,13 +788,5 @@ async function initUIPanels() {
     const fullApp = await import('./fullApp.js');
     fullAppHooks = fullApp.hooks;
     fullApp.initFullAppUI();
-  }
-
-  // Add viewport meta tag if not present for proper mobile scaling
-  if (!document.querySelector('meta[name="viewport"]')) {
-    const viewport = document.createElement('meta');
-    viewport.name = 'viewport';
-    viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
-    document.head.appendChild(viewport);
   }
 }

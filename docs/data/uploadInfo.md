@@ -1,7 +1,7 @@
 # File Upload 
 
 
-The most important information is that CrysViz is mainly a static html page using the resources from your computer. There is no backend unless you choose *AI mode*. This means that the structures you upload are stored in the temporary browser storage on **your computer**. Reloading the website will remove the data. Clearing browser history will make sure no data is left.
+The most important information is that CrysViz is mainly a static html page using the resources from your computer. Nothing leaves your computer unless you connect a compute server yourself (ASE in the Atomistic window). This means that the structures you upload are stored in the temporary browser storage on **your computer**. Reloading the website will remove the data. Clearing browser history will make sure no data is left.
 
 Currently it is possible to view the following file types: 
 
@@ -46,7 +46,7 @@ Currently it is possible to view the following file types:
 
 ## Parameters
 
-Under the structure table, **Parameters** unfolds the selected structure's scalar properties (energy, pressure, max force — whichever it carries), its lattice vectors,
+Under the structure table, **Parameters** unfolds the selected structure's scalar properties (energy, pressure, max force — whichever it carries) and their **Source**: the code that computed them (VASP, Quantum ESPRESSO, CASTEP, FHI-aims, AIRSS, or the calculator an ASE trajectory names) or the potential that ran in the Atomistic, EOS, phonon or Order Structure window (PET-MAD xs, NEP89, a model on your ASE server); then its lattice vectors,
 cell parameters and volume, its atomic positions (fractional or Cartesian) and its Wyckoff
 positions (space group and one row per crystallographic orbit, from the active Wyckoff lock or a
 symmetry analysis at a tight tolerance (1e-5 Å); the space group links to its symdata page, and the copied text also carries each orbit's

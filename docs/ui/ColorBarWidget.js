@@ -1266,6 +1266,28 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       maxInput.value = formatLimit(max);
       renderTicks();
     },
+    // A saved layout put back on this live bar (a share link or .crysviz
+    // session, ui/ShareModule.js): where it floats over the scene — or docked
+    // back into its window — its orientation (vertical only while floating),
+    // label side, legend text and length. Omitted fields stay as they are.
+    /** @param {{ floating?: boolean, anchor?: any, orientation?: string, flipSide?: boolean, legend?: string, size?: number }} [settings] */
+    applySettings({ floating, anchor, orientation: nextOrientation, flipSide: nextFlip, legend: nextLegend, size } = {}) {
+      if (floating === true && anchor) dragCtl?.floatAtAnchor(anchor);
+      else if (floating === false && dragCtl?.isFloating()) dragCtl.dockBack();
+      if (nextOrientation === 'horizontal' || nextOrientation === 'vertical') {
+        orientation = nextOrientation === 'vertical' && !(dragCtl?.isFloating()) ? 'horizontal' : nextOrientation;
+      }
+      if (nextFlip != null) flipSide = !!nextFlip;
+      if (typeof nextLegend === 'string') {
+        currentLegendRaw = nextLegend;
+        refreshLegendContent();
+      }
+      if (Number.isFinite(size)) barLength = Math.min(Math.max(size, MIN_BAR_LENGTH), MAX_BAR_LENGTH);
+      applyLayout();
+      render(currentColormap);
+      relayoutFloating();
+      updateMenuState();
+    },
     // Applies a length chosen elsewhere — the resize handle's drag broadcasts
     // to every other currently-showing bar via this (ui/ColorBarRegistry.js),
     // so all of them stay the same size instead of just the one being

@@ -281,6 +281,19 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // (the data is already in `series`), and the purge waits for the react.
   /** @type {Promise<any> | null} */
   let inFlight = null;
+  // The other Plotly calls still running (cursor relayout, resize,
+  // extendTraces): a purge in the middle of one ends the same way — "reading
+  // '_redrawFromAutoMarginCount' of undefined" when the Trajectory window was
+  // rebuilt during a relaxation — so the purge waits for these too. Their
+  // errors still surface (re-thrown).
+  /** @type {Set<Promise<any>>} */
+  const sideCalls = new Set();
+  function track(call) {
+    if (!call || typeof call.then !== 'function') return call;
+    sideCalls.add(call);
+    call.then(() => sideCalls.delete(call), (error) => { sideCalls.delete(call); throw error; });
+    return call;
+  }
   let redrawQueued = false;
   let removed = false;
   let layoutSig = '';        // signature of the current trace/axis layout
@@ -719,7 +732,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     laidOutHeight = plotDiv.clientHeight;
     wireClickSeek();
     startResizeObserver();
-    requestAnimationFrame(() => { if (!removed && !inFlight) Plotly.Plots.resize(plotDiv); });
+    requestAnimationFrame(() => { if (!removed && !inFlight) track(Plotly.Plots.resize(plotDiv)); });
     if (redrawQueued) {
       redrawQueued = false;
       drawFull();
@@ -749,7 +762,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         if (Math.abs(h - laidOutHeight) > 2 || chooseArrangement(plottedSeries()) !== arrangement) {
           laidOutHeight = h;
           drawFull();
-        } else Plotly.Plots.resize(plotDiv);
+        } else track(Plotly.Plots.resize(plotDiv));
       });
     });
     ro.observe(plotDiv);
@@ -772,12 +785,12 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       cursorLastAt = performance.now();
       if (!ready || removed) return;
       if (inFlight) { scheduleCursor(); return; } // after the redraw lands
-      Plotly.relayout(plotDiv, {
+      track(Plotly.relayout(plotDiv, {
         shapes: [...markerShapes(), ...cursorShapes()],
         annotations: [...rowLabels, ...markerAnnotations()],
         // Streamed points (extendTraces) can move a row's minimum or maximum.
         ...rowTickUpdates(),
-      });
+      }));
     }, wait);
   }
 
@@ -901,7 +914,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         return arr.slice(Math.max(0, arr.length - k));
       });
       const idxs = plotted.map((_, i) => i);
-      Plotly.extendTraces(plotDiv, { x: xUpdate, y: yUpdate }, idxs, maxPts);
+      track(Plotly.extendTraces(plotDiv, { x: xUpdate, y: yUpdate }, idxs, maxPts));
       scheduleCursor();
     },
 
@@ -1017,10 +1030,12 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       if (ro) { ro.disconnect(); ro = null; }
       if (isExpanded) { closeExpandedSplitItem(); isExpanded = false; }
       root.remove();
-      // Purge only once no react is in flight (see inFlight above); the div is
-      // already out of the DOM, so nothing is visible in between.
+      // Purge only once no Plotly call is in flight (see inFlight and
+      // sideCalls above); the div is already out of the DOM, so nothing is
+      // visible in between.
       const purge = () => { try { if (Plotly && plotDiv) Plotly.purge(plotDiv); } catch { /* nothing drawn yet */ } };
-      if (inFlight) inFlight.then(purge, purge);
+      const pending = [inFlight, ...sideCalls].filter(Boolean);
+      if (pending.length) Promise.allSettled(pending).then(purge);
       else purge();
     },
   };

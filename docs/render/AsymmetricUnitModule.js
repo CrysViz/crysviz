@@ -28,6 +28,7 @@ import { disposeGroup } from '../ui/WindowAndSceneControls.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { containsFractional, CONTAINS_TOLERANCE } from '../ui/BackendPanel/asuGeometry.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
+import { CUT_PLANE_TOLERANCE } from './cutPlaneTolerance.js';
 import { MAX_CUT_PLANES } from './MaterialStyles.js';
 import { fracToCartPoint, invert3x3, transpose3x3 } from '../math/index.js';
 import { setAsuHighlightRefresh } from './asuHighlightHook.js';
@@ -651,7 +652,7 @@ function activeCutPlanes() {
 
 function isCutAway(point, planes) {
   return planes.some(({ n, r, sign }) =>
-    (point[0] * n[0] + point[1] * n[1] + point[2] * n[2] - r) * sign > 0);
+    (point[0] * n[0] + point[1] * n[1] + point[2] * n[2] - r) * sign > CUT_PLANE_TOLERANCE);
 }
 
 setAsuHighlightRefresh(updateAsuAtomHighlight);

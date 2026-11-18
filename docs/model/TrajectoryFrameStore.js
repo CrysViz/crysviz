@@ -32,7 +32,10 @@
  *   spinRaw: Float64Array | null,
  *   energy: number | null,
  *   stress: number[][] | null,
+ *   dataSource?: string | null,
  * }} FramePhysics
+ * `dataSource` is the frame's own source (an Atomistic result), absent when
+ * it is the file's (the container's, model/dataSource.js).
  */
 
 // Plain JS backend on purpose: these run during load (possibly in a worker
@@ -126,6 +129,7 @@ export class TrajectoryFrameStore {
       spinRaw,
       energy: Number.isFinite(structure.energy) ? structure.energy : null,
       stress: structure.stress?.tensor ? structure.stress.tensor.map(row => [...row]) : null,
+      ...(structure.dataSource ? { dataSource: structure.dataSource } : {}),
     };
   }
 

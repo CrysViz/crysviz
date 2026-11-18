@@ -27,8 +27,10 @@
 // fast path is preserved).
 
 import * as THREE from '../external/three/three.module.js';
-import { groups, general, app } from '../state/store.js';
+import { groups, general, app, fileBrowser } from '../state/store.js';
+import { groundNormal, cleanGroundDirection, groundFollowsView } from './groundDirection.js';
 import { activeAtomCutPlanes } from './pipeline/raytrace/SceneEncoder.js';
+import { CUT_PLANE_TOLERANCE } from './cutPlaneTolerance.js';
 
 // Ground surface color at a plane point — byte-for-byte copy of the tracer's
 // groundPatternColor (raytrace/sceneFragment.js): solid / checkerboard / grid of
@@ -70,12 +72,22 @@ const GROUND_CACHE_KEY = 'cv-ground-plane';
  * mesh.visible — the encoder early-returns keeping stale minY/center/radius while
  * hidden, and the matrices are unchanged while hidden, so the results match.
  *
- * @returns {{ posX:number, posY:number, posZ:number, scale:number }}
+ * Along a ground direction other than 'down' (render/groundDirection.js) the
+ * plane is the same distance beyond the lowest point along its normal, the disc
+ * centred where the structure's centre projects onto it.
+ *
+ * @param {THREE.Camera} [camera] for a view-relative ground direction
+ * @returns {{ posX:number, posY:number, posZ:number, scale:number, normal:number[] }}
  */
-export function computeGroundPlacement() {
+export function computeGroundPlacement(camera = app.camera) {
   const mesh = groups.atomsMesh;
+  // Which side (render/groundDirection.js): the normal points from the ground
+  // towards the structure; 'down' is the original +y.
+  const direction = cleanGroundDirection(general.rtGroundDirection);
+  const n = groundNormal(direction, camera, fileBrowser.selectedStructure?.lattice);
   let minX = Infinity, minY = Infinity, minZ = Infinity;
   let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  let minProj = Infinity; // lowest point along n (centre · n − radius)
   if (mesh && mesh.instanceMatrix) {
     // ----- KEEP IN LOCKSTEP with SceneEncoder._encodeAtoms atom AABB loop -----
     const cutPlanes = activeAtomCutPlanes();
@@ -89,7 +101,7 @@ export function computeGroundPlacement() {
       if (cutPlanes.length && !(immune && immune[i] >= 0.5)) {
         let cut = false;
         for (const p of cutPlanes) {
-          if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > 0) { cut = true; break; }
+          if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > CUT_PLANE_TOLERANCE) { cut = true; break; }
         }
         if (cut) continue;
       }
@@ -99,21 +111,36 @@ export function computeGroundPlacement() {
       if (cy + radius > maxY) maxY = cy + radius;
       if (cz - radius < minZ) minZ = cz - radius;
       if (cz + radius > maxZ) maxZ = cz + radius;
+      const proj = cx * n.x + cy * n.y + cz * n.z - radius;
+      if (proj < minProj) minProj = proj;
     }
     // ----- END LOCKSTEP -----
   }
   const structMinY = Number.isFinite(minY) ? minY : -5;
-  let centerX = 0, centerZ = 0, structureRadius = 5;
+  let centerX = 0, centerY = 0, centerZ = 0, structureRadius = 5;
   if (Number.isFinite(minX)) {
     centerX = (minX + maxX) / 2;
+    centerY = (minY + maxY) / 2;
     centerZ = (minZ + maxZ) / 2;
     structureRadius = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2) / 2;
   }
   // Exact driver placement formulas (RayTracingPipeline.js).
   const offset = general.rtGroundOffset ?? 0.75;
   const scale = Math.max((general.rtGroundSize ?? 2.5) * structureRadius, 5);
-  return { posX: centerX, posY: structMinY - offset, posZ: centerZ, scale };
+  const normal = [n.x, n.y, n.z];
+  if (direction === 'down') {
+    return { posX: centerX, posY: structMinY - offset, posZ: centerZ, scale, normal };
+  }
+  // The plane n · p = minProj − offset; the disc centred where the structure's
+  // centre projects onto it.
+  const planeD = (Number.isFinite(minProj) ? minProj : (centerX * n.x + centerY * n.y + centerZ * n.z) - 5) - offset;
+  const h = centerX * n.x + centerY * n.y + centerZ * n.z - planeD;
+  return { posX: centerX - h * n.x, posY: centerY - h * n.y, posZ: centerZ - h * n.z, scale, normal };
 }
+
+const UP = new THREE.Vector3(0, 1, 0);
+const _normal = new THREE.Vector3();
+let lastViewKey = '';
 
 /** Refresh the per-frame ground uniforms from `general` + the scene background.
  *  Runs in the mesh's onBeforeRender (fires per drawn raster/preview frame), so
@@ -138,6 +165,7 @@ function refreshGroundUniforms(material) {
     shader.uniforms.uGroundColor2.value.copy(ud.color2);
     shader.uniforms.uGroundPattern.value = ud.pattern;
     shader.uniforms.uGroundScale.value = ud.scale;
+    if (ud.normal) shader.uniforms.uGroundNormal.value.copy(ud.normal);
   }
 }
 
@@ -153,7 +181,7 @@ function createGroundMaterial() {
   material.customProgramCacheKey = () => GROUND_CACHE_KEY;
   material.onBeforeCompile = (shader) => {
     const ud = material.userData;
-    shader.uniforms.uGroundNormal = { value: new THREE.Vector3(0, 1, 0) };
+    shader.uniforms.uGroundNormal = { value: ud.normal ? ud.normal.clone() : new THREE.Vector3(0, 1, 0) };
     shader.uniforms.uGroundColor1 = { value: ud.color1.clone() };
     shader.uniforms.uGroundColor2 = { value: ud.color2.clone() };
     shader.uniforms.uGroundPattern = { value: ud.pattern };
@@ -211,6 +239,18 @@ export function updateGroundPlane() {
   const p = computeGroundPlacement();
   mesh.position.set(p.posX, p.posY, p.posZ);
   mesh.scale.setScalar(p.scale);
+  // tilt the disc (normal +y baked into the geometry) onto the ground's normal
+  _normal.fromArray(p.normal);
+  mesh.quaternion.setFromUnitVectors(UP, _normal);
+  mesh.material.userData.normal = _normal.clone();
+  lastViewKey = viewKey();
+}
+
+/** The camera's orientation, for re-placing a view-relative ground only when
+ *  the view turned (rounded: the orbit damping's last tiny steps don't count). */
+function viewKey() {
+  const e = app.camera?.matrixWorld?.elements;
+  return e ? [e[4], e[5], e[6], e[8], e[9], e[10]].map((v) => v.toFixed(4)).join(',') : '';
 }
 
 /** O(1) per-frame visibility sync (called from the animate loop just before the
@@ -221,4 +261,10 @@ export function syncGroundPlaneVisibility() {
   const mesh = groups.groundMesh;
   if (mesh) mesh.visible = !!general.rtGroundPlane;
   else if (general.rtGroundPlane) updateGroundPlane();
+  // Below / behind the view: follow the camera (one pass over the atoms per
+  // view change, nothing while the view stays put).
+  if (general.rtGroundPlane && groundFollowsView(general.rtGroundDirection)) {
+    app.camera?.updateMatrixWorld?.(); // this frame's view, not the last one's
+    if (viewKey() !== lastViewKey) updateGroundPlane();
+  }
 }

@@ -98,13 +98,14 @@ import * as THREE from '../external/three/three.module.js';
 import { initializeWithPOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import {
-  StructureContainer, TrajectoryContainer, Field, FieldContainer, Force, Spin,
-  getIsosurfaceMaterialSettings, setIsosurfaceMaterialSettings,
+  StructureContainer, TrajectoryContainer, Field, FieldContainer, Force, Spin, Stress,
+  cleanDataSource, dataSourceOf, getIsosurfaceMaterialSettings, setIsosurfaceMaterialSettings,
   applyMaterialSettingsToStoredIsosurfaces,
 } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField, updateForces, updateSpins, removeForces, removeSpins, setCelOutlineColor } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra, holdPolyhedra, releasePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField, updateForces, updateSpins, removeForces, removeSpins, setCelOutlineColor } from '../render/index.js';
 import { showTrajectoryFrame } from './TrajectoryPanel.js';
+import { cleanGroundDirection } from '../render/groundDirection.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
 import { serializeCifErrors, restoreCifErrors } from '../model/cifErrors.js';
@@ -112,7 +113,7 @@ import { siteSpeciesRecord, restoreSiteSpecies } from '../model/siteSpecies.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
 import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
-import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelManager.js';
+import { revealFeaturePanels, refreshPanelAvailability, openPanel } from './panels/PanelManager.js';
 import { fracToCart, cartToFractional, normalizeFractional } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
@@ -126,6 +127,10 @@ import {
 import { encodeCompact, expandCompact, compactReference } from '../io/share/shareCodec.js';
 import { fetchAlexandriaStructure, fetchOptimadeStructure } from '../io/OptimadeModule.js';
 import { wasLaunchedByHost } from '../host/BrowserHost.js';
+import { setLoadStep, finishLoadProgress, nextPaint, isLoadProgressShown } from './BootProgress.js';
+import { listActiveColorBars } from './ColorBarRegistry.js';
+import { captureStructurePrefField, restoreStructurePrefField } from '../state/structurePrefs.js';
+import { getContainerForStructure } from '../state/structures.js';
 
 // Share links carry their payload in the URL fragment, which browsers never
 // send to the server — so there is no server URL limit (crysviz.org answers 414
@@ -135,6 +140,220 @@ import { wasLaunchedByHost } from '../host/BrowserHost.js';
 const URL_NOTE_CHARS = 8000;
 const URL_CONFIRM_CHARS = 64000;
 let lastRestorePromise = Promise.resolve();
+
+// ---------------------------------------------------------------------------
+// Colour bars (ColorBarWidget.js): Forces, Spins, the Atoms (by force) /
+// Bonds (by length) bars of the Colors window, and the Planes bar.
+// ---------------------------------------------------------------------------
+//
+// Each keeps its layout in `general` (store.js: <id>ColorBarOrientation,
+// …FlipSide, …Floating, …FloatPos — an anchor —, …Locked, <id>LegendText, and
+// the shared colorBarSize), which its window writes only when the bar is torn
+// down, so a capture reads the live bar first. Shared and saved as flat
+// display settings, as the share codec takes plain values and number maps
+// only: the floating position as {x, y, r, b}, offsets from #view's left or
+// right (r: 1) and top or bottom (b: 1) edge. A legend left at its default
+// text is saved as null. The Planes bar's legend, colour map and range belong
+// to each plane and travel with the planes (display.planes), so only its
+// layout is here (legend: false) — and, like the planes, only in .crysviz
+// sessions, not in share links.
+//
+// Restoring them never fails a load: a bar that cannot take the settings (a
+// stale cached widget, an older build) is skipped and logged.
+
+const COLOR_BARS = [
+  { id: 'force', legend: 'Force (eV/Å)' },
+  { id: 'spin', legend: 'Spin (\u03bcB)' },
+  { id: 'atom', legend: 'Atom Force (eV/Å)' },
+  { id: 'bond', legend: 'Bond Length (Å)' },
+  { id: 'plane', legend: false },
+];
+const MAX_LEGEND = 256;
+const MAX_ANCHOR_OFFSET = 20000;
+
+/** A bar's floating anchor (ColorBarDrag.js) as a number map, or null. */
+function anchorToShare(a) {
+  if (!a || !Number.isFinite(a.offsetX) || !Number.isFinite(a.offsetY)) return null;
+  return {
+    x: Math.round(a.offsetX), y: Math.round(a.offsetY),
+    r: a.edgeX === 'right' ? 1 : 0, b: a.edgeY === 'bottom' ? 1 : 0,
+  };
+}
+
+/** …and back (untrusted: bounded), or null. */
+function anchorFromShare(p) {
+  if (!p || typeof p !== 'object' || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+  const clamp = (v) => Math.min(Math.max(v, -MAX_ANCHOR_OFFSET), MAX_ANCHOR_OFFSET);
+  return { edgeX: p.r ? 'right' : 'left', offsetX: clamp(p.x), edgeY: p.b ? 'bottom' : 'top', offsetY: clamp(p.y) };
+}
+
+/** The colour bars' display settings, for captureState(); the Planes bar
+ *  only for a .crysviz session (`planes`). */
+function captureColorBars({ planes = false } = {}) {
+  const live = new Map(listActiveColorBars().map((b) => [b.id, b.instance]));
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const { id, legend } of COLOR_BARS) {
+    if (id === 'plane' && !planes) continue;
+    const bar = live.get(id);
+    const s = bar?.getSettings();
+    const anchor = bar
+      ? (bar.isFloating() ? bar.getAnchor() : null)
+      : (general[`${id}ColorBarFloating`] ? general[`${id}ColorBarFloatPos`] : null);
+    const text = s ? s.legend : general[`${id}LegendText`];
+    out[`${id}ColorBarOrientation`] = (s ? s.orientation : general[`${id}ColorBarOrientation`]) === 'vertical' ? 'vertical' : 'horizontal';
+    out[`${id}ColorBarFlipSide`] = !!(s ? s.flipSide : general[`${id}ColorBarFlipSide`]);
+    if (legend !== false) out[`${id}LegendText`] = text == null || text === legend ? null : String(text).slice(0, MAX_LEGEND);
+    out[`${id}ColorBarFloatAt`] = anchorToShare(anchor);
+    out[`${id}ColorBarFloating`] = out[`${id}ColorBarFloatAt`] !== null;
+    out[`${id}ColorBarLocked`] = !!general[`${id}ColorBarLocked`];
+  }
+  // Resizing any bar resizes all; null until one was resized.
+  out.colorBarSize = Number.isFinite(general.colorBarSize) ? Math.round(general.colorBarSize) : null;
+  return out;
+}
+
+/** Put saved colour-bar settings back: into `general` for bars built later,
+ *  and onto any bar on screen now. Absent keys (older files) change nothing. */
+function applyColorBars(display) {
+  const has = (key) => display[key] !== undefined;
+  if (has('colorBarSize')) {
+    const size = display.colorBarSize;
+    general.colorBarSize = Number.isFinite(size) && size > 0 ? size : null;
+  }
+  const live = new Map(listActiveColorBars().map((b) => [b.id, b.instance]));
+  for (const { id, legend } of COLOR_BARS) {
+    const keys = [`${id}ColorBarOrientation`, `${id}ColorBarFlipSide`,
+      `${id}ColorBarFloating`, `${id}ColorBarFloatAt`, `${id}ColorBarLocked`];
+    if (legend !== false) keys.push(`${id}LegendText`);
+    if (!keys.some(has)) continue;
+    const orientation = display[`${id}ColorBarOrientation`] === 'vertical' ? 'vertical' : 'horizontal';
+    const flipSide = display[`${id}ColorBarFlipSide`] === true;
+    const rawText = display[`${id}LegendText`];
+    const text = typeof rawText === 'string' ? rawText.slice(0, MAX_LEGEND) : null;
+    const anchor = display[`${id}ColorBarFloating`] === true ? anchorFromShare(display[`${id}ColorBarFloatAt`]) : null;
+    general[`${id}ColorBarOrientation`] = orientation;
+    general[`${id}ColorBarFlipSide`] = flipSide;
+    if (legend !== false) general[`${id}LegendText`] = text;
+    general[`${id}ColorBarFloating`] = anchor !== null;
+    general[`${id}ColorBarFloatPos`] = anchor;
+    general[`${id}ColorBarLocked`] = display[`${id}ColorBarLocked`] === true;
+    const bar = live.get(id);
+    if (typeof bar?.applySettings !== 'function') continue; // built later: it reads general
+    try {
+      bar.applySettings({
+        floating: anchor !== null, anchor, orientation, flipSide,
+        legend: legend === false ? undefined : (text ?? legend), size: general.colorBarSize ?? undefined,
+      });
+    } catch (err) {
+      console.warn(`Restoring the ${id} colour bar failed`, err);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Crystal planes (PlanesPanel.js): kept per structure in this browser through
+// state/structurePrefs.js, and through the same capture/restore saved in
+// .crysviz sessions (not in share links) — with each plane's field colour map,
+// range, scale and legend (the Planes colour bar's content).
+// ---------------------------------------------------------------------------
+
+const MAX_PLANES = 64;
+const PLANE_UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Saved planes from a link or file (untrusted): plain records only —
+ *  numbers, booleans, short strings, small arrays and objects — each with
+ *  its params; the Planes window's restorer fills the rest from defaults. */
+function sanitizePlanes(list) {
+  if (!Array.isArray(list)) return null;
+  const clean = (v, depth = 0) => {
+    if (v === null || typeof v === 'boolean') return v;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+    if (typeof v === 'string') return v.length <= 256 ? v : undefined;
+    if (depth >= 3) return undefined;
+    if (Array.isArray(v)) {
+      if (v.length > 64) return undefined;
+      const a = v.map((x) => clean(x, depth + 1));
+      return a.every((x) => x !== undefined) ? a : undefined;
+    }
+    if (typeof v === 'object') {
+      const out = {};
+      for (const [k, x] of Object.entries(v).slice(0, 32)) {
+        if (PLANE_UNSAFE_KEYS.has(k) || k.length > 64) continue;
+        const c = clean(x, depth + 1);
+        if (c !== undefined) out[k] = c;
+      }
+      return out;
+    }
+    return undefined;
+  };
+  return list.slice(0, MAX_PLANES).map((p) => clean(p))
+    .filter((p) => p && typeof p === 'object' && !Array.isArray(p)
+      && p.params && typeof p.params === 'object' && !Array.isArray(p.params));
+}
+
+/**
+ * A link or session that shows forces or spins, or a session with a plane
+ * coloured by a field, opens those windows: they hold the colour bars (and the
+ * controls), which a recipient whose sidebar lacks them would otherwise never
+ * see — arrows with no scale. The Planes window opens on that plane.
+ */
+function revealWindowsForSharedData(structure) {
+  const open = (id) => {
+    try { openPanel(id); } catch (err) { console.warn(`Opening the ${id} window failed`, err); }
+  };
+  if (general.forcesActive && structure?.forces?.length) open('forces');
+  if (general.spinsActive && structure?.spins?.length) open('spins');
+  if ((structure?.planes ?? []).some((p) => p?.visualization === 'Field' && p.field)) {
+    open('planes');
+    import('./PlanesPanel.js').then((m) => m.selectFirstFieldPlane()).catch((err) => console.warn('Selecting the field plane failed', err));
+  }
+}
+
+/** The Atoms (by force) and Bonds (by length) colour scales: range, scale,
+ *  colour map. The Forces/Spins ones are shared already (forceMin, …). */
+function captureColorScales() {
+  return {
+    atomColorMin: general.ForceMin,
+    atomColorMax: general.ForceMax,
+    atomColorScale: general.atomColorScale,
+    atomColorMap: general.atomColorMap ?? null,
+    bondColorMin: general.BondMin,
+    bondColorMax: general.BondMax,
+    bondColorScale: general.bondColorScale,
+    bondColorMap: general.bondsColorMap ?? null,
+  };
+}
+
+function applyColorScales(display) {
+  const num = (v) => (Number.isFinite(v) ? v : null);
+  const scale = (v) => (v === 'log' || v === 'linear' ? v : null);
+  const cmap = (v) => (typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(v) ? v : undefined);
+  const set = (key, v) => { if (v != null) general[key] = v; };
+  set('ForceMin', num(display.atomColorMin));
+  set('ForceMax', num(display.atomColorMax));
+  set('atomColorScale', scale(display.atomColorScale));
+  if (display.atomColorMap === null) general.atomColorMap = null;
+  else set('atomColorMap', cmap(display.atomColorMap));
+  set('BondMin', num(display.bondColorMin));
+  set('BondMax', num(display.bondColorMax));
+  set('bondColorScale', scale(display.bondColorScale));
+  if (display.bondColorMap === null) general.bondsColorMap = null;
+  else set('bondsColorMap', cmap(display.bondColorMap));
+  const live = new Map(listActiveColorBars().map((b) => [b.id, b.instance]));
+  for (const [id, min, max, map, sc] of [
+    ['atom', general.ForceMin, general.ForceMax, general.atomColorMap, general.atomColorScale],
+    ['bond', general.BondMin, general.BondMax, general.bondsColorMap, general.bondColorScale],
+  ]) {
+    const bar = live.get(id);
+    try {
+      if (typeof bar?.setRange === 'function') bar.setRange(min, max);
+      if (typeof bar?.update === 'function') bar.update(map ?? 'heatmap', sc);
+    } catch (err) {
+      console.warn(`Restoring the ${id} colour scale failed`, err);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Capture
@@ -212,6 +431,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
   // frame (issue #53), and `selectedFrameIndex` records which one is on screen.
   let frames;
   let selectedFrameIndex;
+  let containerSource = null;
   if (includeFrames) {
     const activeContainer = structureShip.container?.[fileBrowser.selectedRowIndex];
     // Through the container seam: a store-backed trajectory serves frame
@@ -230,6 +450,9 @@ export function captureState({ includeFrames = false, includeFields = false } = 
         forces: structure.forces?.length ? structure.forces : null,
         spins: structure.spins?.length ? structure.spins : null,
         species: siteSpeciesRecord(structure.atoms.map(a => a.species)),
+        energy: structure.energy,
+        stress: structure.stress?.tensor ?? null,
+        dataSource: dataSourceOf(structure),
       }];
     frames = entries.map(frame => ({
       elements: frame.elements,
@@ -240,8 +463,17 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       ...(frame.species ? { species: frame.species } : {}),
       ...(frame.forces?.length ? { forces: serializeArrows(frame.forces) } : {}),
       ...(frame.spins?.length ? { spins: serializeArrows(frame.spins, true) } : {}),
+      // The frame's energy (eV) and stress (eV/Å³, compression positive,
+      // model/Stress.js — the pressure is its trace/3), when it has them, and
+      // the frame's own source when a computation in the app gave them
+      // (the file's is `dataSource` below).
+      ...(Number.isFinite(frame.energy) ? { energy: frame.energy } : {}),
+      ...(isStressTensor(frame.stress) ? { stress: frame.stress.map(r => [...r]) } : {}),
+      ...(cleanDataSource(frame.dataSource) ? { dataSource: cleanDataSource(frame.dataSource) } : {}),
     }));
     selectedFrameIndex = Math.max(0, activeContainer ? activeContainer.frameIndexOf(structure) : 0);
+    // Where the file's energies, forces and stress came from ("VASP").
+    containerSource = cleanDataSource(activeContainer?.dataSource);
   }
 
   // The errors read from a CIF (model/cifErrors.js), for the viewed
@@ -255,6 +487,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
   return {
     version: '2.16',
     ...(frames ? { frames, selectedFrameIndex } : {}),
+    ...(containerSource ? { dataSource: containerSource } : {}),
     ...(cifErrors ? { cifErrors } : {}),
     ...(fields ? { fields } : {}),
     // The viewed frame lives in `frames[selectedFrameIndex]` when frames are
@@ -266,6 +499,11 @@ export function captureState({ includeFrames = false, includeFields = false } = 
         lattice: structure.lattice.map(r => [...r]),
         positions: structure.atoms.map(a => [...a.position]),
         ...(viewedSpecies ? { species: viewedSpecies } : {}),
+        // The force and spin arrows on screen, as each .crysviz frame carries
+        // them: a share link opens with them drawn (it had only their display
+        // settings, so it showed none).
+        ...(structure.forces?.length ? { forces: serializeArrows(structure.forces) } : {}),
+        ...(structure.spins?.length ? { spins: serializeArrows(structure.spins, true) } : {}),
       },
     }),
     colors: {
@@ -337,6 +575,12 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       spinLengthLogScale: general.spinLengthLogScale,
       spinColorMap: general.spinColorMap,
       spinSpeciesVisibility: nonEmptyDeepCopy(general.speciesVisibility),
+      // The colour bars' layout and legends, and the Atoms/Bonds colour scales.
+      ...captureColorBars({ planes: includeFrames }),
+      ...captureColorScales(),
+      // The crystal planes (with their colour maps and legends), when any —
+      // in a .crysviz session only (includeFrames), not in a share link.
+      ...(includeFrames ? { planes: nonEmptyDeepCopy(captureStructurePrefField('planes', structure)) } : {}),
     },
     style: {
       renderStyle: general.renderStyle,
@@ -360,6 +604,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       rtGroundOffset: general.rtGroundOffset,
       rtGroundSize: general.rtGroundSize,
       rtGroundReflect: general.rtGroundReflect,
+      rtGroundDirection: general.rtGroundDirection,
       rtLightIntensity: general.rtLightIntensity,
       rtAmbient: general.rtAmbient,
       rtSaturation: general.rtSaturation,
@@ -697,6 +942,9 @@ function applyDisplaySettings(display) {
   setGen('spinLengthLogScale', display.spinLengthLogScale);
   setGen('spinColorMap', display.spinColorMap);
   if (display.spinSpeciesVisibility) general.speciesVisibility = { ...display.spinSpeciesVisibility };
+  // Never fail a load over a colour bar (see COLOR_BARS above).
+  try { applyColorBars(display); } catch (err) { console.warn('Restoring the colour bars failed', err); }
+  try { applyColorScales(display); } catch (err) { console.warn('Restoring the colour scales failed', err); }
   if (display.forcesActive != null) { general.forcesActive = display.forcesActive; setToggle('showForcesToggle', display.forcesActive); }
   if (display.spinsActive != null) { general.spinsActive = display.spinsActive; setToggle('showSpinsToggle', display.spinsActive); }
 }
@@ -782,6 +1030,12 @@ function applyStyleSettings(style) {
     }
   }
   if (style.rtGroundPattern != null) { general.rtGroundPattern = style.rtGroundPattern; setSelect('rtGroundPattern', style.rtGroundPattern); }
+  // Which side the ground lies on (render/groundDirection.js); older links and
+  // sessions have none and keep today's.
+  if (style.rtGroundDirection != null) {
+    general.rtGroundDirection = cleanGroundDirection(style.rtGroundDirection);
+    setSelect('rtGroundDirection', general.rtGroundDirection);
+  }
   if (style.rtGroundColor1 !== undefined) {
     general.rtGroundColor1 = style.rtGroundColor1;
     if (style.rtGroundColor1) setSelect('rtGroundColor1', style.rtGroundColor1);
@@ -1280,29 +1534,63 @@ export async function openShareLink(urlString) {
   const found = findSharePayload(urlString);
   if (!found) return false;
 
-  let state;
+  // Progress over the 3D view for every step (ui/BootProgress.js): a large
+  // styled link spends seconds building the structure, polyhedra and
+  // measurements on the main thread, so each step is painted before it runs.
+  // At start-up the bar is already most of the way (ui/BootProgress.js).
+  const progress = shareProgressScale();
+  setLoadStep('Opening the shared structure…', { fraction: progress(0.15) });
+  await nextPaint();
   try {
-    state = await decodeSharePayload(found);
-  } catch (e) {
-    const invalidChars = [...found.value].filter(c => !/[A-Za-z0-9\-_+/= ]/.test(c));
-    console.error('Failed to decode shared state:', e,
-      'kind:', found.kind, 'length:', found.value.length,
-      'invalid chars:', invalidChars.slice(0, 10));
-    throw new Error(`Failed to decode shared state: ${e.message}`);
-  }
-  if (state === null) return false; // password prompt cancelled
+    let state;
+    try {
+      state = await decodeSharePayload(found);
+    } catch (e) {
+      const invalidChars = [...found.value].filter(c => !/[A-Za-z0-9\-_+/= ]/.test(c));
+      console.error('Failed to decode shared state:', e,
+        'kind:', found.kind, 'length:', found.value.length,
+        'invalid chars:', invalidChars.slice(0, 10));
+      throw new Error(`Failed to decode shared state: ${e.message}`);
+    }
+    if (state === null) return false; // password prompt cancelled
 
-  const warnings = Array.isArray(state.shareWarnings) ? state.shareWarnings : [];
-  if (!applySharedState(state, 'shared.vasp')) {
-    throw new Error('Shared state could not be applied.');
+    const warnings = Array.isArray(state.shareWarnings) ? state.shareWarnings : [];
+    await applySharedStateWithProgress(state, 'shared.vasp', 'Shared state could not be applied.', progress);
+    general.sharedStructureLoaded = true;
+    if (warnings.length) {
+      console.warn('Share link:', warnings.join(' '));
+      setShareStatus(warnings.join(' '));
+    }
+    return true;
+  } finally {
+    finishLoadProgress();
   }
+}
+
+/** Map a share load's own progress (0–1) onto the bar: the whole bar when it
+ *  opens on its own (Paste Text, a .crysviz file), its last stretch when it is
+ *  the last step of start-up. */
+function shareProgressScale() {
+  const base = isLoadProgressShown() ? 0.8 : 0;
+  return (f) => base + (1 - base) * f;
+}
+
+/** applySharedState + waitForStateRestoration, each step shown on the
+ *  progress overlay first. Throws `failMessage` when the state cannot be
+ *  applied. */
+async function applySharedStateWithProgress(state, fileName, failMessage, progress = shareProgressScale()) {
+  const viewed = state.structure ?? (Array.isArray(state.frames) ? state.frames[state.selectedFrameIndex ?? 0] : null);
+  const atoms = viewed?.elements?.length ?? 0;
+  setLoadStep(`Building the structure${atoms ? ` (${atoms.toLocaleString('en-US')} atoms)` : ''}…`, { fraction: progress(0.45) });
+  await nextPaint();
+  if (!applySharedState(state, fileName)) throw new Error(failMessage);
+  const extras = [
+    (general.showPolyhedra || general.completePolyhedra) && 'polyhedra',
+    state.measurements?.length && 'measurements',
+  ].filter(Boolean);
+  setLoadStep(extras.length ? `Drawing the ${extras.join(' and ')}…` : 'Drawing…', { fraction: progress(0.8) });
+  await nextPaint();
   await waitForStateRestoration();
-  general.sharedStructureLoaded = true;
-  if (warnings.length) {
-    console.warn('Share link:', warnings.join(' '));
-    setShareStatus(warnings.join(' '));
-  }
-  return true;
 }
 
 /** Boot-time loader for a share link in the page's own URL. */
@@ -1318,6 +1606,26 @@ export async function loadSharedStructure() {
   return true;
 }
 
+/** A 3×3 tensor of finite numbers (a stored stress, model/Stress.js). */
+function isStressTensor(t) {
+  return Array.isArray(t) && t.length === 3
+    && t.every((row) => Array.isArray(row) && row.length === 3 && row.every((v) => Number.isFinite(v)));
+}
+
+/**
+ * A saved frame's energy, stress and source onto its rebuilt structure
+ * (.crysviz sessions; older ones and links carry none, which leaves the
+ * structure without them as before).
+ * @param {any} frame the saved frame
+ * @param {import('../model/Structure.js').Structure} structure
+ * @param {unknown} [fallbackSource] the session's file-wide source
+ */
+function applyFrameScalars(frame, structure, fallbackSource = null) {
+  structure.energy = Number.isFinite(frame?.energy) ? frame.energy : null;
+  structure.stress = isStressTensor(frame?.stress) ? new Stress({ tensor: frame.stress.map((r) => [...r]) }) : null;
+  structure.dataSource = cleanDataSource(frame?.dataSource) ?? cleanDataSource(fallbackSource);
+}
+
 /**
  * Apply a captured state (see captureState): load its structure and restore
  * colors, display/style settings, camera and measurements. Shared by the
@@ -1325,6 +1633,20 @@ export async function loadSharedStructure() {
  * @returns {boolean} whether the state was applied
  */
 export function applySharedState(state, fileName = 'shared.vasp') {
+  // Polyhedra wait for the restored atom order and styles (one compute, not
+  // two: render/PolyhedraModule.js holdPolyhedra). On a failed restore any
+  // held request still runs, so the view is not left with stale polyhedra.
+  holdPolyhedra();
+  let applied = false;
+  try {
+    applied = applySharedStateHeld(state, fileName);
+    return applied;
+  } finally {
+    if (releasePolyhedra() && !applied) updatePolyhedra();
+  }
+}
+
+function applySharedStateHeld(state, fileName) {
   if (!state?.version?.startsWith('2')) {
     console.warn('State version not supported:', state?.version);
     return false;
@@ -1362,6 +1684,7 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       const structures = frames.map((f, i) => {
         const s = readPOSCAR(buildPOSCAR({ structure: f }), fileName);
         applySiteSpecies(f, s);
+        applyFrameScalars(f, s);
         const ordered = restoreAtomOrder(f, s);
         if (i === selectedFrameIndex) viewedOrdered = ordered;
         applyArrows(f, s);
@@ -1372,6 +1695,7 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       trajectoryContainer = structures.length > 1
         ? TrajectoryContainer.fromStructures(fileName, structures)
         : new StructureContainer({ fileName, structures });
+      trajectoryContainer.dataSource = cleanDataSource(state.dataSource);
       // Optional per-frame cell-kind labels (altermagnets DB precomputes
       // loaded/conventional/primitive as frames). Order-aligned with `frames`;
       // stashed for widget mode to read. Ignored everywhere else. Validate
@@ -1391,6 +1715,10 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       // the wedges and the disorder warnings see the mixed sites from the start.
       const s = readPOSCAR(buildPOSCAR({ structure: viewed }), fileName);
       applySiteSpecies(viewed, s);
+      // Energy, stress and source before the first render (the Parameters
+      // section shows them); the session's file-wide source goes on the
+      // structure here, as there is no trajectory to hold it.
+      applyFrameScalars(viewed, s, state.dataSource);
       initializeWithPOSCAR(s, fileName, { restoreStoredPrefs: false });
     }
   } catch (e) {
@@ -1439,6 +1767,12 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   // SceneEncoder), so the two compose on the next trace.
   if (state.fields) restoreFields(state.fields, structure);
 
+  // Crystal planes (.crysviz sessions), after the fields (a plane shows a field
+  // by its label; one whose field comes later binds to it then: PlanesPanel.js
+  // resolvePendingPlaneFields). Links and older files have none.
+  const planes = sanitizePlanes(state.display?.planes);
+  if (planes?.length) restoreStructurePrefField('planes', getContainerForStructure(structure), planes, structure);
+
   // Rebuild bonds to reflect any bondLength / bondVisibility changes
   rebuildBonds();
 
@@ -1462,12 +1796,13 @@ export function applySharedState(state, fileName = 'shared.vasp') {
     else removeSpins();
   }
 
-  // parsePOSCAR's updateVisualization kicked off the (async) polyhedra compute
-  // BEFORE restoreAtomOrder and the style-store restore above; re-run it so
-  // keys derive from the corrected atom order and restored styles render.
-  // (updatePolyhedra coalesces with any in-flight compute.)
+  revealWindowsForSharedData(structure);
+
+  // Polyhedra, once: requests made while the structure was being built were
+  // held (applySharedState) until the atom order and styles above are restored.
   const restorationTasks = [restoreCamera(state.camera), restoreMeasurements(state.measurements)];
-  if (general.showPolyhedra || general.completePolyhedra) restorationTasks.push(updatePolyhedra());
+  const heldPolyhedra = releasePolyhedra();
+  if (heldPolyhedra || general.showPolyhedra || general.completePolyhedra) restorationTasks.push(updatePolyhedra());
   lastRestorePromise = Promise.all(restorationTasks).then(() => undefined);
   // Legacy synchronous callers still receive the boolean below; the async
   // loaders await this same promise. Mark the rejection handled here so a
@@ -1514,10 +1849,12 @@ export async function loadCrysvizFile(content, fileName = 'file.crysviz') {
   if (state?.format !== 'crysviz') {
     throw new Error(`${fileName} is not a CrysViz state file.`);
   }
-  if (!applySharedState(state, fileName)) {
-    throw new Error(`Could not apply the state in ${fileName} (unsupported version?).`);
+  try {
+    await applySharedStateWithProgress(state, fileName,
+      `Could not apply the state in ${fileName} (unsupported version?).`);
+  } finally {
+    finishLoadProgress();
   }
-  await waitForStateRestoration();
   const container = structureShip.container.length > initialContainerCount
     ? structureShip.container.at(-1)
     : null;

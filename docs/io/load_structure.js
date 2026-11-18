@@ -16,6 +16,7 @@ import { readPOSCAR } from './ReadPOSCARModule.js';
 import { parseASETrajectory } from './ReadASETrajectoryModule.js';
 import {generateID} from '../utils/index.js'
 import { detectFormat, headOf, looksLike } from './formats.js';
+import { formatDataSource, hasComputedData } from '../model/dataSource.js';
 
 /*
  * The idea is that parse_any will eventually take over all parsing
@@ -33,7 +34,16 @@ export async function parse_any(content, fileName = '', isDefault = false, known
   // FileSource, which `headOf` cannot read, so without it the name alone
   // would decide (and `run.extxyz` would be read as a POSCAR).
   const formatId = knownFormat || detectFormat({ fileName, head: headOf(content) }).id;
+  const container = await parseByFormat(formatId, content, fileName);
+  // Where its energies, forces and stress came from (model/dataSource.js),
+  // unless the reader knew better (an ASE trajectory names its calculator).
+  const source = formatDataSource(formatId);
+  if (source && container && !container.dataSource && hasComputedData(container)) container.dataSource = source;
+  return container;
+}
 
+/** The reader for one io/formats.js id. */
+async function parseByFormat(formatId, content, fileName) {
   switch (formatId) {
     case 'traj':
       // ASE ULM trajectories are binary; `content` arrives as an ArrayBuffer.

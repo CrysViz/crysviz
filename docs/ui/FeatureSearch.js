@@ -15,6 +15,13 @@
 //   Structure  the selected structure's elements, atoms, bond pairs,
 //            polyhedra categories and Wyckoff sites, as the Structure window
 //            lists them (search/structureEntries.js)
+//   Supercell  typing the three factors ("222", "2x3x2") offers to build
+//            that supercell of the selected structure, first in the list
+//            (search/supercellQuery.js)
+//   Switch   a query ending in "on" or "off" ("bonds off", "polyhedra on"),
+//            or starting "turn on/off" ("turn off bonds"), lists the matching
+//            on/off toggles as results that switch them straight away,
+//            without going to them (see switchResults)
 //
 // Choosing a control goes to it: its window is added to the sidebar if it was
 // in the store, opened, the right in-window tab selected, any disclosure it
@@ -37,6 +44,10 @@ import { structureEntries } from './search/structureEntries.js';
 import { CONCEPTS, BEST_BETS, RESULT_LABELS } from './search/concepts.js';
 import { setStructurePanelOpen } from './StructureInfoPanel/General.js';
 import { scoreEntry, normalize, stem } from './search/fuzzy.js';
+import { parseSupercellQuery } from './search/supercellQuery.js';
+import { showConfirmation } from './ConfirmBanner.js';
+import { supercellAtomCount } from './SuperCellModule.js';
+import { fileBrowser } from '../state/store.js';
 import {
   harvestWindow, findTabButton, revealAncestors, isShown, isActiveTab,
 } from './search/controlHarvest.js';
@@ -53,7 +64,7 @@ const KIND_LABEL = {
   window: 'Panel', action: 'Action', button: 'Button', toggle: 'Toggle',
   slider: 'Slider', select: 'Choice', input: 'Field', tab: 'Tab', link: 'Link',
   section: 'Section', element: 'Element', atom: 'Atom', bond: 'Bond pair',
-  polyhedron: 'Polyhedra', site: 'Site',
+  polyhedron: 'Polyhedra', site: 'Site', switch: 'Switch',
 };
 
 let overlay = null;
@@ -95,6 +106,9 @@ async function scrollSettled(el, timeoutMs = 1200) {
 }
 
 /** App-level actions that are not keyboard-shortcut commands. */
+async function recenterView(fit = false) {
+  (await import('./WindowAndSceneControls.js')).recenterView({ fit });
+}
 async function openSelectionInspector() {
   (await import('./AnalysisPanels/SelectionInspector.js')).openSelectionInspector();
 }
@@ -110,6 +124,8 @@ function appActions() {
     { label: 'Colour palette', path: 'Theme', keywords: ['color', 'palette', 'theme'], run: click('#themeMenuToggle') },
     { label: 'About CrysViz', path: 'Help', keywords: ['version', 'help', 'license', 'credits'], run: click('#aboutTrigger') },
     { label: 'Selection Inspector', path: 'The selected atoms in their own view (also: Inspect on the selection bar)', keywords: ['inspect', 'inspector', 'selection', 'selected atoms'], run: openSelectionInspector },
+    { label: 'Recenter view', path: 'Camera · the structure back to the middle, rotation and zoom kept (also: long-press Reset view)', keywords: ['recenter', 'recentre', 'center', 'centre', 'middle', 'pan back', 'keep rotation'], run: () => recenterView() },
+    { label: 'Recenter and fit', path: 'Camera · back to the middle and zoomed to fit, rotation kept', keywords: ['recenter', 'recentre', 'fit', 'zoom to fit', 'keep rotation'], run: () => recenterView(true) },
   ].map((a) => ({ ...a, type: 'action', curated: true }));
 }
 
@@ -268,6 +284,156 @@ function defaultResults() {
   return [...hinted, ...rest, ...actions].slice(0, MAX_RESULTS).map((entry) => ({ entry, positions: [], score: 0 }));
 }
 
+/** The "Build a 2×3×2 supercell" result for a supercell query ("232",
+ *  "2x3x2"), or null (not one, or no structure to tile). */
+function supercellResult(query) {
+  const f = parseSupercellQuery(query);
+  const structure = fileBrowser.selectedStructure;
+  if (!f || !structure?.atoms?.length || !structure.lattice) return null;
+  const cur = structure.supercell || {};
+  const dims = `${f.nx}×${f.ny}×${f.nz}`;
+  const atoms = supercellAtomCount(structure, f.nx, f.ny, f.nz);
+  const count = (n) => `${n.toLocaleString('en-US')} atom${n === 1 ? '' : 's'}`;
+  const already = f.nx === (cur.nx || 1) && f.ny === (cur.ny || 1) && f.nz === (cur.nz || 1);
+  const entry = {
+    type: 'action', kind: 'action', curated: true, keywords: [], shortcut: '', supercell: f,
+    label: f.nx * f.ny * f.nz === 1 ? 'Back to the 1×1×1 cell' : `Build a ${dims} supercell`,
+    path: already
+      ? `Cell & Supercell · it is ${dims} now (${count(atoms)})`
+      : `Cell & Supercell · ${count(structure.atoms.length)} → ${count(atoms)}`,
+    run: async () => {
+      await (await import('./LatticeSupercellPanel.js')).applySupercell(f.nx, f.ny, f.nz);
+      const now = fileBrowser.selectedStructure?.atoms?.length ?? atoms;
+      showConfirmation(f.nx * f.ny * f.nz === 1
+        ? `Back to the 1×1×1 cell (${count(now)})`
+        : `${dims} supercell built (${count(now)})`);
+    },
+  };
+  return { entry, positions: [], score: Infinity, alias: null };
+}
+
+// ---- switching toggles: "bonds off" -----------------------------------------
+
+/** "show bonds off", "polyhedra on", "spins: on": the words before, and on/off. */
+const ON_OFF = /^(.*?\S)[\s:=]+(on|off)$/i;
+/** "turn off bonds", "switch on polyhedra": on/off, and the words after. */
+const TURN_ON_OFF = /^(?:turn|switch)\s+(on|off)\s+(.*\S)$/i;
+
+/** The toggle words and the state a switch query asks for, or null. */
+function parseSwitchQuery(query) {
+  const q = String(query).trim();
+  const turn = TURN_ON_OFF.exec(q);
+  if (turn) return { words: turn[2], on: turn[1].toLowerCase() === 'on' };
+  const end = ON_OFF.exec(q);
+  if (end) return { words: end[1], on: end[2].toLowerCase() === 'on' };
+  return null;
+}
+/** At most this many switch results lead the list. */
+const MAX_SWITCHES = 6;
+/** The latest setToggle call per toggle (see there). */
+const switchTurns = new Map();
+
+/** A toggle result's element, if it is in the page now (its window built). */
+function liveToggle(entry) {
+  if (entry.el?.isConnected) return entry.el;
+  return (entry.id && document.getElementById(entry.id)) || null;
+}
+
+/** On/off toggles only: not a radio button, nor a two-sided switch
+ *  ("Perspective | Parallel"), where neither side is "on". */
+function isOnOffToggle(el) {
+  if (el.tagName === 'INPUT') {
+    const input = /** @type {HTMLInputElement} */ (el);
+    return input.type === 'checkbox' && !input.parentElement?.querySelector('.toggle_slider_dual');
+  }
+  return el.getAttribute('role') === 'switch';
+}
+
+function toggleIsOn(el) {
+  return el.tagName === 'INPUT' ? /** @type {HTMLInputElement} */ (el).checked : el.getAttribute('aria-checked') === 'true';
+}
+
+/**
+ * Switch a toggle result on or off. Where its window was never built, the
+ * toggle is not in the page yet: its window is opened (as choosing the toggle
+ * would) and then it is switched. Exported for the browser tests.
+ * @returns {Promise<boolean>} whether it is now in the asked state
+ */
+export async function setToggle(toggle, on) {
+  // Opening the window takes a moment (it scrolls to the toggle first); a
+  // newer switch of the same toggle meanwhile wins ("… on", then "… off"
+  // quickly: the late "on" must not undo the "off").
+  const key = toggle.id || `${toggle.panelId}\n${toggle.label}`;
+  const turn = (switchTurns.get(key) || 0) + 1;
+  switchTurns.set(key, turn);
+  let el = liveToggle(toggle);
+  if (!el) el = await goToControl(toggle);
+  if (switchTurns.get(key) !== turn) return false;
+  if (!el || !isOnOffToggle(el)) return false;
+  if (/** @type {HTMLInputElement} */ (el).disabled) {
+    await goToControl(toggle); // greyed out here: show it, and why
+    return false;
+  }
+  // A click, as the user's: the toggle's own click/input/change handlers run.
+  const was = toggleIsOn(el);
+  if (was !== on) el.click();
+  const row = el.closest('label.toggle_row, .toggle_row, label');
+  if (row && isShown(/** @type {HTMLElement} */ (row))) flashElement(row);
+  const done = toggleIsOn(el) === on;
+  // The control is not shown: say it is done ("Show Bonds" -> "Bonds").
+  if (done) {
+    const name = toggle.label.replace(/^show\s+/i, '');
+    showConfirmation(`${name} ${was === on ? 'already' : 'switched'} ${on ? 'on' : 'off'}`);
+  }
+  return done;
+}
+
+/** For a query ending in on/off: the toggles its other words name, as
+ *  results that switch them ("Show Bonds → off"), best match first. */
+function switchResults(query, pool) {
+  const ask = parseSwitchQuery(query);
+  if (!ask || !normalize(ask.words).trim()) return [];
+  const { words, on } = ask;
+  const word = on ? 'on' : 'off';
+  // The words name the toggle itself: its label first; only where no label
+  // matches, a phrase for it (search/concepts.js: "bonds across boundary" is
+  // Neighbour Bonds, but "bonds" means Show Bonds). Its window's name alone
+  // does not count.
+  const byLabel = [];
+  const byAlias = [];
+  for (const entry of pool) {
+    if (entry.type !== 'control' || entry.kind !== 'toggle') continue;
+    const el = liveToggle(entry);
+    if (el && !isOnOffToggle(el)) continue;
+    const onLabel = scoreEntry(words, { ...entry, aliases: undefined });
+    if (onLabel?.positions.length) { byLabel.push({ entry, el, match: onLabel }); continue; }
+    const onAlias = scoreEntry(words, entry);
+    if (onAlias?.alias) byAlias.push({ entry, el, match: onAlias });
+  }
+  const hits = byLabel.length ? byLabel : byAlias;
+  if (!hits.length) return [];
+  // Ties: the shorter label is the closer match ("Show Polyhedra" over
+  // "Complete Polyhedra").
+  hits.sort((a, b) => b.match.score - a.match.score || a.entry.label.length - b.entry.label.length);
+  const best = hits[0].match.score;
+  return hits.filter((h) => h.match.score >= best * 0.5).slice(0, MAX_SWITCHES).map(({ entry, el, match }) => {
+    const now = el ? toggleIsOn(el) : null;
+    let state = 'opens its window first';
+    if (el?.disabled) state = 'not available here';
+    else if (now === on) state = `already ${word}`;
+    else if (now !== null) state = `${now ? 'on' : 'off'} now`;
+    return {
+      entry: {
+        type: 'action', kind: 'switch', label: `${entry.label} → ${word}`,
+        path: `${entry.path} · ${state}`, keywords: [], shortcut: entry.shortcut || '',
+        switchOf: entry, switchTo: on,
+        run: () => setToggle(entry, on),
+      },
+      positions: match.positions, score: Infinity, alias: match.alias || null,
+    };
+  });
+}
+
 /**
  * Rank the entries for a query. Exported for the browser tests.
  * @returns {{ entry: any, positions: number[], score: number }[]}
@@ -291,7 +457,9 @@ export function searchEntries(query, pool = entries) {
   const bets = bestBets(query, pool);
   const lead = bets.map((entry) => scored.find((s) => s.entry === entry)
     || { entry, positions: [], score: 0, alias: null });
-  return [...lead, ...scored.filter((s) => !bets.includes(s.entry))].slice(0, MAX_RESULTS);
+  const supercell = supercellResult(query);
+  return [...(supercell ? [supercell] : []), ...switchResults(query, pool), ...lead,
+    ...scored.filter((s) => !bets.includes(s.entry))].slice(0, MAX_RESULTS);
 }
 
 // ---- rendering --------------------------------------------------------------
@@ -518,7 +686,9 @@ export async function goToControl(entry) {
   // A checkbox/slider is drawn by its row; flash what the eye sees.
   const visible = el.closest('label.toggle_row, .toggle_row') || (isShown(el) ? el : el.closest('label')) || el;
   visible.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  if (typeof el.focus === 'function') el.focus({ preventScroll: true });
+  // Not while the palette is open again (a quick next search): the typing
+  // belongs in its field — focused here, the next Enter went to this control.
+  if (typeof el.focus === 'function' && !isFeatureSearchOpen()) el.focus({ preventScroll: true });
   // Flash once the control has arrived: a long smooth scroll outlasts the
   // half-second flash, which would otherwise be over before it is on screen.
   await scrollSettled(/** @type {HTMLElement} */ (visible));
@@ -568,6 +738,8 @@ function build() {
         <span><kbd class="feature-search-kbd">↵</kbd> go there</span>
         <span><kbd class="feature-search-kbd">Esc</kbd> close</span>
         <span><kbd class="feature-search-kbd" id="featureSearchAgainKey"></kbd> again: the browser's find</span>
+        <span>… <kbd class="feature-search-kbd">on</kbd> / <kbd class="feature-search-kbd">off</kbd> switch a toggle</span>
+        <span><kbd class="feature-search-kbd">222</kbd> build a supercell</span>
       </div>
     </div>
   `;
