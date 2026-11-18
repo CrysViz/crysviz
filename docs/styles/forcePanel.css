@@ -292,6 +292,16 @@
   width: 100px;
 }
 
+/* "Group by Wyckoff" outside Wyckoff mode (ForceHistogram.js's syncWyckoff). */
+.fh-wyckoff-row.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.fh-wyckoff-row.is-disabled input {
+  cursor: not-allowed;
+}
+
 .fh-stats {
   display: flex;
   flex-wrap: wrap;

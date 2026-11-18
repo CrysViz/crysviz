@@ -6,11 +6,14 @@
 // tool. Here the bonds are already known by render instance id (the
 // histogram bin) and already highlighted by highlightBondIn3D, so only the
 // text label is needed — reusing its .measure-label visual style for
-// consistency with the Measure tool.
+// consistency with the Measure tool. With CIF errors read and "Show CIF
+// Errors" on, a label carries the bond's standard uncertainty, 1.9620(14) Å,
+// as the Measure tool's labels do.
 
-import { app } from '../../state/store.js';
+import { app, fileBrowser, general } from '../../state/store.js';
 import { CSS2DObject } from '../../external/three/CSS2DRenderer.js';
-import { getBondByInstanceId } from '../../render/BondsFracUpdateModule.js';
+import { getBondByInstanceId, bondLengthSu } from '../../render/BondsFracUpdateModule.js';
+import { formatWithSu } from '../../model/cifErrors.js';
 
 /** @type {any[]} */
 let labels = [];
@@ -29,7 +32,8 @@ export function showBondDistanceLabels(instanceIds) {
     const [p1, p2] = bond.positions;
     const div = document.createElement('div');
     div.className = 'measure-label bond-distance-label';
-    div.textContent = `${bond.dist.toFixed(3)} Å`;
+    const su = general.showCifErrors !== false ? bondLengthSu(fileBrowser.selectedStructure, bond) : null;
+    div.textContent = `${formatWithSu(bond.dist, su, 3)} Å`;
 
     const label = /** @type {any} */ (new CSS2DObject(div));
     label.position.set(

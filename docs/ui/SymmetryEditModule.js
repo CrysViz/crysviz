@@ -8,6 +8,7 @@ import { cartToFrac, fracToCart, invert3x3, transpose3x3, latticeFromCell, latti
 import { clearSelectedAtoms } from './SelectAndHighlightModule.js';
 import { Atom } from '../model/index.js';
 import { generateID } from '../utils/index.js';
+import { SYMMETRY_MODE_CHANGED } from './AnalysisPanels/wyckoffSites.js';
 
 let moyoReady = null;
 
@@ -561,11 +562,19 @@ export function buildCifWyckoffSymmetryState(structure, cifSymmetry, tolerance =
   });
 }
 
+// Tells windows that group by Wyckoff site (the Bond Length and Force
+// histograms) that the lock came or went, so they can regroup and enable or
+// disable their "Group by Wyckoff" toggle.
+function announceSymmetryModeChange() {
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent(SYMMETRY_MODE_CHANGED));
+}
+
 export async function activateWyckoffMode(structure = fileBrowser.selectedStructure, tolerance = defaultSymprec()) {
   if (!structure) throw new Error('No structure selected');
   const dataset = await analyzeStructureSymmetry(structure, tolerance);
   structure.symmetry = buildWyckoffSymmetryState(structure, dataset, tolerance);
   general.structurePanelMode = 'wyckoff';
+  announceSymmetryModeChange();
   return structure.symmetry;
 }
 
@@ -579,12 +588,14 @@ export function activateWyckoffModeFromCif(structure = fileBrowser.selectedStruc
   if (!state) return null;
   structure.symmetry = state;
   general.structurePanelMode = 'wyckoff';
+  announceSymmetryModeChange();
   return state;
 }
 
 export function deactivateWyckoffMode(structure = fileBrowser.selectedStructure) {
   if (structure?.symmetry?.mode === 'wyckoff') {
     structure.symmetry = null;
+    announceSymmetryModeChange();
   }
   general.structurePanelMode = 'atoms';
 }

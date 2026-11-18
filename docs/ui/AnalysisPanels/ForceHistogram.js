@@ -11,6 +11,12 @@
 // BondsFracUpdateModule.js uses for the bond histograms) and also called
 // directly on open/reopen so the panel is never stale the moment it's shown.
 // recompute() is a no-op cost-wise unless the panel is actually open.
+//
+// "Group by Wyckoff", enabled while the structure is in Wyckoff mode, makes
+// one series per Wyckoff site (wyckoffSites.js: "O2 (2q)") instead of one per
+// element. Each bin is one stacked bar, a segment per series; colours follow
+// the element either way (histogramColors.js), the sites of one element in
+// shades of its colour, grouped under it in the legend.
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
 import { expandSplitItem, closeExpandedSplitItem } from '../panels/SideDock.js';
@@ -18,8 +24,10 @@ import {
   renderGroupedHistogram, onHistogramBarClick, exportHistogramPNG, resizeHistogramPlot, clearHistogramPlot,
   togglePlotTheme,
 } from './histogramPlotly.js';
-import { highlightAtomsIn3D, clearAllHighlights } from '../SelectAndHighlightModule.js';
-import { fileBrowser } from '../../state/store.js';
+import { highlightAtomsIn3D, clearAllHighlights, HIGHLIGHT_CLEARED } from '../SelectAndHighlightModule.js';
+import { fileBrowser, highlightHover } from '../../state/store.js';
+import { wyckoffSites, hasWyckoffSites, SYMMETRY_MODE_CHANGED } from './wyckoffSites.js';
+import { seriesColors } from './histogramColors.js';
 
 const PANEL_ID = 'forceHistogram';
 const PLOT_ID = 'forceHistogramPlot';
@@ -28,6 +36,18 @@ const PLOT_ID = 'forceHistogramPlot';
 let data = [];
 /** @type {{ n: number, min: number, max: number, mean: number, rms: number, maxIndex: number, maxElement: string } | null} */
 let stats = null;
+let dataStructure = null; // the structure `data` was computed from — its Wyckoff sites name the series
+// The "Group by Wyckoff" choice, kept for the page's lifetime; it only takes
+// effect while the structure is in Wyckoff mode.
+let groupByWyckoff = false;
+// The highlighted bar: its series and its bin's lower edge (eV/Å), so it can
+// still be outlined after the bin width changes, if a bin still starts there.
+let selectedBar = null; // { label, lo }
+// The atom instances that bar lit, to tell when something else has cleared
+// them (HIGHLIGHT_CLEARED), and whether this window is changing the highlight
+// itself right now (highlightAtomsIn3D clears the old one first).
+let selectedInstances = null;
+let ownHighlight = false;
 let view = null; // { redraw() } while the window is open
 
 /** Cheap O(N) pass: |F| per atom + summary stats. */
@@ -36,6 +56,8 @@ function recompute(structure) {
   const elements = structure?.elements ?? [];
   data = [];
   stats = null;
+  if ((structure ?? null) !== dataStructure) { selectedBar = null; selectedInstances = null; } // another structure: its bar is gone
+  dataStructure = structure ?? null;
   if (!forces?.length) return;
 
   let min = Infinity, max = -Infinity, sum = 0, sumSq = 0, maxIndex = -1;
@@ -76,54 +98,103 @@ export function getForceStats() {
   return stats;
 }
 
+/** Whether the series are Wyckoff sites right now: the toggle is on and the
+ *  structure is in Wyckoff mode. */
+function groupsByWyckoff() {
+  return groupByWyckoff && hasWyckoffSites(dataStructure);
+}
+
 /** binWidth is fixed (user-chosen) — the bin COUNT adapts to it and to the
  *  chosen max-|F| bound, instead of the other way around (mirrors
- *  BondLengthHistogram.js's computeBins). */
+ *  BondLengthHistogram.js's computeBins). One series per element in order of
+ *  first appearance, or per Wyckoff site, ordered by element and then as the
+ *  Wyckoff tab lists them. Bars sit on a numeric |F| axis (x = bin centre); a
+ *  bin's range is in its hover. */
 function computeBins(binWidth, maxVal) {
   const minVal = 0;
   const binCount = Math.max(1, Math.ceil(Math.max(maxVal - minVal, 1e-6) / binWidth));
   const xLabels = Array.from({ length: binCount }, (_, i) => {
     const lo = minVal + i * binWidth;
-    return `${lo.toPrecision(3)}–${(lo + binWidth).toPrecision(3)}`;
+    return `${lo.toPrecision(3)}–${(lo + binWidth).toPrecision(3)} eV/Å`;
   });
+  const xCentres = Array.from({ length: binCount }, (_, i) => minVal + (i + 0.5) * binWidth);
+  const sites = groupsByWyckoff() ? wyckoffSites(dataStructure) : null;
+  const elementOrder = [...new Set(data.map((d) => d.element))];
 
-  const byElement = new Map();
+  const bySeries = new Map(); // label -> { element, rank, y, customdata }
   for (const { element, mag, index } of data) {
-    if (!byElement.has(element)) {
-      byElement.set(element, {
+    const label = sites?.labels[index] ?? element;
+    if (!bySeries.has(label)) {
+      bySeries.set(label, {
+        element,
+        rank: sites?.ranks[index] ?? 0,
         y: new Array(binCount).fill(0),
         customdata: Array.from({ length: binCount }, () => []),
       });
     }
-    const series = byElement.get(element);
+    const series = bySeries.get(label);
     let idx = Math.floor((mag - minVal) / binWidth);
     idx = Math.max(0, Math.min(binCount - 1, idx));
     series.y[idx] += 1;
     series.customdata[idx].push(index);
   }
 
-  const groups = [...byElement.entries()].map(([label, s]) => ({
-    label, x: xLabels, y: s.y, customdata: s.customdata,
+  const ordered = [...bySeries.entries()].sort(([, a], [, b]) =>
+    (elementOrder.indexOf(a.element) - elementOrder.indexOf(b.element)) || (a.rank - b.rank));
+  const colors = seriesColors(ordered.map(([, s]) => s.element), elementOrder);
+  const groups = ordered.map(([label, s], i) => ({
+    label,
+    x: xCentres,
+    y: s.y,
+    customdata: s.customdata,
+    color: colors[i],
+    ...(sites ? { legendgroup: s.element, legendgrouptitle: s.element } : {}),
+    hovertext: s.y.map((n, k) => `${label}<br>${xLabels[k]}<br>${n} atom${n === 1 ? '' : 's'}`),
   }));
-  return { groups };
+  return { groups, bins: { width: binWidth, min: minVal, max: minVal + binCount * binWidth } };
 }
 
-/** Bar-click handler: toggles the 3D highlight for the clicked (element,
- *  |F|-bin) cell's atoms. */
-function makeClickHandler() {
-  let lastKey = null;
+/** The bar to outline at the current bin width, if a bin still starts at the
+ *  highlighted bar's lower edge. */
+function selectedBarAt(binWidth, groups) {
+  if (!selectedBar || !groups.some((g) => g.label === selectedBar.label)) return undefined;
+  const index = Math.round(selectedBar.lo / binWidth);
+  const binCount = groups[0]?.y.length ?? 0;
+  if (index >= binCount || Math.abs(index * binWidth - selectedBar.lo) > 1e-9) return undefined;
+  return { label: selectedBar.label, index };
+}
+
+/** Bar-click handler: toggles the 3D highlight for the clicked (element or
+ *  site, |F|-bin) segment's atoms, and redraws so the segment is outlined. */
+function makeClickHandler(getBinWidth, redraw) {
   return (customdata, point) => {
-    const key = `${point.data.name}|${point.pointIndex}`;
-    if (key === lastKey) {
+    const label = point.data.name;
+    const lo = point.pointIndex * getBinWidth();
+    if (selectedBar?.label === label && Math.abs(selectedBar.lo - lo) < 1e-9) {
+      selectedBar = null;
+      selectedInstances = null;
       clearAllHighlights();
-      lastKey = null;
+      redraw();
       return;
     }
     if (customdata?.length) {
-      highlightAtomsIn3D(customdata);
-      lastKey = key;
+      ownHighlight = true;
+      try {
+        highlightAtomsIn3D(customdata);
+      } finally {
+        ownHighlight = false;
+      }
+      selectedBar = { label, lo };
+      selectedInstances = [...(highlightHover.currentlyHighlightedAtomInstances ?? [])];
+      redraw();
     }
   };
+}
+
+/** The strongest-force atom's element, or its Wyckoff site while grouping by site. */
+function maxAtomName() {
+  const site = groupsByWyckoff() ? wyckoffSites(dataStructure)?.labels[stats.maxIndex] : null;
+  return site ?? stats.maxElement;
 }
 
 function statsHTML() {
@@ -134,16 +205,24 @@ function statsHTML() {
     <span><b>min</b> ${f(stats.min)}</span>
     <span><b>mean</b> ${f(stats.mean)}</span>
     <span><b>RMS</b> ${f(stats.rms)}</span>
-    <span><b>max</b> ${f(stats.max)} <span class="fh-stats-muted">(${stats.maxElement} #${stats.maxIndex})</span></span>
+    <span><b>max</b> ${f(stats.max)} <span class="fh-stats-muted">(${maxAtomName()} #${stats.maxIndex})</span></span>
     <span class="fh-stats-muted">eV/Å</span>
   `;
 }
 
-/** Control-row builder (fixed bin width + max |F| sliders), same idiom as
- *  BondLengthHistogram's buildControls, plus a stats readout underneath. */
+/** Control-row builder (fixed bin width + max |F| sliders and the "Group by
+ *  Wyckoff" toggle), same idiom as BondLengthHistogram's controls row, plus a
+ *  stats readout underneath. */
 function buildControls(container, { binWidth, maxVal, onChange }) {
   container.innerHTML = `
     <div class="fh-controls-row">
+      <label class="eos-mini-toggle toggle_row toggle_container fh-wyckoff-row">
+        <span class="toggle_switch">
+          <input type="checkbox" class="fh-wyckoff-toggle">
+          <span class="toggle_slider"></span>
+        </span>
+        <span class="toggle_text">Group by Wyckoff</span>
+      </label>
       <label>Bin width (eV/Å)
         <input type="range" min="0.02" max="1" step="0.02" value="${binWidth}" class="fh-width-slider">
         <span class="fh-width-label">${binWidth}</span>
@@ -160,6 +239,15 @@ function buildControls(container, { binWidth, maxVal, onChange }) {
   const maxSlider = container.querySelector('.fh-max-slider');
   const maxLabel = container.querySelector('.fh-max-label');
   const statsEl = container.querySelector('.fh-stats');
+  const wyckoffRow = container.querySelector('.fh-wyckoff-row');
+  const wyckoffToggle = /** @type {HTMLInputElement} */ (container.querySelector('.fh-wyckoff-toggle'));
+  wyckoffToggle.addEventListener('change', () => {
+    groupByWyckoff = wyckoffToggle.checked;
+    selectedBar = null; // the highlighted bar's series may be gone
+    selectedInstances = null;
+    clearAllHighlights();
+    onChange();
+  });
   widthSlider.addEventListener('input', () => {
     widthLabel.textContent = widthSlider.value;
     onChange();
@@ -172,6 +260,17 @@ function buildControls(container, { binWidth, maxVal, onChange }) {
     get binWidth() { return parseFloat(widthSlider.value); },
     get maxVal() { return parseFloat(maxSlider.value); },
     syncStats() { statsEl.innerHTML = statsHTML(); },
+    /** Live only while the structure is in Wyckoff mode; outside it the
+     *  toggle shows off and says why it is greyed out. */
+    syncWyckoff() {
+      const available = hasWyckoffSites(dataStructure);
+      wyckoffToggle.disabled = !available;
+      wyckoffToggle.checked = available && groupByWyckoff;
+      wyckoffRow.classList.toggle('is-disabled', !available);
+      wyckoffRow.title = available
+        ? 'One series per Wyckoff site (element + orbit) instead of per element'
+        : 'Activate Wyckoff mode to use this feature (Symmetry window → Enable Wyckoff Editor)';
+    },
   };
 }
 
@@ -195,13 +294,24 @@ export function addForceHistogramPanel() {
 
   const isMobile = window.innerWidth < 700;
   let resizeObserver = null;
+  let onSymmetryModeChange = null;
+  let onHighlightCleared = null;
   registerPanel({
     id: PANEL_ID,
     title: 'Force Histogram',
     lifecycle: 'persistent',
     infoMd: './data/forceHistogramInfo.md',
     closable: true,
-    onClose() { view = null; resizeObserver?.disconnect(); clearHistogramPlot(PLOT_ID); },
+    onClose() {
+      view = null;
+      resizeObserver?.disconnect();
+      if (onSymmetryModeChange) {
+        document.removeEventListener(SYMMETRY_MODE_CHANGED, onSymmetryModeChange);
+        document.removeEventListener('crysviz:atoms-changed', onSymmetryModeChange);
+      }
+      if (onHighlightCleared) document.removeEventListener(HIGHLIGHT_CLEARED, onHighlightCleared);
+      clearHistogramPlot(PLOT_ID);
+    },
     buildContent(body) {
       body.innerHTML = `
         <div class="cv-plot-stack">
@@ -226,15 +336,35 @@ export function addForceHistogramPanel() {
       const controls = buildControls(body.querySelector('#fhControls'), {
         binWidth: DEFAULT_BIN_WIDTH, maxVal: initialMax, onChange: () => redraw(),
       });
-      const onBarClick = makeClickHandler();
       let expanded = false;
+      const onBarClick = makeClickHandler(() => controls.binWidth, () => redraw());
 
       function redraw() {
         controls.syncStats();
-        const { groups } = computeBins(controls.binWidth, controls.maxVal);
-        renderGroupedHistogram(PLOT_ID, { groups, xTitle: '|F| (eV/Å)', yTitle: 'Atoms', isExpanded: expanded })
-          .then(() => onHistogramBarClick(PLOT_ID, onBarClick));
+        controls.syncWyckoff();
+        const { groups, bins } = computeBins(controls.binWidth, controls.maxVal);
+        renderGroupedHistogram(PLOT_ID, {
+          groups, bins, xTitle: '|F| (eV/Å)', yTitle: 'Atoms', isExpanded: expanded,
+          selected: selectedBarAt(controls.binWidth, groups),
+        }).then(() => onHistogramBarClick(PLOT_ID, onBarClick));
       }
+
+      // Wyckoff mode switched on/off, or orbits/atoms edited (which can drop
+      // the lock), with the window open: the series may be named differently.
+      onSymmetryModeChange = () => refreshForceHistogram();
+      document.addEventListener(SYMMETRY_MODE_CHANGED, onSymmetryModeChange);
+      document.addEventListener('crysviz:atoms-changed', onSymmetryModeChange);
+      // Our atoms are no longer the ones lit (a click on empty space in 3D,
+      // another selection): drop the outline.
+      onHighlightCleared = () => {
+        if (ownHighlight || !selectedInstances) return;
+        const lit = highlightHover.currentlyHighlightedAtomInstances ?? [];
+        if (lit.length === selectedInstances.length && lit.every((id, i) => id === selectedInstances[i])) return;
+        selectedBar = null;
+        selectedInstances = null;
+        redraw();
+      };
+      document.addEventListener(HIGHLIGHT_CLEARED, onHighlightCleared);
 
       body.addEventListener('click', (ev) => {
         const btn = /** @type {HTMLElement|null} */ (
