@@ -88,6 +88,19 @@
       }
     },
     {
+      "name": "get_voids",
+      "tier": "read",
+      "description": "Interstitial sites of the active structure: the centres of its empty spaces, largest first, each with its radius (distance to the nearest atom, Å) and the atoms around it (e.g. 12 O for a perovskite A site). Positions are fractional, on a 0.4 Å grid. Use with add_atoms to put an atom in a cage or hole. Unlike get_polyhedra's cages, any void counts, not only shells of bonded atoms.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Default 10." },
+          "minRadius": { "type": "number", "exclusiveMinimum": 0, "description": "Smallest distance from a site to every atom, Å. Default 0.7." }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "add_atoms",
       "tier": "write",
       "description": "Add atoms to the active structure at fractional positions, as the Add Atom window does. Refuses atoms closer than 0.5 Å to another atom unless force is true.",

@@ -82,3 +82,16 @@ test('get_polyhedra merges periodic images and puts a cage at its corners\' cent
   assert.deepEqual(cage.center, [0.375, 0.375, 0.5]);
   assert.deepEqual(cage.cornerAtoms, [1, 2, 3]);
 });
+
+test('get_voids finds the empty perovskite A site of ReO3-type WO3 with its 12 O', async () => {
+  const { voidSites } = await import('../../docs/host/commands.js');
+  const atom = (element, position) => ({ position, getRepresentativeElement: () => element });
+  const structure = {
+    lattice: [[3.75, 0, 0], [0, 3.75, 0], [0, 0, 3.75]],
+    atoms: [atom('W', [0, 0, 0]), atom('O', [0.5, 0, 0]), atom('O', [0, 0.5, 0]), atom('O', [0, 0, 0.5])],
+  };
+  const [site] = voidSites(structure, 0.7);
+  assert.deepEqual(site.position, [0.5, 0.5, 0.5]);
+  assert.ok(Math.abs(site.radius - 3.75 / Math.SQRT2) < 1e-6);
+  assert.deepEqual(site.neighbours, { O: 12 });
+});

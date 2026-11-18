@@ -11,7 +11,8 @@ import {
   getContainers,
 } from '../state/structures.js';
 import { app } from '../state/store.js';
-import { cartToFractional } from '../math/index.js';
+import { cartToFractional, fracToCartPoint } from '../math/index.js';
+import { findVoidCentres } from '../render/voidSearch.js';
 import { clickControl, getControl, searchControls, setControl } from './controls.js';
 
 export const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
@@ -263,6 +264,57 @@ export function polyhedraSummary(structure, type) {
   return [...sites.values()];
 }
 
+/** Shortest periodic distance (Å) between fractional points p and q. */
+function periodicDistance(p, q, lattice) {
+  const d = [0, 1, 2].map((k) => { const x = p[k] - q[k]; return x - Math.round(x); });
+  let best = Infinity;
+  // Neighbouring images too: in a skewed cell the rounded difference is not always the shortest.
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+    best = Math.min(best, Math.hypot(...fracToCartPoint([d[0] + i, d[1] + j, d[2] + k], lattice)));
+  }
+  return best;
+}
+
+/** A void's neighbours: atom images within this factor of its nearest distance (the first shell). */
+const VOID_SHELL_FACTOR = 1.15;
+
+/** Periodic images of fractional point q within `cutoff` Å of p. */
+function imagesWithin(p, q, lattice, cutoff) {
+  const d = [0, 1, 2].map((k) => { const x = q[k] - p[k]; return x - Math.round(x); });
+  let count = 0;
+  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) for (let k = -2; k <= 2; k++) {
+    if (Math.hypot(...fracToCartPoint([d[0] + i, d[1] + j, d[2] + k], lattice)) <= cutoff) count++;
+  }
+  return count;
+}
+
+/**
+ * Interstitial sites of `structure`: the void centres of the cage search
+ * (render/voidSearch.js), one per void, largest first, with the atoms around
+ * each.
+ * @param {any} structure
+ * @param {number} minRadius smallest distance (Å) from a site to every atom
+ */
+export function voidSites(structure, minRadius) {
+  const positions = structure.atoms.map((atom) => atom.position);
+  const { voids } = findVoidCentres(structure.lattice, positions, minRadius);
+  voids.sort((p, q) => q.radius - p.radius);
+  const element = (i) => structure.atoms[i]?.getRepresentativeElement?.() ?? structure.elements?.[i] ?? '';
+  const sites = [];
+  for (const v of voids) {
+    // Grid points of one void (a flat maximum, or its periodic copy) merge into the largest.
+    if (sites.some((s) => periodicDistance(s.position, v.frac, structure.lattice) < 0.5)) continue;
+    /** @type {Record<string, number>} */
+    const neighbours = {};
+    positions.forEach((p, i) => {
+      const n = imagesWithin(v.frac, p, structure.lattice, v.radius * VOID_SHELL_FACTOR);
+      if (n) neighbours[element(i)] = (neighbours[element(i)] || 0) + n;
+    });
+    sites.push({ position: v.frac.map(wrap), radius: round(v.radius), neighbours });
+  }
+  return sites;
+}
+
 function cameraState() {
   const camera = app.camera;
   const target = app.controls?.target;
@@ -346,6 +398,19 @@ export const COMMAND_HANDLERS = Object.freeze({
       polyhedra: sites.slice(0, limit),
       ...(built ? {} : { hint: 'No polyhedra are built: switch on Show Polyhedra (search_controls "polyhedra on"), then call again.' }),
     };
+  },
+
+  get_voids(args) {
+    requireOptionalArgs(args, 'get_voids');
+    const limit = args?.limit ?? 10;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw commandError('INVALID_ARGS', 'get_voids.limit must be 1 to 100');
+    const minRadius = args?.minRadius ?? 0.7;
+    if (!isFiniteNumber(minRadius) || minRadius <= 0) throw commandError('INVALID_ARGS', 'get_voids.minRadius must be a positive number');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    if (!Array.isArray(structure.lattice) || structure.periodic === false) throw commandError('NO_LATTICE', 'Voids need a periodic structure');
+    const sites = voidSites(structure, minRadius);
+    return { total: sites.length, voids: sites.slice(0, limit) };
   },
 
   async add_atoms(args) {
