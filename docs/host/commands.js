@@ -11,6 +11,8 @@ import {
   getContainers,
 } from '../state/structures.js';
 import { app } from '../state/store.js';
+import { cartToFractional } from '../math/index.js';
+import { clickControl, getControl, searchControls, setControl } from './controls.js';
 
 export const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
 
@@ -222,6 +224,45 @@ function structureState(structure, includeAtoms) {
   return state;
 }
 
+const wrap = (x) => { const w = round(x - Math.floor(x)); return w === 1 ? 0 : w; };
+
+/**
+ * The polyhedra the app built for `structure` (Show Polyhedra; cages with
+ * Detect Cages), one per site: periodic images of the same polyhedron are
+ * merged and counted.
+ * @param {any} structure
+ * @param {'centered'|'cage'|undefined} type
+ */
+export function polyhedraSummary(structure, type) {
+  const element = (i) => structure.atoms[i]?.getRepresentativeElement?.() ?? structure.elements?.[i] ?? '';
+  const sites = new Map();
+  for (const p of structure.polyhedra?.polyhedra || []) {
+    if (type && p.type !== type) continue;
+    const n = p.vertices.length;
+    if (!n) continue;
+    const centroid = [0, 1, 2].map((k) => p.vertices.reduce((sum, v) => sum + v[k], 0) / n);
+    const center = (p.type === 'centered' && structure.atoms[p.centerIndex]
+      ? structure.atoms[p.centerIndex].position
+      : cartToFractional(centroid, structure.lattice)).map(wrap);
+    const key = `${p.type}|${p.centerIndex}|${center.map((x) => x.toFixed(3)).join(',')}`;
+    const site = sites.get(key);
+    if (site) { site.images += 1; continue; }
+    /** @type {Record<string, number>} */
+    const corners = {};
+    for (const src of p.vertexSrcList) corners[element(src)] = (corners[element(src)] || 0) + 1;
+    sites.set(key, {
+      type: p.type,
+      ...(p.type === 'centered' ? { centerAtom: p.centerIndex, centerElement: p.centerElement ?? element(p.centerIndex) } : {}),
+      center,
+      vertexCount: n,
+      corners,
+      cornerAtoms: [...new Set(p.vertexSrcList)],
+      images: 1,
+    });
+  }
+  return [...sites.values()];
+}
+
 function cameraState() {
   const camera = app.camera;
   const target = app.controls?.target;
@@ -263,6 +304,91 @@ export const COMMAND_HANDLERS = Object.freeze({
       camera: cameraState(),
       renderPipeline: typeof deps.getRenderPipeline === 'function' ? deps.getRenderPipeline() : null,
     };
+  },
+
+  search_controls(args) {
+    const input = requireArgs(args, 'search_controls');
+    if (!safeName(input.query)) throw commandError('INVALID_ARGS', 'search_controls.query must be nonempty');
+    const limit = input.limit ?? 10;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 30) throw commandError('INVALID_ARGS', 'search_controls.limit must be 1 to 30');
+    return searchControls(input.query, limit);
+  },
+
+  get_control(args) {
+    return getControl(requireArgs(args, 'get_control').ref);
+  },
+
+  set_control(args) {
+    const input = requireArgs(args, 'set_control');
+    return setControl(input.ref, input.value);
+  },
+
+  click_control(args) {
+    return clickControl(requireArgs(args, 'click_control').ref);
+  },
+
+  get_polyhedra(args) {
+    requireOptionalArgs(args, 'get_polyhedra');
+    const type = args?.type;
+    if (type !== undefined && type !== 'cage' && type !== 'centered') {
+      throw commandError('INVALID_ARGS', 'get_polyhedra.type must be cage or centered');
+    }
+    const limit = args?.limit ?? 50;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw commandError('INVALID_ARGS', 'get_polyhedra.limit must be 1 to 500');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    const built = (structure.polyhedra?.polyhedra?.length ?? 0) > 0;
+    const sites = polyhedraSummary(structure, type);
+    return {
+      built,
+      detectCages: structure.polyhedraSettings?.detectCages !== false,
+      total: sites.length,
+      polyhedra: sites.slice(0, limit),
+      ...(built ? {} : { hint: 'No polyhedra are built: switch on Show Polyhedra (search_controls "polyhedra on"), then call again.' }),
+    };
+  },
+
+  async add_atoms(args) {
+    const input = requireArgs(args, 'add_atoms');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    if (!Array.isArray(input.atoms) || input.atoms.length < 1 || input.atoms.length > 1000) {
+      throw commandError('INVALID_ARGS', 'add_atoms.atoms must list 1 to 1000 atoms');
+    }
+    if (input.force !== undefined && typeof input.force !== 'boolean') throw commandError('INVALID_ARGS', 'add_atoms.force must be boolean');
+    const rows = input.atoms.map((atom) => {
+      const p = atom?.position;
+      if (typeof atom?.element !== 'string' || !Array.isArray(p) || p.length !== 3 || !p.every(isFiniteNumber)) {
+        throw commandError('INVALID_ARGS', 'Every atom needs an element and a fractional position [x, y, z]');
+      }
+      const occupancy = atom.occupancy ?? 1;
+      if (!isFiniteNumber(occupancy) || occupancy <= 0 || occupancy > 1) throw commandError('INVALID_ARGS', 'occupancy must be in (0, 1]');
+      return { element: atom.element.trim(), x: p[0], y: p[1], z: p[2], occupancy };
+    });
+    const { invalidElementMessage } = await import('../ui/addToStructureModule/ElementValidation.js');
+    const invalid = invalidElementMessage(rows);
+    if (invalid) throw commandError('INVALID_ELEMENT', invalid);
+    const { checkAddedAtomCollisions } = await import('../ui/addToStructureModule/AtomCollisionCheck.js');
+    const { tooClose } = checkAddedAtomCollisions(structure, rows);
+    if (tooClose.length && input.force !== true) {
+      throw commandError('ATOMS_TOO_CLOSE', `${tooClose.length} pair(s) closer than 0.5 Å; move the atoms or pass force: true`,
+        { tooClose: tooClose.slice(0, 10).map((t) => ({ ...t, distance: round(t.distance) })) });
+    }
+    const { commitAddedAtoms } = await import('../ui/addToStructureModule/CommitAtoms.js');
+    commitAddedAtoms(structure, rows);
+    return { added: rows.length, atomCount: structure.atoms.length };
+  },
+
+  async build_supercell(args) {
+    const input = requireArgs(args, 'build_supercell');
+    const n = input.n;
+    if (!Array.isArray(n) || n.length !== 3 || !n.every((k) => Number.isInteger(k) && k >= 1 && k <= 20)) {
+      throw commandError('INVALID_ARGS', 'build_supercell.n must be three integers from 1 to 20');
+    }
+    if (!getActiveStructure()?.lattice) throw commandError('NO_LATTICE', 'The active structure has no lattice');
+    // The same path as the Cell & Supercell window and the feature search's "222".
+    await (await import('../ui/LatticeSupercellPanel.js')).applySupercell(n[0], n[1], n[2]);
+    return { supercell: n, atomCount: getActiveStructure()?.atoms.length ?? 0 };
   },
 
   async load(args, { deps, emit }) {

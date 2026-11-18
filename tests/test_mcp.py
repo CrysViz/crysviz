@@ -35,6 +35,9 @@ class _FakeViewer:
     def close(self):
         self.closed = True
 
+    def call(self, name, **args):
+        return self._command(name, args)
+
     def _command(self, name, args):
         self.calls.append((name, args))
         if name == "set_view" and args.get("direction") == "q":

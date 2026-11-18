@@ -132,8 +132,9 @@ function appActions() {
 const controlKey = (panelId, e) => `${panelId}\u0000${e.label}\u0000${e.section || ''}\u0000${e.kind}`;
 
 /** Everything searchable right now. Rebuilt on every open, so the badges and
- *  the live controls reflect the current sidebar and structure. */
-function collectEntries() {
+ *  the live controls reflect the current sidebar and structure. Exported for
+ *  the host's control commands (host/controls.js). */
+export function collectEntries() {
   const panels = listPanels();
   const panelById = new Map(panels.map((p) => [p.id, p]));
   const suggested = new Set(listStoreFeatures().filter((f) => f.suggested).map((f) => f.id));
@@ -701,20 +702,28 @@ async function activate(i) {
   if (!hit) return;
   const { entry } = hit;
   closeFeatureSearch({ restoreFocus: entry.type === 'action' });
+  await activateEntry(entry);
+}
+
+/** Do what choosing a result does: run an action, open a window, go to a
+ *  control. Shared by the palette and the host's control commands
+ *  (host/controls.js). Resolves to the control element for a control. */
+export async function activateEntry(entry) {
   if (entry.type === 'action') {
-    entry.run();
+    await entry.run();
   } else if (entry.type === 'structure') {
     await entry.run();
   } else if (entry.type === 'window') {
     const panel = getPanel(entry.panelId);
-    if (!panel) return;
+    if (!panel) return null;
     openForSearch(panel, { body: true });
     // The Structure window's content is its formula box.
     if (entry.panelId === 'info') setStructurePanelOpen(true);
     focusWindow(panel);
   } else {
-    await goToControl(entry);
+    return goToControl(entry);
   }
+  return null;
 }
 
 // ---- palette ------------------------------------------------------------------

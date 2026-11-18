@@ -500,6 +500,18 @@ class Viewer:
         finally:
             prepared.close()
 
+    def call(self, command: str, **args: object) -> object:
+        """Run any browser command by name (see crysviz.web/host/commands.json) and return its result.
+
+        ``viewer.call("set_control", ref="control:visual:#showBonds", value=False)``. Commands
+        that move files have their own methods: :meth:`load` and :meth:`save_image`.
+        """
+        if not isinstance(command, str) or not command:
+            raise ValueError("command must be a nonempty string")
+        if command in {"load", "save_image", "close"}:
+            raise ValueError(f"use Viewer.{command}() for {command!r}")
+        return self._command(command, args)
+
     def list_structures(self) -> list[StructureInfo]:
         value = self._command("list_structures")
         if not isinstance(value, list):

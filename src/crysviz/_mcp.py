@@ -134,7 +134,7 @@ class CrysVizTools:
                 return [_text(self._load(args))]
             if name == "save_image":
                 return self._save_image(args)
-            return [_text(self.viewer()._command(name, args))]
+            return [_text(self.viewer().call(name, **args))]
         except BrowserCommandError as error:
             raise ToolError(f"{error.code}: {error.message}") from error
         except (ViewerError, TypeError, ValueError, OSError) as error:

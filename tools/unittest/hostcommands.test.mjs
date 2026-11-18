@@ -61,3 +61,24 @@ test('set_view up is made perpendicular to the direction; cartesian arrays pass 
   assert.deepEqual(viewDirection([0.5, 0.866, 0], LATTICE, { cartesian: true }), [0.5, 0.866, 0]);
   assert.deepEqual(viewDirection('c', LATTICE, { cartesian: true }), [0, 0, 5]);
 });
+
+test('get_polyhedra merges periodic images and puts a cage at its corners\' centroid', async () => {
+  const { polyhedraSummary } = await import('../../docs/host/commands.js');
+  const atom = (element, position) => ({ position, getRepresentativeElement: () => element });
+  const structure = {
+    lattice: [[4, 0, 0], [0, 4, 0], [0, 0, 4]],
+    atoms: [atom('Ti', [0.5, 0.5, 0.5]), atom('O', [0.5, 0.5, 0]), atom('O', [0.5, 0, 0.5]), atom('O', [0, 0.5, 0.5])],
+    polyhedra: { polyhedra: [
+      { type: 'centered', centerIndex: 0, centerElement: 'Ti', vertices: [[2, 2, 0], [2, 2, 4]], vertexSrcList: [1, 1] },
+      { type: 'centered', centerIndex: 0, centerElement: 'Ti', vertices: [[6, 2, 0], [6, 2, 4]], vertexSrcList: [1, 1] },
+      { type: 'cage', centerIndex: null, vertices: [[2, 2, 0], [2, 0, 2], [0, 2, 2], [2, 2, 4]], vertexSrcList: [1, 2, 3, 1] },
+    ] },
+  };
+  const all = polyhedraSummary(structure, undefined);
+  assert.equal(all.length, 2);
+  assert.equal(all[0].images, 2);
+  assert.deepEqual(all[0].corners, { O: 2 });
+  const [cage] = polyhedraSummary(structure, 'cage');
+  assert.deepEqual(cage.center, [0.375, 0.375, 0.5]);
+  assert.deepEqual(cage.cornerAtoms, [1, 2, 3]);
+});
