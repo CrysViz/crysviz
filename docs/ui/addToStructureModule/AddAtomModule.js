@@ -14,20 +14,17 @@
 
 import { removePanel } from '../panels/PanelManager.js';
 import { createAtomTableEditor } from './AtomTableInput.js';
-import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
-import { addAtomsToExistingStructure, removeSessionAddedAtom } from './CommitAtoms.js';
+import { checkAddedAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
+import { commitAddedAtoms, removeSessionAddedAtom } from './CommitAtoms.js';
 import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
 import { createBondLengthControls } from '../BondLengthPanel.js';
 import { fileBrowser } from '../../state/store.js';
-import { fracToCart } from '../../render/index.js';
-import { fracToCartPoint } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { openEditorPanel } from './floatingPanelAnchor.js';
 import { highlightAtomsIn3D, clearHighlightAtom } from '../SelectAndHighlightModule.js';
 import { invalidElementMessage } from './ElementValidation.js';
 
 const PANEL_ID = 'addAtoms';
-const COLLISION_THRESHOLD_ANGSTROM = 0.5;
 
 // uuid of the atom currently highlighted from this list (if any), so a second
 // click on the same row toggles the highlight off instead of just reapplying it.
@@ -152,28 +149,7 @@ function addAtomsPanel(container) {
     defaultLabel: 'Add to Structure',
     anywayLabel: 'Add Anyway',
     validate: () => invalidElementMessage(editor.getAtoms()),
-    checkCollisions: () => {
-      const structure = fileBrowser.selectedStructure;
-      const atoms = editor.getAtoms();
-      if (!structure || !atoms.length) return { tooClose: [] };
-      const existingCart = fracToCart(structure.atoms.map(a => a.position), structure.lattice);
-      const existingAtoms = existingCart.map((position, i) => ({
-        position, element: structure.elements[i],
-        occupancy: structure.atoms[i]?.getTotalOccupancy?.() ?? 1,
-      }));
-      // The table's x/y/z are fractional — convert to Cartesian for the
-      // distance-based collision check (checkAtomCollisions expects Cartesian).
-      const candidateAtoms = atoms.map(a => ({
-        position: fracToCartPoint([a.x, a.y, a.z], structure.lattice),
-        element: a.element, occupancy: a.occupancy ?? 1,
-      }));
-      return checkAtomCollisions({
-        lattice: structure.lattice,
-        existingAtoms,
-        candidateAtoms,
-        thresholdAngstrom: COLLISION_THRESHOLD_ANGSTROM,
-      });
-    },
+    checkCollisions: () => checkAddedAtomCollisions(fileBrowser.selectedStructure, editor.getAtoms()),
     onWarn: (tooClose) => editor.highlightConflicts(conflictingCandidateIndices(tooClose)),
     onClear: () => editor.clearConflicts(),
     commit: () => {
@@ -184,13 +160,7 @@ function addAtomsPanel(container) {
       }
       const atoms = editor.getAtoms();
       if (!atoms.length) return;
-      addAtomsToExistingStructure(structure, atoms);
-      createBondLengthControls();
-      // reRenderComposition: "open" — the Structure Info panel otherwise
-      // doesn't rebuild its composition/atom list at all (its default is
-      // false), so newly-added atoms/elements wouldn't show up there until
-      // some unrelated action happened to trigger a rebuild.
-      updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: "open" });
+      commitAddedAtoms(structure, atoms);
       editor.clear();
       removePanel(PANEL_ID);
     },

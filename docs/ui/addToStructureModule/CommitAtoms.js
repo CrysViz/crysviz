@@ -14,6 +14,8 @@ import { generateID } from '../../utils/index.js';
 import { recenterCamera } from '../WindowAndSceneControls.js';
 import { mergeCoLocatedAtoms, sameSite, SITE_TOLERANCE } from '../../io/cif/site_grouping.js';
 import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
+import { createBondLengthControls } from '../BondLengthPanel.js';
+import { updateVisualization } from '../../core/crystal-viewer.js';
 
 // Parse a "#rrggbb" string to a numeric color, or undefined (=> element default).
 export function parseColorHexToInt(hex) {
@@ -56,6 +58,18 @@ export function addAtomsToExistingStructure(structure, atomsToAdd) {
   // they render as a single pie-wedge sphere rather than as coincident atoms.
   mergeCoLocatedAtoms(structure);
   structure._hasFractionalOccupancy = undefined;
+}
+
+// Add atoms to the loaded structure and show them: the commit behind Add Atom,
+// Add Vacuum and the host's add_atoms command.
+export function commitAddedAtoms(structure, atoms) {
+  addAtomsToExistingStructure(structure, atoms);
+  createBondLengthControls();
+  // reRenderComposition: "open" — the Structure Info panel otherwise
+  // doesn't rebuild its composition/atom list at all (its default is
+  // false), so newly-added atoms/elements wouldn't show up there until
+  // some unrelated action happened to trigger a rebuild.
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: "open" });
 }
 
 // Undo one addAtomsToExistingStructure() addition, looked up by the uuid
