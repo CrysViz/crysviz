@@ -1,7 +1,7 @@
 // Crystal planes persisted per structure (ui/PlanesPanel.js, field 'planes' in
 // state/structurePrefs.js): planes created and edited through the real panel
 // inputs survive a reload of the same structure, with their cut mode and
-// field/colormap settings; a plane bound to a volumetric field re-binds once
+// field/colormap settings (including the per-plane colormap resolution); a plane bound to a volumetric field re-binds once
 // that field is attached again after the reload; and "Clear local data"
 // removes it all without the programmatic plane paths (rebuild, periodic-bounds
 // sync, row re-selection, a field re-attach) writing it back.
@@ -75,9 +75,10 @@ const PREFS_KEY = 'crysviz.structurePrefs.v1';
       planes: planes.map((p) => ({
         params: p.params, cutMode: p.cutMode, visualization: p.visualization,
         colormap: p.colormap, fieldLabel: p.fieldLabel ?? null, fieldBound: p.field?.label ?? null,
-        enabled: p.enabled,
+        enabled: p.enabled, colormapResolution: p.colormapResolution ?? null,
       })),
       meshCount: meshes.length,
+      meshResolutions: meshes.map((m) => [m.resolutionU, m.resolutionV]),
       fieldMeshes: meshes.filter((m) => m._field).length,
       rows: document.querySelectorAll('#planesTableBody tr').length,
       rowFieldText: [...document.querySelectorAll('#planesTableBody .planes-td-field')].map((td) => td.textContent),
@@ -100,9 +101,27 @@ const PREFS_KEY = 'crysviz.structurePrefs.v1';
   await setNumberAndBlur('planeL', 1);
   await H.setSelect(page, 'planesFieldSelect', 'TestBlob');
   await H.setSelect(page, 'planesColormapSelect', 'viridis');
+  // Colormap resolution: two boxes under the field/colormap selects, committed
+  // on change. 5000 is past the cap and must clamp.
+  const autoShown = await page.evaluate(() => [
+    document.getElementById('planesResolutionU').value, document.getElementById('planesResolutionV').value]);
+  await page.evaluate(() => {
+    for (const [id, v] of [['planesResolutionU', '40'], ['planesResolutionV', '5000']]) {
+      const el = /** @type {HTMLInputElement} */ (document.getElementById(id));
+      el.value = v;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  });
   await page.waitForTimeout(500);
 
   const before = await planeState();
+  H.check('resolution boxes show the derived default before any edit',
+    Number(autoShown[0]) >= 1 && Number(autoShown[1]) >= 1 && Math.max(...autoShown.map(Number)) === 256,
+    JSON.stringify(autoShown));
+  H.check('resolution edit applies to the selected plane only (clamped to 1024)',
+    JSON.stringify(before.planes[1].colormapResolution) === JSON.stringify({ u: 40, v: 1024 })
+    && before.planes[0].colormapResolution === null
+    && before.meshResolutions.some(([u, v]) => u === 40 && v === 1024), JSON.stringify(before));
   H.check('two planes created through the panel', before.planes.length === 2
     && JSON.stringify(before.planes[0].params) === JSON.stringify({ type: 'hkl', h: 1, k: 0, l: 0 })
     && JSON.stringify(before.planes[1].params) === JSON.stringify({ type: 'hkl', h: 0, k: 0, l: 1 })
@@ -112,7 +131,9 @@ const PREFS_KEY = 'crysviz.structurePrefs.v1';
   H.check('planes saved to structurePrefs', saved.length === 1 && saved[0].length === 2
     && saved[0][0].cutMode === before.planes[0].cutMode && saved[0][0].cutMode === 'AlongNormal'
     && saved[0][1].fieldLabel === 'TestBlob' && saved[0][1].visualization === 'Field'
-    && saved[0][1].colormap === 'viridis' && !('field' in saved[0][1]), JSON.stringify(saved));
+    && saved[0][1].colormap === 'viridis' && !('field' in saved[0][1])
+    && JSON.stringify(saved[0][1].colormapResolution) === JSON.stringify({ u: 40, v: 1024 })
+    && !('colormapResolution' in saved[0][0]), JSON.stringify(saved));
 
   // ---- 2. Reload: planes come back, the field plane waits for its field -----
   await page.reload({ waitUntil: 'load' });
@@ -129,6 +150,15 @@ const PREFS_KEY = 'crysviz.structurePrefs.v1';
     after.planes[1].visualization === 'Field' && after.planes[1].fieldLabel === 'TestBlob'
     && after.planes[1].fieldBound === null && after.planes[1].colormap === 'viridis'
     && after.rowFieldText[1] === 'TestBlob', JSON.stringify(after));
+  H.check('colormap resolution restored onto the plane and its mesh',
+    JSON.stringify(after.planes[1].colormapResolution) === JSON.stringify({ u: 40, v: 1024 })
+    && after.meshResolutions.some(([u, v]) => u === 40 && v === 1024), JSON.stringify(after));
+  const shownAfter = await page.evaluate(() => {
+    /** @type {HTMLElement} */ (document.querySelectorAll('#planesTableBody tr')[1]).click();
+    return [document.getElementById('planesResolutionU').value, document.getElementById('planesResolutionV').value];
+  });
+  H.check('selecting the restored plane shows its resolution in the boxes',
+    shownAfter[0] === '40' && shownAfter[1] === '1024', JSON.stringify(shownAfter));
 
   const atomCut = await page.evaluate(async () => {
     const { general } = await import('./state/store.js');

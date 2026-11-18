@@ -1,83 +1,15 @@
-import { Field } from '../model/index.js'; // Adjust path as needed
-import { FieldContainer } from '../model/index.js'; // Adjust path as needed
-import { combineFields, magnitudeField, computeFieldStats } from '../model/index.js';
+import { Field, FieldContainer, combineFields, magnitudeField } from '../model/index.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
-import { latticeVolume } from '../math/index.js';
+import { FileSource } from './FileSource.js';
+import { parseChgcarBlob, parseChgcarText } from './chgcarParse.js';
+import * as workerPool from '../workers/workerPool.js';
 
-
-
-/**
- * One parsed data block as a Field.
- *
- * The two call sites below (a new grid header, and end-of-file) used to hold
- * byte-identical copies of this, each running four separate `reduce` passes over
- * the values — eight full walks of a multi-million-entry array per file.
- * `computeFieldStats` does it in one.
- *
- * Blocks are left unlabelled here and named by `labelFields` once the file has
- * been read: what a block *is* depends on the format and on how many blocks
- * turned up, neither of which is known while one is being parsed.
- *
- * @param {Float32Array} values
- * @param {number} nx @param {number} ny @param {number} nz
- * @param {number} index position in the file
- * @param {number} [scale] factor applied while copying, for the density
- *   normalisation below; 1 leaves the file's numbers as they are
- * @returns {Field}
+/*
+ * CHGCAR / ELFCAR loading, main-thread half. Reading the grid numbers out of
+ * the text lives in io/chgcarParse.js and runs on the shared worker pool (task
+ * 'chgcarParse'); this module turns the parsed header and blocks into the
+ * Structure and its labelled, derived Fields.
  */
-function makeComponentField(values, nx, ny, nz, index, scale = 1) {
-  // Scaling here rather than in a pass of its own: the copy into the field's
-  // own buffer has to happen anyway, and computeFieldStats then sees the values
-  // the panel will actually show.
-  const scaled = new Float32Array(values.length);
-  if (scale === 1) {
-    scaled.set(values);
-  } else {
-    for (let i = 0; i < values.length; i++) scaled[i] = values[i] * scale;
-  }
-
-  return new Field({
-    nx,
-    ny,
-    nz,
-    origin: [0, 0, 0],
-    voxel: null, // will set later
-    values: scaled,
-    component: index,
-    label: `Block ${index + 1}`, // replaced by labelFields()
-    ...computeFieldStats(scaled),
-  });
-}
-
-/**
- * The factor that turns a file's raw numbers into the quantity we want to show.
- *
- * VASP writes a CHGCAR as the charge density multiplied by the cell volume, so
- * the numbers in the file are electrons, not a density, and their magnitude
- * scales with the cell: the same physical density in a doubled cell prints
- * doubled numbers. Dividing by the volume gives e/Å³, which means the same
- * thing in every file. (Equivalently, in grid terms: a value divided by the
- * NGX·NGY·NGZ grid points is the charge in one voxel, and dividing that by the
- * voxel volume V/N is the same division by V.)
- *
- * The check that fixes the convention: summing a CHGCAR's values and dividing
- * by the number of grid points returns the electron count exactly, which only
- * holds if each value is ρ·V.
- *
- * ELF is dimensionless and bounded by 1 — it is not multiplied by anything and
- * must be left alone.
- *
- * @param {string} source
- * @param {number[][]} lattice
- * @returns {number}
- */
-function densityScale(source, lattice) {
-  if (source === 'ELFCAR') return 1;
-  const volume = latticeVolume(lattice);
-  // A degenerate cell would turn every value into Infinity or NaN; showing the
-  // file's raw numbers is the better failure.
-  return Number.isFinite(volume) && volume > 0 ? 1 / volume : 1;
-}
 
 /**
  * Name the parsed blocks for the format they came from.
@@ -175,137 +107,105 @@ function deriveCombinations(fields, source) {
   return [];
 }
 
-//------------------------------------------------------------
-//  readCHGCAR(url) → { lattice, positions_cart, field }
-//  Parser for VASP CHGCAR files (supports multiple spin components)
-//------------------------------------------------------------
-export function readCHGCAR(text, fileName, source = 'CHGCAR') {
-  // Find first empty line and split, separates structure from charge density data
-  const firstEmptyIndex = text.search(/\n\s*\n/);
-  const textAfterEmpty = firstEmptyIndex !== -1 ? text.substring(firstEmptyIndex + 2) : text;
-  const textBeforeEmpty = firstEmptyIndex !== -1 ? text.substring(0, firstEmptyIndex) : '';
+/**
+ * Build the structure and its field container from a parsed file.
+ * @param {{header: string, blocks: import('./chgcarParse.js').ChgcarBlock[]}} parsed
+ * @param {string} fileName
+ * @param {string} source
+ */
+function buildChgcar({ header, blocks }, fileName, source) {
+  const structure_with_field = readPOSCAR(header, fileName);
 
-  const lines = textAfterEmpty.trim().split(/\n/);
+  // Blocks are left unlabelled until all of them are known: what a block *is*
+  // depends on the format and on how many blocks turned up.
+  const fields = blocks.map((block, index) => new Field({
+    nx: block.nx,
+    ny: block.ny,
+    nz: block.nz,
+    origin: [0, 0, 0],
+    voxel: null, // set below from the lattice
+    values: block.values,
+    component: index,
+    label: `Block ${index + 1}`, // replaced by labelFields()
+    minValue: block.minValue,
+    maxValue: block.maxValue,
+    absMinValue: block.absMinValue,
+    absMaxValue: block.absMaxValue,
+  }));
 
-  // The structure half is parsed first because the density normalisation needs
-  // the cell volume, and blocks are scaled as they are copied into their field.
-  const structure_with_field = readPOSCAR(textBeforeEmpty, fileName);
-  const scale = densityScale(source, structure_with_field.lattice);
-
-  // Grid dimensions line (nx ny nz)
-  let nx, ny, nz;
-  let nvalues;
-
-  // Read volumetric data (can be multiple blocks for spin-polarized)
-  const fields = [];
-  let fill_ind = 0;
-  let currentValues = null;
-  let i = 0;
-
-  let line;
-  while (i < lines.length) {
-    // Check for augmentation charges section (skip it)
-    let max_arg = 0;
-    line = lines[i].trim();
-    while (line.startsWith('augmentation')) {
-      // Parse the augmentation line to get the count of numbers to skip
-      const augTokens = line.split(/\s+/);
-      const numToSkip = parseInt(augTokens[3], 10) || 0;
-      max_arg = Math.max(max_arg, parseInt(augTokens[2], 10) || 0);
-      
-      // Skip the required number of values
-      let skipped = 0;
-      i++;
-      while (i < lines.length && skipped < numToSkip) {
-        const augLine = lines[i].trim();
-        if (augLine === '') {
-          i++;
-          continue;
-        }
-        const augNums = augLine.split(/\s+/).filter(s => s.length > 0);
-        skipped += augNums.length;
-        i++;
-      }
-      if (i >= lines.length) break;
-      line = lines[i].trim();
-    }
-    // skip any remaining augmentation lines if we had a max_arg
-    const numToSkip = max_arg;
-    let skipped = 0;
-    while (i < lines.length && skipped < numToSkip) {
-      const augLine = lines[i].trim();
-      if (augLine === '') {
-        i++;
-        continue;
-      }
-      const augNums = augLine.split(/\s+/).filter(s => s.length > 0);
-      skipped += augNums.length;
-      i++;
-    }
-
-    if (i >= lines.length) break;
-    
-
-    // Check for new grid line (indicates another spin component)
-    line = lines[i].trim();
-    const tokens = line.split(/\s+/);
-    if (tokens.length === 3 && tokens.every(t => /^\d+$/.test(t))) {
-      // Save current field if we have data
-      if (currentValues && currentValues.length > 0) {
-        fields.push(makeComponentField(currentValues, nx, ny, nz, fields.length, scale));
-      }
-      fill_ind = 0;
-      [nx, ny, nz] = tokens.map(Number);
-      nvalues = nx * ny * nz;
-      currentValues = new Float32Array(nvalues);
-      i++;
-      // Parse volumetric data, already in order of z,y,x (slowest to fastest)
-      while (i < lines.length && fill_ind < nvalues) {
-        line = lines[i].trim();
-        const nums = line.split(/\s+/).filter(s => s.length > 0).map(Number);
-        for (let j = 0; j < nums.length; j++) {
-          if (!isNaN(nums[j]) && fill_ind < nvalues) currentValues[fill_ind++] = nums[j];
-        }
-        i++;
-      }
-      continue;
-    }
-
-    i++;
-  }
-
-  // Push final field
-  if (currentValues && currentValues.length > 0) {
-    fields.push(makeComponentField(currentValues, nx, ny, nz, fields.length, scale));
-  }
-
-  // Naming is deferred to here because it depends on the format and on how many
-  // blocks the file actually held — and the derived combinations below are named
-  // after the fields they are built from, so they must come second.
+  // The derived combinations are named after the fields they are built from,
+  // so naming comes first.
   labelFields(fields, source);
   fields.push(...deriveCombinations(fields, source));
 
-  // Create volumetric field container with metadata
   const fieldContainer = new FieldContainer({
     fileName,
-    source: source,
+    source,
     fieldCount: fields.length,
-    fields: fields
+    fields,
   });
 
   structure_with_field.volumetricFields = fieldContainer;
 
-  // Update voxel field for each component based on structure lattice
-  fieldContainer.fields.forEach(field => {
+  // Voxel vectors of each component from the structure's lattice.
+  const lattice = structure_with_field.lattice;
+  fieldContainer.fields.forEach((field) => {
     field.voxel = [
-      [structure_with_field.lattice[0][0] / field.nx, structure_with_field.lattice[0][1] / field.nx, structure_with_field.lattice[0][2] / field.nx],
-      [structure_with_field.lattice[1][0] / field.ny, structure_with_field.lattice[1][1] / field.ny, structure_with_field.lattice[1][2] / field.ny],
-      [structure_with_field.lattice[2][0] / field.nz, structure_with_field.lattice[2][1] / field.nz, structure_with_field.lattice[2][2] / field.nz]
+      [lattice[0][0] / field.nx, lattice[0][1] / field.nx, lattice[0][2] / field.nx],
+      [lattice[1][0] / field.ny, lattice[1][1] / field.ny, lattice[1][2] / field.ny],
+      [lattice[2][0] / field.nz, lattice[2][1] / field.nz, lattice[2][2] / field.nz],
     ];
   });
 
-  return {
-    fileName,
-    structure_with_field
-  };
+  return { fileName, structure_with_field };
+}
+
+/**
+ * Parse CHGCAR text synchronously, on the calling thread.
+ * @param {string} text
+ * @param {string} fileName
+ * @param {string} [source] 'CHGCAR', 'ELFCAR', …
+ */
+export function readCHGCAR(text, fileName, source = 'CHGCAR') {
+  return buildChgcar(parseChgcarText(text, source), fileName, source);
+}
+
+/**
+ * Parse on the pool when possible, on the main thread when not — the same
+ * dispatch shape as io/ReadOutcarModule.js: a pool that cannot start (module
+ * worker unsupported, blocked by a CSP) must not take CHGCAR loading down with
+ * it. The Blob goes to the worker by reference, so the file is read there and
+ * never materialised as a string on the main thread.
+ * @param {Blob} blob
+ * @param {string} source
+ * @param {(progress: number) => void} [onProgress]
+ */
+async function runParse(blob, source, onProgress) {
+  if (workerPool.available()) {
+    try {
+      return await workerPool.run('chgcarParse', { blob, source }, undefined, onProgress);
+    } catch (error) {
+      console.warn('CHGCAR parse failed in a pool worker; falling back to the '
+        + 'main thread. The UI will block while it runs.', error);
+    }
+  }
+  return parseChgcarBlob(blob, source, onProgress);
+}
+
+/**
+ * Parse a CHGCAR off the main thread.
+ *
+ * @param {FileSource | Blob | string} content normally the FileSource that
+ *   io/formats.js passes through (CHGCAR is a random-access format)
+ * @param {string} fileName
+ * @param {string} [source] 'CHGCAR', 'ELFCAR', …
+ * @param {(progress: number) => void} [onProgress] 0-100 while the file is read
+ */
+export async function readCHGCARAsync(content, fileName, source = 'CHGCAR', onProgress) {
+  let blob;
+  if (content instanceof FileSource) blob = content.asBlob();
+  else if (content instanceof Blob) blob = content;
+  else blob = new Blob([String(content ?? '')]);
+  const parsed = await runParse(blob, source, onProgress);
+  return buildChgcar(parsed, fileName, source);
 }

@@ -312,12 +312,18 @@ export const general = {
   // Custom legend text for the Forces color bar (ForcePanel.js), falls back
   // to "Force (eV/Å)" when unset.
   forceLegendText: null,
+  // Where the user dragged that color bar's legend text (ColorBarWidget.js
+  // legendOffset, CSS px), carried across rebuilds; null = default place.
+  forceLegendOffset: null,
   // Spin colormap normalization: 'linear' | 'log' (Spins panel Log Scale
   // toggle), same role as forceColorScale above but for SpinModule.js.
   spinColorScale: 'linear',
   // Custom legend text for the Spins color bar (SpinPanel.js), falls back
   // to "Spin (μB)" when unset.
   spinLegendText: null,
+  // Where the user dragged that color bar's legend text (ColorBarWidget.js
+  // legendOffset, CSS px), carried across rebuilds; null = default place.
+  spinLegendOffset: null,
   // Spin reference frame (Spins panel "Spin Reference Frame" dropdown): how
   // each spin's raw moments map to global Cartesian — 'file' (re-project from
   // the SAXIS the file was written with), 'cartesian', 'crystal', or 'custom'.
@@ -339,12 +345,18 @@ export const general = {
   // Custom legend text for the Atoms color bar (ColorPanel.js), falls back
   // to "Atom Force (eV/Å)" when unset.
   atomLegendText: null,
+  // Where the user dragged that color bar's legend text (ColorBarWidget.js
+  // legendOffset, CSS px), carried across rebuilds; null = default place.
+  atomLegendOffset: null,
   // Bonds "Length" mode colormap normalization: 'linear' | 'log' (ColorPanel.js
   // Log Scale toggle for the bond color bar).
   bondColorScale: 'linear',
   // Custom legend text for the Bonds color bar (ColorPanel.js), falls back
   // to "Bond Length (Å)" when unset.
   bondLegendText: null,
+  // Where the user dragged that color bar's legend text (ColorBarWidget.js
+  // legendOffset, CSS px), carried across rebuilds; null = default place.
+  bondLegendOffset: null,
   // Force arrow LENGTH normalization (Forces panel "log length" toggle),
   // independent of forceColorScale above — but turning it on also forces
   // forceColorScale to 'log' and locks that toggle, since a log-length arrow

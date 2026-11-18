@@ -422,6 +422,17 @@
   outline: none;
 }
 
+/* On a floating bar the legend can be dragged on its own
+   (ui/ColorBarWidget.js); while being edited it stays a text field. */
+.cv-colorbar-floating .cv-colorbar-legend:not(.cv-colorbar-legend-editing) {
+  cursor: grab;
+}
+
+.cv-colorbar-legend.cv-colorbar-legend-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .cv-colorbar-tick-line {
   position: absolute;
   background: rgb(var(--shadow-rgb) / 0.55);
