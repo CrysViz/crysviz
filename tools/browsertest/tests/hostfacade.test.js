@@ -429,6 +429,7 @@ async function waitForHostFailure(page) {
     })();
     const badView = await host.dispatch({ command: 'set_view', args: { direction: 'q' } });
     const state = await host.dispatch({ command: 'get_state', args: {} });
+    const releaseNoteShown = !!document.getElementById('releaseNote') && !document.getElementById('releaseNote').hidden;
     // A host command has no DOM event to trigger the on-demand redraw: the
     // host asks for one itself, or a colour change shows only on the next click.
     const { counters } = await import('./debug/debugTrace.js');
@@ -492,7 +493,7 @@ async function waitForHostFailure(page) {
       asyncRejection,
       fallback,
       rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
-      viewedC, viewC, badView, state, redrawn,
+      viewedC, viewC, badView, state, redrawn, releaseNoteShown,
       raytrace, raytraceState, unknownPipeline, raster, saved, invalidOutput,
       injected: window.__hostInjected === 1,
       injectedNodes: document.querySelectorAll('img[src="x"], img[onerror]').length,
@@ -580,6 +581,7 @@ async function waitForHostFailure(page) {
       && protocol.state.result.camera.direction.every((value, i) =>
         Math.abs(value - protocol.viewedC.result.direction[i] / Math.hypot(...protocol.viewedC.result.direction)) < 1e-5),
     protocol.state.result?.camera);
+  H.check('a host-launched window shows no release note', !protocol.releaseNoteShown);
   H.check('a host command redraws without any user event', protocol.redrawn.colored && protocol.redrawn.after > protocol.redrawn.before, protocol.redrawn);
   H.check('set_view rejects an unknown direction',
     !protocol.badView.ok && protocol.badView.error.code === 'INVALID_ARGS');
