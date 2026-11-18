@@ -216,5 +216,5 @@ function crash(err) {
 module.exports = {
   launchApp, webglAvailable, loadDefaultStructure, setSelect, setSlider,
   clickById, waitFor, shotCanvas, darkFraction, nonUniformFraction,
-  check, finish, crash,
+  check, finish, crash, CANVAS_CLIP,
 };

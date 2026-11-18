@@ -524,6 +524,19 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
   filter: var(--icon-filter-bright);
 }
 
+/* The button has no chip of its own (background: none above): it sits on the
+   3D scene, so the glyph's polarity follows the scene background rather than
+   the palette. Default light keeps dark chrome over a white scene, and any
+   palette can be given a light background by hand; the white camera glyph
+   vanished on both. ui/SceneTone.js sets data-scene-tone on <html>. */
+:root[data-scene-tone="light"] .cv-panel-compact-btn img {
+  filter: invert(1);
+}
+
+:root[data-scene-tone="dark"] .cv-panel-compact-btn img {
+  filter: none;
+}
+
 /* Expanded-while-compact: unfold to the icon's LEFT, not below it. The row is
    reversed so the title bar (first in the DOM) lands on the right. align-items:
    flex-start (NOT center) keeps the icon pinned exactly where it renders

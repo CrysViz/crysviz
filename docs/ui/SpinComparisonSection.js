@@ -14,7 +14,8 @@ import { fileBrowser, general } from '../state/store.js';
 import { Spin } from '../model/index.js';
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange } from '../utils/index.js';
+import { computeAutoRange, logScaleFloor } from '../utils/index.js';
+import { SPIN_DRAW_THRESHOLD } from '../render/index.js';
 
 const SPIN2_COLORBAR_FLOATING_ID = 'spin2ColorBarFloating';
 const SPIN2_LEGEND = 'Comparison spin (μB)';
@@ -241,15 +242,21 @@ export function buildSpinComparisonSection(body, { colorMapOptions, redraw, repr
       : 'No comparison spins loaded.';
   }
 
-  function applyAutoRange() {
-    const magnitudes = spins2().map((spin) => {
+  // Only moments drawn as arrows (same as SpinPanel.js spinMagnitudes).
+  function spin2Magnitudes() {
+    return spins2().map((spin) => {
       const v = spin?.vector;
-      return v ? Math.hypot(v[0], v[1], v[2]) * (spin.scaling ?? 1.0) : NaN;
+      const mag = v ? Math.hypot(v[0], v[1], v[2]) : NaN;
+      return mag >= SPIN_DRAW_THRESHOLD ? mag * (spin.scaling ?? 1.0) : NaN;
     });
-    const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true });
+  }
+
+  function applyAutoRange() {
+    const magnitudes = spin2Magnitudes();
+    const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true, log: general.spin2ColorScale === 'log' });
     if (!range) return;
     let { min, max } = range;
-    if (general.spin2ColorScale === 'log' && min <= 0) min = 0.01;
+    if (general.spin2ColorScale === 'log' && min <= 0) min = logScaleFloor(max);
     general.spin2Min = min;
     general.spin2Max = max;
     spin2ColorBarInstance?.setRange(min, max);
@@ -259,7 +266,7 @@ export function buildSpinComparisonSection(body, { colorMapOptions, redraw, repr
   function applyLogScale(isLog) {
     general.spin2ColorScale = isLog ? 'log' : 'linear';
     if (isLog && general.spin2Min <= 0) {
-      general.spin2Min = 0.01;
+      general.spin2Min = logScaleFloor(general.spin2Max, spin2Magnitudes());
       spin2ColorBarInstance?.setRange(general.spin2Min, general.spin2Max);
     }
     logCheckbox.checked = isLog;

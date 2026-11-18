@@ -7,7 +7,7 @@ import { getSelectedAtoms, subscribeToAtomSelection } from './SelectAndHighlight
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange, roundToSigFigs } from '../utils/index.js';
+import { computeAutoRange, roundToSigFigs, logScaleFloor } from '../utils/index.js';
 import { saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
 
 export const planesData = {
@@ -859,11 +859,11 @@ function applyPlaneLogScale(isLog) {
   if (!plane) return false;
 
   plane.colormapScale = isLog ? 'log' : 'linear';
-  // log10(0) is -Infinity — floor a min at/below 0 to a small positive
-  // value the moment log scale turns on, same guard Forces/Spins/Atoms/
-  // Bonds all apply.
+  // log10(0) is -Infinity — floor a min at/below 0 the moment log scale
+  // turns on, where the log Auto Range would start (same guard Forces/
+  // Spins/Atoms/Bonds all apply).
   if (isLog && (!Number.isFinite(plane.colormapMin) || plane.colormapMin <= 0)) {
-    plane.colormapMin = 0.01;
+    plane.colormapMin = logScaleFloor(plane.colormapMax, planeLogValues(plane));
     syncPlaneRangeControls(plane.colormapMin, plane.colormapMax);
     planesColorBarInstance?.setRange(plane.colormapMin, plane.colormapMax);
   }
@@ -877,18 +877,33 @@ function applyPlaneLogScale(isLog) {
 // Shared by the Auto Range button and the layout menu's own "Auto Range"
 // item. Recomputes min/max from the field's actual data range (minValue/
 // maxValue — the field's own already-computed true extremes), padded 20%
-// of the data's own span on each side and rounded to 3 significant figures
+// of the data's own span on each side and rounded out to round numbers
 // (computeAutoRange), exactly matching Forces/Spins/Atoms/Bonds.
+// The field's extremes as a log bar should see them: a field that reaches 0
+// or below (a difference density, a potential) starts three decades under
+// its max instead of at its smallest positive value, which for [-0.2, 30]
+// would have been just under 30.
+function planeLogValues(plane) {
+  const lo = Number(plane.field?.minValue);
+  const hi = Number(plane.field?.maxValue);
+  if (!(hi > 0)) return [];
+  return lo > 0 ? [lo, hi] : [hi / 1000, hi];
+}
+
 function applyPlaneAutoRange() {
   const structure = getSelectedStructure();
   if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return false;
   const plane = structure.planes[selectedPlaneIndex];
   if (!plane || !plane.field) return false;
 
-  const range = computeAutoRange([Number(plane.field.minValue), Number(plane.field.maxValue)]);
+  const isLog = plane.colormapScale === 'log';
+  const values = isLog && planeLogValues(plane).length
+    ? planeLogValues(plane)
+    : [Number(plane.field.minValue), Number(plane.field.maxValue)];
+  const range = computeAutoRange(values, 0.2, { log: isLog });
   if (!range) return false;
   let { min, max } = range;
-  if (plane.colormapScale === 'log' && min <= 0) min = 0.01;
+  if (isLog && min <= 0) min = logScaleFloor(max);
 
   plane.colormapMin = min;
   plane.colormapMax = max;

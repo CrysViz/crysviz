@@ -9,6 +9,10 @@ import { getHeatMapColors, getBatlowColors, getHawaiiColors, getManaguaColors, g
 import { makeColorBarDraggable } from './ColorBarDrag.js';
 import { listActiveColorBars } from './ColorBarRegistry.js';
 import { applyLegendHtml, legendPlainText, wireLongPress } from '../utils/index.js';
+// Tick values and labels (unit-tested in node); re-exported for
+// render/ImageExportModule.js, which draws the same ticks into exports.
+import { computeTicks, ticksClearOfFields, formatLimit } from '../utils/ColorBarTicks.js';
+export { formatTick, computeTicks } from '../utils/ColorBarTicks.js';
 
 function createElement(tag, attributes = {}, styles = {}, textContent = "") {
   const el = document.createElement(tag);
@@ -33,82 +37,6 @@ export function colorsFor(colormap) {
     case "jet": return getJetColors();
     default: return getHeatMapColors();
   }
-}
-
-// Exported for render/ImageExportModule.js — see colorsFor above.
-export function formatTick(v) {
-  if (!isFinite(v)) return '';
-  let s = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2);
-  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
-  return s;
-}
-
-// Exact powers of ten print as "1e-4" / "1" / "1e3" rather than the decimal
-// expansion — matches how the log tick picker below always chooses tick
-// *values* that are clean decades once the range spans more than one.
-function formatDecadeTick(k) {
-  return k === 0 ? "1" : `1e${k}`;
-}
-
-// log10(0) is -Infinity; clamp tick values below this floor before taking a
-// log so a tick landing at/near 0 doesn't blow up its own position math.
-const LOG_EPS = 1e-6;
-
-const INNER_TICKS = 3; // labeled ticks strictly between min and max (linear, or a log range under one decade)
-const MAX_LOG_TICKS = 4; // decade ticks cap, not counting the min/max endpoints
-
-// Once a log-scaled range spans more than a decade, evenly-spaced-by-fraction
-// ticks land on odd values like "3.28" — prefer the clean decades (1e-4, 1e-3,
-// …) that fall strictly inside (min, max) instead, thinned to at most
-// MAX_LOG_TICKS if there are more decades than that.
-// Exported for render/ImageExportModule.js — see colorsFor above.
-export function computeTicks(min, max, scale) {
-  if (scale === 'log' && min > 0 && max / min > 10) {
-    const lo = Math.log10(min);
-    const hi = Math.log10(max);
-    let decades = [];
-    for (let k = Math.ceil(lo - 1e-9); k <= Math.floor(hi + 1e-9); k++) {
-      const v = Math.pow(10, k);
-      if (v > min * (1 + 1e-9) && v < max * (1 - 1e-9)) decades.push(k);
-    }
-    if (decades.length > MAX_LOG_TICKS) {
-      const n = decades.length;
-      const picked = [];
-      for (let i = 0; i < MAX_LOG_TICKS; i++) {
-        picked.push(decades[Math.round(i * (n - 1) / (MAX_LOG_TICKS - 1))]);
-      }
-      decades = [...new Set(picked)];
-    }
-    if (decades.length > 0) {
-      return decades.map(k => ({
-        value: Math.pow(10, k),
-        frac: (k - lo) / (hi - lo),
-        label: formatDecadeTick(k),
-      }));
-    }
-    // No clean decade strictly inside the range (e.g. 12 -> 130): fall
-    // through to evenly-spaced-by-fraction ticks below.
-  }
-  // Sub-decade log range (or a >10x range with no clean decade inside it):
-  // pick plain evenly-spaced-by-VALUE ticks (same numbers linear mode would
-  // show — e.g. 0.25 for [0.2, 0.3]) rather than evenly-spaced-by-POSITION
-  // ticks, whose *values* under log interpolation land on the geometric
-  // mean (0.2449… -> "0.24" here) — correct for where that position falls
-  // on a log-normalized bar, but a needlessly odd-looking number for a
-  // range this narrow. Reposition each nice value at its true log-scale
-  // fraction instead, so the tick still marks the right spot on the bar.
-  const ticks = [];
-  const lo = min > 0 ? Math.log10(min) : NaN;
-  const hi = max > 0 ? Math.log10(max) : NaN;
-  for (let i = 1; i <= INNER_TICKS; i++) {
-    const linFrac = i / (INNER_TICKS + 1);
-    const value = min + linFrac * (max - min);
-    const frac = scale === 'log' && hi > lo
-      ? (Math.log10(Math.max(value, LOG_EPS)) - lo) / (hi - lo)
-      : linFrac;
-    ticks.push({ value, frac, label: formatTick(value) });
-  }
-  return ticks;
 }
 
 const DEFAULT_BAR_LENGTH = 300; // canvas internal resolution, px
@@ -415,8 +343,10 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // tickLayer, which renderTicks() wipes and rebuilds on every render —
   // that would destroy and recreate these on every value change, losing
   // focus/typing state mid-edit).
-  const minInput = createElement("input", { type: "number", value: minValue, step: "0.1", class: "cv-colorbar-value-input" });
-  const maxInput = createElement("input", { type: "number", value: maxValue, step: "0.1", class: "cv-colorbar-value-input" });
+  // Values the program sets print like the ticks (formatLimit: 5e-5, not
+  // 0.00005); typed text is left as typed.
+  const minInput = createElement("input", { type: "number", value: formatLimit(minValue), step: "0.1", class: "cv-colorbar-value-input" });
+  const maxInput = createElement("input", { type: "number", value: formatLimit(maxValue), step: "0.1", class: "cv-colorbar-value-input" });
   barOuter.appendChild(minInput);
   barOuter.appendChild(maxInput);
 
@@ -469,9 +399,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // THERE, just not all visible without scrolling the field. Scale the box
   // by the same factor AND measure the input's own current text (like
   // tickLabelSpanV — a long typed value needs more than just the scaled
-  // default), once floating (docked bars stay at the small fixed
-  // DOCKED_INPUT_FONT, so the default width is never actually too small for
-  // them). A separate function from applyInputStyle (below), not folded into
+  // default). Docked bars keep the small fixed DOCKED_INPUT_FONT but still
+  // widen to their text: Auto Range values like 0.011 or 0.00005 showed as
+  // "0.0" in the 46px box. A separate function from applyInputStyle (below), not folded into
   // it, so a plain Min/Max edit (onLimitsBlur -> renderTicks(), which needs
   // this re-run against the newly typed text) can call just this without
   // also resetting textAlign back to plainInputStyle's default "center" —
@@ -479,11 +409,22 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // reapplied on that path, unlike here where applyLayout always runs
   // before renderTicks in every OTHER caller.
   function scaledInputWidth(input) {
-    if (!(dragCtl?.isFloating() ?? false)) return `${MINMAX_WIDTH}px`;
+    const floating = dragCtl?.isFloating() ?? false;
     const fontPx = scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT);
-    measureCtx.font = `${fontPx}px 'CrysViz Sans', sans-serif`;
+    // The field's own font stack (the canvas falls back to a narrower face
+    // otherwise, and "0.00005" came out ~15px short).
+    const family = getComputedStyle(input).fontFamily || "'CrysViz Sans', sans-serif";
+    measureCtx.font = `${fontPx}px ${family}`;
     const textWidth = measureCtx.measureText(input.value || '').width;
-    return `${Math.max(MINMAX_WIDTH * fontScale(), textWidth + 14)}px`;
+    return `${Math.max(floating ? MINMAX_WIDTH * fontScale() : MINMAX_WIDTH, Math.ceil(textWidth) + 14)}px`;
+  }
+
+  // Once laid out, widen a field whose text still scrolls (the canvas
+  // measure is only an estimate of the rendered text). A hidden field
+  // reports 0 for both and is left alone.
+  function fitInputToText(input) {
+    const over = input.scrollWidth - input.clientWidth;
+    if (over > 0) input.style.width = `${(parseFloat(input.style.width) || MINMAX_WIDTH) + over + 2}px`;
   }
 
   function applyInputStyle(input) {
@@ -788,6 +729,31 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // in-progress invalid range (renderTicks() bails out before drawing
   // anything in that case) — they're the editable source of that range, so
   // they need to stay visible and in place for the user to fix it.
+  // How far a docked horizontal field is shifted inwards: it grows from the
+  // outer edge of the default MINMAX_WIDTH box towards the bar's middle, so a
+  // long value (0.00005) doesn't overhang the panel and get cut off. Floating
+  // bars keep the field centred on the bar's end.
+  function inwardShift(input) {
+    if (orientation !== 'horizontal' || (dragCtl?.isFloating() ?? false)) return 0;
+    return Math.max(0, (parseFloat(input.style.width) || MINMAX_WIDTH) - MINMAX_WIDTH) / 2;
+  }
+
+  // [start, end] of the Min and Max fields along the bar, in px from the min
+  // end, for ticksClearOfFields. Horizontal: their measured text widths;
+  // vertical: one line of the field's font.
+  function fieldSpans(length) {
+    const horizontal = orientation === 'horizontal';
+    const extent = (input) => (horizontal
+      ? (parseFloat(input.style.width) || MINMAX_WIDTH)
+      : scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT) * 1.5);
+    const minC = inwardShift(minInput);
+    const maxC = length - inwardShift(maxInput);
+    return {
+      minSpan: [minC - extent(minInput) / 2, minC + extent(minInput) / 2],
+      maxSpan: [maxC - extent(maxInput) / 2, maxC + extent(maxInput) / 2],
+    };
+  }
+
   function positionMinMax() {
     const horizontal = orientation === 'horizontal';
     const tickOffset = `calc(100% + ${TICK_LABEL_GAP}px)`;
@@ -797,8 +763,10 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       // renderTicks() -> here, without an applyLayout() in between — widens
       // the box to keep pace instead of clipping until the next layout pass.
       input.style.width = scaledInputWidth(input);
+      fitInputToText(input);
       if (horizontal) {
-        input.style.left = `${frac * 100}%`;
+        const shift = inwardShift(input) * (frac === 0 ? 1 : -1);
+        input.style.left = shift ? `calc(${frac * 100}% + ${shift}px)` : `${frac * 100}%`;
         input.style.right = '';
         input.style.top = flipSide ? '' : tickOffset;
         input.style.bottom = flipSide ? tickOffset : '';
@@ -814,7 +782,11 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     });
   }
 
+  // The ticks drawn last (after ticksClearOfFields), for image export.
+  let shownTicks = [];
+
   function renderTicks() {
+    shownTicks = [];
     positionMinMax();
     // tickLabelSpanV() (positionLegend, vertical mode) needs the actual
     // current tick text to size the legend's clearance against — min/max
@@ -830,8 +802,19 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     const max = parseFloat(maxInput.value);
     if (!isFinite(min) || !isFinite(max) || min >= max) return;
 
-    const ticks = computeTicks(min, max, currentScale);
-    const tickFontSize = `${scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT)}px`;
+    const tickFontPx = scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT);
+    const tickFontSize = `${tickFontPx}px`;
+    // Bar length on screen: a docked horizontal bar stretches to its row
+    // (0 while the panel is still hidden — then nothing is dropped).
+    const length = horizontal ? (barOuter.clientWidth || 0) : (barOuter.clientHeight || barLength);
+    measureCtx.font = `${tickFontPx}px 'CrysViz Sans', sans-serif`;
+    const geom = {
+      length,
+      ...fieldSpans(length),
+      labelSize: (text) => (horizontal ? measureCtx.measureText(text).width : tickFontPx * 1.3),
+      tickGap: tickFontPx * 0.8,
+    };
+    const ticks = shownTicks = computeTicks(min, max, currentScale, (set) => ticksClearOfFields(set, geom));
     ticks.forEach(({ frac, label: text }) => {
       const line = createElement("div", { class: "cv-colorbar-tick-line" });
       // position/color/white-space are constant (sceneWidgets.css); fontSize
@@ -909,8 +892,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // re-stringify it through JS's own number formatting, silently
     // dropping scientific notation the user typed (e.g. "2e-3" would come
     // back as "0.002") even though the value committed is identical.
-    if (isNaN(min) || minInput.value === "") { min = fallbackMin; minInput.value = min; }
-    if (isNaN(max) || maxInput.value === "") { max = fallbackMax; maxInput.value = max; }
+    if (isNaN(min) || minInput.value === "") { min = fallbackMin; minInput.value = formatLimit(min); }
+    if (isNaN(max) || maxInput.value === "") { max = fallbackMax; maxInput.value = formatLimit(max); }
     if (min >= max) {
       min = fallbackMin;
       max = fallbackMax;
@@ -1259,6 +1242,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       // formatTick's 2-decimal-place "0.06".
       minText: minInput.value,
       maxText: maxInput.value,
+      // The ticks on screen (computeTicks, minus those that would touch the
+      // Min/Max fields or each other), so the export prints the same set.
+      ticks: shownTicks.map(({ frac, label }) => ({ frac, label })),
       size: barLength,
       // The tick label font size actually on screen right now (CSS px,
       // already run through scaledFont's fontScale() for a floating bar) —
@@ -1276,8 +1262,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // log-safe value on switching to log scale) into the visible inputs and
     // re-render the ticks against it, without tearing the widget down.
     setRange(min, max) {
-      minInput.value = min;
-      maxInput.value = max;
+      minInput.value = formatLimit(min);
+      maxInput.value = formatLimit(max);
       renderTicks();
     },
     // Applies a length chosen elsewhere — the resize handle's drag broadcasts

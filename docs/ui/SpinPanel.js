@@ -4,10 +4,11 @@ import { fileBrowser, general } from '../state/store.js';
 import { Spin } from '../model/index.js'; // Update path
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange, applySpinFrame, parseSaxis } from '../utils/index.js';
+import { logScaleFloor, applySpinFrame, parseSaxis } from '../utils/index.js';
+import { arrowMagnitudes, autoArrowRange, ensureArrowRanges } from './ArrowRange.js';
 import { isExperimentalMode } from '../debug/experimentalMode.js';
 import { buildSpinComparisonSection, removeSpinComparisonSection } from './SpinComparisonSection.js';
-import { saveArrowStyle, scheduleArrowStyleSave, applyUserArrowRange } from './ArrowStylePrefs.js';
+import { saveArrowStyle, scheduleArrowStyleSave } from './ArrowStylePrefs.js';
 
 const SPIN_COLORBAR_FLOATING_ID = 'spinColorBarFloating';
 
@@ -781,15 +782,6 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
   });
 
-// Only the very first scalar colormap pick for this panel instance should
-// derive the range from the structure's spin lengths; every switch after
-// that (including bouncing through "none"/direction/plusminus, which don't
-// show a range at all) should keep whatever range is already set instead of
-// recomputing it out from under the user. Local (not module-scope), so a
-// full panel rebuild (file change, collapse/reopen) recomputes fresh for
-// the new structure's spin magnitudes — mirroring ForcePanel's
-// preserveRange=false default for its own initial build.
-let spinRangeInitialized = false;
 
 // Builds (or tears down/hides) the color bar to match colorMapSelect's
 // current value. Shared between the colormap dropdown's change handler and
@@ -815,55 +807,19 @@ function refreshColorBarVisibility() {
 
     let minValue = general.spinMin;
     let maxValue = general.spinMax;
-    const haveUsableRange = spinRangeInitialized && isFinite(minValue) && isFinite(maxValue) && minValue < maxValue;
+    const haveUsableRange = isFinite(minValue) && isFinite(maxValue) && minValue < maxValue;
 
     if (!haveUsableRange) {
-      minValue = 0;
-      maxValue = 2;
-
-      const structure = fileBrowser.selectedStructure;
-      if (structure?.spins) {
-        // Calculate lengths for all spins
-        const lengths = structure.spins
-          .map(spin => {
-            if (!spin.vector) return 0;
-            const mag = Math.sqrt(
-              spin.vector[0] ** 2 +
-              spin.vector[1] ** 2 +
-              spin.vector[2] ** 2
-            );
-            return mag * (spin.scaling ?? 1.0);
-          })
-          .filter(len => len > 0.1); // Only consider lengths > 0.1
-
-        if (lengths.length > 0) {
-          minValue = Math.min(...lengths);
-          maxValue = Math.max(...lengths);
-
-          // Round up to 1 decimal place
-          minValue = Math.ceil(minValue * 10) / 10;
-          maxValue = Math.ceil(maxValue * 10) / 10;
-
-          // Add a small buffer to max value (also rounded up)
-          maxValue = Math.ceil(maxValue * 1.05 * 10) / 10;
-
-          // Ensure min is less than max
-          if (minValue >= maxValue) {
-            minValue = Math.floor(maxValue * 0.9 * 10) / 10;
-          }
-        }
-      }
-
-      // Set default values if no valid spins found
-      if (minValue >= maxValue) {
-        minValue = 0;
-        maxValue = 2;
-      }
+      // What Auto Range gives (ui/ArrowRange.js normally set it when the
+      // structure was entered; this covers a range left unusable).
+      const isLog = general.spinColorScale === "log";
+      const range = autoArrowRange(spinMagnitudes(), isLog);
+      minValue = range?.min ?? (isLog ? 0.01 : 0);
+      maxValue = range?.max ?? 2;
 
       // Update general values
       general.spinMin = minValue;
       general.spinMax = maxValue;
-      spinRangeInitialized = true;
     }
 
     // Show the color bar with calculated values
@@ -935,10 +891,10 @@ colorMapSelect.addEventListener("change", () => {
 function applyLogScale(isLog, save = false) {
   general.spinColorScale = isLog ? "log" : "linear";
   // log10(0) is -Infinity, so a min of 0 breaks the log color mapping and
-  // the tick math — floor it to a small positive value the moment log
-  // scale turns on, same as ForcePanel.js.
+  // the tick math — floor it where the log Auto Range would start the
+  // moment log scale turns on, same as ForcePanel.js.
   if (isLog && general.spinMin <= 0) {
-    general.spinMin = 0.01;
+    general.spinMin = logScaleFloor(general.spinMax, spinMagnitudes());
     spinColorBarInstance?.setRange(general.spinMin, general.spinMax);
   }
   logCheckbox.checked = isLog;
@@ -960,18 +916,17 @@ function updateNoSpinsNote() {
 // showing right now (manual list or the structure's own), padded 20% of
 // the data's own span on each side (computeAutoRange) — mirrors
 // ForcePanel.js's applyAutoRange.
+// The moments the colour bar ranges over: only those drawn as arrows
+// (render/SpinModule.js skips |m| under SPIN_DRAW_THRESHOLD), so a
+// non-magnetic atom's 0.0003 μB doesn't stretch a log bar down by decades.
+function spinMagnitudes() {
+  return arrowMagnitudes('spin', sourceSelect.value === "manual" ? parseManualSpins() : fileBrowser.selectedStructure?.spins);
+}
+
 function applyAutoRange(save = false) {
-  const spins = sourceSelect.value === "manual" ? parseManualSpins() : fileBrowser.selectedStructure?.spins;
-  if (!spins?.length) return;
-  const magnitudes = spins.map((spin) => {
-    if (!spin?.vector) return NaN;
-    const mag = Math.sqrt(spin.vector[0] ** 2 + spin.vector[1] ** 2 + spin.vector[2] ** 2);
-    return mag * (spin.scaling ?? 1.0);
-  });
-  const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true });
+  const range = autoArrowRange(spinMagnitudes(), general.spinColorScale === "log");
   if (!range) return;
-  let { min, max } = range;
-  if (general.spinColorScale === "log" && min <= 0) min = 0.01;
+  const { min, max } = range;
   general.spinMin = min;
   general.spinMax = max;
   spinColorBarInstance?.setRange(min, max);
@@ -1179,7 +1134,9 @@ autoRangeBtn.addEventListener("click", () => applyAutoRange(true));
   createSpeciesVisibilityToggles();
   // A range the user set (or restored) for this structure wins over one
   // recomputed from the data (ui/ArrowStylePrefs.js).
-  if (applyUserArrowRange('spin')) spinRangeInitialized = true;
+  // The structure's own range (stored, or its Auto Range) — set when it was
+  // entered (ui/ArrowRange.js); the bar shows it rather than computing another.
+  ensureArrowRanges(fileBrowser.selectedStructure);
   refreshColorBarVisibility();
   // Sync the frame controls to persisted state and apply it once, so a
   // restored non-default frame/rotation (or just the file's SAXIS) is reflected

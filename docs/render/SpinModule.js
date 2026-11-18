@@ -1,7 +1,8 @@
 import * as THREE from '../external/three/three.module.js';
+import { fileMagnitudeExtent, logArrowLength } from './ArrowLength.js';
 import { app, fileBrowser, groups, general } from '../state/store.js';
 import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
-import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
+import { createArrowMaterial, addArrowEmissiveAttributes, applyArrowCelOutline } from './ArrowMaterial.js';
 import { requestRender } from './AnimateModule.js';
 import { applyFocusToArrows } from './FocusRegionModule.js';
 
@@ -13,20 +14,13 @@ const TIP_LENGTH = 0.8; // legacy arrowhead length; the general.spinTipLength de
 const TIP_RADIUS = 0.3;
 const UP = new THREE.Vector3(0, 1, 0);
 const LOG_EPS = 1e-6;
-// Rendered arrow length range for "log length" mode only — normal (linear)
-// mode keeps spin length directly proportional to magnitude (unchanged,
-// unlike ForceModule.js which always compresses into this kind of window),
-// since a spin's magnitude is itself a meaningful physical quantity at a
-// human-readable scale. Log mode needs *some* fixed window to map into
-// (log-compressed values aren't proportional to anything by construction),
-// so it borrows ForceModule.js's own range for a consistent look.
-const ARROW_LEN_MIN = 0.3;
-const ARROW_LEN_MAX = 2.0;
 // Minimum rendered magnitude for an arrow to be drawn at all. Shared by
 // updateSpins()'s draw cutoff and autoSpinScale()'s "magnetic" classification
 // so the auto scale sizes off exactly the arrows that actually appear — a spin
 // below this never draws, so it must not drag the scale down either.
-const SPIN_DRAW_THRESHOLD = 0.05;
+// Also what the colour bars range over (ui/SpinPanel.js spinMagnitudes):
+// a bar spanning moments that are never drawn would waste its colours.
+export const SPIN_DRAW_THRESHOLD = 0.05;
 // Glow for a set's "Highlight" toggle — same orange and strength as the
 // selection glow (ui/SelectAndHighlightModule.js's HIGHLIGHT_EMISSIVE).
 const SET_HIGHLIGHT_EMISSIVE = { r: 1, g: 0.549, b: 0 };
@@ -204,20 +198,11 @@ function drawSpinSet(set, structure, {
   // it on also forces+locks useLog on (ui/SpinPanel.js), same one-directional
   // coupling as ForceModule.js's forceLengthLogScale.
   const useLogLength = general.spinLengthLogScale === true;
-  // Log-length normalizes against the PRIMARY set's range for every set, so
-  // the same magnitude draws the same length in both (length is global).
-  const lengthMin = general.spinMin || 0;
-  const lengthMax = general.spinMax || 2;
-
-  // Same shape as ForceModule.js's normalizeMag() — only used for length
-  // here (in log-length mode; color keeps its own inline normalization
-  // above/below since it also needs to handle "none"/direction/plusminus).
-  function normalizeMag(mag) {
-    const lo = Math.log10(Math.max(lengthMin, LOG_EPS));
-    const hi = Math.log10(Math.max(lengthMax, LOG_EPS));
-    const v = Math.log10(Math.max(mag, LOG_EPS));
-    return hi > lo ? Math.min(Math.max((v - lo) / (hi - lo), 0), 1) : 0;
-  }
+  // Log length is placed against the PRIMARY moments' extent over the whole
+  // file (render/ArrowLength.js) for every set, so the same magnitude draws
+  // the same length in both — and never against the colour range, which
+  // used to rescale the arrows whenever the limits changed.
+  const lengthExtent = useLogLength ? fileMagnitudeExtent('spin', structure, SPIN_DRAW_THRESHOLD) : null;
 
   spins.forEach((spin, idx) => {
     if (!spin.vector) return;
@@ -332,19 +317,22 @@ function drawSpinSet(set, structure, {
     if (!spin?.vector) continue;
     if (spin.hidden) continue; // that atom's own row "Hide" checkbox
 
+    // Hidden only by an unticked species box in the Spins window. Without
+    // the window built there are no boxes, and this skipped every spin: no
+    // spin arrows at all until the window was opened.
     const element = structure.elements[srcIdx];
-    if (!speciesVisibility[element]) continue;
+    if (speciesVisibility[element] === false) continue;
 
     const v = spin.vector;
     const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
     if (mag < SPIN_DRAW_THRESHOLD) continue;
 
-    // Linear mode: length directly proportional to magnitude (unchanged).
-    // Log mode: same compressed-into-a-fixed-window shape ForceModule.js
-    // uses for its own arrows, so a spin spanning orders of magnitude
-    // doesn't collapse every small one down to invisible.
+    // Linear mode: length directly proportional to magnitude. Log mode: the
+    // log against the file's extent (0.3 Å smallest, 2 Å largest, as for
+    // forces), so a spin spanning orders of magnitude doesn't collapse every
+    // small one down to invisible.
     const totalLen = useLogLength
-      ? (ARROW_LEN_MIN + normalizeMag(mag * (spin.scaling ?? 1.0)) * (ARROW_LEN_MAX - ARROW_LEN_MIN)) * spinFactor
+      ? logArrowLength(mag * (spin.scaling ?? 1.0), lengthExtent) * spinFactor
       : mag * (spin.scaling ?? 1.0) * spinFactor;
     if (totalLen < 0.05) continue;
 
@@ -385,6 +373,8 @@ function drawSpinSet(set, structure, {
     // RayTracingPipeline.js's meshes.
     groups[set.shaftKey].frustumCulled = false;
     addArrowEmissiveAttributes(groups[set.shaftKey], count * 2);
+    // Cel outlines: hides the lines behind it, outlined itself unless switched off.
+    applyArrowCelOutline(groups[set.shaftKey]);
     app.scene.add(groups[set.shaftKey]);
 
     const tipGeo = new THREE.ConeGeometry(1, 1, TIP_SEGS);
@@ -395,6 +385,7 @@ function drawSpinSet(set, structure, {
     groups[set.tipKey].instanceColor.setUsage(THREE.DynamicDrawUsage);
     groups[set.tipKey].frustumCulled = false; // see spinShaftMesh above
     addArrowEmissiveAttributes(groups[set.tipKey], count);
+    applyArrowCelOutline(groups[set.tipKey]);
     app.scene.add(groups[set.tipKey]);
   }
 

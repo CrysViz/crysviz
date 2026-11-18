@@ -174,9 +174,10 @@ export const RENDERING_DEFAULTS = {
   rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)
   rtSaturation: 1, // both tracers: post-tone-map saturation grade (output pass; 1 = neutral)
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
-  celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
+  celOutlineWidth: 0.0125, // screen-space outline width in world units (0 = off); slider 0.5
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)
   celHullPolyWidth: 0.025, // hull outline width in world units, polyhedra
+  celOutlineArrows: true, // screen-space cel outlines also on force/spin/phonon arrows (3D hull: never)
   // Cel outline color, shared by both outline modes. 'auto' picks black or
   // white for maximum contrast against the scene background; 'black'/'white'
   // are fixed; 'custom' uses celOutlineColor.

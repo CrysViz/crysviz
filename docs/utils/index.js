@@ -10,7 +10,7 @@ export {
 } from './shareutils.js';
 
 // Shared "Auto Range" formula for magnitude-driven color bars:
-export { computeAutoRange, roundToSigFigs } from './AutoRange.js';
+export { computeAutoRange, roundToSigFigs, logScaleFloor, niceFloor125, niceCeil125 } from './AutoRange.js';
 
 // Shared bounded webfont loading for asynchronous rendering/export paths:
 export { loadCrysVizFonts, crysVizFontsLoaded } from './FontLoading.js';

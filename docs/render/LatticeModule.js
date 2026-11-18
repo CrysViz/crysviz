@@ -88,6 +88,37 @@ export function createLatticeLines(color = general.currentLatticeColor) {
   return group;
 }
 
+/**
+ * Keep the cell lines at least about a pixel wide on screen: their radius
+ * is in world units (general.latticeLineWidth), so zoomed out they fell
+ * below a pixel and showed as broken, stair-stepped lines. Called every
+ * frame before the render (AnimateModule.js); scales the cylinders'
+ * cross-section, never their length.
+ * @param {any} camera
+ * @param {any} renderer
+ */
+export function syncLatticeLineWidth(camera, renderer) {
+  const group = groups.latticeGroup;
+  if (!group || !camera || !renderer) return;
+  const radius = general.latticeLineWidth ?? 0.015;
+  if (!(radius > 0)) return;
+  const h = renderer.domElement.height;
+  let pxPerWorld;
+  if (camera.isOrthographicCamera) {
+    pxPerWorld = (h * camera.zoom) / (camera.top - camera.bottom);
+  } else {
+    const dist = app.controls ? camera.position.distanceTo(app.controls.target) : 1;
+    pxPerWorld = h / (2 * Math.tan((camera.fov * Math.PI / 180) / 2) * Math.max(dist, 1e-3));
+  }
+  const MIN_RADIUS_PX = 0.6;
+  const factor = Math.max(1, MIN_RADIUS_PX / (radius * pxPerWorld));
+  if (Math.abs((group.userData.lineWidthFactor ?? 1) - factor) < 1e-3) return;
+  group.userData.lineWidthFactor = factor;
+  for (const cyl of group.children) {
+    if (cyl.isMesh) cyl.scale.set(factor, 1, factor);
+  }
+}
+
 export function updateLattice(color = general.currentLatticeColor) {
   disposeGroup(groups.latticeGroup);
   if (!fileBrowser.selectedStructure) {

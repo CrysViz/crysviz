@@ -10,6 +10,7 @@ import { installGestureArbiter } from './GestureArbiter.js';
 import { loadCrysVizFonts } from '../utils/index.js';
 import { configureGizmoCameraProjection, GIZMO_FOV, GIZMO_ORTHO_HALF_HEIGHT } from './GizmoLayout.js';
 import { getPanelPref } from './panels/PanelManager.js';
+import { syncSceneTone } from './SceneTone.js';
 
 const cameraPanRight = new THREE.Vector3();
 const cameraPanUp = new THREE.Vector3();
@@ -135,6 +136,7 @@ export function setupScene() {
     general.defaultBackgroundColor = 0xE7E7E7
     general.currentLatticeColor = 0x090A09
    };
+  syncSceneTone();
 
   //
   //

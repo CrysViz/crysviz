@@ -17,7 +17,7 @@ import * as THREE from '../../external/three/three.module.js';
 import { app } from '../../state/store.js';
 import { WboitPass } from '../../external/three-wboit/WboitPass.js';
 import { WboitUtils } from '../../external/three-wboit/WboitUtils.js';
-import { renderCelOutlinePass } from '../CelOutlinePass.js';
+import { prepareCelOutlinePass, renderCelOutlinePass } from '../CelOutlinePass.js';
 import { StagedTransparencyPipeline } from './StagedTransparencyPipeline.js';
 
 export class WboitPipeline extends StagedTransparencyPipeline {
@@ -44,6 +44,7 @@ export class WboitPipeline extends StagedTransparencyPipeline {
     this._pass.scene = scene;
     this._pass.camera = camera;
     this._syncOverlayVisibility();
+    prepareCelOutlinePass(renderer, scene, camera);
     this._pass.render(renderer);
     renderCelOutlinePass(renderer, scene, camera);
   }

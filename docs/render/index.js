@@ -93,7 +93,8 @@ export {
   revealFieldPanelForCurrentStructure, suggestIsoValue,
 } from './Render3DFieldModule.js';
 
-export { removeSpins, updateSpins, deleteSpins, computeSpinColor, autoSpinScale } from './SpinModule.js';
+export { removeSpins, updateSpins, deleteSpins, computeSpinColor, autoSpinScale, SPIN_DRAW_THRESHOLD } from './SpinModule.js';
+export { restyleArrowMaterials, refreshArrowCelOutlines } from './ArrowMaterial.js';
 
 export {
   setupAxisControls, setupAxisLongPress, setAxisStepButtonsMode, applyRotationFromUI,

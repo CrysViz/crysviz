@@ -21,6 +21,7 @@ import { selectStructure, updateRow } from '../ui/FileBrowswerPanel.js';
 import { applyFrameFast, requestRender } from '../render/index.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { generateID } from '../utils/UUIDModule.js';
+import { logScaleFloor } from '../utils/AutoRange.js';
 import { updatePhononArrows, removePhononArrows } from '../render/PhononArrowModule.js';
 import { refreshPanelAvailability } from '../ui/panels/PanelManager.js';
 import {
@@ -754,8 +755,11 @@ export function setArrowRange(min, max, { auto = false } = {}) {
 
 export function setArrowColorScale(scale) {
   phononState.arrowColorScale = scale === 'log' ? 'log' : 'linear';
-  // log10(0) is -Infinity: floor the range the moment log turns on.
-  if (phononState.arrowColorScale === 'log' && phononState.arrowMin <= 0) phononState.arrowMin = 0.001;
+  // log10(0) is -Infinity: floor the range the moment log turns on, where
+  // the log Auto Range of the current displacements would start.
+  if (phononState.arrowColorScale === 'log' && phononState.arrowMin <= 0) {
+    phononState.arrowMin = logScaleFloor(phononState.arrowMax, arrowMagnitudes());
+  }
   refreshArrows();
   requestRender();
   emit('arrows');
