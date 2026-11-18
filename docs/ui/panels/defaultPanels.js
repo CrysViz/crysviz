@@ -36,7 +36,7 @@ import { addPhononPlotsPanel, removePhononPlotsPanel } from '../PhononPlotsPanel
 import { phononAvailable } from '../../phonon/phononSession.js';
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
-import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
+import { buildMeasurementSettings, buildAtomLabelSettings } from '../MeasurementSettingsPanel.js';
 import { createFeatureLockSwitch } from '../FeatureLockModule.js';
 import { setCifErrorsShown } from '../CifErrorsDisplay.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
@@ -932,6 +932,8 @@ export function registerDefaultPanels() {
       // How measurements are drawn (label size, atom highlight marker, accent
       // colours) — see ui/MeasurementSettingsPanel.js.
       buildMeasurementSettings(body);
+      // The size of the atom labels (the Structure window's Aₓ switch).
+      buildAtomLabelSettings(body);
       body.appendChild(makeSectionHeadline('Windows'));
       const dragGroup = document.createElement('div');
       dragGroup.className = 'toggle_group';

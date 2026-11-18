@@ -10,6 +10,7 @@ import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression, MAX_
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 import {rebuildChargeBadges} from './ChargeBadgeModule.js'
+import {rebuildAtomLabels} from './AtomLabelModule.js'
 import {requestRender} from './AnimateModule.js'
 import {
   buildWedgeTexture, WEDGE_VERTEX_DECL, WEDGE_VERTEX_BODY,
@@ -587,6 +588,7 @@ export function buildAtoms() {
   // have to be rebuilt whenever that set is rebuilt. No-ops when the flag is
   // off or nothing in the structure carries a charge.
   rebuildChargeBadges();
+  rebuildAtomLabels(); // the same for the atom labels (no-op while off)
 }
 
 

@@ -18,6 +18,12 @@ angle labelled directly on the geometry — drag to rotate, scroll to zoom.
   label keeps a thin line back to its bond or arc, and a **↺** on its left that puts just that one
   back; the **×** stays on the right. Press Move labels again to rotate; **Reset positions** puts
   every label back.
+- **Aₓ** and **Aˣ⁺** (top right): each atom's name on it and its charge beside it — the same
+  switches as in the Structure window.
+- **Measured**: the distances and angles measured in the 3D view among these atoms.
+- **Size**: the size of the length and angle labels (**Values**), of the atom labels (**Atoms**;
+  the **Aₓ** button) and of the charge badges (**Charges**; the **Aˣ⁺** button), each a multiple of
+  the default.
 - **Errors from a CIF**: for a CIF loaded with its errors (standard uncertainties), each length
   and angle label shows its error in parentheses, `2.093(3) Å`, and so do the volume, the
   distortion index and the angle variance in the summary — each propagated through the same

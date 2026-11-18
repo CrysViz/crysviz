@@ -208,6 +208,7 @@ export function clearArrowHighlightOverride() {
 }
 
 function reapplyCurrentSelectionHighlight() {
+  if (measurePaused) return;
   if (atomSelection.selectedAtoms.length) {
     applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   }
@@ -285,7 +286,12 @@ export function applyAtomHighlightIndices(indices) {
     highlightHover.currentlyHighlightedAtomInstances = [];
     return;
   }
+  paintAtomHighlight(indices);
+}
 
+/** Paint the glow onto these instances, on top of whatever the atoms show
+ *  now — no clearing first (applyAtomHighlightIndices clears). */
+function paintAtomHighlight(indices) {
   // Normally every selected atom's sphere glows. The one exception: while
   // the Structure Info panel's Spin/Force editor is open for an atom
   // (arrowHighlightOverride), that atom's sphere is skipped here in favor of
@@ -347,6 +353,44 @@ export function highlightAtomsIn3D(sourceIndices) {
 // Rebuild below); restoreSelectionHighlight or a new selection ends it.
 let glowSuppressed = false;
 
+// While a measure tool is on (ui/MeasurementToolbar.js setMeasureMode) the
+// selection's glow is off: the atoms a measurement picks glow instead, and
+// the selection's glow comes back when the tool is turned off. The selection
+// itself is kept throughout (rows, inspectors); every path that would put its
+// glow back — a new selection, a rebuild of the atoms mesh, a colour editor
+// closing — waits for the tool to be turned off.
+let measurePaused = false;
+
+/**
+ * The atoms were just refreshed in place (render updateAtoms, which turns
+ * every glow off — core/crystal-viewer.js updateVisualization's non-rebuild
+ * path, after a colour, alpha or size edit, a panel refresh, ...): paint the
+ * selection's glow back on, unless a colour editor or a measure tool has it
+ * off on purpose. Paint only, on the atoms as refreshed: going through
+ * applyAtomHighlightIndices would refresh them again at full opacity.
+ * (A rebuild of the mesh carries the glow over itself, carrySelectionAcrossRebuild.)
+ */
+export function repaintSelectionGlow() {
+  if (glowSuppressed || measurePaused || !groups.atomsMesh || !atomSelection.selectedAtoms.length) return;
+  paintAtomHighlight(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
+}
+
+/** A measure tool was turned on: take the selection's glow off. */
+export function pauseSelectionGlowForMeasure() {
+  if (measurePaused) return;
+  measurePaused = true;
+  clearHighlightAtom();
+  clearHighlightBond();
+}
+
+/** The measure tool was turned off: the selection glows again (unless a
+ *  colour editor still has it off, suppressSelectionHighlightFor3D). */
+export function resumeSelectionGlowAfterMeasure() {
+  if (!measurePaused) return;
+  measurePaused = false;
+  if (!glowSuppressed) restoreSelectionHighlight();
+}
+
 export function suppressSelectionHighlightFor3D() {
   glowSuppressed = true;
   clearHighlightAtom();
@@ -357,6 +401,7 @@ export function suppressSelectionHighlightFor3D() {
  *  current atom or bond selection. */
 export function restoreSelectionHighlight() {
   glowSuppressed = false;
+  if (measurePaused) return; // back when the measure tool is turned off
   if (atomSelection.selectedAtoms.length) {
     applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   } else if (highlightHover.currentlyHighlightedBond) {
@@ -870,7 +915,8 @@ function instancesForSelectedAtom(atom) {
 }
 
 function syncSelectedAtomHighlights(options = {}) {
-  applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
+  // Measuring: the rows follow the selection, the 3D glow waits (measurePaused).
+  if (!measurePaused) applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   syncSelectedAtomRows(options);
 }
 

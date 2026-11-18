@@ -34,6 +34,11 @@ export {
 } from './ChargeBadgeModule.js';
 
 export {
+  rebuildAtomLabels, updateAtomLabels, clearAtomLabelTextureCache, atomLabelTexts, refreshAtomLabelsIfStale,
+  MAX_LABELLED_ATOMS,
+} from './AtomLabelModule.js';
+
+export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,
   updateSingleBondDiameter, applyBondRadius, disposeBondsMesh, updateSingleBondColor,
   updateSingleBondOpacity, bondKey, bondGroupKey, refreshBondColorsForAtoms,

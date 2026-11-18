@@ -226,7 +226,8 @@ export function rebuildChargeBadges() {
     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
       map: texture, transparent: true, depthTest: true, depthWrite: false,
     }));
-    const height = BADGE_WORLD_HEIGHT * (general.atomSize || 1);
+    // Times Settings ▸ Atom labels ▸ Charges (general.chargeLabelScale).
+    const height = BADGE_WORLD_HEIGHT * (general.atomSize || 1) * (general.chargeLabelScale ?? 1);
     const aspect = texture.image.width / texture.image.height;
     sprite.scale.set(height * aspect, height, 1);
 
@@ -237,6 +238,14 @@ export function rebuildChargeBadges() {
   if (badges.length) app.scene.add(badgeGroup);
   else badgeGroup = null;
   applyFocusToChargeBadges(structure);
+}
+
+/** The badges shown now (for tests): their atom (source and instance), the
+ *  point they are anchored at, and whether visible. */
+export function chargeBadgeAnchors() {
+  return badges.map(({ sprite, cart, srcIndex, instance }) => ({
+    srcIndex, instance, anchor: [...cart], visible: sprite.visible, text: sprite.material?.map?.userData?.text ?? null,
+  }));
 }
 
 /** A badge fades with the atom it labels: sprite alpha = focus-region factor

@@ -192,7 +192,7 @@ function normalizeCutPlaneNormal(x = 1, y = 0, z = 0) {
   return [nx / length, ny / length, nz / length];
 }
 
-function isPointCutByPlanes(position, cutPlanes) {
+export function isPointCutByPlanes(position, cutPlanes) {
   if (!Array.isArray(position) || position.length < 3) return false;
 
   return cutPlanes.some((plane) => {

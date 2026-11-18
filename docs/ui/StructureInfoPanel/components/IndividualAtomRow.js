@@ -1100,6 +1100,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // A centered polyhedron is coloured by its centre atom, so recolour in place
     // (cheap, no geometry recompute) — matches the perImage reset branch above.
     updatePolyhedraColors();
+    // Close the editor BEFORE the panel re-renders: the re-render rebuilds this
+    // row and reopens whichever editors were open, so closing afterwards hit
+    // the old, detached row and left the new one open (with the selection's
+    // glow back on, over the colour it was meant to show).
+    setActiveEditor(null);
     updateVisualization({
       bondsUpdate: false,
       reRenderAtoms: false,
@@ -1108,7 +1113,6 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       reRenderOther: false,
       reRenderComposition: "open",
     });
-    setActiveEditor(null);
     return { structure, currentMode };
   }
   AtomColorResetBtn.title = 'Click: this frame. Press and hold: whole trajectory.';

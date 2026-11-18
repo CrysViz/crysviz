@@ -408,6 +408,14 @@ export const general = {
   // Off by default: most structures have no charge data, and on those that do
   // a badge per atom is a lot of extra ink to opt into rather than inherit.
   showCharges:false,
+  // Atom labels ("Fe1", "O3") on the atoms of the main view and in the
+  // inspectors (render/AtomLabelModule.js); the label button next to ✎ in the
+  // Structure window. Off by default.
+  showAtomLabels:false,
+  // Their size, a multiplier on the default (Settings ▸ Atom labels ▸ Names).
+  atomLabelScale:1.0,
+  // The charge badges' size (Settings ▸ Atom labels ▸ Charges), a multiplier.
+  chargeLabelScale:1.0,
   // Standard uncertainties read from a CIF ("CIF errors", model/cifErrors.js),
   // written after measured lengths and angles: 2.3456(12) Å. They are only
   // read when the user says so at load; this switch (Features window) hides

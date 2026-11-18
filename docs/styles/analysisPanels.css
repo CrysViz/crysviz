@@ -105,6 +105,25 @@
   margin-bottom: var(--sp-2);
 }
 
+/* The inspectors' title, centred as every split item's, with the Aₓ switch
+   (ui/AtomLabelsToggle.js) at the right end — as in the Structure window. */
+.pi-title-row {
+  position: relative;
+  min-height: 26px;
+  margin-bottom: var(--sp-1);
+}
+.pi-title-row > h4 {
+  margin: 0;
+  line-height: 26px;
+}
+.pi-title-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: var(--sp-1);
+}
+
 .pi-ctl-row {
   display: flex;
   flex-wrap: wrap;
@@ -151,6 +170,27 @@
 
 .pi-colors-text {
   flex: 0 0 auto;
+}
+
+/* Label sizes (inspectorLabels.js): a caption, a short slider and its
+   multiplier per kind of label, wrapping as one unit on a narrow dock. */
+.pi-ctl-row .pi-size {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--sp-1);
+  height: 28px;
+  white-space: nowrap;
+}
+/* Two classes: the global input[type="range"] rule is 100% wide. */
+.pi-ctl-row .pi-size-slider {
+  width: 76px;
+  flex: 0 0 76px;
+}
+.pi-size-value {
+  min-width: 30px;
+  text-align: right;
+  font-family: var(--font-mono);
 }
 
 /* A colour swatch + its caption is one button opening the app's colour picker. */

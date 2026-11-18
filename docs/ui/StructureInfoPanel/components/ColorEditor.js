@@ -307,6 +307,10 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     holdLabel: 'Apply to Trajectory',
     onPress: () => {
       updatePieDotCallback(); // Update the pie dot
+      // Close BEFORE the panel re-renders: the re-render rebuilds this row and
+      // reopens the editors that were open, so hiding this (old) editor
+      // afterwards left the new one open.
+      editor.style.display = 'none';
       updateVisualization({
         bondsUpdate: false,
         reRenderAtoms: false,
@@ -315,7 +319,6 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
         reRenderOther: false,
         reRenderComposition: "open",
       });
-      editor.style.display = 'none';
     },
     onConfirm: () => {
       // A deliberate broadcast (unlike Reset, it's meant to overwrite every

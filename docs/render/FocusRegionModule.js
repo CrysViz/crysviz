@@ -11,6 +11,7 @@ import { requestRender } from './AnimateModule.js';
 import { syncArrowTransparency } from './ArrowMaterial.js';
 import { applyFocusToPolyhedra } from './PolyhedraModule.js';
 import { applyFocusToChargeBadges } from './ChargeBadgeModule.js';
+import { applyFocusToAtomLabels } from './AtomLabelModule.js';
 import { applyFocusToHydrogenBonds } from './HydrogenBondModule.js';
 import { refreshAsuHighlight } from './asuHighlightHook.js';
 
@@ -405,6 +406,7 @@ export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
   applyFocusToPolyhedra(structure);
   applyFocusToField(structure);
   applyFocusToChargeBadges(structure);
+  applyFocusToAtomLabels(structure);
   applyFocusToHydrogenBonds(structure);
   refreshAsuHighlight();
   requestRender();

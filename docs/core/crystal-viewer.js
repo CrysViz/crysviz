@@ -47,6 +47,7 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 import { initModifyStructureButton } from '../ui/addToStructureModule/AddStructureModule.js'
 import { refreshFileStructureSummary } from '../ui/FileStructureSummary.js';
 import { selectStructure } from '../ui/FileBrowswerPanel.js'
+import { repaintSelectionGlow } from '../ui/SelectAndHighlightModule.js'
 // PanelManager stays in the shared graph (getPanelPref etc. are used by modules
 // widget mode keeps, like TrajectoryPanel). revealFeaturePanels is called from
 // the structure-load path below; in widget mode no panels are registered, so it
@@ -208,6 +209,9 @@ export function updateVisualization(options = {}) {
   if (!reRenderAtoms && atomsUpdate) {
     console.warn("Calling updateAtoms with opacity")
     updateAtoms(mOpacity);
+    // updateAtoms turns every glow off: the selection's goes back on (a
+    // colour or size edit, a panel refresh, ... must not drop it).
+    repaintSelectionGlow();
   }
 
   if (reRenderBonds) {
