@@ -167,9 +167,8 @@
        like the other controls rather than stretched by the flex row. */
     .trajOptCheck { cursor: pointer; }
     .trajOptCheck input[type=checkbox] { cursor: pointer; margin: 0; }
-    /* "Full render each frame" note: shown while a force/length colour map is
-       active, since Auto then rebuilds every playback frame (slower). Muted and
-       small — an explanation, not an alarm. */
+    /* Player note ("pause to change …" while a large trajectory plays, see
+       ui/HeavyRebuild.js). Muted and small — an explanation, not an alarm. */
     .trajRenderNote {
       margin-top: 6px;
       text-align: center;

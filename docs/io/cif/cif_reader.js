@@ -334,7 +334,14 @@ async function _read_cif_loop(f, pragmatic = true, allow_cif2 = false, use_types
         if (r.done) { broke = true; break; }
         row = r.value;
 
-        while (row !== undefined && /^\s+$/.test(row)) {
+        // Skip blank lines and comment lines before looking at what comes
+        // next. A comment after a loop's last row (Jana writes "#=====…"
+        // separators there) used to reach _read_cif_data_value, which skips
+        // it and reads on — taking the next "loop_" and its tags as more
+        // values of this loop, so the atom_site loop after it was lost
+        // (the load error then read "No structural block found in CIF").
+        while (row !== undefined && (/^\s+$/.test(row) || row.trim().startsWith("#"))) {
+          noteol = false; // the next row starts a line (a ";" text field)
           r = await f.next();
           if (r.done) { broke = true; break; }
           row = r.value;
@@ -348,7 +355,10 @@ async function _read_cif_loop(f, pragmatic = true, allow_cif2 = false, use_types
       const striprow = row.trim();
       const lowrow = striprow.toLowerCase();
 
-      if (!row || row.startsWith("_") || lowrow.startsWith("data_") || lowrow.startsWith("loop_")) {
+      // The next tag ends the loop also when indented (" _cell_length_a"): an
+      // unquoted value never starts with an underscore.
+      if (!row || striprow.startsWith("_") || lowrow.startsWith("data_") || lowrow.startsWith("loop_")
+        || lowrow.startsWith("save_") || lowrow.startsWith("global_") || lowrow.startsWith("stop_")) {
         f.rewind();
         broke = true;
         break;

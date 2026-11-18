@@ -181,6 +181,13 @@
   color: var(--fg-85);
 }
 
+/* "Source: VASP" — where the numbers came from, on its own line above them,
+   in the text font (it is a name, not a number). */
+.fss-source {
+  flex-basis: 100%;
+  font-family: inherit;
+}
+
 /* Long tables scroll vertically inside the block instead of stretching the
    window. Widths are kept inside the sidebar by design — five monospace
    columns of 6-decimal numbers at tight padding — so no horizontal scroll

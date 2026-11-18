@@ -11,7 +11,7 @@
 import { fileBrowser, general, structureShip } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { setActivePipelineFromController } from './ColorPanel.js';
-import { updateSpins, updatePolyhedra, autoSpinScale, latticeDirs } from '../render/index.js';
+import { updateSpins, updatePolyhedra, autoSpinScale, latticeDirs, restyleArrowMaterials } from '../render/index.js';
 import { recenterCamera, setGizmoLabelsOnArrows, resizeGizmoRenderer, setViewDirection, resetView, updateGizmoLabelScales } from './WindowAndSceneControls.js';
 import { selectStructure, createRow } from './FileBrowswerPanel.js';
 import { showTrajectoryFrame } from './TrajectoryPanel.js';
@@ -317,8 +317,8 @@ function buildSettings(href) {
   // mark on dark, the white-ground one otherwise.
   const darkTheme = document.documentElement.getAttribute('data-theme') === 'dark';
   img.src = darkTheme
-    ? './data/CrysViz_logo_black_back_logo_only.png'
-    : './data/CrysViz_logo_white_back_logo_only.png';
+    ? './data/logo-web/CrysViz_logo_black_back_logo_only.png'
+    : './data/logo-web/CrysViz_logo_white_back_logo_only.png';
   img.alt = 'CrysViz';
   logo.appendChild(img);
   buttonEl = logo;
@@ -690,6 +690,7 @@ function applyPreset(value) {
  *  widgets (the composition legend) refresh. */
 function restyleAtomsBonds() {
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+  restyleArrowMaterials(); // spin/force arrows follow the shading too
   document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
 }
 

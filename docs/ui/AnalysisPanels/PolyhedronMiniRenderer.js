@@ -18,8 +18,10 @@ import { TrackballControls } from '../../external/three/TrackballControls.js';
 import { ConvexGeometry } from '../../external/three/ConvexGeometry.js';
 import { defaultColorMap, getAtomVisSettings, getBondVisSettings } from '../../defaults/color_texture_defaults.js';
 import { createStyledMaterial } from '../../render/MaterialStyles.js';
-import { app, general } from '../../state/store.js';
+import { app, general, fileBrowser } from '../../state/store.js';
+import { wedgeDataForAtom, applySingleMeshWedge } from '../../render/WedgeAtoms.js';
 import { formatWithSu } from '../../model/cifErrors.js';
+import { markerColorFor } from '../../render/MeasurementModule.js';
 
 const FALLBACK_COLOR = 0x999999;
 // Label and arc colours default to the look below; the inspectors' colour
@@ -37,6 +39,12 @@ const ICON_PUT_BACK = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.4
 // A placed label's leader back to its bond or arc: a neutral grey that reads
 // on the dark view and on a white export alike.
 const LEADER_COLOR = '#8a8a8a';
+// Atom labels ("Fe1"): white text with a dark outline, no pill, as in the
+// main view (render/AtomLabelModule.js).
+const ATOM_LABEL_TEXT = '#ffffff';
+const ATOM_LABEL_OUTLINE = 'rgba(12,12,16,0.9)';
+// Charge badges ("3+"): the main view's dark pill (render/ChargeBadgeModule.js).
+const CHARGE_BG = 'rgba(20,20,24,0.82)';
 
 /** '#rrggbb' at the given opacity, as a canvas fillStyle. */
 function withAlpha(hex, alpha) {
@@ -69,7 +77,9 @@ function bondHalfMaterial(color) {
  *  that spot is rotated behind the polyhedron. `worldHeight` is the sprite's
  *  height in scene units, so callers can size labels relative to the
  *  polyhedron's own bond length. */
-function makeLabelSprite(text, { color = '#fff', bg = 'rgba(0,0,0,0.72)', bold = false, worldHeight = 0.3, resolution = 1 } = {}) {
+function makeLabelSprite(text, { color = '#fff', bg = 'rgba(0,0,0,0.72)', outline = null, bold = false, worldHeight = 0.3, resolution = 1 } = {}) {
+  // `bg` null draws no pill; `outline` strokes the text in that colour first
+  // (an atom label: white text that reads on any atom, which shows around it).
   // `resolution` > 1 draws the texture larger (an image export renders the
   // view several times its on-screen size); the sprite's world size is the same.
   const fontPx = 56 * resolution;
@@ -92,14 +102,22 @@ function makeLabelSprite(text, { color = '#fff', bg = 'rgba(0,0,0,0.72)', bold =
   ctx.textBaseline = 'middle';
 
   const r = canvas.height * 0.3;
-  ctx.fillStyle = bg;
-  ctx.beginPath();
-  ctx.roundRect(0, 0, canvas.width, canvas.height, r);
-  ctx.fill();
+  if (bg) {
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.roundRect(0, 0, canvas.width, canvas.height, r);
+    ctx.fill();
+  }
 
   ctx.textAlign = 'left';
   let x = (canvas.width - textWidth) / 2;
   runs.forEach((r, i) => {
+    if (outline) {
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = fontPx * 0.2;
+      ctx.strokeStyle = outline;
+      ctx.strokeText(r.text, x, canvas.height / 2 + fontPx * 0.03);
+    }
     ctx.fillStyle = r.color ?? color;
     ctx.fillText(r.text, x, canvas.height / 2 + fontPx * 0.03);
     x += runWidths[i];
@@ -115,6 +133,7 @@ function makeLabelSprite(text, { color = '#fff', bg = 'rgba(0,0,0,0.72)', bold =
   const aspect = canvas.width / canvas.height;
   sprite.scale.set(worldHeight * aspect, worldHeight, 1);
   sprite.userData.text = runs.map((r) => r.text).join(''); // what it says, for tests
+  sprite.userData.bg = bg; // its pill's colour, for tests
   return sprite;
 }
 
@@ -264,6 +283,7 @@ export function createPolyhedronMiniRenderer(container) {
   // camera — without the caller re-supplying them.
   let showAngles = true;
   let showLengths = true;
+  let showMeasures = true; // the 3D view's measurements (model.measures)
   /** @type {Set<string>} */
   let hiddenLabels = new Set();
   let lastModel = null;
@@ -284,6 +304,8 @@ export function createPolyhedronMiniRenderer(container) {
   let placing = false;
   // See inspectorLabels.js LabelColors; null = the default above.
   let labelColors = { valueA: null, valueB: COMPARE_TEXT, lengthBg: null, angleBg: null, arc: null };
+  // See inspectorLabels.js LabelSizes: multipliers on the label heights below.
+  let labelSizes = { value: 1, atom: 1, charge: 1 };
 
   let running = false;
   let rafId = null;
@@ -324,6 +346,9 @@ export function createPolyhedronMiniRenderer(container) {
         const d = _miniToCam.length() || 1;
         _miniToCam.multiplyScalar(1 / d);
         sprite.position.copy(base).addScaledVector(_miniToCam, Math.min(sprite.userData.lift, d * 0.5));
+        // A charge badge sits up and right of its atom on screen.
+        const o = sprite.userData.badgeOffset;
+        if (o) sprite.position.addScaledVector(camRight, o).addScaledVector(camUp, o);
       } else if (sprite.userData.home) {
         sprite.position.copy(sprite.userData.home);
       }
@@ -349,6 +374,14 @@ export function createPolyhedronMiniRenderer(container) {
       labelRay.set(camera.position, toLabel.normalize());
       labelRay.far = dist - 0.01;
       sprite.visible = labelRay.intersectObjects(occluders, true).length === 0;
+      // An atom label that passes is drawn over everything: a bond leaving
+      // its atom toward the viewer must not cut through the name. Except
+      // behind an opaque hull, which hides by depth alone (it is no
+      // occluder, see setModel), so there the depth test still decides.
+      if (sprite.userData.atomLabel) {
+        sprite.material.depthTest = !!faceMaterial?.depthWrite;
+        sprite.renderOrder = 5;
+      }
     }
   }
 
@@ -365,18 +398,58 @@ export function createPolyhedronMiniRenderer(container) {
   }
 
   /**
+   * A measurement's line from `a` to `b`, drawn as the main view draws it
+   * (render/MeasurementModule.js buildMeasureLine): thin cylinders — a WebGL
+   * line is one pixel whatever its width — dashed or solid and at the opacity
+   * Settings ▸ Measurements set, from one atom's surface to the other's.
+   * Thickness and dashes scale with the view (`span`, its shortest bond).
+   */
+  function addMeasureLine(a, b, color, trimA, trimB, span) {
+    const full = a.distanceTo(b);
+    if (!(full > 0)) return;
+    const startTrim = Math.min(trimA, full * 0.45);
+    const length = full - startTrim - Math.min(trimB, full * 0.45);
+    if (!(length > 0)) return;
+    const opacity = general.measureLineOpacity ?? 1;
+    const material = new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+    const dir = b.clone().sub(a).normalize();
+    const origin = a.clone().addScaledVector(dir, startTrim);
+    const radius = span * 0.018;
+    const piece = (len, centre) => {
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, 10, 1, true), material);
+      mesh.position.copy(origin).addScaledVector(dir, centre);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+      group.add(mesh);
+    };
+    if ((general.measureLineStyle ?? 'dashed') === 'solid') {
+      piece(length, length / 2);
+      return;
+    }
+    const dash = span * 0.07, gap = span * 0.045;
+    const count = Math.max(1, Math.floor((length + gap) / (dash + gap)));
+    // Centred on the span, so both ends look the same.
+    const used = count * dash + (count - 1) * gap;
+    const lead = (length - Math.min(used, length)) / 2;
+    for (let k = 0; k < count; k++) piece(Math.min(dash, length), lead + k * (dash + gap) + Math.min(dash, length) / 2);
+  }
+
+  /**
    * Draw a model: atoms, the bonds between them, the angles between bonds that
    * meet at an atom, and optionally a convex hull. The inspector builds one
    * from a polyhedron (centre + vertices + hull) or from an atom selection.
    * Every label carries a key so it can be hidden individually. A length or
    * angle with an s.u. (lengthSu / angleSu, the CIF errors —
    * model/cifErrors.js) is written with it in parentheses, 2.3456(12) Å; a
-   * compared value with its own (lengthSu2 / angleSu2) likewise.
+   * compared value with its own (lengthSu2 / angleSu2) likewise. An atom with
+   * a `label` (the Aₓ switch) gets it written on it, keyed `atom:<key>`, and
+   * one with a `charge` (the Aˣ⁺ switch) a badge up and right of it, keyed
+   * `charge:<key>` — both hide and move like the other labels.
    * @param {null | {
-   *   atoms: Array<{key:string, pos:number[], color?:number|null, element?:string|null, radius?:number|null, ghost?:boolean}>,
+   *   atoms: Array<{key:string, pos:number[], srcIndex?:number|null, color?:number|null, element?:string|null, radius?:number|null, ghost?:boolean, label?:string|null, charge?:string|null}>,
    *   bonds: Array<{key?:string, a:number, b:number, colorA?:number|null, colorB?:number|null, trimA?:number|null, trimB?:number|null, length?:number|null, length2?:number|null, lengthSu?:number|null, lengthSu2?:number|null, labelAt?:number, ghost?:boolean}>,
    *   angles: Array<{key:string, at:number, i:number, j:number, angleDeg:number, angleDeg2?:number|null, angleSu?:number|null, angleSu2?:number|null}>,
    *   hull?: null | {points:number[][], faceColor?:number|string, faceOpacity?:number, edgeColor?:number|string},
+   *   measures?: Array<{key:string, kind:'distance'|'angle', at:number[], value:number, su?:number|null}>,
    * }} model
    * @param {{faceOpacity?: number, keepCamera?: boolean}} [opts] local opacity
    *   override (0-1) for the hull face, independent of the main structure's
@@ -461,6 +534,12 @@ export function createPolyhedronMiniRenderer(container) {
 
     model.atoms.forEach((a, i) => {
       const material = atomMaterial(atomColors[i]);
+      // A disordered site gets the main view's wedge split (one colour per
+      // species, sized by occupancy, vacancy hatched) instead of its single
+      // representative colour.
+      const site = a.srcIndex != null ? fileBrowser.selectedStructure?.atoms?.[a.srcIndex] : null;
+      const wedge = site ? wedgeDataForAtom(site) : null;
+      if (wedge) applySingleMeshWedge(material, wedge);
       if (a.ghost) makeGhost(material);
       const mesh = new THREE.Mesh(sphereGeom, material);
       mesh.position.copy(atomVecs[i]);
@@ -469,6 +548,53 @@ export function createPolyhedronMiniRenderer(container) {
       group.add(mesh);
       atomMeshes.push(mesh);
       if (!a.ghost) occluders.push(mesh);
+    });
+
+    // Atom labels: on the atom, lifted toward the camera past the front of its
+    // sphere (the frame loop keeps it there as the view turns), so the atom is
+    // the label's backdrop. The faint atoms the neighbour tool offers get none.
+    model.atoms.forEach((a, i) => {
+      if (a.ghost || !a.label) return;
+      const key = `atom:${a.key}`;
+      if (hiddenLabels.has(key)) return;
+      const label = makeLabelSprite(a.label, {
+        color: ATOM_LABEL_TEXT, bg: null, outline: ATOM_LABEL_OUTLINE, bold: true,
+        worldHeight: bondSpan * 0.13 * labelSizes.atom, resolution: labelResolution,
+      });
+      label.userData.baseAnchor = atomVecs[i].clone();
+      label.userData.lift = sphereR[i] * 1.05 + bondSpan * 0.01;
+      label.userData.labelKey = key;
+      label.userData.atomLabel = true;
+      label.position.copy(label.userData.baseAnchor);
+      label.userData.leaderAnchor = atomVecs[i].clone();
+      label.userData.leader = makeLeader(bondSpan);
+      group.add(label.userData.leader);
+      group.add(label);
+      labelSprites.push(label);
+    });
+
+    // Charge badges: a dark pill up and right of the atom's outline on screen
+    // (the frame loop offsets it along the camera's right and up), as in the
+    // main view, so it never covers the atom's name.
+    model.atoms.forEach((a, i) => {
+      if (a.ghost || !a.charge) return;
+      const key = `charge:${a.key}`;
+      if (hiddenLabels.has(key)) return;
+      const badge = makeLabelSprite(a.charge, {
+        color: ATOM_LABEL_TEXT, bg: CHARGE_BG, bold: true,
+        worldHeight: bondSpan * 0.1 * labelSizes.charge, resolution: labelResolution,
+      });
+      badge.userData.baseAnchor = atomVecs[i].clone();
+      badge.userData.lift = sphereR[i] * 1.05 + bondSpan * 0.01;
+      badge.userData.badgeOffset = sphereR[i] * 0.8;
+      badge.userData.labelKey = key;
+      badge.userData.atomLabel = true; // drawn over its own atom when unoccluded, as the names are
+      badge.position.copy(badge.userData.baseAnchor);
+      badge.userData.leaderAnchor = atomVecs[i].clone();
+      badge.userData.leader = makeLeader(bondSpan);
+      group.add(badge.userData.leader);
+      group.add(badge);
+      labelSprites.push(badge);
     });
 
     for (const b of model.bonds) {
@@ -486,7 +612,7 @@ export function createPolyhedronMiniRenderer(container) {
       if (b.ghost) continue;
       occluders.push(bond);
       if (!showLengths || b.length == null || (b.key && hiddenLabels.has(b.key))) continue;
-      const labelHeight = bondSpan * 0.11;
+      const labelHeight = bondSpan * 0.11 * labelSizes.value;
       const lengthValue = formatWithSu(b.length, b.lengthSu, 3);
       const text = b.length2 == null ? `${lengthValue} Å` : [
         { text: lengthValue, color: lengthText },
@@ -586,12 +712,66 @@ export function createPolyhedronMiniRenderer(container) {
           { text: `  ${formatWithSu(a.angleDeg2, a.angleSu2, 1)}°`, color: compareColor },
         ];
         const label = makeLabelSprite(text, {
-          color: angleText, bg: angleBg, bold: true, worldHeight: bondSpan * 0.1, resolution: labelResolution,
+          color: angleText, bg: angleBg, bold: true, worldHeight: bondSpan * 0.1 * labelSizes.value, resolution: labelResolution,
         });
         label.position.copy(centerVec.clone().addScaledVector(outward, arcR * 1.08));
         label.userData.home = label.position.clone();
         label.userData.labelKey = a.key;
         label.userData.leaderAnchor = mid.clone();
+        label.userData.leader = makeLeader(bondSpan);
+        group.add(label.userData.leader);
+        group.add(label);
+        labelSprites.push(label);
+      }
+    }
+
+    // The 3D view's measurements among these atoms: dashed lines in the
+    // measurement colours (Settings ▸ Measurements), an arc at an angle's
+    // vertex, and the value on a pill of the same colour. One that repeats a
+    // bond or angle this view already labels is left to that label.
+    if (showMeasures) {
+      const sameEnds = (p, q) => p.length === q.length && p.every((v) => q.includes(v));
+      for (const m of model.measures ?? []) {
+        if (hiddenLabels.has(m.key)) continue;
+        if (m.kind === 'distance' && showLengths && model.bonds.some((b) => !b.ghost && b.length != null
+          && sameEnds([b.a, b.b], m.at) && !(b.key && hiddenLabels.has(b.key)))) continue;
+        if (m.kind === 'angle' && showAngles && model.angles.some((g) => g.at === m.at[1]
+          && sameEnds([g.i, g.j], [m.at[0], m.at[2]]) && !hiddenLabels.has(g.key))) continue;
+        // The main view's colour for this kind (Settings ▸ Measurements ▸ Colors).
+        const color = markerColorFor(m.kind);
+        const pts = m.at.map((i) => atomVecs[i]);
+        // Atom-to-atom, or vertex-to-end for an angle's two legs.
+        const segments = m.kind === 'distance' ? [[m.at[0], m.at[1]]] : [[m.at[1], m.at[0]], [m.at[1], m.at[2]]];
+        for (const [i, j] of segments) addMeasureLine(atomVecs[i], atomVecs[j], color, sphereR[i], sphereR[j], bondSpan);
+        const text = m.kind === 'distance'
+          ? `${formatWithSu(m.value, m.su, 3)} Å` : `${formatWithSu(m.value, m.su, 1)}°`;
+        const label = makeLabelSprite(text, {
+          color: '#ffffff', bg: withAlpha(color, 0.92), bold: true,
+          worldHeight: bondSpan * 0.11 * labelSizes.value, resolution: labelResolution,
+        });
+        if (m.kind === 'distance') {
+          // On its line, lifted toward the camera like a length label.
+          label.userData.baseAnchor = pts[0].clone().lerp(pts[1], 0.5);
+          label.userData.lift = bondSpan * 0.08;
+          label.userData.leaderAnchor = label.userData.baseAnchor.clone();
+        } else {
+          const d1 = pts[0].clone().sub(pts[1]).normalize();
+          const d2 = pts[2].clone().sub(pts[1]).normalize();
+          const r = bondSpan * 0.55;
+          const arc = arcPoints(pts[1], d1, d2, r);
+          if (arc.length) {
+            group.add(new THREE.Mesh(
+              new THREE.TubeGeometry(new THREE.CatmullRomCurve3(arc), Math.max(8, arc.length - 1), bondSpan * 0.014, 8, false),
+              new THREE.MeshBasicMaterial({ color, depthWrite: false })));
+          }
+          const mid = arc.length ? arc[Math.floor(arc.length / 2)] : pts[1].clone();
+          const out = mid.clone().sub(pts[1]).normalize();
+          label.position.copy(pts[1].clone().addScaledVector(out, r * 1.15));
+          label.userData.home = label.position.clone();
+          label.userData.leaderAnchor = mid.clone();
+        }
+        label.userData.labelKey = m.key;
+        label.position.copy(label.userData.baseAnchor ?? label.position);
         label.userData.leader = makeLeader(bondSpan);
         group.add(label.userData.leader);
         group.add(label);
@@ -655,6 +835,13 @@ export function createPolyhedronMiniRenderer(container) {
     rebuild();
   }
 
+  /** Show/hide the 3D view's measurements (lines, arcs and values). */
+  function setShowMeasures(show) {
+    if (show === showMeasures) return;
+    showMeasures = show;
+    rebuild();
+  }
+
   /** Show/hide the bond-length labels (the bonds themselves stay). */
   function setShowLengths(show) {
     if (show === showLengths) return;
@@ -674,6 +861,12 @@ export function createPolyhedronMiniRenderer(container) {
     // The view's background (inspectorLabels.js LabelColors.background): the
     // panel's own wash unless one is chosen. The canvas is transparent.
     container.style.background = colors.background ?? '';
+    rebuild();
+  }
+
+  /** Label sizes (inspectorLabels.js LabelSizes); rebuilds in place. */
+  function setLabelSizes(sizes) {
+    labelSizes = { value: sizes?.value ?? 1, atom: sizes?.atom ?? 1, charge: sizes?.charge ?? 1 };
     rebuild();
   }
 
@@ -996,14 +1189,15 @@ export function createPolyhedronMiniRenderer(container) {
   }
 
   return {
-    setModel, setFaceOpacity, setShowAngles, setShowLengths, setHiddenLabels, setHandlers,
+    setModel, setFaceOpacity, setShowAngles, setShowLengths, setShowMeasures, setHiddenLabels, setHandlers, setLabelSizes,
     setLabelColors, getLabelStyle, getExportSource, setPlacing, setLabelOffsets,
     fit: ({ includeGhosts = false } = {}) => frame0({ keepOrientation: true, includeGhosts }), resize, start, stop, dispose, getCamera: () => camera,
     // For tests: what is drawn, with page coordinates to click.
     getLabels: () => labelSprites.map((sprite) => ({
-      key: sprite.userData.labelKey, text: sprite.userData.text, visible: sprite.visible, ...toScreen(sprite.position),
+      key: sprite.userData.labelKey, text: sprite.userData.text, bg: sprite.userData.bg ?? null, visible: sprite.visible, ...toScreen(sprite.position),
       moved: labelOffsets.has(sprite.userData.labelKey), leader: !!sprite.userData.leader?.visible,
       depthTested: sprite.material.depthTest !== false,
+      height: sprite.scale.y, // world units
       anchor: sprite.userData.leaderAnchor ? toScreen(sprite.userData.leaderAnchor) : null,
     })),
     getAtomScreenPositions: () => atomMeshes.map((mesh) => ({

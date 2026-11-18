@@ -1,6 +1,7 @@
 import { general } from '../state/store.js';
 import {loadStructure} from '../core/crystal-viewer.js';
 import { receivedSession, startSessionReceiver } from './SessionReceiver.js';
+import { setLoadStep, nextPaint } from '../ui/BootProgress.js';
 
 // Structures named by the location hash:
 //
@@ -95,6 +96,8 @@ export async function loadFromFilePath() {
     return false;
   }
 
+  setLoadStep(`Opening ${source.name || 'the structure'}…`, { fraction: 0.9 });
+  await nextPaint();
   const result = await loadStructure(source.data, source.name, false, source.format, cubePeriodicOption());
   const url = new URL(window.location.href);
   url.hash = '';

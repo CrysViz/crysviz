@@ -9,6 +9,7 @@
  */
 
 import { stressToAppConvention } from './calculatorStress.js';
+import { assertPotentialSize } from './potentialLimits.js';
 
 const WASM_BASE = new URL('../external/nep_wasm/', import.meta.url).href;
 
@@ -71,10 +72,18 @@ export function ensureWorkerNEPReady() {
  */
 export function createWorkerNEPForceEvaluator() {
   let sentTypes = null;
+  let ready = false;
   return async ({ lattice, positions, types }) => {
-    await ensureWorkerNEPReady();
+    // Await only until the worker is up: afterwards the request must be posted
+    // synchronously, so pipelined MD (MD.js) can do the viewer work while the
+    // worker computes.
+    if (!ready) {
+      await ensureWorkerNEPReady();
+      ready = true;
+    }
 
     const n = positions.length;
+    assertPotentialSize('nep', n);
     const flat = new Float64Array(n * 3);
     for (let i = 0; i < n; i += 1) {
       const p = positions[i];

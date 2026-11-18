@@ -45,12 +45,17 @@ function changedPixelCount(fileA, fileB) {
       general.rtRasterPreview = false;
     });
 
-    // Enable the real YBCO coordination polyhedra (the <= 20-face regression set).
+    // Enable the real YBCO coordination polyhedra (the <= 20-face regression
+    // set) and wait for them to be computed: the computation is asynchronous,
+    // and a polyhedron that appears after the synthetic one is injected (or
+    // not, depending on the machine's load) changed what the checks below saw.
     await H.clickById(page, 'showPolyhedra');
-    await page.waitForTimeout(2500);
+    await page.evaluate(async () => (await import('./render/PolyhedraModule.js')).updatePolyhedra());
+    await page.waitForTimeout(500);
 
     await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
-    await page.waitForTimeout(3500);
+    await H.waitFor(page, async () => (await import('./state/store.js')).app.pipeline?._shaderState === 'ready',
+      { timeout: 300000, interval: 2000 });
 
     // --- Regression guard: the ordinary (<= 20-plane) YBCO polyhedra still trace
     const realPolys = await page.evaluate(async () => {
@@ -110,10 +115,20 @@ function changedPixelCount(fileA, fileB) {
       mesh.userData.type = 'polyhedron';
       mesh.userData.polyIndex = idx;
       mesh.visible = true;
+      // A real polyhedron around the cell centre (YBCO's Y site) would wrap the
+      // synthetic one in its see-through faces and hide what the checks below
+      // compare: take it out of the scene.
+      const centre = new THREE.Vector3(cx, cy, cz);
+      let hidden = 0;
+      for (const m of groups.polyhedraGroup.children) {
+        if (m.userData?.type !== 'polyhedron' || !m.visible || !m.geometry) continue;
+        m.geometry.computeBoundingBox();
+        if (m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld).containsPoint(centre)) { m.visible = false; hidden++; }
+      }
       groups.polyhedraGroup.add(mesh);
       structure.__synthMeshId = mesh.id;
       structure.__synthIdx = idx;
-      return { idx, verts: vertices.length, center: [cx, cy, cz] };
+      return { idx, verts: vertices.length, center: [cx, cy, cz], hidden };
     });
 
     // Force a deterministic re-encode and read back the encoded plane count.
@@ -142,7 +157,7 @@ function changedPixelCount(fileA, fileB) {
     });
     // CHECK 1: encoder includes it, no skip warning fired, > 20 planes
     H.check('synthetic >20-face poly encoded (not skipped), rtPlanes > 20',
-      !encoded.unsupported && encoded.rtPlanes > 20 && encoded.polyCount === realPolys.polyCount + 1,
+      !encoded.unsupported && encoded.rtPlanes > 20 && encoded.polyCount === realPolys.polyCount - inject.hidden + 1,
       JSON.stringify(encoded));
     // CHECK 2: header texel's planeCount > 20
     H.check('encoded header texel planeCount > 20',

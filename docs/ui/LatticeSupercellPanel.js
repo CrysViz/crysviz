@@ -3,7 +3,8 @@ import { applyLatticeTransformation } from './LatticeTransformModule.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js';
 import { general, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { createSupercell } from './SuperCellModule.js';
+import { createSupercell, supercellAtomCount } from './SuperCellModule.js';
+import { setLoadStep, finishLoadProgress, nextPaint } from './BootProgress.js';
 import { schedulePeriodicBoundsSave, saveSupercellPref, pinCellPrefsKey } from '../state/cellPrefs.js';
 import { resetView, recenterCamera } from './WindowAndSceneControls.js';
 import { fracToCart, cartToFrac } from '../render/index.js';
@@ -11,6 +12,7 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 import { createNewStructureFromAtoms, createTrajectoryFromFrames } from './addToStructureModule/CommitAtoms.js';
 import { buildOrderedStructure, planOrdering, listMultiplierOptions } from '../atomistic/order_structure.js';
+import { mountPotentialNotice, potentialLabel, potentialSource } from '../atomistic/potentialNotice.js';
 import { Atom, Structure } from '../model/index.js';
 
 // Grow the current structure's cell by the requested vacuum (Å) along each
@@ -270,8 +272,8 @@ function resetOrderSession() {
  *   (click a row)  -> swap that same preview to look at any other sample.
  *   Compare Energy -> single-point energy for every built sample with
  *                      whatever potential is selected in the Atomistic panel
- *                      (NEP/PET-MAD; ASE can't run headless — see
- *                      ensureCalculatorRunner); results re-sort best first.
+ *                      (NEP, PET-MAD or ASE; the section names it, with the
+ *                      accuracy caveat); results re-sort best first.
  *   Use Shown      -> keep whichever sample is currently previewed as the
  *                      final structure (one new file-browser row).
  *   Keep All       -> every built sample becomes one frame of a new
@@ -316,6 +318,7 @@ function addOrderStructureSection(container) {
       <button id="osMajorityBtn" class="btn-mini lsc-build-row-btn"
         title="Every site takes its most-occupied species. Faster, but destroys stoichiometry — a 50/50 Fe/Ni alloy becomes pure Fe.">Use Majority</button>
     </div>
+    <div id="osPotentialNotice"></div>
     <div id="osStatus" class="lsc-status-text"></div>
     <div id="osList" class="order-structure-list" hidden></div>
     <div id="osResultsActions" class="lsc-results-actions-row" hidden>
@@ -326,6 +329,10 @@ function addOrderStructureSection(container) {
     </div>
   `;
 
+  // Compare Energy ranks the samples with the Atomistic window's potential:
+  // name it, with the accuracy caveat.
+  const noticeHost = container.querySelector('#osPotentialNotice');
+  if (noticeHost) mountPotentialNotice(noticeHost);
   const sampleCountInput = container.querySelector('#osSampleCount');
   const sizeSelect = container.querySelector('#osSizeSelect');
   const buildBtn = container.querySelector('#osBuildBtn');
@@ -417,7 +424,8 @@ function addOrderStructureSection(container) {
     try {
       const { ensureCalculatorRunner } = await import('./BackendPanel/AtomisticPanels.js');
       const { buildNEPStructure } = await import('../atomistic/relaxer.js');
-      const { runner } = await ensureCalculatorRunner((msg) => { setOrderStatus(msg); });
+      const { runner, potential } = await ensureCalculatorRunner((msg) => { setOrderStatus(msg); });
+      const usedLabel = potentialLabel(potential);
       const samples = orderSession.builtSamples;
       for (let i = 0; i < samples.length; i += 1) {
         const sample = samples[i];
@@ -434,7 +442,7 @@ function addOrderStructureSection(container) {
       orderSession.energiesComputed = true;
       renderOrderList();
       showOrderCandidate(samples[0]); // land on the best one now that ranking is known
-      setOrderStatus(`${samples.length} energ${samples.length === 1 ? 'y' : 'ies'} computed, lowest first — showing #1. Click a row to look at another.`);
+      setOrderStatus(`${samples.length} energ${samples.length === 1 ? 'y' : 'ies'} computed with ${usedLabel}, lowest first — showing #1. Click a row to look at another.`);
     } catch (error) {
       setOrderStatus(`Could not compute energies: ${error.message || String(error)}`);
     } finally {
@@ -473,7 +481,10 @@ function addOrderStructureSection(container) {
         // Per-frame total energy (like an MD/relax trajectory) if this sample
         // was compared — the Trajectory panel picks it up automatically via
         // its own "Compute step stats" action.
-        if (Number.isFinite(s.energyPerAtom)) frame.energy = s.energyPerAtom * s.built.atoms.length;
+        if (Number.isFinite(s.energyPerAtom)) {
+          frame.energy = s.energyPerAtom * s.built.atoms.length;
+          frame.dataSource = potentialSource();
+        }
         return frame;
       });
       const hadEnergy = Number.isFinite(samples[0].energyPerAtom);
@@ -768,6 +779,53 @@ export function refreshPeriodicBoundaryControls() {
   if (content) addPeriodicBoundarySection(content);
 }
 
+// The Supercell section's factor fields while the Cell window's content is
+// built (null otherwise), so a supercell built from elsewhere shows in them.
+let liveSupercellInputs = null;
+// Above this many atoms, building a supercell shows the load progress overlay.
+const LARGE_SUPERCELL_ATOMS = 20000;
+
+/**
+ * Build an nx×ny×nz supercell of the selected structure: the Supercell
+ * section's Apply (and Reset: 1×1×1), also used by the feature search
+ * ("222", "2x3x2"). The factors are stored as the structure's cell preference
+ * and shown in the section's fields.
+ */
+export async function applySupercell(nx, ny, nz) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure?.atoms) return;
+  // A large one blocks the page for a while: say so on the load progress
+  // overlay first (a small one is built right away, within the click).
+  const atoms = supercellAtomCount(structure, nx, ny, nz);
+  const large = atoms > LARGE_SUPERCELL_ATOMS;
+  if (large) {
+    setLoadStep(`Building the ${nx}×${ny}×${nz} supercell (${atoms.toLocaleString('en-US')} atoms)…`, { fraction: 0.3 });
+    await nextPaint();
+  }
+  try {
+    // Note: do NOT reset atoms/lattice/elements from `.original` here.
+    // createSupercell() derives the base unit cell from the live (user-modified)
+    // structure and re-tiles it to the requested factors, so modifications
+    // (colour, opacity, moved atoms, …) are preserved across supercell changes.
+    pinCellPrefsKey();
+    createSupercell(nx, ny, nz);
+    saveSupercellPref();
+    if (liveSupercellInputs?.nx?.isConnected) {
+      liveSupercellInputs.nx.value = String(nx);
+      liveSupercellInputs.ny.value = String(ny);
+      liveSupercellInputs.nz.value = String(nz);
+    }
+    updateVisualization({
+      reRenderAtoms: true,
+      reRenderBonds: true,
+      reRenderLattice: true,
+    });
+    resetView();
+  } finally {
+    if (large) finishLoadProgress();
+  }
+}
+
 export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   const targetPanel = document.getElementById(target);
   if (!targetPanel) {
@@ -803,6 +861,7 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   supercellInputRow.className = "lsc-supercell-row";
 
   const supercellInputs = {};
+  liveSupercellInputs = supercellInputs;
   ["nx", "ny", "nz"].forEach((axis) => {
     const input = document.createElement("input");
     input.type = "number";
@@ -941,38 +1000,13 @@ transformContent.appendChild(transformMatrixContainer);
 
   // --- Event Handlers ---
 
+  // An empty or invalid field counts as 1 (it was NaN, which tiled no atoms).
+  const factor = (input) => Math.max(1, parseInt(input.value, 10) || 1);
   supercellApplyBtn.onclick = () => {
-    const newA = Math.max(1, parseInt(supercellInputs.nx.value));
-    const newB = Math.max(1, parseInt(supercellInputs.ny.value));
-    const newC = Math.max(1, parseInt(supercellInputs.nz.value));
-
-    // Note: do NOT reset atoms/lattice/elements from `.original` here.
-    // createSupercell() derives the base unit cell from the live (user-modified)
-    // structure and re-tiles it to the requested factors, so modifications
-    // (colour, opacity, moved atoms, …) are preserved across supercell changes.
-    pinCellPrefsKey();
-    createSupercell(newA, newB, newC);
-    saveSupercellPref();
-    updateVisualization({
-      reRenderAtoms: true,
-      reRenderBonds: true,
-      reRenderLattice: true,
-    });
-    resetView();
+    applySupercell(factor(supercellInputs.nx), factor(supercellInputs.ny), factor(supercellInputs.nz));
   };
 
-  supercellResetBtn.onclick = () => {
-    pinCellPrefsKey();
-    createSupercell(1, 1, 1);
-    saveSupercellPref();
-    Object.values(supercellInputs).forEach((input) => { input.value = '1'; });
-    updateVisualization({
-      reRenderAtoms: true,
-      reRenderBonds: true,
-      reRenderLattice: true,
-    });
-    resetView();
-  };
+  supercellResetBtn.onclick = () => applySupercell(1, 1, 1);
 
 
 transformApplyBtn.onclick = () => {
@@ -1033,6 +1067,7 @@ transformResetBtn.onclick = () => {
 }
 
 export function removeLatticeAndSupercellPanel() {
+  liveSupercellInputs = null;
   const panel = document.getElementById('latticeAndSupercellGroup');
   if (panel) {
     panel.remove();

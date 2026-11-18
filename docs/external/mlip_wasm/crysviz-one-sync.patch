@@ -1,0 +1,79 @@
+--- a/src/runtime/graph_model.cpp
++++ b/src/runtime/graph_model.cpp
+@@ -933,9 +933,10 @@
+   }
+ 
+   const double t_alloc = graph_timing_now_ms();
+-  ggml_status status = ggml_backend_graph_compute(compute_backend_, cgraph);
++  ggml_status status = ggml_backend_graph_compute_async(compute_backend_, cgraph);
+   const double t_compute = graph_timing_now_ms();
+   if (status != GGML_STATUS_SUCCESS) {
++    ggml_backend_synchronize(compute_backend_);
+     if (compute_buffer) ggml_backend_buffer_free(compute_buffer);
+     ggml_free(compute_ctx);
+     ggml_backend_buffer_free(input_buffer);
+@@ -944,12 +945,32 @@
+   }
+ 
+   // --- Extract results ---
++  // Queue every read of the outputs, then synchronize once: on a GPU backend
++  // each wait for the device is a round trip (in browsers about 100 ms each),
++  // so the graph and three separate reads cost four of them. On the CPU the
++  // reads happen right away and synchronize does nothing.
+   ModelResult result;
+-
+-  // Get atomic energies
+   std::vector<float> atomic_energies(n_atoms);
+-  ggml_backend_tensor_get(output, atomic_energies.data(), 0,
+-                          n_atoms * sizeof(float));
++  ggml_backend_tensor_get_async(compute_backend_, output, atomic_energies.data(), 0,
++                                n_atoms * sizeof(float));
++  ggml_tensor *grad_tensor =
++      compute_forces ? ggml_graph_get_grad(cgraph, edge_vectors_t) : nullptr;
++  std::vector<float> grad_data;
++  if (grad_tensor && grad_tensor->data) {
++    grad_data.resize(ggml_nelements(grad_tensor));
++    ggml_backend_tensor_get_async(compute_backend_, grad_tensor, grad_data.data(), 0,
++                                  ggml_nbytes(grad_tensor));
++  }
++  ggml_tensor *cv_grad = (compute_forces && have_adaptive && cutoff_values_t)
++                             ? ggml_graph_get_grad(cgraph, cutoff_values_t)
++                             : nullptr;
++  std::vector<float> cv_grad_data;
++  if (cv_grad && cv_grad->data) {
++    cv_grad_data.resize(ggml_nelements(cv_grad));
++    ggml_backend_tensor_get_async(compute_backend_, cv_grad, cv_grad_data.data(), 0,
++                                  ggml_nbytes(cv_grad));
++  }
++  ggml_backend_synchronize(compute_backend_);
+ 
+   // Sum and scale
+   float model_energy = 0.0f;
+@@ -971,12 +992,7 @@
+ 
+   // Extract forces
+   if (compute_forces) {
+-    ggml_tensor *grad_tensor = ggml_graph_get_grad(cgraph, edge_vectors_t);
+-    if (grad_tensor && grad_tensor->data) {
+-      std::vector<float> grad_data(ggml_nelements(grad_tensor));
+-      ggml_backend_tensor_get(grad_tensor, grad_data.data(), 0,
+-                              ggml_nbytes(grad_tensor));
+-
++    if (!grad_data.empty()) {
+       // Scatter edge gradients to per-atom forces
+       result.forces.resize(n_atoms * 3, 0.0f);
+       const int stride_slot = 3;
+@@ -1016,12 +1032,7 @@
+       // Skipped when adaptive cutoff isn't active.
+       std::vector<double> adaptive_coef;  // per full_nlist edge
+       if (have_adaptive && cutoff_values_t) {
+-        ggml_tensor *cv_grad = ggml_graph_get_grad(cgraph, cutoff_values_t);
+-        if (cv_grad && cv_grad->data) {
+-          std::vector<float> cv_grad_data(ggml_nelements(cv_grad));
+-          ggml_backend_tensor_get(cv_grad, cv_grad_data.data(), 0,
+-                                  ggml_nbytes(cv_grad));
+-
++        if (!cv_grad_data.empty()) {
+           // S[k] = Σ_e (in filtered list, edge e touches atom k) C_e
+           std::vector<double> S(n_atoms, 0.0);
+           for (int ca = 0; ca < n_atoms; ca++) {

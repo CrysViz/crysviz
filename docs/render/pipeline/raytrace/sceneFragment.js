@@ -71,6 +71,7 @@ uniform vec3 uBackgroundColor;
 uniform vec3 uBackgroundDisplay; // pre-compensated: primary-miss rays only (see driver)
 uniform float uReflectivity;
 uniform float uLightSoftness; // 0 = hard shadows; >0 jitters shadow rays (penumbra via accumulation)
+uniform bool uLegacyNoise; // debug A/B only: the old sampling (coin flip at see-through surfaces, plain random light/lobe directions)
 uniform float uAmbientStrength; // ambient/fill light level (classic look: 0.25)
 uniform bool uGroundEnabled;  // ground plane (shadow catcher)
 uniform vec3 uGroundNormal;   // plane: dot(normal, p) = uGroundD
@@ -118,6 +119,70 @@ int resolveMaterialType(float matCode, float alpha)
 }
 
 #include <raytracing_core_functions>
+
+// ---- stratified directions (soft shadows, glass frost, metal roughness) ----
+// The jittered directions used to come from rng(): independent white noise per
+// sample, the slowest-converging kind — the soft-shadow penumbrae (Light
+// softness > 0), which cover most surfaces in a cluster of polyhedra, stayed
+// grainy at the 64 samples a render (and each export tile) stops at. They now
+// come from 2D Kronecker sequences, one point per sample index and one
+// sequence per draw along the path: over the samples the points cover the
+// light's cone (or the frost / roughness lobe) evenly, so they converge
+// faster at the same cost per sample, to the same image. Exact uint32
+// arithmetic (no float drift over a long session), the same lobe mapping as
+// the vendored randomDirectionInSpecularLobe, and a per-pixel, per-use
+// Cranley-Patterson rotation (lowbias32 hash) that keeps neighbouring pixels
+// and the draws along one path independent — unbiased. Keyed on uFrameCounter,
+// which advances once per sample and is frozen across a tiled round's tiles.
+uint rtHashLowbias32(uint x)
+{
+	x ^= x >> 16; x *= 0x7feb352dU;
+	x ^= x >> 15; x *= 0x846ca68bU;
+	x ^= x >> 16;
+	return x;
+}
+uint gRtSampleIndex = 0u; // uint(uFrameCounter + 0.5), set in RayTrace
+uint gRtPixelHash = 0u;   // lowbias32(gl_FragCoord), set in RayTrace
+int gRtLobeDraw = 0;      // lobe draws so far on this path
+
+// Increments for the first four draws along a path: fract(sqrt(p)) * 2^32 for
+// p = 5, 7 | 11, 13 | 17, 19 | 23, 29 — distinct irrationals, so the draws of
+// one path (frosted glass entering, leaving, then a soft shadow) are
+// independent instead of the same sequence shifted, and none shares the R2
+// constants of the per-sample pixel jitter (RayTracingPipeline._nextRandomVec2).
+const uint RT_LDS_INC[8] = uint[8](
+	1013904243u, 2773480762u,  // sqrt(5), sqrt(7)
+	1359893120u, 2600822924u,  // sqrt(11), sqrt(13)
+	528734636u, 1541459225u,   // sqrt(17), sqrt(19)
+	3418070366u, 1654270250u   // sqrt(23), sqrt(29)
+);
+
+vec2 rtStratified2()
+{
+	int d = gRtLobeDraw;
+	gRtLobeDraw++;
+	// deeper draws (rare: long frosted / rough chains) take white noise —
+	// never biased, only slower to converge
+	if (d >= 4) return vec2(rng(), rng());
+	uint rx = rtHashLowbias32(gRtPixelHash + uint(d) * 0x9e3779b9u);
+	uint ry = rtHashLowbias32(rx ^ 0x85ebca6bu);
+	uvec2 v = uvec2(gRtSampleIndex) * uvec2(RT_LDS_INC[2 * d], RT_LDS_INC[2 * d + 1]) + uvec2(rx, ry);
+	return vec2(v) * ONE_OVER_MAX_INT;
+}
+
+// A direction in the lobe around dir (roughness 0 = dir itself): the vendored
+// randomDirectionInSpecularLobe's distribution, from stratified points (or its
+// own white noise under the debug comparison).
+vec3 lobeDirection(vec3 dir, float roughness)
+{
+	if (uLegacyNoise) return randomDirectionInSpecularLobe(dir, roughness);
+	vec2 u = rtStratified2();
+	float z = (u.x * 2.0) - 1.0;
+	float phi = u.y * TWO_PI;
+	float r = sqrt(max(0.0, 1.0 - (z * z)));
+	vec3 cosDiffuseDir = normalize(dir + vec3(r * cos(phi), r * sin(phi), z));
+	return normalize(mix(dir, cosDiffuseDir, roughness * roughness));
+}
 #include <raytracing_sphere_intersect>
 #include <raytracing_unit_cylinder_intersect>
 #include <raytracing_boundingbox_intersect>
@@ -162,8 +227,8 @@ vec3 groundPatternColor(vec3 p)
 // returns 1 only for a SHADOW ray whose new closest hit is an opaque
 // (alpha>=1, non-glass) blocker — the caller treats that as "occluded" and
 // stops. Quality argument: an opaque blocker anywhere on the segment forces
-// occlusion regardless of what is in front of it (a stochastic surface either
-// blocks or passes through TO the blocker; a glass surface tints a
+// occlusion regardless of what is in front of it (a see-through surface only
+// dims the light on its way TO the blocker; a glass surface tints a
 // contribution the occluded branch never adds), and any opaque blocker skipped
 // here because it sits behind a closer transparent surface is re-found by the
 // shadow-march (re-invocation past that surface). So the OCCLUSION decision is
@@ -378,8 +443,29 @@ vec3 getSkyColor(vec3 rayDir)
 }
 
 //---------------------------------------------------------------------------
+// The end of one ray: pick up what still waits — the reflection ray of the
+// first surface (within its segment, as before), then the see-through
+// continuation (a new segment) — or finish. (Each macro is one line: the JS
+// template joins the backslash-ended lines.)
+#define RESUME_PASS_RAY \
+	if (havePassRay == TRUE) { rayColorMask = passRayColorMask; rayOrigin = passRayOrigin; rayDirection = passRayDirection; isPrimaryRay = passRayIsPrimary; isShadowRay = FALSE; havePassRay = FALSE; willNeedReflectionRay = FALSE; segBounces = 0; continue; }
+#define RESUME_OR_BREAK \
+	if (willNeedReflectionRay == TRUE) { rayColorMask = reflectionRayColorMask; rayOrigin = reflectionRayOrigin; rayDirection = reflectionRayDirection; willNeedReflectionRay = FALSE; isShadowRay = FALSE; isPrimaryRay = FALSE; continue; } \
+	RESUME_PASS_RAY \
+	break;
+// See-through layers composited exactly per camera path; deeper ones (weight
+// (1 - alpha)^4 and less) fall back to the random pass. Each segment (the
+// path up to the first see-through layer, then each continuation) keeps the
+// classic budget of 6 steps, so paths without see-through surfaces trace
+// exactly as before; the loop leaves room for the continuations.
+#define MAX_PASS_LAYERS 4
+#define SEGMENT_BOUNCES 6
+
 vec3 RayTrace()
 {
+	gRtSampleIndex = uint(uFrameCounter + 0.5);
+	gRtPixelHash = rtHashLowbias32(uint(gl_FragCoord.x) + rtHashLowbias32(uint(gl_FragCoord.y)));
+	gRtLobeDraw = 0;
 	vec3 accumulatedColor = vec3(0);
 	vec3 rayColorMask = vec3(1);
 	vec3 reflectionRayOrigin, reflectionRayDirection, reflectionRayColorMask;
@@ -401,9 +487,27 @@ vec3 RayTrace()
 	// pass-throughs keep it — so the backdrop seen through transparent
 	// objects blends against the same display-exact background color.
 	int isPrimaryRay = TRUE;
+	// See-through continuation: what lies behind a see-through surface,
+	// traced after that surface (and its shadow ray) is done, with weight
+	// (1 - alpha). One slot, filled again layer after layer.
+	int havePassRay = FALSE;
+	int passRayIsPrimary = FALSE;
+	int passLayers = 0;
+	int segBounces = 0;
+	vec3 passRayOrigin, passRayDirection, passRayColorMask;
 
-	for (int bounces = 0; bounces < 6; bounces++)
+	for (int bounces = 0; bounces < SEGMENT_BOUNCES * (MAX_PASS_LAYERS + 1); bounces++)
 	{
+		// This segment's budget is spent: as before, whatever it still had
+		// pending (a shadow or reflection ray) is dropped; a waiting
+		// see-through continuation starts its own segment.
+		if (segBounces >= SEGMENT_BOUNCES)
+		{
+			RESUME_PASS_RAY
+			break;
+		}
+		segBounces++;
+
 		t = SceneIntersect(isShadowRay);
 
 		if (t == INFINITY) // ray escaped the scene
@@ -412,7 +516,7 @@ vec3 RayTrace()
 			{
 				// unredirected camera ray: the display-exact background
 				accumulatedColor += rayColorMask * uBackgroundDisplay;
-				break;
+				RESUME_OR_BREAK
 			}
 			if (isShadowRay == TRUE) // directional light: escaping = light visible
 			{
@@ -423,44 +527,53 @@ vec3 RayTrace()
 			{
 				accumulatedColor += rayColorMask * getSkyColor(rayDirection);
 			}
-			if (willNeedReflectionRay == TRUE)
-			{
-				rayColorMask = reflectionRayColorMask;
-				rayOrigin = reflectionRayOrigin;
-				rayDirection = reflectionRayDirection;
-				willNeedReflectionRay = FALSE;
-				isShadowRay = FALSE;
-				isPrimaryRay = FALSE;
-				continue;
-			}
-			break;
+			RESUME_OR_BREAK
 		}
 
 		// Non-refractive alpha transparency (raster-like "see-through"): any
-		// non-glass surface with alpha < 1 lets the ray pass STRAIGHT through
-		// with probability (1 - alpha). The accumulation averages this into
-		// the classic alpha blend; shadow rays inherit partial shadows.
-		if (intersectionMaterialType != MAT_TRANSP && intersectionAlpha < 0.999
-			&& rand() >= intersectionAlpha)
+		// non-glass surface with alpha < 1 shows (alpha) of itself and
+		// (1 - alpha) of what lies behind it — the classic alpha blend.
+		// It used to be a coin flip per sample (pass straight through with
+		// probability 1 - alpha), which the accumulation averaged into that
+		// blend; at the 64 samples a render (and each export tile) stops at,
+		// see-through polyhedra, atoms and bonds and their shadows stayed
+		// visibly grainy. Now both are exact; the converged image is the same.
+		if (intersectionMaterialType != MAT_TRANSP && intersectionAlpha < 0.999)
 		{
-			rayOrigin = rayOrigin + ((t + uEPS_intersect) * rayDirection);
-			continue;
+			// A shadow ray: (1 - alpha) of the light gets through.
+			if (isShadowRay == TRUE && !uLegacyNoise)
+			{
+				diffuseContribution *= 1.0 - intersectionAlpha;
+				specularContribution *= 1.0 - intersectionAlpha;
+				rayOrigin = rayOrigin + ((t + uEPS_intersect) * rayDirection);
+				continue;
+			}
+			// A camera (or reflected/refracted) ray: shade this surface below
+			// with weight alpha, and keep what lies behind it, weight
+			// (1 - alpha), for when this surface is done (RESUME_OR_BREAK).
+			if (isShadowRay == FALSE && havePassRay == FALSE && passLayers < MAX_PASS_LAYERS && !uLegacyNoise)
+			{
+				havePassRay = TRUE;
+				passLayers++;
+				passRayOrigin = rayOrigin + ((t + uEPS_intersect) * rayDirection);
+				passRayDirection = rayDirection;
+				passRayColorMask = rayColorMask * (1.0 - intersectionAlpha);
+				passRayIsPrimary = isPrimaryRay;
+				rayColorMask *= intersectionAlpha;
+			}
+			// The slot is taken (a metal reflection still running), too many
+			// layers, or the debug comparison: the random pass, as before.
+			else if (rand() >= intersectionAlpha)
+			{
+				rayOrigin = rayOrigin + ((t + uEPS_intersect) * rayDirection);
+				continue;
+			}
 		}
 
 		// shadow ray hit an occluder: surface stays in ambient shadow
 		if (isShadowRay == TRUE && intersectionMaterialType != MAT_TRANSP)
 		{
-			if (willNeedReflectionRay == TRUE)
-			{
-				rayColorMask = reflectionRayColorMask;
-				rayOrigin = reflectionRayOrigin;
-				rayDirection = reflectionRayDirection;
-				willNeedReflectionRay = FALSE;
-				isShadowRay = FALSE;
-				isPrimaryRay = FALSE;
-				continue;
-			}
-			break;
+			RESUME_OR_BREAK
 		}
 
 		geometryNormal = normalize(intersectionNormal);
@@ -501,7 +614,7 @@ vec3 RayTrace()
 			isPrimaryRay = FALSE;
 			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 			rayDirection = uLightSoftness > 0.0
-				? randomDirectionInSpecularLobe(directionToLight, uLightSoftness * 0.5)
+				? lobeDirection(directionToLight, uLightSoftness * 0.5)
 				: directionToLight;
 			continue;
 		}
@@ -521,7 +634,7 @@ vec3 RayTrace()
 			isPrimaryRay = FALSE;
 			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 			rayDirection = uLightSoftness > 0.0
-				? randomDirectionInSpecularLobe(directionToLight, uLightSoftness * 0.5)
+				? lobeDirection(directionToLight, uLightSoftness * 0.5)
 				: directionToLight;
 			continue;
 		}
@@ -531,17 +644,7 @@ vec3 RayTrace()
 			// additive glow: the object is its own light source; a small diffuse
 			// term keeps the shape readable at low intensities
 			accumulatedColor += rayColorMask * intersectionColor * (intersectionTypeParam * 0.5 + 0.25);
-			if (willNeedReflectionRay == TRUE)
-			{
-				rayColorMask = reflectionRayColorMask;
-				rayOrigin = reflectionRayOrigin;
-				rayDirection = reflectionRayDirection;
-				willNeedReflectionRay = FALSE;
-				isShadowRay = FALSE;
-				isPrimaryRay = FALSE;
-				continue;
-			}
-			break;
+			RESUME_OR_BREAK
 		}
 
 		if (intersectionMaterialType == MAT_METAL)
@@ -565,7 +668,7 @@ vec3 RayTrace()
 			rayColorMask *= metalReflect;
 			rayOrigin = intersectionPoint + (uEPS_intersect * shadingNormal);
 			rayDirection = reflect(rayDirection, shadingNormal);
-			rayDirection = randomDirectionInSpecularLobe(rayDirection, intersectionRoughness * intersectionRoughness);
+			rayDirection = lobeDirection(rayDirection, intersectionRoughness * intersectionRoughness);
 			isPrimaryRay = FALSE;
 			continue;
 		}
@@ -623,7 +726,7 @@ vec3 RayTrace()
 				rayOrigin = intersectionPoint - (uEPS_intersect * shadingNormal);
 				rayDirection = refract(rayDirection, shadingNormal, IoR_ratio);
 				if (intersectionRoughness > 0.0)
-					rayDirection = randomDirectionInSpecularLobe(rayDirection, intersectionRoughness * intersectionRoughness);
+					rayDirection = lobeDirection(rayDirection, intersectionRoughness * intersectionRoughness);
 			}
 			else // shadow rays pass through transparent surfaces (glass slider tint or
 			     // alpha-routed inverse-alpha tint)

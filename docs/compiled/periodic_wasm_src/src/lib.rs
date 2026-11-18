@@ -153,6 +153,7 @@ pub fn compute_polyhedra(
     cutoff_matrix: &[f64],
     n_elem: usize,
     electroneg: &[f64],
+    anion_former: &[u8],
     radii: &[f64],
     max_cutoff: f64,
     use_chem_filter: bool,
@@ -165,6 +166,7 @@ pub fn compute_polyhedra(
     cut_plane_immune: &[u8],
     cut_planes: &[f64],
     cut_plane_count: usize,
+    cage_bounds: &[f64],
 ) -> PolyhedraResult {
     let r = polyhedra::compute_polyhedra(
         frac,
@@ -173,6 +175,7 @@ pub fn compute_polyhedra(
         cutoff_matrix,
         n_elem,
         electroneg,
+        anion_former,
         radii,
         max_cutoff,
         use_chem_filter,
@@ -185,6 +188,7 @@ pub fn compute_polyhedra(
         cut_plane_immune,
         cut_planes,
         cut_plane_count,
+        cage_bounds,
     );
     PolyhedraResult {
         kinds: r.kinds,
@@ -271,6 +275,7 @@ pub fn compute_candidates(
     cutoff_matrix: &[f64],
     n_elem: usize,
     electroneg: &[f64],
+    anion_former: &[u8],
     radii: &[f64],
     max_cutoff: f64,
     use_chem_filter: bool,
@@ -283,15 +288,16 @@ pub fn compute_candidates(
     cut_plane_immune: &[u8],
     cut_planes: &[f64],
     cut_plane_count: usize,
+    cage_bounds: &[f64],
     center_start: usize,
     center_end: usize,
     seed_start: usize,
     seed_end: usize,
 ) -> CandidateResult {
     let (cands, _timing) = polyhedra::build_candidates(
-        frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff,
+        frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff,
         use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys,
-        seed_visible, cut_plane_immune, cut_planes, cut_plane_count,
+        seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds,
         center_start, center_end, seed_start, seed_end,
     );
     let f = polyhedra::flatten_candidates(&cands);

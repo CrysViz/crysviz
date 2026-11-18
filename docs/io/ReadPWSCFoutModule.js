@@ -5,7 +5,7 @@ import { Spin } from "../model/index.js";
 import { Stress, KBAR_TO_EV_PER_A3 } from "../model/index.js";
 import { StructureContainer, TrajectoryContainer } from "../model/index.js";
 import { cartToFractional } from "../math/index.js";
-import { generateID } from '../utils/index.js'
+import { generateID, releaseIDs } from '../utils/index.js'
 
 const BOHR_TO_ANG = 0.52917721092;
 const RY_TO_EV = 13.605693;
@@ -185,9 +185,15 @@ export function parsePWSCFout(content, fileName) {
   // Multi-frame relax/vc-relax outputs become store-backed trajectories
   // (physics packed per frame, one live Structure for rendering); single
   // frames stay eager.
-  return structures.length > 1
-    ? TrajectoryContainer.fromStructures(fileName, structures)
-    : new StructureContainer({ fileName, structures });
+  if (structures.length > 1) {
+    const container = TrajectoryContainer.fromStructures(fileName, structures);
+    // The store keeps the packed physics and mints its own unregistered atom
+    // ids (model/materializeFrame.js); the parsed frames are dropped, so their
+    // registered ids go back too instead of growing usedIDs by atoms x frames.
+    for (const s of structures) releaseIDs(s.atoms);
+    return container;
+  }
+  return new StructureContainer({ fileName, structures });
 }
 
 // "crystal axes: (cart. coord. in units of alat)" followed by a(1)..a(3).

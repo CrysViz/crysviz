@@ -51,7 +51,7 @@
 .addstructure-col-icon { width: 30px; text-align: center; }
 .addstructure-col-element { width: 74px; }
 .addstructure-col-coord { width: 88px; }
-.addstructure-col-narrow { width: 44px; }
+.addstructure-col-narrow { width: 52px; } /* holds 0.1769 */
 .addstructure-col-color { width: 40px; text-align: center; }
 
 .addstructure-inline-row {
@@ -64,8 +64,14 @@
    secondary row of a disordered site gets `disabled` in JS (groupSiteRows,
    AtomTableInput.js); the dimming used to be a separate `style.opacity`
    write next to it, now it's implied by the disabled state alone. */
+/* Each class is repeated as input[type="number"].class: the app-wide
+   input[type="number"] rules (styles_file_browswer.css width 45px,
+   trajectoryPanel.css padding) outrank a bare class, and had squeezed every
+   box here to 45px — 0.1769 showed as "0.176". Same for the two rules below. */
 .addstructure-num-input,
-.wyckoff-coord-input {
+.wyckoff-coord-input,
+input[type="number"].addstructure-num-input,
+input[type="number"].wyckoff-coord-input {
   width: 100%;
   background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
@@ -87,7 +93,8 @@
 /* Orbit-table numeric input (StructureEditorPanel.js's locked Modify body):
    same box chrome as .addstructure-num-input, plus the radius/text-align
    the plain atom table never used. */
-.wyckoff-orbit-num-input {
+.wyckoff-orbit-num-input,
+input[type="number"].wyckoff-orbit-num-input {
   width: 100%;
   background: var(--chrome-2-5);
   border: 1px solid var(--chrome-5);
@@ -420,7 +427,8 @@ tr.atom-row-filtered { display: none; }
 
 .lattice-cell { padding: var(--sp-1); }
 
-.lattice-num-input {
+.lattice-num-input,
+input[type="number"].lattice-num-input {
   width: 70px;
   text-align: right;
   font-family: var(--font-mono);
@@ -665,9 +673,13 @@ tr.atom-row-filtered { display: none; }
   display: none;
 }
 
+/* Even with the trims below, nine columns leave X/Y/Z ~19px each in a
+   ~340px dock: too narrow for one digit (the boxes overlapped). They get a
+   width that holds -0.1769 instead, and the table scrolls sideways
+   (.atoms-table-scroll) for Charge, Color and ✕. */
 .cv-docked .addstructure-col-coord,
 .cv-side-docked .addstructure-col-coord {
-  width: auto;
+  width: 54px;
 }
 
 /* Auto table layout refuses to shrink a column below a number input's
@@ -687,13 +699,33 @@ tr.atom-row-filtered { display: none; }
 .cv-docked .addstructure-col-element,
 .cv-side-docked .addstructure-col-element { width: 64px; }
 .cv-docked .addstructure-col-narrow,
-.cv-side-docked .addstructure-col-narrow { width: 40px; }
+.cv-side-docked .addstructure-col-narrow { width: 46px; }
 .cv-docked .addstructure-col-color,
 .cv-side-docked .addstructure-col-color { width: 30px; }
 .cv-docked .addstructure-col-icon,
 .cv-side-docked .addstructure-col-icon { width: 24px; }
 
 .cv-docked .atoms-table-scroll,
-.cv-side-docked .atoms-table-scroll {
+.cv-side-docked .atoms-table-scroll,
+.cv-docked .wyckoff-sites-scroll,
+.cv-side-docked .wyckoff-sites-scroll,
+.cv-docked .wyckoff-add-scroll,
+.cv-side-docked .wyckoff-add-scroll {
   overflow-x: auto;
 }
+
+/* The locked (Wyckoff) tables named no widths, so docked their seven columns
+   came out an equal ~46px each and X/Y/Z held three digits. Same sizing as
+   the atom table above. */
+.cv-docked .wyckoff-col-element,
+.cv-side-docked .wyckoff-col-element { width: 64px; }
+.cv-docked .wyckoff-col-site,
+.cv-side-docked .wyckoff-col-site { width: 58px; }
+.cv-docked .wyckoff-col-coord,
+.cv-side-docked .wyckoff-col-coord { width: 54px; }
+.cv-docked .wyckoff-col-color,
+.cv-side-docked .wyckoff-col-color { width: 30px; }
+.cv-docked .wyckoff-col-icon,
+.cv-side-docked .wyckoff-col-icon { width: 24px; }
+.cv-docked .wyckoff-col-add,
+.cv-side-docked .wyckoff-col-add { width: 52px; }

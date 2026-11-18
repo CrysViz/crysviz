@@ -595,6 +595,17 @@ export function mdProfileMeasure(bucket, fn) {
   return result;
 }
 
+// The last run's timing breakdown (same buckets as the console profile), for
+// the Debug window's benchmark (debug/potentialBenchmark.js). The viewer /
+// plot / save buckets are only filled while general.mdProfile is on.
+/** @type {any} */
+let lastMdTiming = null;
+
+/** Timing of the most recent runMDSimulation, or null before the first. */
+export function getLastMdTiming() {
+  return lastMdTiming;
+}
+
 function logMdProfile(timing) {
   const { totalMs, steps } = timing;
   if (!steps || totalMs <= 0) return;
@@ -638,8 +649,9 @@ export async function runMDSimulation({
   barostat = createNoBarostat(),
   onStep = null,
   shouldStop = null,
-  // True when forceEvaluator does its work off the main thread (the NEP
-  // worker). Changes only how this loop yields — see nextMacrotask.
+  // True when forceEvaluator does its work off the main thread (the NEP or
+  // PET-MAD worker). Changes how this loop yields (see nextMacrotask) and lets
+  // the viewer update of one step overlap the next force evaluation (below).
   offThreadForces = false,
 } = {}) {
   if (!state) throw new Error('runMDSimulation: state is required');
@@ -652,10 +664,39 @@ export async function runMDSimulation({
   // Force evaluation happens inside integrator.step (it awaits the evaluator),
   // so the only way to separate "the potential" from "our JS" is to time the
   // evaluator itself.
+  //
+  // Pipelining (off-thread potentials, general.mdPipelineViewer): the onStep
+  // of step i (viewer update, plot, trajectory frame) is deferred and run right
+  // after step i+1's positions have been posted to the worker, so the main
+  // thread draws step i while the worker computes step i+1. Per-step wall time
+  // becomes max(potential, viewer) instead of their sum. onStep receives a
+  // snapshot of step i's state (positions, velocities, forces, stress, cell),
+  // so what it shows and saves is exactly step i. The evaluator must post its
+  // request synchronously when called (both worker clients do).
+  const pipeline = offThreadForces && general.mdPipelineViewer !== false && !!onStep;
+  /** @type {any} */
+  let deferredStep = null;
+  const runOnStep = (payload) => {
+    const t0 = performance.now();
+    onStep(payload);
+    timing.onStepMs += performance.now() - t0;
+  };
   const timedForceEvaluator = async (cell) => {
     const t = performance.now();
-    const result = await forceEvaluator(cell);
-    timing.forceEvalMs += performance.now() - t;
+    const pending = forceEvaluator(cell);
+    let overlapMs = 0;
+    if (deferredStep) {
+      const payload = deferredStep;
+      deferredStep = null;
+      const t1 = performance.now();
+      runOnStep(payload);
+      overlapMs = performance.now() - t1;
+    }
+    const result = await pending;
+    // Only the time spent WAITING for the potential counts here; the viewer
+    // work done meanwhile is already in onStepMs (so the buckets still add up
+    // to the wall time).
+    timing.forceEvalMs += Math.max(0, performance.now() - t - overlapMs);
     return result;
   };
   const totalStart = performance.now();
@@ -708,8 +749,7 @@ export async function runMDSimulation({
     const volumeA3 = cellVolume(state.lattice);
 
     if (onStep) {
-      t0 = performance.now();
-      onStep({
+      const payload = {
         step: state.step,
         timeFs: state.timeFs,
         temperatureK: temp,
@@ -719,9 +759,10 @@ export async function runMDSimulation({
         etotEv: etot,
         pressureGPa,
         volumeA3,
-        state,
-      });
-      timing.onStepMs += performance.now() - t0;
+        state: pipeline ? snapshotStepState(state) : state,
+      };
+      if (pipeline) deferredStep = payload;
+      else runOnStep(payload);
     }
     timing.steps = state.step - startStep;
 
@@ -736,16 +777,42 @@ export async function runMDSimulation({
       lastYield = performance.now();
     }
   }
+  // The last step's viewer update/frame save has nothing left to overlap.
+  if (deferredStep) {
+    const payload = deferredStep;
+    deferredStep = null;
+    runOnStep(payload);
+  }
   timing.totalMs = performance.now() - totalStart;
   timing.viewerMs = mdProfileBuckets.viewerMs;
   timing.plotMs = mdProfileBuckets.plotMs;
   timing.saveMs = mdProfileBuckets.saveMs;
+  lastMdTiming = {
+    ...timing,
+    fastFrames: mdProfileBuckets.fastFrames,
+    fullFrames: mdProfileBuckets.fullFrames,
+  };
   if (general.mdProfile) logMdProfile(timing);
 
   return {
     stopped,
     stepsRun: state.step - startStep,
     timing,
+  };
+}
+
+/** Step i's state as onStep sees it when the viewer runs one step behind the
+ *  integrator (pipelined MD): the arrays the viewer, the frame snapshot and
+ *  "Continue MD" read are copied; constants (types, masses, keptIndices) are
+ *  shared. */
+function snapshotStepState(state) {
+  return {
+    ...state,
+    lattice: clone3xN(state.lattice),
+    positions: clone3xN(state.positions),
+    velocities: clone3xN(state.velocities),
+    forces: clone3xN(state.forces),
+    stress: Array.isArray(state.stress) ? clone3xN(state.stress) : state.stress,
   };
 }
 

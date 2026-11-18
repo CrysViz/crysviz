@@ -5,6 +5,7 @@ import { swallowClickAfterDrag } from './panels/PanelWindow.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../render/index.js';
 import {updateForces} from '../render/index.js';
+import { ensureArrowRanges } from './ArrowRange.js';
 import {fieldBrowser} from './FieldPanel.js';
 import { setActiveField, updateField, deleteField, disposeOverlayMeshes} from '../render/index.js';
 import {updateLatticeComparisonPanel, removeLatticeComparisonPopup} from './LatticeComparisonPanel.js';
@@ -14,7 +15,7 @@ import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import { recenterCamera, captureCameraSnapshot, applyCameraSnapshot, fitCameraToCurrentStructure } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
 import { count as traceCount } from '../debug/debugTrace.js';
-import { generateID } from '../utils/index.js';
+import { generateID, releaseIDs } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
 import { captureContainerSizes, applyContainerSizes } from './SizePrefs.js';
 import { captureSelectionSnapshot, restoreSelectionSnapshot } from './SelectAndHighlightModule.js';
@@ -573,9 +574,14 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     e.stopPropagation();
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     structureShip.len = structureShip.len - 1;
-    structureShip.container.splice(rowIndex, 1);
+    const [removed] = structureShip.container.splice(rowIndex, 1);
+    releaseContainerIDs(removed);
     row.remove();
     selectLastAddedRow();
+    // Rebuild the open panels for the new selection, as a row click does: the
+    // Trajectory panel's transport handlers close over the shown container, so
+    // left alone they kept driving (and kept alive) the deleted trajectory.
+    refreshActivePanels();
     // The removed row may have been checked — re-derive combine/comparison state.
     updateCombineButtonState();
     syncOverlayFromCheckboxes();
@@ -583,6 +589,21 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   rowObjects.set(row, obj);
   return row;
+}
+
+/** Give a deleted row's registered atom and bond ids back to the global
+ *  usedIDs registry, which otherwise keeps every id ever minted. A store-backed
+ *  trajectory's frames are mostly unmaterialized holes; its live frame's atoms
+ *  carry unregistered ids (a no-op here) but its bonds are registered. */
+function releaseContainerIDs(container) {
+  if (!container) return;
+  const structures = [...(container.structures || [])];
+  if (container._live) structures.push(container._live);
+  for (const s of structures) {
+    if (!s) continue;
+    releaseIDs(s.atoms);
+    releaseIDs(s.bonds);
+  }
 }
 
 /** Select a specific row element (its current position in the table decides
@@ -1162,10 +1183,10 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
   if (container !== lastActiveContainer) applyContainerSizes(container);
   syncPlanesForSelectedStructure();
   refreshBackendTheme();
-  let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
-  if (spins != null && general.spinsActive) updateSpins();
-  let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-  if (forces != null && general.forcesActive) updateForces();
+  // The colour ranges belong to this structure before anything is coloured
+  // (ui/ArrowRange.js): its stored range, else its Auto Range — not
+  // whatever the previous structure (or the default 0 .. 2) left behind.
+  ensureArrowRanges(structure);
   // Point the field browser at the newly selected structure's catalog. Going
   // through the catalog rather than the flat `fields` array matters for proxy
   // formats: a WAVECAR's `fields` is empty until a band is expanded, but the
@@ -1196,6 +1217,11 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
   rebuildPanel('polyhedra');
   refreshOverlayLatticePlots(); // only updates if the lattice-overlay popup is on
   updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true, reRenderComposition: true});
+  // Arrows after updateVisualization, which computes this frame's atom
+  // positions (periodic.visibleWrapped): drawn before it, they sat where the
+  // atoms were in the previously shown step.
+  if (structure.spins?.length && general.spinsActive) updateSpins();
+  if (structure.forces?.length && general.forcesActive) updateForces();
 
   if (rowChanged) {
     if (!app.cameraLocked) {

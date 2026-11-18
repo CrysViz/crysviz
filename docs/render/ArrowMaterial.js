@@ -6,9 +6,11 @@
 // (ui/SelectAndHighlightModule.js) without recoloring it.
 
 import * as THREE from '../external/three/three.module.js';
-import { createStyledMaterial } from './MaterialStyles.js';
+import { createStyledMaterial, ARROW_MESH_KEYS } from './MaterialStyles.js';
+import { CEL_OUTLINE_LAYER, CEL_OCCLUDER_LAYER } from './CelOutlinePass.js';
 import { getAtomVisSettings } from '../defaults/color_texture_defaults.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
+import { general, groups } from '../state/store.js';
 
 export function createArrowMaterial() {
   const material = createStyledMaterial(getAtomVisSettings());
@@ -52,6 +54,56 @@ export function addArrowEmissiveAttributes(mesh, instanceCount) {
   const opacity = new Float32Array(instanceCount);
   opacity.fill(1);
   mesh.geometry.setAttribute('instanceOpacity', new THREE.InstancedBufferAttribute(opacity, 1));
+}
+
+/**
+ * Give every arrow mesh a material in the current render style
+ * (general.renderStyle: metallic, matte or cel). The arrows are built once
+ * and reused while their count stays the same, so without this they kept the
+ * style they were created in: shiny arrows among cel-shaded atoms, or toon
+ * arrows after switching back. Keeps the transparency a focus region set.
+ * Call when the render style changes.
+ */
+export function restyleArrowMaterials() {
+  for (const key of ARROW_MESH_KEYS) {
+    const mesh = groups[key];
+    if (!mesh?.material) continue;
+    const old = mesh.material;
+    const material = createArrowMaterial();
+    mesh.material = material;
+    const spec = old.userData?.transparencySpec;
+    if (spec) applyTransparency(material, { ...spec, mesh });
+    old.dispose();
+    applyArrowCelOutline(mesh);
+  }
+}
+
+/**
+ * The cel outline of one arrow mesh (call when it is built, and when the
+ * render style, the outline mode or general.celOutlineArrows changes). The
+ * arrow always hides the lines behind it (CEL_OCCLUDER_LAYER) and, outlined,
+ * takes part in the screen-space pass (CEL_OUTLINE_LAYER). In 3D-hull mode
+ * the arrows get no outline: inverted hulls suit them badly (thin, very
+ * unevenly scaled and running through atoms, they showed hairline or
+ * missing outlines, spikes, and shells poking through the atoms around
+ * them), and lines drawn around them clash with the atoms' and bonds'
+ * rings. A hull left from an earlier build is removed.
+ */
+export function applyArrowCelOutline(mesh) {
+  if (!mesh) return;
+  mesh.layers.enable(CEL_OCCLUDER_LAYER);
+  if (general.celOutlineArrows !== false) mesh.layers.enable(CEL_OUTLINE_LAYER);
+  else mesh.layers.disable(CEL_OUTLINE_LAYER);
+  const hull = mesh.userData.celOutline;
+  if (hull) {
+    mesh.remove(hull);
+    delete mesh.userData.celOutline;
+  }
+}
+
+/** applyArrowCelOutline on every arrow mesh. */
+export function refreshArrowCelOutlines() {
+  for (const key of ARROW_MESH_KEYS) applyArrowCelOutline(groups[key]);
 }
 
 export function syncArrowTransparency(mesh, needsTransparency = false) {

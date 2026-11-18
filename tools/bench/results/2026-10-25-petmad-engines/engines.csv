@@ -1,0 +1,61 @@
+model,threads,engine,atoms,ms,status,peak_rss_mb
+s,1,native,13,815.2,ok,
+s,1,native,104,5195.3,ok,
+s,1,native,351,18297.2,ok,
+s,1,native,832,43652.4,ok,
+s,1,pytorch,13,273.4,ok,
+s,1,pytorch,104,1501.4,ok,
+s,1,pytorch,351,7987.0,ok,
+s,1,pytorch,832,29975.5,ok,
+s,1,wasm-new,13,2177,ok,945
+s,1,wasm-new,104,15303,ok,1215
+s,1,wasm-new,351,51173,ok,2423
+s,1,wasm-new,832,,out of memory,759
+s,1,wasm-old,13,2375,ok,1270
+s,1,wasm-old,104,,out of memory,753
+s,1,wasm-old,351,,out of memory,754
+s,4,native,13,358.6,ok,
+s,4,native,104,2942.5,ok,
+s,4,native,351,9378.9,ok,
+s,4,native,832,14638.6,ok,
+s,4,pytorch,13,175.3,ok,
+s,4,pytorch,104,782.2,ok,
+s,4,pytorch,351,3521.4,ok,
+s,4,pytorch,832,10890.9,ok,
+s,4,wasm-new,13,845,ok,1102
+s,4,wasm-new,104,5979,ok,1564
+s,4,wasm-new,351,18810,ok,2743
+s,4,wasm-new,832,,out of memory,845
+s,4,wasm-old,13,1185,ok,1603
+s,4,wasm-old,104,,out of memory,843
+s,4,wasm-old,351,,out of memory,843
+xs,1,native,13,213.1,ok,
+xs,1,native,104,1649.2,ok,
+xs,1,native,351,5795.1,ok,
+xs,1,native,832,13644.9,ok,
+xs,1,pytorch,13,121.4,ok,
+xs,1,pytorch,104,567.1,ok,
+xs,1,pytorch,351,2644.2,ok,
+xs,1,pytorch,832,6568.6,ok,
+xs,1,wasm-new,13,665,ok,361
+xs,1,wasm-new,104,4877,ok,652
+xs,1,wasm-new,351,15813,ok,1339
+xs,1,wasm-new,832,48053,ok,2673
+xs,1,wasm-old,13,1196,ok,638
+xs,1,wasm-old,104,4545,ok,2325
+xs,1,wasm-old,351,,out of memory,197
+xs,4,native,13,146.7,ok,
+xs,4,native,104,932.6,ok,
+xs,4,native,351,3286.8,ok,
+xs,4,native,832,5506.0,ok,
+xs,4,pytorch,13,86.6,ok,
+xs,4,pytorch,104,339.3,ok,
+xs,4,pytorch,351,1278.6,ok,
+xs,4,pytorch,832,2985.2,ok,
+xs,4,wasm-new,13,1141,ok,631
+xs,4,wasm-new,104,1707,ok,866
+xs,4,wasm-new,351,6968,ok,1543
+xs,4,wasm-new,832,10435,ok,2898
+xs,4,wasm-old,13,1356,ok,845
+xs,4,wasm-old,104,7676,ok,2534
+xs,4,wasm-old,351,,out of memory,351

@@ -22,7 +22,7 @@
 //                                  needed for acceptable blending (OIT: false)
 
 import { app } from '../../state/store.js';
-import { renderCelOutlinePass } from '../CelOutlinePass.js';
+import { prepareCelOutlinePass, renderCelOutlinePass } from '../CelOutlinePass.js';
 
 export class ForwardPipeline {
   static id = 'forward';
@@ -35,11 +35,12 @@ export class ForwardPipeline {
   // its CPU back-to-front triangle sort on camera-move end.
   needsCpuTriangleSort = true;
 
-  /** One frame: main scene pass, then the screen-space cel outline composite
-   *  (a no-op unless cel style + screen outline mode are active). Any pipeline
+  /** One frame: the cel outline pass's depth targets, the main scene pass,
+   *  then the outline composite (no-ops outside cel style). Any pipeline
    *  that ends with final color in the default framebuffer can reuse the
    *  outline pass the same way. */
   render({ renderer, scene, camera }) {
+    prepareCelOutlinePass(renderer, scene, camera);
     renderer.render(scene, camera);
     renderCelOutlinePass(renderer, scene, camera);
   }

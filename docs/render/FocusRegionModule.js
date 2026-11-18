@@ -11,6 +11,7 @@ import { requestRender } from './AnimateModule.js';
 import { syncArrowTransparency } from './ArrowMaterial.js';
 import { applyFocusToPolyhedra } from './PolyhedraModule.js';
 import { applyFocusToChargeBadges } from './ChargeBadgeModule.js';
+import { applyFocusToAtomLabels } from './AtomLabelModule.js';
 import { applyFocusToHydrogenBonds } from './HydrogenBondModule.js';
 import { refreshAsuHighlight } from './asuHighlightHook.js';
 
@@ -217,12 +218,43 @@ export function resetFocusRegionCenter(region, structure = fileBrowser.selectedS
   applyFocusRegionEdit(structure);
 }
 
+// One-entry cache of periodicBasis by the cell's values. getFocusOpacityForInstance
+// runs once per atom and twice per bond on every fast MD / playback frame
+// (applyFocusRegions); inverting the cell on each call was most of that
+// frame's main-thread time (a 1.7k-atom trajectory: ~30 of ~40 ms).
+let basisCacheKey = null;
+let basisCacheValue = null;
+function cachedPeriodicBasis(lattice) {
+  if (!Array.isArray(lattice) || lattice.length !== 3) return null;
+  const key = basisCacheKey;
+  if (key && key.length === 9) {
+    let same = true;
+    for (let r = 0; r < 3 && same; r++) {
+      for (let c = 0; c < 3; c++) {
+        if (key[r * 3 + c] !== lattice[r]?.[c]) { same = false; break; }
+      }
+    }
+    if (same) return basisCacheValue;
+  }
+  basisCacheKey = [0, 1, 2].flatMap((r) => [0, 1, 2].map((c) => lattice[r]?.[c]));
+  basisCacheValue = periodicBasis(lattice.map((row) => [...row]));
+  return basisCacheValue;
+}
+
+const isActiveRegion = (region) => region?.enabled && region.center?.length;
+
 export function getFocusOpacityForInstance(instanceIndex, structure = fileBrowser.selectedStructure) {
+  // No regions: the usual case, and this runs twice per bond on a rebuild.
+  if (!structure?.focusRegions?.length) return 1;
   const wrapped = structure?.periodic?.visibleWrapped;
   const point = wrapped?.cart?.[instanceIndex];
   if (!point) return 1;
+  const regions = getFocusRegions(structure);
+  // Same predicate as combinedFocusOpacity: nothing enabled means full opacity,
+  // and then the periodic basis is not needed at all.
+  if (!regions.some(isActiveRegion)) return 1;
   return combinedFocusOpacity(point, wrapped.srcIndex?.[instanceIndex] ?? instanceIndex,
-    getFocusRegions(structure), periodicBasis(structure.lattice));
+    regions, cachedPeriodicBasis(structure.lattice));
 }
 
 /** Focus opacity of one polyhedron (model/Polyhedron: Cartesian `vertices`,
@@ -405,6 +437,7 @@ export function applyFocusRegions(structure = fileBrowser.selectedStructure) {
   applyFocusToPolyhedra(structure);
   applyFocusToField(structure);
   applyFocusToChargeBadges(structure);
+  applyFocusToAtomLabels(structure);
   applyFocusToHydrogenBonds(structure);
   refreshAsuHighlight();
   requestRender();

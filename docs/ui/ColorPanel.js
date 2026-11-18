@@ -1,21 +1,23 @@
 import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
 import { app, groups,fileBrowser, general, RENDERING_DEFAULTS} from '../state/store.js';
-import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors,getJetColors} from '../defaults/color_texture_defaults.js'
+import { colorMapColors, colorMapTable, colorBin } from '../render/ColorMapBins.js'
 
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
 import { updateSingleBondColor } from '../render/index.js'
 import { updatePolyhedra, updatePolyhedraColors, setCelHullWidth, setCelHullPolyWidth, setCelOutlineColor } from '../render/index.js'
-import { listPipelines, setActivePipeline, isPngCaptureInProgress, requestRender } from '../render/index.js'
+import { listPipelines, setActivePipeline, isPngCaptureInProgress, requestRender, restyleArrowMaterials, refreshArrowCelOutlines } from '../render/index.js'
+import { createToggleRow } from './ToggleSwitch.js'
 import { updateGroundPlane } from '../render/index.js'
+import { GROUND_DIRECTIONS } from '../render/groundDirection.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
 import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
 import { saveBondStyles } from './SizePrefs.js'
 import { createColorBar } from './ColorBarWidget.js'
 import { registerColorBarSource } from './ColorBarRegistry.js'
-import { computeAutoRange } from '../utils/index.js'
+import { computeAutoRange, logScaleFloor } from '../utils/index.js'
 
 let synchronizeControllerPipelineVisibility = () => {};
 
@@ -170,47 +172,15 @@ function updateBondColorsByLength() {
   }
 }
 
-function colorMapColors(colorMapName) {
-  switch (colorMapName) {
-    case "batlow": return getBatlowColors();
-    case "hawaii": return getHawaiiColors();
-    case "managua": return getManaguaColors();
-    case "viridis": return getViridisColors();
-    case "plasma": return getPlasmaColors();
-    case "spectralR": return getSpectralRColors();
-    case "jet": return getJetColors();
-    default: return getHeatMapColors();
-  }
-}
-
-const COLOR_LOG_EPS = 1e-6;
-
 function valueToColor(value, minVal, maxVal, colorMapName, useLog = false) {
-  const colors = colorMapColors(colorMapName);
-  if (!colors || colors.length === 0) {
+  // The map's '#rrggbb' strings, built once (render/ColorMapBins.js): this
+  // runs once per atom or bond, and building the map's colours each call cost
+  // ~1 s per recolour at 50k atoms.
+  const table = colorMapTable(colorMapName);
+  if (!table.n) {
     return "#ffffff";
   }
-
-  const nBins = colors.length;
-  const clamped = Math.max(minVal, Math.min(maxVal, value));
-  let t;
-  if (useLog) {
-    const lo = Math.log10(Math.max(minVal, COLOR_LOG_EPS));
-    const hi = Math.log10(Math.max(maxVal, COLOR_LOG_EPS));
-    const v = Math.log10(Math.max(clamped, COLOR_LOG_EPS));
-    t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
-  } else {
-    t = (maxVal > minVal) ? (clamped - minVal) / (maxVal - minVal) : 0.5;
-  }
-  const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
-  // getHexString(), not manual r*255 truncation: these THREE.Color objects
-  // store their intended sRGB appearance internally as linear (color
-  // management), so reading .r/.g/.b directly and truncating them as if
-  // they were already 0-255 sRGB values skips the linear->sRGB conversion
-  // getHexString() does — same value ends up a visibly different color than
-  // what the same colormap+value renders as on an instanced mesh (which
-  // reads .r/.g/.b directly, correctly, as linear).
-  return `#${colors[bin].getHexString()}`;
+  return table.hex[colorBin(value, minVal, maxVal, table.n, useLog)];
 }
 
 export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
@@ -360,6 +330,7 @@ export function addColorPanel(target = "colorContainer") {
     // is a tracer-only analytic-mirror control, so its row is toggled here.
     groundReflectRow.style.display = isTracer ? "grid" : "none";
     renderStyleMenu.style.display = isRaster ? "grid" : "none";
+    atomDetailMenu.style.display = isRaster ? "grid" : "none";
     outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
     // Structure-window tracer-only blocks (material editors) hide under the
     // raster pipelines via this body class (see styles.css). The underlying
@@ -385,6 +356,9 @@ export function addColorPanel(target = "colorContainer") {
       SecondReRenderAtoms: hasComparison,
       SecondReRenderBonds: hasComparison,
     });
+    // Force, spin and phonon arrows take the new style too.
+    restyleArrowMaterials();
+    requestRender();
     // Hull outlines are children created at polyhedra build time — rebuild so
     // they appear/disappear with the style (no-op when polyhedra are off).
     if (general.celOutlineMode === "hull") updatePolyhedra();
@@ -392,6 +366,18 @@ export function addColorPanel(target = "colorContainer") {
     // the atoms' look (the Composition Display swatches) re-render on the
     // same event every bulk recolour already broadcasts.
     document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
+  });
+
+  // Atom level of detail (render/AtomLodModule.js). Rebuilds the atoms mesh:
+  // the two variants have different geometry and a different material, so
+  // nothing can be re-parameterised in place.
+  const atomDetailMenu = createDropdown("atomDetailMenu", "Atom detail", [
+    { value: "auto", text: "Auto (imposters for large structures)", selected: general.atomDetail === "auto" },
+    { value: "spheres", text: "Spheres", selected: general.atomDetail === "spheres" },
+    { value: "imposters", text: "Imposters", selected: general.atomDetail === "imposters" },
+  ], () => {
+    general.atomDetail = atomDetailMenu.querySelector("select").value;
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: false });
   });
 
   // Rendering pipeline (how a frame is drawn) — the top of the tree.
@@ -686,6 +672,11 @@ export function addColorPanel(target = "colorContainer") {
     rowEl.appendChild(select);
     return rowEl;
   };
+  // Which side of the structure the ground lies on: below (−y, the original),
+  // below or behind the view (follows the camera), or a fixed world or crystal
+  // side. Placement changes, so the raster disc is re-placed too.
+  groundOptions.appendChild(groundSelectRow('rtGroundDirection', 'Ground position', GROUND_DIRECTIONS,
+    general.rtGroundDirection ?? 'down', (v) => { general.rtGroundDirection = v; updateGroundPlane(); }));
   groundOptions.appendChild(groundSelectRow('rtGroundPattern', 'Ground pattern', [
     ['solid', 'Solid'],
     ['checker', 'Checkerboard'],
@@ -759,6 +750,7 @@ export function addColorPanel(target = "colorContainer") {
 
   // Render Style follows the per-pipeline knobs (raster pipelines only).
   content.appendChild(renderStyleMenu);
+  content.appendChild(atomDetailMenu);
 
   // Cel outline controls: mode selector plus mode-specific width sliders.
   // Both widths are world units. 'Screen space' = post-process with clean
@@ -793,14 +785,36 @@ export function addColorPanel(target = "colorContainer") {
       SecondReRenderBonds: hasComparison,
     });
     updatePolyhedra(); // add/remove polyhedra hull children
+    refreshArrowCelOutlines(); // and the arrows' (force/spin/phonon) hulls
+    requestRender();
   });
   outlineBlock.appendChild(outlineModeMenu);
 
   const screenControls = createElement("div", {},
     { display: general.celOutlineMode === "screen" ? "block" : "none" });
+  // Force, spin and phonon arrows get the screen-space outline too, unless
+  // switched off: thin arrows coloured by a colour map can read better bare.
+  // Either way an arrow hides the lines behind it. In 3D-hull mode the
+  // arrows get no outline at all (the shells never suited them, and lines
+  // around them clash with the atoms' and bonds' rings), so the switch
+  // lives with the screen-space controls.
+  const { row: outlineArrowsRow } = createToggleRow({
+    id: "celOutlineArrowsToggle",
+    label: "Outline arrows",
+    rowClass: "toggle_row toggle_container cv-outline-arrows-row",
+    checked: general.celOutlineArrows !== false,
+    onChange: (on) => {
+      general.celOutlineArrows = on;
+      refreshArrowCelOutlines();
+      requestRender();
+    },
+  });
+  screenControls.appendChild(outlineArrowsRow);
+
   // Quadratic slider response: most of the travel controls thin widths, where
-  // the differences matter; the top end caps at a moderate max thickness.
-  const CEL_OUTLINE_MAX = 0.1; // world units at slider max
+  // the differences matter; the top end caps at a moderate max thickness
+  // (0.05 Å; the default 0.0125 Å sits at the slider's middle).
+  const CEL_OUTLINE_MAX = 0.05; // world units at slider max
   const outlineSlider = createElement("input", {
     type: "range", id: "celOutlineWidth", min: "0", max: "1", step: "0.01",
     value: String(Math.sqrt(Math.min(general.celOutlineWidth, CEL_OUTLINE_MAX) / CEL_OUTLINE_MAX)),
@@ -925,12 +939,14 @@ export function addColorPanel(target = "colorContainer") {
     // pipeline + style first: they drive the visibility tree and rebuilds
     if (general.renderPipeline !== D.renderPipeline) fire('renderPipelineMenu', D.renderPipeline, 'change');
     if (general.renderStyle !== D.renderStyle) fire('renderStyleMenu', D.renderStyle, 'change');
+    if (general.atomDetail !== D.atomDetail) fire('atomDetailMenu', D.atomDetail, 'change');
     if (general.celOutlineMode !== D.celOutlineMode) fire('celOutlineModeMenu', D.celOutlineMode, 'change');
     if (general.celOutlineColorMode !== D.celOutlineColorMode) fire('celOutlineColorMenu', D.celOutlineColorMode, 'change');
     fire('depthPeelLayersSlider', D.depthPeelLayers, 'input');
     fire('celOutlineWidth', Math.sqrt(D.celOutlineWidth / CEL_OUTLINE_MAX), 'input'); // quadratic slider
     fire('celHullWidth', D.celHullWidth, 'input');
     fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
+    fireCheck('celOutlineArrowsToggle', D.celOutlineArrows);
     outlineCustomPicker.setHex(D.celOutlineColor); // fires onChange → state + render
     fire('rtResolutionScale', D.rtResolutionScale, 'input');
     fireCheck('rtTiledToggle', D.rtTiledRender);
@@ -946,6 +962,7 @@ export function addColorPanel(target = "colorContainer") {
     fire('rtDofFocus', D.rtDofFocus, 'input');
     fireCheck('rtGroundToggle', D.rtGroundPlane);
     fire('rtGroundPattern', D.rtGroundPattern, 'change');
+    fire('rtGroundDirection', D.rtGroundDirection ?? 'down', 'change');
     // quadratic sliders: the ELEMENT holds a [0,1] position
     fire('rtGroundOffset', sizeValueToSlider(D.rtGroundOffset, GROUND_OFFSET_RANGE), 'input');
     fire('rtGroundSize', sizeValueToSlider(D.rtGroundSize, GROUND_SIZE_RANGE), 'input');
@@ -1114,7 +1131,8 @@ export function addColorPanel(target = "colorContainer") {
   function applyAtomLogScale(isLog) {
     general.atomColorScale = isLog ? "log" : "linear";
     if (isLog && general.ForceMin <= 0) {
-      general.ForceMin = 0.01;
+      // Where the log Auto Range would start (a fixed 0.01 sat above small forces).
+      general.ForceMin = logScaleFloor(general.ForceMax, atomForceMagnitudes());
       atomsColorBar?.setRange(general.ForceMin, general.ForceMax);
     }
     atomsLogCheckbox.checked = isLog;
@@ -1131,18 +1149,21 @@ export function addColorPanel(target = "colorContainer") {
   // Shared by atomsAutoRangeBtn and the layout menu's own "Auto Range" item.
   // Recomputes min/max from the structure's actual force magnitudes, padded
   // 20% of the data's own span on each side (computeAutoRange).
+  function atomForceMagnitudes() {
+    return (fileBrowser.selectedStructure?.forces ?? []).map((force) => {
+      if (!force?.vector) return NaN;
+      return Math.sqrt(force.vector[0] ** 2 + force.vector[1] ** 2 + force.vector[2] ** 2);
+    });
+  }
+
   function applyAtomAutoRange() {
     const structure = fileBrowser.selectedStructure;
-    if (!structure?.forces?.length) return;
-    const magnitudes = structure.forces.map((force) => {
-      if (!force?.vector) return NaN;
-      const mag = Math.sqrt(force.vector[0] ** 2 + force.vector[1] ** 2 + force.vector[2] ** 2);
-      return mag;
-    });
-    const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true });
+    const magnitudes = atomForceMagnitudes();
+    if (!magnitudes.length) return;
+    const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true, log: general.atomColorScale === "log" });
     if (!range) return;
     let { min, max } = range;
-    if (general.atomColorScale === "log" && min <= 0) min = 0.01;
+    if (general.atomColorScale === "log" && min <= 0) min = logScaleFloor(max);
     general.ForceMin = min;
     general.ForceMax = max;
     atomsColorBar?.setRange(min, max);
@@ -1255,8 +1276,7 @@ export function addColorPanel(target = "colorContainer") {
     updatePolyhedraColors();
     // A mode switch is a bulk recolour: broadcast on the same event every other
     // bulk recolour uses, so UIs mirroring the colour state (the Composition
-    // swatches, the trajectory player's "full render" note for force colouring)
-    // learn about it without polling.
+    // swatches) learn about it without polling.
     document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
   }
 
@@ -1340,7 +1360,7 @@ export function addColorPanel(target = "colorContainer") {
   function applyBondLogScale(isLog) {
     general.bondColorScale = isLog ? "log" : "linear";
     if (isLog && general.BondMin <= 0) {
-      general.BondMin = 0.01;
+      general.BondMin = logScaleFloor(general.BondMax, visibleBondLengths());
       bondsColorBar?.setRange(general.BondMin, general.BondMax);
     }
     bondsLogCheckbox.checked = isLog;
@@ -1354,16 +1374,19 @@ export function addColorPanel(target = "colorContainer") {
   // Shared by bondsAutoRangeBtn and the layout menu's own "Auto Range" item.
   // Recomputes min/max from the actual visible bond lengths, padded 20% of
   // the data's own span on each side (computeAutoRange).
-  function applyBondAutoRange() {
-    const bonds = fileBrowser.selectedStructure?.bonds;
-    if (!bonds?.length) return;
-    const lengths = bonds
+  function visibleBondLengths() {
+    return (fileBrowser.selectedStructure?.bonds ?? [])
       .filter((bond) => bond.visibleLen && bond.visibleLen > 1e-3)
       .map((bond) => bond.dist);
-    const range = computeAutoRange(lengths, 0.2, { clampMinAtZero: true });
+  }
+
+  function applyBondAutoRange() {
+    if (!fileBrowser.selectedStructure?.bonds?.length) return;
+    const lengths = visibleBondLengths();
+    const range = computeAutoRange(lengths, 0.2, { clampMinAtZero: true, log: general.bondColorScale === "log" });
     if (!range) return;
     let { min, max } = range;
-    if (general.bondColorScale === "log" && min <= 0) min = 0.01;
+    if (general.bondColorScale === "log" && min <= 0) min = logScaleFloor(max);
     general.BondMin = min;
     general.BondMax = max;
     bondsColorBar?.setRange(min, max);
@@ -1510,8 +1533,8 @@ export function addColorPanel(target = "colorContainer") {
       bondsSolidColorPicker = null;
     }
     updatePolyhedraColors();
-    // Bulk recolour broadcast (see onAtomsModeChange): lets the trajectory
-    // player show/hide its "full render each frame" note for Length mode.
+    // Bulk recolour broadcast (see onAtomsModeChange): UIs mirroring the
+    // colour state learn about the switch.
     document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
   }
 

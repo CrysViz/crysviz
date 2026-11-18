@@ -6,25 +6,45 @@
 
 import { latticeParameters, fracToCartPoint } from '../math/index.js';
 import { pressureGPa, tensorGPa } from '../model/index.js';
+import { formatWithSu } from '../model/cifErrors.js';
 
 const num = (v, digits = 6, width = 0) => {
   const text = Number.isFinite(v) ? v.toFixed(digits) : 'nan';
   return width ? text.padStart(width) : text;
 };
 
-/** The three lattice vectors, one per line (Å, 6 decimals). */
-export function latticeText(lattice) {
-  return lattice.map((row) => row.map((v) => num(v, 6, 12)).join(' ')).join('\n');
+/** The three lattice vectors, one per line (Å, 6 decimals) — a component
+ *  with an s.u. (`su`, 3×3 like the lattice: CIF errors, model/cifErrors.js
+ *  latticeVectorSus) written with it, 4.91600(10). */
+export function latticeText(lattice, su = null) {
+  return lattice.map((row, i) => row.map((v, k) => withSu(v, su?.[i]?.[k], 6).padStart(12)).join(' ')).join('\n');
 }
 
-/** "a = 5.4455 Å  b = …  c = …  α = 90.000°  β = …  γ = …  V = 366.1234 Å³". */
-export function latticeParamsText(lattice) {
+/** A value, with its s.u. in parentheses when it has one (CIF errors,
+ *  model/cifErrors.js formatWithSu): 5.4307(2); else to `digits` decimals. */
+const withSu = (v, su, digits) => (Number.isFinite(v) ? formatWithSu(v, su, digits) : 'nan');
+
+/**
+ * The lattice parameters and volume, one item each:
+ * ["a = 5.4455 Å", …, "α = 90.000°", …, "V = 366.1234 Å³"]. With `su` (the
+ * s.u.s of a, b, c, α, β, γ, V from a CIF, model/cifErrors.js
+ * cellParameterSus) a value that has one is written with it, a = 5.4307(2) Å.
+ * @param {number[][]} lattice
+ * @param {number[]|null} [su]
+ */
+export function latticeParamItems(lattice, su = null) {
   const p = latticeParameters(lattice);
-  return [
-    `a = ${num(p.a, 4)} Å`, `b = ${num(p.b, 4)} Å`, `c = ${num(p.c, 4)} Å`,
-    `α = ${num(p.alpha, 3)}°`, `β = ${num(p.beta, 3)}°`, `γ = ${num(p.gamma, 3)}°`,
-    `V = ${num(p.volume, 4)} Å³`,
-  ].join('  ');
+  const values = [p.a, p.b, p.c, p.alpha, p.beta, p.gamma, p.volume];
+  const names = ['a', 'b', 'c', 'α', 'β', 'γ', 'V'];
+  const units = [' Å', ' Å', ' Å', '°', '°', '°', ' Å³'];
+  const digits = [4, 4, 4, 3, 3, 3, 4];
+  return values.map((v, k) => `${names[k]} = ${withSu(v, su?.[k], digits[k])}${units[k]}`);
+}
+
+/** "a = 5.4455 Å  b = …  c = …  α = 90.000°  β = …  γ = …  V = 366.1234 Å³"
+ *  (with s.u.s when `su` is given, see latticeParamItems). */
+export function latticeParamsText(lattice, su = null) {
+  return latticeParamItems(lattice, su).join('  ');
 }
 
 /** A site's label: its element, or "Fe/Ni" for a mixed site, with the
@@ -39,19 +59,31 @@ export function siteLabel(atom, element) {
     : label;
 }
 
+/** A coordinate as the tables write it: 6 decimals, or with its s.u. */
+export const coordText = (v, su) => withSu(v, su, 6);
+
 /**
  * The atomic positions, one row per atom: index, site label, x y z — in the
  * structure's own fractional coordinates, or Cartesian Å when `cartesian`.
- * @returns {{header: string, rows: {index: number, label: string, xyz: number[]}[], text: string}}
+ * `su(atomIndex)` gives an atom's fractional-coordinate s.u.s (CIF errors,
+ * model/cifErrors.js fracCoordinateSus) or null; a fractional row carries them
+ * (`su`, written into the text with the values), a Cartesian one never does.
+ * @param {any} structure
+ * @param {boolean} [cartesian]
+ * @param {{su?: ((atomIndex: number) => number[]|null) | null}} [opts]
+ * @returns {{header: string, rows: {index: number, label: string, xyz: number[], su: number[]|null}[], text: string}}
  */
-export function positionsTable(structure, cartesian = false) {
+export function positionsTable(structure, cartesian = false, { su = null } = {}) {
   const rows = structure.atoms.map((atom, i) => {
     const frac = atom.position;
     const xyz = cartesian ? fracToCartPoint(frac, structure.lattice) : frac;
-    return { index: i + 1, label: siteLabel(atom, structure.elements[i]), xyz: [...xyz] };
+    return {
+      index: i + 1, label: siteLabel(atom, structure.elements[i]), xyz: [...xyz],
+      su: !cartesian && su ? su(i) : null,
+    };
   });
   const header = `# ${cartesian ? 'Cartesian positions (Å)' : 'Fractional positions'}: index element x y z`;
-  const text = [header, ...rows.map((r) => `${String(r.index).padStart(4)} ${r.label.padEnd(6)} ${r.xyz.map((v) => num(v, 6, 12)).join(' ')}`)].join('\n');
+  const text = [header, ...rows.map((r) => `${String(r.index).padStart(4)} ${r.label.padEnd(6)} ${r.xyz.map((v, k) => coordText(v, r.su?.[k]).padStart(12)).join(' ')}`)].join('\n');
   return { header, rows, text };
 }
 
@@ -62,8 +94,9 @@ export function positionsTable(structure, cartesian = false) {
  * the structure's active Wyckoff lock (ui/SymmetryEditModule.js orbitGroups)
  * or a raw moyo dataset whose per-atom `orbits`/`wyckoffs` arrays are
  * index-aligned with `structure.atoms`.
+ * `repIndex` is the atom whose coordinates the row shows.
  * @returns {{spaceGroup: string, number: number | null, hallNumber: number | null,
- *            rows: {element: string, wyckoff: string, siteSymmetry: string, multiplicity: number, xyz: number[], atomIndices: number[]}[]}}
+ *            rows: {element: string, wyckoff: string, siteSymmetry: string, multiplicity: number, xyz: number[], repIndex: number, atomIndices: number[]}[]}}
  */
 export function wyckoffRows(structure, { lock = null, dataset = null } = {}) {
   // moyo writes the HM symbol with spaces ("P m m m"); the Symmetry window
@@ -80,6 +113,7 @@ export function wyckoffRows(structure, { lock = null, dataset = null } = {}) {
         siteSymmetry: g.siteSymmetry ?? '',
         multiplicity: g.multiplicity,
         xyz: [...structure.atoms[g.representativeIndex].position],
+        repIndex: g.representativeIndex,
         atomIndices: [...g.atomIndices],
       })),
     };
@@ -102,17 +136,22 @@ export function wyckoffRows(structure, { lock = null, dataset = null } = {}) {
       siteSymmetry: symbols[rep] ?? '',
       multiplicity: atomIndices.length,
       xyz: [...structure.atoms[rep].position],
+      repIndex: rep,
       atomIndices,
     };
   });
   return { spaceGroup: compact(dataset.hm_symbol), number: dataset.number ?? null, hallNumber: dataset.hall_number ?? null, rows };
 }
 
-/** The Wyckoff rows as text: a space-group line, then one row per orbit. */
-export function wyckoffText(info) {
+/** The Wyckoff rows as text: a space-group line, then one row per orbit —
+ *  with the representative's coordinate s.u.s when `su` gives them (see
+ *  positionsTable). */
+export function wyckoffText(info, { su = null } = {}) {
   const head = `# Space group ${info.spaceGroup}${info.number ? ` (${info.number})` : ''}: element wyckoff site-symmetry x y z`;
-  return [head, ...info.rows.map((r) =>
-    `${r.element.padEnd(4)} ${r.wyckoff.padEnd(5)} ${(r.siteSymmetry || '-').padEnd(8)} ${r.xyz.map((v) => num(v, 6, 12)).join(' ')}`)].join('\n');
+  return [head, ...info.rows.map((r) => {
+    const sus = su && Number.isInteger(r.repIndex) ? su(r.repIndex) : null;
+    return `${r.element.padEnd(4)} ${r.wyckoff.padEnd(5)} ${(r.siteSymmetry || '-').padEnd(8)} ${r.xyz.map((v, k) => coordText(v, sus?.[k]).padStart(12)).join(' ')}`;
+  })].join('\n');
 }
 
 /** Largest per-atom force magnitude (eV/Å) over a structure's forces, or NaN
@@ -165,17 +204,22 @@ export function stressTensorText(structure) {
   return t ? t.map((row) => row.map((v) => num(v, 4, 12)).join(' ')).join('\n') : '';
 }
 
-/** Everything the section shows, as one text for "Copy all". */
-export function structureSummaryText(structure, { name = '', cartesian = false, wyckoff = null } = {}) {
-  const scalars = scalarPropertiesText(structure);
+/** Everything the section shows, as one text for "Copy all" — with the CIF
+ *  errors when given (`latticeSu`, `cellSu`, `su`: see latticeText,
+ *  latticeParamItems, positionsTable) and the data's `source` ("VASP"). */
+export function structureSummaryText(structure, {
+  name = '', cartesian = false, wyckoff = null, latticeSu = null, cellSu = null, su = null, source = null,
+} = {}) {
+  // Where the energy, forces and stress came from (model/dataSource.js), first.
+  const scalars = [source ? `Source: ${source}` : '', scalarPropertiesText(structure)].filter(Boolean).join('\n');
   const stress = stressTensorText(structure);
   const parts = [
     `# ${name || 'structure'}: ${structure.atoms.length} atoms`,
     ...(scalars ? [scalars, ''] : []),
     ...(stress ? ['# Stress tensor (GPa, compression positive)', stress, ''] : []),
-    '# Lattice vectors (Å)', latticeText(structure.lattice), latticeParamsText(structure.lattice),
-    '', positionsTable(structure, cartesian).text,
+    '# Lattice vectors (Å)', latticeText(structure.lattice, latticeSu), latticeParamsText(structure.lattice, cellSu),
+    '', positionsTable(structure, cartesian, { su }).text,
   ];
-  if (wyckoff?.rows?.length) parts.push('', wyckoffText(wyckoff));
+  if (wyckoff?.rows?.length) parts.push('', wyckoffText(wyckoff, { su }));
   return `${parts.join('\n')}\n`;
 }

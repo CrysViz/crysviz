@@ -13,7 +13,8 @@ import { getPanel, isCompactViewport } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
-import { updateForces, updateSpins } from '../../render/index.js';
+import { updateForces, updateSpins, refreshAtomLabelsIfStale } from '../../render/index.js';
+import { createAtomLabelsButton, createChargesButton } from '../AtomLabelsToggle.js';
 import { applyToOtherTrajectoryFrames, wirePressHoldPopup, getSiteSignatureGroups } from './components/utils.js';
 import { toggleCompositionLegend, refreshCompositionLegend } from '../CompositionLegendWidget.js';
 import { createToggleRow } from '../ToggleSwitch.js';
@@ -499,6 +500,14 @@ export function renderComposition(panelState="closed") {
   addButtonsRow.appendChild(legendButton);
   refreshCompositionLegend();
 
+  // Atom labels (Aₓ) on or off: each atom's name, as its row below names it,
+  // drawn on the atom in the main view and in the inspectors. A switch, so it
+  // shows its state (pressed while on); the inspectors offer the same one
+  // (ui/AtomLabelsToggle.js).
+  addButtonsRow.appendChild(createAtomLabelsButton('atomLabelsButton'));
+  // Charges beside it: the oxidation states as badges (Features ▸ Show Charges).
+  addButtonsRow.appendChild(createChargesButton('chargeBadgesButton'));
+
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');
   titleWrapper.className = 'si-title-row';
@@ -801,6 +810,11 @@ showPanel(modePanelIds[initialMode] ?? 'atomPanel')
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   const volume = getLatticeVolume(lattice);
   volumeDiv.textContent = `Volume: ${volume} Å³`;
+
+  // The atom labels name atoms as these rows do — orbit names while a Wyckoff
+  // lock is on — and a lock switched on or off re-renders this window without
+  // rebuilding the atoms: bring the labels (and the inspectors') in step.
+  refreshAtomLabelsIfStale();
 
 }
 

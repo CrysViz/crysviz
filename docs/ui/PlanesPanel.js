@@ -7,7 +7,7 @@ import { getSelectedAtoms, subscribeToAtomSelection } from './SelectAndHighlight
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange, roundToSigFigs } from '../utils/index.js';
+import { computeAutoRange, roundToSigFigs, logScaleFloor } from '../utils/index.js';
 import { saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
 import { setViewDirection } from './WindowAndSceneControls.js';
 
@@ -168,6 +168,21 @@ function findFieldByLabel(label) {
  * every 'crysviz:fields-changed' (ui/FieldPanel.js fieldBrowser.setSelectedField).
  * @returns {number} planes resolved
  */
+/**
+ * Select the first plane coloured by a field, so the Planes window shows its
+ * colour bar (a .crysviz session that brings one opens the window on it:
+ * ui/ShareModule.js). No-op while the window's table is not built.
+ * @returns {boolean} whether a plane was selected
+ */
+export function selectFirstFieldPlane() {
+  const idx = getSelectedStructurePlanes().findIndex((p) => p?.visualization === PLANE_VIS_FIELD && p.field);
+  if (idx < 0 || !document.getElementById('planesTableBody')) return false;
+  selectedPlaneIndex = idx;
+  renderPlanesTable();
+  loadSelectedPlaneParameters();
+  return true;
+}
+
 export function resolvePendingPlaneFields() {
   const structure = getSelectedStructure();
   if (!structure?.planes?.length) return 0;
@@ -225,7 +240,10 @@ function restorePlanes(container, value, structure) {
   return added;
 }
 
-registerStructurePrefField(PLANES_PREF_FIELD, (container, value, structure) => restorePlanes(container, value, structure));
+registerStructurePrefField(PLANES_PREF_FIELD, (container, value, structure) => restorePlanes(container, value, structure), {
+  // Also saved in share links and .crysviz sessions (ui/ShareModule.js).
+  capture: (structure) => serializePlanes(structure),
+});
 
 function ensureStructurePlaneState(structure) {
   if (!structure) return;
@@ -434,7 +452,16 @@ function syncAtomCutPlanesFromSelectedStructure() {
     });
   }
 
+  // Only re-sync the scene when the cut-plane set actually changed. This runs
+  // on every trajectory frame (TrajectoryPanel's applyFrameStructure), and the
+  // updateVisualization below is a full per-bond matrix/colour pass — paid for
+  // nothing when, as in most sessions, there are no planes at all.
+  const signature = JSON.stringify(retainedPlanes);
+  const unchanged = signature === lastAtomCutPlaneSignature
+    && JSON.stringify(general.atomCutPlanes || []) === signature;
   general.atomCutPlanes = retainedPlanes;
+  if (unchanged) return;
+  lastAtomCutPlaneSignature = signature;
   updateAtomCutPlaneState();
   updateVisualization({
     atomsUpdate: false,
@@ -446,6 +473,7 @@ function syncAtomCutPlanesFromSelectedStructure() {
     reRenderComposition: false,
   });
 }
+let lastAtomCutPlaneSignature = null;
 
 export function syncPlanesForSelectedStructure() {
   const structure = getSelectedStructure();
@@ -978,11 +1006,11 @@ function applyPlaneLogScale(isLog) {
   if (!plane) return false;
 
   plane.colormapScale = isLog ? 'log' : 'linear';
-  // log10(0) is -Infinity — floor a min at/below 0 to a small positive
-  // value the moment log scale turns on, same guard Forces/Spins/Atoms/
-  // Bonds all apply.
+  // log10(0) is -Infinity — floor a min at/below 0 the moment log scale
+  // turns on, where the log Auto Range would start (same guard Forces/
+  // Spins/Atoms/Bonds all apply).
   if (isLog && (!Number.isFinite(plane.colormapMin) || plane.colormapMin <= 0)) {
-    plane.colormapMin = 0.01;
+    plane.colormapMin = logScaleFloor(plane.colormapMax, planeLogValues(plane));
     syncPlaneRangeControls(plane.colormapMin, plane.colormapMax);
     planesColorBarInstance?.setRange(plane.colormapMin, plane.colormapMax);
   }
@@ -996,18 +1024,33 @@ function applyPlaneLogScale(isLog) {
 // Shared by the Auto Range button and the layout menu's own "Auto Range"
 // item. Recomputes min/max from the field's actual data range (minValue/
 // maxValue — the field's own already-computed true extremes), padded 20%
-// of the data's own span on each side and rounded to 3 significant figures
+// of the data's own span on each side and rounded out to round numbers
 // (computeAutoRange), exactly matching Forces/Spins/Atoms/Bonds.
+// The field's extremes as a log bar should see them: a field that reaches 0
+// or below (a difference density, a potential) starts three decades under
+// its max instead of at its smallest positive value, which for [-0.2, 30]
+// would have been just under 30.
+function planeLogValues(plane) {
+  const lo = Number(plane.field?.minValue);
+  const hi = Number(plane.field?.maxValue);
+  if (!(hi > 0)) return [];
+  return lo > 0 ? [lo, hi] : [hi / 1000, hi];
+}
+
 function applyPlaneAutoRange() {
   const structure = getSelectedStructure();
   if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) return false;
   const plane = structure.planes[selectedPlaneIndex];
   if (!plane || !plane.field) return false;
 
-  const range = computeAutoRange([Number(plane.field.minValue), Number(plane.field.maxValue)]);
+  const isLog = plane.colormapScale === 'log';
+  const values = isLog && planeLogValues(plane).length
+    ? planeLogValues(plane)
+    : [Number(plane.field.minValue), Number(plane.field.maxValue)];
+  const range = computeAutoRange(values, 0.2, { log: isLog });
   if (!range) return false;
   let { min, max } = range;
-  if (plane.colormapScale === 'log' && min <= 0) min = 0.01;
+  if (isLog && min <= 0) min = logScaleFloor(max);
 
   plane.colormapMin = min;
   plane.colormapMax = max;

@@ -3,6 +3,7 @@ import * as THREE from '../external/three/three.module.js';
 import {app, groups, fileBrowser, general} from '../state/store.js';
 import {getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 import {getElementRadius} from '../defaults/radii_defaults.js'
+import {acquirePersistentMaterial} from './MaterialStyles.js'
 
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsFracUpdateModule.js'
@@ -49,11 +50,16 @@ export function createLatticeLines(color = general.currentLatticeColor) {
   // user-adjustable cell line width (general.latticeLineWidth, world units).
   const settings = getLatticeVisSettings(color);
   const radius = general.latticeLineWidth ?? 0.015;
-  const material = new THREE.MeshBasicMaterial({
-    color: settings.color,
-    transparent: settings.transparent,
-    opacity: settings.opacity,
-  });
+  // Reused across rebuilds (the box is rebuilt on every trajectory frame):
+  // a fresh MeshBasicMaterial per rebuild was one of the three shader
+  // recompiles per frame. disposeGroup leaves persistent materials alone.
+  const material = acquirePersistentMaterial('lattice',
+    JSON.stringify([String(settings.color), settings.transparent, settings.opacity]),
+    () => new THREE.MeshBasicMaterial({
+      color: settings.color,
+      transparent: settings.transparent,
+      opacity: settings.opacity,
+    }));
   const UP = new THREE.Vector3(0, 1, 0);
 
   const lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
@@ -86,6 +92,37 @@ export function createLatticeLines(color = general.currentLatticeColor) {
   });
 
   return group;
+}
+
+/**
+ * Keep the cell lines at least about a pixel wide on screen: their radius
+ * is in world units (general.latticeLineWidth), so zoomed out they fell
+ * below a pixel and showed as broken, stair-stepped lines. Called every
+ * frame before the render (AnimateModule.js); scales the cylinders'
+ * cross-section, never their length.
+ * @param {any} camera
+ * @param {any} renderer
+ */
+export function syncLatticeLineWidth(camera, renderer) {
+  const group = groups.latticeGroup;
+  if (!group || !camera || !renderer) return;
+  const radius = general.latticeLineWidth ?? 0.015;
+  if (!(radius > 0)) return;
+  const h = renderer.domElement.height;
+  let pxPerWorld;
+  if (camera.isOrthographicCamera) {
+    pxPerWorld = (h * camera.zoom) / (camera.top - camera.bottom);
+  } else {
+    const dist = app.controls ? camera.position.distanceTo(app.controls.target) : 1;
+    pxPerWorld = h / (2 * Math.tan((camera.fov * Math.PI / 180) / 2) * Math.max(dist, 1e-3));
+  }
+  const MIN_RADIUS_PX = 0.6;
+  const factor = Math.max(1, MIN_RADIUS_PX / (radius * pxPerWorld));
+  if (Math.abs((group.userData.lineWidthFactor ?? 1) - factor) < 1e-3) return;
+  group.userData.lineWidthFactor = factor;
+  for (const cyl of group.children) {
+    if (cyl.isMesh) cyl.scale.set(factor, 1, factor);
+  }
 }
 
 export function updateLattice(color = general.currentLatticeColor) {
@@ -360,6 +397,18 @@ function imageShiftsOf(wrapped, frac) {
   return shifts
 }
 
+function flatFrac(frac) {
+  const out = new Float64Array(frac.length * 3)
+  for (let i = 0; i < frac.length; i++) {
+    const p = frac[i]
+    if (!p) return null
+    out[i * 3] = p[0]
+    out[i * 3 + 1] = p[1]
+    out[i * 3 + 2] = p[2]
+  }
+  return out
+}
+
 export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
     let bondLenghts = general.bondLengths
@@ -392,6 +441,10 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
       // relax render fast path replays these to move every instance without
       // re-deriving the image set (see render/FastFrameModule.js).
       periodic.wrapped.imageShifts = imageShiftsOf(periodic.wrapped, frac)
+      // The source positions this wrapping was built from: where the fast
+      // path starts tracking face crossings (an atom that crosses between the
+      // rebuild and the first fast frame must be counted too).
+      periodic.wrapped.buildAtomFrac = flatFrac(frac)
       periodic.hash = inputHash
     }
     return periodic

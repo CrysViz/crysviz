@@ -310,6 +310,16 @@
     overflow: visible;
   }
 
+  /* ---- trajectoryPanel.css: the trajectory plot in the phone side dock ----
+     Side-docked, the plot takes the pane's leftover height (min 140px). The
+     phone's bottom sheet leaves almost none once the player controls are in,
+     so the chart came out ~65px tall: too short for its stacked or
+     side-by-side plots to show anything. Give it the main dock's 260px; the
+     sheet scrolls to it (its one scroll surface, above). */
+  .cv-panel.cv-side-docked[data-panel-id="trajectory"] #trajPlotHost > .trajPlot {
+    min-height: 260px;
+  }
+
   /* ---- styles.css: "Export CIF with symmetry" dialog ----
      The card fills the phone width; the four tolerance rungs go two by two
      (four abreast leaves ~80px each, too narrow for "P6_3/mmc (194)"); the
@@ -553,6 +563,14 @@
     font-size: var(--fs-base);
     padding: var(--sp-1) var(--sp-2);
   }
+
+  /* ---- trajectoryPanel.css: the trajectory plot in the phone side dock ----
+     A landscape phone's side pane is as short as the portrait bottom sheet
+     (see the mobile rung): the side-docked plot keeps 260px and the pane
+     scrolls to it, rather than a ~65px chart. */
+  .cv-panel.cv-side-docked[data-panel-id="trajectory"] #trajPlotHost > .trajPlot {
+    min-height: 260px;
+  }
 }
 
 /* ================================================================
@@ -725,4 +743,10 @@
   .cv-panel.cv-docked > .cv-panel-titlebar {
     touch-action: pan-y;
   }
+}
+
+/* Load progress overlay (styles.css .boot-progress-fill): no self-moving bar
+   for reduced motion — it waits for the first script's real progress. */
+@media (prefers-reduced-motion: reduce) {
+  .boot-progress-fill { animation: none; }
 }

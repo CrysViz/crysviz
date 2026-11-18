@@ -36,7 +36,7 @@ import { addPhononPlotsPanel, removePhononPlotsPanel } from '../PhononPlotsPanel
 import { phononAvailable } from '../../phonon/phononSession.js';
 import { buildCustomUserSettingsPanel } from '../CustomUserSettingsPanel.js';
 import { makeSectionHeadline } from './sectionHeadline.js';
-import { buildMeasurementSettings } from '../MeasurementSettingsPanel.js';
+import { buildMeasurementSettings, buildAtomLabelSettings } from '../MeasurementSettingsPanel.js';
 import { createFeatureLockSwitch } from '../FeatureLockModule.js';
 import { setCifErrorsShown } from '../CifErrorsDisplay.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
@@ -45,7 +45,11 @@ import { isDebugMode } from '../../debug/debugMode.js';
 import { registerDebugPanel } from '../DebugPanel.js';
 
 import { getFontScale, setFontScale, FONT_SCALE_MIN, FONT_SCALE_MAX } from '../FontScaleModule.js';
+import {
+  trajectoryMemoryGiB, TRAJECTORY_MEMORY_MIN_GIB, TRAJECTORY_MEMORY_MAX_GIB, TRAJECTORY_MEMORY_STEP_GIB,
+} from '../TrajectoryMemoryLimit.js';
 import { setBackgroundDotVisible, createBackgroundSwatch } from '../BackgroundPicker.js';
+import { isPotentialCaveatCollapsed, setPotentialCaveatCollapsed, onPotentialChange } from '../../atomistic/potentialNotice.js';
 
 // ---- static-row adoption ------------------------------------------------------
 //
@@ -415,8 +419,8 @@ export function registerDefaultPanels() {
   registerPanel({
     id: 'backend',
     title: 'Atomistic',
-    store: { category: 'Simulation', blurb: 'Relaxations and molecular dynamics on your device (NEP) or through a calculation backend.' },
-    keywords: ['relax', 'relaxation', 'md', 'molecular dynamics', 'nep', 'ase', 'mace', 'calculator', 'potential', 'simulation'],
+    store: { category: 'Simulation', blurb: 'Relaxation and molecular dynamics with machine-learned potentials: NEP and PET-MAD in your browser, or models on your own ASE server.' },
+    keywords: ['relax', 'relaxation', 'md', 'molecular dynamics', 'nep', 'pet-mad', 'ase', 'mace', 'calculator', 'potential', 'simulation'],
     lifecycle: 'persistent',
     infoMd: './data/backendInfo.md',
     // Interatomic potentials/ML force fields need one definite species per
@@ -932,6 +936,8 @@ export function registerDefaultPanels() {
       // How measurements are drawn (label size, atom highlight marker, accent
       // colours) — see ui/MeasurementSettingsPanel.js.
       buildMeasurementSettings(body);
+      // The size of the atom labels (the Structure window's Aₓ switch).
+      buildAtomLabelSettings(body);
       body.appendChild(makeSectionHeadline('Windows'));
       const dragGroup = document.createElement('div');
       dragGroup.className = 'toggle_group';
@@ -963,6 +969,18 @@ export function registerDefaultPanels() {
       warnGroup.appendChild(makeToggleRow('disableLeaveWarningToggle',
         'Disable reload warning', !!getPanelPref('hideLeaveWarning'),
         (on) => setPanelPref('hideLeaveWarning', on)));
+      // The machine-learned potentials' accuracy caveat in the Atomistic,
+      // EOS, Order Structure and phonon windows, folded to a small ⚠ (its own
+      // Collapse button and ⚠ set the same preference). NEP's high-pressure
+      // warning always shows in full.
+      const caveatRow = makeToggleRow('collapsePotentialCaveatToggle',
+        'Collapse potential accuracy warning', isPotentialCaveatCollapsed(),
+        (on) => setPotentialCaveatCollapsed(on));
+      warnGroup.appendChild(caveatRow);
+      // The notice's own buttons change the same preference while this
+      // window stays built: keep the switch in step.
+      const caveatInput = /** @type {HTMLInputElement|null} */ (caveatRow.querySelector('input'));
+      if (caveatInput) onPotentialChange(() => { caveatInput.checked = isPotentialCaveatCollapsed(); });
       body.appendChild(warnGroup);
       // Graphics: GPU memory the PNG export may allocate for its render
       // surface (render/ImageExportModule.js reads it live). WebGL cannot
@@ -997,6 +1015,44 @@ export function registerDefaultPanels() {
       gmRow.appendChild(gmSlider);
       gmRow.appendChild(gmVal);
       body.appendChild(gmRow);
+      // Memory: how much a loaded trajectory's frames may take. Above it a
+      // load asks what to load (ui/TrajectoryMemoryLimit.js), whose "raise
+      // the limit" answer moves this slider too.
+      body.appendChild(makeSectionHeadline('Memory'));
+      const tmRow = document.createElement('label');
+      tmRow.className = 'toggle_row toggle_container';
+      tmRow.style.gap = '8px';
+      tmRow.title = 'A trajectory whose frames would take more memory asks what to load: every n-th frame, the first frames, or everything';
+      const tmText = document.createElement('span');
+      tmText.className = 'toggle_text';
+      tmText.textContent = 'Trajectory memory';
+      const tmSlider = document.createElement('input');
+      tmSlider.type = 'range';
+      tmSlider.id = 'trajectoryMemorySlider';
+      tmSlider.min = String(TRAJECTORY_MEMORY_MIN_GIB);
+      tmSlider.max = String(TRAJECTORY_MEMORY_MAX_GIB);
+      tmSlider.step = String(TRAJECTORY_MEMORY_STEP_GIB);
+      tmSlider.value = String(trajectoryMemoryGiB());
+      tmSlider.style.flex = '1';
+      const tmVal = document.createElement('span');
+      tmVal.className = 'toggle_text';
+      tmVal.style.minWidth = '58px';
+      tmVal.style.textAlign = 'right';
+      tmVal.textContent = `${tmSlider.value} GiB`;
+      tmSlider.addEventListener('input', () => {
+        setPanelPref('trajectoryMemoryGiB', parseFloat(tmSlider.value));
+        tmVal.textContent = `${tmSlider.value} GiB`;
+      });
+      const onLimitRaised = () => {
+        if (!tmSlider.isConnected) { document.removeEventListener('crysviz:trajectory-memory-changed', onLimitRaised); return; }
+        tmSlider.value = String(trajectoryMemoryGiB());
+        tmVal.textContent = `${tmSlider.value} GiB`;
+      };
+      document.addEventListener('crysviz:trajectory-memory-changed', onLimitRaised);
+      tmRow.appendChild(tmText);
+      tmRow.appendChild(tmSlider);
+      tmRow.appendChild(tmVal);
+      body.appendChild(tmRow);
       // Overall font scale: multiplies the window fonts (title bars, headlines,
       // labels) live via --cv-font-scale; persisted across sessions.
       body.appendChild(makeSectionHeadline('Text'));

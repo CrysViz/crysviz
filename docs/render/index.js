@@ -34,6 +34,11 @@ export {
 } from './ChargeBadgeModule.js';
 
 export {
+  rebuildAtomLabels, updateAtomLabels, clearAtomLabelTextureCache, atomLabelTexts, refreshAtomLabelsIfStale,
+  MAX_LABELLED_ATOMS,
+} from './AtomLabelModule.js';
+
+export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,
   updateSingleBondDiameter, applyBondRadius, disposeBondsMesh, updateSingleBondColor,
   updateSingleBondOpacity, bondKey, bondGroupKey, refreshBondColorsForAtoms,
@@ -65,6 +70,7 @@ export {
   setFocusRegionCenterFractional,
   resetFocusRegionCenter, applyFocusToArrows, applyFocusToField,
 } from './FocusRegionModule.js';
+export { atomLodStats, imposterModeFor, ATOM_DETAIL_MODES } from './AtomLodModule.js';
 
 export { updateGroundPlane } from './GroundPlaneModule.js';
 
@@ -82,7 +88,7 @@ export {
 } from './AsymmetricUnitModule.js';
 
 export {
-  updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
+  updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory, holdPolyhedra, releasePolyhedra,
   resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
   polyhedronFaceColor, applyFocusToPolyhedra,
 } from './PolyhedraModule.js';
@@ -93,7 +99,8 @@ export {
   revealFieldPanelForCurrentStructure, suggestIsoValue,
 } from './Render3DFieldModule.js';
 
-export { removeSpins, updateSpins, deleteSpins, computeSpinColor, autoSpinScale } from './SpinModule.js';
+export { removeSpins, updateSpins, deleteSpins, computeSpinColor, autoSpinScale, SPIN_DRAW_THRESHOLD } from './SpinModule.js';
+export { restyleArrowMaterials, refreshArrowCelOutlines } from './ArrowMaterial.js';
 
 export {
   setupAxisControls, setupAxisLongPress, setAxisStepButtonsMode, applyRotationFromUI,

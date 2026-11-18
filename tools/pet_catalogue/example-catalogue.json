@@ -1,0 +1,27 @@
+{
+  "name": "Example PET-MAD-XS fine-tunes",
+  "description": "Template: replace the entries with your own (make_entry.py writes them).",
+  "models": [
+    {
+      "id": "pet-mad-xs-v1.5.0",
+      "name": "PET-MAD-XS v1.5.0 (base model, Hugging Face)",
+      "url": "https://huggingface.co/peterspackman/mlip-gguf/blob/main/pet-mad-xs.gguf",
+      "size": 17074144,
+      "license": "BSD-3-Clause",
+      "description": "The base model every XS fine-tune starts from."
+    },
+    {
+      "id": "cu-ni",
+      "name": "PET-MAD-XS · Cu–Ni alloys",
+      "url": "cu-ni.gguf",
+      "base": "PET-MAD-XS v1.5.0",
+      "method": "full",
+      "elements": ["Cu", "Ni"],
+      "reference": "PBEsol",
+      "description": "Placeholder entry: there is no cu-ni.gguf next to this file.",
+      "authors": "…",
+      "license": "BSD-3-Clause",
+      "citation": "doi:…"
+    }
+  ]
+}

@@ -12,9 +12,10 @@ import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
 import { getCutPlaneMaskSign } from '../model/Plane.js'
+import { CUT_PLANE_TOLERANCE } from './cutPlaneTolerance.js'
 import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
-import { electronegativity } from '../defaults/electronegativity_defaults.js'
+import { electronegativity, ANION_FORMERS } from '../defaults/electronegativity_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js'
 import { getFocusOpacityForPolyhedron } from './FocusRegionModule.js'
@@ -25,7 +26,7 @@ import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
 import { rebuildBonds } from '../render/BondsFracUpdateModule.js'
-import { runPeriodicWrapped } from '../render/LatticeModule.js'
+import { runPeriodicWrapped, normalizePeriodicBounds } from '../render/LatticeModule.js'
 import { updatePolyhedraComparisonWarning } from '../ui/PolyhedraComparisonWarningBanner.js'
 import { updateDisorderWarning, structureHasFractionalOccupancy } from '../ui/DisorderWarningBanner.js'
 
@@ -79,14 +80,22 @@ const DOUBLE_SIDE = true;
 // rendering pipeline policy: 'polyhedraFace' in render/pipeline/ForwardPipeline.js.
 
 // ---------- BEHAVIOR (compute) ----------
-// Cages (uncentered): **includes N = 20 dodecahedra**
+// Cages (uncentred): empty closed shells of mutually bonded framework atoms —
+// B12 icosahedra and B6 octahedra, clathrate Si20/Si24 cages, C60, cubane,
+// dodecahedrane, P4. Found from the empty space, see findCages() below.
+// Mirrored in periodic_wasm_src (polyhedra.rs, find_cages).
 const ALLOW_CAGES = true;
-const CAGE_TARGET_NS_DESC = [20, 12, 10, 8, 6, 4]; // 20 first for dodecahedron cages
-const CAGE_BFS_DEPTH = 5; // a bit deeper to ensure we hit full N=20 shells
+const CAGE_GRID_STEP = 0.4;          // Å, spacing of the void-search grid
+const CAGE_GRID_MAX_POINTS = 400000; // a coarser grid beyond this many points
+const CAGE_SPLAT_RADIUS = 4.5;       // Å, the distance field is resolved up to here
+const CAGE_MIN_VOID = 0.7;           // Å, a void centre is at least this far from every atom
+const CAGE_SHELL_TOL = 1.35;         // shell: framework atoms within 1.35 × the nearest one…
+const CAGE_SHELL_PAD = 0.6;          // …or within nearest + 0.6 Å, whichever is larger
+const CAGE_SHELL_CAP = 6.5;          // Å, atoms gathered around a void
+const CAGE_REFINE_ITERS = 8;         // re-centring steps before a shell must be stable
+const CAGE_MIN_SURFACE_SHARE = 0.6;  // share of an atom's framework bonds lying in the shell
+const CAGE_MIN_THICKNESS = 0.15;     // anti-flatness of the shell (rings are not cages)
 
-// Distortion tolerance (cages only — see centered note below). Kept loose so
-// genuinely distorted-but-complete shells are not dropped.
-const MAX_EDGE_SPREAD = 1.60;      // max(edge)/min(edge) ≤ 1.60
 const MIN_THICKNESS_RATIO = 0.08;  // very lenient anti-flatness (e_min / e_max)
 const MIN_CENTER_FACE_CLEARANCE_REL = 0.10; // min portion of atomic radius between center and any face (to avoid near-degenerate centered polyhedra)
 
@@ -113,6 +122,48 @@ function isLigandOf(nbrElem, centerElem, filterByElectronegativity = true) {
     return nbrElem !== centerElem;
   }
   return enN > enC + 1e-6;
+}
+
+// Second-shell cations. The electronegativity rule alone lets any LESS
+// electropositive cation in: around Ca (1.00) in diopside that is Si (1.90)
+// and Mg (1.31), both inside the default Ca–Si / Ca–Mg cutoffs, and the Ca
+// polyhedron came out with 17 corners (8 O + 6 Si + 3 Mg) instead of 8 O. So
+// a candidate is dropped when it is bonded to a more electronegative anion
+// former (a nonmetal or metalloid, ANION_FORMERS) that sits clearly nearer to
+// the centre: it is a neighbouring cation seen THROUGH that anion (Ca–O–Si).
+//
+// "Clearly nearer" is d(centre, anion) < BRIDGE_NEARER × d(centre, candidate).
+// Over 313 test structures every cation behind an anion came out at a ratio
+// of 0.882 or less (perovskites, phosphates, chlorates, YBCO, LiNbO3, MgAgAs,
+// K3AsS4), while atoms of one anionic layer sit side by side at 0.92 or more:
+// the B and C of LiBC (1.00) and MgB2C2 are both corners of the Li/Mg between
+// the layers. A partner farther out than the candidate never counts, so Fe–C≡N in
+// Prussian blue, M–C≡O and ferrocene's carbons keep their corners; a metal
+// partner never counts either, since in an alloy every atom touches every
+// other and Ni or Mo would strip the Fe corners off a Cr site.
+//
+// The bond to the anion gets BRIDGE_BOND_SLACK on the default cutoff, which
+// is too short for some cations: Pb–O in PbZrO3 is 2.9 Å against 2.54 Å. Only
+// a bond to an anion that already sits between the two can count, so a
+// contact between two separate ligands (O···Cl ≈ 3 Å vs 1.25 × 2.0) never
+// does. Mirrored in periodic_wasm_src (polyhedra.rs, is_bridged_cation).
+//   cand:   the vertex candidate {elem, pos, d}
+//   cands:  every atom gathered around the centre (same objects)
+const BRIDGE_NEARER = 0.9;
+const BRIDGE_BOND_SLACK = 1.25;
+
+function isBridgedCation(cand, cands) {
+  const enB = electronegativity[cand.elem];
+  if (!enB) return false;
+  for (const x of cands) {
+    if (x === cand || !ANION_FORMERS.has(x.elem)) continue;
+    const enX = electronegativity[x.elem];
+    if (!enX || enX <= enB + 1e-6) continue;
+    if (!(x.d < BRIDGE_NEARER * cand.d)) continue;
+    const cut = getBondLengthCutoff(cand.elem, x.elem);
+    if (cut > 1e-3 && x.pos.distanceTo(cand.pos) <= cut * BRIDGE_BOND_SLACK) return true;
+  }
+  return false;
 }
 
 // ConvexGeometry constructor (vendored addon; fall back to THREE.ConvexGeometry if present)
@@ -256,15 +307,29 @@ export function resolvePolyhedronStyle(structure, key, catKey, type, centerIndex
   };
 }
 
-// Minimal induced degree per cage size (tune as needed)
-function minVertexDegreeForCageSize(N) {
-  if (N === 12) return 5; // B12 icosahedral cage in boron carbide
-  if (N === 20) return 3; // 20-vertex dodecahedron (degree 3)
-  if (N === 10) return 3;
-  if (N === 8)  return 3;
-  if (N === 6)  return 3;
-  if (N === 4)  return 2;
-  return 3;
+// Framework bond for cage detection (chemical filter on). A cage is a shell of
+// atoms bonded to EACH OTHER: Si–Si in a clathrate, B–B, C–C in cubane, P–P,
+// or metal–metal in an intermetallic. Not framework: a metal–nonmetal bond
+// (that is a coordination bond — the nonmetal is the metal's ligand), and a
+// metal–metal contact both of whose atoms bond to one more electronegative
+// anion former (two cations sharing an anion, Ti–O–Ti in rutile, which the
+// default cutoffs also call a bond). Without this, ordinary oxides showed
+// "cages" of Ti2O2 or Al2O2, and those swallowed the real octahedra (ilmenite,
+// LiNbO3) as nested. Mirrored in polyhedra.rs (is_framework_bond).
+//   ei, ej:     element symbols; nbrI: atom i's neighbour images; posJ: j's image
+//   elements:   element symbol per source atom
+function isFrameworkBond(ei, ej, nbrI, posJ, elements) {
+  const afI = ANION_FORMERS.has(ei), afJ = ANION_FORMERS.has(ej);
+  if (afI !== afJ) return false;
+  if (afI) return true;
+  const enMax = Math.max(electronegativity[ei] || 0, electronegativity[ej] || 0);
+  for (const x of nbrI) {
+    const ex = elements[x.srcJ];
+    if (!ANION_FORMERS.has(ex) || !((electronegativity[ex] || 0) > enMax + 1e-6)) continue;
+    const cut = getBondLengthCutoff(ej, ex);
+    if (cut > 1e-3 && x.pos.distanceTo(posJ) <= cut) return false;
+  }
+  return true;
 }
 
 // ---------- Helpers ----------
@@ -298,23 +363,14 @@ function thicknessRatio(points) {
   return eMin / Math.max(1e-12, eMax);
 }
 
-function edgeSpreadOK(geom) {
-  const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-  const pos = egeom.getAttribute('position');
-  let minL = Infinity, maxL = 0;
-  for (let i=0; i<pos.count; i+=2) {
-    const a = new THREE.Vector3().fromBufferAttribute(pos, i);
-    const b = new THREE.Vector3().fromBufferAttribute(pos, i+1);
-    const L = a.distanceTo(b);
-    if (L < minL) minL = L;
-    if (L > maxL) maxL = L;
-  }
-  egeom.dispose();
-  if (!isFinite(minL) || minL <= 1e-9) return false;
-  return (maxL / minL) <= MAX_EDGE_SPREAD;
-}
+// Nesting margin (Å). A point counts as inside a hull only when it is at least
+// this far inside every face. A point ON a face — the Al centre of MnAlCu2 is a
+// corner of the Mn polyhedron — is not nested; with a 1e-6 tolerance rounding
+// decided it, and the JS and WASM paths (which also scaled it differently) kept
+// different polyhedra. Mirrors NEST_MARGIN in polyhedra.rs.
+const NEST_MARGIN = 0.01;
 
-function pointInsideConvexGeometry(p, geom, eps=1e-6) {
+function pointInsideConvexGeometry(p, geom, margin = NEST_MARGIN) {
   const pos = geom.getAttribute('position');
   const idx = geom.getIndex();
   if (!pos) return false;
@@ -331,10 +387,11 @@ function pointInsideConvexGeometry(p, geom, eps=1e-6) {
     const c = new THREE.Vector3().fromBufferAttribute(pos, i2);
     const n = b.clone().sub(a).cross(c.clone().sub(a));
     if (n.lengthSq() < 1e-18) continue;
+    n.normalize();
     const outward = Math.sign(n.dot(a.clone().sub(pc))) || 1;
     n.multiplyScalar(outward);
     const s = n.dot(new THREE.Vector3().subVectors(p, a));
-    if (s > eps) return false;
+    if (s > -margin) return false;
   }
   return true;
 }
@@ -376,7 +433,7 @@ function isPointCutByPlanes(position, cutPlanes) {
     const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
     const maskSign = getCutPlaneMaskSign(plane.side);
     const planeSide = ((position[0] * nx) + (position[1] * ny) + (position[2] * nz) - (Number(plane.r) || 0)) * maskSign;
-    return planeSide > 0;
+    return planeSide > CUT_PLANE_TOLERANCE;
   });
 }
 
@@ -385,52 +442,6 @@ function isAtomImageVisible(position, atom, cutPlanes) {
   if (!cutPlanes.length) return true;
   if (atom?.cutPlaneImmune) return true;
   return !isPointCutByPlanes(position, cutPlanes);
-}
-
-// Spherical farthest-point sampling: pick N vertices well spread (angle-based)
-function pickSpreadSubset(points, N) {
-  if (points.length < N) return null;
-  let aIdx = 0, bIdx = 1, best = -1;
-  for (let i=0;i<points.length;i++) for (let j=i+1;j<points.length;j++) {
-    const d = points[i].distanceToSquared(points[j]);
-    if (d > best) { best = d; aIdx=i; bIdx=j; }
-  }
-  const chosenIdx = [aIdx, bIdx];
-  while (chosenIdx.length < N) {
-    let bestIdx=-1, bestScore=-Infinity;
-    for (let i=0;i<points.length;i++) {
-      if (chosenIdx.includes(i)) continue;
-      let minD = Infinity;
-      for (const j of chosenIdx) {
-        const d = points[i].distanceToSquared(points[j]);
-        if (d < minD) minD = d;
-      }
-      if (minD > bestScore) { bestScore = minD; bestIdx = i; }
-    }
-    if (bestIdx < 0) break;
-    chosenIdx.push(bestIdx);
-  }
-  if (chosenIdx.length < N) return null;
-  return chosenIdx.map(k => points[k]);
-}
-
-function quantile(sortedArr, q) {
-  if (!sortedArr.length) return 0;
-  const i = (sortedArr.length - 1) * q;
-  const i0 = Math.floor(i), i1 = Math.min(sortedArr.length - 1, i0 + 1);
-  const t = i - i0;
-  return sortedArr[i0] * (1 - t) + sortedArr[i1] * t;
-}
-
-function inducedDegreeOK(adjacency, selSrcs, minDeg) {
-  const set = new Set(selSrcs);
-  for (const u of selSrcs) {
-    const nb = adjacency.get(u) || new Set();
-    let deg = 0;
-    for (const v of nb) if (set.has(v) && v !== u) deg++;
-    if (deg < minDeg) return false;
-  }
-  return true;
 }
 
 /**
@@ -536,9 +547,17 @@ export function computePolyhedra(structure) {
     const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
     return [nx, ny, nz, Number(plane.r) || 0, getCutPlaneMaskSign(plane.side)];
   });
+  // With periodic images shown, a cage on the cell boundary is drawn at every
+  // image the display bounds hold, by the rule the atoms follow
+  // (render/LatticeModule.js periodicWrapped): [min − tol, max + tol] per axis.
+  // null: one copy, centre in the cell.
+  const faceTol = general.periodicFaceTol ?? 1e-3;
+  const cageBounds = general.showPeriodic
+    ? normalizePeriodicBounds(general.periodicBounds).map(([lo, hi]) => [lo - faceTol, hi + faceTol])
+    : null;
   const prep = {
     positions, elements, lattice, maxCutoff,
-    useChemicalFilter, detectCages,
+    useChemicalFilter, detectCages, cageBounds,
     displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData,
     getBondCutoff: getBondLengthCutoff, // length-only (visibility-independent)
   };
@@ -680,6 +699,40 @@ export function computePolyhedra(structure) {
     return out;
   }
 
+  // All atom images (any species) within `r` of P, the atom AT P included —
+  // gatherWithin with a radius of the caller's choosing (cage shells reach
+  // past the Voronoi search radius: a C60 is 3.5 Å across its middle).
+  /**
+   * @param {THREE.Vector3} P
+   * @param {number} r
+   * @returns {Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>}
+   */
+  function gatherRadius(P, r) {
+    const fp = cartToFrac([P.x, P.y, P.z], lattice, latInv);
+    const hx = Math.floor(r / binWA) + 1, hy = Math.floor(r / binWB) + 1, hz = Math.floor(r / binWC) + 1;
+    // Half a cell of slack on the image window, so how an exact .5 rounds
+    // (differently in JS and Rust) cannot drop an image.
+    const ia = Math.max(1, Math.ceil(r / Math.max(widthA, 1e-6) + 0.5));
+    const ib = Math.max(1, Math.ceil(r / Math.max(widthB, 1e-6) + 0.5));
+    const ic = Math.max(1, Math.ceil(r / Math.max(widthC, 1e-6) + 0.5));
+    const out = [];
+    for (const j of cellCandidates(fp, hx, hy, hz)) {
+      const fj = positions[j];
+      const c0 = Math.round(fp[0] - fj[0]);
+      const c1 = Math.round(fp[1] - fj[1]);
+      const c2 = Math.round(fp[2] - fj[2]);
+      for (let dx = c0 - ia; dx <= c0 + ia; dx++)
+        for (let dy = c1 - ib; dy <= c1 + ib; dy++)
+          for (let dz = c2 - ic; dz <= c2 + ic; dz++) {
+            const q = baseCart[j].clone().addScaledVector(a, dx).addScaledVector(b, dy).addScaledVector(c, dz);
+            const d = q.distanceTo(P);
+            if (d > r) continue;
+            out.push({ srcJ: j, shift: /** @type {[number,number,number]} */ ([dx, dy, dz]), pos: q, d });
+          }
+    }
+    return out;
+  }
+
   // ---------- Spatial cell list (shared neighbour acceleration) ----------
   // Both scans above are O(atoms) per query → O(atoms²) overall, which dominates
   // large structures. Bin every atom by its wrapped fractional cell into a grid,
@@ -751,28 +804,41 @@ export function computePolyhedra(structure) {
     return out;
   }
 
-  // Base-cell neighbour images per source atom + source-level adjacency. Both are
-  // used ONLY by the cage path (the BFS pool and the induced-degree test), and
-  // building them is the O(atoms²) neighbour scan — so skip it entirely when cage
-  // detection is off (this is also the toggle you'd flip for speed).
-  /** @type {Array<Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>>} */
-  let baseNeighbors = [];
-  /** @type {Map<number, Set<number>>} */
-  const adjacency = new Map();
+  // Framework graph for the cage search (only built when cages are on): the
+  // framework-bond neighbour images of each base atom, as keys for an O(1)
+  // image-aware bond test, and each atom's framework degree counted over
+  // non-terminal partners (an H on a cubane carbon is no part of the cage).
+  // With the chemical filter on, framework bonds are isFrameworkBond's
+  // (nonmetal–nonmetal, or metal–metal not bridged by an anion); off, every bond.
+  /** @type {Array<Array<{srcJ:number, shift:[number,number,number]}>>} */
+  let fwNbrs = [];
+  /** @type {Array<Set<string>>} */
+  let fwKeys = [];
+  /** @type {Int32Array | null} */
+  let fwDeg = null;
+  // What a shell atom's in-shell bonds are measured against: its framework
+  // degree, except for a metal under the chemical filter, which counts all
+  // its metal–metal contacts — in a carbide most Ti–Ti contacts are bridged
+  // by C (no framework bonds), and a Ti4 hole then passed with 3 of 4.
+  /** @type {Int32Array | null} */
+  let shareDeg = null;
   if (ALLOW_CAGES && detectCages) {
-    // Every periodic image of an atom is just a lattice translation of its base
-    // cell, so its neighbour images are this list shifted by the image's lattice
-    // offset — letting the cage BFS avoid re-scanning all atoms for every node.
-    baseNeighbors = new Array(nAtoms);
-    for (let i = 0; i < nAtoms; i++) baseNeighbors[i] = neighborImages(baseCart[i], elements[i]);
-
-    const addBond = (u, v) => {
-      if (!adjacency.has(u)) adjacency.set(u, new Set());
-      if (!adjacency.has(v)) adjacency.set(v, new Set());
-      adjacency.get(u).add(v); adjacency.get(v).add(u);
-    };
+    fwNbrs = new Array(nAtoms);
+    fwKeys = new Array(nAtoms);
+    shareDeg = new Int32Array(nAtoms);
     for (let i = 0; i < nAtoms; i++) {
-      for (const o of baseNeighbors[i]) addBond(i, o.srcJ);
+      const nbr = neighborImages(baseCart[i], elements[i]);
+      fwNbrs[i] = nbr.filter((o) => !useChemicalFilter
+        || isFrameworkBond(elements[i], elements[o.srcJ], nbr, o.pos, elements));
+      fwKeys[i] = new Set(fwNbrs[i].map((o) => `${o.srcJ}:${o.shift[0]},${o.shift[1]},${o.shift[2]}`));
+      if (useChemicalFilter && !ANION_FORMERS.has(elements[i])) {
+        shareDeg[i] = nbr.filter((o) => !ANION_FORMERS.has(elements[o.srcJ])).length;
+      }
+    }
+    fwDeg = new Int32Array(nAtoms);
+    for (let i = 0; i < nAtoms; i++) {
+      for (const o of fwNbrs[i]) if (fwNbrs[o.srcJ].length >= 2) fwDeg[i]++;
+      if (!(useChemicalFilter && !ANION_FORMERS.has(elements[i]))) shareDeg[i] = fwDeg[i];
     }
   }
   _tSetup = performance.now();
@@ -805,11 +871,13 @@ export function computePolyhedra(structure) {
     // be a chemical ligand of the centre and within the visible bond cutoff.
     const cands = gatherWithin(centerPos);
     if (cands.length < 4) continue;
-    const accept = (/** @type {any} */ cand) => {
+    const isLigand = (/** @type {any} */ cand) => {
       if (!isLigandOf(cand.elem, centerElem, useChemicalFilter)) return false;
       const cutoff = getBondLengthCutoff(centerElem, cand.elem);
       return cutoff > 1e-3 && cand.d <= cutoff;
     };
+    const accept = (/** @type {any} */ cand) => isLigand(cand)
+      && !(useChemicalFilter && isBridgedCation(cand, cands));
     const vor = voronoiNeighbours(centerPos, cands, {
       radical: VORONOI_RADICAL,
       relMin: VORONOI_SOLID_ANGLE_REL,
@@ -856,178 +924,184 @@ export function computePolyhedra(structure) {
 
   _tCentered = performance.now();
 
-  // ---- Cages (uncentered): includes N=20 dodecahedra; largest-first ----
+  // ---- Cages (uncentred): empty shells of mutually bonded framework atoms ----
   if (ALLOW_CAGES && detectCages) {
-    // BFS in image space: each node is a concrete periodic image keyed by
-    // (src, shift), so a boundary-straddling shell stays spatially contiguous
-    // (the old in-cell pool was the main source of partial cages).
-    //
-    // Expanded a single depth-level at a time (frontier BFS) and stopped at the
-    // same depth as before (always ≥3, then deeper until ≥40 cut-visible images or
-    // CAGE_BFS_DEPTH). This visits each image once instead of rebuilding the whole
-    // BFS from scratch for depth 3, then 4, then 5. Hidden-by-plane images may still be
-    // traversed to keep connectivity intact, but only visible images are retained
-    // in the returned pool.
-    //
-    // The neighbour images of a node are its source atom's cached base neighbours
-    // translated by the node's own lattice shift — no per-node atom rescan.
-    function buildPoolForSeed(seedI) {
-      const startKey = `${seedI}:0,0,0`;
-      /** @type {Set<string>} */
-      const visited = new Set();
-      /** @type {Array<{pos:THREE.Vector3, src:number, shift:[number,number,number], depth:number}>} */
-      const visiblePool = [];
-      const start = { pos: baseCart[seedI], src: seedI, shift: /** @type {[number,number,number]} */ ([0, 0, 0]), depth: 0 };
-      visited.add(startKey);
-      visiblePool.push(start);
-      let frontier = [start];
-      let depth = 0;
-      const expand = () => {
-        const next = [];
-        for (const node of frontier) {
-          const sx = node.shift[0], sy = node.shift[1], sz = node.shift[2];
-          for (const o of baseNeighbors[node.src]) {
-            const ndx = o.shift[0] + sx, ndy = o.shift[1] + sy, ndz = o.shift[2] + sz;
-            const k = `${o.srcJ}:${ndx},${ndy},${ndz}`;
-            if (!visited.has(k)) {
-              const pos = baseCart[o.srcJ].clone()
-                .addScaledVector(a, ndx).addScaledVector(b, ndy).addScaledVector(c, ndz);
-              const nn = { pos, src: o.srcJ, shift: /** @type {[number,number,number]} */ ([ndx, ndy, ndz]), depth: depth + 1 };
-              visited.add(k);
-              if (isAtomImageVisible(pos.toArray(), structure.atoms[o.srcJ], activeCutPlanes)) visiblePool.push(nn);
-              next.push(nn);
-            }
+    const _c0 = performance.now();
+    findCages();
+    _cagePoolMs += performance.now() - _c0;
+  }
+
+  /**
+   * Cages from the empty space. A cage is a closed shell of framework atoms
+   * around a void: a B12 icosahedron, a clathrate's Si20 or Si24, a C60. The
+   * old search grew a pool of atoms around each SEED ATOM and cut it into
+   * distance bands about the pool's centroid, which sits near the seed, not
+   * in a cage — so it found none of the real ones and plenty of junk.
+   *
+   *   1. Distance to the nearest atom on a grid over the cell (each atom
+   *      stamps a sphere of CAGE_SPLAT_RADIUS; periodic by index wrap), and
+   *      its local maxima at least CAGE_MIN_VOID from every atom.
+   *   2. Around each, the framework atoms within CAGE_SHELL_TOL × the nearest
+   *      distance (or + CAGE_SHELL_PAD), re-centred on their centroid until the
+   *      shell stops changing.
+   *   3. It is a cage when every shell atom has ≥ 3 framework bonds inside the
+   *      shell and at least CAGE_MIN_SURFACE_SHARE of all its framework bonds
+   *      (a metal: of all its metal–metal contacts, see shareDeg) lie in it (5 of 6 on a B12, 3 of 4 on a clathrate cage, 3 of 3 on a
+   *      C60 — but 3 of 6 around the gap between icosahedra in boron, ≤ 6 of 12
+   *      at a hole in a close-packed metal), the shell is connected and not
+   *      flat, the void lies inside its hull with every shell atom on the hull,
+   *      and no atom at all lies inside (a shell around an atom or a guest is
+   *      that atom's polyhedron — Ba8Si46 keeps its Ba-centred cages).
+   *
+   * Each cage is kept once, translated so its centre lies in the cell (with a
+   * 1e-6 nudge so a centre on a cell face lands the same way on both paths).
+   */
+  function findCages() {
+    if (!fwDeg || !fwDeg.some((d) => d >= 3)) return;
+    const cellVolume = Math.abs(a.dot(new THREE.Vector3().crossVectors(b, c)));
+    // Coarsened in fixed steps (not a cube root) so both paths get the same grid.
+    let h = CAGE_GRID_STEP;
+    while (cellVolume / (h * h * h) > CAGE_GRID_MAX_POINTS) h *= 1.25;
+    const nA = Math.max(4, Math.ceil(a.length() / h));
+    const nB = Math.max(4, Math.ceil(b.length() / h));
+    const nC = Math.max(4, Math.ceil(c.length() / h));
+    const field = new Float64Array(nA * nB * nC).fill(CAGE_SPLAT_RADIUS);
+    const at = (i, j, k) => ((((i % nA) + nA) % nA) * nB + (((j % nB) + nB) % nB)) * nC + (((k % nC) + nC) % nC);
+    const ea = Math.ceil((CAGE_SPLAT_RADIUS / widthA) * nA) + 1;
+    const eb = Math.ceil((CAGE_SPLAT_RADIUS / widthB) * nB) + 1;
+    const ec = Math.ceil((CAGE_SPLAT_RADIUS / widthC) * nC) + 1;
+    for (let j = 0; j < nAtoms; j++) {
+      const f0 = positions[j][0] - Math.floor(positions[j][0]);
+      const f1 = positions[j][1] - Math.floor(positions[j][1]);
+      const f2 = positions[j][2] - Math.floor(positions[j][2]);
+      const px = a.x * f0 + b.x * f1 + c.x * f2;
+      const py = a.y * f0 + b.y * f1 + c.y * f2;
+      const pz = a.z * f0 + b.z * f1 + c.z * f2;
+      const ci = Math.round(f0 * nA), cj = Math.round(f1 * nB), ck = Math.round(f2 * nC);
+      for (let i = ci - ea; i <= ci + ea; i++) {
+        const g0 = i / nA;
+        for (let jj = cj - eb; jj <= cj + eb; jj++) {
+          const g1 = jj / nB;
+          for (let k = ck - ec; k <= ck + ec; k++) {
+            const g2 = k / nC;
+            const dx = a.x * g0 + b.x * g1 + c.x * g2 - px;
+            const dy = a.y * g0 + b.y * g1 + c.y * g2 - py;
+            const dz = a.z * g0 + b.z * g1 + c.z * g2 - pz;
+            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (d >= CAGE_SPLAT_RADIUS) continue;
+            const idx = at(i, jj, k);
+            if (d < field[idx]) field[idx] = d;
           }
         }
-        frontier = next;
-        depth++;
-      };
-      while (depth < 3 && frontier.length) expand(); // always reach depth 3
-      while (visiblePool.length < 40 && depth < CAGE_BFS_DEPTH && frontier.length) { // heuristic ≥2×N
-        expand();
       }
-      return visiblePool;
     }
 
-    for (let seedI=0; seedI<nAtoms; seedI++) {
-      if (!isAtomImageVisible(baseCart[seedI].toArray(), structure.atoms[seedI], activeCutPlanes)) continue;
-      const seedElem = elements[seedI];
+    const imgKey = (o) => `${o.srcJ}:${o.shift[0]},${o.shift[1]},${o.shift[2]}`;
+    const byImage = (u, v) => (u.srcJ - v.srcJ) || (u.shift[0] - v.shift[0]) || (u.shift[1] - v.shift[1]) || (u.shift[2] - v.shift[2]);
+    const bonded = (u, v) => fwKeys[u.srcJ].has(`${v.srcJ}:${v.shift[0] - u.shift[0]},${v.shift[1] - u.shift[1]},${v.shift[2] - u.shift[2]}`);
+    /** @type {Set<string>} */
+    const seen = new Set();
 
-      const _p0 = performance.now();
-      const pool = buildPoolForSeed(seedI);
-      _cagePoolMs += performance.now() - _p0;
-      if (pool.length < 4) continue;
+    for (let i = 0; i < nA; i++) for (let j = 0; j < nB; j++) for (let k = 0; k < nC; k++) {
+      const v = field[(i * nB + j) * nC + k];
+      if (v < CAGE_MIN_VOID || v >= CAGE_SPLAT_RADIUS) continue;
+      let isMax = true;
+      for (let di = -1; di <= 1 && isMax; di++) for (let dj = -1; dj <= 1 && isMax; dj++) for (let dk = -1; dk <= 1; dk++) {
+        if ((di || dj || dk) && field[at(i + di, j + dj, k + dk)] > v) { isMax = false; break; }
+      }
+      if (!isMax) continue;
 
-      // reference: centroid of pool (better shell center)
-      const centroid = pool.reduce((acc,o)=>acc.add(o.pos), new THREE.Vector3()).multiplyScalar(1/pool.length);
-      const dists = pool.map(o => o.pos.distanceTo(centroid)).sort((a,b)=>a-b);
-      const q30 = quantile(dists, 0.30), q70 = quantile(dists, 0.70);
-      const q25 = quantile(dists, 0.25), q75 = quantile(dists, 0.75);
-      const q20 = quantile(dists, 0.20), q80 = quantile(dists, 0.80);
+      // 2. the shell around this void, re-centred until it is stable
+      let P = new THREE.Vector3().addScaledVector(a, i / nA).addScaledVector(b, j / nB).addScaledVector(c, k / nC);
+      let shell = null;
+      let prevKey = '';
+      let stable = false;
+      for (let it = 0; it < CAGE_REFINE_ITERS; it++) {
+        const near = gatherRadius(P, CAGE_SHELL_CAP);
+        if (!near.length) break;
+        let dmin = Infinity;
+        for (const o of near) if (o.d < dmin) dmin = o.d;
+        const cutR = Math.max(CAGE_SHELL_TOL * dmin, dmin + CAGE_SHELL_PAD);
+        const sh = near.filter((o) => o.d <= cutR && fwNbrs[o.srcJ].length >= 2).sort(byImage);
+        if (sh.length < 4) break;
+        const key = sh.map(imgKey).join('|');
+        if (key === prevKey) { stable = true; shell = sh; break; }
+        prevKey = key;
+        P = sh.reduce((acc, o) => acc.add(o.pos), new THREE.Vector3()).multiplyScalar(1 / sh.length);
+      }
+      if (!stable || !shell) continue;
 
-      // Per-band hull vertex sets are N-independent: the 3 distance bands are the
-      // same for every target N, and the band hull + its hull→band-entry mapping
-      // depend only on the band, not on N. Build them ONCE per seed (narrow → wide)
-      // instead of rebuilding inside the N loop — this collapses up to 18
-      // ConvexGeometry builds per seed (3 bands × 6 N) down to 3. Only the
-      // reduce-to-N step and acceptance below stay inside the N loop.
-      const bands = [
-        [q30, q70],
-        [q25, q75],
-        [q20, q80],
-      ];
-      const bandHulls = bands.map(([lo, hi]) => {
-        const band = pool.filter(o => {
-          const r = o.pos.distanceTo(centroid);
-          return r >= lo && r <= hi;
-        });
-        if (band.length < 4) return { band, baseVerts: [] };
-        let geomBand;
-        try { geomBand = new ConvexGeomCtor(band.map(o => o.pos)); } catch { geomBand = null; }
-        if (!geomBand) return { band, baseVerts: [] };
+      // translate so the centre lies in the cell, then keep each cage once
+      const fc = cartToFrac([P.x, P.y, P.z], lattice, latInv);
+      const t = fc.map((x) => Math.floor(x + 1e-6));
+      if (t[0] || t[1] || t[2]) {
+        const off = new THREE.Vector3().addScaledVector(a, t[0]).addScaledVector(b, t[1]).addScaledVector(c, t[2]);
+        P = P.clone().sub(off);
+        shell = shell.map((o) => ({ ...o, pos: o.pos.clone().sub(off),
+          shift: /** @type {[number,number,number]} */ ([o.shift[0] - t[0], o.shift[1] - t[1], o.shift[2] - t[2]]) }));
+      }
+      const cageKey = shell.map(imgKey).join('|');
+      if (seen.has(cageKey)) continue;
+      seen.add(cageKey);
 
-        const posAttr = geomBand.getAttribute('position');
-        const hullPts = [];
-        for (let k = 0; k < posAttr.count; k++) hullPts.push(new THREE.Vector3().fromBufferAttribute(posAttr, k));
-        geomBand.dispose();
-
-        // Unique nearest mapping back to band entries
-        const chosenMap = new Map(); // band index -> band entry
-        for (const hp of hullPts) {
-          let bi = -1, best = Infinity;
-          for (let j = 0; j < band.length; j++) {
-            const dd = hp.distanceToSquared(band[j].pos);
-            if (dd < best) { best = dd; bi = j; }
-          }
-          if (bi >= 0 && !chosenMap.has(bi)) chosenMap.set(bi, band[bi]);
+      // 3. is it a cage?
+      let ok = true;
+      for (const u of shell) {
+        let inShell = 0;
+        for (const w of shell) if (w !== u && bonded(u, w)) inShell++;
+        if (inShell < 3 || inShell < CAGE_MIN_SURFACE_SHARE * shareDeg[u.srcJ]) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const reached = new Set([0]);
+      const queue = [0];
+      while (queue.length) {
+        const u = queue.pop();
+        for (let w = 0; w < shell.length; w++) {
+          if (!reached.has(w) && bonded(shell[u], shell[w])) { reached.add(w); queue.push(w); }
         }
-        return { band, baseVerts: Array.from(chosenMap.values()) }; // {pos,src,shift}[]
-      });
+      }
+      if (reached.size !== shell.length) continue;
+      const posList = shell.map((o) => o.pos);
+      if (thicknessRatio(posList) < CAGE_MIN_THICKNESS) continue;
+      let geom;
+      try { geom = new ConvexGeomCtor(posList); } catch { continue; }
+      const inside = (q) => pointInsideConvexGeometry(q, geom);
+      let rMax = 0;
+      for (const o of shell) rMax = Math.max(rMax, o.pos.distanceTo(P));
+      const keys = new Set(shell.map(imgKey));
+      const good = inside(P)
+        && shell.every((o) => !inside(o.pos))
+        && gatherRadius(P, rMax + 0.05).every((o) => keys.has(imgKey(o)) || !inside(o.pos));
+      geom.dispose();
+      if (!good) continue;
 
-      for (const N of CAGE_TARGET_NS_DESC) {
-        let builtThisN = false;
-
-        for (const { band, baseVerts } of bandHulls) {
-          if (band.length < N) continue;
-          if (baseVerts.length < N) continue; // hull too small (or failed to build)
-
-          // Reduce to N by spread when the hull has more than N vertices.
-          let verts = baseVerts;
-          if (verts.length !== N) {
-            const subset = pickSpreadSubset(verts.map(o => o.pos), N);
-            if (!subset) continue;
-            verts = subset.map(p => {
-              let best = null, bestD = Infinity;
-              for (const o of band) {
-                const dd = p.distanceToSquared(o.pos);
-                if (dd < bestD) { bestD = dd; best = o; }
-              }
-              return best;
+      // One candidate per image on show (see cageBounds): the in-cell centre
+      // coordinate w takes every shift n with lo ≤ w + n ≤ hi.
+      const w = [fc[0] - t[0], fc[1] - t[1], fc[2] - t[2]];
+      const range = (/** @type {number} */ k) => (cageBounds
+        ? [Math.ceil(cageBounds[k][0] - w[k]), Math.floor(cageBounds[k][1] - w[k])]
+        : [0, 0]);
+      const [rx, ry, rz] = [range(0), range(1), range(2)];
+      for (let nx = rx[0]; nx <= rx[1]; nx++) {
+        for (let ny = ry[0]; ny <= ry[1]; ny++) {
+          for (let nz = rz[0]; nz <= rz[1]; nz++) {
+            const off = new THREE.Vector3().addScaledVector(a, nx).addScaledVector(b, ny).addScaledVector(c, nz);
+            const img = shell.map((o) => ({ srcJ: o.srcJ, pos: o.pos.clone().add(off),
+              shift: /** @type {[number,number,number]} */ ([o.shift[0] + nx, o.shift[1] + ny, o.shift[2] + nz]) }));
+            if (!img.every((o) => isAtomImageVisible(o.pos.toArray(), structure.atoms[o.srcJ], activeCutPlanes))) continue;
+            candidates.push({
+              kind: 'cage',
+              colorElem: elements[img[0].srcJ],
+              posList: img.map((o) => o.pos),
+              vertexSrcList: img.map((o) => o.srcJ),
+              vertexImageList: img.map((o) => ({ src: o.srcJ, shift: o.shift })),
+              refPoint: P.clone().add(off),
             });
           }
-
-          const posList = verts.map(o=>o.pos);
-          const selSrcs = verts.map(o=>o.src);   // source atom index per selected vertex
-
-          // ---- CAGE acceptance: cheap necessary conditions FIRST, so the
-          // expensive hull / EdgesGeometry is only built for candidates that can
-          // actually be accepted. Both checks are necessary (combined with the
-          // edge-spread test via AND), so ordering them first doesn't change which
-          // cages pass — it just skips the geometry for the common rejections
-          // (e.g. a coordination shell whose ligands aren't bonded to each other).
-
-          // 1) Anti-flatness — operates on the point set, no hull needed.
-          if (thicknessRatio(posList) < 0.08) continue;          // very lenient
-
-          // 2) Induced-degree in the selected vertex set (B12 needs 5) — combinatorial.
-          const minDeg = minVertexDegreeForCageSize(posList.length);
-          if (!inducedDegreeOK(adjacency, selSrcs, minDeg)) continue;
-
-          // 3) Build the candidate hull only now, and run the edge-spread sanity.
-          let geom;
-          try { geom = new ConvexGeomCtor(posList); } catch { geom = null; }
-          if (!geom) continue;
-          geom.computeVertexNormals();
-          if (!edgeSpreadOK(geom)) { geom.dispose(); continue; } // max(edge)/min(edge) ≤ 1.30
-
-          // Accept candidate cage
-          candidates.push({
-            kind: 'cage',
-            colorElem: seedElem,
-            posList,
-            vertexSrcList: selSrcs,
-            vertexImageList: verts.map(o=>({ src:o.src, shift:o.shift })),
-            refPoint: posList.reduce((acc,p)=>acc.add(p), new THREE.Vector3()).multiplyScalar(1/posList.length),
-          });
-
-          geom.dispose();
-          builtThisN = true;
-          break; // move to next N (largest-first, one per band here)
-        } // bands
-        if (builtThisN) continue;
-      } // Ns
-    } // seeds
-  } // cages enabled
+        }
+      }
+    }
+  }
   _tCages = performance.now();
 
   // ---------- Global constraints & accept into model ----------
@@ -1073,7 +1147,7 @@ export function computePolyhedra(structure) {
     // No nesting: reference point not inside any accepted hull
     let inside = false;
     for (const g of acceptedHulls) {
-      if (pointInsideConvexGeometry(cand.refPoint, g, 1e-6)) { inside = true; break; }
+      if (pointInsideConvexGeometry(cand.refPoint, g)) { inside = true; break; }
     }
     if (inside) { geom.dispose(); continue; }
 
@@ -1307,12 +1381,41 @@ export function setPolyEdgeWidth(width) {
  * Toggle/refresh entry point. Recomputes `structure.polyhedra` (so the model
  * mirrors the scene and bond-cutoff edits take effect) and renders it.
  */
+// A session restore (ui/ShareModule.js applySharedState) builds the structure
+// first and restores the atom order and polyhedron styles after it: polyhedra
+// computed in between were thrown away and computed again, the slowest part of
+// opening a styled share link. While held, a request is only remembered; the
+// restore makes the one request that counts once its styles are on.
+let holdDepth = 0;
+let heldRequest = false;
+
+/** Hold polyhedra requests until releasePolyhedra(). */
+export function holdPolyhedra() {
+  holdDepth += 1;
+}
+
+/** End holdPolyhedra(); true when a request arrived meanwhile (the caller
+ *  should then run updatePolyhedra() itself). */
+export function releasePolyhedra() {
+  if (!holdDepth) return false;
+  holdDepth -= 1;
+  if (holdDepth) return false;
+  const held = heldRequest;
+  heldRequest = false;
+  return held;
+}
+
 export function updatePolyhedra() {
   // Reflect current showPolyhedra/completePolyhedra + comparison-structure
   // state in the viewport warning banner every time this entry point runs
   // (toggles, comparison enable/disable/step-change all funnel through here).
   updatePolyhedraComparisonWarning();
   updateDisorderWarning();
+
+  if (holdDepth) {
+    heldRequest = true;
+    return polyhedraPromise || Promise.resolve();
+  }
 
   // A coordination polyhedron's identity comes from the species of its centre
   // and ligands, and a fractionally occupied site has no single answer for

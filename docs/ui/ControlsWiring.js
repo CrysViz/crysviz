@@ -12,6 +12,7 @@ import { updatePolyhedra, updateSingleAtomDiameter, applyBondRadius, updateLatti
 import { bondKey } from '../render/BondsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
+import { runHeavyRebuild } from './HeavyRebuild.js';
 import { scheduleAtomSizeSave, scheduleBondRadiusSave } from './SizePrefs.js';
 
 // ---- size-slider mapping ---------------------------------------------------
@@ -49,11 +50,14 @@ export function setupControlsWiring() {
 
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
-    general.showBonds = e.target.checked;
-    updateVisualization({
-      reRenderAtoms: !!general.showPBCBonds,
-      reRenderBonds: true,
-      bondsUpdate: false
+    const on = e.target.checked;
+    runHeavyRebuild(() => {
+      general.showBonds = on;
+      updateVisualization({
+        reRenderAtoms: !!general.showPBCBonds,
+        reRenderBonds: true,
+        bondsUpdate: false
+      });
     });
   };
 
@@ -68,17 +72,23 @@ export function setupControlsWiring() {
 
     // Control handlers
   document.getElementById('showPolyhedra').onchange = (e) => {
-    general.showPolyhedra = e.target.checked;
-    updatePolyhedra();
+    const on = e.target.checked;
+    runHeavyRebuild(() => {
+      general.showPolyhedra = on;
+      updatePolyhedra();
+    });
   };
 
   const completePolyToggle = document.getElementById('completePolyhedraToggle');
   if (completePolyToggle) {
     completePolyToggle.onchange = (e) => {
-      general.completePolyhedra = e.target.checked;
+      const on = e.target.checked;
       // The displayed atom set changes (completing atoms added/removed), so rebuild atoms +
       // bonds; updateVisualization also runs updatePolyhedra, which appends the atoms.
-      updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+      runHeavyRebuild(() => {
+        general.completePolyhedra = on;
+        updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+      });
     };
   }
 
@@ -110,16 +120,22 @@ export function setupControlsWiring() {
   const PBCBondToggle = document.getElementById('PBCBondToggle');
   if (PBCBondToggle) {
       PBCBondToggle.onchange = (e) => {
-      general.showPBCBonds = e.target.checked;
-      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
+      const on = e.target.checked;
+      runHeavyRebuild(() => {
+        general.showPBCBonds = on;
+        updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
+      });
     };
   }
 
   const showPeriodicToggle = document.getElementById('showPeriodic');
   if (showPeriodicToggle) {
     showPeriodicToggle.onchange = (e) => {
-      general.showPeriodic = e.target.checked;
-      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
+      const on = e.target.checked;
+      runHeavyRebuild(() => {
+        general.showPeriodic = on;
+        updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
+      });
     };
   }
 

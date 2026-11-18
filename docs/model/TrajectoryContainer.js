@@ -28,8 +28,10 @@
 import { StructureContainer } from './StructureContainer.js';
 import { TrajectoryFrameStore } from './TrajectoryFrameStore.js';
 import { pressureGPa } from './Stress.js';
+import { siteSpeciesRecord } from './siteSpecies.js';
+import { general } from '../state/store.js';
 import {
-  materializeFrame, applyFramePhysics, extractFrameStyles, applyFrameStyles,
+  materializeFrame, deferFramePhysics, hasPendingFramePhysics, peekAtoms, extractFrameStyles, applyFrameStyles,
 } from './materializeFrame.js';
 
 /** @typedef {import('./Structure.js').Structure} Structure */
@@ -109,8 +111,18 @@ export class TrajectoryContainer extends StructureContainer {
     this._liveElements = null;
     /** @type {Map<number, FrameStyleRecord>} step -> that frame's deviations */
     this._frameStyles = new Map();
-    /** Frame-switch counters for the Debug window (debug/memoryAccounting.js). */
-    this.debugStats = { shown: 0, reused: 0, rebuilt: 0, detached: 0, pristine: 0 };
+    /**
+     * Does the live Structure possibly carry a style deviation that a frame
+     * switch must clear? False only right after a pristine (null-record) style
+     * pass; set by a non-null record, a parked user edit, or a park that could
+     * not run. Lets _showFrame skip the O(N) applyFrameStyles reset between two
+     * unstyled frames — the common playback case.
+     */
+    this._liveStyled = false;
+    /** Frame-switch counters for the Debug window (debug/memoryAccounting.js).
+     *  `styled` counts switches that ran the O(N) style reset (stays 0 across
+     *  a run of unstyled frames — the skip is working). */
+    this.debugStats = { shown: 0, reused: 0, rebuilt: 0, detached: 0, pristine: 0, styled: 0 };
     /**
      * How the Trajectory player renders playback frames: 'auto' takes the
      * render fast path when motionProfile() says 'trajectory'; 'full' forces
@@ -119,6 +131,35 @@ export class TrajectoryContainer extends StructureContainer {
      */
     this.playbackMode = 'auto';
     /** @type {{kind: 'trajectory' | 'dataset', maxStep: number, frames: number} | null} */
+    this._motionProfile = null;
+  }
+
+  /**
+   * Keep only these frames (ascending steps) of a freshly parsed trajectory
+   * that is not shown yet — the memory limit's "every n-th frame" / "first
+   * frames" (io/trajectoryLoadPlan.js). Their per-frame records and plot
+   * values move with them; the dropped frames' memory is released.
+   * @param {number[]} steps
+   */
+  keepFrames(steps) {
+    const styles = new Map();
+    steps.forEach((step, i) => {
+      const rec = this._frameStyles.get(step);
+      if (rec) styles.set(i, rec);
+    });
+    this.store.frames = steps.map((step) => this.store.frames[step]);
+    this._frameStyles = styles;
+    if (this.plotSeries) {
+      for (const key of Object.keys(this.plotSeries)) {
+        const series = this.plotSeries[key];
+        if (Array.isArray(series)) this.plotSeries[key] = steps.map((step) => series[step]);
+      }
+    }
+    this.structures = new Array(this.store.frameCount);
+    this._live = null;
+    this._liveStep = -1;
+    this._liveElements = null;
+    this._liveStyled = false;
     this._motionProfile = null;
   }
 
@@ -236,6 +277,11 @@ export class TrajectoryContainer extends StructureContainer {
    */
   _parkLive(ph) {
     if (!this._live || this._liveStep < 0) return;
+    // Still deferred (see deferFramePhysics): nothing has read the shown
+    // frame's atoms since it was switched to, so nothing can have edited them
+    // — its record is what it was — and its objects still hold the previous
+    // frame's positions, which extracting would mistake for position edits.
+    if (hasPendingFramePhysics(this._live)) return;
     if (this._live.atoms.length !== ph.elements.length) {
       // A structural edit (atoms added/removed on the shown frame) has no
       // per-index representation against this frame's physics.
@@ -244,8 +290,14 @@ export class TrajectoryContainer extends StructureContainer {
       return;
     }
     const rec = extractFrameStyles(this._live, ph);
-    if (rec) this._frameStyles.set(this._liveStep, rec);
-    else this._frameStyles.delete(this._liveStep);
+    if (rec) {
+      this._frameStyles.set(this._liveStep, rec);
+      // The live objects hold these deviations; the next switch must clear
+      // them even when the incoming frame has no record of its own.
+      this._liveStyled = true;
+    } else {
+      this._frameStyles.delete(this._liveStep);
+    }
   }
 
   /**
@@ -261,20 +313,40 @@ export class TrajectoryContainer extends StructureContainer {
       // cannot provide the outgoing physics synchronously cannot detect
       // position edits at park time — style deviations still park fine.
       if (!isPending(livePh)) this._parkLive(/** @type {FramePhysics} */(livePh));
+      // Unparked edits are invisible here: assume the live objects are styled.
+      else this._liveStyled = true;
     }
     // The live Structure's objects can be reused only while the composition
     // is unchanged; a frame with different elements (heterogeneous
     // trajectory) rebuilds it — the normal path there, not an error.
+    let rebuilt = false;
     if (this._live && sameElements(this._liveElements, ph.elements)
-      && this._live.atoms.length === ph.elements.length) {
-      applyFramePhysics(this._live, ph);
+      && peekAtoms(this._live).length === ph.elements.length) {
+      // Per-atom part applied on first read: a playback frame that the fast
+      // path moves straight from ph.positions never builds them.
+      deferFramePhysics(this._live, ph);
       this.debugStats.reused += 1;
     } else {
       this._live = materializeFrame(this.store, ph);
       this.debugStats.rebuilt += 1;
+      rebuilt = true;
     }
     this._liveElements = ph.elements;
-    applyFrameStyles(this._live, this._frameStyles.get(step) ?? null);
+    const rec = this._frameStyles.get(step) ?? null;
+    // Atoms coloured by force hold a derived a.color that extractFrameStyles
+    // deliberately does not record, so in that mode the reset is never
+    // skipped (it is what returns a.color to the element default).
+    const derivedColors = general.atomsColor === 'force';
+    if (rec !== null || derivedColors || (!rebuilt && this._liveStyled)) {
+      applyFrameStyles(this._live, rec);
+      this.debugStats.styled += 1;
+      this._liveStyled = rec !== null || derivedColors;
+    } else {
+      // Pristine already (a fresh materialisation, or reused objects that were
+      // themselves unstyled): the per-atom/arrow reset would be a no-op. The
+      // derived-state invalidation applyFrameStyles always does still applies.
+      this._live.polyhedra = null;
+    }
     this._installLazyAsLoaded(this._live, step);
 
     if (this._liveStep >= 0) delete this.structures[this._liveStep];
@@ -548,6 +620,13 @@ export class TrajectoryContainer extends StructureContainer {
       positions,
       forces: arrows(ph.forces, rec?.forces, false),
       spins: ph.spinRaw ? arrows(ph.spinVectors, rec?.spins, true) : null,
+      // A frame's mixed sites live in its style record (extractFrameStyles
+      // keeps the species of every non-plain site).
+      species: siteSpeciesRecord(Array.from({ length: n },
+        (_, a) => /** @type {any} */ (rec?.atoms?.get(a))?.species ?? null)),
+      energy: Number.isFinite(ph.energy) ? ph.energy : null,
+      stress: ph.stress ? ph.stress.map(r => [...r]) : null,
+      dataSource: ph.dataSource ?? null,
     };
   }
 }

@@ -24,6 +24,7 @@ import { activeAtomCutPlanes } from './pipeline/raytrace/SceneEncoder.js';
 import { wedgeDataForAtom } from './WedgeAtoms.js';
 import { Plane } from '../model/index.js';
 import { ASU_HALO_SCALE } from './AsymmetricUnitModule.js';
+import { CUT_PLANE_TOLERANCE } from './cutPlaneTolerance.js';
 
 const _v = new THREE.Vector3();
 const _axis = new THREE.Vector3();
@@ -161,7 +162,7 @@ function atomInstances(mesh, cutPlanes) {
     if (cutPlanes.length && !(immune && immune[i] >= 0.5)) {
       let cut = false;
       for (const p of cutPlanes) {
-        if ((x * p.nx + y * p.ny + z * p.nz - p.w) * p.sign > 0) { cut = true; break; }
+        if ((x * p.nx + y * p.ny + z * p.nz - p.w) * p.sign > CUT_PLANE_TOLERANCE) { cut = true; break; }
       }
       if (cut) continue;
     }

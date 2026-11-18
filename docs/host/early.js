@@ -1,5 +1,11 @@
 import { bootstrapAuthoritative, createBrowserHost } from './BrowserHost.js';
 import { startSessionReceiver } from '../io/SessionReceiver.js';
+import { ensureIsolation } from './coi.js';
+import { setLoadStep, finishLoadProgress, startBootProgress, isFirstStart } from '../ui/BootProgress.js';
+
+// The load progress overlay is on screen from the first paint (index.html):
+// from here on its seconds counter runs and its bar moves with the download.
+startBootProgress();
 
 // This module is loaded before the application module. It captures the
 // launch capability in module-private state and removes it before any later
@@ -48,6 +54,10 @@ const hostController = createBrowserHost();
 hostController.install();
 
 async function start() {
+  // Opt-in cross-origin isolation (multi-threaded PET-MAD): when the user has
+  // asked for it and the page is not isolated yet, this registers the header
+  // service worker and reloads — nothing else should boot in that case.
+  if (await ensureIsolation()) return;
   try {
     await bootstrapAuthoritative({
       host: hostController,
@@ -60,10 +70,20 @@ async function start() {
           general.restoreStoredPrefs = widget.restorePrefs;
         }
         const core = await import('../core/crystal-viewer.js');
-        return core.initializeCore(hostController);
+        setLoadStep('Starting the viewer…', { fraction: 0.55 });
+        // A first start-up in this browser (no saved settings yet) that shows
+        // the example structure draws it before downloading and building the
+        // windows: on a slow connection it is on screen ~1.3 s sooner. Later
+        // start-ups build the windows first, as their code applies saved
+        // settings (per-structure prefs, custom colours) before the first
+        // structure. Not for a host launch (its files may need the full app,
+        // e.g. the CIF symmetry prompt) nor the embed (no windows).
+        const structureFirst = !launch.present && !widget.present && isFirstStart();
+        return core.initializeCore(hostController, { structureFirst });
       },
     });
     hostController.markReady();
+    finishLoadProgress();
     if (widget.present) {
       const { initWidgetMode } = await import('../ui/WidgetMode.js');
       await initWidgetMode({ href: widget.href });
@@ -74,6 +94,7 @@ async function start() {
       acceptLaunchedFiles();
     }
   } catch (error) {
+    finishLoadProgress();
     hostController.reportError(error);
     hostController.close();
     const status = document.getElementById('status');

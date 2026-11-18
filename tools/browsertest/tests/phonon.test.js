@@ -848,8 +848,12 @@ async function loadAnsweringUnitDialog(page, text, name, pick = 1) {
       qeUnit: qe.lengthUnit, qeCalc: qe.calculator, vaspUnit: vasp.lengthUnit,
       a0, aBohr, ratio: aBohr / a0, bohr: BOHR_TO_ANGSTROM, shownA, aBack,
       labels: [S.prettyLabel('$\\Gamma$'), S.prettyLabel('$\\mathrm{P}_0$'), S.prettyLabel('X_1'), S.prettyLabel('$\\mathrm{P}_0$', { html: true }), S.prettyLabel('$\\Sigma_{0}$')],
+      notice: document.querySelector('#phPotentialNotice [data-role="potential-notice-line"]')?.textContent ?? null,
+      caveat: document.querySelector('#phPotentialNotice [data-role="potential-notice-caveat"]')?.textContent ?? null,
     };
   });
+  H.check('the mode map names the potential it computes with, with the accuracy caveat',
+    /^Runs with (NEP|PET-MAD|ASE) — /.test(extra.notice || '') && /against DFT/.test(extra.caveat || ''), JSON.stringify([extra.notice, extra.caveat]));
   H.check('scan supercell auto-follows the mode (X needs 2x1x1)', extra.autoOn && JSON.stringify(extra.dimsShown) === '[2,1,1]', JSON.stringify(extra.dimsShown));
   H.check('scan ran in its own 2x1x1 supercell (2 atoms) while 2x2x2 is displayed', extra.scanAtoms === 2 && extra.rowName.endsWith('_2x1x1') && extra.frames === 5 && JSON.stringify(extra.mmDims) === '[2,1,1]', JSON.stringify(extra));
   H.check('QE phonopy.yaml declares Bohr, VASP-style declares Å', extra.qeUnit === 'bohr' && extra.qeCalc === 'qe' && extra.vaspUnit === 'angstrom', JSON.stringify([extra.qeUnit, extra.vaspUnit]));

@@ -119,17 +119,29 @@ function clearBondEmissiveOnly() {
   highlightHover.currentlyHighlightedBondInstances = [];
 }
 
+/** Fired after an atom or bond highlight is cleared, whoever cleared it. A
+ *  window that marks what it highlighted (the Bond Length and Force
+ *  histograms outline the bar) compares highlightHover's instance lists with
+ *  its own and drops the mark once its highlight is gone. */
+export const HIGHLIGHT_CLEARED = 'crysviz:highlight-cleared';
+
+function announceHighlightCleared() {
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent(HIGHLIGHT_CLEARED));
+}
+
 export function clearHighlightAtom() {
   // Under a tracer, clear only the emissive attrs of the tracked instances (no
   // instanceColor bump → no accumulation restart). Raster pipelines keep the
   // classic full rebuild-from-model.
   if (isTracerPipelineActive()) {
     clearAtomEmissiveOnly();
+    announceHighlightCleared();
     return;
   }
   highlightHover.currentlyHighlightedAtomInstances = [];
   updateAtoms(1.0);
   clearForceSpinHighlight();
+  announceHighlightCleared();
 }
 
 // Force/spin arrows are drawn once per SOURCE atom, never once per periodic
@@ -196,6 +208,7 @@ export function clearArrowHighlightOverride() {
 }
 
 function reapplyCurrentSelectionHighlight() {
+  if (measurePaused) return;
   if (atomSelection.selectedAtoms.length) {
     applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   }
@@ -237,10 +250,12 @@ function clearForceSpinHighlight() {
 export function clearHighlightBond() {
   if (isTracerPipelineActive()) {
     clearBondEmissiveOnly();
+    announceHighlightCleared();
     return;
   }
   highlightHover.currentlyHighlightedBondInstances = [];
   updateBonds(1.0);
+  announceHighlightCleared();
 }
 
 function clearUIHighlight() {
@@ -271,7 +286,12 @@ export function applyAtomHighlightIndices(indices) {
     highlightHover.currentlyHighlightedAtomInstances = [];
     return;
   }
+  paintAtomHighlight(indices);
+}
 
+/** Paint the glow onto these instances, on top of whatever the atoms show
+ *  now — no clearing first (applyAtomHighlightIndices clears). */
+function paintAtomHighlight(indices) {
   // Normally every selected atom's sphere glows. The one exception: while
   // the Structure Info panel's Spin/Force editor is open for an atom
   // (arrowHighlightOverride), that atom's sphere is skipped here in favor of
@@ -333,6 +353,44 @@ export function highlightAtomsIn3D(sourceIndices) {
 // Rebuild below); restoreSelectionHighlight or a new selection ends it.
 let glowSuppressed = false;
 
+// While a measure tool is on (ui/MeasurementToolbar.js setMeasureMode) the
+// selection's glow is off: the atoms a measurement picks glow instead, and
+// the selection's glow comes back when the tool is turned off. The selection
+// itself is kept throughout (rows, inspectors); every path that would put its
+// glow back — a new selection, a rebuild of the atoms mesh, a colour editor
+// closing — waits for the tool to be turned off.
+let measurePaused = false;
+
+/**
+ * The atoms were just refreshed in place (render updateAtoms, which turns
+ * every glow off — core/crystal-viewer.js updateVisualization's non-rebuild
+ * path, after a colour, alpha or size edit, a panel refresh, ...): paint the
+ * selection's glow back on, unless a colour editor or a measure tool has it
+ * off on purpose. Paint only, on the atoms as refreshed: going through
+ * applyAtomHighlightIndices would refresh them again at full opacity.
+ * (A rebuild of the mesh carries the glow over itself, carrySelectionAcrossRebuild.)
+ */
+export function repaintSelectionGlow() {
+  if (glowSuppressed || measurePaused || !groups.atomsMesh || !atomSelection.selectedAtoms.length) return;
+  paintAtomHighlight(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
+}
+
+/** A measure tool was turned on: take the selection's glow off. */
+export function pauseSelectionGlowForMeasure() {
+  if (measurePaused) return;
+  measurePaused = true;
+  clearHighlightAtom();
+  clearHighlightBond();
+}
+
+/** The measure tool was turned off: the selection glows again (unless a
+ *  colour editor still has it off, suppressSelectionHighlightFor3D). */
+export function resumeSelectionGlowAfterMeasure() {
+  if (!measurePaused) return;
+  measurePaused = false;
+  if (!glowSuppressed) restoreSelectionHighlight();
+}
+
 export function suppressSelectionHighlightFor3D() {
   glowSuppressed = true;
   clearHighlightAtom();
@@ -343,6 +401,7 @@ export function suppressSelectionHighlightFor3D() {
  *  current atom or bond selection. */
 export function restoreSelectionHighlight() {
   glowSuppressed = false;
+  if (measurePaused) return; // back when the measure tool is turned off
   if (atomSelection.selectedAtoms.length) {
     applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   } else if (highlightHover.currentlyHighlightedBond) {
@@ -411,8 +470,10 @@ function findBondRow(pair, key, groupKey = null) {
   if (!bondsContainer) return null;
 
   // Individual bond rows are populated lazily on first expand (see
-  // BondLengthPanel.js). We expand programmatically here, so ensure they exist.
-  /** @type {any} */ (bondsContainer)._populateBondRows?.();
+  // BondLengthPanel.js). We expand programmatically here, so ensure they exist
+  // and that a long list shows the page holding this bond.
+  if (/** @type {any} */ (bondsContainer)._showBondRow) /** @type {any} */ (bondsContainer)._showBondRow(key, groupKey);
+  else /** @type {any} */ (bondsContainer)._populateBondRows?.();
 
   if (bondsContainer.style.display === 'none') {
     bondsContainer.style.display = 'block';
@@ -565,8 +626,10 @@ function findPolyhedronRow(catKey, key, groupKey = null) {
   const listContainer = /** @type {HTMLElement} */ (control.querySelector('.individual-polyhedra'));
   if (!listContainer) return null;
 
-  // Rows are populated lazily on first expand (see PolyhedraListPanel.js).
-  /** @type {any} */ (listContainer)._populatePolyhedronRows?.();
+  // Rows are populated lazily on first expand (see PolyhedraListPanel.js); a
+  // long list shows the page holding this polyhedron.
+  if (/** @type {any} */ (listContainer)._showPolyhedronRow) /** @type {any} */ (listContainer)._showPolyhedronRow(key, groupKey);
+  else /** @type {any} */ (listContainer)._populatePolyhedronRows?.();
 
   if (listContainer.style.display === 'none') {
     listContainer.style.display = 'block';
@@ -764,7 +827,13 @@ function findAtomRow(element, sourceIndex, instanceId = null, revealPanel = true
 
   // Individual atom rows are populated lazily on first expand (see
   // CompositionRow.js). We expand programmatically here, so ensure they exist.
-  /** @type {any} */ (atomsContainer)._populateAtomRows?.();
+  // A long list shows one page of rows (components/PagedRows.js): open it on
+  // the atom's page — only when revealing, so a modifier pick leaves it alone.
+  if (revealPanel && /** @type {any} */ (atomsContainer)._showAtomRow) {
+    /** @type {any} */ (atomsContainer)._showAtomRow(targetAtomIndex, instanceId);
+  } else {
+    /** @type {any} */ (atomsContainer)._populateAtomRows?.();
+  }
 
   // Only force the row list open when the caller actually wants the panel
   // revealed — a Shift-add pick still highlights the row once expanded
@@ -856,7 +925,8 @@ function instancesForSelectedAtom(atom) {
 }
 
 function syncSelectedAtomHighlights(options = {}) {
-  applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
+  // Measuring: the rows follow the selection, the 3D glow waits (measurePaused).
+  if (!measurePaused) applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   syncSelectedAtomRows(options);
 }
 
@@ -1236,6 +1306,14 @@ export function selectAtomsByInstances(instanceIds, options = {}) {
  */
 export function selectAtomFromRow(atomIndex, sourceEvent = null, imageIndex = null) {
   const structure = fileBrowser.selectedStructure;
+  // A Wyckoff-tab row stands for its whole orbit: select every atom of it.
+  const orbit = imageIndex == null && structure?.symmetry?.mode === 'wyckoff'
+    ? structure.symmetry.orbitGroups?.find((group) => group.representativeIndex === atomIndex)
+    : null;
+  if (orbit && orbit.atomIndices.length > 1) {
+    selectOrbitFromRow(orbit, sourceEvent);
+    return;
+  }
   // Per-image rows pass their own instance; linked rows use the canonical
   // first image of the source atom.
   const instanceId = imageIndex ?? structure?.atomImages?.[atomIndex]?.[0];
@@ -1251,6 +1329,32 @@ export function selectAtomFromRow(atomIndex, sourceEvent = null, imageIndex = nu
       reason: 'row-click',
     },
   );
+}
+
+/** selectAtomFromRow for a Wyckoff orbit row: the same modifier semantics,
+ *  applied to the orbit's atoms together (a plain click on the row of the
+ *  orbit that alone is selected deselects it; ctrl/cmd removes the orbit when
+ *  all of it is selected, else adds it; shift adds it). */
+function selectOrbitFromRow(orbit, sourceEvent) {
+  const structure = fileBrowser.selectedStructure;
+  if (!groups.atomsMesh) return;
+  const members = orbit.atomIndices
+    .map((index) => structure?.atomImages?.[index]?.[0])
+    .filter((instanceId) => instanceId !== undefined);
+  if (!members.length) return;
+  const current = atomSelection.selectedAtoms;
+  const inOrbit = (atom) => orbit.atomIndices.includes(atom.sourceIndex);
+  const orbitSelected = orbit.atomIndices.every((index) => current.some((atom) => atom.sourceIndex === index));
+  const mode = (sourceEvent?.ctrlKey || sourceEvent?.metaKey) ? 'toggle' : (sourceEvent?.shiftKey ? 'add' : 'replace');
+  const kept = current.map((atom) => atom.instanceId);
+  let next;
+  if (mode === 'replace') next = orbitSelected && current.every(inOrbit) ? [] : members;
+  else if (mode === 'toggle' && orbitSelected) next = current.filter((atom) => !inOrbit(atom)).map((atom) => atom.instanceId);
+  else next = [...kept, ...members];
+  clearBondSelection();
+  clearPolyhedronSelection();
+  if (next.length) selectAtomsByInstances(next, { sourceEvent, reason: 'row-click' });
+  else clearSelectedAtoms({ sourceEvent, reason: 'row-click' });
 }
 
 export function clearAllHighlights(options = {}) {

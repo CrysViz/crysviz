@@ -1,0 +1,140 @@
+diff --git a/src/runtime/graph_model.cpp b/src/runtime/graph_model.cpp
+index a76b914..bef818f 100644
+--- a/src/runtime/graph_model.cpp
++++ b/src/runtime/graph_model.cpp
+@@ -347,6 +347,12 @@ GraphModel::~GraphModel() {
+   if (compute_galloc_) {
+     ggml_gallocr_free(compute_galloc_);
+   }
++  if (weight_t_buffer_) {
++    ggml_backend_buffer_free(weight_t_buffer_);
++  }
++  if (weight_t_ctx_) {
++    ggml_free(weight_t_ctx_);
++  }
+   if (input_buffer_) {
+     ggml_backend_buffer_free(input_buffer_);
+   }
+@@ -359,6 +365,95 @@ GraphModel::~GraphModel() {
+   // compute_backend_ is owned by backend_provider_; do not free here.
+ }
+ 
++// ggml's backward of MUL_MAT computes the input gradient as
++// mul_mat(cont(transpose(W)), grad): a transposed copy of every weight matrix
++// on every prediction (PET-MAD-XS: 42 matrices, 16 MB; PET-MAD-S: 60, 94 MB).
++// The weights never change, so the copies are made once, into a buffer of
++// their own, and those CONT nodes become plain tensors on them: op NONE with
++// their data set, which the graph allocator leaves alone and the backends
++// skip. Results are unchanged (same values, computed earlier).
++void GraphModel::substitute_weight_transposes(ggml_cgraph *cgraph) {
++  std::vector<ggml_tensor *> nodes;
++  bool missing = false;
++  for (int i = 0; i < ggml_graph_n_nodes(cgraph); ++i) {
++    ggml_tensor *n = ggml_graph_node(cgraph, i);
++    if (n->op != GGML_OP_CONT || !n->src[0] || n->src[0]->op != GGML_OP_TRANSPOSE) {
++      continue;
++    }
++    const ggml_tensor *w = n->src[0]->src[0];
++    if (!w || w->op != GGML_OP_NONE || w->view_src || w->buffer != weight_buffer_ ||
++        n->type != w->type || !ggml_is_contiguous(n)) {
++      continue;
++    }
++    nodes.push_back(n);
++    missing = missing || !weight_t_.count(w);
++  }
++  if (nodes.empty()) {
++    return;
++  }
++  if (missing) {
++    // (Re)build the set: every weight seen now plus the ones from before.
++    std::vector<const ggml_tensor *> weights;
++    for (const auto &kv : weight_t_) {
++      weights.push_back(kv.first);
++    }
++    for (ggml_tensor *n : nodes) {
++      const ggml_tensor *w = n->src[0]->src[0];
++      if (!weight_t_.count(w) &&
++          std::find(weights.begin(), weights.end(), w) == weights.end()) {
++        weights.push_back(w);
++      }
++    }
++    if (weight_t_buffer_) {
++      ggml_backend_buffer_free(weight_t_buffer_);
++      weight_t_buffer_ = nullptr;
++    }
++    if (weight_t_ctx_) {
++      ggml_free(weight_t_ctx_);
++      weight_t_ctx_ = nullptr;
++    }
++    weight_t_.clear();
++    ggml_init_params tp = {ggml_tensor_overhead() * (weights.size() + 1), nullptr, true};
++    weight_t_ctx_ = ggml_init(tp);
++    for (const ggml_tensor *w : weights) {
++      const int64_t ne[4] = {w->ne[1], w->ne[0], w->ne[2], w->ne[3]};
++      ggml_tensor *wt = ggml_new_tensor(weight_t_ctx_, w->type, 4, ne);
++      ggml_format_name(wt, "%.40s (T)", w->name);
++      weight_t_[w] = wt;
++    }
++    weight_t_buffer_ = ggml_backend_alloc_ctx_tensors(weight_t_ctx_, compute_backend_);
++    if (!weight_t_buffer_) {
++      throw std::runtime_error("Failed to allocate transposed weights");
++    }
++    // Fill them on the compute backend: one graph of copies, run once.
++    const size_t n_ops = 4 * weights.size() + 16;
++    ggml_init_params cp = {ggml_tensor_overhead() * n_ops + ggml_graph_overhead_custom(n_ops, false),
++                           nullptr, true};
++    ggml_context *copy_ctx = ggml_init(cp);
++    ggml_cgraph *copy_graph = ggml_new_graph_custom(copy_ctx, n_ops, false);
++    for (const ggml_tensor *w : weights) {
++      ggml_tensor *src = ggml_transpose(copy_ctx, const_cast<ggml_tensor *>(w));
++      ggml_tensor *dst = ggml_cpy(copy_ctx, src, weight_t_[w]);
++      // Views made outside an allocator: attach them to their buffers.
++      ggml_backend_view_init(src);
++      ggml_backend_view_init(dst);
++      ggml_build_forward_expand(copy_graph, dst);
++    }
++    const ggml_status st = ggml_backend_graph_compute(compute_backend_, copy_graph);
++    ggml_free(copy_ctx);
++    if (st != GGML_STATUS_SUCCESS) {
++      throw std::runtime_error("Failed to compute transposed weights");
++    }
++  }
++  for (ggml_tensor *n : nodes) {
++    ggml_tensor *wt = weight_t_.at(n->src[0]->src[0]);
++    n->op = GGML_OP_NONE;
++    n->src[0] = nullptr;
++    n->buffer = wt->buffer;
++    n->data = wt->data;
++  }
++}
++
+ bool GraphModel::load_from_gguf(const std::string &path) {
+   constexpr size_t TEMP_CTX_SIZE = 512 * 1024 * 1024;
+ 
+@@ -894,6 +989,9 @@ ModelResult GraphModel::predict_single(
+     cgraph = ggml_new_graph(compute_ctx);
+     ggml_build_forward_expand(cgraph, output);
+   }
++  if (compute_forces && !post_compute_hook) {
++    substitute_weight_transposes(cgraph);
++  }
+ 
+   // Allocate the graph's tensors. With the graph allocator, intermediate
+   // tensors share memory once nothing reads them any more, and the buffer
+diff --git a/src/runtime/graph_model.h b/src/runtime/graph_model.h
+index d0d5f52..8411706 100644
+--- a/src/runtime/graph_model.h
++++ b/src/runtime/graph_model.h
+@@ -116,6 +116,12 @@ private:
+   // small. A new buffer per call means new buffer handles each time, which on
+   // WebGPU defeats the bind group cache of every kernel that reads an input.
+   ggml_backend_buffer_t input_buffer_ = nullptr;
++  // Transposed copies of weight matrices for the backward graph, made once
++  // (see substitute_weight_transposes): weight -> its transpose.
++  ggml_context *weight_t_ctx_ = nullptr;
++  ggml_backend_buffer_t weight_t_buffer_ = nullptr;
++  std::map<const ggml_tensor *, ggml_tensor *> weight_t_;
++  void substitute_weight_transposes(ggml_cgraph *cgraph);
+ 
+   // Species mapping (atomic number -> index)
+   std::map<int, int> species_to_index_;

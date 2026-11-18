@@ -10,8 +10,9 @@ selected), or search for "Selection Inspector".
 
 ## Choosing atoms
 
-It follows the selection in the main 3D view: click an atom, **Shift-click** to add more,
-**Ctrl/⌘-click** to remove one, or drag to select a region. Ctrl/⌘-click an atom in the inspector's
+It follows the selection in the main 3D view: double-click an atom, **Shift+double-click** to add
+more, **Ctrl/⌘+double-click** to remove one, or **Shift+drag** to select a region (on a touch
+screen, double-tap). Ctrl/⌘-click an atom in the inspector's
 own view removes it too.
 
 The **add-neighbour** button at the top (an atom, a faint atom and a +) shows every atom bonded to
@@ -43,8 +44,16 @@ while the tool is on).
   **Move labels** again to turn the view again — moved labels stay beside their bond or angle as it
   turns, and keep their place in an export. While placing, each moved label has a **↺** on its
   left that puts just that one back on its bond or angle (no leader, hidden behind atoms again like
-  any other label); its **×** stays on the right. **Reset positions** puts
-  them all back.
+  any other label); its **×** stays on the right. **Reset** (shown once a label
+  was moved) puts them all back.
+- **Aₓ** and **Aˣ⁺** (top right) show each atom's name on it and its charge beside it — the same
+  switches as in the Structure window.
+- **Measured** shows the distances and angles measured in the 3D view whose atoms are all in the
+  inspector (the same copies), in the measurement colours; a measurement that repeats a labelled
+  bond or angle is left to that label.
+- **Size** sets the size of the length and angle labels (**Values**), of the atom labels
+  (**Atoms**; the **Aₓ** button) and of the charge badges (**Charges**; the **Aˣ⁺** button), each as
+  a multiple of the default. The 3D view's have their own sizes, in Settings ▸ Atom labels.
 - **Colours** sets the colour of the values, of the length and angle label backgrounds and of the
   angle arcs — for figures, black values on white labels, say. Click a swatch for the colour
   picker; its Reset (or the row's **Reset**) goes back to the default.

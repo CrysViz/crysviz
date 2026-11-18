@@ -158,7 +158,7 @@ const H = require('../harness');
   H.check('screen mode: hulls removed after switch back', !!noHulls);
 
   // Back to metallic: physical material again, outline pass inert.
-  await H.setSlider(page, 'celOutlineWidth', 0.7); // ~default width
+  await H.setSlider(page, 'celOutlineWidth', 0.5); // the default width
   await H.setSelect(page, 'renderStyleMenu', 'metallic');
   await page.waitForTimeout(2000);
   const metallic = await page.evaluate(async () => {

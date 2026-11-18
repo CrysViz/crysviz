@@ -64,7 +64,7 @@ const GROUP_META = {
 };
 
 const GROUP_ORDER = ['temperature', 'energy', 'force', 'pressure'];
-const AXIS_IDS = ['y', 'y2', 'y3'];      // left, right, outer-right
+const AXIS_IDS = ['y', 'y2', 'y3', 'y4']; // one stacked row per group, top to bottom
 
 // After a failed Plotly load (offline), wait this long before trying again.
 const PLOTLY_RETRY_MS = 15000;
@@ -83,6 +83,14 @@ function pickColor(spec, isLight) {
 
 function fmt(v, digits) {
   return Number.isFinite(v) ? v.toFixed(digits) : 'n/a';
+}
+
+// English ordinal for the decimation note ("every 4th step"): 1st, 2nd, 3rd,
+// 4th … 11th–13th, 21st.
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
 }
 
 /**
@@ -110,11 +118,17 @@ function fmt(v, digits) {
  *   carry an x coordinate.
  * @param {boolean} [options.showComputeStats=true] - keep the "Compute step
  *   stats" toolbar slot (hidden until setComputeStatsAvailable(true)).
+ * @param {any} [options.plotly] - test seam: a pre-resolved Plotly-like module
+ *   to draw with instead of lazy-loading the real one from the CDN.
  * @returns {{update, setSeries, clear, setCursor, onSeek, onComputeStats,
  *            setComputeStatsAvailable, addMarker, clearMarkers, getEl, remove}}
  */
 export function createTrajectoryPlot(hostEl, options = {}) {
   const maxPts = Number.isFinite(options.maxPts) ? options.maxPts : 5000;
+  // Test seam: a pre-resolved Plotly-like module. Production leaves it null and
+  // drawFull lazy-loads the real one; a browser test with the CDN blocked can
+  // pass a recorder to exercise the draw path.
+  const plotlyOverride = options.plotly || null;
   const plotId = options.id || PLOT_ID;
   const seriesSpec = options.seriesSpec || SERIES_SPEC;
   const groupMeta = options.groupMeta || GROUP_META;
@@ -235,8 +249,19 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // the axis reads real steps. cursor/seek map between frame index and these.
   const xValues = [];
   let xTitle = xTitleDefault;
-  let sampleCount = 0;       // longest series length == number of x samples
+  let sampleCount = 0;       // longest series length == number of PLOTTED samples
   let cursorIndex = null;
+  // setSeries downsamples a long series so Plotly never redraws more than
+  // maxPts points. `decimation` is the frame stride between kept samples,
+  // `fullSampleCount` the original frame count, and `sampleFrame[k]` the
+  // original frame index of the k-th kept sample (the last frame is always
+  // kept). cursor/seek map between original frame indices and this decimated
+  // sample space. The live `update` path uses the maxPts ring instead, so it
+  // leaves these at their 1:1 defaults.
+  let decimation = 1;
+  let fullSampleCount = 0;
+  /** @type {number[] | null} */
+  let sampleFrame = null;
   // Vertical event markers ({x, label}) — a loaded file, play/pause, a GC
   // hint — drawn as dotted lines with a small rotated label. Pruned with the
   // ring buffer so they never outlive the samples they annotate.
@@ -256,6 +281,19 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // (the data is already in `series`), and the purge waits for the react.
   /** @type {Promise<any> | null} */
   let inFlight = null;
+  // The other Plotly calls still running (cursor relayout, resize,
+  // extendTraces): a purge in the middle of one ends the same way — "reading
+  // '_redrawFromAutoMarginCount' of undefined" when the Trajectory window was
+  // rebuilt during a relaxation — so the purge waits for these too. Their
+  // errors still surface (re-thrown).
+  /** @type {Set<Promise<any>>} */
+  const sideCalls = new Set();
+  function track(call) {
+    if (!call || typeof call.then !== 'function') return call;
+    sideCalls.add(call);
+    call.then(() => sideCalls.delete(call), (error) => { sideCalls.delete(call); throw error; });
+    return call;
+  }
   let redrawQueued = false;
   let removed = false;
   let layoutSig = '';        // signature of the current trace/axis layout
@@ -294,14 +332,14 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     return present;
   }
 
-  // Distinct groups present, in order — the first gets the left axis, the next
-  // two the right axes.
+  // Distinct groups present, in order — each gets its own row (y axis), the
+  // first at the top.
   function groupAxisMap(plotted) {
     const groups = [];
     for (const p of plotted) if (!groups.includes(p.group)) groups.push(p.group);
     const map = {};
     groups.slice(0, AXIS_IDS.length).forEach((g, i) => { map[g] = AXIS_IDS[i]; });
-    // Any groups beyond the third fold onto the last axis rather than vanish.
+    // Any groups beyond the fourth fold onto the last row rather than vanish.
     for (const g of groups) if (!map[g]) map[g] = AXIS_IDS[AXIS_IDS.length - 1];
     return { groups, map };
   }
@@ -327,6 +365,8 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       x: x.slice(),
       y: (series.get(name) || []).slice(0, n),
       yaxis: groupAxisMap(plotted).map[group],
+      // Side by side, each column has its own step axis (x, x2, ...).
+      xaxis: arrangement === 'columns' ? `x${groupAxisMap(plotted).map[group].slice(1)}` : 'x',
       line: { color: pickColor(spec, isLight), width: 1.8, dash: DASH[spec.dash] },
       connectgaps: false,
       // Value only; the "x unified" hover header already shows the step/frame.
@@ -334,24 +374,177 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     }));
   }
 
+  // How the groups are laid out: stacked in rows sharing one step axis, or
+  // side by side in columns, each with its own step axis kept in step with
+  // the first. Chosen from the chart's shape on every full draw (drawFull),
+  // so traces and layout agree: wide and short (the side dock along the
+  // bottom edge, a phone's bottom sheet, landscape) puts them side by side,
+  // anything taller stacks them.
+  /** @type {'rows' | 'columns'} */
+  let arrangement = 'rows';
+
+  // Axes of the last layout, one entry per group in order ({x, y} axis ids),
+  // and the group labels. The cursor/marker relayout (scheduleCursor) redraws
+  // shapes and annotations without rebuilding the layout, so it reads these
+  // to keep one cursor line per plot and the labels in place.
+  /** @type {{x: string, y: string}[]} */
+  let plotAxes = [{ x: 'x', y: 'y' }];
+  let rowLabels = [];
+  // Per plot: its y-axis key, the series drawn in it, its height and tick font
+  // size, so the throttled relayout can refresh the ticks while data streams.
+  /** @type {{key: string, names: string[], px: number, tickPx: number}[]} */
+  let rowTickInfo = [];
+
+  // Bigger fonts/margins in the fullscreen (⛶) view, same idiom as the
+  // histograms' isExpanded sizing — the compact panel's tuned sizes read as
+  // tiny once stretched across a 90vw/90vh fullscreen canvas.
+  function chartSizes() {
+    return isExpanded
+      ? { base: 15, legend: 14, xTitle: 15, rowLabel: 15, tick: 14, scale: 1.5 }
+      : { base: 11, legend: 10, xTitle: 11, rowLabel: 11, tick: 10, scale: 1 };
+  }
+
+  // A legend only where a plot holds more than one line (T and T target);
+  // otherwise each plot's label already names its one series.
+  function needsLegend(plotted) {
+    const perGroup = new Map();
+    for (const p of plotted) perGroup.set(p.group, (perGroup.get(p.group) || 0) + 1);
+    return [...perGroup.values()].some((c) => c > 1);
+  }
+
+  // Pixel geometry of the chart for an arrangement: margins (the label above
+  // each plot lives in the top margin or the gap between rows; side by side,
+  // a short chart drops the step-axis title) and the plotting area.
+  function chartGeometry(mode, showLegend) {
+    const sizes = chartSizes();
+    const sc = sizes.scale;
+    const labelPx = Math.round(sizes.rowLabel * 1.5);
+    const W = plotDiv.clientWidth || 320;
+    const H = plotDiv.clientHeight || 220;
+    const top = Math.round((showLegend ? 28 : 4) * sc) + labelPx;
+    const withTitle = mode === 'rows' || H - top - Math.round(38 * sc) >= 60 * sc;
+    const margin = {
+      t: top,
+      r: Math.round(14 * sc),
+      b: Math.round((withTitle ? 38 : 22) * sc),
+      l: Math.round(44 * sc),
+    };
+    return {
+      sizes, labelPx, margin, withTitle,
+      plotW: Math.max(60, W - margin.l - margin.r),
+      plotH: Math.max(20, H - margin.t - margin.b),
+      // Between columns: room for the next column's tick labels.
+      colGapPx: Math.round(52 * sc),
+    };
+  }
+
+  function chooseArrangement(plotted) {
+    const n = groupAxisMap(plotted).groups.length;
+    if (n < 2 || !plotDiv.clientWidth || !plotDiv.clientHeight) return 'rows';
+    const showLegend = needsLegend(plotted);
+    const rows = chartGeometry('rows', showLegend);
+    const cols = chartGeometry('columns', showLegend);
+    const rowPx = (rows.plotH - rows.labelPx * (n - 1)) / n;
+    const colPx = (cols.plotW - cols.colGapPx * (n - 1)) / n;
+    const fitsColumns = colPx >= 80 * cols.sizes.scale;
+    // Wide and short: side by side. Taller: stacked, unless the rows would
+    // be too flat to read and columns still fit.
+    if (fitsColumns && plotDiv.clientWidth >= 2 * plotDiv.clientHeight) return 'columns';
+    if (fitsColumns && rowPx < rows.sizes.tick * 3) return 'columns';
+    return 'rows';
+  }
+
+  // Signed, with the typographic minus Plotly uses on its own ticks.
+  function tickText(v, decimals) {
+    const t = Math.abs(v) < 0.5 * 10 ** -decimals ? (0).toFixed(decimals) : v.toFixed(decimals);
+    return t.replace('-', '\u2212');
+  }
+
+  // Ticks for one row: its data minimum and maximum, always labelled (the
+  // values the plot is read for: the starting force, the peak pressure),
+  // plus 0 and round values between them where the row is tall enough to
+  // keep the labels apart.
+  function rowTicks({ names, px, tickPx }) {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const name of names) {
+      const arr = series.get(name) || [];
+      const n = Math.min(arr.length, sampleCount);
+      for (let i = 0; i < n; i++) {
+        const v = arr[i];
+        if (!Number.isFinite(v)) continue;
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+    if (!Number.isFinite(lo)) return { tickmode: 'auto', tickvals: null, ticktext: null };
+    const span = hi - lo;
+    if (!(span > 0)) {
+      const d = Math.max(0, Math.min(6, 2 - Math.floor(Math.log10(Math.abs(lo) || 1))));
+      return { tickmode: 'array', tickvals: [lo], ticktext: [tickText(lo, d)] };
+    }
+    const perUnit = px / span;
+    const minSep = tickPx * 1.6; // px between label centres
+    const fits = (v) => (v - lo) * perUnit >= minSep && (hi - v) * perUnit >= minSep;
+    // Round values that fit between the ends, on a 1-2-5 step.
+    const inner = [];
+    let step = 0;
+    const room = Math.floor(px / (tickPx * 2.4)) - 1;
+    if (room > 0) {
+      const raw = span / (room + 1);
+      const mag = 10 ** Math.floor(Math.log10(raw));
+      step = [1, 2, 5, 10].map((m) => m * mag).find((st) => st >= raw) || 10 * mag;
+      for (let k = Math.ceil(lo / step); k * step < hi; k++) {
+        if (fits(k * step)) inner.push(k * step);
+      }
+    }
+    // 0 keeps its place even when nothing else fits: where the sign changes.
+    if (lo < 0 && hi > 0 && fits(0) && !inner.some((v) => Math.abs(v) < 1e-12)) {
+      for (let i = inner.length - 1; i >= 0; i--) if (Math.abs(inner[i]) * perUnit < minSep) inner.splice(i, 1);
+      inner.push(0);
+    }
+    // One decimal count for the whole row: enough to tell the ends apart and
+    // to write the step.
+    const endDecimals = 1 - Math.floor(Math.log10(span));
+    const stepDecimals = step ? -Math.floor(Math.log10(step) + 1e-9) : 0;
+    const decimals = Math.max(0, Math.min(6, Math.max(endDecimals, stepDecimals)));
+    const vals = [lo, hi, ...inner];
+    const texts = vals.map((v) => tickText(v, decimals));
+    return { tickmode: 'array', tickvals: vals, ticktext: texts };
+  }
+
+  // The rows' current ticks as relayout updates ('yaxis2.tickvals', ...).
+  function rowTickUpdates() {
+    const out = {};
+    for (const row of rowTickInfo) {
+      const t = rowTicks(row);
+      out[`${row.key}.tickmode`] = t.tickmode;
+      out[`${row.key}.tickvals`] = t.tickvals;
+      out[`${row.key}.ticktext`] = t.ticktext;
+    }
+    return out;
+  }
+
+  // One plot per group (T, E, |F|, P): stacked in rows on a shared step axis,
+  // or side by side (see chooseArrangement). Each plot is labelled above its
+  // plotting area rather than with a rotated y title, and labels its own
+  // minimum and maximum — overlaid right-hand axes ran into each other.
   function buildLayout(plotted) {
     const { groups, map } = groupAxisMap(plotted);
-    const nRight = Math.max(0, groups.length - 1);
-    // Shrink the plotting area from the right to make room for stacked right
-    // axes, and pad the right margin so the outer axis's tick labels aren't
-    // clipped by the container edge.
-    const rightDomain = nRight >= 2 ? 0.84 : 1;
-    const marginR = nRight >= 2 ? 52 : (nRight === 1 ? 44 : 14);
+    const yIds = groups.length ? groups.map((g) => map[g]).filter((id, i, all) => all.indexOf(id) === i) : ['y'];
+    const n = yIds.length;
+    const columns = arrangement === 'columns' && n > 1;
     const isLight = plotTheme === 'light';
     const fontColor = isLight ? '#1a1a1a' : '#ddd';
     const gridColor = isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.07)';
-    // Bigger fonts/margins in the fullscreen (⛶) view, same idiom as the
-    // histograms' isExpanded sizing — the compact panel's tuned sizes read as
-    // tiny once stretched across a 90vw/90vh fullscreen canvas.
-    const sizes = isExpanded
-      ? { base: 15, legend: 14, xTitle: 15, yTitle: 16, tick: 14 }
-      : { base: 11, legend: 10, xTitle: 11, yTitle: 12, tick: 10 };
-    const marginScale = isExpanded ? 1.5 : 1;
+    const showLegend = needsLegend(plotted);
+    const geo = chartGeometry(columns ? 'columns' : 'rows', showLegend);
+    const { sizes, labelPx, margin, plotW, plotH } = geo;
+
+    // Rows: the gap above each row holds that row's label. Columns: the gap
+    // left of each column holds its tick labels. Pixels to paper fractions.
+    const gap = n > 1 ? Math.min(0.3, (columns ? geo.colGapPx / plotW : labelPx / plotH)) : 0;
+    const size = (1 - gap * (n - 1)) / n;
 
     const layout = {
       // Dark stays transparent (the surrounding .trajPlot div already paints
@@ -360,17 +553,10 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       paper_bgcolor: isLight ? '#ffffff' : 'rgba(0,0,0,0)',
       plot_bgcolor: isLight ? '#ffffff' : 'rgba(0,0,0,0)',
       font: { color: fontColor, size: sizes.base },
-      // Extra top room so the (possibly two-row) horizontal legend sits fully
-      // above the plot frame instead of overlapping the traces.
-      margin: {
-        t: Math.round(42 * marginScale),
-        r: Math.round(marginR * marginScale),
-        b: Math.round(38 * marginScale),
-        l: Math.round(52 * marginScale),
-      },
-      showlegend: true,
+      margin,
+      showlegend: showLegend,
       legend: {
-        orientation: 'h', x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom',
+        orientation: 'h', x: 0.5, y: 1 + labelPx / plotH, xanchor: 'center', yanchor: 'bottom',
         font: { color: fontColor, size: sizes.legend }, bgcolor: 'rgba(0,0,0,0)',
         tracegroupgap: 8,
       },
@@ -379,44 +565,72 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       hoverlabel: isLight
         ? { bgcolor: 'rgba(255,255,255,0.96)', bordercolor: '#bbbbbb', font: { color: '#1a1a1a', size: sizes.base } }
         : { bgcolor: 'rgba(24,24,27,0.96)', bordercolor: '#5a5a5e', font: { color: '#f2f2f2', size: sizes.base } },
-      xaxis: {
-        title: { text: xTitle, font: { size: sizes.xTitle }, standoff: 6 },
-        tickfont: { size: sizes.tick },
-        color: fontColor, gridcolor: gridColor,
-        zeroline: false, domain: [0, rightDomain],
-      },
-      shapes: [...markerShapes(), ...cursorShapes()],
-      annotations: markerAnnotations(),
     };
+    const stepAxis = (extra) => ({
+      title: geo.withTitle ? { text: xTitle, font: { size: sizes.xTitle }, standoff: 6 } : undefined,
+      tickfont: { size: sizes.tick },
+      color: fontColor, gridcolor: gridColor,
+      zeroline: false,
+      ...extra,
+    });
+    // Rows share one step axis, under the bottom row.
+    if (!columns) layout.xaxis = stepAxis({ anchor: yIds[n - 1] });
 
-    groups.forEach((g, i) => {
-      const axisId = map[g];
+    rowLabels = [];
+    rowTickInfo = [];
+    plotAxes = [];
+    yIds.forEach((axisId, i) => {
+      const g = groups.find((grp) => map[grp] === axisId);
       const key = axisId === 'y' ? 'yaxis' : `yaxis${axisId.slice(1)}`;
+      const xId = columns ? `x${axisId.slice(1)}` : 'x';
       // A dynamic group (no fixed meta) takes its first series' colour and
       // is titled by that series' label.
+      const inGroup = plotted.filter((p) => map[p.group] === axisId);
       const meta = groupMeta[g] || (() => {
-        const first = plotted.find((p) => p.group === g);
+        const first = inGroup[0];
         return first ? { color: first.spec.color, lightColor: first.spec.lightColor, title: first.spec.label } : GENERIC_SPEC;
       })();
       const axColor = pickColor(meta, isLight);
-      const ax = {
-        title: { text: meta.title, font: { color: axColor, size: sizes.yTitle } },
+      // Rows run top to bottom, columns left to right.
+      const start = columns ? i * (size + gap) : 1 - i * (size + gap) - size;
+      const domain = [Math.max(0, start), Math.min(1, start + size)];
+      if (columns) {
+        // Each column its own step axis, zoomed together with the first.
+        layout[i === 0 ? 'xaxis' : `xaxis${axisId.slice(1)}`] = stepAxis({
+          domain, anchor: axisId, ...(i > 0 ? { matches: 'x' } : {}),
+        });
+      }
+      const tickInfo = { key, names: inGroup.map((p) => p.name), px: columns ? plotH : size * plotH, tickPx: sizes.tick };
+      rowTickInfo.push(tickInfo);
+      layout[key] = {
+        domain: columns ? [0, 1] : domain,
+        anchor: xId,
         color: axColor,
         tickfont: { color: axColor, size: sizes.tick },
+        gridcolor: gridColor,
         zeroline: false,
+        ...rowTicks(tickInfo),
+        // Labels sit just above their tick: a bottom minimum then stays clear
+        // of the step axis's labels under it.
+        ticklabelposition: 'outside top',
+        // Grow the left margin to the widest tick label of any row.
+        automargin: true,
       };
-      if (i === 0) {
-        ax.gridcolor = gridColor;
-      } else {
-        ax.overlaying = 'y';
-        ax.side = 'right';
-        ax.showgrid = false;
-        // Second right axis floats just outside the shrunk plot area, at the
-        // right edge of the paper so its labels live in the padded margin.
-        if (i >= 2) { ax.anchor = 'free'; ax.position = 1; }
-      }
-      layout[key] = ax;
+      // One series in the plot: name it with the group's unit ("E tot (eV)");
+      // several (T, T target): the group title, the legend tells them apart.
+      const unit = /\(([^)]*)\)\s*$/.exec(meta.title || '')?.[1];
+      const text = inGroup.length === 1 && unit ? `${inGroup[0].spec.label} (${unit})` : (meta.title || '');
+      rowLabels.push({
+        text, showarrow: false,
+        x: columns ? domain[0] : 0, xref: 'paper', xanchor: 'left',
+        y: columns ? 1 : domain[1], yref: 'paper', yanchor: 'bottom', yshift: 2,
+        font: { color: axColor, size: sizes.rowLabel },
+      });
+      plotAxes.push({ x: xId, y: axisId });
     });
+    if (!plotAxes.length) plotAxes = [{ x: 'x', y: 'y' }];
+    layout.shapes = [...markerShapes(), ...cursorShapes()];
+    layout.annotations = [...rowLabels, ...markerAnnotations()];
 
     return layout;
   }
@@ -426,12 +640,12 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     const i = Math.max(0, Math.min(sampleCount - 1, cursorIndex));
     const x = i < xValues.length ? xValues[i] : i + 1; // step at this frame
     const isLight = plotTheme === 'light';
-    return [{
-      type: 'line', xref: 'x', yref: 'paper',
+    return plotAxes.map(({ x: xId, y: id }) => ({
+      type: 'line', xref: xId, yref: `${id} domain`,
       x0: x, x1: x, y0: 0, y1: 1,
       line: { color: isLight ? 'rgba(20,20,20,0.55)' : 'rgba(255,255,255,0.7)', width: 1, dash: 'solid' },
       layer: 'above',
-    }];
+    }));
   }
 
   // Marker line + label colours for either canvas.
@@ -442,12 +656,12 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   function markerShapes() {
     if (!markers.length) return [];
     const color = markerColor();
-    return markers.map((m) => ({
-      type: 'line', xref: 'x', yref: 'paper',
+    return markers.flatMap((m) => plotAxes.map(({ x: xId, y: id }) => ({
+      type: 'line', xref: xId, yref: `${id} domain`,
       x0: m.x, x1: m.x, y0: 0, y1: 1,
       line: { color, width: 1, dash: 'dot' },
       layer: 'below',
-    }));
+    })));
   }
 
   function markerAnnotations() {
@@ -469,12 +683,11 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     if (markers[0].x < oldest) markers = markers.filter((m) => m.x >= oldest);
   }
 
-  const config = {
-    responsive: true,
-    displaylogo: false,
-    modeBarButtonsToRemove: ['select2d', 'lasso2d'],
-    toImageButtonOptions: { format: 'png', filename: 'trajectory', scale: 3 },
-  };
+  // No Plotly mode bar, like every other plot in the app (histograms, EOS,
+  // phonons, lattice): it sat over the plots' labels, and the toolbar above
+  // the chart has export and fullscreen. Drag still zooms, a double click or
+  // tap resets.
+  const config = { responsive: true, displayModeBar: false };
 
   function sigOf(plotted) {
     const { map } = groupAxisMap(plotted);
@@ -485,6 +698,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // set of plotted series or their axis assignment changes.
   async function drawFull() {
     if (removed) return;
+    if (!Plotly && plotlyOverride) Plotly = plotlyOverride;
     if (!Plotly) {
       // Offline, the loader rejects and forgets its promise so a later attempt
       // can succeed; a streaming caller (live MD, the debug sampler) calls
@@ -504,6 +718,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     if (inFlight) { redrawQueued = true; return; }
     const plotted = plottedSeries();
     layoutSig = sigOf(plotted);
+    arrangement = chooseArrangement(plotted);
     inFlight = Plotly.react(plotDiv, buildTraces(plotted), buildLayout(plotted), config);
     try {
       await inFlight;
@@ -514,9 +729,10 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     }
     if (removed) return;
     ready = true;
+    laidOutHeight = plotDiv.clientHeight;
     wireClickSeek();
     startResizeObserver();
-    requestAnimationFrame(() => { if (!removed && !inFlight) Plotly.Plots.resize(plotDiv); });
+    requestAnimationFrame(() => { if (!removed && !inFlight) track(Plotly.Plots.resize(plotDiv)); });
     if (redrawQueued) {
       redrawQueued = false;
       drawFull();
@@ -527,15 +743,26 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // user-resizable (drag + CSS resize handle), so observe the container and
   // resize the chart to fill it — otherwise it only caught up on an autoscale
   // ("Home") click. rAF-coalesced so a drag doesn't fire a resize per pixel.
+  // The gaps between plots (and the labels in them) are sized in pixels from
+  // the chart's size (buildLayout), and its shape picks rows or columns, so a
+  // height change or a flip of the arrangement re-lays the chart out; other
+  // width changes only need Plotly's resize.
   let ro = null;
   let resizeRAF = 0;
+  let laidOutHeight = 0;
   function startResizeObserver() {
     if (ro || typeof ResizeObserver === 'undefined') return;
+    laidOutHeight = plotDiv.clientHeight;
     ro = new ResizeObserver(() => {
       if (resizeRAF) return;
       resizeRAF = requestAnimationFrame(() => {
         resizeRAF = 0;
-        if (ready && !removed && Plotly) Plotly.Plots.resize(plotDiv);
+        if (!ready || removed || !Plotly) return;
+        const h = plotDiv.clientHeight;
+        if (Math.abs(h - laidOutHeight) > 2 || chooseArrangement(plottedSeries()) !== arrangement) {
+          laidOutHeight = h;
+          drawFull();
+        } else track(Plotly.Plots.resize(plotDiv));
       });
     });
     ro.observe(plotDiv);
@@ -558,10 +785,12 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       cursorLastAt = performance.now();
       if (!ready || removed) return;
       if (inFlight) { scheduleCursor(); return; } // after the redraw lands
-      Plotly.relayout(plotDiv, {
+      track(Plotly.relayout(plotDiv, {
         shapes: [...markerShapes(), ...cursorShapes()],
-        annotations: markerAnnotations(),
-      });
+        annotations: [...rowLabels, ...markerAnnotations()],
+        // Streamed points (extendTraces) can move a row's minimum or maximum.
+        ...rowTickUpdates(),
+      }));
     }, wait);
   }
 
@@ -576,28 +805,34 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     plotDiv.addEventListener('click', (e) => {
       if (!ready || typeof seekCb !== 'function') return;
       const fl = /** @type {any} */ (plotDiv)._fullLayout;
-      const xa = fl && fl.xaxis;
-      if (!xa || typeof xa.p2d !== 'function') return;
+      if (!fl) return;
+      // The step axis under the click: one shared by stacked rows, one per
+      // column side by side.
       const rect = plotDiv.getBoundingClientRect();
-      const px = e.clientX - rect.left - (xa._offset || 0);
-      if (px < 0 || px > (xa._length || 0)) return; // outside the plotting area
-      const dataX = xa.p2d(px);
+      const x = e.clientX - rect.left;
+      const xa = Object.keys(fl).filter((k) => /^xaxis\d*$/.test(k)).map((k) => fl[k])
+        .find((a) => a && typeof a.p2d === 'function' && x >= (a._offset || 0) && x <= (a._offset || 0) + (a._length || 0));
+      if (!xa) return; // outside every plotting area
+      const dataX = xa.p2d(x - (xa._offset || 0));
       if (!Number.isFinite(dataX)) return;
       // Map the clicked x back to the nearest FRAME INDEX. x may be step numbers
       // (non-unit spacing), so find the closest recorded step rather than assume
       // x == frame index.
-      let frame;
+      let sample;
       if (xValues.length) {
         let best = 0; let bestD = Infinity;
         for (let i = 0; i < xValues.length; i++) {
           const d = Math.abs(xValues[i] - dataX);
           if (d < bestD) { bestD = d; best = i; }
         }
-        frame = best;
+        sample = best;
       } else {
-        frame = Math.round(dataX) - 1;
+        sample = Math.round(dataX) - 1;
       }
-      seekCb(Math.max(0, Math.min(sampleCount - 1, frame)));
+      sample = Math.max(0, Math.min(sampleCount - 1, sample));
+      // Map the decimated sample back to the original frame the panel seeks to.
+      const frame = sampleFrame ? sampleFrame[sample] : sample * decimation;
+      seekCb(Math.max(0, Math.min((fullSampleCount || sampleCount) - 1, frame)));
     });
   }
 
@@ -679,7 +914,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         return arr.slice(Math.max(0, arr.length - k));
       });
       const idxs = plotted.map((_, i) => i);
-      Plotly.extendTraces(plotDiv, { x: xUpdate, y: yUpdate }, idxs, maxPts);
+      track(Plotly.extendTraces(plotDiv, { x: xUpdate, y: yUpdate }, idxs, maxPts));
       scheduleCursor();
     },
 
@@ -687,12 +922,35 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     // `step` key on the object (or opts.steps) supplies the per-frame step
     // numbers for the x-axis; without it the x-axis falls back to 1-based frames.
     setSeries(seriesObj = {}, opts = {}) {
+      // Downsample to at most maxPts: a compute-stats / replay path can hand us
+      // 100k+ points, and Plotly redraws every one of them on each relayout
+      // (10-15 ms) — a 100k-point trace makes the whole panel jerk. Keep every
+      // `stride`-th frame plus the last, so the line's shape and its endpoint
+      // survive; the cursor/seek mapping below works in this decimated space.
+      let full = 0;
+      for (const arr of Object.values(seriesObj)) {
+        if (Array.isArray(arr)) full = Math.max(full, arr.length);
+      }
+      const stride = full > maxPts ? Math.ceil(full / maxPts) : 1;
+      /** @type {number[]} original frame index of each kept sample */
+      const keep = [];
+      for (let i = 0; i < full; i += stride) keep.push(i);
+      // Pin the last kept sample to the final frame so the line ends where the
+      // data does — overwriting, not appending, keeps the count ≤ maxPts.
+      if (full > 0) keep[keep.length - 1] = full - 1;
+      const pick = (/** @type {any[]} */ arr) =>
+        keep.map((i) => (i < arr.length ? arr[i] : NaN));
+
+      decimation = stride;
+      fullSampleCount = full;
+      sampleFrame = keep;
+
       series.clear();
       seriesOrder.length = 0;
       for (const [name, arr] of Object.entries(seriesObj)) {
         if (name === xKey) continue; // reserved: x-axis values, not a plotted series
         if (seriesSpec[name] && seriesSpec[name].plot === false) continue;
-        series.set(name, Array.isArray(arr) ? arr.slice() : []);
+        series.set(name, Array.isArray(arr) ? pick(arr) : []);
         seriesOrder.push(name);
         noteGroup(specFor(name).group);
       }
@@ -702,15 +960,15 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       const steps = Array.isArray(opts.steps) ? opts.steps
         : (Array.isArray(seriesObj[xKey]) ? seriesObj[xKey] : null);
       if (steps) {
-        for (let i = 0; i < sampleCount; i++) {
-          xValues.push(Number.isFinite(steps[i]) ? steps[i] : i + 1);
-        }
+        for (const i of keep) xValues.push(Number.isFinite(steps[i]) ? steps[i] : i + 1);
         xTitle = xTitleWithX;
       } else {
         xTitle = xTitleDefault;
       }
 
-      statsEl.textContent = '';
+      statsEl.textContent = stride > 1
+        ? `showing every ${ordinal(stride)} step (${sampleCount} of ${full})`
+        : '';
       drawFull();
     },
 
@@ -721,6 +979,9 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       xTitle = xTitleDefault;
       sampleCount = 0;
       cursorIndex = null;
+      decimation = 1;
+      fullSampleCount = 0;
+      sampleFrame = null;
       markers = [];
       statsEl.textContent = '';
       drawFull();
@@ -741,7 +1002,11 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     },
 
     setCursor(frameIndex) {
-      cursorIndex = Number.isFinite(frameIndex) ? frameIndex : null;
+      // frameIndex is an ORIGINAL frame index; map it into the decimated
+      // sample space the plot draws in (a no-op when decimation === 1).
+      cursorIndex = Number.isFinite(frameIndex)
+        ? Math.round(frameIndex / decimation)
+        : null;
       scheduleCursor();
     },
 
@@ -765,10 +1030,12 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       if (ro) { ro.disconnect(); ro = null; }
       if (isExpanded) { closeExpandedSplitItem(); isExpanded = false; }
       root.remove();
-      // Purge only once no react is in flight (see inFlight above); the div is
-      // already out of the DOM, so nothing is visible in between.
+      // Purge only once no Plotly call is in flight (see inFlight and
+      // sideCalls above); the div is already out of the DOM, so nothing is
+      // visible in between.
       const purge = () => { try { if (Plotly && plotDiv) Plotly.purge(plotDiv); } catch { /* nothing drawn yet */ } };
-      if (inFlight) inFlight.then(purge, purge);
+      const pending = [inFlight, ...sideCalls].filter(Boolean);
+      if (pending.length) Promise.allSettled(pending).then(purge);
       else purge();
     },
   };

@@ -36,6 +36,7 @@ export const CONCEPTS = [
   { to: { control: 'relaxBtn' }, phrases: [
     'start relaxation', 'run relaxation', 'relax structure', 'optimise geometry', 'run optimisation', 'minimise structure',
   ] },
+  { to: { control: 'relaxStopBtn' }, phrases: ['stop relaxation', 'abort relaxation', 'cancel optimisation'] },
   { to: { control: 'relaxMaxStepsInput' }, phrases: ['maximum relaxation steps', 'max iterations', 'optimisation steps', 'nsw relaxation'] },
   { to: { control: 'relaxForceTolInput' }, phrases: ['force convergence', 'force tolerance', 'fmax', 'ediffg', 'convergence criterion'] },
   { to: { control: 'relaxTargetPressureInput' }, phrases: ['target pressure', 'external pressure', 'relax under pressure', 'hydrostatic pressure', 'pstress'] },
@@ -269,6 +270,7 @@ export const CONCEPTS = [
   { to: { control: 'renderStyleMenu' }, phrases: [
     'cel shading', 'cartoon look', 'toon shading', 'metallic look', 'matte look', 'glossy', 'shiny atoms', 'outlines',
   ] },
+  { to: { control: 'atomDetailMenu' }, phrases: ['sphere resolution', 'level of detail', 'smoother spheres', 'faster rendering', 'large structures slow'] },
   { to: { control: 'depthPeelLayersSlider' }, phrases: ['transparency quality', 'depth peeling', 'order independent transparency'] },
   { to: { control: 'rtGroundToggle' }, phrases: ['ground shadow', 'floor', 'shadow plane'] },
   { to: { control: 'resetRenderingBtn' }, phrases: ['default rendering'] },
@@ -287,6 +289,10 @@ export const CONCEPTS = [
     'custom shortcuts', 'change shortcuts', 'rebind keys', 'hotkeys',
   ] },
   { to: { control: 'compositionLegendButton' }, phrases: ['legend', 'colour legend', 'element legend', 'composition legend'] },
+  { to: { control: 'chargeBadgesButton' }, phrases: ['charge badges', 'charges on atoms', 'oxidation state labels'] },
+  { to: { control: 'atomLabelsButton' }, phrases: ['atom labels', 'atom names', 'site labels', 'label atoms', 'atom numbers', 'show labels'] },
+  { to: { control: 'atomLabelSize' }, phrases: ['atom label size', 'label font size', 'bigger labels', 'smaller labels'] },
+  { to: { control: 'chargeLabelSize' }, phrases: ['charge label size', 'charge badge size', 'bigger charges', 'smaller charges'] },
   { to: { control: 'resetAllColorsBtn' }, phrases: ['reset colours', 'undo colour changes'] },
   { to: { control: 'applyStylesToTrajectoryBtn' }, phrases: ['apply colours to all frames', 'style whole trajectory'] },
   { to: { control: 'linkPeriodicCopiesToggle' }, phrases: ['periodic copies same colour'] },
@@ -331,7 +337,12 @@ export const CONCEPTS = [
   { to: { control: 'clearLocalDataButton' }, phrases: ['clear cache', 'forget settings', 'reset everything', 'factory reset', 'delete stored data'] },
   { to: { control: 'disableLeaveWarningToggle' }, phrases: ['reload warning', 'leave site warning', 'stop asking before reload'] },
   { to: { control: 'disableRaytraceWarningToggle' }, phrases: ['ray tracing warning'] },
+  { to: { control: 'collapsePotentialCaveatToggle' }, phrases: [
+    'hide mlip warning', 'collapse accuracy warning', 'hide accuracy warning', 'machine learned potential warning',
+    'dft warning', 'potential warning',
+  ] },
   { to: { control: 'exportGpuMemorySlider' }, phrases: ['gpu memory', 'vram', 'large image export'] },
+  { to: { control: 'trajectoryMemorySlider' }, phrases: ['memory limit', 'ram limit', 'memory usage', 'large trajectory'] },
   { to: { control: 'measureLabelSize' }, phrases: ['measurement label size', 'measurement font size'] },
   { to: { control: 'measureLineStyle' }, phrases: ['dashed line', 'measurement line style'] },
   { to: { control: 'dragIntoDockToggle' }, phrases: ['docking behaviour', 'prevent docking', 'stop windows docking'] },
@@ -395,7 +406,7 @@ export const BEST_BETS = [
     { panel: 'forces' }, { panel: 'spins' }, { control: 'spinTextInput' },
   ] },
   { words: ['quality'], targets: [
-    { control: 'renderPipelineMenu' }, { control: 'depthPeelLayersSlider' },
+    { control: 'renderPipelineMenu' }, { control: 'atomDetailMenu' }, { control: 'depthPeelLayersSlider' },
     { control: 'exportGpuMemorySlider' },
   ] },
   { words: ['pressure'], targets: [

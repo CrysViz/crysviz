@@ -33,7 +33,9 @@ const FILE = path.join(__dirname, '..', '..', '..', 'docs', 'ui', 'search', 'con
     const { CONCEPTS, BEST_BETS } = await import('./ui/search/concepts.js');
     fs.openFeatureSearch('');
     fs.closeFeatureSearch();
-    const is = (e, to) => (to.structure ? e.type === 'structure' && e.key === to.structure
+    // A switch result ("turn off bonds" -> "Show Bonds → off") is its toggle.
+    const is = (e, to) => (e.switchOf ? is(e.switchOf, to)
+      : to.structure ? e.type === 'structure' && e.key === to.structure
       : to.panel && to.label ? e.type === 'control' && e.panelId === to.panel && e.label === to.label
       : to.panel ? e.type === 'window' && e.panelId === to.panel
       : to.control ? e.type === 'control' && e.id === to.control

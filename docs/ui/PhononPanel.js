@@ -19,7 +19,7 @@ import { createColorSwatch } from './SwatchColorPicker.js';
 import { isExperimentalMode } from '../debug/experimentalMode.js';
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange } from '../utils/index.js';
+import { computeAutoRange, logScaleFloor } from '../utils/index.js';
 import { isScalarArrowMap } from '../render/PhononArrowModule.js';
 import { runModeMapScan, frozenGeometries, speciesToTypes } from '../phonon/modeMapScan.js';
 import { fitPolynomial, analyzeFit, amplitudeGrid, thzToOmega2 } from '../phonon/modeMapFit.js';
@@ -31,6 +31,7 @@ import { buildZip } from '../utils/zipWriter.js';
 import { openPanel } from './panels/PanelManager.js';
 import { setModeMapClickHandler, setModeMapCardHidden } from './PhononPlotsPanel.js';
 import { ensureCalculatorRunner } from './BackendPanel/AtomisticPanels.js';
+import { mountPotentialNotice, potentialSource } from '../atomistic/potentialNotice.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
 import { initializeUIOnLoad } from './StructureInputModule.js';
 import { downloadBlob } from './SavePanel.js';
@@ -74,7 +75,7 @@ function fmt(v, digits = 3) { return Number.isFinite(v) ? Number(v).toFixed(digi
 // Frames / rows
 // ---------------------------------------------------------------------------
 
-function makeFrame(sc, frac, energy, forces) {
+function makeFrame(sc, frac, energy, forces, potential) {
   const elements = [...sc.species];
   const structure = new Structure({
     elements,
@@ -84,6 +85,8 @@ function makeFrame(sc, frac, energy, forces) {
     periodic: { hash: 'None', wrapped: null },
   });
   structure.energy = Number.isFinite(energy) ? energy : null;
+  // The potential the scan ran with (model/dataSource.js).
+  if (structure.energy !== null || structure.forces.length) structure.dataSource = potentialSource(potential);
   return structure;
 }
 
@@ -464,7 +467,7 @@ export function ingestScan(scan, {
     atEdge: (iMin === 0 || iMin === scan.Q.length - 1) && reference - scan.energies[iMin] > 1e-6,
   };
 
-  const frames = scan.fracs.map((frac, i) => makeFrame(sc, frac, scan.energies[i], scan.forces?.[i]));
+  const frames = scan.fracs.map((frac, i) => makeFrame(sc, frac, scan.energies[i], scan.forces?.[i], potential));
   registerScanRow(frames, potential, dims);
 
   const sel = phononState.selected;
@@ -518,7 +521,7 @@ function loadMinimumStructure(container) {
   if (!candidates.length) { setScanStatus(container, 'No off-centre minimum in the scanned range.'); return; }
   const deepest = candidates.reduce((a, b) => (b.depth > a.depth ? b : a));
   const [g] = frozenGeometries(sc, pattern, [deepest.Q]);
-  const frame = makeFrame(sc, g.frac, mm.reference - deepest.depth, null);
+  const frame = makeFrame(sc, g.frac, mm.reference - deepest.depth, null, mm.potential);
   const name = `phonon_min_${phononState.sourceName}_${modeTag()}_Q${deepest.Q.toFixed(2)}`;
   const minContainer = new StructureContainer({ fileName: name, structures: [frame] });
   adoptContainer(minContainer);
@@ -815,10 +818,10 @@ function buildArrowSection(host) {
 
   function applyAutoRange() {
     const mags = arrowMagnitudes().filter((m) => m > 1e-9);
-    const range = computeAutoRange(mags, 0.2, { clampMinAtZero: true });
+    const range = computeAutoRange(mags, 0.2, { clampMinAtZero: true, log: phononState.arrowColorScale === 'log' });
     if (!range) return;
     let { min, max } = range;
-    if (phononState.arrowColorScale === 'log' && min <= 0) min = Math.max(1e-3, max * 0.01);
+    if (phononState.arrowColorScale === 'log' && min <= 0) min = logScaleFloor(max);
     if (Math.abs(min - phononState.arrowMin) > 1e-12 || Math.abs(max - phononState.arrowMax) > 1e-12) {
       setArrowRange(min, max, { auto: true });
     } else {
@@ -989,9 +992,10 @@ export function addPhononPanel(target = 'cvPanelBody-phonon') {
     <details class="control-group ph-needs-data ph-collapsible-group" open hidden>
       <summary class="eos-collapsible-summary ph-group-summary"><span class="eos-collapsible-arrow">▶</span>Mode map (frozen phonon)</summary>
       <p class="ph-help">Freeze the selected mode into its own supercell at amplitudes Q, compute each
-        structure with the active potential (NEP / PET-MAD, chosen in the Atomistic window), fit U(Q) and
+        structure with the active potential (chosen in the Atomistic window), fit U(Q) and
         locate the minima. Q is the normal-mode coordinate with Σ m u² = Q², so a harmonic mode gives
         U = ½ω²Q².</p>
+      <div id="phPotentialNotice"></div>
       <div class="ph-row">
         <label>Supercell</label>
         <input type="number" id="phScanDim1" min="1" max="12" step="1" value="1" class="ph-dim">
@@ -1104,6 +1108,8 @@ export function addPhononPanel(target = 'cvPanelBody-phonon') {
     q(container, sel)?.addEventListener('change', () => updateScanUI(container));
   }
   q(container, '#phScanBtn')?.addEventListener('click', () => runScan(container));
+  const noticeHost = q(container, '#phPotentialNotice');
+  if (noticeHost) mountPotentialNotice(/** @type {HTMLElement} */ (noticeHost));
   q(container, '#phScanStopBtn')?.addEventListener('click', () => { scanStopRequested = true; setScanStatus(container, 'Stopping…'); });
   q(container, '#phExportBtn')?.addEventListener('click', () => exportStructures(container));
   q(container, '#phLoadMinBtn')?.addEventListener('click', () => loadMinimumStructure(container));

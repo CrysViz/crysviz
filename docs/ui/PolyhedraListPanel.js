@@ -13,6 +13,7 @@ import {
   updatePolyhedra, polyhedronFaceColor,
 } from '../render/index.js';
 import { createIndividualPolyhedronRow } from './StructureInfoPanel/components/IndividualPolyhedronRow.js';
+import { fillRows, rememberedPage } from './StructureInfoPanel/components/PagedRows.js';
 import { createMaterialEditor } from './StructureInfoPanel/components/MaterialEditor.js';
 import { createTinyImmunityToggle } from './StructureInfoPanel/components/Immunity.js';
 import {
@@ -419,20 +420,24 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     // Lazy + stale-aware (general.polyhedraBuildCounter bumps on every group
     // swap). `force` repopulates even when not stale — used after in-place
-    // style resets, which don't rebuild the polyhedra.
+    // style resets, which don't rebuild the polyhedra. A long list shows one
+    // page of rows (StructureInfoPanel/components/PagedRows.js);
+    // _showPolyhedronRow brings up a polyhedron's page.
     let builtForBuildId = -1;
-    function populatePolyhedronRows(force = false) {
+    let polyRows = null;
+    let polyEntries = [];
+    // isFocus: a test for the entry whose page to open on.
+    function populatePolyhedronRows(force = false, isFocus = null) {
       if (!force && builtForBuildId === general.polyhedraBuildCounter) return;
       builtForBuildId = general.polyhedraBuildCounter;
       listContainer.innerHTML = '';
       // "Link periodic copies" on: one row per physical polyhedron — periodic
       // image copies grouped by poly.groupKey, edits/selection fan out to all.
       const linking = general.linkPeriodicCopies !== false;
+      const entries = []; // [polyIndex, position] unlinked, [representative, position, members, groupKey] linked
       if (!linking) {
         entry.indices.forEach((polyIndex, pos) => {
-          const poly = model.polyhedra[polyIndex];
-          if (!poly) return;
-          listContainer.appendChild(createIndividualPolyhedronRow(poly, polyIndex, pos + 1));
+          if (model.polyhedra[polyIndex]) entries.push([polyIndex, pos + 1]);
         });
       } else {
         const groupsMap = new Map(); // groupKey -> member poly indices (insertion order)
@@ -445,20 +450,34 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
           members.push(polyIndex);
         }
         let pos = 0;
-        for (const [gk, members] of groupsMap) {
-          pos += 1;
-          listContainer.appendChild(createIndividualPolyhedronRow(
-            model.polyhedra[members[0]], members[0], pos,
-            { linkedPolyIndexes: members, groupKey: gk }));
-        }
+        for (const [gk, members] of groupsMap) entries.push([members[0], ++pos, members, gk]);
       }
-      if (!listContainer.children.length) {
+      polyEntries = entries;
+      polyRows = fillRows(listContainer, entries.length, (k) => {
+        const [polyIndex, pos, members, gk] = entries[k];
+        return members
+          ? createIndividualPolyhedronRow(model.polyhedra[polyIndex], polyIndex, pos,
+            { linkedPolyIndexes: members, groupKey: gk })
+          : createIndividualPolyhedronRow(model.polyhedra[polyIndex], polyIndex, pos);
+      }, {
+        noun: 'polyhedra',
+        ...rememberedPage(structure, `polyhedra:${catKey}`),
+        focus: isFocus ? entries.findIndex(isFocus) : -1,
+      });
+      if (!entries.length) {
         const empty = document.createElement('div');
         empty.className = 'phl-empty-list-msg';
         empty.textContent = 'No polyhedra in this category';
         listContainer.appendChild(empty);
       }
     }
+    /** @type {any} */ (listContainer)._showPolyhedronRow = (key, groupKey = null) => {
+      const isFocus = ([polyIndex, , , gk]) => (groupKey
+        ? gk === groupKey
+        : model.polyhedra[polyIndex]?.key === key);
+      if (builtForBuildId !== general.polyhedraBuildCounter) populatePolyhedronRows(false, isFocus);
+      else polyRows.showItem(polyEntries.findIndex(isFocus));
+    };
     /** @type {any} */ (listContainer)._populatePolyhedronRows = populatePolyhedronRows;
 
     function togglePolyList(e) {

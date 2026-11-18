@@ -20,7 +20,7 @@ import {
   clearDebugHistory, DEFAULT_INTERVAL_MS,
 } from '../debug/debugSampler.js';
 import { formatBytes } from '../debug/memoryAccounting.js';
-import { setRenderBenchmark, isRenderBenchmark } from '../render/index.js';
+import { setRenderBenchmark, isRenderBenchmark, atomLodStats } from '../render/index.js';
 
 /** @typedef {import('../debug/debugSampler.js').DebugSample} DebugSample */
 
@@ -235,6 +235,12 @@ function renderReadout(sample) {
   setText(els.dom, Number.isFinite(sample.domNodes) ? String(sample.domNodes) : '–');
   setText(els.calls, Number.isFinite(sample.drawCalls) ? String(sample.drawCalls) : '–');
   setText(els.tris, Number.isFinite(sample.triangles) ? fmtCount(sample.triangles) : '–');
+  if (els.atomLod) {
+    const lod = atomLodStats();
+    setText(els.atomLod, lod.mode === 'imposters'
+      ? `imposters, ${lod.near}${lod.overflow ? '+' : ''} near spheres (${lod.computeMs.toFixed(1)} ms)`
+      : lod.mode);
+  }
   // This sample's accounting cost (0 when the previous walk was carried
   // forward) and the PREVIOUS sample's subscriber cost — the window's own
   // plots/tables — which is only known once its handlers have run.
@@ -292,7 +298,8 @@ function plots() {
 }
 
 function panelVisible() {
-  return !!panelBody && panelBody.isConnected && !document.hidden && panelBody.getClientRects().length > 0;
+  return !!panelBody && panelBody.isConnected && !document.hidden && panelBody.getClientRects().length > 0
+    && activeDebugTab === 'monitor';
 }
 
 function flushPlots() {
@@ -401,6 +408,14 @@ export function addDebugPanel(target = `cvPanelBody-${DEBUG_PANEL_ID}`) {
 
   body.innerHTML = `
     <div class="panelBody dbgBody">
+      <div class="backend-potential-toggle dbgTabs" role="tablist" aria-label="Debug views">
+        <button type="button" role="tab" data-dbg-tab="monitor">Monitor</button>
+        <button type="button" role="tab" data-dbg-tab="bench" title="Measure in-browser MD speed for NEP and PET-MAD on this machine">Benchmark</button>
+        <button type="button" role="tab" data-dbg-tab="tracer" title="Compare the old and new see-through objects and shadows in the ray/path tracer">Tracer</button>
+      </div>
+      <div class="dbgTabPane" data-dbg-pane="bench" role="tabpanel" hidden></div>
+      <div class="dbgTabPane" data-dbg-pane="tracer" role="tabpanel" hidden></div>
+      <div class="dbgTabPane" data-dbg-pane="monitor" role="tabpanel">
       <div class="trajTransport dbgTransport">
         <button id="dbgRecordBtn" class="trajBtn dbgRecordBtn" type="button" title="Pause sampling">⏸</button>
         <label class="trajOpt">Sample
@@ -428,6 +443,7 @@ export function addDebugPanel(target = `cvPanelBody-${DEBUG_PANEL_ID}`) {
         <span class="dbgStat" title="Ids in the global registry (state/store.js usedIDs); must not climb during playback"><span class="dbgStatLabel">ids</span><span class="dbgStatValue" id="dbgIds">–</span></span>
         <span class="dbgStat" title="DOM nodes in the page"><span class="dbgStatLabel">dom</span><span class="dbgStatValue" id="dbgDom">–</span></span>
         <span class="dbgStat" title="Draw calls and triangles of the last rendered frame (renderer.info)"><span class="dbgStatLabel">draw</span><span class="dbgStatValue" id="dbgCalls">–</span><span class="dbgStatUnit">calls / <span id="dbgTris">–</span> tris</span></span>
+        <span class="dbgStat" title="Atom level of detail (render/AtomLodModule.js): spheres, or imposters with the count of atoms large enough on screen to be drawn as real spheres and the last near-set computation's cost; + marks more than the near cap"><span class="dbgStatLabel">atoms</span><span class="dbgStatValue" id="dbgAtomLod">–</span></span>
         <span class="dbgStat" title="Accounting walk of this tick (0 when the previous walk was carried forward) + this window's own plots/tables on the previous tick, both main-thread ms"><span class="dbgStatLabel">cost</span><span class="dbgStatValue" id="dbgCost">–</span><span class="dbgStatUnit">@ <span id="dbgTick">–</span></span></span>
       </div>
       <div class="dbgPlots">
@@ -471,8 +487,10 @@ export function addDebugPanel(target = `cvPanelBody-${DEBUG_PANEL_ID}`) {
           <tbody id="dbgTableBody"></tbody>
         </table>
       </div>
+      </div>
     </div>
   `;
+  bindDebugTabs(body);
 
   els = {
     recordBtn: body.querySelector('#dbgRecordBtn'),
@@ -486,6 +504,7 @@ export function addDebugPanel(target = `cvPanelBody-${DEBUG_PANEL_ID}`) {
     dom: body.querySelector('#dbgDom'),
     calls: body.querySelector('#dbgCalls'),
     tris: body.querySelector('#dbgTris'),
+    atomLod: body.querySelector('#dbgAtomLod'),
     frameCur: body.querySelector('#dbgFrameCur'),
     frameTot: body.querySelector('#dbgFrameTot'),
     playback: body.querySelector('#dbgPlayback'),
@@ -585,6 +604,38 @@ export function addDebugPanel(target = `cvPanelBody-${DEBUG_PANEL_ID}`) {
   replayHistory();
   unsubSample = onDebugSample(onSample);
   unsubMarker = onDebugMarker(onMarker);
+}
+
+// Which tab the window shows; module-level so a rebuild keeps it.
+let activeDebugTab = 'monitor';
+
+function bindDebugTabs(body) {
+  const tabs = [...body.querySelectorAll('[data-dbg-tab]')];
+  const show = (name) => {
+    activeDebugTab = name;
+    for (const t of tabs) {
+      const on = /** @type {HTMLElement} */ (t).dataset.dbgTab === name;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    for (const pane of body.querySelectorAll('[data-dbg-pane]')) {
+      /** @type {HTMLElement} */ (pane).hidden = /** @type {HTMLElement} */ (pane).dataset.dbgPane !== name;
+    }
+    const bench = /** @type {HTMLElement|null} */ (body.querySelector('[data-dbg-pane="bench"]'));
+    if (name === 'bench' && bench && !bench.dataset.built) {
+      bench.dataset.built = '1';
+      import('./DebugBenchmarkTab.js').then((m) => m.buildBenchmarkTab(bench));
+    }
+    const tracer = /** @type {HTMLElement|null} */ (body.querySelector('[data-dbg-pane="tracer"]'));
+    if (name === 'tracer' && tracer && !tracer.dataset.built) {
+      tracer.dataset.built = '1';
+      import('./DebugTracerTab.js').then((m) => m.buildTracerTab(tracer));
+    }
+    // The monitor's plots were skipped while hidden (panelVisible); catch up.
+    if (name === 'monitor' && memPlot) replayHistory();
+  };
+  tabs.forEach((t) => t.addEventListener('click', () => show(/** @type {HTMLElement} */ (t).dataset.dbgTab)));
+  show(activeDebugTab);
 }
 
 export function removeDebugPanel() {

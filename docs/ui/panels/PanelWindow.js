@@ -231,6 +231,8 @@ export class PanelWindow {
     this.el = el;
     this.titlebar = bar;
     this.titleEl = title;
+    /** @type {HTMLElement|null} title-bar status text (setStatus), made on first use */
+    this.statusEl = null;
     this.foldBtn = fold;
     this.body = body;
     this._menuEl = null;      // the open ≡ dropdown, if any (portaled to body)
@@ -268,6 +270,26 @@ export class PanelWindow {
 
   setTitle(html) {
     this.titleEl.innerHTML = html;
+  }
+
+  /**
+   * Short status text next to the title, e.g. a run in progress ("MD 37%"):
+   * seen while the window is collapsed too. Falsy removes it.
+   * @param {string|null} text
+   */
+  setStatus(text) {
+    if (!text) {
+      if (this.statusEl) this.statusEl.hidden = true;
+      return;
+    }
+    if (!this.statusEl) {
+      this.statusEl = document.createElement('span');
+      this.statusEl.className = 'cv-panel-status';
+      this.statusEl.dataset.role = 'panel-status';
+      this.titleEl.after(this.statusEl);
+    }
+    this.statusEl.hidden = false;
+    this.statusEl.textContent = text;
   }
 
   /** Legacy boolean: in either dock (i.e. not floating). Most cross-panel

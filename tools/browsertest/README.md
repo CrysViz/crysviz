@@ -63,6 +63,26 @@ Each test is a standalone node script (CommonJS) using `harness.js`; exit code
 0/1 per test, `run.sh` aggregates. Screenshots land in `artifacts/`
 (gitignored) — inspect them on failure.
 
+## Polyhedra regression set
+
+`tests/polygolden1.test.js` … `polygolden5.test.js` check the coordination
+polyhedra and cages of 315 structures (the AFLOW prototype library as shipped
+with pymatgen, pymatgen's test structures and hand-made cases such as diopside,
+C60 fullerite and dodecahedrane) against `fixtures/polyhedra_golden.json`: for
+each structure, the polyhedra drawn with default settings as
+`"<centre>: <corners>"` / `"cage: <corners>"` with counts, on the WASM and the
+JS path. `fixtures/polyhedra_golden.md` is the readable copy. The set is split
+in five so no file nears the per-file timeout (each takes about 5–7 minutes).
+
+After an intended change to what gets drawn, regenerate the lists and review
+the diff of the `.md`:
+
+```bash
+POLY_GOLDEN_UPDATE=1 tools/browsertest/run.sh tests/polygolden1.test.js tests/polygolden2.test.js tests/polygolden3.test.js tests/polygolden4.test.js tests/polygolden5.test.js
+```
+
+Update mode refuses a structure where the JS and WASM paths disagree.
+
 ## Writing tests
 
 See `tests/*.test.js`. The key techniques:

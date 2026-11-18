@@ -123,14 +123,63 @@ function forcesFromFlat(flat, n) {
   return out;
 }
 
+/**
+ * Why the WebGPU build cannot run here, or null. ggml's WebGPU backend
+ * requires the adapter feature 'shader-f16' (GGML_ASSERT in ggml-webgpu.cpp
+ * at device init) and aborts the whole wasm module without it — on a model
+ * LOAD, long after init succeeded. Checked up front so the caller gets a
+ * clear error and can fall back to the CPU build.
+ * @returns {Promise<string|null>}
+ */
+export async function webgpuUnsupportedReason() {
+  if (typeof navigator === 'undefined' || !('gpu' in navigator)) {
+    return 'WebGPU is not available in this browser. Use the cpu backend, or a browser with '
+      + 'WebGPU enabled (Chrome/Edge 113+, Safari 18+, or Firefox with dom.webgpu.enabled).';
+  }
+  let adapter = null;
+  try {
+    adapter = await /** @type {any} */ (navigator).gpu.requestAdapter();
+  } catch { /* no adapter */ }
+  if (!adapter) return 'WebGPU is enabled but no GPU adapter is available.';
+  if (!adapter.features?.has?.('shader-f16')) {
+    return 'This GPU/browser does not offer the WebGPU feature "shader-f16", which the PET-MAD '
+      + 'WebGPU build requires. Use the cpu backend.';
+  }
+  return null;
+}
+
 export class MLIPRunner {
   /**
-   * @param {{ backend?: 'cpu'|'webgpu'|'auto', defaultModelUrl?: string }} [options]
+   * @param {{ backend?: 'cpu'|'webgpu'|'auto', threads?: number|'auto'|false,
+   *   blockedGemm?: boolean, gpuReadback?: 'auto'|'map', gpuMatmul?: 'tile4'|'reg_tile',
+   *   defaultModelUrl?: string }} [options]
    */
   constructor(options = {}) {
     this.backend = options.backend || 'cpu';
+    // CPU thread count: 'auto' (the wasm's own default — logical cores, capped
+    // at 8), a number, or false for the single-threaded build. Only takes
+    // effect when the threaded build can run (see index.browser.js).
+    this.threads = options.threads ?? 'auto';
+    // CPU matrix products: the blocked GEMM kernel (true, the default) or
+    // ggml's dot-product path (false), for A/B comparisons; see README
+    // "Matrix kernel". Builds without the switch ignore it.
+    this.blockedGemm = options.blockedGemm ?? true;
+    // WebGPU result readback: 'auto' reads through a canvas snapshot where
+    // that is exact (canvas_readback.js; Firefox answers mapAsync only every
+    // ~100 ms), else mapAsync; 'map' always maps.
+    this.gpuReadback = options.gpuReadback || 'auto';
+    // WebGPU f32 matrix products: 'tile4' (vec4 accumulators, the default) or
+    // upstream's 'reg_tile' kernel, for A/B comparisons (README "f32 matrix kernel").
+    /** @type {'tile4'|'reg_tile'} */
+    this.gpuMatmul = options.gpuMatmul === 'reg_tile' ? 'reg_tile' : 'tile4';
+    /** @type {any} */
+    this._readbackHook = null;
+    /** @type {number|null} WebGPU: one tiny mapAsync round trip at init, ms */
+    this.gpuMapMs = null;
     this.defaultModelUrl = options.defaultModelUrl || DEFAULT_MODEL_URL;
     this.module = null;
+    // Which wasm variant init() loaded: 'cpu' | 'cpu-mt' | 'gpu'.
+    this.variant = null;
     this.model = null;
     this.modelInfo = null;
     // Ring buffer of recent wasm stderr lines (ggml logs OOM / WebGPU device
@@ -162,22 +211,165 @@ export class MLIPRunner {
           + 'Firefox with dom.webgpu.enabled).',
         );
       }
+      if (this.backend === 'webgpu' || this.backend === 'auto') {
+        const why = await webgpuUnsupportedReason();
+        if (why && this.backend === 'webgpu') throw new Error(why);
+        // 'auto' would pick the GPU build whenever navigator.gpu exists and
+        // then abort on load; take the CPU build instead when it cannot work.
+        if (why) this.backend = 'cpu';
+      }
       const loader = await import('./index.browser.js');
       const createMlipcpp = loader.default || loader.createMlipcpp;
       const cpuWasmUrl = new URL('./cpu/mlipcpp_wasm.wasm', import.meta.url).href;
       const gpuWasmUrl = new URL('./gpu/mlipcpp_wasm.wasm', import.meta.url).href;
+      const mtWasmUrl = new URL('./cpu-mt/mlipcpp_wasm.wasm', import.meta.url).href;
       try {
         this.module = await createMlipcpp({
           backend: this.backend,
+          threads: this.threads,
           cpuWasmUrl,
           gpuWasmUrl,
+          mtWasmUrl,
           printErr: (text) => this._captureErr(text),
         });
       } catch (error) {
         throw this._enrich(error, `PET-MAD ${this.backend} module init failed`);
       }
+      this.variant = this.module.crysvizVariant || 'cpu';
+      // The thread count is read when the model's backend is created, so it
+      // has to be set before loadModel*. Numbers are clamped by the wasm.
+      if (typeof this.threads === 'number' && typeof this.module.setNumThreads === 'function') {
+        this.module.setNumThreads(Math.max(1, Math.round(this.threads)));
+      }
+      if (typeof this.module.setBlockedGemm === 'function') this.module.setBlockedGemm(this.blockedGemm);
+      if (this.variant === 'gpu') {
+        const { createCanvasReadback, mapRoundTripMs, SLOW_MAP_MS } = await import('./canvas_readback.js');
+        this._readbackHook = createCanvasReadback();
+        // The canvas route only pays where mapAsync is slow (Firefox answers
+        // it every ~100 ms); elsewhere a WebGPU canvas is never touched.
+        const mapMs = await mapRoundTripMs().catch(() => null);
+        this.gpuMapMs = mapMs;
+        if (!(mapMs != null && mapMs > SLOW_MAP_MS)) {
+          this._readbackHook.decline(mapMs == null ? 'mapAsync not measured'
+            : `mapAsync is fast here (${mapMs.toFixed(1)} ms)`);
+        }
+        this.setGpuReadback(this.gpuReadback);
+        this.setGpuMatmul(this.gpuMatmul);
+      }
     }
     return this;
+  }
+
+  /**
+   * WebGPU build: read results through the canvas snapshot where it works
+   * ('auto') or always with mapAsync ('map'), from the next prediction. The
+   * canvas self-test runs once per runner. No-op on the CPU builds.
+   * @param {'auto'|'map'} mode
+   */
+  setGpuReadback(mode) {
+    this.gpuReadback = mode === 'map' ? 'map' : 'auto';
+    if (this.module && this._readbackHook) {
+      this.module.ggmlWebgpuReadback = this.gpuReadback === 'map' ? null : this._readbackHook;
+    }
+    return this.describe();
+  }
+
+  /**
+   * Switch the CPU matrix kernel of a running module (from the next
+   * prediction): true = blocked GEMM, false = ggml's dot products.
+   * @param {boolean} on
+   */
+  setBlockedGemm(on) {
+    this.blockedGemm = on;
+    const M = this.module;
+    if (M && typeof M.setBlockedGemm === 'function') M.setBlockedGemm(on);
+    return this.describe();
+  }
+
+  /**
+   * Change the CPU thread count of a running module (takes effect from the
+   * next prediction; the threaded build only — the others stay at one).
+   * 'auto' re-enables the per-size calibration, false pins one thread.
+   * @param {number|'auto'|false} threads
+   */
+  setThreads(threads) {
+    this.threads = threads;
+    this._tunedAtoms = null;
+    this.threadCalibration = null;
+    const M = this.module;
+    if (M && typeof M.setNumThreads === 'function') {
+      if (typeof threads === 'number') M.setNumThreads(Math.max(1, Math.round(threads)));
+      else if (threads === false) M.setNumThreads(1);
+      else if (typeof M.getMaxThreads === 'function') M.setNumThreads(M.getMaxThreads());
+    }
+    return this.describe();
+  }
+
+  /**
+   * WebGPU build: the f32 matrix-product kernel from the next prediction,
+   * 'tile4' or 'reg_tile' (Module.ggmlWebgpuMatmul). No-op on the CPU builds.
+   * @param {'tile4'|'reg_tile'} kernel
+   */
+  setGpuMatmul(kernel) {
+    this.gpuMatmul = kernel === 'reg_tile' ? 'reg_tile' : 'tile4';
+    if (this.module && this.variant === 'gpu') this.module.ggmlWebgpuMatmul = this.gpuMatmul;
+    return this.describe();
+  }
+
+  /**
+   * WebGPU build, diagnostics: from the next prediction on, submit every GPU
+   * kernel on its own and time it (slow: one wait per kernel; see the ggml
+   * WebGPU patch, Module.ggmlWebgpuProfileOps). No-op on the CPU builds.
+   * @param {boolean} on
+   */
+  setOpProfile(on) {
+    const M = this.module;
+    if (M && this.variant === 'gpu') {
+      M.ggmlWebgpuProfileOps = !!on;
+      if (on) M.ggmlWebgpuOpProfile = [];
+    }
+    return !!on && this.variant === 'gpu';
+  }
+
+  /**
+   * The kernel times recorded since setOpProfile(true), and clear them:
+   * [{ op, name, ne, ms }], each prediction starting with three "(wait)"
+   * entries (an empty wait, to subtract).
+   * @returns {{ op: string, name: string, ne: number[], ms: number }[]}
+   */
+  takeOpProfile() {
+    const M = this.module;
+    const p = (M && M.ggmlWebgpuOpProfile) || [];
+    if (M) M.ggmlWebgpuOpProfile = [];
+    return p;
+  }
+
+  /** How this runner is running, for status lines and the worker handshake. */
+  describe() {
+    const m = this.module;
+    return {
+      backend: this.backend,
+      variant: this.variant,
+      threads: m && typeof m.getNumThreads === 'function' ? m.getNumThreads() : 1,
+      maxThreads: m && typeof m.getMaxThreads === 'function' ? m.getMaxThreads() : 1,
+      // null: this build has no kernel switch (dot products only).
+      blockedGemm: m && typeof m.getBlockedGemm === 'function' ? m.getBlockedGemm() : null,
+      // WebGPU only: 'canvas' | 'map' | 'pending' (decided at the first readback).
+      gpuReadback: this.gpuReadbackMode(),
+      // WebGPU only: one tiny mapAsync round trip at init, ms.
+      gpuMapMs: this.gpuMapMs ?? null,
+      // WebGPU only: the f32 matrix-product kernel.
+      gpuMatmul: this.variant === 'gpu' ? this.gpuMatmul : null,
+    };
+  }
+
+  /** How the WebGPU build reads results back, or null for the CPU builds. */
+  gpuReadbackMode() {
+    if (this.variant !== 'gpu') return null;
+    const hook = this._readbackHook;
+    // The wasm drops the hook if it ever throws.
+    if (!hook || this.module?.ggmlWebgpuReadback !== hook) return 'map';
+    return hook.info.readback;
   }
 
   /**
@@ -320,6 +512,8 @@ export class MLIPRunner {
     } catch (error) {
       throw this._enrich(error, `Loading ${name} failed`, mark);
     }
+    this._tunedAtoms = null;
+    this.threadCalibration = null;
     this.modelInfo = {
       name,
       // Full periodic table so buildNEPStructure never rejects an element; the
@@ -365,8 +559,9 @@ export class MLIPRunner {
     const sys = await this.module.AtomicSystem.create(positionsFlat, atomicNumbers, cellFlat, true);
     try {
       let r;
+      const t0 = performance.now();
       try {
-        r = await this.model.predict(sys);
+        r = await this._predictCalibrated(sys, nAtoms);
       } catch (error) {
         throw this._enrich(error, `PET-MAD compute failed (${nAtoms} atoms)`, mark);
       }
@@ -382,6 +577,11 @@ export class MLIPRunner {
             + '— results discarded. Try the cpu backend.');
         }
       }
+      // Where the wasm spent this evaluation (phases of the prediction, and on
+      // WebGPU encode / wait / read-back), for the Debug window's benchmark.
+      this.lastTimings = typeof this.module.getLastTimings === 'function'
+        ? { ...this.module.getLastTimings(), predictMs: performance.now() - t0, gpuReadback: this.gpuReadbackMode(),
+          gpuMatmul: this.variant === 'gpu' ? this.gpuMatmul : null } : null;
       const forcesFlat = r.forces;
       const totalEnergy = r.energy;
       return {
@@ -396,6 +596,56 @@ export class MLIPRunner {
       // Release the embind-owned WASM heap allocation for this system.
       if (sys && typeof sys.delete === 'function') sys.delete();
     }
+  }
+
+  /**
+   * model.predict with the thread count chosen for this system size.
+   *
+   * ggml pays a synchronisation barrier per graph node, and in wasm those are
+   * expensive: on a 4-core machine the threaded build was 2.2x FASTER than one
+   * thread for 64 atoms (and for a 250-wide model even at 8 atoms) but 3x
+   * SLOWER for 8 atoms of the small model. No fixed rule covers both, so with
+   * `threads: 'auto'` the first evaluation at a new atom count times the
+   * candidates (all cores, one, half) on the real system and keeps the
+   * fastest — a few extra evaluations once per run, nothing afterwards. The
+   * calibration evaluations return the same numbers, so the last one is the
+   * result. An explicit thread count skips all of this.
+   * @param {any} sys
+   * @param {number} nAtoms
+   */
+  async _predictCalibrated(sys, nAtoms) {
+    const M = this.module;
+    const canTune = this.threads === 'auto'
+      && typeof M.hasThreads === 'function' && M.hasThreads()
+      && typeof M.getMaxThreads === 'function' && M.getMaxThreads() > 1;
+    if (!canTune) return this.model.predict(sys);
+    if (this._tunedAtoms === nAtoms) return this.model.predict(sys);
+
+    const max = M.getMaxThreads();
+    const mid = Math.ceil(max / 2);
+    const candidates = [...new Set([max, 1, mid])];
+    const timed = [];
+    let last = null;
+    for (const n of candidates) {
+      M.setNumThreads(n);
+      if (n === candidates[0]) {
+        // First call at a new size also pays the graph allocation; do not
+        // charge it to this candidate.
+        last = await this.model.predict(sys);
+      }
+      const t0 = performance.now();
+      last = await this.model.predict(sys);
+      const ms = performance.now() - t0;
+      timed.push({ n, ms });
+      // A system this large is clearly in the regime where threads win; do
+      // not spend more multi-second evaluations proving it.
+      if (n === candidates[0] && ms > 2000) break;
+    }
+    timed.sort((a, b) => a.ms - b.ms);
+    M.setNumThreads(timed[0].n);
+    this._tunedAtoms = nAtoms;
+    this.threadCalibration = { atoms: nAtoms, chosen: timed[0].n, timings: timed };
+    return last;
   }
 
   destroy() {

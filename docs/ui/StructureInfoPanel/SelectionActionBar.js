@@ -112,6 +112,19 @@ function selectedCoordinateRows(selected) {
   });
 }
 
+/** What the box shows: tab-separated like the Copy text (so a selection of it
+ *  still pastes into a spreadsheet as columns), at a precision that lets x, y
+ *  and z fit the narrow window side by side (fractional 5 decimals, Cartesian
+ *  4 — 0.1 mÅ); the box's tab stops line the columns up
+ *  (structureInfoPanel.css). Copy still takes coordinateText's 8 decimals. */
+function coordinateDisplayText(rows, key, digits) {
+  const lines = rows.map((row) => {
+    const values = row[key];
+    return `${row.label}\t${values?.map((value) => Number(value).toFixed(digits)).join('\t') ?? 'unavailable'}`;
+  });
+  return ['Atom\tx\ty\tz', ...lines].join('\n');
+}
+
 function coordinateText(rows, key) {
   const lines = rows.map((row) => {
     const values = row[key];
@@ -142,7 +155,7 @@ function buildCoordinateViewer(selected) {
   const rows = selectedCoordinateRows(selected);
   const viewer = document.createElement('div');
   viewer.className = 'si-selbar-coordinates';
-  const addBlock = (title, key, unit = '') => {
+  const addBlock = (title, key, unit = '', digits = 5) => {
     const block = document.createElement('section');
     const heading = document.createElement('div');
     heading.className = 'si-selbar-coordinate-heading';
@@ -158,13 +171,14 @@ function buildCoordinateViewer(selected) {
     const output = document.createElement('textarea');
     output.readOnly = true;
     output.rows = Math.min(8, Math.max(2, rows.length + 1));
-    output.value = text;
+    output.value = coordinateDisplayText(rows, key, digits);
+    output.title = 'Copy puts every coordinate on the clipboard with 8 decimals, tab-separated';
     output.setAttribute('aria-label', `${title} coordinates of selected atoms`);
     block.append(heading, output);
     viewer.appendChild(block);
   };
-  addBlock('Fractional', 'fractional');
-  addBlock('Cartesian', 'cartesian', 'Å');
+  addBlock('Fractional', 'fractional', '', 5);
+  addBlock('Cartesian', 'cartesian', 'Å', 4);
   return viewer;
 }
 
@@ -401,7 +415,7 @@ function refreshSelectionActionBar() {
   inspectBtn.className = 'btn-mini si-selbar-inspect';
   inspectBtn.id = 'selectionInspectBtn';
   inspectBtn.textContent = 'Inspect';
-  inspectBtn.title = 'Selection Inspector: show the selected atoms in their own 3D view, with the bonds between them, every bond length and every bond angle. It follows the selection — Shift-click adds atoms, Ctrl/⌘-click removes them.';
+  inspectBtn.title = 'Selection Inspector: show the selected atoms in their own 3D view, with the bonds between them, every bond length and every bond angle. It follows the selection — Shift+double-click adds atoms, Ctrl/⌘+double-click removes them, Shift+drag selects a region.';
   inspectBtn.onclick = async () => {
     const { openSelectionInspector } = await import('../AnalysisPanels/SelectionInspector.js');
     openSelectionInspector();

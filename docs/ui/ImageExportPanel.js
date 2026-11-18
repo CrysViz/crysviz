@@ -39,7 +39,7 @@ const DEFAULT_LONG_EDGE = 3840; // 4K on the long edge by default
 const VECTOR_SHAPE_WARN = 20000;
 
 const PNG_NOTE = 'Save exports the whole view; Choose region lets you drag a crop area '
-  + 'over the 3D view first.';
+  + 'over the 3D view first (the last area is remembered for this browser session).';
 const SVG_NOTE = 'Labels, axes and colour bars are editable Inkscape layers; the structure '
   + 'is an embedded image unless you pick Vector shapes.';
 
@@ -55,6 +55,33 @@ function loadPrefs() {
 
 function savePrefs(prefs) {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); }
+  catch { /* storage unavailable */ }
+}
+
+// The last area chosen with "Choose region", as fractions of the 3D view
+// (what the crop overlay reports), remembered for this browser session
+// only: it belongs to the view and camera of the moment, so it is kept
+// through a reload of this tab but not across sessions or in the .crysviz
+// file. The next "Choose region" starts from it instead of the automatic
+// content box; "Forget region" in the dialog drops it.
+const REGION_KEY = 'crysviz.pngExportRegion.v1';
+
+function loadRegion() {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(REGION_KEY));
+    const ok = r && [r.x0, r.y0, r.x1, r.y1].every((v) => Number.isFinite(v)) && r.x1 > r.x0 && r.y1 > r.y0;
+    return ok ? r : null;
+  } catch { return null; }
+}
+
+function saveRegion(crop) {
+  try {
+    sessionStorage.setItem(REGION_KEY, JSON.stringify({ x0: crop.x0, y0: crop.y0, x1: crop.x1, y1: crop.y1, aspect: crop.aspect }));
+  } catch { /* storage unavailable */ }
+}
+
+function clearRegion() {
+  try { sessionStorage.removeItem(REGION_KEY); }
   catch { /* storage unavailable */ }
 }
 
@@ -140,6 +167,7 @@ export function initImageExportPanel() {
       <div class="paste-modal-actions">
         <button type="button" id="pngSaveBtn" class="png-primary">Save</button>
         <button type="button" id="pngDownloadBtn" class="png-primary">Choose region…</button>
+        <button type="button" id="pngForgetRegionBtn" title="Choose region starts from the automatic framing again">Forget region</button>
         <button type="button" id="pngCancelBtn">Cancel</button>
       </div>
     </div>
@@ -159,6 +187,7 @@ export function initImageExportPanel() {
   const noteEl = document.getElementById('imgExportNote');
   const saveBtn = document.getElementById('pngSaveBtn');
   const downloadBtn = document.getElementById('pngDownloadBtn');
+  const forgetRegionBtn = document.getElementById('pngForgetRegionBtn');
   const cancelBtn = document.getElementById('pngCancelBtn');
 
   // aspectRatio is the enforced ratio while an explicit preset/view is chosen;
@@ -277,6 +306,7 @@ export function initImageExportPanel() {
       aspectRatio = PRESET_ASPECTS[aspectSelect.value] || 1;
       fillFromAspect(longEdge);
     }
+    forgetRegionBtn.hidden = !loadRegion();
     modal.hidden = false;
   }
 
@@ -286,6 +316,11 @@ export function initImageExportPanel() {
     activeSource = null;
     activeBaseName = null;
   }
+
+  forgetRegionBtn.addEventListener('click', () => {
+    clearRegion();
+    forgetRegionBtn.hidden = true;
+  });
 
   formatSelect.addEventListener('change', () => { syncFormat(); syncSourceControls(); });
   svgStructureSelect.addEventListener('change', syncFormat);
@@ -400,6 +435,18 @@ export function initImageExportPanel() {
     return { left, top, width: bw, height: bh };
   }
 
+  // The remembered area (this browser session) in #view CSS px, or null when
+  // there is none or it is too small for the overlay's rect.
+  function rememberedInitialRect() {
+    const r = loadRegion();
+    if (!r) return null;
+    const view = document.getElementById('view');
+    const vw = (view && view.clientWidth) || 0;
+    const vh = (view && view.clientHeight) || 0;
+    const rect = { left: r.x0 * vw, top: r.y0 * vh, width: (r.x1 - r.x0) * vw, height: (r.y1 - r.y0) * vh };
+    return rect.width >= 40 && rect.height >= 40 ? rect : null;
+  }
+
   async function chooseArea() {
     const dims = readDims();
     if (!dims) return;
@@ -441,7 +488,8 @@ export function initImageExportPanel() {
       // height's LARGER edge becomes the output's long edge with the other
       // edge derived from the shape actually drawn (see below).
       aspect: free ? null : width / height,
-      initial: autoInitialRect(lockInput.checked && !free ? width / height : null),
+      // The last area chosen this session, else the automatic content box.
+      initial: rememberedInitialRect() ?? autoInitialRect(lockInput.checked && !free ? width / height : null),
       locked: lockInput.checked,
       onLockChange: (locked) => savePrefs({ ...loadPrefs(), lock: locked }),
       // Tracer pipelines render to full convergence inside captureSceneToPng
@@ -451,6 +499,7 @@ export function initImageExportPanel() {
       // text (ui/CropOverlay.js owns that UI; the settings modal is already
       // closed by the time this runs).
       onConfirm: async (crop, { signal, onProgress }) => {
+        saveRegion(crop);
         let outWidth = width;
         let outHeight = height;
         // A crop drawn at a different shape than width x height — Free mode,

@@ -21,7 +21,14 @@ body {
    redefine any of them. */
 
 #ui {
-  height: 98dvh;
+  /* Exactly the screen's height with the padding below: as 98dvh plus the
+     padding it ran 22px past the bottom of the screen — clipped by the body,
+     but still scrollable, so a window brought into view (scrollIntoView, the
+     window shortcuts, the Wyckoff switch) scrolled the whole page up by that
+     much. Content-box on purpose: border-box would also take the side padding
+     out of --ui-width, narrowing the column and moving the view's centre. */
+  height: calc(100dvh - max(var(--ui-padding), env(safe-area-inset-top))
+                      - max(var(--ui-padding), env(safe-area-inset-bottom)));
   min-width: var(--ui-width);
   width:var(--ui-width);
   max-width:var(--ui-width);
@@ -2029,6 +2036,79 @@ input[type="checkbox"] {
 
 .cv-rotation-lock-badge[hidden] {
   display: none;
+}
+/* Start-up (and large share link) progress over the 3D view: index.html
+   #bootProgress, driven by ui/BootProgress.js. Above the canvas, below every
+   window; it never takes a click. No continuous animation: see BootProgress.js. */
+.boot-progress {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.boot-progress[hidden] { display: none; }
+.boot-progress.is-done { opacity: 0; }
+/* The structure is already drawn (a plain start-up builds the windows after
+   it): the card waits at the bottom of the view, out of its way. */
+.boot-progress.is-compact {
+  align-items: flex-end;
+  padding-bottom: var(--sp-6);
+}
+.boot-progress-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 240px;
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--radius-md);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-md);
+}
+.boot-progress-text {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  text-align: center;
+}
+.boot-progress-elapsed {
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+}
+.boot-progress-track {
+  position: relative;
+  width: 220px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--wash-3);
+  overflow: hidden;
+}
+.boot-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: var(--highlight-color);
+  transform-origin: left center;
+  transform: scaleX(0.08); /* the first step, before any script has run */
+  transition: transform 0.25s ease-out;
+  /* Until the first script runs (ui/BootProgress.js startBootProgress), the
+     bar creeps on by itself once, so the first seconds of a slow start-up do
+     not look stuck. A single run, not a loop: a running animation over the
+     3D view slows its rendering. */
+  animation: boot-progress-creep 4s ease-out both;
+}
+/* From the first script on, the bar follows the download and the steps. */
+.boot-progress.is-tracking .boot-progress-fill {
+  animation: none;
+}
+@keyframes boot-progress-creep {
+  from { transform: scaleX(0.04); }
+  to { transform: scaleX(0.2); }
 }
 
 #aboutOverlay {

@@ -40,9 +40,29 @@ let nextMeasurementId = 1;
 // leaking every segment's geometry on each clear.
 function disposeMeasureItem(item) {
   item.traverse?.((child) => {
-    if (child.geometry) child.geometry.dispose();
+    if (child.geometry) disposeOwnGeometry(child.geometry);
   });
-  if (item.geometry) item.geometry.dispose();
+  if (item.geometry) disposeOwnGeometry(item.geometry);
+}
+
+/** Dispose a geometry unless it is one of the shared dash cylinders below. */
+function disposeOwnGeometry(geometry) {
+  if (!geometry.userData?.sharedDash) geometry.dispose();
+}
+
+// One unit-length cylinder per line radius, shared by every dash of every
+// measurement line and stretched to each dash's length (mesh.scale.y). Each
+// dash used to build its own geometry: ~10 per line, a few hundred for a
+// share link with twenty measurements, all built while it opened.
+const dashGeometries = new Map();
+function dashGeometry(radius) {
+  let geometry = dashGeometries.get(radius);
+  if (!geometry) {
+    geometry = new THREE.CylinderGeometry(radius, radius, 1, 12);
+    geometry.userData.sharedDash = true;
+    dashGeometries.set(radius, geometry);
+  }
+  return geometry;
 }
 
 /** Removes just one measurement (all its lines/markers/label) by the shared
@@ -61,6 +81,7 @@ export function removeMeasurementById(id) {
     return false;
   });
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 /** Tear down one value label: the sprite itself (its material, whose texture
@@ -152,7 +173,7 @@ const LINE_SPECS = {
  *  carry can't drift apart. */
 function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
   for (const child of group.children.slice()) {
-    child.geometry?.dispose();
+    if (child.geometry) disposeOwnGeometry(child.geometry);
     child.material?.dispose?.();
     group.remove(child);
   }
@@ -185,11 +206,11 @@ function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
   const step = new THREE.Vector3().subVectors(end, start).normalize();
   const origin = start.clone().addScaledVector(step, usableStart);
   const addPiece = (length, centreAlong) => {
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(spec.radius, spec.radius, length, 12), material);
+    const mesh = new THREE.Mesh(dashGeometry(spec.radius), material);
     mesh.position.copy(origin).addScaledVector(step, centreAlong);
     mesh.lookAt(end);
     mesh.rotateX(Math.PI / 2);
+    mesh.scale.y = length;
     group.add(mesh);
   };
 
@@ -197,9 +218,16 @@ function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
     addPiece(distance, distance / 2);
     return;
   }
+  // Whole dashes at both ends: the count that fits best, with dash and gap
+  // stretched or shrunk together (by under half a period) to fill the line
+  // exactly. Laid from the first atom at the set lengths, the pattern ran out
+  // up to a period short of the second (a ~0.35 Å bare stretch there).
   const segmentLength = spec.dash + spec.gap;
-  const count = Math.floor(distance / segmentLength);
-  for (let i = 0; i < count; i++) addPiece(spec.dash, i * segmentLength + spec.dash / 2);
+  const count = Math.max(1, Math.round((distance + spec.gap) / segmentLength));
+  const scale = distance / (count * spec.dash + (count - 1) * spec.gap);
+  const dash = spec.dash * scale;
+  const period = (spec.dash + spec.gap) * scale;
+  for (let i = 0; i < count; i++) addPiece(dash, i * period + dash / 2);
 }
 
 // How far along the angle bisector the label sits, as a multiple of the arc's
@@ -358,6 +386,8 @@ export function refreshMeasurementStyling() {
   // Rebuilds the lines (via buildMeasureLine), the label textures and, at its
   // end, every atom marker (via updateMeasurementMarkers).
   updateAllMeasurements();
+  // The inspectors draw the same measurements in the same colours and style.
+  notifyMeasurementsChanged();
 }
 
 /** Points along the minor arc between unit directions d1,d2, radius r from
@@ -467,6 +497,43 @@ export function clearAllMeasurements(){
   measurements.measureLabels = [];
   measurements.selectedAtoms = [];
   clearMeasureGraphics();
+  notifyMeasurementsChanged();
+}
+
+/** Tell whoever shows the measurements elsewhere (the inspectors) that one
+ *  was added or removed. */
+function notifyMeasurementsChanged() {
+  document.dispatchEvent(new CustomEvent('crysviz:measurements-changed'));
+}
+
+/**
+ * Every measurement on screen, for a view of its own (the Selection and
+ * Polyhedron Inspectors): its kind, its atoms where they are now (source
+ * atom, Cartesian position of the copy measured; an angle's vertex second),
+ * its value and its CIF error (null without). One entry per value label,
+ * which every measurement has exactly one of.
+ * @returns {Array<{id: number, kind: 'distance'|'angle', atoms: Array<{atomIndex: number, pos: number[]}>, value: number, su: number|null}>}
+ */
+export function measurementsSnapshot() {
+  const out = [];
+  for (const label of measurements.measureLabels) {
+    const u = label.userData ?? {};
+    if (u.type !== 'distance' && u.type !== 'angle') continue;
+    const refs = u.type === 'distance' ? [u.atom1Ref, u.atom2Ref] : [u.atom1Ref, u.atom2Ref, u.atom3Ref];
+    const resolved = refs.map((ref) => resolveMeasurementAtom(ref));
+    if (resolved.some((a) => !a)) continue;
+    const value = u.type === 'distance'
+      ? resolved[0].position.distanceTo(resolved[1].position)
+      : calculateAngle(resolved[0], resolved[1], resolved[2]);
+    out.push({
+      id: u.measurementId,
+      kind: u.type,
+      atoms: resolved.map((a) => ({ atomIndex: a.userData.atomIndex, pos: a.position.toArray() })),
+      value,
+      su: measurementSu(u.type, refs),
+    });
+  }
+  return out;
 }
 
 export function calculateAngle(atom1, atom2, atom3) {
@@ -882,6 +949,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   app.scene.add(label);
   measurements.measureLabels.push(label);
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 
@@ -963,6 +1031,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   app.scene.add(label);
   measurements.measureLabels.push(label);
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 export function drawMeasureGraphics(){

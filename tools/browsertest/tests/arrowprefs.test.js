@@ -128,7 +128,7 @@ const STATE = async () => {
   await H.setSlider(page, 'spinTipLengthSlider', 0.8);
   await H.setSelect(page, 'spinColorMapSelect', 'viridis');
   await H.clickById(page, 'spinLogLengthCheckbox');
-  await H.setSlider(page, 'forceScaleSlider', 3);
+  await H.setSlider(page, 'forceScaleSlider', Math.log10(3)); // log slider: its value is log10 of the factor
   await H.setSlider(page, 'forceRadiusSlider', 0.05);
   await H.setSelect(page, 'forceColorMapSelect', 'jet');
   await H.clickById(page, 'forceLogScaleCheckbox');
@@ -195,7 +195,7 @@ const STATE = async () => {
   H.check('spin widgets restored', Number(w.spinLength) === 2.5 && Number(w.spinSize) === 0.12
     && Number(w.spinTip) === 0.8 && w.spinCmap === 'viridis' && w.spinLogLength === true && w.spinLog === true
     && w.spinLegend === 'My moment', JSON.stringify(w));
-  H.check('force widgets restored', Number(w.forceScale) === 3 && Number(w.forceRadius) === 0.05
+  H.check('force widgets restored', Math.abs(10 ** Number(w.forceScale) - 3) < 0.01 && Number(w.forceRadius) === 0.05
     && w.forceCmap === 'jet' && w.forceLog === true
     && Number(w.forceLimits[0]) === 0.2 && Number(w.forceLimits[1]) === 1.7, JSON.stringify(w));
   H.check('category style restored', back.spinCat?.Fe?.color?.toLowerCase() === '#11aa33', JSON.stringify(back.spinCat));

@@ -94,8 +94,10 @@ const panelPrefDefaults = {
   dragByHandleOnly: window.matchMedia('(pointer: coarse)').matches,
   smallDragHandles: false, // collapsed-bar handles: original thin always-visible strip
   exportGpuMemoryGiB: 1, // PNG export render-surface GPU memory budget (GiB)
+  trajectoryMemoryGiB: 2, // memory a loaded trajectory's frames may take (GiB, ui/TrajectoryMemoryLimit.js)
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
   hideLeaveWarning: false, // Settings ▸ "Disable reload warning" (ui/LeaveGuard.js)
+  collapsePotentialCaveat: false, // the potentials' accuracy warning folded to its ⚠ (atomistic/potentialNotice.js)
   releaseNoteSeen: '', // id of the newest release note dismissed for good (ui/ReleaseNote.js)
   legendTransparent: false, // Composition Display: no window chrome, swatches+text only
   // The on-canvas background picker: a 54px drag-and-resize affordance that
@@ -116,6 +118,20 @@ const panelPrefDefaults = {
   // fixed-cell MD doesn't need it; a relaxation/optimization that translates
   // the structure does.
   trajRecenterEachStep: false,
+  // PET-MAD controls ▸ "threads": 'auto' or a CPU thread count as a string
+  // (ui/BackendPanel/AtomisticPanels.js bindThreadsSelect).
+  mlipThreads: 'auto',
+  // PET-MAD controls ▸ model: the selected model (a built-in file name or a
+  // catalogue/link URL), the catalogues the user added (with a snapshot of
+  // each, so the list works offline) and single models added by link
+  // (ui/BackendPanel/PetModelList.js).
+  mlipModel: '',
+  petCatalogues: [],
+  petLinks: [],
+  // ASE controls ▸ server: the address last connected to, and the model picked
+  // when the server offers several (AtomisticPanels.js).
+  aseServerUrl: '',
+  aseModel: '',
   // Lattice Plots ▸ card heights the user dragged, px by plot id
   // (ui/LatticePlotsPanel.js); empty = every card flex-shares the stack.
   latticePlotHeights: {},
@@ -305,6 +321,11 @@ function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
   const defaults = panel.def.defaults || {};
   const dock = defaultDockOf(panel.def);
   panel.closed = false;
+  // Leaving the side dock (≡ ▸ Default on a side-docked window whose home is
+  // elsewhere): detach from the pane first, or its tab is left behind in an
+  // otherwise empty side dock. (floatPanel does this itself; the main-dock
+  // path did not.)
+  if (panel.dock === 'right' && dock !== 'right') sideUndockPanel(panel);
   if (dock === 'right') {
     sideDockPanel(panel, { front: true, expand: false });
     // Show the dock on a desktop reset. On a phone the side dock is the
@@ -690,7 +711,12 @@ export function registerPanel(def) {
   // Build persistent content only after the panel is attached: builders
   // resolve their target container by id (document.getElementById), which
   // fails on a detached panel body.
-  if (def.lifecycle !== 'rebuild' && (!closed || shelved) && !waitsForStructure) buildContent(panel);
+  // A shelved window that waits for the first structure (Visual removed from
+  // the sidebar) defers to its first open, as revealFeaturePanels does — also
+  // when it registers after that structure (a first start draws the
+  // structure before the windows, core/crystal-viewer.js).
+  const buildNow = !closed || (shelved && !def.hiddenUntilStructure);
+  if (def.lifecycle !== 'rebuild' && buildNow && !waitsForStructure) buildContent(panel);
 
   if (!closed && !collapsed && panel.collapsed) {
     if (waitsForStructure) panel.wantExpanded = true;

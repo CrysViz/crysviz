@@ -1,4 +1,3 @@
-import { loadSocketIO } from '../../external/socket.io-loader.js';
 import { fileBrowser, structureShip, general } from '../../state/store.js';
 import { structureHasFractionalOccupancy } from '../DisorderWarningBanner.js';
 import {
@@ -28,10 +27,22 @@ import {
 import { ensureWorkerNEPReady, createWorkerNEPForceEvaluator } from '../../atomistic/nepWorkerClient.js';
 import { ensureTrajectoryPanelForLive, feedLiveStep, resetLivePlot, endLiveFeed } from '../TrajectoryPanel.js';
 import { MLIPRunner } from '../../external/mlip_wasm/mlip_runner.js';
+import { WorkerMLIPRunner } from '../../atomistic/mlipWorkerClient.js';
+import { ASERunner, DEFAULT_ASE_URL } from '../../atomistic/aseClient.js';
+import { PET_MAD_BASE_URL, fetchPetModel, inspectPetModelFile, elementsOutside } from '../../atomistic/petModels.js';
+import { PET_LINK_OPTION, bindPetModelList, petModelFor, selectedPetModel } from './PetModelList.js';
+import { mountPotentialNotice, setPotentialLabel, notifyPotentialChange, potentialSource } from '../../atomistic/potentialNotice.js';
+import { dataSourceOf } from '../../model/dataSource.js';
+import { getContainerForStructure } from '../../state/structures.js';
+import {
+  isIsolated, isMultithreadRequested, canRequestIsolation, setMultithreadEnabled,
+} from '../../host/coi.js';
+import { confirmAppReload, reloadAbandoned } from '../LeaveGuard.js';
 import { withAppStressConvention } from '../../atomistic/calculatorStress.js';
+import { withAtomLimit, assertPotentialSize, potentialSizeProblem } from '../../atomistic/potentialLimits.js';
 import { updateForces } from '../../render/index.js';
-import { updateRow, createRow, selectLastAddedRow, selectStructure, selectContainer } from '../FileBrowswerPanel.js';
-import { refreshActivePanels } from '../panels/PanelManager.js';
+import { updateRow, createRow, selectStructure, selectContainer } from '../FileBrowswerPanel.js';
+import { refreshActivePanels, getPanelPref, setPanelPref, getPanel } from '../panels/PanelManager.js';
 import { refreshFileStructureSummary } from '../FileStructureSummary.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { fracToCartPoint, cartToFractional, normalizeFractionalPoint } from '../../math/index.js';
@@ -41,12 +52,13 @@ import {
   symmetrizeCartesianVectors,
   symmetrizeCartesianStrain,
 } from '../SymmetryEditModule.js';
-import { StructureContainer, TrajectoryContainer } from '../../model/index.js';
+import { TrajectoryContainer } from '../../model/index.js';
 import { Atom } from '../../model/index.js';
 import { Force } from '../../model/index.js';
-import { Stress, fromTensionPositive } from '../../model/index.js';
+import { Stress } from '../../model/index.js';
 import { Structure } from '../../model/index.js';
 import { refreshBackendTheme } from './BackendTheme.js';
+import { isVacancy } from '../../render/VacancyMarkerModule.js';
 
 const tableBody = document.querySelector('#objectTable tbody');
 
@@ -56,16 +68,17 @@ let nepInitPromise = null;
 // PET-MAD (mlip.js) state. The runner is a singleton keyed by backend: changing
 // the backend requires a fresh runner (a different wasm variant / module),
 // while changing the model just reloads weights on the existing runner.
-const MLIP_MODEL_BASE_URL = 'https://huggingface.co/peterspackman/mlip-gguf/resolve/main/';
+// Models come from atomistic/petModels.js (built-in PET-MAD, catalogues,
+// links); the list is PetModelList.js.
 // All PET-MAD singleton state lives in one object so a backend change (or a
 // failed init) replaces/clears it atomically instead of resetting five vars
 // in lockstep. Shape: { backend, initPromise, runner, loadedModelKey,
-// modelPromise, modelPromiseKey }.
+// modelPromise, modelPromiseKey, modelMeta }.
 let mlipState = null;
 
-let aseSocket = null;
-let aseConnected = false;
-let aseBoundElements = null;
+/** @type {ASERunner|null} */
+let aseRunner = null;
+/** @type {Promise<ASERunner>|null} */
 let aseConnectPromise = null;
 
 function loadScript(src) {
@@ -91,12 +104,97 @@ async function initNEP() {
 
     await runner.init();
     await runner.loadDefaultModel();
-    nepRunner = withAppStressConvention(runner);
+    nepRunner = withAtomLimit(withAppStressConvention(runner), 'nep');
     return nepRunner;
   })();
 
   return nepInitPromise;
 }
+
+// Progress bars in the Atomistic window: the potential's loading bar under
+// the potential picker, and MD's and Relax's run progress under their
+// buttons. `fraction` in 0..1 fills the bar, null sweeps it (no end known).
+function progressMarkup(role, ariaLabel) {
+  return `
+    <div class="atomistic-progress" data-role="${role}" hidden>
+      <div class="atomistic-progress-label" data-role="progress-label"></div>
+      <div class="atomistic-progress-track" data-role="progress-bar" role="progressbar"
+           aria-label="${ariaLabel}" aria-valuemin="0" aria-valuemax="100">
+        <div class="atomistic-progress-fill" data-role="progress-fill"></div>
+      </div>
+    </div>`;
+}
+
+// These bars and the title status below are called from inside relaxation
+// and MD steps: they show progress and must never be what stops a run, so
+// they tolerate missing pieces instead of throwing.
+
+/** @param {any} box an element from progressMarkup @param {string} label @param {number|null} [fraction] */
+function showProgress(box, label, fraction = null) {
+  if (!box) return;
+  box.hidden = false;
+  const labelEl = box.querySelector('[data-role="progress-label"]');
+  if (labelEl) labelEl.textContent = label;
+  const bar = box.querySelector('[data-role="progress-bar"]');
+  const fill = /** @type {HTMLElement|null} */ (box.querySelector('[data-role="progress-fill"]'));
+  if (!bar || !fill) return;
+  const known = Number.isFinite(fraction);
+  bar.classList.toggle('is-indeterminate', !known);
+  if (known) {
+    const pct = Math.round(Math.min(1, Math.max(0, fraction)) * 100);
+    fill.style.width = `${pct}%`;
+    bar.setAttribute('aria-valuenow', String(pct));
+  } else {
+    fill.style.width = '';
+    bar.removeAttribute('aria-valuenow');
+  }
+}
+
+/** @param {any} box an element from progressMarkup */
+function hideProgress(box) {
+  if (box) box.hidden = true;
+}
+
+// A run's state in the Atomistic window's title bar ("MD 37%", "Relax step
+// 12"): seen when the window is collapsed, or scrolled away from the bar.
+// Skipped when the window cannot show it: no window yet, or a browser that
+// still runs a cached ui/panels/PanelWindow.js from before setStatus existed
+// (static hosts let browsers keep modules for minutes after a deploy, and a
+// page can then mix new and old modules).
+function setAtomisticTitleStatus(text) {
+  try {
+    const win = /** @type {any} */ (getPanel('backend'));
+    if (typeof win?.setStatus === 'function') win.setStatus(text);
+  } catch (error) {
+    console.warn('Atomistic window title status:', error);
+  }
+}
+
+// The loading bar under the potential picker. Each loader (nep, mlip, ase)
+// reports under its own key; the latest one shows. A model download fills it,
+// wasm start-up, weights parsing and a model loading on the ASE server sweep
+// it. Found by query, not through a shell, so loads started from other
+// windows (EOS, phonons) show here too.
+const potentialLoads = new Map();
+
+function setPotentialLoad(key, label, fraction = null) {
+  potentialLoads.delete(key);
+  potentialLoads.set(key, { label, fraction });
+  renderPotentialLoad();
+}
+
+function endPotentialLoad(key) {
+  if (potentialLoads.delete(key)) renderPotentialLoad();
+}
+
+function renderPotentialLoad() {
+  const box = document.querySelector('#BackendPotentialSelector [data-role="potential-load"]');
+  const current = [...potentialLoads.values()].pop();
+  if (current) showProgress(box, current.label, current.fraction);
+  else hideProgress(box);
+}
+
+const megabytes = (bytes) => (bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0);
 
 async function ensureNEPReady(statusEl, stateEl = null) {
   if (nepRunner) {
@@ -107,7 +205,13 @@ async function ensureNEPReady(statusEl, stateEl = null) {
   if (statusEl) statusEl.textContent = 'Loading built-in NEP model...';
   if (stateEl) stateEl.textContent = 'Built-in model loading...';
 
-  const runner = await initNEP();
+  setPotentialLoad('nep', 'Loading the built-in NEP model …');
+  let runner;
+  try {
+    runner = await initNEP();
+  } finally {
+    endPotentialLoad('nep');
+  }
 
   if (statusEl) statusEl.textContent = 'Built-in NEP model loaded.';
   if (stateEl) stateEl.textContent = `Built-in model ready: ${runner.modelInfo.name}`;
@@ -124,13 +228,28 @@ function setMLIPStatus(shell, message) {
 // runner. Concurrent loads are de-duplicated per model key via mlipState.
 async function ensureMLIPReady(shell) {
   const backend = shell.mlipBackendSelect?.value || 'cpu';
-  const modelFile = shell.mlipModelSelect?.value || 'pet-mad-xs.gguf';
+  const modelFile = selectedPetModel(shell.mlipModelSelect);
   const localFile = shell.mlipFileInput?.files?.[0] || null;
+  if (!modelFile && !localFile) {
+    throw new Error('Paste a link to a .gguf model or a catalogue and press Add, or pick a model.');
+  }
 
-  // Keyed by backend on the state object (not the runner) so a switch made
-  // while the previous init is still in flight also takes effect: the old
-  // runner is destroyed once its init settles.
-  if (mlipState && mlipState.backend !== backend) {
+  // Keyed by backend and transport (worker or main thread) on the state
+  // object, not the runner, so a switch made while the previous init is still
+  // in flight also takes effect: the old runner is destroyed once its init
+  // settles.
+  try {
+    return await loadMLIP(shell, backend, modelFile, localFile);
+  } finally {
+    endPotentialLoad('mlip');
+  }
+}
+
+/** ensureMLIPReady's work, reporting to the loading bar as it goes. */
+async function loadMLIP(shell, backend, modelFile, localFile) {
+  const useWorker = general.mlipWorker !== false && typeof Worker !== 'undefined';
+  const runnerKey = `${backend}|${useWorker ? 'worker' : 'main'}`;
+  if (mlipState && mlipState.key !== runnerKey) {
     const old = mlipState;
     mlipState = null;
     old.initPromise.then((r) => r.destroy()).catch(() => { /* never initialized */ });
@@ -140,15 +259,41 @@ async function ensureMLIPReady(shell) {
     setMLIPStatus(shell, `initializing PET-MAD (${backend}) …`);
     const state = {
       backend,
+      key: runnerKey,
       initPromise: null,
       runner: null,
       loadedModelKey: null,
       modelPromise: null,
       modelPromiseKey: null,
+      // What the loaded model says about itself (petModels.describeGGUF,
+      // overlaid by its catalogue entry): name, species, trained elements.
+      modelMeta: null,
     };
     state.initPromise = (async () => {
-      const runner = withAppStressConvention(new MLIPRunner({ backend }));
-      await runner.init();
+      const threads = /** @type {number|'auto'|false} */ (general.mlipThreads ?? 'auto');
+      const blockedGemm = general.mlipBlockedGemm !== false;
+      const gpuReadback = general.mlipGpuReadback === 'map' ? 'map' : 'auto';
+      const gpuMatmul = general.mlipGpuMatmul === 'reg_tile' ? 'reg_tile' : 'tile4';
+      // Off the main thread whenever possible (workers/mlipWorker.js): an
+      // evaluation is tens to hundreds of ms and would block paint and input
+      // for every relax/MD step. Falls back to the in-thread runner when the
+      // worker cannot start (no Worker, or a backend the worker cannot host).
+      let runner = null;
+      if (useWorker) {
+        try {
+          runner = withAtomLimit(withAppStressConvention(
+            new WorkerMLIPRunner({ backend, threads, blockedGemm, gpuReadback, gpuMatmul })), 'mlip');
+          await runner.init();
+        } catch (workerError) {
+          console.warn('PET-MAD worker unavailable, running the potential on the main thread:', workerError);
+          runner = null;
+        }
+      }
+      if (!runner) {
+        runner = withAtomLimit(withAppStressConvention(
+          new MLIPRunner({ backend, threads, blockedGemm, gpuReadback, gpuMatmul })), 'mlip');
+        await runner.init();
+      }
       state.runner = runner;
       return runner;
     })();
@@ -162,6 +307,7 @@ async function ensureMLIPReady(shell) {
   const state = mlipState;
   let runner;
   try {
+    if (!state.runner) setPotentialLoad('mlip', `Starting PET-MAD (${backend}) …`);
     runner = await state.initPromise;
   } catch (error) {
     // WebGPU (or 'auto' resolving to it) can fail on adapter/device request;
@@ -197,13 +343,37 @@ async function ensureMLIPReady(shell) {
       state.modelPromise = (async () => {
         if (localFile) {
           setMLIPStatus(shell, `loading ${localFile.name} …`);
+          setPotentialLoad('mlip', `Loading ${localFile.name} …`);
+          const info = await inspectPetModelFile(localFile);
           await runner.loadModelFromFile(localFile);
+          state.modelMeta = { ...info, name: info.name || localFile.name };
         } else {
-          const url = MLIP_MODEL_BASE_URL + modelFile;
-          await runner.loadModelFromUrl(url, ({ loadedBytes, totalBytes }) => {
-            const pct = totalBytes ? Math.round((loadedBytes / totalBytes) * 100) : 0;
-            setMLIPStatus(shell, `fetching ${modelFile} … ${pct}%`);
+          // Catalogue and link entries are URLs, as are the benchmarks' own
+          // options (./bench-models/…); the built-in entries are bare file
+          // names under the Hugging Face repo. All of them download through
+          // fetchPetModel (direct links, checks, checksum, cache) and reach
+          // the runner as a File.
+          const item = petModelFor(modelFile);
+          const url = /^(https?:)?\/\/|^\.{0,2}\//.test(modelFile) ? modelFile : PET_MAD_BASE_URL + modelFile;
+          const label = item?.entry.name || modelFile.split('/').pop();
+          setPotentialLoad('mlip', `Loading ${label} …`);
+          const { file, info, checked } = await fetchPetModel(url, {
+            sha256: item?.entry.sha256,
+            name: item?.source.kind === 'builtin' ? modelFile : label,
+            onProgress: ({ loadedBytes, totalBytes }) => {
+              const pct = totalBytes ? Math.round((loadedBytes / totalBytes) * 100) : 0;
+              setMLIPStatus(shell, `fetching ${label} … ${pct}%`);
+              setPotentialLoad('mlip', totalBytes
+                ? `Downloading ${label}: ${megabytes(loadedBytes)} of ${megabytes(totalBytes)} MB`
+                : `Downloading ${label}: ${megabytes(loadedBytes)} MB`,
+              totalBytes ? loadedBytes / totalBytes : null);
+            },
           });
+          setMLIPStatus(shell, `loading ${label} …`);
+          setPotentialLoad('mlip', `Loading ${label} into PET-MAD …`);
+          await runner.loadModelFromFile(file);
+          // The catalogue's description wins over what the file says.
+          state.modelMeta = { ...info, ...(item ? stripEmpty(item.entry) : {}), checked };
         }
         state.loadedModelKey = modelKey;
       })();
@@ -218,16 +388,81 @@ async function ensureMLIPReady(shell) {
     }
   }
 
-  setMLIPStatus(shell, `PET-MAD ready: ${runner.modelInfo.name}`);
-  if (shell.sourceStateEl) shell.sourceStateEl.textContent = `PET-MAD ready: ${runner.modelInfo.name}`;
+  // general.mlipThreads / mlipBlockedGemm / mlipGpuReadback / mlipGpuMatmul may have changed since this runner
+  // was built (the Debug window's benchmark switches them between runs):
+  // apply them in place.
+  const wantThreads = general.mlipThreads ?? 'auto';
+  if (typeof runner.setThreads === 'function' && runner.threads !== wantThreads) {
+    await runner.setThreads(/** @type {number|'auto'|false} */ (wantThreads));
+  }
+  const wantGemm = general.mlipBlockedGemm !== false;
+  if (typeof runner.setBlockedGemm === 'function' && runner.blockedGemm !== wantGemm) {
+    await runner.setBlockedGemm(wantGemm);
+  }
+  const wantReadback = general.mlipGpuReadback === 'map' ? 'map' : 'auto';
+  if (typeof runner.setGpuReadback === 'function' && runner.gpuReadback !== wantReadback) {
+    await runner.setGpuReadback(wantReadback);
+  }
+  const wantMatmul = general.mlipGpuMatmul === 'reg_tile' ? 'reg_tile' : 'tile4';
+  if (typeof runner.setGpuMatmul === 'function' && runner.gpuMatmul !== wantMatmul) {
+    await runner.setGpuMatmul(wantMatmul);
+  }
+
+  const domainNote = checkPetModelElements(state.modelMeta);
+  const readyText = `PET-MAD ready: ${runner.modelInfo.name} (${mlipRuntimeLabel(runner)})${domainNote}`;
+  setMLIPStatus(shell, readyText);
+  if (shell.sourceStateEl) shell.sourceStateEl.textContent = readyText;
   return runner;
 }
 
+/** An entry without its undefined fields, so it does not blank what the file says. */
+function stripEmpty(entry) {
+  return Object.fromEntries(Object.entries(entry).filter(([, v]) => v !== undefined && v !== ''));
+}
+
+/**
+ * The selected structure against the loaded model: an element the model has
+ * no parameters for stops the run here with its name (instead of an opaque
+ * failure inside predict); one outside the elements a fine-tuned model was
+ * trained for (catalogue `elements`, or the exporter's pet.training_species)
+ * is only noted, since the model still runs there, as extrapolation.
+ * @param {{ name?: string, species?: string[], elements?: string[] }|null|undefined} meta
+ * @returns {string} a note for the status line, or ''
+ */
+function checkPetModelElements(meta) {
+  const structure = fileBrowser.selectedStructure;
+  if (!meta || !structure?.elements) return '';
+  const present = structure.elements
+    .filter((e) => !isVacancy(e))
+    .map((e) => String(e).charAt(0).toUpperCase() + String(e).slice(1).toLowerCase());
+  const missing = elementsOutside(present, meta.species);
+  if (missing.length) {
+    throw new Error(`${meta.name || 'This model'} has no parameters for ${missing.join(', ')}.`);
+  }
+  const outside = elementsOutside(present, meta.elements);
+  return outside.length
+    ? ` — trained for ${meta.elements.join(', ')}; ${outside.join(', ')} ${outside.length === 1 ? 'is' : 'are'} outside that`
+    : '';
+}
+
+// "cpu, 4 threads, worker" — where and how a PET-MAD runner evaluates, for
+// the status lines (so a user can see whether the multi-threaded build is on).
+function mlipRuntimeLabel(runner) {
+  const d = typeof runner?.describe === 'function' ? runner.describe() : null;
+  if (!d) return '';
+  const where = runner.offThread ? 'worker' : 'main thread';
+  if (d.variant === 'gpu') return `webgpu, ${where}`;
+  const threads = Math.max(1, Number(d.threads) || 1);
+  return `cpu, ${threads} thread${threads === 1 ? '' : 's'}, ${where}`;
+}
+
 // Return the ready runner for the active potential (nep -> NEP wasm singleton,
-// mlip -> PET-MAD runner). Both expose the same { modelInfo, compute } surface
-// buildNEPStructure / relaxUntilConverged / createNEPForceEvaluator consume.
+// mlip -> PET-MAD runner, ase -> the ASE server). All expose the same
+// { modelInfo, compute } surface buildNEPStructure / relaxUntilConverged /
+// createNEPForceEvaluator consume.
 async function ensureCalculatorReady(potential, shell) {
   if (potential === 'mlip') return ensureMLIPReady(shell);
+  if (potential === 'ase') return ensureASEReady(shell);
   return ensureNEPReady(shell.statusEl, shell.sourceStateEl);
 }
 
@@ -254,6 +489,26 @@ function assertOrderedStructure() {
   }
 }
 
+/** Atoms the potential would see (vacancies are left out, see buildNEPStructure). */
+function potentialAtomCount(structure = fileBrowser.selectedStructure) {
+  if (!structure?.atoms) return 0;
+  const elements = structure.elements || [];
+  let n = 0;
+  for (let i = 0; i < structure.atoms.length; i += 1) if (!isVacancy(elements[i])) n += 1;
+  return n;
+}
+
+/** Refuse, before anything is set up, a structure the potential cannot take. */
+function assertStructureFitsPotential(potential) {
+  assertPotentialSize(potential, potentialAtomCount());
+}
+
+/** Say up front, when the panel opens, that the selected structure is too big. */
+function showPotentialSizeNotice(shell, potential) {
+  const problem = potentialSizeProblem(potential, potentialAtomCount());
+  if (problem && shell.resultEl) shell.resultEl.textContent = problem;
+}
+
 // Shared by ensureActiveCalculator and ensureCalculatorRunner below: resolves
 // general.atomisticPotential to a ready { runner, potential }. When the
 // Relax/MD panel IS built, its PET-MAD backend/model controls are reused so a
@@ -262,11 +517,11 @@ function assertOrderedStructure() {
 // browser.
 async function resolveCalculatorRunner(onStatus = () => {}) {
   const potential = general.atomisticPotential || 'nep';
-  if (potential === 'ase') {
-    throw new Error('ASE runs on a remote server backend — select the NEP or PET-MAD potential to compute in-browser.');
-  }
   const statusEl = statusElAdapter(onStatus);
-  const panel = document.getElementById('BackendCalcPanel');
+  // The PET-MAD backend/model controls live in the persistent potential
+  // selector (buildSourcePanel), not in the action body.
+  const panel = document.getElementById('BackendPotentialSelector')
+    ?? document.getElementById('BackendCalcPanel');
   const shell = {
     statusEl,
     sourceStateEl: statusEl,
@@ -274,6 +529,8 @@ async function resolveCalculatorRunner(onStatus = () => {}) {
     mlipBackendSelect: panel?.querySelector('[data-role="mlip-backend"]') ?? null,
     mlipModelSelect: panel?.querySelector('[data-role="mlip-model"]') ?? null,
     mlipFileInput: panel?.querySelector('[data-role="mlip-file"]') ?? null,
+    aseUrlInput: panel?.querySelector('[data-role="ase-url"]') ?? null,
+    backendStateEl: panel?.querySelector('[data-role="backend-state"]') ?? null,
   };
   const runner = await ensureCalculatorReady(potential, shell);
   return { runner, potential };
@@ -303,10 +560,6 @@ export async function ensureCalculatorRunner(onStatus = () => {}) {
 
 // The ASE server sends ASE's get_stress(): eV/Å³, tension-positive. Stored in
 // the app convention (eV/Å³, compression positive — model/Stress.js).
-function stressFromASE(stressTensor) {
-  return fromTensionPositive(stressTensor);
-}
-
 function setCurrentEFS(out, keptIndices = null) {
   if (Array.isArray(out?.forces)) {
     // The potential returns one force per NON-vacancy atom; expand back to the
@@ -330,6 +583,13 @@ function setCurrentEFS(out, keptIndices = null) {
     fileBrowser.selectedStructure.stress = new Stress({
       tensor: out.stress.matrix3x3.map((row) => [...row]),
     });
+    // A new pressure: the NEP high-pressure warning may now apply.
+    notifyPotentialChange();
+  }
+  // Where these numbers came from, for the Parameters section's "Source:"
+  // and the .crysviz session (model/dataSource.js): the potential that ran.
+  if (Array.isArray(out?.forces) || Number.isFinite(Number(out?.total_energy)) || Array.isArray(out?.stress?.matrix3x3)) {
+    fileBrowser.selectedStructure.dataSource = potentialSource();
   }
 
   if (general.forcesActive) {
@@ -365,6 +625,9 @@ export function snapshotCurrentStructure() {
     forces,
     stress,
     energy: Number.isFinite(src.energy) ? src.energy : null,
+    // The source of that energy as this structure shows it (its own, else its
+    // file's), so a frame keeps it whatever trajectory it lands in.
+    dataSource: dataSourceOf(src, getContainerForStructure(src)),
     velocities,
     // MD/relax animate a snapshot, not the source, and every symmetrize call
     // in MD.js keys off `structure.symmetry.mode === 'wyckoff'`. Dropping it
@@ -395,212 +658,157 @@ function restoreStructureInPlace(target, src) {
   // source too; put back what the structure had before the run.
   target.stress = src.stress?.tensor ? new Stress({ tensor: src.stress.tensor.map((row) => [...row]) }) : null;
   target.energy = Number.isFinite(src.energy) ? src.energy : null;
+  target.dataSource = src.dataSource ?? null;
   // Drop the wrapped-position cache so the restored structure re-wraps from its
   // own positions instead of a leftover MD frame's.
   target.periodic = { hash: 'None', wrapped: null };
 }
 
-function setASEStatus(bound, message) {
-  if (!bound?.statusEl) return;
-  bound.statusEl.textContent = message;
+// ASE: backend/server.py as a calculator (atomistic/aseClient.js), used by
+// every workflow through ensureCalculatorReady like NEP and PET-MAD. One
+// connection per page; the URL is remembered.
+function aseServerUrl(shell) {
+  const typed = shell?.aseUrlInput?.value?.trim();
+  return typed || getPanelPref('aseServerUrl') || DEFAULT_ASE_URL;
 }
 
-function clearASEHandlers() {
-  if (!aseSocket || !aseBoundElements) return;
-
-  aseSocket.off('connect', aseBoundElements.onConnect);
-  aseSocket.off('connect_error', aseBoundElements.onConnectError);
-  aseSocket.off('status', aseBoundElements.onStatus);
-  aseSocket.off('new', aseBoundElements.onNew);
-  aseSocket.off('getEFS', aseBoundElements.onGetEFS);
-  aseSocket.off('stressUpdate', aseBoundElements.onStressUpdate);
-  aseBoundElements = null;
+function setASEState(shell, text) {
+  if (shell?.backendStateEl) shell.backendStateEl.textContent = text;
 }
 
-function bindASEHandlers(bound) {
-  if (!aseSocket) return;
-  clearASEHandlers();
-
-  const onConnect = () => {
-    aseConnected = true;
-    if (bound.backendStateEl) bound.backendStateEl.textContent = 'Backend: connected';
-    setASEStatus(bound, 'ASE backend connected.');
-  };
-
-  const onConnectError = () => {
-    aseConnected = false;
-    if (bound.backendStateEl) bound.backendStateEl.textContent = 'Backend: not found';
-    setASEStatus(bound, 'ASE backend not found. Start the server and reconnect.');
-  };
-
-  const onStatus = (data) => {
-    setASEStatus(bound, data.message);
-  };
-
-  const onNew = (data) => {
-    setASEStatus(bound, 'ASE relaxation finished.');
-    if (bound.resultEl) bound.resultEl.textContent = data.log ?? '';
-    const sourceFileName = structureShip.container[fileBrowser.selectedRowIndex].fileName;
-    const container = new StructureContainer({ fileName: sourceFileName });
-
-    for (let i = 0; i < data.result.positions.length; i += 1) {
-      const atoms = [];
-      data.result.positions[i].forEach((pos, index) => {
-        atoms.push(new Atom({
-          position: pos,
-          element: [...fileBrowser.selectedStructure.elements][index],
-        }));
-      });
-
-      const forces = [];
-      data.result.forces[i].forEach((force) => {
-        forces.push(new Force({ vector: force }));
-      });
-
-      const elements = [...fileBrowser.selectedStructure.elements];
-      const structure = new Structure({
-        elements,
-        uniqueElements: [...new Set(elements)],
-        lattice: data.result.lattices[i],
-        atoms,
-        forces,
-        stress: new Stress({ tensor: stressFromASE(data.result.stresses[i]) }),
-      });
-      container.structures.push(structure);
-    }
-
-    structureShip.container.push(container);
-    const fileName = `relax_ase_${sourceFileName}`;
-    container.fileName = fileName;
-    const row = createRow({ name: fileName, traj: container.structures.length, step: container.structures.length });
-    tableBody.appendChild(row);
-    fileBrowser.fileData.push({ name: fileName, traj: container.structures.length, step: container.structures.length });
-    selectLastAddedRow();
-  };
-
-  const onGetEFS = (data) => {
-    setASEStatus(bound, data.log ?? 'ASE EFS finished.');
-    const elements = [...fileBrowser.selectedStructure.elements];
-    // FIXME (latent bug, pre-existing): unlike the relax/MD paths above, this
-    // EFS path passes `positions` (ignored by Structure, which reads `atoms`)
-    // and a single malformed Force instead of building `atoms` + a forces array.
-    // Cast keeps existing runtime behavior; the structure ends up without atoms.
-    const structure = new Structure(/** @type {any} */ ({
-      elements,
-      uniqueElements: [...new Set(elements)],
-      lattice: data.result.lattice,
-      positions: data.result.positions,
-      forces: new Force({ vector: data.result.forces }),
-      stress: new Stress({ tensor: stressFromASE(data.result.stress) }),
-    }));
-    const pressure = structure.stress.pressureGPa;
-    if (bound.efsMetricsEl) {
-      bound.efsMetricsEl.innerHTML = `
-        <div>energy / atom: server</div>
-        <div>max force: ${Number(data.result.maxf).toFixed(5)} eV/A</div>
-        <div>pressure: ${pressure.toFixed(2)} GPa</div>
-      `;
-    }
-    if (bound.resultEl) {
-      bound.resultEl.textContent = `ASE EFS ready. max|F|=${Number(data.result.maxf).toFixed(5)} eV/A, P=${pressure.toFixed(2)} GPa`;
-    }
-  };
-
-  const onStressUpdate = (data) => {
-    const stress = new Stress({ tensor: stressFromASE(data.stress) });
-    if (bound.efsMetricsEl) {
-      bound.efsMetricsEl.innerHTML = `
-        <div>energy / atom: server</div>
-        <div>max force: ${Number(data.maxf).toFixed(5)} eV/A</div>
-        <div>pressure: ${stress.pressureGPa.toFixed(2)} GPa</div>
-      `;
-    }
-  };
-
-  aseBoundElements = {
-    ...bound,
-    onConnect,
-    onConnectError,
-    onStatus,
-    onNew,
-    onGetEFS,
-    onStressUpdate,
-  };
-
-  aseSocket.on('connect', onConnect);
-  aseSocket.on('connect_error', onConnectError);
-  aseSocket.on('status', onStatus);
-  aseSocket.on('new', onNew);
-  aseSocket.on('getEFS', onGetEFS);
-  aseSocket.on('stressUpdate', onStressUpdate);
-}
-
-async function connectASEBackend(bound) {
-  bindASEHandlers(bound);
-
-  if (aseConnected) {
-    if (bound.backendStateEl) bound.backendStateEl.textContent = 'Backend: connected';
-    setASEStatus(bound, 'ASE backend connected.');
-    return;
-  }
-
-  if (aseSocket) return;
-  if (aseConnectPromise) return aseConnectPromise;
-  aseConnectPromise = (async () => {
-    try {
-      const { io } = await loadSocketIO();
-      aseSocket = io('http://localhost:5001', {
-        timeout: 1000,
-        reconnection: false,
-      });
-      bindASEHandlers(bound);
-    } catch (error) {
-      setASEStatus(bound, `ASE backend client unavailable: ${error.message || String(error)}`);
-    } finally {
+async function ensureASEReady(shell) {
+  const url = aseServerUrl(shell);
+  if (aseRunner && aseRunner.url !== url) disconnectASE(shell);
+  if (aseRunner?.connected && aseRunner.modelInfo) return aseRunner;
+  if (!aseConnectPromise) {
+    aseConnectPromise = (async () => {
+      setASEState(shell, `Backend: connecting to ${url} …`);
+      setPotentialLoad('ase', `Connecting to the ASE server at ${url} …`);
+      const runner = withAppStressConvention(new ASERunner({ url }));
+      try {
+        await runner.init();
+      } catch (error) {
+        setASEState(shell, 'Backend: not connected');
+        throw error;
+      }
+      runner.onDisconnect = () => {
+        if (aseRunner === runner) aseRunner = null;
+        setASEState(shell, 'Backend: disconnected');
+        showASEModels(shell, null);
+      };
+      setPanelPref('aseServerUrl', url);
+      // The model picked last time, when this server offers it too.
+      const wanted = getPanelPref('aseModel');
+      if (wanted && wanted !== runner.modelId && runner.models.some((m) => m.id === wanted)) {
+        setASEState(shell, `Backend: loading ${wanted} on the server …`);
+        setPotentialLoad('ase', `Loading ${wanted} on the ASE server …`);
+        try {
+          await runner.setModel(wanted);
+        } catch (error) {
+          console.warn('ASE: the remembered model did not load; using the server default:', error);
+        }
+      }
+      aseRunner = runner;
+      setASEState(shell, `Backend: ${runner.modelInfo.name} at ${url}`);
+      showASEModels(shell, runner);
+      notifyPotentialChange();
+      return runner;
+    })().finally(() => {
       aseConnectPromise = null;
-    }
-  })();
+      endPotentialLoad('ase');
+    });
+  }
   return aseConnectPromise;
 }
 
-function disconnectASEBackend(bound) {
-  if (!aseSocket) return;
-  clearASEHandlers();
-  aseSocket.disconnect();
-  aseSocket = null;
-  aseConnected = false;
-  if (bound?.backendStateEl) bound.backendStateEl.textContent = 'Backend: disconnected';
-  setASEStatus(bound, 'ASE backend disconnected.');
+function disconnectASE(shell) {
+  const runner = aseRunner;
+  aseRunner = null;
+  runner?.destroy();
+  setASEState(shell, 'Backend: disconnected');
+  showASEModels(shell, null);
+  notifyPotentialChange();
 }
 
-function emitASERelax(style, params) {
-  if (!aseConnected || !aseSocket) throw new Error('ASE backend not connected');
-  const positions = fileBrowser.selectedStructure.atoms.map((atom) => atom.position);
-  const elements = [...fileBrowser.selectedStructure.elements];
-  const lattice = fileBrowser.selectedStructure.lattice.map((row) => [...row]);
-  aseSocket.emit('relaxStructure', {
-    positions,
-    lattice,
-    elements,
-    fmax: params.forceTol,
-    pressure: params.targetPressure / 160.21766,
-    style,
-  });
+/**
+ * The server's models in the ASE controls: shown when it offers more than
+ * one (python backend/server.py --model A --model B), hidden otherwise.
+ * @param {any} shell
+ * @param {ASERunner|null} runner
+ */
+function showASEModels(shell, runner) {
+  const select = /** @type {HTMLSelectElement|null} */ (shell?.aseModelSelect ?? null);
+  const row = shell?.aseModelRow ?? null;
+  if (!select || !row) return;
+  const models = runner?.modelId != null ? runner.models : [];
+  row.classList.toggle('hidden', models.length < 2);
+  select.innerHTML = '';
+  for (const m of models) {
+    const option = document.createElement('option');
+    option.value = m.id;
+    option.textContent = m.loaded ? m.label : `${m.id} (loads on first use)`;
+    if (m.error) option.title = m.error;
+    select.appendChild(option);
+  }
+  if (runner?.modelId != null) select.value = runner.modelId;
 }
 
-function emitASEEFS() {
-  if (!aseConnected || !aseSocket) throw new Error('ASE backend not connected');
-  const positions = fileBrowser.selectedStructure.atoms.map((atom) => atom.position);
-  const elements = [...fileBrowser.selectedStructure.elements];
-  const lattice = fileBrowser.selectedStructure.lattice.map((row) => [...row]);
-  aseSocket.emit('relaxStructure', {
-    positions,
-    lattice,
-    elements,
-    fmax: 0,
-    pressure: 0,
-    style: 'getEFS',
-  });
+/** Switch the connected server's model from the ASE controls. */
+async function switchASEModel(shell, id) {
+  const runner = aseRunner;
+  if (!runner) return;
+  const previous = runner.modelId;
+  setASEState(shell, `Backend: loading ${id} on the server …`);
+  setPotentialLoad('ase', `Loading ${id} on the ASE server …`);
+  shell.aseModelSelect.disabled = true;
+  try {
+    await runner.setModel(id);
+    setPanelPref('aseModel', id);
+    setASEState(shell, `Backend: ${runner.modelInfo.name} at ${runner.url}`);
+  } catch (error) {
+    setASEState(shell, `Backend: ${id} did not load: ${error.message || error}`);
+    console.warn(error);
+  } finally {
+    endPotentialLoad('ase');
+    shell.aseModelSelect.disabled = false;
+    showASEModels(shell, runner);
+    if (runner.modelId !== id && previous != null) shell.aseModelSelect.value = previous;
+    notifyPotentialChange();
+  }
+}
+
+/** The PET-MAD model the next run uses, for the potential notices. */
+function mlipModelLabel(shell) {
+  const file = shell?.mlipFileInput?.files?.[0];
+  if (file) return `${file.name} (local file, in your browser)`;
+  const option = shell?.mlipModelSelect?.selectedOptions?.[0];
+  const name = option && option.value !== PET_LINK_OPTION
+    ? option.textContent.replace(/\s*\(\d+ [kM]B\)$/, '')
+    : 'PET-MAD xs';
+  return `${name} (in your browser)`;
+}
+
+/** The ASE server's model, for the potential notices. */
+function aseModelLabel(shell) {
+  if (aseRunner?.connected && aseRunner.modelInfo) return `${aseRunner.modelInfo.name} on ${aseRunner.url}`;
+  return `a model on your ASE server at ${aseServerUrl(shell)} (not connected)`;
+}
+
+/**
+ * Pressures in play for the selected structure, GPa (compression positive):
+ * the relax target, the NPT target, and the pressure computed last.
+ * @returns {{ label: string, gpa: number }[]}
+ */
+function atomisticPressures() {
+  const body = document.getElementById('BackendCalcPanel');
+  const out = [];
+  const relax = /** @type {HTMLInputElement|null} */ (body?.querySelector('#relaxTargetPressureInput') ?? null);
+  if (relax) out.push({ label: 'target pressure', gpa: Number(relax.value) });
+  const npt = /** @type {HTMLInputElement|null} */ (body?.querySelector('#mdPressureInput') ?? null);
+  if (npt && !npt.disabled) out.push({ label: 'NPT pressure', gpa: Number(npt.value) });
+  const stress = fileBrowser.selectedStructure?.stress;
+  if (stress) out.push({ label: 'the structure\'s pressure', gpa: Number(stress.pressureGPa) });
+  return out;
 }
 
 // The potential picker lives in its OWN persistent element (#BackendPotentialSelector),
@@ -622,14 +830,29 @@ function buildSourcePanel() {
         <div class="atomistic-source-copy">
           <div class="atomistic-source-state" data-role="source-state"></div>
         </div>
+        ${progressMarkup('potential-load', 'Loading the potential')}
+        <div data-role="potential-notice-host"></div>
         <div class="atomistic-backend-actions hidden" data-role="mlip-source">
           <label class="atomistic-inline-toggle">
             <span>model</span>
             <select class="atomistic-input-sm" data-role="mlip-model">
-              <option value="pet-mad-xs.gguf">PET-MAD xs (17 MB)</option>
-              <option value="pet-mad-s.gguf">PET-MAD s (100 MB)</option>
+              <optgroup label="PET-MAD" data-role="mlip-builtin-models">
+                <option value="pet-mad-xs.gguf">PET-MAD xs (17 MB)</option>
+                <option value="pet-mad-s.gguf">PET-MAD s (100 MB)</option>
+              </optgroup>
+              <option value="${PET_LINK_OPTION}">from a link…</option>
             </select>
           </label>
+          <div class="atomistic-model-link hidden" data-role="mlip-link-row">
+            <input type="url" class="atomistic-input-sm" data-role="mlip-link" spellcheck="false" autocomplete="off"
+                   placeholder="link to a .gguf model or a catalogue .json" aria-label="Model or catalogue link">
+            <button type="button" class="calcButton" data-role="mlip-link-add">Add</button>
+          </div>
+          <div class="atomistic-model-info" data-role="mlip-model-info">
+            <span data-role="mlip-model-info-text"></span>
+            <button type="button" class="atomistic-text-button hidden" data-role="mlip-forget"
+                    title="Remove this catalogue (all its models) or link from the list">forget</button>
+          </div>
           <label class="atomistic-inline-toggle">
             <span>backend</span>
             <select class="atomistic-input-sm" data-role="mlip-backend">
@@ -643,9 +866,27 @@ function buildSourcePanel() {
             <span>local .gguf</span>
             <input type="file" accept=".gguf" class="atomistic-input-sm" data-role="mlip-file">
           </label>
+          <label class="atomistic-inline-toggle" data-role="mlip-multithread-row"
+                 title="Run the CPU build on several cores. Needs a cross-origin isolated page, so turning it on or off reloads CrysViz.">
+            <span>multi-threaded</span>
+            <input type="checkbox" data-role="mlip-multithread">
+          </label>
+          <label class="atomistic-inline-toggle" data-role="mlip-threads-row">
+            <span>threads</span>
+            <select class="atomistic-input-sm atomistic-threads-select" data-role="mlip-threads"></select>
+          </label>
           <div class="atomistic-backend-state" data-role="mlip-status">PET-MAD: not loaded</div>
         </div>
         <div class="atomistic-backend-actions hidden" data-role="ase-connectors">
+          <label class="atomistic-inline-toggle" title="Where backend/server.py listens (python backend/server.py --help).">
+            <span>server</span>
+            <input type="text" class="atomistic-input-sm" data-role="ase-url" spellcheck="false" autocomplete="off">
+          </label>
+          <label class="atomistic-inline-toggle atomistic-ase-model hidden" data-role="ase-model-row"
+                 title="Models this server offers: start it with several, e.g. python backend/server.py --model mace-mp --model orb (--list shows all)">
+            <span>model</span>
+            <select class="atomistic-input-sm" data-role="ase-model"></select>
+          </label>
           <button type="button" class="calcButton" data-role="connect-ase">Connect</button>
           <button type="button" class="calcButton" data-role="disconnect-ase">Disconnect</button>
           <div class="atomistic-backend-state" data-role="backend-state">Backend: not connected</div>
@@ -672,14 +913,27 @@ function getShellBindings() {
   return {
     toggle: selector?.querySelector('[data-role="potential-toggle"]'),
     sourceStateEl,
+    potentialNoticeHost: selector?.querySelector('[data-role="potential-notice-host"]'),
     aseConnectorsEl: selector?.querySelector('[data-role="ase-connectors"]'),
+    aseUrlInput: selector?.querySelector('[data-role="ase-url"]'),
+    aseModelRow: selector?.querySelector('[data-role="ase-model-row"]'),
+    aseModelSelect: selector?.querySelector('[data-role="ase-model"]'),
     backendStateEl: selector?.querySelector('[data-role="backend-state"]'),
     mlipSourceEl: selector?.querySelector('[data-role="mlip-source"]'),
     mlipModelSelect: selector?.querySelector('[data-role="mlip-model"]'),
+    mlipLinkRow: selector?.querySelector('[data-role="mlip-link-row"]'),
+    mlipLinkInput: selector?.querySelector('[data-role="mlip-link"]'),
+    mlipLinkAddBtn: selector?.querySelector('[data-role="mlip-link-add"]'),
+    mlipModelInfoText: selector?.querySelector('[data-role="mlip-model-info-text"]'),
+    mlipForgetBtn: selector?.querySelector('[data-role="mlip-forget"]'),
     mlipBackendSelect: selector?.querySelector('[data-role="mlip-backend"]'),
     mlipLoadBtn: selector?.querySelector('[data-role="mlip-load"]'),
     mlipFileInput: selector?.querySelector('[data-role="mlip-file"]'),
     mlipStatusEl: selector?.querySelector('[data-role="mlip-status"]'),
+    mlipMultithreadInput: selector?.querySelector('[data-role="mlip-multithread"]'),
+    mlipMultithreadRow: selector?.querySelector('[data-role="mlip-multithread-row"]'),
+    mlipThreadsSelect: selector?.querySelector('[data-role="mlip-threads"]'),
+    mlipThreadsRow: selector?.querySelector('[data-role="mlip-threads-row"]'),
     bodyEl: calc?.querySelector('[data-role="body"]'),
     statusEl: sourceStateEl,
     resultEl: sourceStateEl,
@@ -819,7 +1073,9 @@ function renderRelaxBody(bodyEl, potential) {
       </div>
       <div class="atomistic-button-row atomistic-button-row-compact">
         <button type="button" class="calcButton" id="relaxBtn">Relax</button>
+        <button type="button" class="calcButton" id="relaxStopBtn" disabled>Stop</button>
       </div>
+      ${progressMarkup('relax-progress', 'Relaxation progress')}
     </div>
     <div class="atomistic-card atomistic-card-compact">
       <div class="atomistic-card-title atomistic-card-title-accent">Rattle</div>
@@ -946,16 +1202,36 @@ function renderMDBody(bodyEl, potential) {
         </div>
       </div>
       <div class="atomistic-button-row atomistic-button-row-compact">
-        <button type="button" class="calcButton" id="mdStartBtn"${potential === 'ase' ? ' disabled' : ''}>start</button>
+        <button type="button" class="calcButton" id="mdStartBtn">start</button>
         <button type="button" class="calcButton" id="mdStopBtn" disabled>stop</button>
       </div>
+      ${progressMarkup('md-progress', 'MD progress')}
     </div>
-    ${potential === 'ase' ? '<div class="atomistic-hint">ASE-backed MD is not wired yet. Use NEP for in-browser MD.</div>' : ''}
   `;
 }
 
-async function runLocalRelax(shell, params, potential) {
+/**
+ * @param {any} shell @param {any} params @param {string} potential
+ * @param {{ shouldStop?: () => boolean }} [options] cooperative stop (the Stop
+ *   button), checked once per step; the steps so far are kept.
+ */
+async function runLocalRelax(shell, params, potential, options = {}) {
+  const { shouldStop } = options;
   const metricsEl = shell.bodyEl.querySelector('#relaxEfsMetrics');
+  // How far it got. A relaxation has no known end (it stops when converged),
+  // so the bar sweeps and the label carries the step and the max force.
+  const progressBox = shell.bodyEl.querySelector('[data-role="relax-progress"]');
+  try {
+    return await relaxWithProgress(shell, params, potential, shouldStop, metricsEl, progressBox);
+  } finally {
+    hideProgress(progressBox);
+    setAtomisticTitleStatus(null);
+  }
+}
+
+async function relaxWithProgress(shell, params, potential, shouldStop, metricsEl, progressBox) {
+  showProgress(progressBox, 'Relaxation: getting the potential ready …');
+  setAtomisticTitleStatus('Relax …');
   const runner = await ensureCalculatorReady(potential, shell);
   const noStress = runner.supportsStress === false;
   const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
@@ -1012,6 +1288,7 @@ async function runLocalRelax(shell, params, potential) {
       cellStep: 0.002,
       targetPressureGPa: params.targetPressure,
       pressureTolGPa: params.stressTol,
+      shouldStop,
       onStep: (step, current, out, mF) => {
         // snapshotCurrentStructure copies the viewer structure, so a save-step must
         // also apply the current state to the viewer first.
@@ -1039,6 +1316,9 @@ async function runLocalRelax(shell, params, potential) {
           ? `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`
           : 'n/a';
         shell.statusEl.textContent = `step ${step} / ${params.maxSteps}`;
+        showProgress(progressBox, `Relaxation: step ${step} (max ${params.maxSteps}) · `
+          + `max force ${mF.toFixed(3)} eV/Å, target ${params.forceTol}`);
+        setAtomisticTitleStatus(`Relax step ${step}`);
         if (metricsEl) {
           metricsEl.innerHTML = `
             <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
@@ -1067,7 +1347,9 @@ async function runLocalRelax(shell, params, potential) {
     shell.statusEl.textContent = '';
     shell.resultEl.textContent = relaxed.converged
       ? `Converged after ${relaxed.steps} steps.`
-      : `Stopped after ${relaxed.steps} steps.`;
+      : relaxed.stopped
+        ? `Stopped after ${relaxed.steps} steps, before converging.`
+        : `Stopped after ${relaxed.steps} steps (max steps), not converged.`;
   } finally {
     // Live run over: release the plot, restore the source structure (relax
     // mutated it in place), and switch to the recorded relaxation trajectory.
@@ -1095,7 +1377,7 @@ async function runLocalEFS(shell, metricsEl, potential) {
     : `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`;
   metricsEl.innerHTML = `
     <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
-    <div>max force: ${maxForce(out.forces).toFixed(5)} eV/A</div>
+    <div>max force: ${maxForce(out.forces).toFixed(5)} eV/Å</div>
     <div>pressure: ${pressureText}</div>
   `;
   shell.resultEl.textContent = '';
@@ -1103,46 +1385,53 @@ async function runLocalEFS(shell, metricsEl, potential) {
 
 function bindRelaxBody(panel, shell, potential) {
   renderRelaxBody(shell.bodyEl, potential);
+  showPotentialSizeNotice(shell, potential);
   const metricsEl = shell.bodyEl.querySelector('#relaxEfsMetrics');
   const efsCard = shell.bodyEl.querySelector('#relaxEfsCard');
   const relaxBtn = shell.bodyEl.querySelector('#relaxBtn');
-
-  const aseBinding = {
-    statusEl: shell.statusEl,
-    resultEl: shell.resultEl,
-    backendStateEl: shell.backendStateEl,
-    efsMetricsEl: metricsEl,
-  };
+  const relaxStopBtn = shell.bodyEl.querySelector('#relaxStopBtn');
+  let relaxRunning = false;
+  let relaxStopRequested = false;
 
   efsCard.addEventListener('click', async () => {
     try {
       shell.resultEl.textContent = '';
       assertOrderedStructure();
-      if (potential === 'ase') {
-        emitASEEFS();
-        setASEStatus(aseBinding, 'Requesting EFS from ASE backend...');
-      } else {
-        await runLocalEFS(shell, metricsEl, potential);
-      }
+      assertStructureFitsPotential(potential);
+      await runLocalEFS(shell, metricsEl, potential);
     } catch (error) {
       shell.resultEl.textContent = `EFS failed: ${error.message || String(error)}`;
     }
   });
 
+  // One relaxation at a time: Relax is locked while one runs, and Stop ends it
+  // after the current step, keeping the trajectory so far (like MD's stop).
   relaxBtn.addEventListener('click', async () => {
+    if (relaxRunning) return;
     try {
       const params = readRelaxParams(shell.bodyEl);
       shell.resultEl.textContent = '';
       assertOrderedStructure();
-      if (potential === 'ase') {
-        emitASERelax('new', params);
-        setASEStatus(aseBinding, 'Submitting ASE relaxation...');
-      } else {
-        await runLocalRelax(shell, params, potential);
-      }
+      assertStructureFitsPotential(potential);
+      relaxRunning = true;
+      relaxStopRequested = false;
+      relaxBtn.disabled = true;
+      if (relaxStopBtn) relaxStopBtn.disabled = false;
+      await runLocalRelax(shell, params, potential, { shouldStop: () => relaxStopRequested });
     } catch (error) {
       shell.resultEl.textContent = `Relax failed: ${error.message || String(error)}`;
+    } finally {
+      relaxRunning = false;
+      relaxStopRequested = false;
+      relaxBtn.disabled = false;
+      if (relaxStopBtn) relaxStopBtn.disabled = true;
     }
+  });
+  relaxStopBtn?.addEventListener('click', () => {
+    if (!relaxRunning) return;
+    relaxStopRequested = true;
+    relaxStopBtn.disabled = true;
+    shell.statusEl.textContent = 'Stopping the relaxation after the current step...';
   });
 
   const rattleBtn = shell.bodyEl.querySelector('#relaxRattleBtn');
@@ -1163,6 +1452,7 @@ function bindRelaxBody(panel, shell, potential) {
 function bindMDBody(panel, shell, potential) {
   renderMDBody(shell.bodyEl, potential);
   renderMDAnnealSummary(shell.bodyEl);
+  showPotentialSizeNotice(shell, potential);
 
   const annealHeader = shell.bodyEl.querySelector('#mdAnnealHeader');
   const annealControls = shell.bodyEl.querySelector('#mdAnnealControls');
@@ -1179,16 +1469,14 @@ function bindMDBody(panel, shell, potential) {
     .forEach((sel) => shell.bodyEl.querySelector(sel)
       ?.addEventListener('input', () => renderMDAnnealSummary(shell.bodyEl)));
 
-  if (potential === 'ase') {
-    startBtn?.addEventListener('click', () => {
-      window.alert('ASE requires a server backend, but MD over ASE is not wired yet in this UI.');
-    });
-    return;
-  }
-
+  // MD's progress under its buttons, and in the window's title bar: visible
+  // while the Trajectory window (live plot) or this window is collapsed.
+  const mdProgressBox = shell.bodyEl.querySelector('[data-role="md-progress"]');
+  let mdTitlePct = -1;
   stopBtn?.addEventListener('click', () => {
     mdStopRequested = true;
     shell.statusEl.textContent = 'Stopping MD after current step...';
+    showProgress(mdProgressBox, 'MD: stopping after the current step …');
   });
 
   // Ensemble: NVT (thermostat, fixed cell) or NPT (thermostat + barostat, cell
@@ -1254,12 +1542,16 @@ function bindMDBody(panel, shell, potential) {
     let isContinuation = false;
     try {
       assertOrderedStructure();
+      assertStructureFitsPotential(potential);
       mdRunning = true;
       mdStopRequested = false;
       startBtn.disabled = true;
       stopBtn.disabled = false;
       shell.resultEl.textContent = '';
 
+      showProgress(mdProgressBox, 'MD: getting the potential ready …');
+      setAtomisticTitleStatus('MD …');
+      mdTitlePct = -1;
       const runner = await ensureCalculatorReady(potential, shell);
       const steps = Number(shell.bodyEl.querySelector('#mdStepsInput')?.value || 500);
       const dtFs = Number(shell.bodyEl.querySelector('#mdTimestepInput')?.value || 1);
@@ -1341,7 +1633,11 @@ function bindMDBody(panel, shell, potential) {
       // Falls back to the in-thread runner if the worker cannot start (and for
       // MLIP/ASE, which have their own transports).
       let forceEvaluator = createNEPForceEvaluator(runner);
-      let offThreadForces = false;
+      // PET-MAD's runner is already worker-backed when it could be
+      // (ensureMLIPReady), and ASE computes on its server; the loop only needs
+      // to know so it yields with a macrotask instead of waiting for a paint it
+      // does not block.
+      let offThreadForces = (potential === 'mlip' || potential === 'ase') && runner.offThread === true;
       if (potential === 'nep' && general.mdWorker !== false && typeof Worker !== 'undefined') {
         try {
           await ensureWorkerNEPReady();
@@ -1452,6 +1748,14 @@ function bindMDBody(panel, shell, potential) {
             ? `  ·  P=${pressureGPa.toFixed(2)} GPa  ·  V=${volumeA3.toFixed(1)} A^3`
             : '';
           shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}${pvLabel}`;
+          if (!mdStopRequested) {
+            showProgress(mdProgressBox, `MD: step ${step} of ${steps} · ${timeFs.toFixed(1)} fs`, step / steps);
+          }
+          const pct = Math.floor((100 * step) / steps);
+          if (pct !== mdTitlePct) {
+            mdTitlePct = pct;
+            setAtomisticTitleStatus(`MD ${pct}%`);
+          }
         },
       });
 
@@ -1490,6 +1794,8 @@ function bindMDBody(panel, shell, potential) {
     } catch (error) {
       shell.resultEl.textContent = `MD failed: ${error.message || String(error)}`;
     } finally {
+      hideProgress(mdProgressBox);
+      setAtomisticTitleStatus(null);
       mdRunning = false;
       mdStopRequested = false;
       if (startBtn) startBtn.disabled = false;
@@ -1526,7 +1832,7 @@ function bindMDBody(panel, shell, potential) {
 
 // Reflect the current general.atomisticPotential in the selector's own widgets
 // (button highlight, ASE/MLIP sub-controls, one-line hint). Pure UI — no body.
-function updatePotentialUI(shell, { announce = false } = {}) {
+function updatePotentialUI(shell) {
   const potential = general.atomisticPotential || 'nep';
   shell.toggle?.querySelectorAll('button').forEach((button) => {
     button.classList.toggle('active', button.dataset.potential === potential);
@@ -1534,11 +1840,12 @@ function updatePotentialUI(shell, { announce = false } = {}) {
   refreshBackendTheme();
   shell.aseConnectorsEl?.classList.toggle('hidden', potential !== 'ase');
   shell.mlipSourceEl?.classList.toggle('hidden', potential !== 'mlip');
-  if (announce && potential === 'ase') {
-    window.alert('ASE requires a server backend. Please connect to the backend server before running this mode.');
-    if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'ASE selected: server backend required.';
-  } else if (potential === 'ase') {
-    if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'ASE selected: server backend required.';
+  if (potential === 'ase') {
+    if (shell.sourceStateEl) {
+      shell.sourceStateEl.textContent = aseRunner?.connected
+        ? `ASE ready: ${aseRunner.modelInfo?.name ?? ''}`
+        : 'ASE: start python backend/server.py on your machine, then Connect (runs connect on first use too).';
+    }
   } else if (potential === 'mlip') {
     if (shell.sourceStateEl) shell.sourceStateEl.textContent = 'PET-MAD selected: load a model, then compute in-browser.';
   } else if (shell.sourceStateEl) {
@@ -1570,26 +1877,55 @@ function bindPotentialToggle() {
     const button = event.target.closest('button[data-potential]');
     if (!button) return;
     general.atomisticPotential = button.dataset.potential;
-    updatePotentialUI(shell, { announce: true });
+    updatePotentialUI(shell);
     if (shell.resultEl) shell.resultEl.textContent = '';
     renderActiveBody();
+    notifyPotentialChange();
   });
 
-  shell.aseConnectorsEl?.querySelector('[data-role="connect-ase"]')?.addEventListener('click', () => {
-    void connectASEBackend({
-      statusEl: shell.statusEl,
-      backendStateEl: shell.backendStateEl,
-      resultEl: shell.resultEl,
-      efsMetricsEl: shell.bodyEl?.querySelector('#relaxEfsMetrics'),
-    });
+  if (shell.aseUrlInput) shell.aseUrlInput.value = aseServerUrl(null);
+  shell.aseConnectorsEl?.querySelector('[data-role="connect-ase"]')?.addEventListener('click', async () => {
+    try {
+      const runner = await ensureASEReady(shell);
+      if (shell.sourceStateEl) shell.sourceStateEl.textContent = `ASE ready: ${runner.modelInfo.name}`;
+    } catch (error) {
+      if (shell.sourceStateEl) shell.sourceStateEl.textContent = `ASE: ${error.message || String(error)}`;
+    }
   });
 
   shell.aseConnectorsEl?.querySelector('[data-role="disconnect-ase"]')?.addEventListener('click', () => {
-    disconnectASEBackend({
-      statusEl: shell.statusEl,
-      backendStateEl: shell.backendStateEl,
-    });
+    disconnectASE(shell);
   });
+  shell.aseModelSelect?.addEventListener('change', () => {
+    switchASEModel(shell, shell.aseModelSelect.value);
+  });
+
+  // Multi-threaded PET-MAD: the threaded wasm needs SharedArrayBuffer, i.e. a
+  // cross-origin isolated page. Served isolated already (desktop host, dev
+  // server --coi) the box is on and locked; otherwise it drives the opt-in
+  // service worker (host/coi.js), which reloads the page either way.
+  bindMultithreadToggle(shell);
+  bindThreadsSelect(shell);
+  // The model list: built-in PET-MAD, catalogues, links (PetModelList.js).
+  bindPetModelList(shell, {
+    setStatus: (text) => setMLIPStatus(shell, text),
+    loadSelected: () => ensureMLIPReady(shell),
+  });
+
+  // Which model each potential runs, for the notices in this and the other
+  // windows that compute with it (EOS, Order Structure, phonon mode maps),
+  // and the accuracy caveat with the NEP high-pressure warning here.
+  setPotentialLabel('mlip', () => mlipModelLabel(shell));
+  setPotentialLabel('ase', () => aseModelLabel(shell));
+  shell.mlipModelSelect?.addEventListener('change', notifyPotentialChange);
+  shell.mlipFileInput?.addEventListener('change', notifyPotentialChange);
+  if (shell.potentialNoticeHost) {
+    const notice = mountPotentialNotice(shell.potentialNoticeHost, { showPotential: false, pressures: atomisticPressures });
+    // The relax / NPT target pressures live in the action body, rebuilt on
+    // every Relax/MD switch: listen on its persistent container.
+    const calc = document.getElementById('BackendCalcPanel');
+    for (const type of ['input', 'change', 'click']) calc?.addEventListener(type, () => notice.update());
+  }
 
   // Eager model load: the same ensureMLIPReady path the EFS/Relax/MD entry
   // points use, so whatever is loaded here is reused by later runs.
@@ -1606,6 +1942,99 @@ function bindPotentialToggle() {
   });
 
   updatePotentialUI(shell);
+}
+
+function bindMultithreadToggle(shell) {
+  const input = shell.mlipMultithreadInput;
+  if (!input) return;
+  const isolated = isIsolated();
+  const requested = isMultithreadRequested();
+  input.checked = isolated || requested;
+  if (isolated && !requested) {
+    // Headers come from the server: nothing for the page to toggle.
+    input.disabled = true;
+    shell.mlipMultithreadRow?.setAttribute('title', 'This page is cross-origin isolated: the threaded build is used.');
+    return;
+  }
+  if (!canRequestIsolation()) {
+    input.disabled = true;
+    shell.mlipMultithreadRow?.setAttribute('title',
+      'Multi-threading needs a secure context with service workers (https or localhost).');
+    return;
+  }
+  input.addEventListener('change', async () => {
+    const enabled = input.checked;
+    // The reload loses everything held only in this page: ask first.
+    input.disabled = true;
+    const go = await confirmAppReload(enabled ? 'Turning multi-threading on' : 'Turning multi-threading off');
+    if (!go) {
+      input.checked = !enabled;
+      input.disabled = false;
+      return;
+    }
+    setMLIPStatus(shell, enabled
+      ? 'reloading to enable multi-threaded PET-MAD …'
+      : 'reloading to disable multi-threaded PET-MAD …');
+    let reloading = false;
+    let reason = 'this browser cannot register the service worker it needs';
+    try {
+      reloading = await setMultithreadEnabled(enabled);
+    } catch (error) {
+      reason = error.message || String(error);
+    }
+    if (!reloading) {
+      reloadAbandoned();
+      input.checked = !enabled;
+      input.disabled = false;
+      setMLIPStatus(shell, `multi-threading unavailable: ${reason}`);
+    }
+  });
+}
+
+// PET-MAD CPU threads: 'auto' (per system size the fastest of all cores, one
+// and half, timed on the first evaluation; MLIPRunner) or a fixed count, to
+// leave cores free for other work. Remembered across reloads (the
+// multi-threaded switch reloads the page); a loaded model takes the new count
+// from its next evaluation.
+function bindThreadsSelect(shell) {
+  const select = shell.mlipThreadsSelect;
+  if (!select) return;
+  // At most 16: the threaded wasm starts min(cores, 16) workers and clamps to
+  // that (external/mlip_wasm/README.md "Threads").
+  const cores = Math.min(16, Math.max(1, Number(navigator.hardwareConcurrency) || 1));
+  select.innerHTML = ['auto', ...Array.from({ length: cores }, (_, i) => String(i + 1))]
+    .map((v) => `<option value="${v}">${v}</option>`).join('');
+  const stored = Number(getPanelPref('mlipThreads'));
+  select.value = stored >= 1 ? String(Math.min(cores, Math.round(stored))) : 'auto';
+  // general.mlipThreads is typed by its 'auto' default; it also takes a count.
+  general.mlipThreads = /** @type {any} */ (select.value === 'auto' ? 'auto' : Number(select.value));
+
+  const refresh = () => {
+    const threaded = isIsolated();
+    const gpu = shell.mlipBackendSelect?.value === 'webgpu';
+    select.disabled = !threaded || gpu;
+    shell.mlipThreadsRow?.setAttribute('title', !threaded
+      ? 'CPU threads for PET-MAD: turn on "multi-threaded" first (one thread until then).'
+      : gpu
+        ? 'The webgpu backend runs on the GPU; this sets the threads of the cpu backend.'
+        : 'CPU threads for PET-MAD. auto: per system size the fastest of all cores, one and half (timed on the first evaluation).');
+  };
+  refresh();
+  shell.mlipBackendSelect?.addEventListener('change', refresh);
+
+  select.addEventListener('change', async () => {
+    setPanelPref('mlipThreads', select.value);
+    general.mlipThreads = /** @type {any} */ (select.value === 'auto' ? 'auto' : Number(select.value));
+    const runner = mlipState?.runner;
+    if (!runner || typeof runner.setThreads !== 'function') return;
+    try {
+      await runner.setThreads(general.mlipThreads);
+      const name = runner.modelInfo?.name;
+      setMLIPStatus(shell, name ? `PET-MAD ready: ${name} (${mlipRuntimeLabel(runner)})` : `PET-MAD: ${mlipRuntimeLabel(runner)}`);
+    } catch (error) {
+      setMLIPStatus(shell, `threads not changed: ${error.message || error}`);
+    }
+  });
 }
 
 // Build the persistent potential selector once, above the Relax/MD switch.

@@ -113,6 +113,23 @@ export class Atom extends ColoredObject {
     });
   }
 
+  /**
+   * Replace the site's species (a saved session putting a disordered site
+   * back, model/siteSpecies.js). `asLoaded` also makes them what a reset to
+   * the as-loaded state returns to.
+   * @param {Array<{element:string,occupancy?:number,oxidationState?:number|null,color?:number|null}>} species
+   * @param {{asLoaded?: boolean}} [options]
+   */
+  setSpecies(species, { asLoaded = false } = {}) {
+    this.species = normalizeSpecies(species, this.species[0]?.element ?? '', 1, null);
+    if (asLoaded) {
+      this.original = Object.freeze({
+        ...this.original,
+        species: this.species.map((s) => Object.freeze({ ...s })),
+      });
+    }
+  }
+
   // Get the current color of the atom
   getColor() {
     if (!this.userColor) return this.color;

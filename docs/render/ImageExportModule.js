@@ -37,7 +37,7 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general, groups, measurements } from '../state/store.js';
-import { latticeDirsNorm } from './LatticeModule.js';
+import { latticeDirsNorm, syncLatticeLineWidth } from './LatticeModule.js';
 import { markerColorFor } from './MeasurementModule.js';
 import { requestRender } from './AnimateModule.js';
 import { colorsFor, computeTicks, formatTick, currentContrastColor } from '../ui/ColorBarWidget.js';
@@ -308,12 +308,14 @@ async function renderMainTiled(src, srcW, srcH, tileW, tileH, onProgress, signal
             await nextFrame();
             throwIfAborted(signal);
             throwIfContextLost(gl);
+            syncLatticeLineWidth(renderCtx.camera, src.renderer);
             src.pipeline.render(renderCtx);
             checkFirstFrame();
             reportTile();
           }
           reportTile();
         } else {
+          syncLatticeLineWidth(renderCtx.camera, src.renderer);
           src.pipeline?.render(renderCtx);
           checkFirstFrame();
         }
@@ -400,12 +402,17 @@ async function renderMainToCanvasConverged(src, w, h, onProgress, signal, win) {
         // this check the convergence loop would spin forever ("Rendering…"
         // stuck) instead of reporting what actually happened.
         throwIfContextLost(gl);
+        syncLatticeLineWidth(renderCtx.camera, src.renderer);
         src.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
         checkAfterFrame();
         reportProgress();
       }
       reportProgress(); // final (converged) count
     } else {
+      // The cell lines' minimum pixel width is per frame (AnimateModule.js
+      // does it for the live view): compute it for the export's camera and
+      // size, not whatever the last screen frame left.
+      syncLatticeLineWidth(renderCtx.camera, src.renderer);
       src.pipeline?.render(renderCtx); // raster: single frame, capture immediately
       checkAfterFrame();
     }
@@ -639,7 +646,10 @@ function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, input
   });
 
   const validRange = isFinite(min) && isFinite(max) && min < max;
-  const ticks = validRange ? computeTicks(min, max, scale) : [];
+  // The live bar's own tick set when it has one: it leaves out ticks that
+  // would touch the Min/Max fields or each other, which computeTicks alone
+  // can't know about (the export used to print every one of them).
+  const ticks = !validRange ? [] : (Array.isArray(settings.ticks) ? settings.ticks : computeTicks(min, max, scale));
 
   // Same text color the live floating widget itself uses (ColorBarWidget.js's
   // tickContrast/currentContrastColor) — no outline or shadow, just the
@@ -680,8 +690,10 @@ function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, input
   if (horizontal) {
     const tickY = flipSide ? y - tickGap : y + h + tickGap;
     const tickBaseline = flipSide ? 'bottom' : 'top';
-    drawText(inputFont, validRange ? minLabel : '', x, tickY, 'left', tickBaseline);
-    drawText(inputFont, validRange ? maxLabel : '', x + w, tickY, 'right', tickBaseline);
+    // Centred on the bar's ends, where the live bar's Min/Max fields sit
+    // (they used to be pulled inside the bar, onto the first and last ticks).
+    drawText(inputFont, validRange ? minLabel : '', x, tickY, 'center', tickBaseline);
+    drawText(inputFont, validRange ? maxLabel : '', x + w, tickY, 'center', tickBaseline);
     for (const t of ticks) drawText(tickFont, t.label, x + t.frac * w, tickY, 'center', tickBaseline);
     if (legend) {
       const legendY = flipSide
@@ -696,8 +708,9 @@ function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, input
   } else {
     const tickX = flipSide ? x - tickGap : x + w + tickGap;
     const tickAlign = flipSide ? 'right' : 'left';
-    drawText(inputFont, validRange ? maxLabel : '', tickX, y, tickAlign, 'top');
-    drawText(inputFont, validRange ? minLabel : '', tickX, y + h, tickAlign, 'bottom');
+    // Centred on the ends like the live fields (and the ticks between them).
+    drawText(inputFont, validRange ? maxLabel : '', tickX, y, tickAlign, 'middle');
+    drawText(inputFont, validRange ? minLabel : '', tickX, y + h, tickAlign, 'middle');
     for (const t of ticks) drawText(tickFont, t.label, tickX, y + h - t.frac * h, tickAlign, 'middle');
     if (legend) {
       const verticalLegendOffset = tickSpanV() + legendGap + legendHalfHeight();

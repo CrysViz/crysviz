@@ -24,10 +24,14 @@ export function subscribePolyhedraAnalysis(cb) {
 
 function recompute() {
   const structure = fileBrowser.selectedStructure;
+  // The connectivity compares every polyhedron with its periodic neighbours,
+  // the costliest of the three: worked out only when read (the Connectivity
+  // window, while open), and then once per rebuild.
+  let connectivity = null;
   const data = structure?.polyhedra?.polyhedra?.length
     ? {
       typeGroups: computePolyhedraTypeGroups(structure),
-      connectivity: computePolyhedraConnectivity(structure),
+      get connectivity() { return (connectivity ??= computePolyhedraConnectivity(structure)); },
       volumes: computePolyhedraVolumes(structure),
     }
     : { typeGroups: [], connectivity: [], volumes: [] };

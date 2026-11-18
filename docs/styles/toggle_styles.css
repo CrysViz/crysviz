@@ -10,6 +10,19 @@
   align-items: center;
 }
 
+/* Rebuild-heavy display toggles while a large trajectory plays
+   (ui/HeavyRebuild.js setPlaybackLock; the row's title says "pause first"). */
+.toggle_row.is-playback-locked {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A long display rebuild is running (ui/HeavyRebuild.js runHeavyRebuild). */
+body.cv-busy,
+body.cv-busy * {
+  cursor: progress !important;
+}
+
 /* toggle + text */
 .toggle_container {
    margin: var(--sp-5) 0px 0px 0px;
@@ -326,6 +339,13 @@ margin: var(--sp-5) 0px 5px 0px;
   min-width: 0;
 }
 
+/* Visual ▸ cel outline settings: the "Outline arrows" switch sits between two
+   dropdown/slider rows; give it the same room below as above so it doesn't
+   read as part of the width slider under it. */
+.cv-outline-arrows-row {
+  margin: var(--sp-5) 0;
+}
+
 /* Small explanatory note under a control group. */
 .control-note {
   font-size: var(--fs-sm);
@@ -392,11 +412,16 @@ margin: var(--sp-5) 0px 5px 0px;
    compensating margin needed: positionLegend()'s centering (translateX/Y
    against the element's OWN size, see its comments) re-centers automatically
    as the box grows from the added padding/border, in every orientation. */
-.cv-colorbar-legend-editing {
+/* The text takes the field's own colour while editing: the legend otherwise
+   follows the scene (dark on a light background), which on --input-bg (dark
+   chrome in Default light) was dark on dark. Two classes, to beat
+   .cv-colorbar-legend's color: currentColor (sceneWidgets.css loads later). */
+.cv-colorbar-legend.cv-colorbar-legend-editing {
   padding: 1px 5px;
   border: 1px solid var(--accent-color, var(--info-bright));
   border-radius: var(--radius-4);
   background: var(--input-bg);
+  color: var(--fg-1);
   caret-color: var(--fg-1);
 }
 

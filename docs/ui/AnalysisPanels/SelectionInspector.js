@@ -3,7 +3,7 @@
 // between two of those bonds that meet at an atom
 // (render/SelectionAnalysisModule.js). Opened from the Structure window's
 // selection bar (Inspect) or the search; follows the atom selection live —
-// Shift-click adds an atom in the main view, Ctrl/⌘-click removes one.
+// Shift+double-click adds an atom in the main view, Ctrl/⌘+double-click removes one.
 //
 // The neighbours tool (the add-neighbour button at the top) shows the atoms
 // bonded to the selection faintly while it is on; clicking one adds it, and
@@ -31,7 +31,7 @@
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
 import { createPolyhedronMiniRenderer } from './PolyhedronMiniRenderer.js';
-import { createLabelState, labelToolbarHtml, wireLabelToolbar } from './inspectorLabels.js';
+import { createLabelState, labelToolbarHtml, wireLabelToolbar, annotateModelAtoms, modelMeasures } from './inspectorLabels.js';
 import { createInfoButton } from '../InfoPanel.js';
 import {
   computeSelectionDetail, findSelectionNeighbours, compareSelectionDetail,
@@ -49,6 +49,7 @@ import { makeDraggableWithin } from '../ColorBarDrag.js';
 import { currentBaseName } from '../SavePanel.js';
 import { colorToCss, viewFraction, cropToOutputRect } from '../../render/ImageExportModule.js';
 import { modelErrors, formatWithSu } from '../../model/cifErrors.js';
+import { createAtomLabelsButton, createChargesButton } from '../AtomLabelsToggle.js';
 
 const PANEL_ID = 'selectionInspector';
 
@@ -191,7 +192,11 @@ function selectionModel(detail, neighbours, compared = null, errors = null, erro
   const angles = detail.angles.map((g, k) => ({
     ...g, angleDeg2: compared?.angles[k] ?? null, angleSu: errors?.angles[k] ?? null, angleSu2: errors2?.angles[k] ?? null,
   }));
-  return { atoms, bonds, angles, hull: null };
+  // Each selected atom's name ("Fe1") and charge, while their switches (Aₓ,
+  // Aˣ⁺) are on; the faint neighbours get neither.
+  annotateModelAtoms(fileBrowser.selectedStructure, atoms);
+  // The 3D view's measurements among these atoms.
+  return { atoms, bonds, angles, hull: null, measures: modelMeasures(atoms) };
 }
 
 function compareStatus(cmp) {
@@ -240,7 +245,7 @@ function drawLegendForExport(legendEl, painter, ex) {
 
 function renderSummary(container, detail, errors = null) {
   if (!detail) {
-    container.innerHTML = '<div class="pi-summary-empty">Select atoms in the 3D view to inspect them: click an atom, Shift-click to add more, Ctrl/⌘-click to remove one, or drag to select a region.</div>';
+    container.innerHTML = '<div class="pi-summary-empty">Select atoms in the 3D view to inspect them: double-click an atom, Shift+double-click to add more, Ctrl/⌘+double-click to remove one, or Shift+drag to select a region.</div>';
     return;
   }
   const rows = [
@@ -298,7 +303,10 @@ export function openSelectionInspector() {
       body.innerHTML = `
         <div class="cv-plot-stack">
           <div class="split-item" id="selection-inspector-item">
-            <h4>Selection Inspector</h4>
+            <div class="pi-title-row">
+              <h4>Selection Inspector</h4>
+              <span class="pi-title-actions" id="siTitleActions"></span>
+            </div>
             <div class="pi-controls">
               <div class="pi-ctl-row" id="siNeighbourRow">
                 <button type="button" class="btn-mini pi-btn pi-tool-btn pi-icon-btn" id="siNeighboursTool" aria-pressed="false"
@@ -343,6 +351,9 @@ export function openSelectionInspector() {
         </div>
       `;
 
+      // The atom-label and charge switches, the same ones as in the Structure window.
+      body.querySelector('#siTitleActions').append(
+        createAtomLabelsButton('siAtomLabelsButton'), createChargesButton('siChargeBadgesButton'));
       const viewport = /** @type {HTMLElement} */ (body.querySelector('#siViewport'));
       const summaryEl = body.querySelector('#siSummary');
       const hintEl = body.querySelector('#siHint');
@@ -577,6 +588,11 @@ subscribeToAtomSelection(() => view?.update());
 document.addEventListener('crysviz:colors-changed', () => view?.update({ keepCamera: true }));
 // "Show CIF Errors" switched, or a CIF's errors were read.
 document.addEventListener('crysviz:cif-errors-changed', () => view?.update({ keepCamera: true }));
+// The atom-label and charge switches (Aₓ, Aˣ⁺).
+document.addEventListener('crysviz:atom-labels-changed', () => view?.update({ keepCamera: true }));
+document.addEventListener('crysviz:charges-changed', () => view?.update({ keepCamera: true }));
+// A measurement made or removed in the 3D view.
+document.addEventListener('crysviz:measurements-changed', () => view?.update({ keepCamera: true }));
 document.addEventListener('crysviz:polyhedra-rebuilt', () => view?.update({ keepCamera: true }));
 // The note on linked copies: the setting changed, or the copies on screen did.
 document.addEventListener('crysviz:link-copies-changed', () => syncLinkWarn());

@@ -105,6 +105,25 @@
   margin-bottom: var(--sp-2);
 }
 
+/* The inspectors' title, centred as every split item's, with the Aₓ switch
+   (ui/AtomLabelsToggle.js) at the right end — as in the Structure window. */
+.pi-title-row {
+  position: relative;
+  min-height: 26px;
+  margin-bottom: var(--sp-1);
+}
+.pi-title-row > h4 {
+  margin: 0;
+  line-height: 26px;
+}
+.pi-title-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  gap: var(--sp-1);
+}
+
 .pi-ctl-row {
   display: flex;
   flex-wrap: wrap;
@@ -144,6 +163,14 @@
   white-space: nowrap;
 }
 
+/* display above would otherwise beat the hidden attribute: Reset positions
+   showed before any label had been moved. Out of sight but keeping its
+   place: taken out of the row, it reflowed the row when the first drag
+   brought it back, and the view moved under the label being dragged. */
+.pi-ctl-row .pi-btn[hidden] {
+  visibility: hidden;
+}
+
 .pi-ctl-row .pi-btn:disabled {
   opacity: 0.5;
   cursor: default;
@@ -151,6 +178,27 @@
 
 .pi-colors-text {
   flex: 0 0 auto;
+}
+
+/* Label sizes (inspectorLabels.js): a caption, a short slider and its
+   multiplier per kind of label, wrapping as one unit on a narrow dock. */
+.pi-ctl-row .pi-size {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: var(--sp-1);
+  height: 28px;
+  white-space: nowrap;
+}
+/* Two classes: the global input[type="range"] rule is 100% wide. */
+.pi-ctl-row .pi-size-slider {
+  width: 76px;
+  flex: 0 0 76px;
+}
+.pi-size-value {
+  min-width: 30px;
+  text-align: right;
+  font-family: var(--font-mono);
 }
 
 /* A colour swatch + its caption is one button opening the app's colour picker. */
@@ -462,6 +510,14 @@
 @keyframes tracerCompileSlide {
   0% { left: -40%; }
   100% { left: 100%; }
+}
+
+/* The same sweep for showBusyProgress, in transform (percentages of the 40%
+   segment: -100% .. 250% is -40% .. 100% of the strip) so the compositor keeps
+   it moving while a long rebuild blocks the main thread. */
+@keyframes tracerBusySlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
 }
 
 /* ===========================================================================

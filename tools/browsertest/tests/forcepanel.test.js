@@ -87,6 +87,10 @@ const H = require('../harness');
     JSON.stringify(open.stats));
   H.check('histogram binned every atom', open.bars === open.stats.n, `binned=${open.bars} n=${open.stats?.n}`);
   H.check('stats readout rendered', /max/.test(open.statsText), open.statsText);
+  // The strongest force's atom is numbered from 1, as the selection bar and
+  // the Atoms tab number atoms ("Si #6" was Si7).
+  H.check('the max readout numbers its atom from 1', new RegExp(`#${open.stats.maxIndex + 1}\\)`).test(open.statsText),
+    `${open.statsText} (index ${open.stats.maxIndex})`);
 
   // --- Click-to-highlight contract (matches BondLengthHistogram.js /
   // CoordinationHistogram.js): clicking a bar with atoms in it highlights

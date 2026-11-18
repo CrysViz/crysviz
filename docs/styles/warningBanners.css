@@ -2,7 +2,8 @@
    (#view): Forces+Spins, Disorder, Polyhedra-comparison, Scanline and Disco
    (ui/ForceSpinWarningBanner.js, DisorderWarningBanner.js,
    PolyhedraComparisonWarningBanner.js, ScanlineWarningBanner.js,
-   DiscoWarningBanner.js). All five were near-identical copies of the same
+   DiscoWarningBanner.js), and the green search confirmation
+   (ui/ConfirmBanner.js, at the end). All five were near-identical copies of the same
    amber-warning chrome, differing only in which vertical slot they stack
    into and their text — factored into one shell plus per-banner position
    modifiers rather than five parallel rule sets.
@@ -48,6 +49,22 @@
 
 .cv-disco-warning {
   top: 71px;
+}
+
+/* The green confirmation after an action from the feature search
+   (ui/ConfirmBanner.js: "✓ Bonds switched off"): the same shell, on the menu
+   background with the ok-green text and border. Its top is set from JS,
+   below whichever warnings are on screen; it fades out once. */
+.cv-confirm-banner {
+  top: 5px;
+  background: var(--menu-bg);
+  border-color: rgb(var(--ok-bright-rgb) / 0.6);
+  color: var(--ok-bright);
+  transition: opacity 0.3s ease;
+}
+
+.cv-confirm-banner.is-leaving {
+  opacity: 0;
 }
 
 /* Disorder banner's inline "Order structure…" action button — the one

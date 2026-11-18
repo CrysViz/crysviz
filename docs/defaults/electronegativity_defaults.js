@@ -17,3 +17,14 @@ export const electronegativity = {
   Tl: 1.62, Pb: 2.33, Bi: 2.02, Po: 2.00, At: 2.20, Rn: 0,
   Th: 1.30, Pa: 1.50, U: 1.38, Np: 1.36, Pu: 1.28,
 }; // Pauling scale
+
+// Nonmetals and metalloids: the elements that form anions or polyanions. A
+// polyhedron corner bonded to a more electronegative one of these that is
+// also a ligand of the centre (Ca–O–Si) is a neighbouring cation, not a
+// corner (render/PolyhedraModule.js isBridgedCation; mirrored in the WASM).
+// Metals are left out on purpose: in an alloy every atom touches every other,
+// and Ni or Mo (Pauling 1.91, 2.16) would strip the Fe corners off a Cr site.
+export const ANION_FORMERS = new Set([
+  'H', 'B', 'C', 'N', 'O', 'F', 'Si', 'P', 'S', 'Cl',
+  'Ge', 'As', 'Se', 'Br', 'Sb', 'Te', 'I', 'At',
+]);

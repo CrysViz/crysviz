@@ -2,16 +2,21 @@ import * as THREE from '../external/three/three.module.js';
 
 import {bondLengths, coordinationNumbers, app, groups,fileBrowser, general, highlightHover} from '../state/store.js';
 import {getDefaultBondCutoff} from '../defaults/radii_defaults.js'
-import {getBondVisSettings,getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors,getViridisColors,getPlasmaColors,getSpectralRColors,getJetColors} from '../defaults/color_texture_defaults.js'
+import {getBondVisSettings} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
+import { bondDefaultColor } from '../model/Bond.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression} from './MaterialStyles.js'
-import {getAtomImageStyle} from './AtomsFracUpdateModule.js'
+import { CUT_PLANE_TOLERANCE } from './cutPlaneTolerance.js';
+import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression,
+  acquirePersistentMaterial, isPersistentMaterial} from './MaterialStyles.js'
+import { getAtomImageStyle, hasAtomImageStyles } from './AtomsFracUpdateModule.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { requestRender } from './AnimateModule.js';
 import { getFocusOpacityForInstance } from './FocusRegionModule.js';
 import { refreshAsuHighlight } from './asuHighlightHook.js';
+import { showBusyProgress, hideBusyProgress } from './TracerProgressModule.js';
+import { colorMapTable, colorBin } from './ColorMapBins.js';
 
 
 
@@ -19,18 +24,15 @@ import { refreshAsuHighlight } from './asuHighlightHook.js';
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
 import {refreshBondLengthHistogram, isBondLengthHistogramOpen} from '../ui/AnalysisPanels/BondLengthHistogram.js'
 import {refreshCoordinationHistogram, isCoordinationHistogramOpen} from '../ui/AnalysisPanels/CoordinationHistogram.js'
-import {generateID, releaseIDs} from '../utils/index.js'
+import { hasCifErrors, distanceSu } from '../model/cifErrors.js'
+import { writeBondMatrices, writeHiddenBondHalf } from './bondMatrix.js';
+import { peekAtoms } from '../model/materializeFrame.js';
 import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
 
-// Module-scope scratch objects reused by the per-bond matrix/colour writers
-// (updateSingleBond / updateSingleBondPosition). three.js setMatrixAt / setXYZ
-// copy their inputs, so reuse is safe and avoids allocating an Object3D +
-// Vector3 (×2) + Color per bond per frame.
-const _bondDummy = new THREE.Object3D();
-const _bondDir = new THREE.Vector3();
-const _bondUp = new THREE.Vector3(0, 1, 0);
+// Module-scope scratch colour reused by the per-bond colour writer (setXYZ
+// copies its input). Matrices are written directly (render/bondMatrix.js).
 const _bondColor = new THREE.Color();
 export function initBondsLengths(){
   if (!fileBrowser.selectedStructure) {
@@ -71,7 +73,19 @@ export function initBondsLengths(){
   }
 }
 
+/** Drop the playback candidate bonds (render/PlaybackBondsModule.js), if any. */
+export function disposeBondCandidatesMesh() {
+  const mesh = groups.bondsCandidateMesh;
+  if (!mesh) return;
+  mesh.geometry.dispose();
+  if (!isPersistentMaterial(mesh.material)) mesh.material.dispose();
+  mesh.parent?.remove(mesh);
+  groups.bondsCandidateMesh = null;
+}
+
 export function disposeBondsMesh(clearBondData = false) {
+  // Candidates belong to the bond topology being replaced.
+  disposeBondCandidatesMesh();
   if (groups.bondsMesh) {
     // A pipeline-owned transparent-instance overlay (userData.transparentOverlay)
     // goes down with the mesh — same handling as rebuildAtoms.
@@ -79,15 +93,15 @@ export function disposeBondsMesh(clearBondData = false) {
     if (overlay) {
       overlay.parent?.remove(overlay);
       if (overlay.geometry !== groups.bondsMesh.geometry) overlay.geometry.dispose();
-      overlay.material.dispose();
+      if (!isPersistentMaterial(overlay.material)) overlay.material.dispose();
     }
     groups.bondsMesh.geometry.dispose();
-    groups.bondsMesh.material.dispose();
+    // The main bonds material survives rebuilds (MaterialStyles.acquirePersistentMaterial).
+    if (!isPersistentMaterial(groups.bondsMesh.material)) groups.bondsMesh.material.dispose();
     app.scene.remove(groups.bondsMesh);
     groups.bondsMesh = null;
   }
   if (clearBondData && fileBrowser.selectedStructure) {
-    releaseIDs(fileBrowser.selectedStructure.bonds);
     fileBrowser.selectedStructure.bonds = [];
     fileBrowser.selectedStructure.bondMapping = {};
     fileBrowser.selectedStructure.bondObjectMapping = {};
@@ -107,17 +121,18 @@ export function rebuildBonds(opacity=1.0) {
     return;
   }
   disposeBondsMesh(true);
-  console.time("bond:buildBondObjects");
+  // Timings only under general.mdProfile: console.time/log on every full
+  // trajectory or MD frame was measurable work and console noise.
+  const t0 = general.mdProfile ? performance.now() : 0;
   buildBondObjects(fileBrowser.selectedStructure)
-  console.timeEnd("bond:buildBondObjects");
-  console.log("bond: bondCount =", fileBrowser.selectedStructure.bonds.length,
-              "wrappedCart =", fileBrowser.selectedStructure.periodic?.visibleWrapped?.cart?.length);
-  console.time("bond:renderBonds");
+  const t1 = general.mdProfile ? performance.now() : 0;
   renderBonds();
-  console.timeEnd("bond:renderBonds");
-  console.time("bond:updateBonds");
+  const t2 = general.mdProfile ? performance.now() : 0;
   updateBonds(opacity);
-  console.timeEnd("bond:updateBonds");
+  if (general.mdProfile) {
+    console.log(`[bonds] ${fileBrowser.selectedStructure.bonds.length} bonds: build ${(t1 - t0).toFixed(1)} ms, `
+      + `render ${(t2 - t1).toFixed(1)} ms, update ${(performance.now() - t2).toFixed(1)} ms`);
+  }
   if (groups.bondsMesh) {
     groups.bondsMesh.visible = !!general.showBonds;
   }
@@ -132,19 +147,39 @@ export function rebuildBonds(opacity=1.0) {
   refreshBondHistogramData();
 }
 
+/** Drawn atoms (periodic images included) from which a full atoms + bonds
+ *  rebuild takes noticeable time — about 0.3 s at 2·10^4, seconds at 2·10^5.
+ *  There the busy strip (TracerProgressModule.js) runs during rebuilds, a
+ *  settle keeps the playback topology (FastFrameModule.js) and the heavy
+ *  display toggles lock during playback (ui/HeavyRebuild.js). */
+export const LARGE_REBUILD_ATOMS = 20000;
+
 // Debounced bond-geometry refresh: anything that changes RENDERED atom radii
 // (the global Atom Size slider, per-species/per-atom/per-copy Size edits)
 // invalidates the clipped bond lengths (Bond.r1/r2 bake the radii in).
 // Cheap live feedback stays with the caller; the heavier rebuild runs once
-// the edits settle.
+// the edits settle — on a large structure with the busy strip running from
+// the edit until it is done.
 let bondRebuildTimer = null;
+let bondRebuildBusy = false;
 export function scheduleBondRebuild(delayMs = 200) {
   if (bondRebuildTimer) clearTimeout(bondRebuildTimer);
+  if (!bondRebuildBusy && (groups.atomsMesh?.count ?? 0) >= LARGE_REBUILD_ATOMS) {
+    bondRebuildBusy = true;
+    showBusyProgress();
+  }
   bondRebuildTimer = setTimeout(() => {
     bondRebuildTimer = null;
-    rebuildBonds(general.mainOpacity ?? 1);
-    // The in-wedge rings are sized off the atoms, so they follow too.
-    refreshAsuHighlight();
+    try {
+      rebuildBonds(general.mainOpacity ?? 1);
+      // The in-wedge rings are sized off the atoms, so they follow too.
+      refreshAsuHighlight();
+    } finally {
+      if (bondRebuildBusy) {
+        bondRebuildBusy = false;
+        hideBusyProgress();
+      }
+    }
     // Rendering is on demand, and this runs from a timer — after the input
     // event whose catch-all listener already painted its frame. Without this
     // the rebuilt bonds stay undrawn until something else (a camera move)
@@ -191,19 +226,19 @@ function normalizeCutPlaneNormal(x = 1, y = 0, z = 0) {
   return [nx / length, ny / length, nz / length];
 }
 
-function isPointCutByPlanes(position, cutPlanes) {
+export function isPointCutByPlanes(position, cutPlanes) {
   if (!Array.isArray(position) || position.length < 3) return false;
 
   return cutPlanes.some((plane) => {
     const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
     const maskSign = getCutPlaneMaskSign(plane.side);
     const planeSide = ((position[0] * nx) + (position[1] * ny) + (position[2] * nz) - (Number(plane.r) || 0)) * maskSign;
-    return planeSide > 0;
+    return planeSide > CUT_PLANE_TOLERANCE;
   });
 }
 
 export function isBondCutByPlanes(bond, cutPlanes) {
-  if (!cutPlanes.length || !bond?.srcIndices || !Array.isArray(bond.positions)) return false;
+  if (!cutPlanes.length || !bond?.srcIndices || !bond.hasEndpoints) return false;
 
   // Per-pair cut immunity (Bonds tab header toggle).
   const [e1, e2] = bond.elements;
@@ -215,8 +250,8 @@ export function isBondCutByPlanes(bond, cutPlanes) {
   const atomA = atoms[bond.srcIndices[0]];
   const atomB = atoms[bond.srcIndices[1]];
 
-  const firstCut = !atomA?.cutPlaneImmune && isPointCutByPlanes(bond.positions[0], cutPlanes);
-  const secondCut = !atomB?.cutPlaneImmune && isPointCutByPlanes(bond.positions[1], cutPlanes);
+  const firstCut = !atomA?.cutPlaneImmune && isPointCutByPlanes([bond.ex1, bond.ey1, bond.ez1], cutPlanes);
+  const secondCut = !atomB?.cutPlaneImmune && isPointCutByPlanes([bond.ex2, bond.ey2, bond.ez2], cutPlanes);
 
   return firstCut || secondCut;
 }
@@ -259,39 +294,30 @@ export function bondGroupKey(structure, bond) {
   return `${sa}_${sb}:${q.join(',')}`;
 }
 
-export function buildBondObjects(structure){
-  const _t0 = performance.now();
-  releaseIDs(structure.bonds); // the ids of the bonds being replaced
-  structure.bonds = [];
-  structure.bondMapping = {};
-  structure.bondObjectMapping = {};
-  // Per-bond user styles (structure.bondUserStyles) intentionally survive rebuilds;
-  // the mesh and any bond selection do not.
-  structure.bondUserStyles ??= {};
-  structure.bondCategoryStyles ??= {};
-  general.bondsBuildCounter = (general.bondsBuildCounter || 0) + 1;
-  highlightHover.currentlyHighlightedBond = null;
+// Bond ids: unique per bond and per build, NOT registered in the global usedIDs
+// set. Nothing looks a bond up by id (pairs are keyed by srcIndex/shift, see
+// bondPairKey; picking goes through bondObjectMapping) — they only fill the
+// instanceUUID attribute — and registering then releasing one per bond on
+// every rebuild was a quarter of the bond rebuild at tens of thousands of
+// bonds. Same scheme as materializeFrame's atom ids: a random base per build
+// plus the index (and a counter, so two builds in one millisecond differ).
+let bondBuildCounter = 0;
+function bondIdBase() {
+  bondBuildCounter = (bondBuildCounter + 1) % 1296;
+  return Math.random().toString(36).slice(2, 7).padEnd(5, '0') + bondBuildCounter.toString(36);
+}
 
-  const wrapped = structure.periodic.visibleWrapped;
-  const wrappedCart = wrapped.cart;
-  const atoms = fileBrowser.selectedStructure?.atoms;
+/** Pairs closer than this (Å, squared) are never bonds (coincident sites). */
+export const BOND_MIN_DIST_SQ = 0.005 * 0.005;
 
-  // First pass: create all bonds.
-  //
-  // This is the hot path for large structures: it is O(N^2) over the wrapped
-  // atom set. To keep the inner loop cheap we (1) precompute the per-element-pair
-  // cutoffs once (they don't depend on position), keyed by a small integer
-  // element index so the inner loop avoids string building and Map/object
-  // lookups; (2) compare *squared* distances so the rejected majority of pairs
-  // never pay a sqrt; and (3) only allocate (the Bond, which recomputes the real
-  // distance from positions) for pairs that actually bond. Previously each pair
-  // allocated two THREE.Vector3, called distanceTo (sqrt), and rebuilt the cutoff
-  // strings — and pairs with cutoff <= 0.01 hit a per-pair console.log.
-  const n = wrappedCart.length;
-  const wrappedElements = wrapped.elements;
-  const wrappedSrcIndex = wrapped.srcIndex;
-  const minDistSq = 0.005 * 0.005;
-
+/**
+ * Per-element-pair bond cutoff tables over the elements of a wrapped set.
+ * @param {string[]} wrappedElements
+ * @returns {{uniqueElems: string[], atomElemIdx: Int32Array, nu: number,
+ *   cutoffSqFlat: Float64Array, minCutoffSqFlat: Float64Array, maxCutoff: number}}
+ */
+export function bondElementTables(wrappedElements) {
+  const n = wrappedElements.length;
   // Map atoms -> small element index, and build flat symmetric cutoff^2 / minCutoff^2
   // matrices over the unique elements present in the wrapped set (flat so the same arrays
   // serve the WASM pair finder and the JS fallback).
@@ -315,6 +341,40 @@ export function buildBondObjects(structure){
   }
   const atomElemIdx = new Int32Array(n);
   for (let i = 0; i < n; i++) atomElemIdx[i] = elemIndexOf.get(wrappedElements[i]);
+  return { uniqueElems, atomElemIdx, nu, cutoffSqFlat, minCutoffSqFlat, maxCutoff };
+}
+
+export function buildBondObjects(structure){
+  const _t0 = performance.now();
+  structure.bonds = [];
+  structure.bondMapping = {};
+  structure.bondObjectMapping = {};
+  // Per-bond user styles (structure.bondUserStyles) intentionally survive rebuilds;
+  // the mesh and any bond selection do not.
+  structure.bondUserStyles ??= {};
+  structure.bondCategoryStyles ??= {};
+  general.bondsBuildCounter = (general.bondsBuildCounter || 0) + 1;
+  highlightHover.currentlyHighlightedBond = null;
+
+  const wrapped = structure.periodic.visibleWrapped;
+  const wrappedCart = wrapped.cart;
+
+  // First pass: create all bonds.
+  //
+  // This is the hot path for large structures: it is O(N^2) over the wrapped
+  // atom set. To keep the inner loop cheap we (1) precompute the per-element-pair
+  // cutoffs once (they don't depend on position), keyed by a small integer
+  // element index so the inner loop avoids string building and Map/object
+  // lookups; (2) compare *squared* distances so the rejected majority of pairs
+  // never pay a sqrt; and (3) only allocate (the Bond, which recomputes the real
+  // distance from positions) for pairs that actually bond. Previously each pair
+  // allocated two THREE.Vector3, called distanceTo (sqrt), and rebuilt the cutoff
+  // strings — and pairs with cutoff <= 0.01 hit a per-pair console.log.
+  const n = wrappedCart.length;
+  const wrappedElements = wrapped.elements;
+  const minDistSq = BOND_MIN_DIST_SQ;
+
+  const { uniqueElems, atomElemIdx, nu, cutoffSqFlat, minCutoffSqFlat, maxCutoff } = bondElementTables(wrappedElements);
 
   const _tSetup = performance.now();
 
@@ -366,51 +426,8 @@ export function buildBondObjects(structure){
   const _tPairs = performance.now();
 
   // ---- Build Bond objects from the pairs (colour / id logic; O(bonds)) ----
-  // The clipped bond geometry must meet each endpoint at its RENDERED radius:
-  // per-copy Size overrides win over the source atom's radiusScale.
-  const endpointScale = (imageIndex, srcIndex) =>
-    getAtomImageStyle(structure, imageIndex)?.radiusScale
-      ?? structure.atoms?.[srcIndex]?.getRadiusScale?.() ?? 1;
-  for (let k = 0; k < pairI.length; k++) {
-    const i = pairI[k], j = pairJ[k];
-    const pi = wrappedCart[i], pj = wrappedCart[j];
-    const ei = uniqueElems[atomElemIdx[i]];
-    const ej = uniqueElems[atomElemIdx[j]];
-    const bond = new Bond({
-      elements: [ei, ej],
-      positions: [[pi[0], pi[1], pi[2]], [pj[0], pj[1], pj[2]]],
-      uuid: generateID([ei, ej]),
-      srcIndices: [wrappedSrcIndex[i], wrappedSrcIndex[j]],
-      indices: [i, j],
-      radiusScales: [endpointScale(i, wrappedSrcIndex[i]), endpointScale(j, wrappedSrcIndex[j])],
-    });
-    // Element-pair cutoff (squared) so the fast frame path can hide a bond that
-    // stretches past breaking without re-running pair finding.
-    bond.cutoffSq = cutoffSqFlat[atomElemIdx[i] * nu + atomElemIdx[j]];
-
-    // Set bond colors based on current color mode
-    if (general.bondsColor === "white") {
-      bond.color = ["#ffffff", "#ffffff"];
-    } else if (general.bondsColor === "solid") {
-      bond.color = [general.solidBondColor || "#ffffff", general.solidBondColor || "#ffffff"];
-    } else if (general.bondsColor === "length") {
-      // Temporary color, will be updated in second pass
-      bond.color = bond.defaultColor;
-    } else {
-      // Default to element colors or atom colors. getRepresentativeColor(),
-      // not the plain .color field: for a disordered endpoint that resolves
-      // to whatever the representative species' OWN colour is (falling back
-      // to the element default), so a per-species colour edit is visible on
-      // the bond too, not only on the wedge sphere.
-      if (atoms && bond.srcIndices[0] < atoms.length && bond.srcIndices[1] < atoms.length) {
-        bond.color = [atoms[bond.srcIndices[0]].getRepresentativeColor(), atoms[bond.srcIndices[1]].getRepresentativeColor()];
-      } else {
-        bond.color = bond.defaultColor;
-      }
-    }
-
-    structure.bonds.push(bond);
-  }
+  structure.bonds = createModeColoredBonds(structure, wrapped, pairI, pairJ,
+    { uniqueElems, atomElemIdx, nu, cutoffSqFlat });
 
   const _ms = (x) => x.toFixed(1);
   console.log(
@@ -441,40 +458,143 @@ export function buildBondObjects(structure){
       general.BondMax = maxLength;
     }
 
-    // Apply color mapping based on bond lengths
-    const colorMap = general.bondsColorMap || "heatmap";
-    let colors;
-    switch (colorMap) {
-      case "batlow": colors = getBatlowColors(); break;
-      case "hawaii": colors = getHawaiiColors(); break;
-      case "managua": colors = getManaguaColors(); break;
-      case "viridis": colors = getViridisColors(); break;
-      case "plasma": colors = getPlasmaColors(); break;
-      case "spectralR": colors = getSpectralRColors(); break;
-      case "jet": colors = getJetColors(); break;
-      default: colors = getHeatMapColors();
-    }
-
-    if (colors && colors.length > 0) {
-      const nBins = colors.length;
+    // Apply color mapping based on bond lengths — the Colors panel's binning
+    // (ColorMapBins.js, log scale included) and the playback fast path's.
+    const table = colorMapTable(general.bondsColorMap || "heatmap");
+    if (table.n > 0) {
+      const useLog = general.bondColorScale === "log";
       structure.bonds.forEach(bond => {
-        const clamped = Math.max(minLength, Math.min(maxLength, bond.dist));
-        const t = (maxLength > minLength) ? (clamped - minLength) / (maxLength - minLength) : 0.5;
-        const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
-        // getHexString(), not manual r*255 truncation — see
-        // ui/ColorPanel.js's valueToColor for why.
-        const color = `#${colors[bin].getHexString()}`;
+        const color = table.hex[colorBin(bond.dist, minLength, maxLength, table.n, useLog)];
         bond.color = [color, color];
       });
     }
   }
 
+  applyBondStyleOverrides(structure, structure.bonds);
+}
+
+/**
+ * Bond objects for the given wrapped-instance pairs, coloured by the current
+ * bond colour mode (white / solid / element or atom colours; "length" gets the
+ * element default here — buildBondObjects maps lengths afterwards). Shared by
+ * buildBondObjects and the playback candidate bonds (PlaybackBondsModule.js),
+ * so a bond that forms during playback looks exactly like one a rebuild makes.
+ * @param {any} structure
+ * @param {any} wrapped the visible wrapping the pair indices refer to
+ * @param {ArrayLike<number>} pairI @param {ArrayLike<number>} pairJ
+ * @param {{uniqueElems: string[], atomElemIdx: Int32Array, nu: number, cutoffSqFlat: Float64Array}} ctx
+ * @returns {any[]}
+ */
+export function createModeColoredBonds(structure, wrapped, pairI, pairJ, ctx) {
+  const { uniqueElems, atomElemIdx, nu, cutoffSqFlat } = ctx;
+  const wrappedCart = wrapped.cart;
+  const wrappedSrcIndex = wrapped.srcIndex;
+  const out = [];
+  if (!pairI.length) return out;
+  // Colours and radius scales only (positions come from the wrapping): no need
+  // to apply a deferred trajectory frame switch first (model/materializeFrame.js).
+  const atoms = peekAtoms(fileBrowser.selectedStructure);
+  const ownAtoms = peekAtoms(structure);
+  // The clipped bond geometry must meet each endpoint at its RENDERED radius:
+  // per-copy Size overrides win over the source atom's radiusScale. (No
+  // per-copy styles at all is the usual case: skip the lookup per bond end.)
+  const anyImageStyles = hasAtomImageStyles(structure);
+  const endpointScale = (imageIndex, srcIndex) =>
+    (anyImageStyles ? getAtomImageStyle(structure, imageIndex)?.radiusScale : undefined)
+      ?? ownAtoms?.[srcIndex]?.getRadiusScale?.() ?? 1;
+  const idBase = bondIdBase();
+  // Each atom's representative colour once, not once per bond end.
+  const repColors = new Map();
+  const repColor = (src) => {
+    let c = repColors.get(src);
+    if (c === undefined) { c = atoms[src].getRepresentativeColor(); repColors.set(src, c); }
+    return c;
+  };
+  // Per element pair, shared by its bonds (never written in place): the
+  // elements, default colours and id prefix. With the scratch arrays the
+  // constructor only reads, a bond allocates little beyond itself — at 10^5
+  // bonds the garbage collector was most of a rebuild.
+  const pairInfo = new Array(nu * nu);
+  const noUserColor = [null, null];
+  const noPositions = [];
+  const coords = new Float64Array(6);
+  const radiusScales = [1, 1];
+  // One options object for every bond: the constructor reads it, keeps none of it.
+  const opts = {
+    elements: null, positions: noPositions, coords, defaultColor: null, userColor: noUserColor,
+    uuidPrefix: '', uuidIndex: 0, indexA: 0, indexB: 0, srcA: 0, srcB: 0, radiusScales,
+  };
+  for (let k = 0; k < pairI.length; k++) {
+    const i = pairI[k], j = pairJ[k];
+    const pi = wrappedCart[i], pj = wrappedCart[j];
+    const t = atomElemIdx[i] * nu + atomElemIdx[j];
+    let info = pairInfo[t];
+    if (!info) {
+      const ei = uniqueElems[atomElemIdx[i]];
+      const ej = uniqueElems[atomElemIdx[j]];
+      info = pairInfo[t] = { elements: [ei, ej], defaultColor: bondDefaultColor(ei, ej), uuidPrefix: `${ei}-${ej}-${idBase}b` };
+    }
+    coords[0] = pi[0]; coords[1] = pi[1]; coords[2] = pi[2];
+    coords[3] = pj[0]; coords[4] = pj[1]; coords[5] = pj[2];
+    const si = wrappedSrcIndex[i], sj = wrappedSrcIndex[j];
+    radiusScales[0] = endpointScale(i, si);
+    radiusScales[1] = endpointScale(j, sj);
+    opts.elements = info.elements;
+    opts.defaultColor = info.defaultColor;
+    opts.uuidPrefix = info.uuidPrefix;
+    opts.uuidIndex = k;
+    opts.indexA = i;
+    opts.indexB = j;
+    opts.srcA = si;
+    opts.srcB = sj;
+    const bond = new Bond(opts);
+    // Element-pair cutoff (squared) so the fast frame path can hide a bond that
+    // stretches past breaking without re-running pair finding.
+    bond.cutoffSq = cutoffSqFlat[t];
+
+    // Set bond colors based on current color mode
+    if (general.bondsColor === "white") {
+      bond.color = ["#ffffff", "#ffffff"];
+    } else if (general.bondsColor === "solid") {
+      bond.color = [general.solidBondColor || "#ffffff", general.solidBondColor || "#ffffff"];
+    } else if (general.bondsColor === "length") {
+      // Temporary color, will be updated in second pass (a copy: the
+      // defaults are shared, bond.color is edited in place)
+      bond.color = [bond.defaultColor[0], bond.defaultColor[1]];
+    } else {
+      // Default to element colors or atom colors. getRepresentativeColor(),
+      // not the plain .color field: for a disordered endpoint that resolves
+      // to whatever the representative species' OWN colour is (falling back
+      // to the element default), so a per-species colour edit is visible on
+      // the bond too, not only on the wedge sphere.
+      if (atoms && si < atoms.length && sj < atoms.length) {
+        bond.color = [repColor(si), repColor(sj)];
+      } else {
+        bond.color = [bond.defaultColor[0], bond.defaultColor[1]];
+      }
+    }
+
+    out.push(bond);
+  }
+
+  return out;
+}
+
+/**
+ * Category styles (Bonds-tab header dot), then persisted per-bond user styles
+ * (structure.bondUserStyles), onto freshly built bonds — after all mode
+ * colouring, so individual overrides win. Shared with the playback candidate
+ * bonds (PlaybackBondsModule.js).
+ * @param {any} structure @param {any[]} bonds
+ */
+export function applyBondStyleOverrides(structure, bonds) {
   // Category styles (Bonds-tab header dot) — applied after mode coloring and
   // BEFORE the per-copy bondUserStyles pass below, so individual overrides win.
-  if (Object.keys(structure.bondCategoryStyles).length) {
-    for (const bond of structure.bonds) {
+  const categoryStyles = structure.bondCategoryStyles ?? {};
+  if (Object.keys(categoryStyles).length) {
+    for (const bond of bonds) {
       const [e1, e2] = bond.elements;
-      const cs = structure.bondCategoryStyles[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`];
+      const cs = categoryStyles[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`];
       if (!cs) continue;
       if (cs.color) {
         bond.color = [cs.color, cs.color];
@@ -490,8 +610,11 @@ export function buildBondObjects(structure){
   // Note the asymmetry with atom recoloring: the per-atom color editor tints
   // attached bond halves via bond.userColor without persisting; per-bond styles
   // set here persist in structure.bondUserStyles and take precedence.
-  for (const bond of structure.bonds) {
-    const saved = structure.bondUserStyles[bondKey(bond.indices)];
+  const userStyles = structure.bondUserStyles ?? {};
+  // Nearly always empty: skip building a key string per bond.
+  if (!Object.keys(userStyles).length) return;
+  for (const bond of bonds) {
+    const saved = userStyles[bondKey(bond.indices)];
     if (saved && saved.elements[0] === bond.elements[0] && saved.elements[1] === bond.elements[1]) {
       if (saved.color) {
         bond.color = [saved.color, saved.color]; // one color for both halves
@@ -577,6 +700,22 @@ export function getBondByInstanceId(instanceId) {
   return structure.bonds?.[mapping[0]] ?? null;
 }
 
+/** Standard uncertainty (Å) of a bond's length from the CIF's errors, or null
+ *  when the structure has no read errors or an atom has moved off its CIF
+ *  site (model/cifErrors.js). The two ends are the copies the bond joins, so a
+ *  bond to a periodic image propagates through the right lattice translation.
+ *  Used by the Bond Length Histogram's hover list and its distance labels. */
+export function bondLengthSu(structure, bond) {
+  if (!hasCifErrors(structure)) return null;
+  const frac = structure.periodic?.visibleWrapped?.frac;
+  const fa = frac?.[bond.indices?.[0]];
+  const fb = frac?.[bond.indices?.[1]];
+  if (!fa || !fb || !bond.srcIndices) return null;
+  return distanceSu(structure,
+    { atomIndex: bond.srcIndices[0], frac: [...fa] },
+    { atomIndex: bond.srcIndices[1], frac: [...fb] });
+}
+
 function populateBondHistogramData(structure) {
   for (const key in bondLengths) delete bondLengths[key];
   for (const key in coordinationNumbers) delete coordinationNumbers[key];
@@ -605,6 +744,7 @@ function populateBondHistogramData(structure) {
     // (hover list, distance labels) without re-deriving them from instanceIds.
     const entry = {
       dist: bond.dist,
+      su: bondLengthSu(structure, bond), // null without read CIF errors
       instanceIds: bond.instanceIds ? [...bond.instanceIds] : [],
       srcIndices: [...bond.srcIndices],
     };
@@ -704,15 +844,30 @@ export function createBondsMaterial() {
 // per-half instance attributes), 2 halves per bond. Identical for the main and
 // comparison ("second") bond meshes; the caller fills the instances in its own
 // loop and stores the mesh at groups[...]. Returns the InstancedMesh.
-export function createBondsMesh(bondCount) {
+export function createBondsMesh(bondCount, { persistent = false, zeroed = false } = {}) {
   // Geometry: unit cylinder along +Y
   const geometry = new THREE.CylinderGeometry(1, 1, 1, 16, 1, true);
 
-  // Material: copy atom material logic
-  const material = createBondsMaterial();
+  // Material: copy atom material logic. The MAIN bonds mesh reuses one
+  // material across rebuilds (no shader recompile per frame); the overlay
+  // structures' bond meshes keep their own, since each carries its own
+  // opacity/transparency state.
+  const material = persistent
+    ? acquirePersistentMaterial('bonds', JSON.stringify([general.renderStyle, getBondVisSettings()]), createBondsMaterial)
+    : createBondsMaterial();
 
-  // Instanced mesh: 2 halves per bond
-  const mesh = new THREE.InstancedMesh(geometry, material, bondCount * 2);
+  // Instanced mesh: 2 halves per bond. `zeroed`: the caller writes every
+  // slot itself (or wants unwritten ones hidden), so skip three.js's
+  // identity fill — one setMatrixAt per instance, a quarter of a second at
+  // 10^5 bonds — and start from a zero (collapsed) buffer.
+  let mesh;
+  if (zeroed) {
+    mesh = new THREE.InstancedMesh(geometry, material, 0);
+    mesh.instanceMatrix = new THREE.InstancedBufferAttribute(new Float32Array(bondCount * 2 * 16), 16);
+    mesh.count = bondCount * 2;
+  } else {
+    mesh = new THREE.InstancedMesh(geometry, material, bondCount * 2);
+  }
 
   // rebuildBonds() always disposes and recreates this mesh, so its lazily
   // auto-computed per-instance bounding sphere (three.js InstancedMesh) would
@@ -761,6 +916,39 @@ export function createBondsMesh(bondCount) {
   return mesh;
 }
 
+/**
+ * bondObjectMapping for a bonds mesh: half h (0/1) of instance slot i maps to
+ * [bondsIndexOf[i], h], an index into the unfiltered structure.bonds. Read
+ * like the plain object it replaces (mapping[id], `id in mapping`,
+ * Object.keys), but each [bond, half] pair is made on lookup: a stored pair
+ * per half was 10^6 small arrays at 10^5 bonds, kept for the rare colour edit
+ * or pick that reads one.
+ * @param {Int32Array} bondsIndexOf
+ */
+function bondHalfTable(bondsIndexOf) {
+  const halves = bondsIndexOf.length * 2;
+  const halfOf = (key) => {
+    if (typeof key !== 'string') return -1;
+    const id = Number(key);
+    return Number.isInteger(id) && id >= 0 && id < halves && String(id) === key ? id : -1;
+  };
+  const pair = (id) => [bondsIndexOf[id >> 1], id & 1];
+  return new Proxy({}, {
+    get: (target, key) => {
+      const id = halfOf(key);
+      return id >= 0 ? pair(id) : Reflect.get(target, key);
+    },
+    has: (target, key) => halfOf(key) >= 0 || Reflect.has(target, key),
+    ownKeys: (target) => [...Array.from({ length: halves }, (_, id) => String(id)), ...Reflect.ownKeys(target)],
+    getOwnPropertyDescriptor: (target, key) => {
+      const id = halfOf(key);
+      return id >= 0
+        ? { value: pair(id), writable: true, enumerable: true, configurable: true }
+        : Reflect.getOwnPropertyDescriptor(target, key);
+    },
+  });
+}
+
 export function renderBonds() {
   const structure = fileBrowser.selectedStructure;
   const bonds = fileBrowser.selectedStructure.bonds;
@@ -769,12 +957,14 @@ export function renderBonds() {
   const bondCount = validBonds.length;
  // console.log("Rendering", bondCount, "bonds");
 
-  const mesh = createBondsMesh(bondCount);
+  // Every slot is written by updateBonds right after (matrix or hidden).
+  const mesh = createBondsMesh(bondCount, { persistent: true, zeroed: true });
 
-  // UUIDs
+  // instanceUUID: kept for attribute-layout parity with the atoms mesh, but
+  // nothing reads it for bonds (picking goes through bondObjectMapping), so
+  // it is no longer filled — packing an id string per half was a tenth of a
+  // second per rebuild at 10^5 bonds.
   const uuidAttr = new Float32Array(bondCount*2*4);
-  const encoder = new TextEncoder();
-  const paddedUUID = new Uint8Array(16);
 
   // Per-instance matrices, colours and emissive are written by updateBonds() — which
   // runs immediately after this in rebuildBonds(), with the precise quaternion alignment
@@ -785,56 +975,57 @@ export function renderBonds() {
   // bondObjectMapping must hold indices into the UNFILTERED structure.bonds array
   // (all consumers do structure.bonds[mapping[0]]), while the instance index i
   // runs over validBonds only.
-  const bondsIndexOf = new Map();
-  bonds.forEach((b, k) => bondsIndexOf.set(b, k));
+  const bondsIndexOf = new Int32Array(bondCount);
+  for (let k = 0, v = 0; k < bonds.length; k++) {
+    if (bonds[k].visibleLen > 1e-3) bondsIndexOf[v++] = k;
+  }
+
+  // bondMapping lists (instance -> its bond halves) are sized up front: a
+  // list grown by push starts at 17 slots, and most hold a handful.
+  let maxKey = -1;
+  for (const bond of validBonds) {
+    if (!bond.hasCenters) continue;
+    if (bond.indexA > maxKey) maxKey = bond.indexA;
+    if (bond.indexB > maxKey) maxKey = bond.indexB;
+  }
+  const halvesPerKey = new Int32Array(maxKey + 1);
+  for (const bond of validBonds) {
+    if (!bond.hasCenters) continue;
+    halvesPerKey[bond.indexA]++;
+    halvesPerKey[bond.indexB]++;
+  }
+  const filled = new Int32Array(maxKey + 1).fill(-1); // -1: a list this pass did not create
+  const addHalf = (key, half) => {
+    let list = structure.bondMapping[key];
+    if (!list) {
+      list = structure.bondMapping[key] = new Array(halvesPerKey[key]);
+      filled[key] = 0;
+    }
+    if (filled[key] >= 0) list[filled[key]++] = half;
+    else list.push(half);
+  };
 
   validBonds.forEach((bond, i) => {
-    if (!bond.center1 || !bond.center2) return;
+    if (!bond.hasCenters) return;
 
     // Stable instance-index tag for the render fast path (applyFrameFast). Filtering
     // structure.bonds by the live visibleLen across frames is unsafe because
     // updateEndpoints mutates visibleLen; this fixed index (assigned once per
     // rebuild) is the authoritative bond -> instance-slot mapping the fast path uses.
-    bond.renderIndex = i;
+    // It also gives bond.instanceIds, the reverse map bond -> its two
+    // half-cylinder instance ids (the Bonds tab rows and the highlight code;
+    // built on first read). Filtered-out bonds keep it undefined.
+    bond.setRenderIndex(i);
 
-    // Reverse map bond -> its two half-cylinder instance ids (used by the Bonds
-    // tab rows and the highlight code). Filtered-out bonds keep it undefined.
-    bond.instanceIds = [i * 2, i * 2 + 1];
-
-    // ---- first half ----
     if (!structure.bondhalfToAtom) structure.bondhalfToAtom = {};
-    structure.bondhalfToAtom[i * 2] = bond.srcIndices[0];
-
-    let key = bond.indices[0];
-    if (!structure.bondMapping[key]) {
-      structure.bondMapping[key] = [];
-    }
-    structure.bondMapping[key].push(i * 2);
-
-    // Lookup table from bondHalf to the actual bond objects (used for colour changes).
-    structure.bondObjectMapping[i * 2] = [bondsIndexOf.get(bond), 0];
-
-    const uuid1 = `1${bond.uuid}`.replace(/-/g, '');
-    paddedUUID.fill(0);
-    paddedUUID.set(encoder.encode(uuid1).subarray(0, 16));
-    uuidAttr.set(new Float32Array(paddedUUID.buffer), i * 8 + 0);
-
-    // ---- second half ----
-    structure.bondhalfToAtom[i * 2 + 1] = bond.srcIndices[1];
-
-    key = bond.indices[1];
-    if (!structure.bondMapping[key]) {
-      structure.bondMapping[key] = [];
-    }
-    structure.bondMapping[key].push(i * 2 + 1);
-
-    structure.bondObjectMapping[i * 2 + 1] = [bondsIndexOf.get(bond), 1];
-
-    const uuid2 = `2${bond.uuid}`.replace(/-/g, '');
-    paddedUUID.fill(0);
-    paddedUUID.set(encoder.encode(uuid2).subarray(0, 16));
-    uuidAttr.set(new Float32Array(paddedUUID.buffer), i * 8 + 4);
+    structure.bondhalfToAtom[i * 2] = bond.srcA;
+    structure.bondhalfToAtom[i * 2 + 1] = bond.srcB;
+    addHalf(bond.indexA, i * 2);
+    addHalf(bond.indexB, i * 2 + 1);
   });
+
+  // Lookup table from bond half to its bond (colour changes, picking).
+  structure.bondObjectMapping = bondHalfTable(bondsIndexOf);
 
   // Assign UUID attribute
   mesh.geometry.setAttribute('instanceUUID', new THREE.InstancedBufferAttribute(uuidAttr, 4));
@@ -851,6 +1042,18 @@ export function renderBonds() {
   // Add to scene
   app.scene.add(mesh);
   groups.bondsMesh = mesh;
+}
+
+const _parsedBondColors = new Map();
+function parsedBondColor(color) {
+  let rgb = _parsedBondColors.get(color);
+  if (!rgb) {
+    if (_parsedBondColors.size > 4096) _parsedBondColors.clear();
+    _bondColor.set(color);
+    rgb = [_bondColor.r, _bondColor.g, _bondColor.b];
+    _parsedBondColors.set(color, rgb);
+  }
+  return rgb;
 }
 
 // change the color of a bond "half  cylinder" with index bondMeshIndex to color "color" (hex)
@@ -873,9 +1076,11 @@ export function updateSingleBondColor(bondMeshIndex, color, overwriteAtom = fals
 
   //console.log(bondMeshIndex,atom.userColor, overwriteAtom, targetColor)
 
-  // Update bond half color (reuse module scratch THREE.Color; setXYZ copies).
-  _bondColor.set(targetColor);
-  mesh.instanceColor.setXYZ(bondMeshIndex, _bondColor.r, _bondColor.g, _bondColor.b);
+  // Update bond half color. Parsed colours are cached by value: a rebuild
+  // repaints every half with one of a handful of colours, and parsing the
+  // string each time was a fifth of updateBonds at 10^5 bonds.
+  const rgb = parsedBondColor(targetColor);
+  mesh.instanceColor.setXYZ(bondMeshIndex, rgb[0], rgb[1], rgb[2]);
   mesh.instanceColor.needsUpdate = true;
 
 }
@@ -946,22 +1151,7 @@ function syncBondMaterialTransparency(baseOpacity = 1.0) {
 }
 
 export function updateSingleBondPosition(index, bond) {
-  const mesh = groups.bondsMesh;
-  _bondDir.copy(bond.dir).normalize();
-
-  // First half position and orientation
-  _bondDummy.position.copy(bond.center1);
-  _bondDummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir);
-  _bondDummy.updateMatrix();
-  mesh.setMatrixAt(index * 2, _bondDummy.matrix);
-
-  // Second half position and orientation
-  _bondDummy.position.copy(bond.center2);
-  _bondDummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir);
-  _bondDummy.updateMatrix();
-  mesh.setMatrixAt(index * 2 + 1, _bondDummy.matrix);
+  writeBondMatrices(groups.bondsMesh.instanceMatrix.array, index, bond);
 }
 
 /**
@@ -979,7 +1169,8 @@ export function applyBondRadius(bond, radius) {
   const mesh = groups.bondsMesh;
   const idx = bond.renderIndex;
   const visible = bond.visibleLen > 1e-3 && bond.center1 && bond.center2;
-  if (!mesh || !Number.isInteger(idx)) {
+  // renderIndex is -1 for a bond that is not drawn.
+  if (!mesh || !Number.isInteger(idx) || idx < 0) {
     if (visible && general.showBonds) scheduleBondRebuild();
     return;
   }
@@ -1031,14 +1222,9 @@ export function updateSingleBondDiameter(instanceIndex, newRadius) {
 
 export function updateSingleBond(index, bond, overwriteAtom=false){
   const mesh = groups.bondsMesh;
-  _bondDir.copy(bond.dir).normalize();
+  writeBondMatrices(mesh.instanceMatrix.array, index, bond);
 
   // ---- first half ----
-  _bondDummy.position.copy(bond.center1);
-  _bondDummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir); // precise alignment
-  _bondDummy.updateMatrix();
-  mesh.setMatrixAt(index*2, _bondDummy.matrix);
 
   // A per-bond user color must survive repaints even when the atom has a
   // userColor (bond userColor > atom userColor > mode color).
@@ -1050,19 +1236,13 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
   // endpoint's species in the wedge texture (was an unused constant 0).
   mesh.geometry.attributes.instanceElementIndex.setX(index*2, index*2);
   const focusOpacity = Math.min(
-    getFocusOpacityForInstance(bond.indices[0]),
-    getFocusOpacityForInstance(bond.indices[1]),
+    getFocusOpacityForInstance(bond.indexA),
+    getFocusOpacityForInstance(bond.indexB),
   );
   mesh.geometry.attributes.instanceOpacity.setX(index*2,
     Math.max(0, Math.min(1, bond.alpha ?? 1)) * focusOpacity);
 
   // ---- second half ----
-  _bondDummy.position.copy(bond.center2);
-  _bondDummy.scale.set(bond.radius, bond.halfLen, bond.radius);
-  _bondDummy.quaternion.setFromUnitVectors(_bondUp, _bondDir);
-  _bondDummy.updateMatrix();
-  mesh.setMatrixAt(index*2 + 1, _bondDummy.matrix);
-
   updateSingleBondColor(index*2+1, bond.color[1], overwriteAtom || bond.userColor?.[1] != null)
 
   mesh.geometry.attributes.instanceEmissive.setXYZ(index*2 + 1, 0,0,0);
@@ -1075,14 +1255,8 @@ export function updateSingleBond(index, bond, overwriteAtom=false){
 export function hideSingleBond(index) {
   const mesh = groups.bondsMesh;
   if (!mesh) return;
-
-  _bondDummy.position.set(0, 0, 0);
-  _bondDummy.scale.set(0, 0, 0);
-  _bondDummy.quaternion.set(0, 0, 0, 1);
-  _bondDummy.updateMatrix();
-
-  mesh.setMatrixAt(index * 2, _bondDummy.matrix);
-  mesh.setMatrixAt(index * 2 + 1, _bondDummy.matrix);
+  writeHiddenBondHalf(mesh.instanceMatrix.array, index * 2);
+  writeHiddenBondHalf(mesh.instanceMatrix.array, index * 2 + 1);
 }
 
 export async function updateBonds(opacity=1.0) {

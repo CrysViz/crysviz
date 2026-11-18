@@ -104,7 +104,7 @@
 // while enabled (intended). The preview<->traced visual "pop" is the contract.
 
 import * as THREE from '../../external/three/three.module.js';
-import { app, general, mode, groups, highlightHover } from '../../state/store.js';
+import { app, general, mode, groups, highlightHover, fileBrowser } from '../../state/store.js';
 import '../../external/three-raytracing/RayTracingCommon.js'; // registers THREE.ShaderChunk['raytracing_*']
 import { CommonRayTracing_Vertex } from '../../external/three-raytracing/CommonRayTracing_Vertex.js';
 import { ScreenCopy_Fragment } from '../../external/three-raytracing/ScreenCopy_Fragment.js';
@@ -117,6 +117,7 @@ import { DepthPeelPipeline } from './DepthPeelPipeline.js';
 import { makeSceneFragment } from './raytrace/sceneFragment.js';
 import { SceneEncoder } from './raytrace/SceneEncoder.js';
 import { occupancyChunk } from './raytrace/occupancyChunk.js';
+import { groundNormal, cleanGroundDirection } from '../groundDirection.js';
 
 const RESIZE_BOOST_SAMPLES = 16; // inner samples after a size change (PNG export)
 
@@ -227,6 +228,13 @@ export class RayTracingPipeline extends ForwardPipeline {
   _sceneDirty = true;
   _shaderHasOccupancy = false;
   _boostSamples = 0;
+  // Debug comparison (Debug window ▸ Tracer, ?debug): true = the OLD, noisier
+  // sampling — a ray passes a see-through (alpha < 1) surface by a coin flip
+  // (both tracers), and the ray tracer's soft-shadow, frost and roughness
+  // directions are plain white noise; false (always, outside that comparison)
+  // = exact see-through blending and stratified directions. Drives
+  // uLegacyNoise.
+  _legacyNoise = false;
   _lastLookBackground = undefined;
 
   // ---- async shader-compile gate ------------------------------------------
@@ -423,6 +431,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       uBackgroundColor: { value: new THREE.Color(0.9, 0.9, 0.9) },
       uReflectivity: { value: general.rtReflectivity ?? 0.15 },
       uLightSoftness: { value: general.ptLightSoftness ?? 0.3 },
+      uLegacyNoise: { value: false }, // debug A/B only (_legacyNoise)
       uAmbientStrength: { value: general.rtAmbient ?? 0.3 },
       uBackgroundDisplay: { value: new THREE.Color(0.9, 0.9, 0.9) }, // pre-compensated (primary miss)
       uGroundEnabled: { value: false },
@@ -1074,19 +1083,20 @@ export class RayTracingPipeline extends ForwardPipeline {
     }
     u.uReflectivity.value = general.rtReflectivity ?? 0.15;
     u.uLightSoftness.value = general.ptLightSoftness ?? 0.3;
+    u.uLegacyNoise.value = this._legacyNoise === true;
     u.uAmbientStrength.value = general.rtAmbient ?? 0.3;
     u.uGroundEnabled.value = !!general.rtGroundPlane;
-    // Ground orientation: 'structure' = world-fixed below the cell;
-    // 'horizon' = perpendicular to the camera's up vector and below the
-    // structure's bounding sphere, so orbiting reads as rotating the
-    // structure above a fixed floor. (Reorientation coincides with camera
-    // moves, which already reset the accumulation.)
-    // The ground is a large finite DISC (not an infinite plane) so the
-    // background stays visible as "sky" around it, world-fixed just below
-    // the structure ("Ground distance" sets the gap).
+    // Ground position (render/groundDirection.js): below along −y (the
+    // default), below or behind the view (re-placed as the camera turns —
+    // camera moves already reset the accumulation), or a fixed world or
+    // crystal side. The ground is a large finite DISC (not an infinite plane)
+    // so the background stays visible as "sky" around it, "Ground distance"
+    // beyond the structure's lowest point along the normal.
     const groundOffset = general.rtGroundOffset ?? 0.75;
-    u.uGroundNormal.value.set(0, 1, 0);
-    u.uGroundD.value = this._encoder.minY - groundOffset;
+    const groundDirection = cleanGroundDirection(general.rtGroundDirection);
+    groundNormal(groundDirection, camera, fileBrowser.selectedStructure?.lattice, u.uGroundNormal.value);
+    u.uGroundD.value = (groundDirection === 'down' ? this._encoder.minY
+      : this._encoder.minProjection(u.uGroundNormal.value)) - groundOffset;
     u.uGroundCenter.value.copy(this._encoder.structureCenter);
     u.uGroundRadius.value = Math.max(
       (general.rtGroundSize ?? 2.5) * this._encoder.structureRadius, 5);
@@ -1118,7 +1128,8 @@ export class RayTracingPipeline extends ForwardPipeline {
       + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`
       + `|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
       + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`
-      + `|${general.rtGroundOffset ?? 0.75}|${general.rtGroundSize ?? 2.5}`;
+      + `|${general.rtGroundOffset ?? 0.75}|${general.rtGroundSize ?? 2.5}|${groundDirection}`
+      + `|${u.uLegacyNoise.value}`;
     const backgroundChanged = this._lastLookBackground !== undefined
       && u.uBackgroundColor.value.getHex() !== this._lastLookBackground;
     if (this._lastLookKey !== undefined && lookKey !== this._lastLookKey) {

@@ -1,14 +1,20 @@
 import { Structure } from './Structure.js';
+import { siteSpeciesRecord } from './siteSpecies.js';
 
 export class StructureContainer {
   constructor({
     fileName = null,
     structures = [],
     finalSCF = false,
+    dataSource = null,
   } = {}) {
     this.fileName = fileName ? fileName : "Unspecified";
     this.structures = this._ensureListOfClass(structures, Structure);
     this.finalSCF=finalSCF;
+    // Where the file's energies, forces and stress came from ("VASP"), or
+    // null; a structure's own dataSource wins (model/dataSource.js).
+    /** @type {string | null} */
+    this.dataSource = typeof dataSource === 'string' && dataSource ? dataSource : null;
     // Per-frame plot series for the Trajectory panel (step / temperatureK /
     // etotEv / meanForce / pressure / ...), each a number[] 1:1 with structures.
     // Populated by live MD/relax and "Compute step stats"; null until then.
@@ -178,8 +184,14 @@ export class StructureContainer {
   /**
    * Per-frame geometry/arrow data in plain form for session serialisation
    * (ShareModule's includeFrames path). May return a Promise in subclasses.
+   * `species` is the frame's mixed / partially occupied sites
+   * (model/siteSpecies.js), null when it has none.
+   * `energy` (eV), `stress` (eV/Å³, model/Stress.js) and `dataSource` (the
+   * frame's own, model/dataSource.js) are null when the frame has none.
    * @returns {Array<{elements: string[], lattice: number[][],
-   *   positions: number[][], forces: Force[] | null, spins: Spin[] | null}>
+   *   positions: number[][], forces: Force[] | null, spins: Spin[] | null,
+   *   species: Record<number, Array<object>> | null, energy: number | null,
+   *   stress: number[][] | null, dataSource: string | null}>
    *   | Promise<Array<object>>}
    */
   framePhysicsList() {
@@ -189,6 +201,10 @@ export class StructureContainer {
       positions: frame.atoms.map(a => [...a.position]),
       forces: frame.forces?.length ? frame.forces : null,
       spins: frame.spins?.length ? frame.spins : null,
+      species: siteSpeciesRecord(frame.atoms.map(a => a.species)),
+      energy: Number.isFinite(frame.energy) ? frame.energy : null,
+      stress: frame.stress?.tensor ? frame.stress.tensor.map(r => [...r]) : null,
+      dataSource: frame.dataSource ?? null,
     }));
   }
   flushColorToAllStructures(targetStructure) {

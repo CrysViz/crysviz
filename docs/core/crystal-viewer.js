@@ -47,11 +47,13 @@ import {updateAllMeasurements,clearMeasureGraphics,clearMeasure} from '../render
 import { initModifyStructureButton } from '../ui/addToStructureModule/AddStructureModule.js'
 import { refreshFileStructureSummary } from '../ui/FileStructureSummary.js';
 import { selectStructure } from '../ui/FileBrowswerPanel.js'
+import { repaintSelectionGlow } from '../ui/SelectAndHighlightModule.js'
 // PanelManager stays in the shared graph (getPanelPref etc. are used by modules
 // widget mode keeps, like TrajectoryPanel). revealFeaturePanels is called from
 // the structure-load path below; in widget mode no panels are registered, so it
 // is a safe no-op. The rest of the panel setup moved to core/fullApp.js.
 import { revealFeaturePanels } from '../ui/panels/PanelManager.js'
+import { exampleSignature } from '../state/exampleSignature.js';
 import {initFontScale} from '../ui/FontScaleModule.js'
 
 import { updateField, parseCHGCARFile, parseCubeFile, parseWavecarFile, clearField, revealFieldPanelForCurrentStructure } from '../render/index.js';
@@ -91,11 +93,13 @@ import {renderComposition} from '../ui/StructureInfoPanel/General.js';
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any } from '../io/index.js';
 import { FileSource, detectFormat, materialize, HEAD_BYTES } from '../io/index.js';
+import { planLoadedTrajectory, LoadCancelledError } from '../io/trajectoryLoadPlan.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
 import { applyFrameFast } from '../render/FastFrameModule.js';
 import { getActiveStructure, getContainerForStructure } from '../state/structures.js';
+import { setLoadStep } from '../ui/BootProgress.js';
 
 // ........................................................................................................
 //
@@ -173,6 +177,11 @@ export function updateVisualization(options = {}) {
     // playback) move atoms within a FIXED image set and refresh their own
     // arrows.
     reRenderPeriodic = false,
+    // The crysviz:colors-changed broadcast at the end (composition pie dots,
+    // Polyhedron Inspector re-render). On by default as a safety net; the
+    // trajectory player's light per-frame path passes false — a positions-only
+    // frame switch changes no colours, and every settle frame broadcasts.
+    notifyColors = true,
 
     mOpacity = general.mainOpacity,
     reRenderField = false
@@ -208,6 +217,9 @@ export function updateVisualization(options = {}) {
   if (!reRenderAtoms && atomsUpdate) {
     console.warn("Calling updateAtoms with opacity")
     updateAtoms(mOpacity);
+    // updateAtoms turns every glow off: the selection's goes back on (a
+    // colour or size edit, a panel refresh, ... must not drop it).
+    repaintSelectionGlow();
   }
 
   if (reRenderBonds) {
@@ -309,7 +321,7 @@ export function updateVisualization(options = {}) {
   // needs to stay in sync with live colour edits (e.g. the Polyhedron
   // Inspector's mini render) can listen for this instead of tracking down
   // every individual call site.
-  notifyColorsChanged();
+  if (notifyColors) notifyColorsChanged();
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
       updateField();
@@ -463,7 +475,7 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
       // returns a StructureContainer; registration happens once via
       // initializeUIOnLoad.
       default:
-        structureContainer = await parse_any(payload, parserFileName);
+        structureContainer = await parse_any(payload, parserFileName, false, descriptor.id);
         // The parser filename may carry a format suffix, but the browser must
         // display the manifest/addon supplied name verbatim.
         if (structureContainer) structureContainer.fileName = fileName;
@@ -478,6 +490,9 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         if (!structureContainer?.frameCount || !structureContainer.hasAtoms()) {
           throw new Error('No atoms or structures were found in this file.');
         }
+        // A trajectory a reader could not plan before parsing is held against
+        // the memory limit now, before it is shown (io/trajectoryLoadPlan.js).
+        await planLoadedTrajectory(structureContainer);
         initializeUIOnLoad(structureContainer);
         // A CIF carries a declared space group. Offer to keep it (Wyckoff editor
         // in the file's own setting) once the structure is selected — skipped for
@@ -518,7 +533,6 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // through initializeUIOnLoad() -> selectLastAddedRow() -> updateStructureFromRowAndStep(),
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
-    console.warn(fileBrowser.selectedStructure)
     // A .crysviz that restored a camera pose owns it — don't overwrite. But a
     // session WITHOUT a saved camera (widget #load-file= payloads, share links
     // with no pose) must still be fit/centered, or the orbit target is left at
@@ -547,8 +561,17 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
       showLoadWarningModal({ fileName, message: warnings[0] });
     }
 
+    // The start-up example as loaded (with its saved preferences): the reload
+    // guard (ui/LeaveGuard.js) holds a reload once it differs from this.
+    if (isDefault) structureContainer.bootSignature = exampleSignature(structureContainer);
+
     return { ok: true, container: structureContainer, name: fileName, format: format || undefined };
   } catch (error) {
+    // Cancelled at the memory-limit prompt: a user decision, not a failure.
+    if (error instanceof LoadCancelledError) {
+      setStatus('Load cancelled.');
+      return { ok: false, cancelled: true, name: fileName, format: format || undefined };
+    }
     // Single choke point for every load path and every format: surface a
     // visible warning instead of failing silently. The status line is kept as
     // a secondary, non-blocking trace.
@@ -572,10 +595,22 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
 
 async function loadDefaultStructure() {
   setStatus('Loading default structure...');
+  // No nextPaint() here: the example structure is quick, and waiting a frame
+  // let the render loop draw (and compile shaders for) the still-empty scene
+  // first — 0.5 s more start-up in the browser tests.
+  setLoadStep('Loading the example structure…', { fraction: 0.7 });
   await loadStructure(defaultPOSCAR4, 'oP28-C3N4', true);
 }
 
-export async function initializeCore(browserHostController) {
+/**
+ * @param {any} browserHostController
+ * @param {{ structureFirst?: boolean }} [options] structureFirst (a first
+ *   start-up in this browser, host/early.js): when the start-up only shows
+ *   the example structure, draw it before the windows are downloaded and
+ *   built (initFullAppChrome); a share link or a #load-… file still gets the
+ *   windows first, as its loading may use them.
+ */
+export async function initializeCore(browserHostController, { structureFirst = false } = {}) {
   browserHostController.configure({
     loadStructure,
     selectStructure,
@@ -590,19 +625,31 @@ export async function initializeCore(browserHostController) {
   await initApp();
   setupMobileMenu();
   await initUIPanels();
+  /** @type {Promise<void>|null} */
+  let chrome = null;
+  // The windows: once, before a share link or file loads, or after the
+  // example structure is drawn.
+  const windowsReady = (afterStructure = false) => (chrome ||= (async () => {
+    setLoadStep('Preparing the windows…', { fraction: afterStructure ? 0.85 : 0.75, compact: afterStructure });
+    await initFullAppChrome();
+  })());
+  if (!structureFirst) await windowsReady();
   return {
     loadShared: async () => {
+      await windowsReady();
       const result = await loadSharedStructure();
       if (result) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
       return result;
     },
     loadHash: async () => {
+      await windowsReady();
       const result = await loadFromFilePath();
       if (result === true) browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
       return result;
     },
     loadDefault: async () => {
       await loadDefaultStructure();
+      if (structureFirst) await windowsReady(true);
       browserHostController.emitLoaded(getContainerForStructure(getActiveStructure()));
     },
   };
@@ -715,12 +762,24 @@ async function initializeMathBackend() {
   window.addEventListener('error', e => setStatus(`Error: ${e.message}`));
   window.addEventListener('unhandledrejection', e => setStatus(`Promise error: ${e.reason}`));
 
-// Panel toggle functionality for all screen sizes
+// The scene's look before the first structure (font scale, background,
+// theme), and the full-app windows (initFullAppChrome) — separate so a plain
+// start-up can draw its example structure in between (initializeCore).
 async function initUIPanels() {
   initFontScale();
   createBackgroundControl();
   await setupThemeSystem();
 
+  // Add viewport meta tag if not present for proper mobile scaling
+  if (!document.querySelector('meta[name="viewport"]')) {
+    const viewport = document.createElement('meta');
+    viewport.name = 'viewport';
+    viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
+    document.head.appendChild(viewport);
+  }
+}
+
+async function initFullAppChrome() {
   // Full-app chrome — the panel system and every panel, plus the
   // backend/save/export/debug panels, phonopy loading, keyboard shortcuts and
   // the projection overlay. It is a lot of code the embed never shows, so it
@@ -732,13 +791,5 @@ async function initUIPanels() {
     const fullApp = await import('./fullApp.js');
     fullAppHooks = fullApp.hooks;
     fullApp.initFullAppUI();
-  }
-
-  // Add viewport meta tag if not present for proper mobile scaling
-  if (!document.querySelector('meta[name="viewport"]')) {
-    const viewport = document.createElement('meta');
-    viewport.name = 'viewport';
-    viewport.content = 'width=device-width, initial-scale=1.0, user-scalable=no';
-    document.head.appendChild(viewport);
   }
 }
