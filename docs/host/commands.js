@@ -10,7 +10,8 @@ import {
   getContainerId,
   getContainers,
 } from '../state/structures.js';
-import { app } from '../state/store.js';
+import { app, general } from '../state/store.js';
+import { cancelJob, getJob, jobView, listJobs, runningJob, startJob, waitJob } from './jobs.js';
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
 import { clickControl, getControl, searchControls, setControl } from './controls.js';
@@ -355,6 +356,7 @@ export const COMMAND_HANDLERS = Object.freeze({
       structure: structure ? structureState(structure, includeAtoms) : null,
       camera: cameraState(),
       renderPipeline: typeof deps.getRenderPipeline === 'function' ? deps.getRenderPipeline() : null,
+      jobs: listJobs(),
     };
   },
 
@@ -454,6 +456,72 @@ export const COMMAND_HANDLERS = Object.freeze({
     // The same path as the Cell & Supercell window and the feature search's "222".
     await (await import('../ui/LatticeSupercellPanel.js')).applySupercell(n[0], n[1], n[2]);
     return { supercell: n, atomCount: getActiveStructure()?.atoms.length ?? 0 };
+  },
+
+  async run_md(args) {
+    const input = args ?? {};
+    requireOptionalArgs(args, 'run_md');
+    const steps = input.steps ?? 500;
+    if (!Number.isInteger(steps) || steps < 1 || steps > 100000) throw commandError('INVALID_ARGS', 'run_md.steps must be 1 to 100000');
+    const temperatureK = input.temperatureK ?? 300;
+    const saveStride = input.saveStride ?? 4;
+    if (!Number.isInteger(saveStride) || saveStride < 1) throw commandError('INVALID_ARGS', 'run_md.saveStride must be a positive integer');
+    const ensemble = input.ensemble ?? 'nvt';
+    if (ensemble !== 'nvt' && ensemble !== 'npt') throw commandError('INVALID_ARGS', 'run_md.ensemble must be nvt or npt');
+    for (const [name, value] of [['temperatureK', temperatureK], ['timestepFs', input.timestepFs], ['thermostatTauFs', input.thermostatTauFs]]) {
+      if (value !== undefined && !(isFiniteNumber(value) && value > 0)) throw commandError('INVALID_ARGS', `run_md.${name} must be a positive number`);
+    }
+    if (input.pressureGPa !== undefined && !isFiniteNumber(input.pressureGPa)) throw commandError('INVALID_ARGS', 'run_md.pressureGPa must be a number');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    const busy = runningJob('md');
+    if (busy) throw commandError('JOB_BUSY', `MD job ${busy.id} is still running; wait for it or cancel_job`);
+    const atomistic = await import('../ui/BackendPanel/AtomisticPanels.js');
+    const { recommendedTimestepFs } = await import('../atomistic/MD.js');
+    // Refused here, not inside the job, so a structure too big fails this call.
+    atomistic.assertStructureFitsPotential(general.atomisticPotential || 'nep');
+    const job = startJob('md', async (job) => {
+      job.progress = { text: 'getting the potential ready' };
+      const { runner, potential } = await atomistic.ensureActiveCalculator((text) => { job.progress = { text }; });
+      const result = await atomistic.runMD({
+        steps,
+        dtFs: input.timestepFs ?? recommendedTimestepFs(structure.elements),
+        startTemperatureK: temperatureK,
+        useAnneal: false,
+        useNpt: ensemble === 'npt',
+        targetPressureGPa: input.pressureGPa ?? 0,
+        thermostatTauFs: input.thermostatTauFs,
+        saveStride,
+      }, {
+        runner,
+        potential,
+        shouldStop: () => job.cancelled,
+        onProgress: ({ step, temperatureK: t, text }) => { job.progress = { step, steps, temperatureK: round(t), text }; },
+      });
+      return {
+        potential,
+        trajectory: { id: getContainerId(result.container), name: String(result.container.fileName), frames: result.frames },
+        finalStep: result.finalStep,
+        stopped: result.stopped,
+      };
+    });
+    return jobView(job);
+  },
+
+  job_status(args) {
+    return jobView(getJob(requireArgs(args, 'job_status').jobId));
+  },
+
+  wait_job(args) {
+    const input = requireArgs(args, 'wait_job');
+    const timeoutS = input.timeoutS ?? 20;
+    // The controller times a command out at 30 s; a wait must end before that.
+    if (!isFiniteNumber(timeoutS) || timeoutS < 0 || timeoutS > 25) throw commandError('INVALID_ARGS', 'wait_job.timeoutS must be 0 to 25');
+    return waitJob(input.jobId, timeoutS);
+  },
+
+  cancel_job(args) {
+    return cancelJob(requireArgs(args, 'cancel_job').jobId);
   },
 
   async load(args, { deps, emit }) {

@@ -95,3 +95,31 @@ test('get_voids finds the empty perovskite A site of ReO3-type WO3 with its 12 O
   assert.ok(Math.abs(site.radius - 3.75 / Math.SQRT2) < 1e-6);
   assert.deepEqual(site.neighbours, { O: 12 });
 });
+
+test('jobs: done, failed and cancelled runs; wait_job returns at the end or the timeout', async () => {
+  const { startJob, waitJob, cancelJob, runningJob, getJob } = await import('../../docs/host/jobs.js');
+  const done = startJob('t', async (job) => { job.progress = { step: 1 }; return { ok: 1 }; });
+  assert.equal(runningJob('t'), done);
+  const doneView = await waitJob(done.id, 1);
+  assert.equal(doneView.status, 'done');
+  assert.deepEqual(doneView.result, { ok: 1 });
+  assert.equal(runningJob('t'), null);
+
+  const failed = startJob('t', async () => { throw Object.assign(new Error('boom'), { code: 'X' }); });
+  const failedView = await waitJob(failed.id, 1);
+  assert.equal(failedView.status, 'failed');
+  assert.equal(failedView.error.code, 'X');
+
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const slow = startJob('t', async (job) => { await gate; return { stopped: job.cancelled }; });
+  const t0 = Date.now();
+  assert.equal((await waitJob(slow.id, 0.05)).status, 'running');
+  assert.ok(Date.now() - t0 < 1000);
+  cancelJob(slow.id);
+  release();
+  const cancelled = await waitJob(slow.id, 1);
+  assert.equal(cancelled.status, 'cancelled');
+  assert.deepEqual(cancelled.result, { stopped: true });
+  assert.throws(() => getJob('nope'), (e) => e.code === 'JOB_NOT_FOUND');
+});

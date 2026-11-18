@@ -15,7 +15,7 @@
     {
       "name": "get_state",
       "tier": "read",
-      "description": "Describe what the viewer shows now, including changes the user made by hand: the active structure (id, name, frame, atom count, formula, lattice vectors and a, b, c, alpha, beta, gamma, whether positions changed by update_fractional_positions are committed), the camera (direction from the view centre to the camera, the convention set_view takes; screen up; distance; zoom; orthographic or perspective) and the renderer. Atoms are listed only with atoms: true, at most 500.",
+      "description": "Describe what the viewer shows now, including changes the user made by hand: the active structure (id, name, frame, atom count, formula, lattice vectors and a, b, c, alpha, beta, gamma, whether positions changed by update_fractional_positions are committed), the camera (direction from the view centre to the camera, the convention set_view takes; screen up; distance; zoom; orthographic or perspective) and the renderer. Atoms are listed only with atoms: true, at most 500. Also lists the jobs (run_md) with their status.",
       "args": {
         "type": "object",
         "properties": {
@@ -138,6 +138,60 @@
           "n": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 20 }, "minItems": 3, "maxItems": 3 }
         },
         "required": ["n"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_md",
+      "tier": "write",
+      "description": "Start molecular dynamics on the active structure with the selected potential (default NEP89, 89 elements; PET-MAD if chosen in the Atomistic window), as the MD window's start does: velocity Verlet with a Bussi thermostat (NVT), or with a barostat (NPT). The frames go to a new trajectory row, which is selected when the run ends. Returns a job at once: follow it with wait_job (repeat until status is not running), job_status or cancel_job. One MD run at a time.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "steps": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "Default 500." },
+          "temperatureK": { "type": "number", "exclusiveMinimum": 0, "description": "Default 300." },
+          "timestepFs": { "type": "number", "exclusiveMinimum": 0, "description": "Default: recommended for the elements (shorter with H)." },
+          "saveStride": { "type": "integer", "minimum": 1, "description": "Save a trajectory frame every this many steps. Default 4." },
+          "ensemble": { "type": "string", "enum": ["nvt", "npt"], "description": "Default nvt (fixed cell)." },
+          "pressureGPa": { "type": "number", "description": "NPT target pressure. Default 0." },
+          "thermostatTauFs": { "type": "number", "exclusiveMinimum": 0, "description": "Thermostat coupling time. Default 20." }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "job_status",
+      "tier": "read",
+      "description": "A job's status (running, done, failed, cancelled), progress (step, steps, temperature) and, once it ends, its result or error.",
+      "args": {
+        "type": "object",
+        "properties": { "jobId": { "type": "string" } },
+        "required": ["jobId"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "wait_job",
+      "tier": "read",
+      "description": "Wait until a job ends or timeoutS seconds pass (at most 25), then return its status as job_status does. Call again while it is still running.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "jobId": { "type": "string" },
+          "timeoutS": { "type": "number", "minimum": 0, "maximum": 25, "description": "Default 20." }
+        },
+        "required": ["jobId"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel_job",
+      "tier": "write",
+      "description": "Stop a running job after its current step. An MD run keeps the frames it saved.",
+      "args": {
+        "type": "object",
+        "properties": { "jobId": { "type": "string" } },
+        "required": ["jobId"],
         "additionalProperties": false
       }
     },
