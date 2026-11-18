@@ -11,6 +11,7 @@ import { updateAtomLabels } from './AtomLabelModule.js'
 import { updateMeasurementLabelVisibility } from './MeasurementModule.js'
 import { renderScanlinePass, toggleScanlineMode } from './ScanlinePass.js'
 import { count as traceCount } from '../debug/debugTrace.js'
+import { syncAtomLod } from './AtomLodModule.js'
 import { updateCameraClipRange } from './CameraClipModule.js'
 
 
@@ -23,6 +24,9 @@ let isRendering = true;
 // event, scene changes by updateVisualization(), and synchronous UI-driven
 // changes by the document-level catch-all listeners wired below.
 let needsRender = true;
+
+// Scratch for the camera-relative key light (animation_update).
+const _keyLightOffset = new THREE.Vector3();
 
 export function requestRender() {
   needsRender = true;
@@ -82,6 +86,9 @@ export function renderFrameNow({ interactive = false } = {}) {
   updateCameraClipRange(app.camera);
   // The cell lines keep a minimum width on screen at every zoom level.
   syncLatticeLineWidth(app.camera, app.renderer);
+  // Imposter atoms: refresh the near-sphere set for this camera (throttled
+  // while the view moves — a deferred recompute asks for one more frame).
+  if (syncAtomLod(app.camera)) requestRender();
   app.pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera, interactive });
   renderScanlinePass(app.renderer);
   if (app.gizmoRenderer && app.gizmoScene && app.gizmoCamera) {
@@ -342,12 +349,10 @@ export function animation_update(time = 0) {
   // block guarded on could never match — it was dead, and it would have
   // fought the theme every frame the moment those types lined up again.
 
-  // Update camera-relative lighting position
-  const cameraPosition = app.camera.position.clone();
-
-  // Single key light from upper front-right relative to camera
-  app.keyLight.position.copy(cameraPosition).add(
-    new THREE.Vector3(3, 4, 3).applyQuaternion(app.camera.quaternion)
+  // Update camera-relative lighting position: single key light from upper
+  // front-right relative to the camera (scratch vector, no per-frame allocation).
+  app.keyLight.position.copy(app.camera.position).add(
+    _keyLightOffset.set(3, 4, 3).applyQuaternion(app.camera.quaternion)
   );
 
   // Keep the ground disc's visibility in sync with a possibly-direct

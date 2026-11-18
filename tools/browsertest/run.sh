@@ -49,7 +49,12 @@ done
 
 # devserver.py also sends Cache-Control: no-store — plain http.server sends
 # none, so Firefox can execute the PREVIOUS version of a just-edited module.
-python3 ../devserver.py "$PORT" --bind 127.0.0.1 --directory ../../docs >/dev/null 2>&1 &
+# CRYSVIZ_COI=1 serves with cross-origin isolation headers (SharedArrayBuffer,
+# the threaded PET-MAD wasm) — for the mlip benchmarks; the default suite runs
+# un-isolated like GitHub Pages.
+COI_FLAG=()
+if [ "${CRYSVIZ_COI:-0}" = "1" ]; then COI_FLAG=(--coi); fi
+python3 ../devserver.py "$PORT" --bind 127.0.0.1 --directory ../../docs ${COI_FLAG[@]+"${COI_FLAG[@]}"} >/dev/null 2>&1 &
 SERVER_PID=$!
 XVFB_PID=""
 if [ "$platform" != "Darwin" ]; then

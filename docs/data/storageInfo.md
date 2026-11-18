@@ -19,4 +19,8 @@ There are three planned options for which information is stored on **YOUR device
 **Important:** No data is leaving your device unless you connnect to the backend server hosted by the Theoretical Physics Division at Linköping University. If you do so we can at this point not guarantee that filenames or information about your structure are not saved on our server in log files. However, these log files are only used for performance analysis and error tracking, and will be periodically deleted. 
 
 
+**Trajectory memory** (Memory): how much memory a loaded trajectory's frames may take. A larger
+trajectory asks what to load: every n-th frame, the first frames that fit, or everything (this once,
+or raising this limit to fit). **Allocated GPU memory** (Graphics) applies to the PNG export only.
+
 Contact *Florian Trybel (florian.trybel@liu.se)* if you need any more information. 

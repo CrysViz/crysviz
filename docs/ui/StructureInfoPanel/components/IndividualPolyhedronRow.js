@@ -2,7 +2,7 @@ import { fileBrowser } from '../../../state/store.js';
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { updatePolyhedraColors, resolvePolyhedronStyle } from '../../../render/index.js';
-import { getElementAtomIndices, clampOpacity, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
+import { elementAtomNumber, clampOpacity, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { selectPolyhedronFromRow } from '../../SelectAndHighlightModule.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 
@@ -67,7 +67,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   metaDisplay.className = 'poly-meta';
   const copySuffix = linked && linked.length > 1 ? ` · ×${linked.length}` : '';
   if (poly.type === 'centered' && Number.isInteger(poly.centerIndex)) {
-    const n = getElementAtomIndices(poly.centerElement).indexOf(poly.centerIndex) + 1;
+    const n = elementAtomNumber(poly.centerElement, poly.centerIndex);
     metaDisplay.textContent = `center ${poly.centerElement}${n}${copySuffix}`;
   } else {
     metaDisplay.textContent = `cage · CN ${poly.numVertices}${copySuffix}`;

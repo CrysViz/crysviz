@@ -70,6 +70,7 @@ export {
   setFocusRegionCenterFractional,
   resetFocusRegionCenter, applyFocusToArrows, applyFocusToField,
 } from './FocusRegionModule.js';
+export { atomLodStats, imposterModeFor, ATOM_DETAIL_MODES } from './AtomLodModule.js';
 
 export { updateGroundPlane } from './GroundPlaneModule.js';
 

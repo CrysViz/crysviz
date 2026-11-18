@@ -14,7 +14,7 @@
  *                                                  call their `progress` callback)
  */
 
-import init, { compute_candidates } from '../compiled/periodic_wasm.js';
+import init, { compute_candidates, compute_bond_pairs } from '../compiled/periodic_wasm.js';
 
 // Idempotent; `import.meta.url` resolves the .wasm relative to this module (works in a
 // module worker). Resolving `ready` is what the warm-up task awaits.
@@ -29,6 +29,21 @@ const ready = init({ module_or_path: new URL('../compiled/periodic_wasm_bg.wasm'
 const handlers = {
   // Forces wasm instantiation in the background (the onmessage `await ready` does it).
   warmup: () => ({ result: { ok: true }, transfer: [] }),
+
+  // Bond pair search (cell list) over a wrapped atom set — the same call as
+  // compiled/bondsWasm.js computeBondPairsWasm, off the main thread. Used by
+  // trajectory playback to refresh its candidate bond list in the background
+  // (render/PlaybackBondsModule.js).
+  bondPairs: (payload) => {
+    const { cartFlat, elemIdx, cutoffSqFlat, minCutoffSqFlat, nElem, minDistSq, maxCutoff } = payload;
+    const r = compute_bond_pairs(
+      cartFlat, elemIdx, cutoffSqFlat, minCutoffSqFlat, nElem, minDistSq, maxCutoff,
+      0, elemIdx.length,
+    );
+    const result = { i: r.i(), j: r.j() };
+    r.free();
+    return { result, transfer: [result.i.buffer, result.j.buffer] };
+  },
 
   // Polyhedra candidate generation for a centre/seed partition.
   polyhedraCandidates: (payload) => {

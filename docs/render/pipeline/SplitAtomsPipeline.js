@@ -24,7 +24,7 @@
 
 import * as THREE from '../../external/three/three.module.js';
 import { groups } from '../../state/store.js';
-import { createAtomsMaterial, applyWedgeUniforms } from '../AtomsFracUpdateModule.js';
+import { atomsMaterialFactoryFor, applyWedgeUniforms } from '../AtomsFracUpdateModule.js';
 import { setAlphaPass } from '../MaterialStyles.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
 
@@ -63,24 +63,35 @@ export class SplitAtomsPipeline extends ForwardPipeline {
   /** Lazily create the transparent-pass overlay for an instanced mesh.
    *  `makeMaterial` builds a shader-compatible material (atoms by default;
    *  WboitPipeline reuses this for bonds with createBondsMaterial). */
-  _ensureOverlay(mesh, makeMaterial = createAtomsMaterial) {
+  _ensureOverlay(mesh, makeMaterial = atomsMaterialFactoryFor(mesh)) {
     let overlay = mesh.userData.transparentOverlay;
     if (overlay) return overlay;
-    const material = makeMaterial();
-    material.transparent = true;
-    material.depthWrite = false;
-    material.userData.alphaPass = 2;
-    // The overlay is a freshly compiled material, not a clone — it never
+    // One overlay material per SOURCE material, kept across mesh rebuilds:
+    // the source materials are themselves persistent (MaterialStyles), and a
+    // fresh overlay material per rebuilt mesh would recompile its shader on
+    // every trajectory frame. Marked persistent so the mesh teardown paths
+    // leave it to this pipeline's dispose().
+    this._overlayMaterials ??= new WeakMap();
+    let material = this._overlayMaterials.get(mesh.material);
+    if (!material) {
+      material = makeMaterial();
+      material.transparent = true;
+      material.depthWrite = false;
+      material.userData.alphaPass = 2;
+      // Persistent only alongside a persistent source (the main atoms/bonds
+      // material); an overlay STRUCTURE's mesh keeps its per-rebuild lifecycle.
+      material.userData.persistent = !!mesh.material.userData?.persistent;
+      this._patchOverlayMaterial(material);
+      this._overlayMaterials.set(mesh.material, material);
+    }
+    // The overlay is a separately compiled material, not a clone — it never
     // inherits the source mesh's wedge texture on its own (unlike cut planes,
     // which every material re-reads via applyAtomCutPlaneUniforms). Seed it
-    // here so a disordered site still shows its species split once it renders
-    // through the transparent-instance pass instead of falling back to the
-    // flat blended instance colour.
-    if (mesh.material.userData.wedge) {
-      material.userData.wedge = mesh.material.userData.wedge;
-      applyWedgeUniforms(material);
-    }
-    this._patchOverlayMaterial(material);
+    // on every (re)attach so a disordered site still shows its species split
+    // through the transparent-instance pass, and a reused overlay material
+    // never points at a previous build's disposed texture.
+    material.userData.wedge = mesh.material.userData.wedge ?? null;
+    applyWedgeUniforms(material);
     overlay = this._createOverlayMesh(mesh, material);
     overlay.raycast = () => {}; // never intercept picking
     overlay.name = 'transparentInstancesOverlay';
@@ -124,8 +135,9 @@ export class SplitAtomsPipeline extends ForwardPipeline {
       if (!overlay) continue;
       overlay.parent?.remove(overlay);
       if (overlay.geometry !== mesh.geometry) overlay.geometry.dispose();
-      overlay.material.dispose();
+      overlay.material.dispose(); // pipeline-owned: disposed here, not by mesh teardown
       delete mesh.userData.transparentOverlay;
     }
+    this._overlayMaterials = new WeakMap();
   }
 }

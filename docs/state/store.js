@@ -144,6 +144,12 @@ export const groups = {
 // the "Reset rendering" button (ui/ColorPanel.js resetRenderingSettings).
 export const RENDERING_DEFAULTS = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
+  // Atom level of detail (render/AtomLodModule.js): 'spheres' = tessellated
+  // instanced spheres; 'imposters' = one ray-cast quad per atom (pixel-exact
+  // at every zoom, a fraction of the vertex work), with atoms that are large
+  // on screen drawn as real spheres by a small near mesh; 'auto' = imposters
+  // from atomDetailImposterMin instances up.
+  atomDetail: 'auto', // 'auto' | 'spheres' | 'imposters'
   renderPipeline: 'depthpeel', // active rendering pipeline id; depthpeel self-optimizes to a plain forward pass when the scene has no transparency (DepthPeelPass fast path)
   showAllRenderPipelines: false, // HIDDEN (config-only, no GUI): list superseded/debug pipelines in the rendering dropdown
   depthPeelLayers: 15, // peel passes for the 'depthpeel' pipeline (1-50; more = deeper transparency, slower)
@@ -398,6 +404,13 @@ export const general = {
   // size per bar. null uses the widget's own default.
   colorBarSize: null,
   atomSize:1.0,
+  // Atom LOD tuning (render/AtomLodModule.js; no GUI): instance count from
+  // which 'auto' switches to imposters; projected radius (CSS px) from which an
+  // imposter-mode atom in view is drawn as a real sphere; and the most such
+  // near spheres kept (past it everything stays an imposter).
+  atomDetailImposterMin: 20000,
+  atomDetailNearPx: 28,
+  atomDetailNearMax: 4096,
   mainOpacity:1.0,
   showAtoms:true,
   showBonds:true,
@@ -523,6 +536,29 @@ export const general = {
   // thread during MD. Set false to force the in-thread path (the worker also
   // holds its own copy of the 14.9 MB model, so it costs memory).
   mdWorker:true,
+  // With an off-thread potential, draw/save step i while the worker computes
+  // step i+1 (atomistic/MD.js runMDSimulation). false = strictly sequential.
+  mdPipelineViewer:true,
+  // Run PET-MAD (mlip.cpp) in workers/mlipWorker.js instead of on the main
+  // thread (everywhere it is used: relax, MD, EFS, EOS, phonons). Set false to
+  // force the in-thread runner.
+  mlipWorker:true,
+  // CPU threads for the PET-MAD wasm when the threaded build can run (the page
+  // is cross-origin isolated — see the PET-MAD "multi-threaded" control):
+  // 'auto' = logical cores capped at 8, a number, or false for one thread.
+  mlipThreads:'auto',
+  // PET-MAD CPU matrix products: the blocked GEMM kernel (true) or ggml's
+  // dot-product path (false) — an A/B switch for the Debug window's benchmark
+  // (external/mlip_wasm/README.md "Matrix kernel").
+  mlipBlockedGemm:true,
+  // PET-MAD WebGPU result readback: 'auto' (through a canvas snapshot where
+  // that is exact, else mapAsync) or 'map' (always mapAsync) — the other A/B
+  // switch of the benchmark (external/mlip_wasm/README.md "Canvas readback").
+  mlipGpuReadback:'auto',
+  // PET-MAD WebGPU f32 matrix products: 'tile4' (vec4 accumulators) or
+  // upstream's 'reg_tile' kernel — an A/B switch for the benchmark
+  // (external/mlip_wasm/README.md "f32 matrix kernel").
+  mlipGpuMatmul:'tile4',
   // Default (true): the Features window's toggles are one shared set of
   // values across every loaded structure. Off: each file-browser row
   // remembers its own toggle values (not per trajectory step within a row)

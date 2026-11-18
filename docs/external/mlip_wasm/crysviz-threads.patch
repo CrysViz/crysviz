@@ -1,0 +1,169 @@
+diff --git a/src/api/wasm/mlipcpp_wasm.cpp b/src/api/wasm/mlipcpp_wasm.cpp
+index dd0f2ef..c5cdde5 100644
+--- a/src/api/wasm/mlipcpp_wasm.cpp
++++ b/src/api/wasm/mlipcpp_wasm.cpp
+@@ -11,6 +11,14 @@
+ #include <cmath>
+ #include <memory>
+ #include <fstream>
++// Defined in src/core/backend.cpp (not part of the public headers).
++namespace mlipcpp {
++int wasm_cpu_threads();
++void set_wasm_cpu_threads(int n);
++}
++#ifdef __EMSCRIPTEN_PTHREADS__
++#include <emscripten/threading.h>
++#endif
+ 
+ using namespace emscripten;
+ 
+@@ -234,6 +242,7 @@ public:
+ 
+         mlipcpp::PredictOptions options;
+         options.compute_forces = true;
++        options.compute_stress = system.isPeriodic();
+         options.use_nc_forces = useNCForces;
+ 
+         auto result = predictor_->predict(
+@@ -358,6 +367,48 @@ void setBackend(const std::string& name) {
+ }
+ 
+ // Emscripten bindings
++// --- CPU thread control -----------------------------------------------------
++// The CPU backend runs the ggml graph on this many threads. Only the pthreads
++// build can use more than one (SharedArrayBuffer, cross-origin isolated page);
++// the single-threaded build reports 1 and ignores the setter. Takes effect
++// from the next prediction, also for a model that is already loaded.
++static int getNumThreads() {
++    return mlipcpp::wasm_cpu_threads();
++}
++// The link pre-starts min(logical cores, 16) workers (PTHREAD_POOL_SIZE in
++// rebuild.sh): a thread beyond the pool would need its worker started while
++// the graph compute blocks this thread waiting for it, which never happens in
++// a browser (deadlock; Chrome reports 14 cores on an M-series Pro).
++static const int kMaxWasmThreads = 16;
++static int getMaxThreads() {
++#ifdef __EMSCRIPTEN_PTHREADS__
++    int n = emscripten_num_logical_cores();
++    if (n > kMaxWasmThreads) n = kMaxWasmThreads;
++    return n > 0 ? n : 1;
++#else
++    return 1;
++#endif
++}
++static int setNumThreads(int n) {
++#ifdef __EMSCRIPTEN_PTHREADS__
++    int maxn = getMaxThreads();
++    if (n < 1) n = 1;
++    if (n > maxn) n = maxn;
++    mlipcpp::set_wasm_cpu_threads(n);
++    return n;
++#else
++    (void)n;
++    return 1;
++#endif
++}
++static bool hasThreads() {
++#ifdef __EMSCRIPTEN_PTHREADS__
++    return true;
++#else
++    return false;
++#endif
++}
++
+ EMSCRIPTEN_BINDINGS(mlipcpp) {
+     // AtomicSystem wrapper
+     class_<AtomicSystemWrapper>("AtomicSystem")
+@@ -388,4 +439,8 @@ EMSCRIPTEN_BINDINGS(mlipcpp) {
+     function("getVersion", &getVersion);
+     function("getBackendName", &getBackendName);
+     function("setBackend", &setBackend);
++    function("getNumThreads", &getNumThreads);
++    function("getMaxThreads", &getMaxThreads);
++    function("setNumThreads", &setNumThreads);
++    function("hasThreads", &hasThreads);
+ }
+diff --git a/src/core/backend.cpp b/src/core/backend.cpp
+index d1239a5..e53eb7f 100644
+--- a/src/core/backend.cpp
++++ b/src/core/backend.cpp
+@@ -1,4 +1,7 @@
+ #include "backend.h"
++#if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
++#include <emscripten/threading.h>
++#endif
+ #include "log.h"
+ #include <algorithm>
+ #include <array>
+@@ -11,6 +14,38 @@
+ 
+ namespace mlipcpp {
+ 
++namespace {
++int g_wasm_cpu_threads = -1; // -1: not set yet, resolve lazily
++// The CPU backend most recently created under Emscripten, so a later
++// set_wasm_cpu_threads() reaches a model that is already loaded (ggml reads
++// the count at every graph compute, so it can change between predictions).
++ggml_backend_t g_wasm_last_cpu_backend = nullptr;
++}
++
++int wasm_cpu_threads() {
++#if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
++  if (g_wasm_cpu_threads < 1) {
++    int n = emscripten_num_logical_cores();
++    if (n < 1) n = 1;
++    if (n > 8) n = 8;
++    g_wasm_cpu_threads = n;
++  }
++  return g_wasm_cpu_threads;
++#else
++  return 1;
++#endif
++}
++
++void set_wasm_cpu_threads(int n) {
++  g_wasm_cpu_threads = n < 1 ? 1 : n;
++#if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
++  if (g_wasm_last_cpu_backend) {
++    ggml_backend_cpu_set_n_threads(g_wasm_last_cpu_backend, g_wasm_cpu_threads);
++  }
++#endif
++}
++
++
+ bool is_backend_available(BackendPreference pref) {
+   if (pref == BackendPreference::Auto || pref == BackendPreference::CPU) {
+     return true;
+@@ -166,9 +201,13 @@ BackendProvider::create(BackendPreference pref) {
+     }
+   };
+ 
+-  // For WASM/Emscripten, set threads to 1 (no pthread support)
++  // WASM: a single-threaded build has no pthreads, so one thread. The
++  // pthreads build uses the count set through set_wasm_cpu_threads() (default:
++  // the logical core count, capped), which the JS side can adjust before a
++  // model is loaded.
+ #ifdef __EMSCRIPTEN__
+-  ggml_backend_cpu_set_n_threads(provider->cpu_, 1);
++  ggml_backend_cpu_set_n_threads(provider->cpu_, wasm_cpu_threads());
++  g_wasm_last_cpu_backend = provider->cpu_;
+ #endif
+ 
+   // CPU-only mode
+diff --git a/src/core/backend.h b/src/core/backend.h
+index 99fa5cb..4b9e69e 100644
+--- a/src/core/backend.h
++++ b/src/core/backend.h
+@@ -8,6 +8,12 @@
+ 
+ namespace mlipcpp {
+ 
++/// Thread count the CPU backend is created with under Emscripten (1 without
++/// pthreads). Settable from the JS bindings before a model is loaded.
++int wasm_cpu_threads();
++void set_wasm_cpu_threads(int n);
++
++
+ // Thrown when a specific backend is requested but the corresponding ggml
+ // backend is either not compiled in or has no available devices on this
+ // host. C/C++/Python APIs translate this into MLIPCPP_ERROR_BACKEND /

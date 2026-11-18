@@ -15,7 +15,7 @@ import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import { recenterCamera, captureCameraSnapshot, applyCameraSnapshot, fitCameraToCurrentStructure } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
 import { count as traceCount } from '../debug/debugTrace.js';
-import { generateID } from '../utils/index.js';
+import { generateID, releaseIDs } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
 import { captureContainerSizes, applyContainerSizes } from './SizePrefs.js';
 import { captureSelectionSnapshot, restoreSelectionSnapshot } from './SelectAndHighlightModule.js';
@@ -574,9 +574,14 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     e.stopPropagation();
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     structureShip.len = structureShip.len - 1;
-    structureShip.container.splice(rowIndex, 1);
+    const [removed] = structureShip.container.splice(rowIndex, 1);
+    releaseContainerIDs(removed);
     row.remove();
     selectLastAddedRow();
+    // Rebuild the open panels for the new selection, as a row click does: the
+    // Trajectory panel's transport handlers close over the shown container, so
+    // left alone they kept driving (and kept alive) the deleted trajectory.
+    refreshActivePanels();
     // The removed row may have been checked — re-derive combine/comparison state.
     updateCombineButtonState();
     syncOverlayFromCheckboxes();
@@ -584,6 +589,21 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   rowObjects.set(row, obj);
   return row;
+}
+
+/** Give a deleted row's registered atom and bond ids back to the global
+ *  usedIDs registry, which otherwise keeps every id ever minted. A store-backed
+ *  trajectory's frames are mostly unmaterialized holes; its live frame's atoms
+ *  carry unregistered ids (a no-op here) but its bonds are registered. */
+function releaseContainerIDs(container) {
+  if (!container) return;
+  const structures = [...(container.structures || [])];
+  if (container._live) structures.push(container._live);
+  for (const s of structures) {
+    if (!s) continue;
+    releaseIDs(s.atoms);
+    releaseIDs(s.bonds);
+  }
 }
 
 /** Select a specific row element (its current position in the table decides

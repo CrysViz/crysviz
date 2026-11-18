@@ -1,0 +1,119 @@
+--- a/src/runtime/graph_model.cpp
++++ b/src/runtime/graph_model.cpp
+@@ -8,6 +8,7 @@
+ #include <ggml.h>
+ 
+ #include <algorithm>
++#include <chrono>
+ #include <cmath>
+ #include <cstring>
+ #include <sstream>
+@@ -517,9 +518,29 @@
+                            : nullptr);
+ }
+ 
++// Where the last prediction spent its time (diagnostics, read by the wasm
++// bindings' getLastTimings): [0] neighbour list and inputs, [1] graph build,
++// [2] allocation and constants, [3] graph compute, [4] reading and assembling
++// the results, [5] total. The WebGPU backend's own counters (encode / wait /
++// reads) are reset here too when it is linked in.
++extern "C" {
++double mlipcpp_graph_timing_ms[6] = {0, 0, 0, 0, 0, 0};
++__attribute__((weak)) extern double ggml_webgpu_timing_ms[4];
++}
++
++static double graph_timing_now_ms() {
++  return std::chrono::duration<double, std::milli>(
++             std::chrono::steady_clock::now().time_since_epoch())
++      .count();
++}
++
+ ModelResult GraphModel::predict_single(
+     const AtomicSystem &system, bool compute_forces,
+     const std::function<void()> &post_compute_hook) {
++  const double t_start = graph_timing_now_ms();
++  if (&ggml_webgpu_timing_ms[0] != nullptr) {
++    for (int i = 0; i < 4; i++) ggml_webgpu_timing_ms[i] = 0;
++  }
+   if (compute_forces && !forces_mode_) {
+     throw std::runtime_error(
+         "GraphModel: forces requested but model was exported with "
+@@ -827,6 +848,7 @@
+   }
+ 
+   // --- Build and compute ---
++  const double t_inputs = graph_timing_now_ms();
+   ggml_context *compute_ctx = ggml_init({COMPUTE_CTX_SIZE, nullptr, true});
+   if (!compute_ctx) {
+     ggml_backend_buffer_free(input_buffer);
+@@ -882,6 +904,7 @@
+   // (out of the 4 GB wasm address space at a few hundred atoms) and a new,
+   // zero-filled device buffer on every prediction on GPU backends. A capture
+   // hook reads arbitrary intermediates, so it keeps the old allocation.
++  const double t_graph = graph_timing_now_ms();
+   ggml_backend_buffer_t compute_buffer = nullptr;
+   if (post_compute_hook) {
+     compute_buffer = ggml_backend_alloc_ctx_tensors(compute_ctx, compute_backend_);
+@@ -909,7 +932,9 @@
+     ggml_graph_reset(cgraph);
+   }
+ 
++  const double t_alloc = graph_timing_now_ms();
+   ggml_status status = ggml_backend_graph_compute(compute_backend_, cgraph);
++  const double t_compute = graph_timing_now_ms();
+   if (status != GGML_STATUS_SUCCESS) {
+     if (compute_buffer) ggml_backend_buffer_free(compute_buffer);
+     ggml_free(compute_ctx);
+@@ -1127,6 +1152,13 @@
+   ggml_backend_buffer_free(input_buffer);
+   ggml_free(input_ctx);
+ 
++  const double t_end = graph_timing_now_ms();
++  mlipcpp_graph_timing_ms[0] = t_inputs - t_start;
++  mlipcpp_graph_timing_ms[1] = t_graph - t_inputs;
++  mlipcpp_graph_timing_ms[2] = t_alloc - t_graph;
++  mlipcpp_graph_timing_ms[3] = t_compute - t_alloc;
++  mlipcpp_graph_timing_ms[4] = t_end - t_compute;
++  mlipcpp_graph_timing_ms[5] = t_end - t_start;
+   return result;
+ }
+ 
+--- a/src/api/wasm/mlipcpp_wasm.cpp
++++ b/src/api/wasm/mlipcpp_wasm.cpp
+@@ -421,6 +421,30 @@
+     return getBlockedGemm();
+ }
+ 
++// --- Timings (CrysViz) ------------------------------------------------------
++// Where the last GraphModel prediction spent its time, in ms; the gpu* fields
++// only in the WebGPU build. For finding fixed per-step costs in a browser.
++extern "C" {
++extern double mlipcpp_graph_timing_ms[6];
++__attribute__((weak)) extern double ggml_webgpu_timing_ms[4];
++}
++static val getLastTimings() {
++    val t = val::object();
++    t.set("inputsMs", mlipcpp_graph_timing_ms[0]);
++    t.set("graphMs", mlipcpp_graph_timing_ms[1]);
++    t.set("allocMs", mlipcpp_graph_timing_ms[2]);
++    t.set("computeMs", mlipcpp_graph_timing_ms[3]);
++    t.set("resultsMs", mlipcpp_graph_timing_ms[4]);
++    t.set("totalMs", mlipcpp_graph_timing_ms[5]);
++    if (&ggml_webgpu_timing_ms[0] != nullptr) {
++        t.set("gpuEncodeMs", ggml_webgpu_timing_ms[0]);
++        t.set("gpuWaitMs", ggml_webgpu_timing_ms[1]);
++        t.set("gpuReadMs", ggml_webgpu_timing_ms[2]);
++        t.set("gpuReads", ggml_webgpu_timing_ms[3]);
++    }
++    return t;
++}
++
+ EMSCRIPTEN_BINDINGS(mlipcpp) {
+     // AtomicSystem wrapper
+     class_<AtomicSystemWrapper>("AtomicSystem")
+@@ -458,4 +482,5 @@
+     function("hasBlockedGemm", &hasBlockedGemm);
+     function("getBlockedGemm", &getBlockedGemm);
+     function("setBlockedGemm", &setBlockedGemm);
++    function("getLastTimings", &getLastTimings);
+ }

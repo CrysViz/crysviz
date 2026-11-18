@@ -111,27 +111,153 @@ export function materializeFrame(store, ph) {
  * @param {FramePhysics} ph
  */
 export function applyFramePhysics(live, ph) {
-  const n = live.atoms.length;
+  applyPerAtomPhysics(live.atoms, live.spins, live.forces, ph);
+  applyFrameScalars(live, ph);
+}
+
+/** The per-atom part of applyFramePhysics: O(N) fresh arrays. */
+function applyPerAtomPhysics(atoms, spins, forces, ph) {
+  const n = atoms.length;
   for (let i = 0; i < n; i++) {
-    live.atoms[i].position = [
+    atoms[i].position = [
       ph.positions[i * 3], ph.positions[i * 3 + 1], ph.positions[i * 3 + 2],
     ];
   }
-  if (ph.spinRaw && live.spins.length === n) {
+  if (ph.spinRaw && spins.length === n) {
     for (let i = 0; i < n; i++) {
-      const s = live.spins[i];
+      const s = spins[i];
       s.vector = [ph.spinVectors[i * 3], ph.spinVectors[i * 3 + 1], ph.spinVectors[i * 3 + 2]];
       s.rawVector = [ph.spinRaw[i * 3], ph.spinRaw[i * 3 + 1], ph.spinRaw[i * 3 + 2]];
     }
   }
-  if (ph.forces && live.forces.length === n) {
+  if (ph.forces && forces.length === n) {
     for (let i = 0; i < n; i++) {
-      live.forces[i].vector = [ph.forces[i * 3], ph.forces[i * 3 + 1], ph.forces[i * 3 + 2]];
+      forces[i].vector = [ph.forces[i * 3], ph.forces[i * 3 + 1], ph.forces[i * 3 + 2]];
     }
   }
+}
+
+/** The per-structure part of applyFramePhysics: O(1). */
+function applyFrameScalars(live, ph) {
   live.lattice = ph.lattice.map(row => [...row]);
   live.energy = ph.energy;
   live.stress = ph.stress ? new Stress({ tensor: ph.stress.map(row => [...row]) }) : null;
+}
+
+// ── Deferred per-atom physics (columnar playback) ────────────────────────────
+//
+// Writing a frame's positions into the live Structure is O(N) fresh arrays
+// (they cannot be written in place, see above): ~20 ms per frame at 20k atoms,
+// most of a playback frame once the meshes are moved straight from the frame's
+// position column (render/FastFrameModule.js). So the switch is deferred: the
+// cell, energy and stress are written at once, the per-atom part only when
+// something reads `atoms`, `spins` or `forces` — those become accessors on the
+// live Structure that apply the pending frame first. Every reader therefore
+// sees the shown frame, exactly as before; a playback frame that nobody reads
+// per atom simply never builds them. The same Atom/Spin/Force objects are kept
+// (identity unchanged), only their arrays are replaced, as before.
+
+const PENDING = Symbol('pendingFramePhysics');
+/** Deferred frames applied so far (tests / Debug: stays flat during fast playback). */
+let flushCount = 0;
+export function deferredFlushCount() { return flushCount; }
+const BACKING = Symbol('framePhysicsBacking');
+const DEFERRED_FIELDS = /** @type {const} */ (['atoms', 'spins', 'forces']);
+
+/** Turn atoms/spins/forces of `live` into flushing accessors (once). */
+function installDeferredAccessors(live) {
+  if (live[BACKING]) return;
+  /** @type {Record<string, any[]>} */
+  const backing = { atoms: live.atoms, spins: live.spins, forces: live.forces };
+  live[BACKING] = backing;
+  for (const name of DEFERRED_FIELDS) {
+    Object.defineProperty(live, name, {
+      configurable: true,
+      enumerable: true,
+      get() {
+        if (this[PENDING]) flushFramePhysics(this);
+        return backing[name];
+      },
+      set(value) {
+        if (this[PENDING]) flushFramePhysics(this);
+        backing[name] = value;
+      },
+    });
+  }
+}
+
+/**
+ * applyFramePhysics, with the per-atom part deferred until first read.
+ * @param {Structure} live @param {FramePhysics} ph
+ */
+export function deferFramePhysics(live, ph) {
+  installDeferredAccessors(live);
+  /** @type {any} */ (live)[PENDING] = ph;
+  applyFrameScalars(live, ph);
+}
+
+/**
+ * Apply a pending deferred frame now (no-op when none is pending).
+ * @param {Structure} live
+ */
+export function flushFramePhysics(live) {
+  const l = /** @type {any} */ (live);
+  const ph = l?.[PENDING];
+  if (!ph) return;
+  l[PENDING] = null;
+  flushCount += 1;
+  const b = l[BACKING];
+  applyPerAtomPhysics(b.atoms, b.spins, b.forces, ph);
+}
+
+/**
+ * The fractional position column (Float64Array, 3 per atom) of a frame whose
+ * per-atom physics is still pending on `structure`, else null — for readers
+ * that need positions only and must not materialise them (the playback fast
+ * path).
+ * @param {any} structure
+ * @returns {Float64Array | null}
+ */
+export function pendingFramePositions(structure) {
+  return structure?.[PENDING]?.positions ?? null;
+}
+
+/**
+ * The force column (Float64Array, 3 per atom; null when the frame has no
+ * forces) of a frame whose per-atom physics is still pending on `structure`;
+ * undefined when none is pending. For the playback fast path's force colours.
+ * @param {any} structure
+ * @returns {Float64Array | null | undefined}
+ */
+export function pendingFrameForces(structure) {
+  const ph = structure?.[PENDING];
+  return ph ? (ph.forces ?? null) : undefined;
+}
+
+/**
+ * The forces array WITHOUT applying a pending frame (its length and objects;
+ * the vectors may be the previous frame's).
+ * @param {any} structure
+ * @returns {any[]}
+ */
+export function peekForces(structure) {
+  return structure?.[BACKING]?.forces ?? structure?.forces;
+}
+
+/** Is a deferred frame pending on `structure`? */
+export function hasPendingFramePhysics(structure) {
+  return !!structure?.[PENDING];
+}
+
+/**
+ * The atoms array WITHOUT applying a pending frame: for reads of
+ * non-positional per-atom state (hidden, opacity, element), which a frame
+ * switch never changes. Their positions may be the previous frame's.
+ * @param {any} structure
+ * @returns {any[]}
+ */
+export function peekAtoms(structure) {
+  return structure?.[BACKING]?.atoms ?? structure?.atoms;
 }
 
 const nearlyEqual = (a, b) => a === b || Math.abs(a - b) < 1e-12;
@@ -272,7 +398,14 @@ export function extractFrameStyles(frame, ph) {
  * @param {FrameStyleRecord | null} rec
  */
 export function applyFrameStyles(frame, rec) {
-  frame.atoms.forEach((a, i) => {
+  // Styles are not positions: reset them on the atoms without applying a
+  // frame whose per-atom physics is still pending (deferFramePhysics) —
+  // force-coloured playback resets every frame — unless the record carries
+  // position edits, which must land after the frame's positions.
+  const positional = !!rec?.atoms && [...rec.atoms.values()].some((d) => d?.position);
+  const backing = positional ? null : /** @type {any} */ (frame)[BACKING];
+  const atoms = backing?.atoms ?? frame.atoms;
+  atoms.forEach((a, i) => {
     const d = /** @type {any} */ (rec?.atoms?.get(i));
     a.userColor = d?.userColor ?? null;
     a.hidden = d?.hidden ?? false;
@@ -298,8 +431,8 @@ export function applyFrameStyles(frame, rec) {
       x.hidden = d?.hidden ?? false;
     });
   };
-  applyArrows(frame.spins, rec?.spins ?? null);
-  applyArrows(frame.forces, rec?.forces ?? null);
+  applyArrows(backing?.spins ?? frame.spins, rec?.spins ?? null);
+  applyArrows(backing?.forces ?? frame.forces, rec?.forces ?? null);
 
   for (const k of STYLE_DICTS) {
     frame[k] = rec?.dicts?.[k] ?? {};

@@ -31,6 +31,7 @@ import { buildZip } from '../utils/zipWriter.js';
 import { openPanel } from './panels/PanelManager.js';
 import { setModeMapClickHandler, setModeMapCardHidden } from './PhononPlotsPanel.js';
 import { ensureCalculatorRunner } from './BackendPanel/AtomisticPanels.js';
+import { mountPotentialNotice } from '../atomistic/potentialNotice.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
 import { initializeUIOnLoad } from './StructureInputModule.js';
 import { downloadBlob } from './SavePanel.js';
@@ -986,9 +987,10 @@ export function addPhononPanel(target = 'cvPanelBody-phonon') {
     <details class="control-group ph-needs-data ph-collapsible-group" open hidden>
       <summary class="eos-collapsible-summary ph-group-summary"><span class="eos-collapsible-arrow">▶</span>Mode map (frozen phonon)</summary>
       <p class="ph-help">Freeze the selected mode into its own supercell at amplitudes Q, compute each
-        structure with the active potential (NEP / PET-MAD, chosen in the Atomistic window), fit U(Q) and
+        structure with the active potential (chosen in the Atomistic window), fit U(Q) and
         locate the minima. Q is the normal-mode coordinate with Σ m u² = Q², so a harmonic mode gives
         U = ½ω²Q².</p>
+      <div id="phPotentialNotice"></div>
       <div class="ph-row">
         <label>Supercell</label>
         <input type="number" id="phScanDim1" min="1" max="12" step="1" value="1" class="ph-dim">
@@ -1101,6 +1103,8 @@ export function addPhononPanel(target = 'cvPanelBody-phonon') {
     q(container, sel)?.addEventListener('change', () => updateScanUI(container));
   }
   q(container, '#phScanBtn')?.addEventListener('click', () => runScan(container));
+  const noticeHost = q(container, '#phPotentialNotice');
+  if (noticeHost) mountPotentialNotice(/** @type {HTMLElement} */ (noticeHost));
   q(container, '#phScanStopBtn')?.addEventListener('click', () => { scanStopRequested = true; setScanStatus(container, 'Stopping…'); });
   q(container, '#phExportBtn')?.addEventListener('click', () => exportStructures(container));
   q(container, '#phLoadMinBtn')?.addEventListener('click', () => loadMinimumStructure(container));

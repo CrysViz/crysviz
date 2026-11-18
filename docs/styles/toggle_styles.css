@@ -10,6 +10,19 @@
   align-items: center;
 }
 
+/* Rebuild-heavy display toggles while a large trajectory plays
+   (ui/HeavyRebuild.js setPlaybackLock; the row's title says "pause first"). */
+.toggle_row.is-playback-locked {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A long display rebuild is running (ui/HeavyRebuild.js runHeavyRebuild). */
+body.cv-busy,
+body.cv-busy * {
+  cursor: progress !important;
+}
+
 /* toggle + text */
 .toggle_container {
    margin: var(--sp-5) 0px 0px 0px;

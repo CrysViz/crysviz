@@ -46,9 +46,10 @@ function setForcedControlsUI(forced) {
   for (const [id, stateKey] of [['showPolyhedra', 'showPolyhedra'], ['completePolyhedraToggle', 'completePolyhedra']]) {
     const input = document.getElementById(id);
     if (!input) continue;
-    input.disabled = forced;
-    input.checked = general[stateKey];
     const row = input.closest('.toggle_row');
+    // ui/HeavyRebuild.js may hold the row locked for large playback too.
+    input.disabled = forced || !!row?.classList.contains('is-playback-locked');
+    input.checked = general[stateKey];
     if (row) {
       row.classList.toggle('is-forced-disabled', forced);
       row.title = forced ? REQUIRED_MSG : '';

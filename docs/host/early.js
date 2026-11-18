@@ -1,5 +1,6 @@
 import { bootstrapAuthoritative, createBrowserHost } from './BrowserHost.js';
 import { startSessionReceiver } from '../io/SessionReceiver.js';
+import { ensureIsolation } from './coi.js';
 
 // This module is loaded before the application module. It captures the
 // launch capability in module-private state and removes it before any later
@@ -48,6 +49,10 @@ const hostController = createBrowserHost();
 hostController.install();
 
 async function start() {
+  // Opt-in cross-origin isolation (multi-threaded PET-MAD): when the user has
+  // asked for it and the page is not isolated yet, this registers the header
+  // service worker and reloads — nothing else should boot in that case.
+  if (await ensureIsolation()) return;
   try {
     await bootstrapAuthoritative({
       host: hostController,

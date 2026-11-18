@@ -11,6 +11,7 @@ import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import { createMaterialEditor } from './StructureInfoPanel/components/MaterialEditor.js';
 import { createIndividualBondRow } from './StructureInfoPanel/components/IndividualBondRow.js';
+import { fillRows, rememberedPage } from './StructureInfoPanel/components/PagedRows.js';
 import { createTinyToggle } from './StructureInfoPanel/components/Immunity.js';
 import {
   clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup, createMiniToggleSwitch,
@@ -243,6 +244,36 @@ function refreshBondHeaders(panelRoot) {
   panelRoot.querySelectorAll('.bond-control').forEach((control) => {
     /** @type {any} */ (control)._refreshBondHeader?.();
   });
+}
+
+// Bonds grouped by element pair, computed once per bonds array (a pair's
+// members only change when the bonds are rebuilt, which replaces the array).
+// Every pair header used to filter ALL bonds on each refresh — pairs x bonds
+// per recolor, most of a second at 10^5 bonds. Weak, so a replaced bonds
+// array is not kept alive (and walked by the collector) through the rebuild.
+/** @type {WeakMap<any[], {length: number, map: Map<string, any[]>}>} */
+const pairGroups = new WeakMap();
+const pairOfBond = (b) => (b.elements[0] < b.elements[1]
+  ? `${b.elements[0]}-${b.elements[1]}` : `${b.elements[1]}-${b.elements[0]}`);
+function bondsOfPair(bonds, pair) {
+  if (!Array.isArray(bonds)) return [];
+  let groups = pairGroups.get(bonds);
+  if (!groups || groups.length !== bonds.length) {
+    const map = new Map();
+    // Bonds of one element pair share their elements array (bond builder):
+    // one key string per array, not per bond.
+    const keyOf = new Map();
+    for (const b of bonds) {
+      let key = keyOf.get(b.elements);
+      if (key === undefined) { key = pairOfBond(b); keyOf.set(b.elements, key); }
+      let list = map.get(key);
+      if (!list) { list = []; map.set(key, list); }
+      list.push(b);
+    }
+    groups = { length: bonds.length, map };
+    pairGroups.set(bonds, groups);
+  }
+  return groups.map.get(pair) ?? [];
 }
 
 // A global recolor (Bonds color-map dropdown, mode switch, color-bar limits,
@@ -480,9 +511,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     // --- Live header: pie dot (opens the category editor) + count(pct%) ---
     const structure = () => fileBrowser.selectedStructure;
-    const pairOf = (b) => (b.elements[0] < b.elements[1]
-      ? `${b.elements[0]}-${b.elements[1]}` : `${b.elements[1]}-${b.elements[0]}`);
-    const memberBonds = () => (structure()?.bonds ?? []).filter((b) => pairOf(b) === pair);
+    const memberBonds = () => bondsOfPair(structure()?.bonds, pair);
     const catStyle = () => (structure().bondCategoryStyles ??= {})[pair] ??= {};
 
     /** @type {HTMLElement} */
@@ -666,7 +695,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     }
     function resetPairOnFrame(frame) {
       delete frame.bondCategoryStyles?.[pair];
-      (frame.bonds ?? []).filter((b) => pairOf(b) === pair)
+      (frame.bonds ?? []).filter((b) => pairOfBond(b) === pair)
         .forEach((b) => delete frame.bondUserStyles?.[bondKey(b.indices)]);
     }
     wirePressHoldPopup(catResetBtn, {
@@ -753,9 +782,13 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // every bonds rebuild, so cached rows are refreshed whenever
     // general.bondsBuildCounter has moved on. Exposed on the container so code
     // that expands programmatically (highlight/scroll to a bond) can ensure
-    // the rows exist first.
+    // the rows exist first. A long list shows one page of rows
+    // (components/PagedRows.js); _showBondRow brings up a bond's page.
     let builtForBuildId = -1;
-    function populateBondRows() {
+    let bondRows = null;
+    let bondEntries = [];
+    // isFocus: a test for the entry whose page to open on.
+    function populateBondRows(isFocus = null) {
       if (builtForBuildId === general.bondsBuildCounter) return;
       builtForBuildId = general.bondsBuildCounter;
       bondsContainer.innerHTML = '';
@@ -765,12 +798,13 @@ export function createBondLengthControls(targetPanel='bondControls') {
       // copies grouped by bondGroupKey, edits/selection fan out to all copies.
       const linking = general.linkPeriodicCopies !== false;
       const groupsMap = linking ? new Map() : null; // groupKey -> member indices (insertion order)
+      const entries = []; // [bondIndex] unlinked, [representative, members, groupKey] linked
       bonds.forEach((bond, bondIndex) => {
         const [e1, e2] = bond.elements;
         const bondPair = e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`;
         if (bondPair !== pair) return;
         if (!linking) {
-          bondsContainer.appendChild(createIndividualBondRow(bond, bondIndex));
+          entries.push([bondIndex]);
           return;
         }
         const gk = bondGroupKey(structure, bond);
@@ -779,18 +813,34 @@ export function createBondLengthControls(targetPanel='bondControls') {
         members.push(bondIndex);
       });
       if (linking) {
-        for (const [gk, members] of groupsMap) {
-          bondsContainer.appendChild(createIndividualBondRow(
-            bonds[members[0]], members[0], { linkedBondIndexes: members, groupKey: gk }));
-        }
+        for (const [gk, members] of groupsMap) entries.push([members[0], members, gk]);
       }
-      if (!bondsContainer.children.length) {
+      bondEntries = entries;
+      bondRows = fillRows(bondsContainer, entries.length, (k) => {
+        const [bondIndex, members, gk] = entries[k];
+        return members
+          ? createIndividualBondRow(bonds[bondIndex], bondIndex, { linkedBondIndexes: members, groupKey: gk })
+          : createIndividualBondRow(bonds[bondIndex], bondIndex);
+      }, {
+        noun: 'bonds',
+        ...rememberedPage(structure, `bonds:${pair}`),
+        focus: isFocus ? entries.findIndex(isFocus) : -1,
+      });
+      if (!entries.length) {
         const empty = document.createElement('div');
         empty.className = 'bond-empty-note';
         empty.textContent = 'No bonds in the current length range';
         bondsContainer.appendChild(empty);
       }
     }
+    /** @type {any} */ (bondsContainer)._showBondRow = (key, groupKey = null) => {
+      const bonds = fileBrowser.selectedStructure?.bonds ?? [];
+      const isFocus = ([bondIndex, , gk]) => (groupKey
+        ? gk === groupKey
+        : bonds[bondIndex] && bondKey(bonds[bondIndex].indices) === key);
+      if (builtForBuildId !== general.bondsBuildCounter) populateBondRows(isFocus);
+      else bondRows.showItem(bondEntries.findIndex(isFocus));
+    };
     /** @type {any} */ (bondsContainer)._populateBondRows = populateBondRows;
 
     function toggleBondList(e) {

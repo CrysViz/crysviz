@@ -12,6 +12,7 @@ import { runEOSScan } from '../eos/eosCompute.js';
 import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsPanel.js';
 import { openPanel, closePanel } from './panels/PanelManager.js';
 import { ensureActiveCalculator, snapshotCurrentStructure } from './BackendPanel/AtomisticPanels.js';
+import { mountPotentialNotice, potentialLabel } from '../atomistic/potentialNotice.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
 import { TrajectoryContainer } from '../model/index.js';
 import { fileBrowser, structureShip, general } from '../state/store.js';
@@ -274,7 +275,7 @@ function wireComputedPointClicks() {
  * separately from the Compute button so tests can drive it with a synthetic
  * scan (no wasm).
  */
-export async function ingestComputedScan(scan, { potential = general.atomisticPotential || 'nep' } = {}) {
+export async function ingestComputedScan(scan, { potential = general.atomisticPotential || 'nep', label = potentialLabel(potential) } = {}) {
   const container = document.getElementById('cvPanelBody-eos');
   if (!container) throw new Error('EOS panel is not built — expand it first.');
   if (!scan || !Array.isArray(scan.volumes) || scan.volumes.length < 3) {
@@ -299,7 +300,7 @@ export async function ingestComputedScan(scan, { potential = general.atomisticPo
 
   const info = container.querySelector('.eos-column-info');
   if (info) {
-    info.textContent = `Computed from potential (${potential}): ${scan.volumes.length} points`
+    info.textContent = `Computed with ${label}: ${scan.volumes.length} points`
       + (state.computedStructures ? ' — click a plot point to view its structure.' : '');
   }
 
@@ -338,6 +339,8 @@ async function runComputeFromPotential(container) {
     const base = snapshotCurrentStructure();
     setComputeStatus(container, 'Preparing calculator…');
     const { runner, potential } = await ensureActiveCalculator((text) => setComputeStatus(container, text));
+    // The model as it is now: the label is read again for the result line.
+    const label = potentialLabel(potential);
     const scan = await runEOSScan(runner, base, {
       nPoints, pMinGPa, pMaxGPa, fmaxTol, maxSteps,
       onProgress: (text) => setComputeStatus(container, text),
@@ -347,7 +350,7 @@ async function runComputeFromPotential(container) {
       setComputeStatus(container, `Stopped — only ${scan.volumes.length} point(s) computed, need 3 to fit.`);
       return;
     }
-    await ingestComputedScan(scan, { potential });
+    await ingestComputedScan(scan, { potential, label });
     const unconverged = scan.converged.filter((c) => !c).length;
     const convergedNote = unconverged ? ` (${unconverged} did not converge)` : '';
     setComputeStatus(container, scan.stopped
@@ -613,6 +616,17 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
   container.querySelector('#eosResetFitBtn').addEventListener('click', () => resetFit(container));
 
   container.querySelector('#eosComputeBtn').addEventListener('click', () => runComputeFromPotential(container));
+  // Which potential the scan runs with, its caveat, and the NEP warning for
+  // the scan's top pressure.
+  const computeBody = container.querySelector('#eosComputePoints')?.closest('.eos-collapsible-body');
+  if (computeBody) {
+    const pMax = /** @type {HTMLInputElement} */ (container.querySelector('#eosComputePMax'));
+    const notice = mountPotentialNotice(computeBody, {
+      before: computeBody.firstElementChild,
+      pressures: () => [{ label: 'P max', gpa: parseFloat(pMax.value) }],
+    });
+    pMax.addEventListener('input', () => notice.update());
+  }
   container.querySelector('#eosComputeStopBtn').addEventListener('click', () => {
     computeStopRequested = true;
     setComputeStatus(container, 'Stopping…');

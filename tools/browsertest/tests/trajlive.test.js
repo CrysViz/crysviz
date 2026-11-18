@@ -28,16 +28,30 @@ const H = require('../harness');
     const host = document.getElementById('trajPlotHost');
     const plotShown = host ? getComputedStyle(host).display !== 'none' : false;
 
+    // A burst of steps, as from an MD run at 50+ steps per second: the plot
+    // takes them in batches, and once the run ends every step is on it, in order.
+    for (let step = 2; step <= 51; step++) {
+      tp.feedLiveStep({ step, temperatureK: 300 + step, targetTemperatureK: 300, etotEv: -10, epotEv: -10.5, ekinEv: 0.5 });
+    }
     tp.endLiveFeed();
     const availableAfter = panel.def.available();
+    let plottedSteps = null;
+    for (let i = 0; i < 100 && !plottedSteps; i++) {
+      const chart = document.querySelector('#trajPlotHost .js-plotly-plot');
+      const trace = chart?.data?.find((t) => t.x && t.x.length >= 51);
+      if (trace) plottedSteps = Array.from(trace.x);
+      else await new Promise((r) => setTimeout(r, 50));
+    }
 
-    return { availableBefore, availableDuringLive, openDuringLive, plotShown, availableAfter };
+    return { availableBefore, availableDuringLive, openDuringLive, plotShown, availableAfter, plottedSteps };
   });
 
   H.check('single structure: panel unavailable before a run', res.availableBefore === false, JSON.stringify(res));
   H.check('live run makes the panel available and opens it', res.availableDuringLive && res.openDuringLive, JSON.stringify(res));
   H.check('live plot is shown during the run', res.plotShown, JSON.stringify(res));
   H.check('panel reverts to unavailable after the run (single structure)', res.availableAfter === false, JSON.stringify(res));
+  H.check('every step of a fast run reaches the plot, in order',
+    JSON.stringify(res.plottedSteps) === JSON.stringify(Array.from({ length: 51 }, (_, i) => i + 1)), JSON.stringify(res.plottedSteps));
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

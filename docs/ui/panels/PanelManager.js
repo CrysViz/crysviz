@@ -94,8 +94,10 @@ const panelPrefDefaults = {
   dragByHandleOnly: window.matchMedia('(pointer: coarse)').matches,
   smallDragHandles: false, // collapsed-bar handles: original thin always-visible strip
   exportGpuMemoryGiB: 1, // PNG export render-surface GPU memory budget (GiB)
+  trajectoryMemoryGiB: 2, // memory a loaded trajectory's frames may take (GiB, ui/TrajectoryMemoryLimit.js)
   hideRaytraceWarning: false, // "Don't show again" on the tracer performance modal
   hideLeaveWarning: false, // Settings ▸ "Disable reload warning" (ui/LeaveGuard.js)
+  collapsePotentialCaveat: false, // the potentials' accuracy warning folded to its ⚠ (atomistic/potentialNotice.js)
   releaseNoteSeen: '', // id of the newest release note dismissed for good (ui/ReleaseNote.js)
   legendTransparent: false, // Composition Display: no window chrome, swatches+text only
   // The on-canvas background picker: a 54px drag-and-resize affordance that
@@ -116,6 +118,20 @@ const panelPrefDefaults = {
   // fixed-cell MD doesn't need it; a relaxation/optimization that translates
   // the structure does.
   trajRecenterEachStep: false,
+  // PET-MAD controls ▸ "threads": 'auto' or a CPU thread count as a string
+  // (ui/BackendPanel/AtomisticPanels.js bindThreadsSelect).
+  mlipThreads: 'auto',
+  // PET-MAD controls ▸ model: the selected model (a built-in file name or a
+  // catalogue/link URL), the catalogues the user added (with a snapshot of
+  // each, so the list works offline) and single models added by link
+  // (ui/BackendPanel/PetModelList.js).
+  mlipModel: '',
+  petCatalogues: [],
+  petLinks: [],
+  // ASE controls ▸ server: the address last connected to, and the model picked
+  // when the server offers several (AtomisticPanels.js).
+  aseServerUrl: '',
+  aseModel: '',
   // Lattice Plots ▸ card heights the user dragged, px by plot id
   // (ui/LatticePlotsPanel.js); empty = every card flex-shares the stack.
   latticePlotHeights: {},

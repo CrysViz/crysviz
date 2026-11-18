@@ -92,6 +92,7 @@ import {renderComposition} from '../ui/StructureInfoPanel/General.js';
 // New imports (which go here, because they need initializations that happen above until things are refactored)
 import { parse_any } from '../io/index.js';
 import { FileSource, detectFormat, materialize, HEAD_BYTES } from '../io/index.js';
+import { planLoadedTrajectory, LoadCancelledError } from '../io/trajectoryLoadPlan.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { fieldBrowser } from '../ui/FieldPanel.js';
 import { resetMathBackend } from '../math/index.js';
@@ -174,6 +175,11 @@ export function updateVisualization(options = {}) {
     // playback) move atoms within a FIXED image set and refresh their own
     // arrows.
     reRenderPeriodic = false,
+    // The crysviz:colors-changed broadcast at the end (composition pie dots,
+    // Polyhedron Inspector re-render). On by default as a safety net; the
+    // trajectory player's light per-frame path passes false — a positions-only
+    // frame switch changes no colours, and every settle frame broadcasts.
+    notifyColors = true,
 
     mOpacity = general.mainOpacity,
     reRenderField = false
@@ -313,7 +319,7 @@ export function updateVisualization(options = {}) {
   // needs to stay in sync with live colour edits (e.g. the Polyhedron
   // Inspector's mini render) can listen for this instead of tracking down
   // every individual call site.
-  notifyColorsChanged();
+  if (notifyColors) notifyColorsChanged();
   if (reRenderField) {
     if (fileBrowser.selectedStructure.volumetricFields && fieldBrowser.selectedField) {
       updateField();
@@ -464,7 +470,7 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
       // returns a StructureContainer; registration happens once via
       // initializeUIOnLoad.
       default:
-        structureContainer = await parse_any(payload, parserFileName);
+        structureContainer = await parse_any(payload, parserFileName, false, descriptor.id);
         // The parser filename may carry a format suffix, but the browser must
         // display the manifest/addon supplied name verbatim.
         if (structureContainer) structureContainer.fileName = fileName;
@@ -479,6 +485,9 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         if (!structureContainer?.frameCount || !structureContainer.hasAtoms()) {
           throw new Error('No atoms or structures were found in this file.');
         }
+        // A trajectory a reader could not plan before parsing is held against
+        // the memory limit now, before it is shown (io/trajectoryLoadPlan.js).
+        await planLoadedTrajectory(structureContainer);
         initializeUIOnLoad(structureContainer);
         // A CIF carries a declared space group. Offer to keep it (Wyckoff editor
         // in the file's own setting) once the structure is selected — skipped for
@@ -519,7 +528,6 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
     // through initializeUIOnLoad() -> selectLastAddedRow() -> updateStructureFromRowAndStep(),
     // which already performs a full atoms+bonds+field+other re-render. Re-rendering here
     // doubled the (expensive, O(n^2)) bond build on every load.
-    console.warn(fileBrowser.selectedStructure)
     // A .crysviz that restored a camera pose owns it — don't overwrite. But a
     // session WITHOUT a saved camera (widget #load-file= payloads, share links
     // with no pose) must still be fit/centered, or the orbit target is left at
@@ -550,6 +558,11 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
 
     return { ok: true, container: structureContainer, name: fileName, format: format || undefined };
   } catch (error) {
+    // Cancelled at the memory-limit prompt: a user decision, not a failure.
+    if (error instanceof LoadCancelledError) {
+      setStatus('Load cancelled.');
+      return { ok: false, cancelled: true, name: fileName, format: format || undefined };
+    }
     // Single choke point for every load path and every format: surface a
     // visible warning instead of failing silently. The status line is kept as
     // a secondary, non-blocking trace.

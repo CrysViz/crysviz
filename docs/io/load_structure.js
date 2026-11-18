@@ -21,15 +21,18 @@ import { detectFormat, headOf, looksLike } from './formats.js';
  * The idea is that parse_any will eventually take over all parsing
  * of any kind of structure data and return back a StructureContainer
  */
-export async function parse_any(content, fileName = '', isDefault = false) {
+export async function parse_any(content, fileName = '', isDefault = false, knownFormat = '') {
 
   // Which format this is, is decided in one place (io/formats.js): by the
   // file's contents first and by its name only as the tiebreak/fallback. The
   // CIF sniffers that used to be special-cased here now live on the registry
   // alongside a sniffer for every other format, so a QE run saved as
   // `relax.out`, an aims.out called `Si.scf.out`, or a CIF called `download`
-  // all reach the right reader.
-  const formatId = detectFormat({ fileName, head: headOf(content) }).id;
+  // all reach the right reader. A caller that already sniffed the file passes
+  // `knownFormat`: a random-access format (a large .xyz) arrives here as a
+  // FileSource, which `headOf` cannot read, so without it the name alone
+  // would decide (and `run.extxyz` would be read as a POSCAR).
+  const formatId = knownFormat || detectFormat({ fileName, head: headOf(content) }).id;
 
   switch (formatId) {
     case 'traj':

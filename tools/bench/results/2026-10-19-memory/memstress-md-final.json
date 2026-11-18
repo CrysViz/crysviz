@@ -1,0 +1,217 @@
+{
+ "meta": {
+  "date": "2026-10-19T13:52:39.044Z",
+  "isolated": true,
+  "gpu": false
+ },
+ "md": {
+  "steps": [
+   {
+    "label": "before MD (1625 atoms, NEP runner loaded)",
+    "heapMB": 18.1,
+    "uaMB": 147.7,
+    "uaWorkersMB": 5.8,
+    "pssMB": 551.3,
+    "rendererMB": 0,
+    "gpuProcMB": 0,
+    "geometries": 14,
+    "textures": 2,
+    "programs": 3,
+    "atomsMeshCount": 2055,
+    "imposter": false,
+    "bondsCount": 17020,
+    "dom": 2780
+   },
+   {
+    "label": "after MD",
+    "heapMB": 36.9,
+    "uaMB": 303.1,
+    "uaWorkersMB": 135.1,
+    "pssMB": 764.7,
+    "rendererMB": 0,
+    "gpuProcMB": 0,
+    "geometries": 14,
+    "textures": 2,
+    "programs": 3,
+    "atomsMeshCount": 1734,
+    "imposter": false,
+    "bondsCount": 16074,
+    "dom": 2847
+   },
+   {
+    "label": "after deleting the MD row",
+    "heapMB": 19.2,
+    "uaMB": 280.1,
+    "uaWorkersMB": 135.1,
+    "pssMB": 737.6,
+    "rendererMB": 0,
+    "gpuProcMB": 0,
+    "geometries": 0,
+    "textures": 1,
+    "programs": 3,
+    "atomsMeshCount": 2055,
+    "imposter": false,
+    "bondsCount": 17020,
+    "dom": 2797
+   }
+  ],
+  "samples": [
+   {
+    "t": 5.675,
+    "step": 2,
+    "heapMB": 115.7,
+    "pssMB": 749.7
+   },
+   {
+    "t": 10.731,
+    "step": 19,
+    "heapMB": 131.2,
+    "pssMB": 771.9
+   },
+   {
+    "t": 15.826,
+    "step": 36,
+    "heapMB": 150.5,
+    "pssMB": 807.5
+   },
+   {
+    "t": 20.868,
+    "step": 54,
+    "heapMB": 166.5,
+    "pssMB": 838
+   },
+   {
+    "t": 25.921,
+    "step": 73,
+    "heapMB": 188.8,
+    "pssMB": 859.1
+   },
+   {
+    "t": 30.978,
+    "step": 90,
+    "heapMB": 199.9,
+    "pssMB": 872.5
+   },
+   {
+    "t": 36.042,
+    "step": 107,
+    "heapMB": 122.1,
+    "pssMB": 871.8
+   },
+   {
+    "t": 41.086,
+    "step": 126,
+    "heapMB": 141.8,
+    "pssMB": 876.3
+   },
+   {
+    "t": 46.133,
+    "step": 144,
+    "heapMB": 127,
+    "pssMB": 876
+   },
+   {
+    "t": 51.182,
+    "step": 163,
+    "heapMB": 142.5,
+    "pssMB": 874.3
+   },
+   {
+    "t": 56.288,
+    "step": 180,
+    "heapMB": 154.6,
+    "pssMB": 876.7
+   },
+   {
+    "t": 61.325,
+    "step": 197,
+    "heapMB": 158.2,
+    "pssMB": 878
+   },
+   {
+    "t": 66.389,
+    "step": 217,
+    "heapMB": 185.7,
+    "pssMB": 882.8
+   },
+   {
+    "t": 71.457,
+    "step": 234,
+    "heapMB": 193,
+    "pssMB": 886.7
+   },
+   {
+    "t": 76.524,
+    "step": 250,
+    "heapMB": 202.5,
+    "pssMB": 901.4
+   },
+   {
+    "t": 81.594,
+    "step": 266,
+    "heapMB": 231.6,
+    "pssMB": 918.9
+   },
+   {
+    "t": 86.654,
+    "step": 281,
+    "heapMB": 143.6,
+    "pssMB": 905.5
+   },
+   {
+    "t": 91.723,
+    "step": 296,
+    "heapMB": 128.7,
+    "pssMB": 904.9
+   },
+   {
+    "t": 96.768,
+    "step": 312,
+    "heapMB": 129.4,
+    "pssMB": 906.3
+   },
+   {
+    "t": 101.821,
+    "step": 329,
+    "heapMB": 165.7,
+    "pssMB": 916.5
+   },
+   {
+    "t": 106.937,
+    "step": 347,
+    "heapMB": 146.3,
+    "pssMB": 913.4
+   },
+   {
+    "t": 112.005,
+    "step": 360,
+    "heapMB": 160.7,
+    "pssMB": 919.1
+   },
+   {
+    "t": 117.058,
+    "step": 377,
+    "heapMB": 169.4,
+    "pssMB": 920.7
+   },
+   {
+    "t": 122.104,
+    "step": 392,
+    "heapMB": 173.5,
+    "pssMB": 924.1
+   },
+   {
+    "t": 127.144,
+    "step": null,
+    "heapMB": 190.2,
+    "pssMB": 937.9
+   }
+  ],
+  "trajectory": {
+   "frames": 101,
+   "accountedMB": 45.1,
+   "name": "md_nep_YBCO"
+  },
+  "errors": []
+ }
+}

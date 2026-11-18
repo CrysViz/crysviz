@@ -1,5 +1,5 @@
 import { general } from '../../state/store.js';
-import { removeAtomisticPanel, addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
+import { addRelaxPanel, addMDPanel } from './AtomisticPanels.js';
 import { refreshBackendTheme } from './BackendTheme.js';
 import { removeMDStreamPanel } from './MDStreamPanel.js';
 
@@ -78,20 +78,14 @@ export function addBackendModeSwitch() {
     if (!btn || !btn.dataset.mode) return;
 
     const mode = btn.dataset.mode;
-    const alreadyActive = btn.classList.contains(mode);
+    // Relax and MD are tabs: clicking the one already selected keeps it (and
+    // its panel, with whatever was typed into it) rather than closing it.
+    if (btn.classList.contains(mode)) return;
 
     // Reset UI
     BackendModeSwitch.querySelectorAll("button").forEach(b => {
       b.classList.remove("active", "relax", "md");
     });
-
-    if (alreadyActive) {
-      general.backendState = "none";
-      refreshBackendTheme();
-      removeAtomisticPanel();
-      removeMDStreamPanel();
-      return;
-    }
 
     if (mode === "relax") {
             btn.classList.add("relax");

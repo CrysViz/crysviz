@@ -61,6 +61,53 @@ async function confirmReload() {
   }
 }
 
+/**
+ * Ask before a reload the app itself needs (switching multi-threaded PET-MAD
+ * on or off: host/coi.js). Unlike a stray Cmd+R this is asked even with only
+ * the start-up demo loaded: a reload also stops calculations still running
+ * and drops results nobody downloaded. It is asked even with Settings ▸
+ * Warnings ▸ "Disable reload warning" on: that switch silences the guard
+ * against reloads by accident, and this one is a click whose reload is easy
+ * to miss. Cancel is the focused default and what Escape means. Answering
+ * "Reload" lets the reload through without the browser's own "Leave site?"
+ * prompt on top; a caller whose reload then does not happen calls
+ * reloadAbandoned().
+ * @param {string} action what reloads, e.g. "Turning multi-threading on"
+ * @returns {Promise<boolean>} true to go ahead with the reload
+ */
+export async function confirmAppReload(action) {
+  const n = (structureShip.container || []).filter((c) => c && !c.isBootDefault).length;
+  const lost = [];
+  if (n > 0) {
+    lost.push(`${n === 1 ? 'the loaded structure' : `all ${n} loaded structures`} `
+      + '(to keep them, download them first: Files ▸ Download ▸ CrysViz keeps everything in one file)');
+  }
+  lost.push('relaxations, MD runs, scans and benchmarks still running');
+  lost.push('results not downloaded: plots, benchmark tables, the loaded potential model');
+  dialogOpen = true;
+  const choice = await choiceDialog(
+    `${action} reloads CrysViz. Everything held only in this page is lost:`,
+    {
+      title: 'Reload CrysViz?',
+      detail: lost.map((line) => `• ${line}`).join('\n'),
+      choices: [
+        { value: 'cancel', label: 'Cancel', id: 'appReloadCancel' },
+        { value: 'reload', label: 'Reload', id: 'appReloadOk' },
+      ],
+      cancelValue: 'cancel',
+    },
+  );
+  dialogOpen = false;
+  if (choice !== 'reload') return false;
+  leaving = true;
+  return true;
+}
+
+/** The reload confirmAppReload() let through did not happen: guard again. */
+export function reloadAbandoned() {
+  leaving = false;
+}
+
 /** Wire the guard. Full app only (fullApp.js). */
 export function initLeaveGuard() {
   // Capture phase on window: ahead of every other key handler.

@@ -296,6 +296,21 @@ body.cv-small-drag-handles .cv-panel.cv-bar-collapsed:not(.cv-compact) > .cv-pan
   white-space: nowrap;
 }
 
+/* A run in progress next to the title (PanelWindow.setStatus): "MD 37%",
+   "Relax step 12". Stays visible while the window is collapsed. */
+.cv-panel-status {
+  flex: 0 0 auto;
+  margin: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--highlight-color);
+  white-space: nowrap;
+}
+
+.cv-panel-status[hidden] {
+  display: none;
+}
+
 .cv-panel-menu-btn,
 .cv-panel-close {
   font-size: var(--fs-lg);

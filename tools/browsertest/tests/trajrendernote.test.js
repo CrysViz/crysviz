@@ -1,12 +1,12 @@
 // Frame-dependent colour maps and the trajectory player's render path.
 //
-// Atoms-by-force and bonds-by-length colours change every frame, but the render
-// fast path (applyFrameFast) moves instances without recolouring them. So:
+// Atoms-by-force and bonds-by-length colours change every frame. The render
+// fast path (applyFrameFast) recolours the instances it moves for them
+// (render/FrameColorsModule.js), so:
 //   - isFrameDependentColorMode() names exactly those modes (one predicate);
-//   - applyFrameFast bails on them, and the player's Auto mode falls back to a
-//     full rebuild per frame — playback therefore stays correctly coloured;
-//   - the player shows a small "full render each frame (slower)" note while
-//     such a mode is active, kept in sync with the Colors dropdowns.
+//   - applyFrameFast applies them instead of bailing, and the player's Auto
+//     mode keeps the fast path — playback stays correctly coloured;
+//   - the former "full render each frame (slower)" note is gone.
 'use strict';
 const H = require('../harness');
 
@@ -46,6 +46,7 @@ const TRAJ = [
     const container = structureShip.container[fileBrowser.selectedRowIndex];
     const note = document.getElementById('trajRenderNote');
     const noteShown = () => !!note && !note.hidden && getComputedStyle(note).display !== 'none';
+    const trace = await import('./debug/debugTrace.js');
     const select = (id, value) => {
       const el = document.getElementById(id);
       el.value = value;
@@ -64,18 +65,19 @@ const TRAJ = [
     await wait(150);
     const afterForce = { predicate: isFrameDependentColorMode(), noteShown: noteShown(), mode: general.atomsColor };
 
-    // --- The fast path refuses these frames ---
+    // --- The fast path takes these frames ---
     container.frameAt(1);
     const fastOk = applyFrameFast(fileBrowser.selectedStructure);
     const bailReason = lastFastFrameBail();
 
-    // --- Auto playback stays correctly coloured (falls back to full) ---
+    // --- Auto playback stays correctly coloured, on the fast path ---
     container.playbackMode = 'auto';
     showTrajectoryFrame(0, container);
     await wait(150);
     document.getElementById('speedSelect').value = '50';
     const play = document.getElementById('playPauseBtn');
     const samples = [];
+    const c0 = trace.counters();
     play.click();
     for (let i = 0; i < 10; i++) {
       await wait(60);
@@ -83,6 +85,8 @@ const TRAJ = [
     }
     play.click();
     await wait(150);
+    const c1 = trace.counters();
+    const playedFast = (c1.playbackFast || 0) - (c0.playbackFast || 0);
     const mags = [[1, 2], [5, 6], [9, 9.5]];
     const expectedFor = (step) => mags[step].map((m) => atomForceToColor(m));
     const playbackCorrect = samples.every((s) => JSON.stringify(s.colors) === JSON.stringify(expectedFor(s.step)));
@@ -101,27 +105,27 @@ const TRAJ = [
     const afterBondsBack = { predicate: isFrameDependentColorMode(), noteShown: noteShown() };
 
     return {
-      initial, afterForce, fastOk, bailReason, samples, playbackCorrect, stepsSeen,
+      initial, afterForce, fastOk, bailReason, samples, playbackCorrect, stepsSeen, playedFast,
       afterElements, afterLength, afterBondsBack,
     };
   }, TRAJ);
 
-  H.check('no colour map: predicate false and the note is hidden',
-    res.initial.noteExists && res.initial.predicate === false && res.initial.noteShown === false,
-    JSON.stringify(res.initial));
-  H.check('Atoms → Force (via the dropdown): predicate true, note shown',
-    res.afterForce.predicate === true && res.afterForce.noteShown === true && res.afterForce.mode === 'force',
+  H.check('no colour map: predicate false; no "full render" note in the player',
+    !res.initial.noteExists && res.initial.predicate === false, JSON.stringify(res.initial));
+  H.check('Atoms → Force (via the dropdown): predicate true, still no note',
+    res.afterForce.predicate === true && res.afterForce.noteShown === false && res.afterForce.mode === 'force',
     JSON.stringify(res.afterForce));
-  H.check('applyFrameFast bails for a frame-dependent colour map',
-    res.fastOk === false && /colour mode/.test(res.bailReason || ''), `ok=${res.fastOk} bail=${res.bailReason}`);
-  H.check('Auto playback stays correctly force-coloured on every sampled frame (full fallback)',
-    res.playbackCorrect && res.stepsSeen >= 2, JSON.stringify({ stepsSeen: res.stepsSeen, samples: res.samples }));
-  H.check('Atoms → Elements: predicate false, note hidden',
+  H.check('applyFrameFast applies a frame-dependent colour map (no bail)',
+    res.fastOk === true, `ok=${res.fastOk} bail=${res.bailReason}`);
+  H.check('Auto playback stays correctly force-coloured on every sampled frame, on the fast path',
+    res.playbackCorrect && res.stepsSeen >= 2 && res.playedFast > 0,
+    JSON.stringify({ stepsSeen: res.stepsSeen, playedFast: res.playedFast, samples: res.samples }));
+  H.check('Atoms → Elements: predicate false',
     res.afterElements.predicate === false && res.afterElements.noteShown === false, JSON.stringify(res.afterElements));
-  H.check('Bonds → Length: predicate true, note shown',
-    res.afterLength.predicate === true && res.afterLength.noteShown === true && res.afterLength.mode === 'length',
+  H.check('Bonds → Length: predicate true',
+    res.afterLength.predicate === true && res.afterLength.noteShown === false && res.afterLength.mode === 'length',
     JSON.stringify(res.afterLength));
-  H.check('Bonds → Elements: predicate false, note hidden',
+  H.check('Bonds → Elements: predicate false',
     res.afterBondsBack.predicate === false && res.afterBondsBack.noteShown === false, JSON.stringify(res.afterBondsBack));
 
   // The trajectory panel lazy-loads Plotly from a CDN; in a sandbox without

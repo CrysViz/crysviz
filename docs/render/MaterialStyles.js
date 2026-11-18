@@ -448,7 +448,8 @@ export function syncCelHullPixelFloor(worldUnits) {
 export function setCelHullWidth(width) {
   general.celHullWidth = width;
   applyHullWidths();
-  const cellHullMeshes = [groups.atomsMesh, groups.bondsMesh];
+  // Imposter mode draws the hull on the near-sphere child of the atoms mesh.
+  const cellHullMeshes = [groups.atomsMesh, groups.atomsMesh?.userData?.nearSpheres, groups.bondsMesh];
   for (const entry of groups.overlayMeshes.values()) {
     cellHullMeshes.push(entry.atomsMesh, entry.bondsMesh);
   }
@@ -484,5 +485,73 @@ export function setCelOutlineColor() {
   const hex = resolveCelOutlineColor();
   for (const material of [atomsOutlineMaterial, bondsOutlineMaterial, plainOutlineMaterial, polyOutlineMaterial]) {
     if (material) material.color.set(hex);
+  }
+}
+
+// ---- persistent (rebuild-surviving) materials -------------------------------
+//
+// The atoms / bonds / lattice meshes are rebuilt on every trajectory frame, and
+// each rebuild used to create a fresh material and dispose the old one. That
+// costs a full shader compile + link per material per frame: Material.dispose()
+// releases the program from three.js's cache, and the depth-peel/WBOIT patches
+// stamp every NEW material with a unique customProgramCacheKey, so the next
+// identical material can never hit the cache. Measured: three programs
+// recompiled on every frame step — the dominant per-frame cost.
+//
+// Materials that survive rebuilds are held here, keyed by role, and reused
+// while their construction settings (the `signature`) are unchanged. They carry
+// userData.persistent = true so the mesh teardown paths skip Material.dispose()
+// for them; a changed signature (render style, matte/glossy, lattice colour)
+// disposes the old one and builds anew. Per-build state that lives on a
+// material (the wedge texture, cut-plane uniforms, alpha pass) is written in
+// place by the builders, which already do so for the compiled-shader case.
+
+/** @type {Map<string, {signature: string, material: any}>} */
+const persistentMaterials = new Map();
+
+/**
+ * The persistent material for `key`, rebuilt by `factory` only when
+ * `signature` differs from the one it was built with.
+ * @param {string} key
+ * @param {string} signature
+ * @param {() => any} factory
+ */
+export function acquirePersistentMaterial(key, signature, factory) {
+  const entry = persistentMaterials.get(key);
+  if (entry && entry.signature === signature) return entry.material;
+  if (entry) {
+    entry.material.userData?.wedge?.texture?.dispose?.();
+    entry.material.dispose();
+  }
+  const material = factory();
+  material.userData.persistent = true;
+  persistentMaterials.set(key, { signature, material });
+  return material;
+}
+
+/** Whether a teardown path must leave this material alone. */
+export function isPersistentMaterial(material) {
+  return !!material?.userData?.persistent;
+}
+
+/**
+ * Pack an ASCII id into 16 bytes for the per-instance `instanceUUID`
+ * attribute (zero-padded, truncated). Same bytes a TextEncoder produces for
+ * ASCII input; the ids here are element symbols plus base-36 digits. Falls
+ * back to TextEncoder for anything non-ASCII so the encoding never differs.
+ * @param {string} id
+ * @param {Uint8Array} out16
+ */
+export function packInstanceId(id, out16) {
+  out16.fill(0);
+  const n = Math.min(16, id.length);
+  for (let i = 0; i < n; i++) {
+    const c = id.charCodeAt(i);
+    if (c > 0x7f) {
+      out16.fill(0);
+      out16.set(new TextEncoder().encode(id).subarray(0, 16));
+      return;
+    }
+    out16[i] = c;
   }
 }
