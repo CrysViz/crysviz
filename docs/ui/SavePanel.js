@@ -124,14 +124,27 @@ export function cifBlockName() {
  * survives the export (unlike POSCAR/.cell).
  */
 export function cifToFile() {
+  return cifExport().text;
+}
+
+/**
+ * cifToFile's text plus `order`: the CrysViz atom index of each `_atom_site`
+ * row (a mixed site has a row per species, all naming the same atom). For
+ * callers that map results on the file back to the app's atoms.
+ * @returns {{ text: string, order: number[] }}
+ */
+export function cifExport() {
   const { structure, keep } = selectedForExport();
   const counters = {};
   const sites = [];
+  const order = [];
   structure.atoms.forEach((atom, i) => {
     if (!keep[i]) return;
-    sites.push(...cifSiteRows(siteSpecies(structure, atom, i), atom.position, counters));
+    const rows = cifSiteRows(siteSpecies(structure, atom, i), atom.position, counters);
+    sites.push(...rows);
+    for (let r = 0; r < rows.length; r++) order.push(i);
   });
-  return buildCifText({
+  const text = buildCifText({
     name: cifBlockName(),
     created: new Date().toISOString(),
     cell: latticeParameters(structure.lattice),
@@ -139,6 +152,7 @@ export function cifToFile() {
     symopsXyz: ['x, y, z'],
     sites,
   });
+  return { text, order };
 }
 
 /**
@@ -152,6 +166,15 @@ export async function cifSymmetricToFile(tolerance) {
 }
 
 export function poscartoFile() {
+  return poscarExport().text;
+}
+
+/**
+ * poscartoFile's text plus `order`: the CrysViz atom index of each position
+ * line. POSCAR groups atoms by element, so file atom k is atom order[k].
+ * @returns {{ text: string, order: number[] }}
+ */
+export function poscarExport() {
   const structure = fileBrowser.selectedStructure;
   if (!structure || !structure.atoms?.length || !structure.elements?.length || !structure.lattice?.length) {
     throw new Error('No structure loaded.');
@@ -193,15 +216,17 @@ export function poscartoFile() {
 
   // positions grouped by element (Direct / fractional)
   const posLines = [];
+  const order = [];
   for (const el of uniqueElements) {
     structure.atoms.forEach((atom, i) => {
       if (keep[i] && structure.elements[i] === el) {
         posLines.push(atom.position.map(hpCol).join(''));
+        order.push(i);
       }
     });
   }
 
-  return [
+  const text = [
     comment,
     '   1.0',
     ...latticeLines,
@@ -210,6 +235,7 @@ export function poscartoFile() {
     'Direct',
     ...posLines,
   ].join('\n');
+  return { text, order };
 }
 
 
@@ -271,7 +297,7 @@ export function qeInputBlock() {
  *
  * @returns {boolean}
  */
-function poscarLosesOccupancy() {
+export function poscarLosesOccupancy() {
   const structure = fileBrowser.selectedStructure;
   if (!structure?.atoms?.length) return false;
   return structure.atoms.some((atom) =>

@@ -187,31 +187,55 @@ function buildCoordinateViewer(selected) {
 // its non-perImage (source-atom) path, the unlinked branch its perImage
 // (one on-screen copy) path.
 
+/**
+ * Recolour source atoms (structure.atoms indices) and every on-screen copy of
+ * them, their bond halves and disordered-site wedges, and keep the colours for
+ * the next session. The selection bar's linked colour edit and the host's
+ * apply command share it.
+ * @param {number[]} indices
+ * @param {string} hex '#rrggbb'
+ */
+export function colorSourceAtoms(indices, hex) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  const speciesTargets = [];
+  indices.forEach((idx) => {
+    const atom = structure.atoms[idx];
+    if (!atom) return;
+    // A disordered site's wedges read species[i].color, never atom.userColor —
+    // recolour every species so a bulk edit actually paints the sphere, the
+    // same split the per-row species swatches make.
+    if (atom.isDisordered?.()) {
+      atom.species.forEach((_, speciesIndex) => speciesTargets.push({ atomIndex: idx, speciesIndex }));
+    }
+    atom.userColor = hex;
+    setAtomColor(atom, hex);
+    clearAtomImageStylesForAtom(structure, idx, 'color'); // newest edit wins over per-copy colors
+    structure.atomImages[idx]?.forEach((imgIndex) => {
+      syncBondHalvesToImageColor(structure, imgIndex, hex);
+      updateSingleAtomColor(idx, imgIndex, structure.elements[idx], hex, hex);
+    });
+  });
+  scheduleAtomColorSave(structure); // keep the overrides for the next session
+  if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, hex); // broadcasts crysviz:colors-changed
+  repaintAfterColorEdit();
+}
+
+/** Push recoloured instances to the GPU and tell the colour-dependent views. */
+function repaintAfterColorEdit() {
+  if (groups.atomsMesh?.instanceColor) groups.atomsMesh.instanceColor.needsUpdate = true;
+  if (groups.bondsMesh?.instanceColor) groups.bondsMesh.instanceColor.needsUpdate = true;
+  updatePolyhedraColors();
+  if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
+  document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
+}
+
 function applyBulkColor(selected, hex) {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return;
 
   if (atomLinked()) {
-    const speciesTargets = [];
-    selectedSourceIndices(selected).forEach((idx) => {
-      const atom = structure.atoms[idx];
-      if (!atom) return;
-      // A disordered site's wedges read species[i].color, never atom.userColor —
-      // recolour every species so a bulk edit actually paints the sphere, the
-      // same split the per-row species swatches make.
-      if (atom.isDisordered?.()) {
-        atom.species.forEach((_, speciesIndex) => speciesTargets.push({ atomIndex: idx, speciesIndex }));
-      }
-      atom.userColor = hex;
-      setAtomColor(atom, hex);
-      clearAtomImageStylesForAtom(structure, idx, 'color'); // newest edit wins over per-copy colors
-      structure.atomImages[idx]?.forEach((imgIndex) => {
-        syncBondHalvesToImageColor(structure, imgIndex, hex);
-        updateSingleAtomColor(idx, imgIndex, structure.elements[idx], hex, hex);
-      });
-    });
-    scheduleAtomColorSave(structure); // keep the overrides for the next session
-    if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, hex); // broadcasts crysviz:colors-changed
+    colorSourceAtoms(selectedSourceIndices(selected), hex);
   } else {
     // Only the selected on-screen copies — persist per-image and paint those
     // instances, never the shared source atom or its other images.
@@ -220,13 +244,8 @@ function applyBulkColor(selected, hex) {
       updateSingleAtomImageColor(atom.instanceId, hex);
       syncBondHalvesToImageColor(structure, atom.instanceId, hex);
     });
+    repaintAfterColorEdit();
   }
-
-  if (groups.atomsMesh?.instanceColor) groups.atomsMesh.instanceColor.needsUpdate = true;
-  if (groups.bondsMesh?.instanceColor) groups.bondsMesh.instanceColor.needsUpdate = true;
-  updatePolyhedraColors();
-  if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
-  document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
 }
 
 function applyBulkOpacity(selected, value) {

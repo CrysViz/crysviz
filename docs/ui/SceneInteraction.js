@@ -32,7 +32,7 @@ const HIDE_FLASH_MS = 150;
 // caller that mutates atoms and cares about them follows this same
 // convention — see SelectAndHighlightModule.js), so they need an explicit
 // refresh here too, or a hidden atom's arrow would linger until a reload.
-function commitHideRestore(hideIndices, restoreIndices) {
+export function commitHideRestore(hideIndices, restoreIndices) {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return;
   for (const idx of hideIndices) if (structure.atoms[idx]) structure.atoms[idx].hidden = true;
