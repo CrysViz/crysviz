@@ -258,7 +258,7 @@ if (typeof window !== 'undefined' && typeof window.addEventListener === 'functio
  *   be touched.
  */
 
-/** @type {Map<string, { phase: StructurePrefPhase, order: number, seq: number, restore: (container: any, value: any, structure: any) => void }>} */
+/** @type {Map<string, { phase: StructurePrefPhase, order: number, seq: number, restore: (container: any, value: any, structure: any) => void, capture: ((structure: any) => any) | null }>} */
 const restorers = new Map();
 let registrationSeq = 0;
 
@@ -270,15 +270,49 @@ let registrationSeq = 0;
  *   re-applies a stored value; `structure` is the displayed frame in the
  *   afterSelect phase and null before selection. Exceptions are caught and
  *   logged so one bad record never blocks a load.
- * @param {{ phase?: StructurePrefPhase, order?: number }} [options] order:
+ * @param {{ phase?: StructurePrefPhase, order?: number, capture?: ((structure: any) => any) | null }} [options] order:
  *   restorers of one phase run in ascending order (default 0), ties in
  *   registration order. A field that changes the atom count (the supercell,
  *   state/cellPrefs.js) runs at a negative order so every per-atom-index
- *   field is applied to the same cell it was saved on.
+ *   field is applied to the same cell it was saved on. capture: reads the
+ *   field's current value off a structure, for a field that also travels in
+ *   share links and .crysviz sessions (ui/ShareModule.js: the crystal planes).
  */
-export function registerStructurePrefField(field, restore, { phase = 'afterSelect', order = 0 } = {}) {
+export function registerStructurePrefField(field, restore, { phase = 'afterSelect', order = 0, capture = null } = {}) {
   if (typeof field !== 'string' || !field || typeof restore !== 'function') return;
-  restorers.set(field, { phase, order, seq: registrationSeq++, restore });
+  restorers.set(field, { phase, order, seq: registrationSeq++, restore, capture: typeof capture === 'function' ? capture : null });
+}
+
+/**
+ * One field's current value on a structure, through its registered capture
+ * (null when it has none, or its feature is not loaded).
+ * @param {string} field
+ * @param {any} structure
+ */
+export function captureStructurePrefField(field, structure) {
+  const entry = restorers.get(field);
+  if (!entry?.capture || !structure) return null;
+  try { return entry.capture(structure); } catch (err) {
+    console.warn(`structurePrefs: capturing '${field}' failed`, err);
+    return null;
+  }
+}
+
+/**
+ * Re-apply one field from a value that did not come from this browser's
+ * store (a share link or .crysviz session), through its registered restorer.
+ * @returns {boolean} whether a restorer ran
+ */
+export function restoreStructurePrefField(field, container, value, structure) {
+  const entry = restorers.get(field);
+  if (!entry || value == null) return false;
+  try {
+    entry.restore(container, value, structure);
+    return true;
+  } catch (err) {
+    console.warn(`structurePrefs: restoring '${field}' failed`, err);
+    return false;
+  }
 }
 
 /** The registered field names (tests / the clear-data check). */

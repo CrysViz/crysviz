@@ -100,3 +100,22 @@ downloaded on first use (`models` can point at a local folder such as `./bench-m
 
 Close other heavy tabs while it runs: PET-MAD on all threads competes with everything else for the
 CPU.
+
+## Tracer tab
+
+Compares the tracers' noise, old and new, on the current view with the active tracer (Visual ▸
+Render: **Ray tracing** or **Path tracing**), rendered in this browser on its GPU. Old: a ray passed a
+surface with opacity below 1 at random, and the ray tracer aimed its soft-shadow rays (**Light
+softness**), glass frost and metal roughness with plain random numbers — grainy at the 64 samples a
+render (and each PNG-export tile) stops at. New: each see-through surface is blended exactly with what
+lies behind it and a shadow ray keeps 1 − opacity of the light (up to four layers; deeper ones, and in
+path tracing those met after a bounce, still pass at random), and those directions come from a
+stratified sequence that covers the light evenly over the samples. Both converge to the same picture.
+
+See-through polyhedra or atoms, the ground plane and a soft light show the difference best; then
+**Render old / new**: both at the chosen number of **samples**, side by side;
+click one for full size (or to save it). With **error against 8× samples**, a reference is rendered
+the new way at eight times the samples, and each image shows its mean difference to it (0–255) over
+the pixels that are not plain background: lower is less noise. Each image also gives its render time: the exact
+way traces every see-through layer per sample, so a sample costs more, but far fewer are needed.
+Keep the view still while it renders.

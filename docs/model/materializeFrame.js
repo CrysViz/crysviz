@@ -95,6 +95,7 @@ export function materializeFrame(store, ph) {
     forces,
     energy: ph.energy,
     stress: ph.stress ? new Stress({ tensor: ph.stress.map(row => [...row]) }) : null,
+    dataSource: ph.dataSource ?? null,
   });
 }
 
@@ -142,6 +143,9 @@ function applyFrameScalars(live, ph) {
   live.lattice = ph.lattice.map(row => [...row]);
   live.energy = ph.energy;
   live.stress = ph.stress ? new Stress({ tensor: ph.stress.map(row => [...row]) }) : null;
+  // The frame's own source, else the file's (a computed result on the last
+  // frame must not label this one).
+  live.dataSource = ph.dataSource ?? null;
 }
 
 // ── Deferred per-atom physics (columnar playback) ────────────────────────────

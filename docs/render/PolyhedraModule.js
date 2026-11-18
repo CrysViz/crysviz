@@ -12,6 +12,7 @@ import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
 import { getCutPlaneMaskSign } from '../model/Plane.js'
+import { CUT_PLANE_TOLERANCE } from './cutPlaneTolerance.js'
 import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity, ANION_FORMERS } from '../defaults/electronegativity_defaults.js'
@@ -432,7 +433,7 @@ function isPointCutByPlanes(position, cutPlanes) {
     const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
     const maskSign = getCutPlaneMaskSign(plane.side);
     const planeSide = ((position[0] * nx) + (position[1] * ny) + (position[2] * nz) - (Number(plane.r) || 0)) * maskSign;
-    return planeSide > 0;
+    return planeSide > CUT_PLANE_TOLERANCE;
   });
 }
 
@@ -1380,12 +1381,41 @@ export function setPolyEdgeWidth(width) {
  * Toggle/refresh entry point. Recomputes `structure.polyhedra` (so the model
  * mirrors the scene and bond-cutoff edits take effect) and renders it.
  */
+// A session restore (ui/ShareModule.js applySharedState) builds the structure
+// first and restores the atom order and polyhedron styles after it: polyhedra
+// computed in between were thrown away and computed again, the slowest part of
+// opening a styled share link. While held, a request is only remembered; the
+// restore makes the one request that counts once its styles are on.
+let holdDepth = 0;
+let heldRequest = false;
+
+/** Hold polyhedra requests until releasePolyhedra(). */
+export function holdPolyhedra() {
+  holdDepth += 1;
+}
+
+/** End holdPolyhedra(); true when a request arrived meanwhile (the caller
+ *  should then run updatePolyhedra() itself). */
+export function releasePolyhedra() {
+  if (!holdDepth) return false;
+  holdDepth -= 1;
+  if (holdDepth) return false;
+  const held = heldRequest;
+  heldRequest = false;
+  return held;
+}
+
 export function updatePolyhedra() {
   // Reflect current showPolyhedra/completePolyhedra + comparison-structure
   // state in the viewport warning banner every time this entry point runs
   // (toggles, comparison enable/disable/step-change all funnel through here).
   updatePolyhedraComparisonWarning();
   updateDisorderWarning();
+
+  if (holdDepth) {
+    heldRequest = true;
+    return polyhedraPromise || Promise.resolve();
+  }
 
   // A coordination polyhedron's identity comes from the species of its centre
   // and ligands, and a fractionally occupied site has no single answer for

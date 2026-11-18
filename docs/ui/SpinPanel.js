@@ -725,7 +725,10 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
       const color = spin.color instanceof THREE.Color ?
         `#${spin.color.getHexString()}` :
         spin.color;
-      return `${spin.vector.join(" ")} ${scale} ${color}`;
+      // 12 significant digits: the float noise of a parsed or scaled value
+      // (1.8699999999999999) goes, the value itself stays.
+      const tidy = (v) => String(Number(Number(v).toPrecision(12)));
+      return `${spin.vector.map(tidy).join(" ")} ${tidy(scale)} ${color}`;
     });
     currentSpinsList.value = spinLines.join("\n");
   } else {

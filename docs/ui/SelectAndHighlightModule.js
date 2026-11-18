@@ -1306,6 +1306,14 @@ export function selectAtomsByInstances(instanceIds, options = {}) {
  */
 export function selectAtomFromRow(atomIndex, sourceEvent = null, imageIndex = null) {
   const structure = fileBrowser.selectedStructure;
+  // A Wyckoff-tab row stands for its whole orbit: select every atom of it.
+  const orbit = imageIndex == null && structure?.symmetry?.mode === 'wyckoff'
+    ? structure.symmetry.orbitGroups?.find((group) => group.representativeIndex === atomIndex)
+    : null;
+  if (orbit && orbit.atomIndices.length > 1) {
+    selectOrbitFromRow(orbit, sourceEvent);
+    return;
+  }
   // Per-image rows pass their own instance; linked rows use the canonical
   // first image of the source atom.
   const instanceId = imageIndex ?? structure?.atomImages?.[atomIndex]?.[0];
@@ -1321,6 +1329,32 @@ export function selectAtomFromRow(atomIndex, sourceEvent = null, imageIndex = nu
       reason: 'row-click',
     },
   );
+}
+
+/** selectAtomFromRow for a Wyckoff orbit row: the same modifier semantics,
+ *  applied to the orbit's atoms together (a plain click on the row of the
+ *  orbit that alone is selected deselects it; ctrl/cmd removes the orbit when
+ *  all of it is selected, else adds it; shift adds it). */
+function selectOrbitFromRow(orbit, sourceEvent) {
+  const structure = fileBrowser.selectedStructure;
+  if (!groups.atomsMesh) return;
+  const members = orbit.atomIndices
+    .map((index) => structure?.atomImages?.[index]?.[0])
+    .filter((instanceId) => instanceId !== undefined);
+  if (!members.length) return;
+  const current = atomSelection.selectedAtoms;
+  const inOrbit = (atom) => orbit.atomIndices.includes(atom.sourceIndex);
+  const orbitSelected = orbit.atomIndices.every((index) => current.some((atom) => atom.sourceIndex === index));
+  const mode = (sourceEvent?.ctrlKey || sourceEvent?.metaKey) ? 'toggle' : (sourceEvent?.shiftKey ? 'add' : 'replace');
+  const kept = current.map((atom) => atom.instanceId);
+  let next;
+  if (mode === 'replace') next = orbitSelected && current.every(inOrbit) ? [] : members;
+  else if (mode === 'toggle' && orbitSelected) next = current.filter((atom) => !inOrbit(atom)).map((atom) => atom.instanceId);
+  else next = [...kept, ...members];
+  clearBondSelection();
+  clearPolyhedronSelection();
+  if (next.length) selectAtomsByInstances(next, { sourceEvent, reason: 'row-click' });
+  else clearSelectedAtoms({ sourceEvent, reason: 'row-click' });
 }
 
 export function clearAllHighlights(options = {}) {

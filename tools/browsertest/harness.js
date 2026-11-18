@@ -118,6 +118,14 @@ async function launchApp({ navigate = true, gpu = process.env.CRYSVIZ_GPU || fal
     })
     : await firefox.launch({ headless: false });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  // Offline runs: with CRYSVIZ_PLOTLY_ESM set to a local ES-module build of
+  // plotly.js-dist-min@2.27.0 (the version utils/plotlyLoader.js imports from
+  // esm.sh), the page gets that file instead, so the chart tests run where
+  // esm.sh is unreachable. Make one from the npm package:
+  //   npm pack plotly.js-dist-min@2.27.0 && tar xzf plotly.js-dist-min-2.27.0.tgz
+  //   (printf 'var module = { exports: {} }; var exports = module.exports;\n';
+  //    cat package/plotly.min.js; printf '\nexport default module.exports;\n') > plotly-esm.js
+  if (process.env.CRYSVIZ_PLOTLY_ESM) await page.route('https://esm.sh/plotly.js-dist-min*', (route) => route.fulfill({ path: process.env.CRYSVIZ_PLOTLY_ESM, contentType: 'application/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
   // Pre-dismiss the ray/path-tracing performance-warning modal: shotCanvas is a
   // page screenshot (DOM overlays included), so the modal backdrop would dim
   // every capture taken after a dropdown switch into a tracer. Tests that TEST

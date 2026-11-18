@@ -6,6 +6,7 @@ import {getBondVisSettings} from '../defaults/color_texture_defaults.js'
 import {Bond} from '../model/index.js';
 import { bondDefaultColor } from '../model/Bond.js';
 import { getCutPlaneMaskSign } from '../model/Plane.js';
+import { CUT_PLANE_TOLERANCE } from './cutPlaneTolerance.js';
 import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression,
   acquirePersistentMaterial, isPersistentMaterial} from './MaterialStyles.js'
 import { getAtomImageStyle, hasAtomImageStyles } from './AtomsFracUpdateModule.js'
@@ -232,7 +233,7 @@ export function isPointCutByPlanes(position, cutPlanes) {
     const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
     const maskSign = getCutPlaneMaskSign(plane.side);
     const planeSide = ((position[0] * nx) + (position[1] * ny) + (position[2] * nz) - (Number(plane.r) || 0)) * maskSign;
-    return planeSide > 0;
+    return planeSide > CUT_PLANE_TOLERANCE;
   });
 }
 

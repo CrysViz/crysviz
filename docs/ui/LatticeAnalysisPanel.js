@@ -348,7 +348,7 @@ function updateSelects() {
     sortSel.value = usable.includes(sortBy) ? sortBy : 'order';
   }
   const help = q('#laAxisHelpNoun');
-  if (help) help.textContent = state.source === 'selected' ? 'checked structure, in Files-table order' : 'frame, in frame order';
+  if (help) help.textContent = state.source === 'selected' ? 'checked structure, in the Files window\'s order' : 'frame, in frame order';
 }
 
 /** Point the window at the current source: gather its points, compute (or
@@ -364,7 +364,7 @@ async function sync() {
     updateSelects();
     updateSourceLine();
     updateTable();
-    setStatus('Select a trajectory (a file with 2+ frames), or check two or more rows in the Files table.');
+    setStatus('Select a trajectory (a file with 2+ frames), or check two or more structures in the Files window.');
     return;
   }
   const token = ++state.loadToken;
@@ -529,7 +529,7 @@ export function addLatticeAnalysisPanel(target = PANEL_BODY_ID) {
       <div class="la-source-line">Source: <span class="la-source-name" id="laSourceName">none</span></div>
       <div class="la-source-meta" id="laSourceMeta"></div>
       <div class="la-select-row">
-        <label class="la-select" title="Which structures the points are: every frame of the selected trajectory, or the checked rows of the Files table at their shown frame">
+        <label class="la-select" title="Which structures the points are: every frame of the selected trajectory, or the structures checked in the Files window, at their shown frame">
           <span>Points</span>
           <select id="laSource">
             <option value="trajectory">Selected trajectory</option>

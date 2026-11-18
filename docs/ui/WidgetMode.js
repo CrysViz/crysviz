@@ -317,8 +317,8 @@ function buildSettings(href) {
   // mark on dark, the white-ground one otherwise.
   const darkTheme = document.documentElement.getAttribute('data-theme') === 'dark';
   img.src = darkTheme
-    ? './data/CrysViz_logo_black_back_logo_only.png'
-    : './data/CrysViz_logo_white_back_logo_only.png';
+    ? './data/logo-web/CrysViz_logo_black_back_logo_only.png'
+    : './data/logo-web/CrysViz_logo_white_back_logo_only.png';
   img.alt = 'CrysViz';
   logo.appendChild(img);
   buttonEl = logo;

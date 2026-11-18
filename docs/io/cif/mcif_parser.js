@@ -6,6 +6,7 @@ import {
   parse_cif_float,
   parse_structural_modulation,
   parse_linear_expr,
+  noAtomSitesMessage,
 } from "./cif_parser.js";
 
 /**
@@ -1034,7 +1035,7 @@ export async function single_mag_asu_from_mcif_file(stream, opts = {}) {
     }
   }
   if (!chosen) {
-    throw new Error("No structural block found in CIF.");
+    throw new Error(noAtomSitesMessage(cifblocks));
   }
 
   return cifblock_to_mag_asu(chosen, { error_on_nonmag });

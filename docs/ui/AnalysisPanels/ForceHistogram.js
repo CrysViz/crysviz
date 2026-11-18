@@ -205,7 +205,7 @@ function statsHTML() {
     <span><b>min</b> ${f(stats.min)}</span>
     <span><b>mean</b> ${f(stats.mean)}</span>
     <span><b>RMS</b> ${f(stats.rms)}</span>
-    <span><b>max</b> ${f(stats.max)} <span class="fh-stats-muted">(${maxAtomName()} #${stats.maxIndex})</span></span>
+    <span><b>max</b> ${f(stats.max)} <span class="fh-stats-muted">(${maxAtomName()} #${stats.maxIndex + 1})</span></span>
     <span class="fh-stats-muted">eV/Å</span>
   `;
 }

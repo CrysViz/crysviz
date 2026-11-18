@@ -321,6 +321,11 @@ function applyPanelDefaults(panel, { resetCollapsed = false } = {}) {
   const defaults = panel.def.defaults || {};
   const dock = defaultDockOf(panel.def);
   panel.closed = false;
+  // Leaving the side dock (≡ ▸ Default on a side-docked window whose home is
+  // elsewhere): detach from the pane first, or its tab is left behind in an
+  // otherwise empty side dock. (floatPanel does this itself; the main-dock
+  // path did not.)
+  if (panel.dock === 'right' && dock !== 'right') sideUndockPanel(panel);
   if (dock === 'right') {
     sideDockPanel(panel, { front: true, expand: false });
     // Show the dock on a desktop reset. On a phone the side dock is the
@@ -706,7 +711,12 @@ export function registerPanel(def) {
   // Build persistent content only after the panel is attached: builders
   // resolve their target container by id (document.getElementById), which
   // fails on a detached panel body.
-  if (def.lifecycle !== 'rebuild' && (!closed || shelved) && !waitsForStructure) buildContent(panel);
+  // A shelved window that waits for the first structure (Visual removed from
+  // the sidebar) defers to its first open, as revealFeaturePanels does — also
+  // when it registers after that structure (a first start draws the
+  // structure before the windows, core/crystal-viewer.js).
+  const buildNow = !closed || (shelved && !def.hiddenUntilStructure);
+  if (def.lifecycle !== 'rebuild' && buildNow && !waitsForStructure) buildContent(panel);
 
   if (!closed && !collapsed && panel.collapsed) {
     if (waitsForStructure) panel.wantExpanded = true;

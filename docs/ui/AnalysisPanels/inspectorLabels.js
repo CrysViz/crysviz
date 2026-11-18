@@ -110,7 +110,7 @@ export function labelToolbarHtml(prefix, state) {
       <button type="button" class="btn-mini pi-btn pi-tool-btn" id="${prefix}PlaceLabels" aria-pressed="false"
         title="Move labels: drag a label to place it — a thin line leads back to its bond or angle. The view does not turn meanwhile; press again to rotate it.">Move labels</button>
       <button type="button" class="btn-mini pi-btn pi-show-labels" id="${prefix}ShowLabels" title="Bring back every label you hid">Show all labels</button>
-      <button type="button" class="btn-mini pi-btn" id="${prefix}ResetPlaces" hidden title="Put every moved label back on its bond or angle">Reset positions</button>
+      <button type="button" class="btn-mini pi-btn" id="${prefix}ResetPlaces" hidden title="Reset positions: put every moved label back on its bond or angle">Reset</button>
     </div>
     <div class="pi-ctl-row pi-sizes" id="${prefix}Sizes">
       <span class="pi-colors-text">Size</span>

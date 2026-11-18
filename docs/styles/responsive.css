@@ -744,3 +744,9 @@
     touch-action: pan-y;
   }
 }
+
+/* Load progress overlay (styles.css .boot-progress-fill): no self-moving bar
+   for reduced motion — it waits for the first script's real progress. */
+@media (prefers-reduced-motion: reduce) {
+  .boot-progress-fill { animation: none; }
+}

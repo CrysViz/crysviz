@@ -206,11 +206,12 @@ export function stressTensorText(structure) {
 
 /** Everything the section shows, as one text for "Copy all" — with the CIF
  *  errors when given (`latticeSu`, `cellSu`, `su`: see latticeText,
- *  latticeParamItems, positionsTable). */
+ *  latticeParamItems, positionsTable) and the data's `source` ("VASP"). */
 export function structureSummaryText(structure, {
-  name = '', cartesian = false, wyckoff = null, latticeSu = null, cellSu = null, su = null,
+  name = '', cartesian = false, wyckoff = null, latticeSu = null, cellSu = null, su = null, source = null,
 } = {}) {
-  const scalars = scalarPropertiesText(structure);
+  // Where the energy, forces and stress came from (model/dataSource.js), first.
+  const scalars = [source ? `Source: ${source}` : '', scalarPropertiesText(structure)].filter(Boolean).join('\n');
   const stress = stressTensorText(structure);
   const parts = [
     `# ${name || 'structure'}: ${structure.atoms.length} atoms`,

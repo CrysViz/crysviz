@@ -54,7 +54,7 @@ const H = require('../harness');
       'noto-sans-cyrillic-wght-normal.woff2': '6ab64433de6077ca5ad31b05420450ce986a616a4ea47b6ad16f3217055dafc3',
       'noto-sans-cyrillic-ext-wght-normal.woff2': '82ff72b28e6610f2c62de49d0f295c160a157b2718fa814bb6c512ebfdebb31d',
       'noto-sans-subsuper-wght-normal.woff2': '8d50798ea150d4b050e168d7726cb3e6df9714b685dd9c8083e16afac5de843d',
-      'noto-sans-symbols2-400-normal.woff2': '9c07d511848c274b5430c75bf98d1f2582680ef5f967947bfbdd06b75ca177c2',
+      'noto-sans-symbols2-ui-400-normal.woff2': '0a9079ef213dfd19ede6ef8e729f9e4b6e319d17b9d87fbb8a82dce7b85d003d',
       'noto-sans-symbols1-extras-wght-normal.woff2': 'c4f46bc995694f86472b9dfc037632f2be5c7f90a17b09e1faafe83e091e95ed',
       'noto-emoji-extras-wght-normal.woff2': '1c3669eaded5308ac7ccffd9d8ee4e200c8f10a379ec4de484ddeffed85da781',
       'noto-sans-math-400-normal.woff2': 'c39a9444f95747345dcbde1032ec0ea2af1db63dccf53a31b38a957bdcf4a01f',

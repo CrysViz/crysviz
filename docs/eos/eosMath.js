@@ -33,23 +33,40 @@ export function birchMurnaghanPressure(V, V0, K0, K0Prime) {
  *  optional — a P/V-only file (no energy column found) is valid; P and V are
  *  required. */
 export function detectColumns(lines) {
-  const firstLine = lines[0].trim();
-  const hasHeaders = /^[^0-9\-+.\s]+$/.test(firstLine.split(/\s+/)[0]);
+  // Comment lines (# ! %) are not data. The last one before the data whose
+  // words are all names is the header ("# V E P"): its marker is not a column
+  // (it used to count as one, so no data row matched and the fit got none).
+  const isComment = (line) => /^\s*[#!%]/.test(line);
+  const words = (line) => line.trim().replace(/^[#!%]+\s*/, '').split(/\s+/).filter(Boolean);
+  const isNameRow = (tokens) => tokens.length > 1 && tokens.every((t) => !Number.isFinite(Number(t)));
+  const dataLines = lines.filter((line) => line.trim() && !isComment(line));
+  if (!dataLines.length) throw new Error('No data rows found: the file holds only comments or headers.');
+  let headerTokens = null;
+  for (const line of lines) {
+    if (line === dataLines[0]) break;
+    if (isComment(line) && isNameRow(words(line))) headerTokens = words(line);
+  }
+  const firstTokens = words(dataLines[0]);
+  const hasHeaders = !!headerTokens || /^[^0-9\-+.\s]+$/.test(firstTokens[0]);
   let headers = [];
-  let dataStartIndex = 0;
+  let rows = dataLines;
 
-  if (hasHeaders) {
-    headers = firstLine.split(/\s+/).map((h) => h.trim().toLowerCase());
-    dataStartIndex = 1;
+  if (headerTokens) {
+    headers = headerTokens.map((h) => h.toLowerCase());
+  } else if (hasHeaders) {
+    headers = firstTokens.map((h) => h.trim().toLowerCase());
+    rows = dataLines.slice(1);
   } else {
-    const nCols = lines[0].trim().split(/\s+/).length;
-    headers = Array(nCols).fill().map((_, i) => `col${i + 1}`);
+    headers = Array(firstTokens.length).fill().map((_, i) => `col${i + 1}`);
   }
 
   const allData = [];
-  for (let i = dataStartIndex; i < lines.length; i++) {
-    const values = lines[i].trim().split(/\s+/).map(Number);
-    if (values.length === headers.length) allData.push(values);
+  for (const line of rows) {
+    const values = line.trim().split(/\s+/).map(Number);
+    if (values.length === headers.length && values.every(Number.isFinite)) allData.push(values);
+  }
+  if (!allData.length) {
+    throw new Error(`No data rows with ${headers.length} numeric columns found (the header names ${headers.length}: ${headers.join(' ')}).`);
   }
 
   let pIndex = -1, eIndex = -1, vIndex = -1;

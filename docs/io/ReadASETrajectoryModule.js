@@ -19,6 +19,7 @@ import { generateID, releaseIDs } from "../utils/index.js";
 import { TrajectoryFrameStore } from "../model/TrajectoryFrameStore.js";
 import { Spin } from "../model/index.js";
 import { isUlm, readUlmTrajectory } from "./ulm.js";
+import { aseCalculatorSource } from "../model/dataSource.js";
 
 /**
  * A real ASE `.traj` (the binary ULM container, io/ulm.js). A multi-frame
@@ -29,6 +30,10 @@ import { isUlm, readUlmTrajectory } from "./ulm.js";
  */
 function parseUlmFile(arrayBuffer, fileName) {
   const { frames } = readUlmTrajectory(arrayBuffer);
+  // The calculator the file names ("VASP (via ASE)"), else plain "ASE" — when
+  // any frame carries its results; a geometry-only file has no source.
+  const computed = frames.some((f) => f.energy !== null || f.forces || f.stress);
+  const dataSource = computed ? aseCalculatorSource(frames.find((f) => f.calculator)?.calculator) : null;
   // ASE's stress is tension-positive (eV/Å³); the app stores it
   // compression-positive (model/Stress.js).
   const stressOf = (f) => (f.stress ? fromTensionPositive(f.stress) : null);
@@ -44,7 +49,9 @@ function parseUlmFile(arrayBuffer, fileName) {
       energy: f.energy,
       stress: stressOf(f),
     }));
-    return new TrajectoryContainer({ fileName, store: new TrajectoryFrameStore({ frames: physics }) });
+    const container = new TrajectoryContainer({ fileName, store: new TrajectoryFrameStore({ frames: physics }) });
+    container.dataSource = dataSource;
+    return container;
   }
   const f = frames[0];
   if (f.elements.length === 0) throw new Error('ASE trajectory: the frame has no atoms');
@@ -60,7 +67,7 @@ function parseUlmFile(arrayBuffer, fileName) {
     energy: f.energy,
     stress: stress ? new Stress({ tensor: stress }) : null,
   });
-  return new StructureContainer({ fileName, structures: [structure] });
+  return new StructureContainer({ fileName, structures: [structure], dataSource });
 }
 
 /**

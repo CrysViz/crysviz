@@ -3,7 +3,7 @@
 // between two of those bonds that meet at an atom
 // (render/SelectionAnalysisModule.js). Opened from the Structure window's
 // selection bar (Inspect) or the search; follows the atom selection live —
-// Shift-click adds an atom in the main view, Ctrl/⌘-click removes one.
+// Shift+double-click adds an atom in the main view, Ctrl/⌘+double-click removes one.
 //
 // The neighbours tool (the add-neighbour button at the top) shows the atoms
 // bonded to the selection faintly while it is on; clicking one adds it, and
@@ -245,7 +245,7 @@ function drawLegendForExport(legendEl, painter, ex) {
 
 function renderSummary(container, detail, errors = null) {
   if (!detail) {
-    container.innerHTML = '<div class="pi-summary-empty">Select atoms in the 3D view to inspect them: click an atom, Shift-click to add more, Ctrl/⌘-click to remove one, or drag to select a region.</div>';
+    container.innerHTML = '<div class="pi-summary-empty">Select atoms in the 3D view to inspect them: double-click an atom, Shift+double-click to add more, Ctrl/⌘+double-click to remove one, or Shift+drag to select a region.</div>';
     return;
   }
   const rows = [

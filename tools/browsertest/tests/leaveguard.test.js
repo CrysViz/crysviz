@@ -1,6 +1,7 @@
 // Reload guard (docs/ui/LeaveGuard.js):
 //   - with only the start-up demo loaded nothing is guarded: Ctrl+R and
-//     leaving the page go through
+//     leaving the page go through — until the demo is changed (an atom
+//     recoloured, a measurement), which is something to lose too
 //   - once a structure is loaded, Ctrl+R / Cmd+R / F5 / Ctrl+Shift+R are
 //     stopped and answered with the "Reload CrysViz?" dialog, which counts the
 //     structures at stake; Stay (the focused default) and Escape keep the page
@@ -50,6 +51,37 @@ async function dialog(page) {
   // ---- only the demo: nothing to lose ---------------------------------------
   H.check('only the start-up demo: Ctrl+R goes through', !(await pressReloadKey(page, { key: 'r', code: 'KeyR', ctrlKey: true })));
   H.check('only the start-up demo: leaving is not held up', !(await beforeUnloadPrevented(page)));
+
+  // ---- the demo, changed: that is something to lose -------------------------
+  const recolour = (hex) => page.evaluate(async (hex) => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { updateAtoms } = await import('./render/index.js');
+    const atom = fileBrowser.selectedStructure.atoms[0];
+    window.__origColor ??= atom.color;
+    if (hex === null) atom.color = window.__origColor; else atom.setColor(hex);
+    updateAtoms();
+  }, hex);
+  await recolour('#ff00ff');
+  H.check('the demo with a recoloured atom: Ctrl+R is stopped', await pressReloadKey(page, { key: 'r', code: 'KeyR', ctrlKey: true }));
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  H.check('…and leaving asks the browser to prompt', await beforeUnloadPrevented(page));
+  await recolour(null);
+  H.check('the colour put back: nothing to lose again', !(await beforeUnloadPrevented(page)));
+  const measured = await page.evaluate(async () => {
+    const THREE = await import('./external/three/three.module.js');
+    const { fileBrowser } = await import('./state/store.js');
+    const { addDistanceMeasurement } = await import('./render/MeasurementModule.js');
+    const w = fileBrowser.selectedStructure.periodic.visibleWrapped;
+    const atom = (i) => ({ position: new THREE.Vector3(...w.cart[i]), userData: { atomIndex: w.srcIndex ? w.srcIndex[i] : i, element: w.elements[i], wrappedFrac: [...w.frac[i]] } });
+    addDistanceMeasurement(atom(0), atom(1));
+    const { hasStructuresToLose } = await import('./ui/LeaveGuard.js');
+    const held = hasStructuresToLose();
+    (await import('./render/MeasurementModule.js')).clearAllMeasurements();
+    return { held, after: hasStructuresToLose() };
+  });
+  H.check('a measurement on the demo holds a reload; cleared, it does not', measured.held && !measured.after, JSON.stringify(measured));
 
   // ---- a structure of the user's ---------------------------------------------
   await H.loadDefaultStructure(page, 'defaultPOSCAR', 'YBCO');

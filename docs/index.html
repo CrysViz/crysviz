@@ -6,8 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="referrer" content="no-referrer">
     <title>CrysViz</title>
-    <link rel="icon" href="./data/CrysViz_logo_white_back_logo_only.png" sizes="any">
-    <link rel="apple-touch-icon" href="./data/CrysViz_logo_white_back_logo_only.png">
+    <link rel="icon" href="./data/logo-web/CrysViz_logo_white_back_logo_only.png" sizes="any">
+    <link rel="apple-touch-icon" href="./data/logo-web/CrysViz_logo_white_back_logo_only.png">
     <!-- Installed-app metadata; file_handlers lets the OS open structure files
          in the installed app (StructureInputModule.js launchQueue). -->
     <link rel="manifest" href="./manifest.webmanifest">
@@ -70,7 +70,7 @@
     <div id="mobileOverlay"></div>
     <div id="backgroundDot" class="background-dot"></div>
     <div id="ui">
-      <img src="./data/CrysViz_logo_clear_back_beta.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
+      <img src="./data/logo-web/CrysViz_logo_clear_back_beta.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
       <!-- Theme mode row (auto/light/dark, brightest-first) + a small
            dropdown arrow that lists the installed palettes. A palette that
            doesn't offer a mode gets that button disabled. Wired by
@@ -289,7 +289,17 @@
 
     </div>
     <div id="viewArea">
-      <div id="view"></div>
+      <div id="view">
+        <!-- Load progress over the 3D view (ui/BootProgress.js): from the
+             first paint, one step per stage until the first structure is
+             drawn. Reused while a large share link or .crysviz session opens. -->
+        <div id="bootProgress" class="boot-progress" role="status" aria-live="polite">
+          <div class="boot-progress-card">
+            <div class="boot-progress-text"><span id="bootProgressText">Loading CrysViz…</span> <span class="boot-progress-elapsed" id="bootProgressElapsed"></span></div>
+            <div class="boot-progress-track"><div class="boot-progress-fill" id="bootProgressFill"></div></div>
+          </div>
+        </div>
+      </div>
       <!-- Side dock shell (docs/ui/panels/SideDock.js): regular panel
            windows dock here as tabs — #splitPaneBody hosts their .cv-panel
            elements, the header strip selects the front one, and dragging a
@@ -313,7 +323,7 @@
     <div id="aboutOverlay" hidden>
       <div id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" tabindex="-1">
 
-        <img src="./data/CrysViz_logo_clear_back.png" alt="Crystal Structure Viewer" class="logo">
+        <img src="./data/logo-web/CrysViz_logo_clear_back.png" alt="Crystal Structure Viewer" class="logo" loading="lazy">
         <h1 id="aboutTitle" class="visually-hidden">About Crystal Structure Viewer</h1>
         <button id="aboutClose" aria-label="Close About panel">×</button>
         <div id="aboutContent" aria-live="polite">
@@ -427,10 +437,11 @@
         </div>
 
         <!-- Reset: back to the standard view (the cube is the [1,1,1] view it
-             restores). WindowAndSceneControls.js wraps it with the camera lock
+             restores); a long press opens Recenter / Recenter and fit, which
+             keep the rotation (WindowAndSceneControls.js). WindowAndSceneControls.js wraps it with the camera lock
              in .camera-reset-stack at startup: reset | divider | lock, the lock
              set apart because it is a standing mode, not another view action. -->
-        <button class="cv-tb-btn camera-tool-reset-btn" id="resetView" title="Reset view">
+        <button class="cv-tb-btn camera-tool-reset-btn" id="resetView" aria-label="Reset view" title="Reset view. Long-press to recenter without turning the view.">
           <img class="reset-icon" src="./data/icons/cube-icon.svg" alt="">
         </button>
       </div>

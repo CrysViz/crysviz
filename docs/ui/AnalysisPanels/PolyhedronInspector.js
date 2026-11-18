@@ -226,7 +226,7 @@ function summaryErrors(detail) {
 /** Fills the small text summary above the mini render. */
 function renderSummary(container, detail, errors = null) {
   if (!detail) {
-    container.innerHTML = '<div class="pi-summary-empty">Click a polyhedron (or its centre atom) in the 3D view to inspect it.</div>';
+    container.innerHTML = '<div class="pi-summary-empty">Double-click a polyhedron (or its centre atom) in the 3D view to inspect it; on a touch screen, double-tap.</div>';
     return;
   }
   const rows = [

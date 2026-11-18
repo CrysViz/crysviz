@@ -654,6 +654,24 @@ font-size: var(--fs-xl);
   gap: var(--sp-1);
 }
 
+/* In a dock the table was ~60px wider than the window, and the sticky ✕
+   column sat over half of the Filter column (header included): there, d goes
+   under the plane's point and the cells pad less, so all of it fits. */
+.cv-docked .planes-uvwd-cell,
+.cv-side-docked .planes-uvwd-cell {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.cv-docked .planes-th:not(.planes-th-narrow),
+.cv-docked .planes-td:not(.planes-td-del),
+.cv-side-docked .planes-th:not(.planes-th-narrow),
+.cv-side-docked .planes-td:not(.planes-td-del) {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
 .planes-d-inline {
   font-size: var(--fs-xs);
   line-height: var(--lh-tight);

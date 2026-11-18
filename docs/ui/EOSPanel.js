@@ -12,7 +12,7 @@ import { runEOSScan } from '../eos/eosCompute.js';
 import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsPanel.js';
 import { openPanel, closePanel } from './panels/PanelManager.js';
 import { ensureActiveCalculator, snapshotCurrentStructure } from './BackendPanel/AtomisticPanels.js';
-import { mountPotentialNotice, potentialLabel } from '../atomistic/potentialNotice.js';
+import { mountPotentialNotice, potentialLabel, potentialSource } from '../atomistic/potentialNotice.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
 import { TrajectoryContainer } from '../model/index.js';
 import { fileBrowser, structureShip, general } from '../state/store.js';
@@ -144,6 +144,13 @@ async function fitAndDisplay(container) {
     setStatus(container, 'Fitting with SciPy…');
     const { pvResult, evResult } = await fitEOS(si.volumes, si.energies, si.pressures,
       (text) => setPyodideStatus(container, text));
+    // A fit that could not run shows nothing; one that did not converge shows
+    // its starting guesses, and says so (both used to read "Fit complete.").
+    if ([pvResult, evResult].some((r) => r?.failed === 'error')) {
+      setStatus(container, 'Error: the fit failed (details in the browser console). Check the detected columns and units.');
+      return;
+    }
+    const unconverged = [['P–V', pvResult], ['E–V', evResult]].filter(([, r]) => r?.failed).map(([name]) => name);
     state.pvResult = pvResult;
     state.evResult = evResult;
 
@@ -151,7 +158,9 @@ async function fitAndDisplay(container) {
     setPlotVisible('ev-plot', !!evResult);
     if (evResult) await redraw('ev-plot');
     await redraw('pv-plot');
-    setStatus(container, 'Fit complete.');
+    setStatus(container, unconverged.length
+      ? `The ${unconverged.join(' and ')} fit did not converge: the values shown are its starting guesses.`
+      : 'Fit complete.');
   } catch (error) {
     setStatus(container, `Error: ${error.message}`);
     console.error(error);
@@ -230,6 +239,7 @@ function registerScanRow(scan, potential) {
       // structures array in place — a trajectory container's frame count is
       // owned by its store, so array surgery cannot re-seat it.
       const rebuilt = TrajectoryContainer.fromStructures(name, scan.structures);
+      rebuilt.dataSource = potentialSource(potential);
       rebuilt.cameraSnapshot = container.cameraSnapshot;
       rebuilt.featureSnapshot = container.featureSnapshot;
       // The selected row's own pair is only captured on leaving it, so it may
@@ -241,6 +251,8 @@ function registerScanRow(scan, potential) {
     }
   }
   const container = TrajectoryContainer.fromStructures(name, scan.structures);
+  // Every point's energy came from the potential (model/dataSource.js).
+  container.dataSource = potentialSource(potential);
   structureShip.container.push(container);
   const newRow = createRow({ name, traj: scan.structures.length, step: 1 });
   tbody.appendChild(newRow);

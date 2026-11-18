@@ -1,7 +1,9 @@
 // Reload guard: loaded structures live only in this page's memory — nothing
 // saves them in the browser — so a stray Cmd+R / Ctrl+R / F5 throws them all
 // away. Two layers, armed only while there is something to lose (any structure
-// beyond the untouched demo the app loads at start-up):
+// beyond the untouched demo the app loads at start-up — the demo itself once
+// it was changed: coloured, measured, edited, tiled, given arrows or planes;
+// state/exampleSignature.js):
 //
 //   - Keyboard reloads (Cmd/Ctrl+R, Cmd/Ctrl+Shift+R, F5, Ctrl+F5) are caught
 //     before the browser acts on them and answered with CrysViz's own dialog,
@@ -18,16 +20,23 @@
 import { structureShip } from '../state/store.js';
 import { choiceDialog } from './ConfirmModal.js';
 import { getPanelPref } from './panels/PanelManager.js';
+import { exampleSignature } from '../state/exampleSignature.js';
 
 let leaving = false; // set once the user chose to reload: let it through
 let dialogOpen = false;
 
+/** A structure a reload would lose: anything loaded, pasted, built or run —
+ *  and the start-up demo (crystal-viewer.js loadStructure(..., isDefault):
+ *  isBootDefault) once it differs from how it loaded (bootSignature). */
+function atStake(c) {
+  if (!c) return false;
+  if (!c.isBootDefault) return true;
+  return c.bootSignature != null && exampleSignature(c) !== c.bootSignature;
+}
+
 /** Is there anything a reload would lose? */
 export function hasStructuresToLose() {
-  const containers = structureShip.container || [];
-  // The start-up demo (crystal-viewer.js loadStructure(..., isDefault))
-  // carries isBootDefault; anything else was loaded, pasted, built or run.
-  return containers.some((c) => c && !c.isBootDefault);
+  return (structureShip.container || []).some(atStake);
 }
 
 function armed() {
@@ -41,7 +50,7 @@ function isReloadKey(e) {
 
 async function confirmReload() {
   dialogOpen = true;
-  const n = (structureShip.container || []).filter((c) => c && !c.isBootDefault).length;
+  const n = (structureShip.container || []).filter(atStake).length;
   const choice = await choiceDialog(
     `${n === 1 ? 'The loaded structure' : `All ${n} loaded structures`} will be lost: CrysViz does not save structures in the browser. `
       + 'To keep them, download them first (Files ▸ Download ▸ CrysViz keeps everything in one file).',
@@ -76,7 +85,7 @@ async function confirmReload() {
  * @returns {Promise<boolean>} true to go ahead with the reload
  */
 export async function confirmAppReload(action) {
-  const n = (structureShip.container || []).filter((c) => c && !c.isBootDefault).length;
+  const n = (structureShip.container || []).filter(atStake).length;
   const lost = [];
   if (n > 0) {
     lost.push(`${n === 1 ? 'the loaded structure' : `all ${n} loaded structures`} `

@@ -1215,6 +1215,9 @@
   padding: var(--sp-1) var(--sp-2);
   font: var(--fs-xs)/1.45 var(--font-mono, monospace);
   white-space: pre;
+  /* Tab stops 9 characters apart ("-12.3456" or "Si 123" plus a space): the
+     tab-separated columns line up and x, y and z all fit the window. */
+  tab-size: 9;
 }
 .si-selbar-color-row {
   display: flex;

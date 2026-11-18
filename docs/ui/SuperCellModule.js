@@ -123,6 +123,20 @@ export function tileSupercell(sel, nx = 1, ny = 1, nz = 1) {
   sel.supercell = { nx, ny, nz };
 }
 
+/**
+ * How many atoms `sel` has once tiled to nx×ny×nz (what tileSupercell builds:
+ * its base cell is the live cell divided by the current factors, or the whole
+ * live cell when atoms were added or removed since).
+ * @param {any} sel a Structure
+ */
+export function supercellAtomCount(sel, nx = 1, ny = 1, nz = 1) {
+  const cur = sel.supercell || {};
+  const product = Math.max(1, cur.nx || 1) * Math.max(1, cur.ny || 1) * Math.max(1, cur.nz || 1);
+  const perCell = sel.atoms.length / product;
+  const base = Number.isInteger(perCell) && perCell > 0 ? perCell : sel.atoms.length;
+  return base * nx * ny * nz;
+}
+
 export function createSupercell(nx = 1, ny = 1, nz = 1) {
   tileSupercell(fileBrowser.selectedStructure, nx, ny, nz);
 

@@ -21,6 +21,7 @@ import { bondKey } from '../../BondsFracUpdateModule.js';
 import { normalizePeriodicBounds } from '../../LatticeModule.js';
 import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
 import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
+import { CUT_PLANE_TOLERANCE } from '../../cutPlaneTolerance.js';
 import { getCutPlaneMaskSign, Plane, gridToWorld, blockCellRange } from '../../../model/index.js';
 import { wedgeDataForAtom, MAX_WEDGES } from '../../WedgeAtoms.js';
 import { DATA_TEX_WIDTH } from './sceneFragment.js';
@@ -248,6 +249,8 @@ export class SceneEncoder {
   _gridWarned = false; // one-time entry-cap warning
   boundingRadius = 10; // max atom distance from the origin (light placement)
   minY = -5; // lowest atom point (ground plane placement; driver adds the offset)
+  _groundAtomCount = 0; // the structure's atoms at the start of the atoms texture
+  _minProjectionMemo = null; // {nx, ny, nz, value}: the last minProjection
   structureCenter = new THREE.Vector3(); // atom bounding-box center
   structureRadius = 5; // half-diagonal of the atom bounding box (from the center)
   // whole-scene world AABB (atoms + cylinder spheres + poly AABBs + cell-clipped
@@ -325,6 +328,31 @@ export class SceneEncoder {
     this.gridCellsTexture.dispose();
     this.gridIndexTexture.dispose();
     this.emissiveTexture.dispose();
+  }
+
+  /**
+   * The structure's lowest point along a unit normal: the minimum over its
+   * atoms of centre · n − radius (the ground plane goes the offset beyond it,
+   * render/groundDirection.js). Along +y this is minY. Memoised for the last
+   * normal, so a still view costs nothing per tile; a view-relative ground
+   * pays one pass over the atoms per camera change.
+   * @param {{x: number, y: number, z: number}} normal
+   */
+  minProjection(normal) {
+    const { x, y, z } = normal;
+    const memo = this._minProjectionMemo;
+    if (memo && memo.nx === x && memo.ny === y && memo.nz === z) return memo.value;
+    const data = this.atomsTexture.image.data;
+    let min = Infinity;
+    for (let i = 0; i < this._groundAtomCount; i++) {
+      const d = i * 12;
+      const v = data[d] * x + data[d + 1] * y + data[d + 2] * z - data[d + 3];
+      if (v < min) min = v;
+    }
+    const value = Number.isFinite(min) ? min
+      : (this.structureCenter.x * x + this.structureCenter.y * y + this.structureCenter.z * z) - 5;
+    this._minProjectionMemo = { nx: x, ny: y, nz: z, value };
+    return value;
   }
 
   /** Cheap change detector; true when the scene must be re-encoded. Splits the
@@ -792,6 +820,8 @@ export class SceneEncoder {
     // hit loop + uniform grid); gathered up front to size the texture.
     const measSpheres = this._measurementSpheres();
     const meshVisible = !!(mesh && mesh.visible);
+    this._groundAtomCount = 0;
+    this._minProjectionMemo = null;
     if (!meshVisible && measSpheres.length === 0) {
       this.atomCount = 0;
       return;
@@ -827,7 +857,7 @@ export class SceneEncoder {
           const cx = matrices[o + 12], cy = matrices[o + 13], cz = matrices[o + 14];
           let cut = false;
           for (const p of cutPlanes) {
-            if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > 0) { cut = true; break; }
+            if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > CUT_PLANE_TOLERANCE) { cut = true; break; }
           }
           if (cut) continue;
         }
@@ -891,6 +921,9 @@ export class SceneEncoder {
     }
     this.boundingRadius = Math.sqrt(maxR2) + 3;
     this.minY = Number.isFinite(minY) ? minY : -5;
+    // the structure's own atoms (not the measurement shells appended below):
+    // what the ground plane is placed against (minProjection)
+    this._groundAtomCount = n;
     if (Number.isFinite(minX)) {
       this.structureCenter.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
       this.structureRadius = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2) / 2;

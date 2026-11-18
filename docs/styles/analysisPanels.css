@@ -163,6 +163,14 @@
   white-space: nowrap;
 }
 
+/* display above would otherwise beat the hidden attribute: Reset positions
+   showed before any label had been moved. Out of sight but keeping its
+   place: taken out of the row, it reflowed the row when the first drag
+   brought it back, and the view moved under the label being dragged. */
+.pi-ctl-row .pi-btn[hidden] {
+  visibility: hidden;
+}
+
 .pi-ctl-row .pi-btn:disabled {
   opacity: 0.5;
   cursor: default;

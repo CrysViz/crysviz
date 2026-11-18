@@ -66,8 +66,10 @@ def estimate_k0(volumes, pressures):
     return v0, (-v0 * (sum_num / sum_den) if sum_den != 0 else 300.0)
 `;
 
+/** What a fit that could not run at all returns; `failed` lets the panel say
+ *  so instead of "Fit complete." over zeros. */
 function nullResult(nParams) {
-  return { params: Array(nParams).fill(0), errors: Array(nParams).fill(undefined), fitStats: { rms: 0, maxRes: 0, nPoints: 0 } };
+  return { params: Array(nParams).fill(0), errors: Array(nParams).fill(undefined), fitStats: { rms: 0, maxRes: 0, nPoints: 0 }, failed: 'error' };
 }
 
 /** Fit just the Birch-Murnaghan P-V curve. Shared by the energy-less primary
@@ -92,13 +94,15 @@ try:
     res = pressures - birch_murnaghan_pressure(volumes, *popt)
     rms = float(np.sqrt(np.mean(res ** 2)))
     max_res = float(np.max(np.abs(res)))
+    failed = None
 except Exception:
     popt = [v0_initial, k0_estimate, 4.0]
     errors = [None, None, None]
     rms = 0.0
     max_res = 0.0
+    failed = 'not-converged'
 
-json.dumps({'params': [float(x) for x in popt], 'errors': errors,
+json.dumps({'params': [float(x) for x in popt], 'errors': errors, 'failed': failed,
             'fitStats': {'rms': rms, 'maxRes': max_res, 'nPoints': int(len(pressures))}})
 `;
 
@@ -159,11 +163,13 @@ try:
     pv_res = pressures - birch_murnaghan_pressure(volumes, *pv_popt)
     pv_rms = float(np.sqrt(np.mean(pv_res ** 2)))
     pv_max_res = float(np.max(np.abs(pv_res)))
+    pv_failed = None
 except Exception:
     pv_popt = [pvV0_initial, pvK0_estimate, 4.0]
     pv_errors = [None, None, None]
     pv_rms = 0.0
     pv_max_res = 0.0
+    pv_failed = 'not-converged'
 
 min_energy = float(np.min(energies))
 try:
@@ -176,16 +182,18 @@ try:
     ev_res = energies - (birch_murnaghan_energy(volumes, *ev_popt) + min_energy)
     ev_rms = float(np.sqrt(np.mean(ev_res ** 2)))
     ev_max_res = float(np.max(np.abs(ev_res)))
+    ev_failed = None
 except Exception:
     ev_popt = [0.0, float(pv_popt[0]), float(pv_popt[1]), float(pv_popt[2])]
     ev_errors = [None, None, None, None]
     ev_rms = 0.0
     ev_max_res = 0.0
+    ev_failed = 'not-converged'
 
 result_json = json.dumps([
-    {'params': [float(x) for x in pv_popt], 'errors': pv_errors,
+    {'params': [float(x) for x in pv_popt], 'errors': pv_errors, 'failed': pv_failed,
      'fitStats': {'rms': pv_rms, 'maxRes': pv_max_res, 'nPoints': int(len(pressures))}},
-    {'params': [float(x) for x in ev_popt], 'errors': ev_errors,
+    {'params': [float(x) for x in ev_popt], 'errors': ev_errors, 'failed': ev_failed,
      'fitStats': {'rms': ev_rms, 'maxRes': ev_max_res, 'nPoints': int(len(energies))}},
 ])
 result_json

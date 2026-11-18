@@ -31,7 +31,8 @@
 
 import { fileBrowser, general } from '../state/store.js';
 import { hasCifErrors, cellParameterSus, latticeVectorSus, fracCoordinateSus } from '../model/cifErrors.js';
-import { onActiveStructureChange } from '../state/structures.js';
+import { onActiveStructureChange, getContainers, getContainerForStructure } from '../state/structures.js';
+import { dataSourceOf } from '../model/dataSource.js';
 import { getPanelPref, setPanelPref } from './panels/PanelManager.js';
 import { openModifyStructurePanel } from './addToStructureModule/AddStructureModule.js';
 import {
@@ -85,6 +86,13 @@ function isOpen() {
 
 function selectedName() {
   return fileBrowser.selectedRow?.querySelector('.name-inner')?.textContent?.trim() || '';
+}
+
+/** Where the structure's energy, forces and stress came from ("VASP",
+ *  "PET-MAD xs"): its own, else its file's (model/dataSource.js). */
+function sourceOf(structure) {
+  const row = getContainers()[fileBrowser.selectedRowIndex];
+  return dataSourceOf(structure, row?.structures?.includes(structure) ? row : getContainerForStructure(structure));
 }
 
 /** Cheap identity of the shown geometry: the lattice and every position at
@@ -161,7 +169,7 @@ function blockText(block) {
   if (block === 'all') {
     return structureSummaryText(structure, {
       name: selectedName(), cartesian: state.cartesian, wyckoff: state.wyckoff?.info ?? null,
-      cellSu: cellSus(structure), latticeSu: latticeSus(structure), su,
+      cellSu: cellSus(structure), latticeSu: latticeSus(structure), su, source: sourceOf(structure),
     });
   }
   return '';
@@ -186,12 +194,17 @@ function renderProperties(structure) {
   const el = q('#fssProperties');
   if (!el) return;
   const rows = scalarProperties(structure);
+  const source = sourceOf(structure);
   el.hidden = false;
   // Energy, pressure, max force — the scalars the frame carries — as chips at
-  // the top, plain selectable text like everything else. A plain geometry file
-  // (a POSCAR, a CIF) carries none — say so rather than showing an empty gap.
-  setHtml(el, rows.length
-    ? rows.map((r) =>
+  // the top, plain selectable text like everything else, after where they came
+  // from ("Source: VASP", "Source: PET-MAD xs"). A plain geometry file (a
+  // POSCAR, a CIF) carries none — say so rather than showing an empty gap.
+  const sourceChip = source
+    ? `<span class="fss-chip fss-source" id="fssSource" title="Where the energy, forces and stress came from">Source: ${escapeHtml(source)}</span>`
+    : '';
+  setHtml(el, rows.length || source
+    ? sourceChip + rows.map((r) =>
       `<span class="fss-chip">${escapeHtml(r.label)} = ${fmt(r.value, r.digits)} ${escapeHtml(r.unit)}</span>`).join('')
     : '<span class="fss-muted">No energy, force or stress data for this structure.</span>');
   // The full stress tensor under the chips, when the structure carries one.

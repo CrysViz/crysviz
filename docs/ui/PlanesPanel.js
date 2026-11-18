@@ -109,6 +109,21 @@ function findFieldByLabel(label) {
  * every 'crysviz:fields-changed' (ui/FieldPanel.js fieldBrowser.setSelectedField).
  * @returns {number} planes resolved
  */
+/**
+ * Select the first plane coloured by a field, so the Planes window shows its
+ * colour bar (a .crysviz session that brings one opens the window on it:
+ * ui/ShareModule.js). No-op while the window's table is not built.
+ * @returns {boolean} whether a plane was selected
+ */
+export function selectFirstFieldPlane() {
+  const idx = getSelectedStructurePlanes().findIndex((p) => p?.visualization === PLANE_VIS_FIELD && p.field);
+  if (idx < 0 || !document.getElementById('planesTableBody')) return false;
+  selectedPlaneIndex = idx;
+  renderPlanesTable();
+  loadSelectedPlaneParameters();
+  return true;
+}
+
 export function resolvePendingPlaneFields() {
   const structure = getSelectedStructure();
   if (!structure?.planes?.length) return 0;
@@ -160,7 +175,10 @@ function restorePlanes(container, value, structure) {
   return added;
 }
 
-registerStructurePrefField(PLANES_PREF_FIELD, (container, value, structure) => restorePlanes(container, value, structure));
+registerStructurePrefField(PLANES_PREF_FIELD, (container, value, structure) => restorePlanes(container, value, structure), {
+  // Also saved in share links and .crysviz sessions (ui/ShareModule.js).
+  capture: (structure) => serializePlanes(structure),
+});
 
 function ensureStructurePlaneState(structure) {
   if (!structure) return;

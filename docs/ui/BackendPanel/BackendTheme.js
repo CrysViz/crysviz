@@ -6,20 +6,20 @@ import { fileBrowser } from '../../state/store.js';
 // original CrysViz_logo_clear_back_black_lettering.png already followed.
 const LOGOS = {
   standard: {
-    dark: './data/CrysViz_logo_clear_back_beta.png',
-    light: './data/CrysViz_logo_clear_back_beta_black_lettering.png',
+    dark: './data/logo-web/CrysViz_logo_clear_back_beta.png',
+    light: './data/logo-web/CrysViz_logo_clear_back_beta_black_lettering.png',
   },
   symmetry: {
-    dark: './data/CrysViz_logo_clear_back_beta_blue.png',
-    light: './data/CrysViz_logo_clear_back_beta_blue_black_lettering.png',
+    dark: './data/logo-web/CrysViz_logo_clear_back_beta_blue.png',
+    light: './data/logo-web/CrysViz_logo_clear_back_beta_blue_black_lettering.png',
   },
 };
 
 // The About modal carries the same logo without the beta badge, and its own
 // surface (--about-bg) follows the palette, so it flips on the same signal.
 const ABOUT_LOGOS = {
-  dark: './data/CrysViz_logo_clear_back.png',
-  light: './data/CrysViz_logo_clear_back_black_lettering.png',
+  dark: './data/logo-web/CrysViz_logo_clear_back.png',
+  light: './data/logo-web/CrysViz_logo_clear_back_black_lettering.png',
 };
 
 // Whether the dock itself is light — NOT whether the light MODE is selected.

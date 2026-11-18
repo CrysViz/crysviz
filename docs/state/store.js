@@ -176,6 +176,7 @@ export const RENDERING_DEFAULTS = {
   rtGroundOffset: 0.75, // distance from the structure bottom to the plane (all pipelines)
   rtGroundSize: 2.5, // ground disc radius in multiples of the structure radius (all pipelines)
   rtGroundReflect: 0, // ground mirror fraction (0 = matte ... 1 = mirror floor); TRACER-ONLY
+  rtGroundDirection: 'down', // which side the ground lies on: 'down' (−y), 'view-below', 'view-behind', '±x/±y/±z', '±a/±b/±c' (render/groundDirection.js)
   rtLightIntensity: 1.2, // both tracers: key-light intensity multiplier
   rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)
   rtSaturation: 1, // both tracers: post-tone-map saturation grade (output pass; 1 = neutral)

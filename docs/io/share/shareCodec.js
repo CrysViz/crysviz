@@ -49,6 +49,9 @@ const ATOM_INDEXED_STORES = new Set(['ai', 'bu', 'pu', 'au']);
 const PATH_TO_SHORT = new Map(SETTING_KEYS.map(([p, s]) => [p, s]));
 const SHORT_TO_PATH = new Map(SETTING_KEYS.map(([p, s]) => [s, p]));
 const DERIVED = new Set(STRUCTURE_DERIVED_KEYS);
+/** Settings a link never carries, not even through the X escape hatch: the
+ *  crystal planes and the Planes colour bar are .crysviz-only. */
+const NOT_IN_LINKS = /^display\.(planes|planeColorBar)/;
 
 // ---------------------------------------------------------------------------
 // Small helpers
@@ -365,6 +368,38 @@ function encodeStructureBlock(structure) {
   };
 }
 
+/**
+ * The force or spin arrows of the shared structure (captureState's
+ * serializeArrows records, index-aligned to its atoms), compactly:
+ *   v  every vector's x, y, z in a row, 5 significant digits
+ *   s  the scaling all of them share (omitted when none is set)
+ *   x  { index: extras } only where an arrow has its own: s scaling, c pinned
+ *      colour, h hidden, i (spins) the atom it belongs to when that is not
+ *      its own index (manually placed spins)
+ * Tracer materials stay in the .crysviz file.
+ */
+function encodeArrows(list, isSpin) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const scalings = new Set(list.map((a) => a?.scaling ?? null));
+  const shared = scalings.size === 1 ? [...scalings][0] : undefined;
+  const v = [];
+  const x = {};
+  list.forEach((a, i) => {
+    const vec = Array.isArray(a?.vector) ? a.vector : [];
+    for (let k = 0; k < 3; k++) v.push(roundSig(Number(vec[k]) || 0, 5));
+    const e = {};
+    if (shared === undefined && a?.scaling != null) e.s = roundSig(Number(a.scaling));
+    if (a?.color && isColor(a.color)) e.c = a.color;
+    if (a?.hidden) e.h = 1;
+    if (isSpin && Number.isInteger(a?.atomIndex) && a.atomIndex !== i) e.i = a.atomIndex;
+    if (Object.keys(e).length) x[i] = e;
+  });
+  const out = { v };
+  if (shared != null && Number.isFinite(Number(shared))) out.s = roundSig(Number(shared));
+  if (Object.keys(x).length) out.x = x;
+  return out;
+}
+
 function encodeCamera(cam) {
   if (!cam?.position || !cam?.target || !cam?.quaternion) return null;
   const q = normalizeQuat(cam.quaternion.map(Number));
@@ -500,6 +535,12 @@ export function encodeCompact(state, { supercell = null, reference = null, basel
   const sp = encodeSiteSpecies(state.structure.species);
   if (sp) out.sp = sp;
 
+  // --- force / spin arrows (index-aligned to the full structure) ---
+  const fv = encodeArrows(state.structure.forces, false);
+  if (fv) out.fv = fv;
+  const nv = encodeArrows(state.structure.spins, true);
+  if (nv) out.nv = nv;
+
   // --- per-structure style stores (sparse already) ---
   const t = {};
   for (const [sect, key, short] of STORE_KEYS) {
@@ -586,6 +627,37 @@ function decodeSupercell(x) {
     'bad supercell multipliers');
   assert(x[0] * x[1] * x[2] <= MAX_SUPERCELL_PRODUCT, 'supercell too large');
   return /** @type {[number, number, number]} */ (x);
+}
+
+/** Force or spin arrows back from encodeArrows (untrusted: at most one per
+ *  atom, finite numbers, known extras only), or null. */
+function decodeArrows(a, n, isSpin, label) {
+  if (a == null) return null;
+  assert(isPlainObject(a) && Array.isArray(a.v) && a.v.length % 3 === 0 && a.v.length / 3 <= n
+    && a.v.every(isFiniteNumber), `bad ${label}`);
+  assert(a.s == null || isFiniteNumber(a.s), `bad ${label} scaling`);
+  const count = a.v.length / 3;
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const arrow = { vector: [a.v[3 * i], a.v[3 * i + 1], a.v[3 * i + 2]] };
+    if (a.s != null) arrow.scaling = a.s;
+    out.push(arrow);
+  }
+  if (a.x != null) {
+    assert(isPlainObject(a.x), `bad ${label} extras`);
+    for (const [k, e] of Object.entries(a.x)) {
+      const i = Number(k);
+      assert(Number.isInteger(i) && i >= 0 && i < count && isPlainObject(e), `bad ${label} extras`);
+      if (e.s != null) { assert(isFiniteNumber(e.s), `bad ${label} scaling`); out[i].scaling = e.s; }
+      if (e.c != null) { assert(isColor(e.c), `bad ${label} colour`); out[i].color = e.c; }
+      if (e.h) out[i].hidden = true;
+      if (isSpin && e.i != null) {
+        assert(Number.isInteger(e.i) && e.i >= 0 && e.i < n, `bad ${label} atom index`);
+        out[i].atomIndex = e.i;
+      }
+    }
+  }
+  return out;
 }
 
 function decodeCamera(c) {
@@ -727,7 +799,7 @@ export function expandCompact(obj, { referenceStructure = null } = {}) {
     assert(isPlainObject(obj.X), 'bad extra settings');
     for (const [path, value] of Object.entries(obj.X)) {
       const m = /^(colors|display|style)\.([A-Za-z][A-Za-z0-9_]{0,63})$/.exec(path);
-      if (!m || UNSAFE_KEYS.has(m[2]) || DERIVED.has(path)) continue;
+      if (!m || UNSAFE_KEYS.has(m[2]) || DERIVED.has(path) || NOT_IN_LINKS.test(path)) continue;
       sections[m[1]][m[2]] = cleanValue(value);
     }
   }
@@ -774,9 +846,18 @@ export function expandCompact(obj, { referenceStructure = null } = {}) {
     }
   }
 
+  // --- force / spin arrows ---
+  const forces = perAtomOk ? decodeArrows(obj.fv, n, false, 'forces') : null;
+  const spins = perAtomOk ? decodeArrows(obj.nv, n, true, 'spins') : null;
+
   const state = {
     version: STATE_VERSION,
-    structure: siteSpecies ? { ...structure, species: siteSpecies } : structure,
+    structure: {
+      ...structure,
+      ...(siteSpecies ? { species: siteSpecies } : {}),
+      ...(forces ? { forces } : {}),
+      ...(spins ? { spins } : {}),
+    },
     colors,
     display,
     style,
