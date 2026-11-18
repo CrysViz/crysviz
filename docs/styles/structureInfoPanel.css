@@ -181,7 +181,11 @@
 .si-title-row {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
+  /* 10px, not more: with the four buttons (✎ ❖ Aₓ Aˣ⁺) "Modify Atoms/Bonds"
+     has to stay on one line in the default sidebar — a second line makes
+     the window taller, and it grows up over the view when the selection bar
+     appears. */
+  gap: 10px;
   margin-top: 2px;
 }
 .si-title {
@@ -214,6 +218,42 @@
   border-radius: var(--radius-4);
   color: var(--fg-1);
   cursor: pointer;
+}
+/* The atom-label and charge switches beside it (Aₓ, Aˣ⁺ — ui/AtomLabelsToggle.js),
+   pressed (the active-state green of .atom-editor-button.active) while on. */
+.structure-labels-button {
+  width: 22px; /* narrower than ✎/❖: two characters, and the title needs the room */
+  font-size: var(--fs-base);
+  letter-spacing: -0.02em;
+}
+/* Aₓ / Aˣ⁺: the index low and the charge high beside the A. The glyph is one
+   inline box (the button is a flex container, whose items vertical-align
+   cannot move), and the offsets are explicit, as the button's line-height
+   is 0. */
+.structure-labels-button .annot-glyph {
+  display: inline-block;
+  line-height: 1;
+  white-space: nowrap;
+}
+.structure-labels-button sub,
+.structure-labels-button sup {
+  position: relative;
+  vertical-align: baseline;
+  font-size: 0.68em;
+  line-height: 0;
+  margin-left: 0.5px;
+}
+.structure-labels-button sub { top: 0.32em; }
+.structure-labels-button sup { top: -0.55em; }
+/* Aˣ⁺ for a structure without charges: dimmed, but still hoverable so its
+   tooltip can say why (ui/AtomLabelsToggle.js). */
+.structure-labels-button.is-unavailable {
+  opacity: 0.45;
+  cursor: default;
+}
+.structure-edit-button.active {
+  border: 1px solid rgb(var(--active-green-rgb) / 0.95);
+  box-shadow: 0 0 0 1px rgb(var(--active-green-rgb) / 0.35), inset 0 0 0 1px rgb(var(--active-green-rgb) / 0.15);
 }
 .si-wyckoff-badge {
   margin: 0 0 var(--sp-3-5) 0;

@@ -45,6 +45,14 @@ while the tool is on).
   left that puts just that one back on its bond or angle (no leader, hidden behind atoms again like
   any other label); its **×** stays on the right. **Reset positions** puts
   them all back.
+- **Aₓ** and **Aˣ⁺** (top right) show each atom's name on it and its charge beside it — the same
+  switches as in the Structure window.
+- **Measured** shows the distances and angles measured in the 3D view whose atoms are all in the
+  inspector (the same copies), in the measurement colours; a measurement that repeats a labelled
+  bond or angle is left to that label.
+- **Size** sets the size of the length and angle labels (**Values**), of the atom labels
+  (**Atoms**; the **Aₓ** button) and of the charge badges (**Charges**; the **Aˣ⁺** button), each as
+  a multiple of the default. The 3D view's have their own sizes, in Settings ▸ Atom labels.
 - **Colours** sets the colour of the values, of the length and angle label backgrounds and of the
   angle arcs — for figures, black values on white labels, say. Click a swatch for the colour
   picker; its Reset (or the row's **Reset**) goes back to the default.

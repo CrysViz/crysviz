@@ -492,14 +492,18 @@ async function labelTexts(page) {
       document.dispatchEvent(new CustomEvent('crysviz:polyhedron-selection-changed', { detail: { key: null } }));
       return null;
     }
-    const labels = (getInspectorState()?.labels ?? []).map((l) => l.text);
+    const labels = (getInspectorState()?.labels ?? []).map((l) => ({ key: l.key, text: l.text }));
     return labels.length ? labels : null;
   });
-  let polyLabels = [];
-  for (let t = 0; t < 120 && !polyLabels.length; t++) {
-    polyLabels = (await pollPoly()) ?? [];
-    if (!polyLabels.length) await page.waitForTimeout(500);
+  let polyAll = [];
+  for (let t = 0; t < 120 && !polyAll.length; t++) {
+    polyAll = (await pollPoly()) ?? [];
+    if (!polyAll.length) await page.waitForTimeout(500);
   }
+  // The inspector's own bond and angle labels; the 3D view's measurements
+  // among its atoms (keyed m:<id>) are checked on their own below.
+  const polyLabels = polyAll.filter((l) => !/^m:/.test(l.key ?? '')).map((l) => l.text);
+  const polyMeasured = polyAll.filter((l) => /^m:/.test(l.key ?? '')).map((l) => l.text);
   const polySummary = await page.evaluate(async () => (await import('./ui/AnalysisPanels/PolyhedronInspector.js')).getInspectorState()?.summary ?? '');
   H.check('…and its volume, distortion index and angle variance, through the same maths',
     /Volume\s*\d+\.\d+\(\d+\) Å³/.test(polySummary) && /distortion\s*\d+\.\d+\(\d+\)/.test(polySummary)
@@ -508,6 +512,11 @@ async function labelTexts(page) {
     polyLabels.length >= 8 && polyLabels.filter((t) => /Å$/.test(t)).every((t) => /^1\.6\d+\(\d+\) Å$/.test(t))
       && polyLabels.filter((t) => /°$/.test(t)).every((t) => /^\d+\.\d+\(\d+\)°$/.test(t)),
     JSON.stringify(polyLabels));
+  // The 3D view keeps its measurements by atom index across a structure
+  // switch, and the earlier files' ones land on quartz atoms: any that falls
+  // on this tetrahedron shows in the inspector too, with its error.
+  H.check('…and a 3D-view measurement among its atoms shows there too, with its error',
+    polyMeasured.every((t) => /^\d+\.\d+\(\d+\) (Å|°)$/.test(t)), JSON.stringify(polyMeasured));
 
   // --- 7. A magnetic CIF reads them too -----------------------------------------
   await beginLoad(page, MCIF, 'cr.mcif');

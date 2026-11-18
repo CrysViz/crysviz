@@ -1,9 +1,12 @@
 // The label controls both inspectors share (PolyhedronInspector.js and
-// SelectionInspector.js): Lengths and Angles switches that hide a whole kind,
+// SelectionInspector.js): Lengths, Angles and Measured switches that hide a
+// whole kind (Measured: the main view's measurements among these atoms),
 // a small × on a label to hide just that one (as on the main view's
 // measurement labels), "Show all labels" to bring them back, "Move labels"
 // to drag labels clear of each other (a thin leader keeps each one tied to
-// its bond or angle; the view does not turn meanwhile), and the label colours — value text
+// its bond or angle; the view does not turn meanwhile), the label sizes — the
+// length and angle values together, and the atom labels (the Structure
+// window's Aₓ switch) — and the label colours — value text
 // (the inspected structure's, and a compared structure's), the length and
 // angle label backgrounds and the angle arcs — for figures. Each window keeps
 // its own state, so hiding a label in one never hides it in the other.
@@ -11,7 +14,9 @@
 // everywhere else in the app.
 
 import { openSwatchColorPicker } from '../SwatchColorPicker.js';
-import { app } from '../../state/store.js';
+import { app, general } from '../../state/store.js';
+import { atomLabelTexts, formatCharge } from '../../render/index.js';
+import { measurementsSnapshot } from '../../render/MeasurementModule.js';
 import { colorToCss } from '../../render/ImageExportModule.js';
 
 /** The mini view's own label colours (PolyhedronMiniRenderer.js uses these
@@ -31,8 +36,11 @@ export const DEFAULT_LABEL_COLORS = Object.freeze({
  *   valueA: the inspected structure's values (null = each label's own text
  *   colour: light on a length label, dark on an angle label); valueB: a
  *   compared structure's values.
- * @typedef {{ showLengths: boolean, showAngles: boolean, hidden: Set<string>,
- *   colors: LabelColors, offsets: Map<string, {r: number, u: number}>, placing: boolean }} LabelState
+ * @typedef {{ value: number, atom: number, charge: number }} LabelSizes
+ *   multipliers on the view's own label sizes: value — the length and angle
+ *   labels; atom — the atom labels; charge — the charge badges.
+ * @typedef {{ showLengths: boolean, showAngles: boolean, showMeasures: boolean, hidden: Set<string>,
+ *   colors: LabelColors, sizes: LabelSizes, offsets: Map<string, {r: number, u: number}>, placing: boolean }} LabelState
  *   offsets: labels the user moved (PolyhedronMiniRenderer.js setPlacing);
  *   placing: the Move labels mode is on.
  */
@@ -43,8 +51,19 @@ function defaultColors() {
 
 /** @returns {LabelState} */
 export function createLabelState() {
-  return { showLengths: true, showAngles: true, hidden: new Set(), colors: defaultColors(), offsets: new Map(), placing: false };
+  return {
+    showLengths: true, showAngles: true, showMeasures: true, hidden: new Set(), colors: defaultColors(),
+    sizes: { value: 1, atom: 1, charge: 1 }, offsets: new Map(), placing: false,
+  };
 }
+
+const SIZE_INPUTS = [
+  ['value', 'Values', 'Size of the length and angle labels'],
+  ['atom', 'Atoms', 'Size of the atom labels (the Aₓ switch)'],
+  ['charge', 'Charges', 'Size of the charge badges (the Aˣ⁺ switch)'],
+];
+const SIZE_MIN = 0.5;
+const SIZE_MAX = 3;
 
 const COLOR_INPUTS = [
   ['valueA', 'Values', 'Colour of the values'],
@@ -81,10 +100,27 @@ export function labelToolbarHtml(prefix, state) {
         </span>
         <span class="toggle_text">Angles</span>
       </label>
+      <label class="eos-mini-toggle toggle_row toggle_container" title="Show the distances and angles measured in the 3D view among these atoms">
+        <span class="toggle_switch">
+          <input type="checkbox" id="${prefix}MeasuresToggle" ${state.showMeasures ? 'checked' : ''}>
+          <span class="toggle_slider"></span>
+        </span>
+        <span class="toggle_text">Measured</span>
+      </label>
       <button type="button" class="btn-mini pi-btn pi-tool-btn" id="${prefix}PlaceLabels" aria-pressed="false"
         title="Move labels: drag a label to place it — a thin line leads back to its bond or angle. The view does not turn meanwhile; press again to rotate it.">Move labels</button>
       <button type="button" class="btn-mini pi-btn pi-show-labels" id="${prefix}ShowLabels" title="Bring back every label you hid">Show all labels</button>
       <button type="button" class="btn-mini pi-btn" id="${prefix}ResetPlaces" hidden title="Put every moved label back on its bond or angle">Reset positions</button>
+    </div>
+    <div class="pi-ctl-row pi-sizes" id="${prefix}Sizes">
+      <span class="pi-colors-text">Size</span>
+      ${SIZE_INPUTS.map(([key, text, title]) => `
+        <span class="pi-size" title="${title}">
+          <span>${text}</span>
+          <input type="range" class="pi-size-slider" id="${prefix}Size-${key}" data-size-key="${key}" aria-label="${title}"
+            min="${SIZE_MIN}" max="${SIZE_MAX}" step="0.05" value="${state.sizes[key]}">
+          <span class="pi-size-value" id="${prefix}SizeValue-${key}">${state.sizes[key].toFixed(2)}</span>
+        </span>`).join('')}
     </div>
     <div class="pi-ctl-row pi-colors" id="${prefix}Colors">
       <span class="pi-colors-text">Colours</span>
@@ -166,8 +202,10 @@ export function wireLabelToolbar(body, prefix, state, mini, onColors = () => {},
   };
   mini.setShowLengths(state.showLengths);
   mini.setShowAngles(state.showAngles);
+  mini.setShowMeasures(state.showMeasures);
   mini.setHiddenLabels(state.hidden);
   mini.setLabelColors(state.colors);
+  mini.setLabelSizes(state.sizes);
   mini.setLabelOffsets(state.offsets);
   setPlacing(false, false); // the window is still being built: nothing to tell yet
   placeBtn.addEventListener('click', () => setPlacing(!state.placing));
@@ -184,6 +222,10 @@ export function wireLabelToolbar(body, prefix, state, mini, onColors = () => {},
     state.showAngles = /** @type {HTMLInputElement} */ (e.target).checked;
     mini.setShowAngles(state.showAngles);
   });
+  body.querySelector(`#${prefix}MeasuresToggle`).addEventListener('change', (e) => {
+    state.showMeasures = /** @type {HTMLInputElement} */ (e.target).checked;
+    mini.setShowMeasures(state.showMeasures);
+  });
   showBtn.addEventListener('click', () => {
     state.hidden.clear();
     mini.setHiddenLabels(state.hidden);
@@ -194,6 +236,17 @@ export function wireLabelToolbar(body, prefix, state, mini, onColors = () => {},
       e.stopPropagation();
       pickLabelColor(/** @type {HTMLElement} */ (btn.firstElementChild), state,
         /** @type {keyof LabelColors} */ (btn.dataset.colorKey), setColor);
+    });
+  }
+  for (const slider of /** @type {HTMLInputElement[]} */ ([...body.querySelectorAll(`#${prefix}Sizes .pi-size-slider`)])) {
+    const key = /** @type {keyof LabelSizes} */ (slider.dataset.sizeKey);
+    const readout = body.querySelector(`#${prefix}SizeValue-${key}`);
+    slider.addEventListener('input', () => {
+      const v = parseFloat(slider.value);
+      if (!Number.isFinite(v)) return;
+      state.sizes[key] = v;
+      if (readout) readout.textContent = v.toFixed(2);
+      mini.setLabelSizes(state.sizes);
     });
   }
   body.querySelector(`#${prefix}ColorsReset`).addEventListener('click', () => {
@@ -216,4 +269,49 @@ export function wireLabelToolbar(body, prefix, state, mini, onColors = () => {},
     setColor,
     showCompareColor(on) { if (compareBtn) compareBtn.hidden = !on; },
   };
+}
+
+/**
+ * Write each model atom's annotations, while their switches are on (the Aₓ
+ * and Aˣ⁺ buttons, ui/AtomLabelsToggle.js): `label`, its name as the
+ * Structure window names it (render/AtomLabelModule.js atomLabelTexts), and
+ * `charge`, the oxidation states its file gives ("3+", "2+/3+" for a mixed
+ * site). Atoms without a source atom, and faint (ghost) ones, get neither.
+ * @param {any} structure
+ * @param {Array<{srcIndex?: number|null, ghost?: boolean, label?: string|null, charge?: string|null}>} atoms
+ */
+export function annotateModelAtoms(structure, atoms) {
+  if (!structure) return;
+  const texts = general.showAtomLabels ? atomLabelTexts(structure) : null;
+  const charges = general.showCharges === true;
+  if (!texts && !charges) return;
+  for (const a of atoms) {
+    if (a.ghost || !Number.isInteger(a.srcIndex) || a.srcIndex < 0) continue;
+    if (texts) a.label = texts[a.srcIndex] ?? null;
+    if (charges) {
+      const values = (structure.atoms[a.srcIndex]?.species ?? [])
+        .map((s) => s.oxidationState).filter((c) => Number.isFinite(c));
+      a.charge = values.length ? values.map((c) => formatCharge(c)).join('/') : null;
+    }
+  }
+}
+
+/**
+ * The main view's measurements (render/MeasurementModule.js) whose atoms are
+ * all among the model's: the same source atom at the same place (the copy
+ * that was measured). Each gives the model atoms' indices — an angle's
+ * vertex second — its value and CIF error, keyed `m:<id>` so its label hides
+ * and moves like the others.
+ * @param {Array<{srcIndex?: number|null, pos?: number[], ghost?: boolean}>} atoms
+ * @returns {Array<{key: string, kind: 'distance'|'angle', at: number[], value: number, su: number|null}>}
+ */
+export function modelMeasures(atoms) {
+  const out = [];
+  for (const m of measurementsSnapshot()) {
+    const at = m.atoms.map((ma) => atoms.findIndex((a) => !a.ghost && a.srcIndex === ma.atomIndex && Array.isArray(a.pos)
+      && Math.hypot(a.pos[0] - ma.pos[0], a.pos[1] - ma.pos[1], a.pos[2] - ma.pos[2]) < 1e-3));
+    if (at.some((i) => i < 0)) continue;
+    out.push({ key: `m:${m.id}`, kind: m.kind, at, value: m.value, su: m.su });
+  }
+  return out;
 }

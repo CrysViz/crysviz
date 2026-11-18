@@ -22,7 +22,8 @@ Currently it is possible to view the following file types:
   `5.4307(2)`) for its cell or coordinates also asks whether to read them — a tick box in the
   symmetry dialog (ticked unless you said no last time), or a dialog of its own for a CIF without
   symmetry and for an mCIF. With the errors read, measured lengths and angles (the measurement
-  labels, the Selection and Polyhedron Inspectors) are written with their error, `2.3456(12) Å`;
+  labels, the Selection and Polyhedron Inspectors) are written with their error, `2.3456(12) Å`,
+  and so are the cell parameters and positions in **Parameters** below;
   **Show CIF Errors** in the Features window hides them again. The errors are kept in a supercell
   and saved with a `.crysviz` file or a share link.
   Partially occupied and mixed sites (`_atom_site_occupancy`) are saved with a `.crysviz` file or a
@@ -49,3 +50,13 @@ positions (space group and one row per crystallographic orbit, from the active W
 symmetry analysis at a tight tolerance (1e-5 Å); the space group links to its symdata page, and the copied text also carries each orbit's
 site symmetry). Select any text to copy it, or use a block's ⧉ to copy that block. The ✎ opens
 the same Modify Structure panel as the pen in the Structure window.
+
+For a CIF loaded with its **errors** (standard uncertainties), the lattice vectors' components,
+the cell parameters and the volume are written with them, `a = 5.4307(2) Å` (a component's error
+follows the cell's orientation: with a along x, `a_x` carries σ(a) and `a_y`, `a_z` none), and so
+are the fractional positions and the Wyckoff
+coordinates, `0.4135(3)` (a symmetry copy's through the operation that made it, a supercell's
+scaled with the cell); the ⧉ copies carry them too. Values the file gives exactly (`90`, `0.5`)
+have none. Cartesian positions are shown without errors. An atom moved from where the CIF puts it,
+or a changed cell, loses its errors here as everywhere else; **Show CIF Errors** in the Features
+window hides them.

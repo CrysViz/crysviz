@@ -210,6 +210,119 @@ export function propagateSu(structure, points, fn) {
   return Number.isFinite(variance) ? Math.sqrt(variance) : null;
 }
 
+// ---- the parameters themselves (Files ▸ Parameters) ------------------------
+
+/** Below this an s.u. is rounding noise of the differences (a component
+ *  fixed by the orientation, c·cos 90°, say), not an error: written as none. */
+const SU_FLOOR = 1e-9;
+const floorSu = (v) => (Number.isFinite(v) && v >= SU_FLOOR ? v : 0);
+
+const det3 = (L) => L[0][0] * (L[1][1] * L[2][2] - L[1][2] * L[2][1])
+  - L[0][1] * (L[1][0] * L[2][2] - L[1][2] * L[2][0])
+  + L[0][2] * (L[1][0] * L[2][1] - L[1][1] * L[2][0]);
+
+/**
+ * The s.u.s of the current cell's a, b, c, α, β, γ and volume, propagated
+ * from the CIF's cell errors through its free parameters (a cubic cell's
+ * volume gets 3a²σ(a), not three independent a's) and, in a supercell,
+ * through `toCif`. Null when the structure has no read errors or its cell is
+ * no longer the CIF's; an entry is 0 where the value has no error (an angle
+ * fixed by symmetry, or one the file gives exactly).
+ * @param {any} structure
+ * @returns {number[]|null} [a, b, c, α, β, γ, V]
+ */
+export function cellParameterSus(structure) {
+  if (!hasCifErrors(structure) || !cellMatchesCif(structure)) return null;
+  const { cell, toCif } = structure.cifErrors;
+  // The current lattice is toCif · L_cif (a supercell), else the CIF's own.
+  const current = (params) => {
+    const Lc = basisFromCell(params);
+    const L = toCif ? [0, 1, 2].map((i) => rowTimes(toCif[i], Lc)) : Lc;
+    return [...cellParameters(L), Math.abs(det3(L))];
+  };
+  const variance = [0, 0, 0, 0, 0, 0, 0];
+  const h = 1e-6;
+  for (const { d, su: sigma } of cellDirections(cell)) {
+    const up = current(cell.values.map((v, m) => v + h * d[m]));
+    const down = current(cell.values.map((v, m) => v - h * d[m]));
+    up.forEach((v, k) => { variance[k] += (((v - down[k]) / (2 * h)) * sigma) ** 2; });
+  }
+  const sus = variance.map((v) => Math.sqrt(v));
+  return sus.every(Number.isFinite) ? sus.map(floorSu) : null;
+}
+
+/**
+ * The s.u.s of the current lattice vectors' Cartesian components (rows a, b,
+ * c; Å), propagated from the CIF's cell errors through its free parameters.
+ * A component's error depends on how the cell sits in space, so the cell is
+ * moved with the structure's own orientation: the lattice is
+ * toCif · B(a, b, c, α, β, γ) · Q, B the CIF reader's construction (a along
+ * x, b in the xy plane) and Q fixed by the structure's lattice now. With the
+ * CIF's own orientation a = (a, 0, 0): a_x carries σ(a), a_y and a_z none.
+ * Null when the structure has no read errors or its cell is no longer the
+ * CIF's.
+ * @param {any} structure
+ * @returns {number[][]|null} 3×3, rows as structure.lattice
+ */
+export function latticeVectorSus(structure) {
+  if (!hasCifErrors(structure) || !cellMatchesCif(structure)) return null;
+  const { cell, toCif } = structure.cifErrors;
+  let Lcif = structure.lattice;
+  if (toCif) {
+    const inv = inverse3(toCif);
+    if (!inv) return null;
+    Lcif = [0, 1, 2].map((i) => rowTimes(inv[i], Lcif)); // current = toCif · L_cif
+  }
+  const B0inv = inverse3(basisFromCell(cell.values));
+  if (!B0inv) return null;
+  const Q = [0, 1, 2].map((i) => rowTimes(B0inv[i], Lcif)); // L_cif = B(values) · Q
+  const lattice = (params) => {
+    const B = basisFromCell(params);
+    const M = [0, 1, 2].map((i) => rowTimes(B[i], Q));
+    return toCif ? [0, 1, 2].map((i) => rowTimes(toCif[i], M)) : M;
+  };
+  const variance = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const h = 1e-6;
+  for (const { d, su: sigma } of cellDirections(cell)) {
+    const up = lattice(cell.values.map((v, m) => v + h * d[m]));
+    const down = lattice(cell.values.map((v, m) => v - h * d[m]));
+    for (let i = 0; i < 3; i++) {
+      for (let k = 0; k < 3; k++) variance[i][k] += (((up[i][k] - down[i][k]) / (2 * h)) * sigma) ** 2;
+    }
+  }
+  const sus = variance.map((row) => row.map((v) => floorSu(Math.sqrt(v))));
+  return sus.flat().every(Number.isFinite) ? sus : null;
+}
+
+/**
+ * The s.u.s of an atom's fractional coordinates in the current cell: its CIF
+ * site's, through the operation that made this copy (on a special position
+ * only the free directions move it) and, in a supercell, through `toCif`.
+ * Null when the atom has no error (moved, added, not from the CIF); a
+ * coordinate the file gives exactly, or fixed by symmetry, gets 0.
+ * Fractional coordinates do not depend on the cell, so a changed cell keeps
+ * them.
+ * @param {any} structure
+ * @param {number} atomIndex
+ * @returns {number[]|null} [x, y, z]
+ */
+export function fracCoordinateSus(structure, atomIndex) {
+  if (!hasCifErrors(structure)) return null;
+  const ref = atomCifSite(structure, atomIndex);
+  if (!ref) return null;
+  const site = structure.cifErrors.sites[ref.site];
+  const toCif = structure.cifErrors.toCif;
+  const back = toCif ? inverse3(toCif) : null; // f = f_cif · toCif⁻¹
+  if (toCif && !back) return null;
+  const variance = [0, 0, 0];
+  for (const { d, su: sigma } of siteDirections(site)) {
+    const Rd = rowTimes(d, transpose(ref.R)); // R · d, in the CIF's cell
+    const v = back ? rowTimes(Rd, back) : Rd;
+    v.forEach((x, i) => { variance[i] += (x * sigma) ** 2; });
+  }
+  return variance.map((v) => floorSu(Math.sqrt(v)));
+}
+
 // ---- free parameters: special positions and symmetry-tied cells ----------
 //
 // A CIF lists every coordinate and cell parameter with its own s.u., but

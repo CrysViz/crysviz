@@ -61,6 +61,7 @@ export function removeMeasurementById(id) {
     return false;
   });
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 /** Tear down one value label: the sprite itself (its material, whose texture
@@ -358,6 +359,8 @@ export function refreshMeasurementStyling() {
   // Rebuilds the lines (via buildMeasureLine), the label textures and, at its
   // end, every atom marker (via updateMeasurementMarkers).
   updateAllMeasurements();
+  // The inspectors draw the same measurements in the same colours and style.
+  notifyMeasurementsChanged();
 }
 
 /** Points along the minor arc between unit directions d1,d2, radius r from
@@ -467,6 +470,43 @@ export function clearAllMeasurements(){
   measurements.measureLabels = [];
   measurements.selectedAtoms = [];
   clearMeasureGraphics();
+  notifyMeasurementsChanged();
+}
+
+/** Tell whoever shows the measurements elsewhere (the inspectors) that one
+ *  was added or removed. */
+function notifyMeasurementsChanged() {
+  document.dispatchEvent(new CustomEvent('crysviz:measurements-changed'));
+}
+
+/**
+ * Every measurement on screen, for a view of its own (the Selection and
+ * Polyhedron Inspectors): its kind, its atoms where they are now (source
+ * atom, Cartesian position of the copy measured; an angle's vertex second),
+ * its value and its CIF error (null without). One entry per value label,
+ * which every measurement has exactly one of.
+ * @returns {Array<{id: number, kind: 'distance'|'angle', atoms: Array<{atomIndex: number, pos: number[]}>, value: number, su: number|null}>}
+ */
+export function measurementsSnapshot() {
+  const out = [];
+  for (const label of measurements.measureLabels) {
+    const u = label.userData ?? {};
+    if (u.type !== 'distance' && u.type !== 'angle') continue;
+    const refs = u.type === 'distance' ? [u.atom1Ref, u.atom2Ref] : [u.atom1Ref, u.atom2Ref, u.atom3Ref];
+    const resolved = refs.map((ref) => resolveMeasurementAtom(ref));
+    if (resolved.some((a) => !a)) continue;
+    const value = u.type === 'distance'
+      ? resolved[0].position.distanceTo(resolved[1].position)
+      : calculateAngle(resolved[0], resolved[1], resolved[2]);
+    out.push({
+      id: u.measurementId,
+      kind: u.type,
+      atoms: resolved.map((a) => ({ atomIndex: a.userData.atomIndex, pos: a.position.toArray() })),
+      value,
+      su: measurementSu(u.type, refs),
+    });
+  }
+  return out;
 }
 
 export function calculateAngle(atom1, atom2, atom3) {
@@ -882,6 +922,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   app.scene.add(label);
   measurements.measureLabels.push(label);
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 
@@ -963,6 +1004,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   app.scene.add(label);
   measurements.measureLabels.push(label);
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 export function drawMeasureGraphics(){

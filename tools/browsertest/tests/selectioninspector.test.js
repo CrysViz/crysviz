@@ -371,7 +371,11 @@ const clearOf = (p, list) => Math.min(...list.map((q) => Math.hypot(q.x - p.x, q
       && movedLabel.visible && mode.reset && s.labels.filter((l) => l.moved).length === 1,
     JSON.stringify({ grab: { x: grab.x, y: grab.y }, movedLabel, mode }));
   // Touch drags a label too (pointer events; capture stubbed for synthetic ones).
-  const touchGrab = (await onCanvas(page, s.labels.filter((l) => l.visible && !l.moved && inView(l))))[0];
+  // The label with the most room around it, as for the mouse drag above: a
+  // touch picks the nearest label under the finger, so a crowded one would
+  // move its neighbour instead.
+  const touchGrab = (await onCanvas(page, s.labels.filter((l) => l.visible && !l.moved && inView(l))))
+    .map((l) => ({ ...l, clear: clearOf(l, s.labels) })).sort((p, q) => q.clear - p.clear)[0];
   await page.evaluate(({ x, y }) => {
     const canvas = document.querySelector('#siViewport canvas');
     const capture = [Element.prototype.setPointerCapture, Element.prototype.releasePointerCapture];

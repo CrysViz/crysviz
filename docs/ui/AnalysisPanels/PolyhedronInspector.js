@@ -17,13 +17,14 @@
 
 import { registerPanel, removePanel, getPanel, openPanel } from '../panels/PanelManager.js';
 import { createPolyhedronMiniRenderer } from './PolyhedronMiniRenderer.js';
-import { createLabelState, labelToolbarHtml, wireLabelToolbar } from './inspectorLabels.js';
+import { createLabelState, labelToolbarHtml, wireLabelToolbar, annotateModelAtoms, modelMeasures } from './inspectorLabels.js';
 import { computePolyhedronDetail, convexHullVolume, polyhedronDistortion } from '../../render/PolyhedraAnalysisModule.js';
 import { placedAtomKey, bondLabelKey, angleLabelKey } from '../../render/SelectionAnalysisModule.js';
 import { subscribeToAtomSelection, getSelectedAtoms, highlightPolyhedronByKey } from '../SelectAndHighlightModule.js';
 import { fileBrowser, highlightHover, general } from '../../state/store.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { modelErrors, placedSu, formatWithSu } from '../../model/cifErrors.js';
+import { createAtomLabelsButton, createChargesButton } from '../AtomLabelsToggle.js';
 
 const PANEL_ID = 'polyhedronInspector';
 
@@ -160,8 +161,10 @@ function polyhedronModel(detail) {
   const structure = fileBrowser.selectedStructure;
   const errors = general.showCifErrors !== false && structure?.cifErrors
     ? modelErrors(structure, atoms, bonds, angles) : null;
+  annotateModelAtoms(structure, atoms); // names and charges, while their switches are on
   return {
     atoms,
+    measures: modelMeasures(atoms), // the 3D view's measurements among these atoms
     bonds: bonds.map((b, k) => ({ ...b, lengthSu: errors?.bonds[k] ?? null })),
     angles: angles.map((g, k) => ({ ...g, angleSu: errors?.angles[k] ?? null })),
     hull: detail.vertices.length >= 4 ? {
@@ -284,7 +287,10 @@ export function addPolyhedronInspectorPanel() {
       body.innerHTML = `
         <div class="cv-plot-stack">
           <div class="split-item" id="polyhedron-inspector-item">
-            <h4>Polyhedron Inspector</h4>
+            <div class="pi-title-row">
+              <h4>Polyhedron Inspector</h4>
+              <span class="pi-title-actions" id="piTitleActions"></span>
+            </div>
             ${FORCED_NOTICE_HTML}
             <div class="pi-controls">${labelToolbarHtml('pi', labels)}</div>
             <div class="pi-hint" id="piHint"></div>
@@ -295,6 +301,9 @@ export function addPolyhedronInspectorPanel() {
         </div>
       `;
 
+      // The atom-label and charge switches, the same ones as in the Structure window.
+      body.querySelector('#piTitleActions').append(
+        createAtomLabelsButton('piAtomLabelsButton'), createChargesButton('piChargeBadgesButton'));
       const viewport = body.querySelector('#piViewport');
       const summaryEl = body.querySelector('#piSummary');
       const hintEl = body.querySelector('#piHint');
@@ -389,3 +398,8 @@ document.addEventListener('crysviz:polyhedra-rebuilt', () => refreshAll({ keepCa
 document.addEventListener('crysviz:colors-changed', () => refreshAll({ keepCamera: true }));
 // "Show CIF Errors" switched, or a CIF's errors were read.
 document.addEventListener('crysviz:cif-errors-changed', () => refreshAll({ keepCamera: true }));
+// The atom-label and charge switches (Aₓ, Aˣ⁺).
+document.addEventListener('crysviz:atom-labels-changed', () => refreshAll({ keepCamera: true }));
+document.addEventListener('crysviz:charges-changed', () => refreshAll({ keepCamera: true }));
+// A measurement made or removed in the 3D view.
+document.addEventListener('crysviz:measurements-changed', () => refreshAll({ keepCamera: true }));

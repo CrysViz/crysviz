@@ -7,6 +7,7 @@ import { syncGroundPlaneVisibility } from './GroundPlaneModule.js'
 
 import {updateRandomColors, startDisco, stopDisco} from '../ui/DiscoModule.js'
 import { updateChargeBadges } from './ChargeBadgeModule.js'
+import { updateAtomLabels } from './AtomLabelModule.js'
 import { updateMeasurementLabelVisibility } from './MeasurementModule.js'
 import { renderScanlinePass, toggleScanlineMode } from './ScanlinePass.js'
 import { count as traceCount } from '../debug/debugTrace.js'
@@ -75,6 +76,7 @@ export function renderFrameNow({ interactive = false } = {}) {
   // camera, so they have to be updated before the scene is drawn. Cheap when
   // there are none, and the loop only runs on frames that actually render.
   updateChargeBadges();
+  updateAtomLabels();
   updateMeasurementLabelVisibility();
   // Large cells reach past the default far plane; keep it behind the scene.
   updateCameraClipRange(app.camera);

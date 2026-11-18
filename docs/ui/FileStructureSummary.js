@@ -20,8 +20,17 @@
 // analysis at a tight fixed tolerance (WYCKOFF_TOLERANCE) — run debounced, and
 // only while the section is open, so trajectory playback with the section
 // folded costs nothing.
+//
+// A structure read from a CIF with its errors (model/cifErrors.js) shows them
+// as the measurements do, while "Show CIF Errors" is on: the lattice vectors'
+// components (through the cell's own orientation), the cell parameters
+// and volume as a = 5.4307(2) Å, the fractional positions and the Wyckoff
+// coordinates as 0.6234(5); the copy buttons carry them too. An atom moved
+// from where the CIF put it, or a changed cell, loses its errors here as
+// everywhere else. Cartesian positions are shown without.
 
-import { fileBrowser } from '../state/store.js';
+import { fileBrowser, general } from '../state/store.js';
+import { hasCifErrors, cellParameterSus, latticeVectorSus, fracCoordinateSus } from '../model/cifErrors.js';
 import { onActiveStructureChange } from '../state/structures.js';
 import { getPanelPref, setPanelPref } from './panels/PanelManager.js';
 import { openModifyStructurePanel } from './addToStructureModule/AddStructureModule.js';
@@ -30,8 +39,8 @@ import {
 } from './SymmetryEditModule.js';
 import { hallEntry, symdataHallUrl } from './BackendPanel/hallSymbols.js';
 import {
-  latticeText, latticeParamsText, positionsTable, wyckoffRows, wyckoffText, structureSummaryText,
-  scalarProperties, stressTensorText,
+  latticeText, latticeParamsText, latticeParamItems, positionsTable, wyckoffRows, wyckoffText,
+  structureSummaryText, scalarProperties, stressTensorText, coordText,
 } from './structureSummaryText.js';
 
 const ROOT_ID = 'fileStructureSummary';
@@ -90,6 +99,29 @@ function signatureOf(structure) {
   return parts.join('|');
 }
 
+// ---- CIF errors -----------------------------------------------------------------
+
+/** Whether the shown structure's CIF errors are written with its values. */
+function errorsShown(structure) {
+  return general.showCifErrors !== false && hasCifErrors(structure);
+}
+
+/** The cell's s.u.s [a, b, c, α, β, γ, V] when shown, else null. */
+function cellSus(structure) {
+  return errorsShown(structure) ? cellParameterSus(structure) : null;
+}
+
+/** The lattice vectors' component s.u.s (3×3) when shown, else null. */
+function latticeSus(structure) {
+  return errorsShown(structure) ? latticeVectorSus(structure) : null;
+}
+
+/** An atom's fractional-coordinate s.u.s, as positionsTable takes them, or
+ *  null when none are shown. */
+function fracSuOf(structure) {
+  return errorsShown(structure) ? (i) => fracCoordinateSus(structure, i) : null;
+}
+
 // ---- clipboard ----------------------------------------------------------------
 
 function flash(el) {
@@ -119,12 +151,18 @@ function setStatus(text) {
 function blockText(block) {
   const { structure } = state;
   if (!structure) return '';
-  if (block === 'lattice') return `${latticeText(structure.lattice)}\n${latticeParamsText(structure.lattice)}`;
-  if (block === 'positions') return positionsTable(structure, state.cartesian).text;
-  if (block === 'wyckoff') return state.wyckoff?.info ? wyckoffText(state.wyckoff.info) : '';
+  const su = fracSuOf(structure);
+  if (block === 'lattice') {
+    return `${latticeText(structure.lattice, latticeSus(structure))}\n${latticeParamsText(structure.lattice, cellSus(structure))}`;
+  }
+  if (block === 'positions') return positionsTable(structure, state.cartesian, { su }).text;
+  if (block === 'wyckoff') return state.wyckoff?.info ? wyckoffText(state.wyckoff.info, { su }) : '';
   if (block === 'stress') return stressTensorText(structure);
   if (block === 'all') {
-    return structureSummaryText(structure, { name: selectedName(), cartesian: state.cartesian, wyckoff: state.wyckoff?.info ?? null });
+    return structureSummaryText(structure, {
+      name: selectedName(), cartesian: state.cartesian, wyckoff: state.wyckoff?.info ?? null,
+      cellSu: cellSus(structure), latticeSu: latticeSus(structure), su,
+    });
   }
   return '';
 }
@@ -169,10 +207,21 @@ function renderLattice(structure) {
   const pre = q('#fssLattice');
   const params = q('#fssParams');
   if (!pre || !params) return;
-  pre.textContent = latticeText(structure.lattice);
-  // One chip per parameter.
-  params.innerHTML = latticeParamsText(structure.lattice).split('  ')
-    .map((item) => `<span class="fss-chip">${escapeHtml(item)}</span>`).join('');
+  // The vectors and one chip per parameter, each with its CIF error when it
+  // has one.
+  const text = latticeText(structure.lattice, latticeSus(structure));
+  if (pre.textContent !== text) pre.textContent = text;
+  const su = cellSus(structure);
+  setHtml(params, latticeParamItems(structure.lattice, su)
+    .map((item) => `<span class="fss-chip">${escapeHtml(item)}</span>`).join(''));
+  // Say where the digits in parentheses come from, once, while any are shown
+  // (the cell's, or an atom's that kept its error).
+  const note = q('#fssSuNote');
+  if (note) {
+    const fracSu = fracSuOf(structure);
+    note.hidden = !(su?.some((v) => v > 0)
+      || (fracSu && structure.atoms.some((_, i) => fracSu(i)?.some((v) => v > 0))));
+  }
 }
 
 function renderPositions(structure) {
@@ -180,11 +229,11 @@ function renderPositions(structure) {
   const note = q('#fssPositionsNote');
   const head = q('#fssPositionsHead');
   if (!tbody || !note || !head) return;
-  const { rows } = positionsTable(structure, state.cartesian);
+  const { rows } = positionsTable(structure, state.cartesian, { su: fracSuOf(structure) });
   head.textContent = state.cartesian ? 'Cartesian positions (Å)' : 'Fractional positions';
   const shown = rows.slice(0, MAX_SHOWN_ROWS);
   tbody.innerHTML = shown.map((r) => `<tr>
-      <td class="fss-idx">${r.index}</td>${cell(r.label)}${r.xyz.map((v) => cell(fmt(v))).join('')}
+      <td class="fss-idx">${r.index}</td>${cell(r.label)}${r.xyz.map((v, k) => cell(coordText(v, r.su?.[k]))).join('')}
     </tr>`).join('');
   note.textContent = rows.length > shown.length
     ? `Showing ${shown.length} of ${rows.length} atoms — the copy carries all of them.`
@@ -234,9 +283,13 @@ function renderWyckoff() {
   line.innerHTML = `Space group ${sg}`
     + ` <span class="fss-muted">· ${info.rows.length} orbit${info.rows.length === 1 ? '' : 's'} (${source})${disagreement}</span>`;
   table.hidden = false;
-  tbody.innerHTML = info.rows.map((r) => `<tr>
-      ${cell(r.element)}${cell(r.wyckoff)}${r.xyz.map((v) => cell(fmt(v))).join('')}
-    </tr>`).join('');
+  const su = state.structure ? fracSuOf(state.structure) : null;
+  tbody.innerHTML = info.rows.map((r) => {
+    const sus = su && Number.isInteger(r.repIndex) ? su(r.repIndex) : null;
+    return `<tr>
+      ${cell(r.element)}${cell(r.wyckoff)}${r.xyz.map((v, k) => cell(coordText(v, sus?.[k]))).join('')}
+    </tr>`;
+  }).join('');
 }
 
 /** Run (or reuse) the symmetry analysis for the shown structure. The active
@@ -393,6 +446,7 @@ export function addFileStructureSummary(body) {
         </div>
         <pre class="fss-pre" id="fssLattice"></pre>
         <div class="fss-params" id="fssParams"></div>
+        <div class="fss-muted" id="fssSuNote" hidden title="Show CIF Errors in the Features window hides them">Errors from the CIF in parentheses: 5.4307(2) = 5.4307 ± 0.0002.</div>
       </section>
       <section class="fss-block">
         <div class="fss-block-head">
@@ -463,6 +517,8 @@ export function addFileStructureSummary(body) {
   if (!subscribed) {
     subscribed = true;
     onActiveStructureChange(() => render());
+    // "Show CIF Errors" flipped, or a CIF's errors were just read.
+    document.addEventListener('crysviz:cif-errors-changed', () => render());
   }
   render();
 }

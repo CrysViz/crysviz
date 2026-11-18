@@ -7,9 +7,17 @@
 // type. Everything here writes to `general` and asks MeasurementModule to
 // restyle the measurements already on screen, so changes apply live rather
 // than only to the next measurement.
+//
+// Also the "Atom labels" section right after it (buildAtomLabelSettings): the
+// sizes of the names (the Structure window's Aₓ switch, render/
+// AtomLabelModule.js) and of the charge badges (Aˣ⁺, render/
+// ChargeBadgeModule.js) in the main view. The inspectors size theirs with
+// their own sliders (AnalysisPanels/inspectorLabels.js).
 
 import { general } from '../state/store.js';
-import { requestRender } from '../render/index.js';
+import {
+  requestRender, MAX_LABELLED_ATOMS, rebuildChargeBadges, updateChargeBadges,
+} from '../render/index.js';
 import { refreshMeasureLabelSizes, refreshMeasurementStyling } from '../render/MeasurementModule.js';
 import { openSwatchColorPicker } from './SwatchColorPicker.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js';
@@ -189,5 +197,55 @@ export function buildMeasurementSettings(body) {
     (hex) => { general.measureAngleColor = hex; }));
   group.appendChild(colorGroup);
 
+  body.appendChild(group);
+}
+
+/** A 0.5×–3× size slider row for the Atom labels section. */
+function makeScaleRow(labelText, id, title, get, set, apply) {
+  const wrap = document.createElement('span');
+  wrap.className = 'measure-settings-slider';
+  const value = document.createElement('span');
+  value.className = 'slider-value';
+  value.id = `${id}Value`;
+  value.textContent = get().toFixed(2);
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.id = id;
+  slider.min = '0.5';
+  slider.max = '3';
+  slider.step = '0.05';
+  slider.value = String(get());
+  slider.title = title;
+  slider.addEventListener('input', () => {
+    const v = parseFloat(slider.value);
+    if (Number.isFinite(v)) set(v);
+    value.textContent = get().toFixed(2);
+    apply();
+  });
+  wrap.appendChild(value);
+  wrap.appendChild(slider);
+  return makeRow(labelText, wrap);
+}
+
+/**
+ * Build the Atom labels section into `body` (the Settings window's body): the
+ * 3D view's sizes of the atom names (Aₓ) and of the charge badges (Aˣ⁺), each
+ * a multiplier on its default, applied live. The inspectors have their own.
+ * @param {HTMLElement} body
+ */
+export function buildAtomLabelSettings(body) {
+  body.appendChild(makeSectionHeadline('Atom labels'));
+  const group = document.createElement('div');
+  group.className = 'toggle_group measure-settings-group';
+  group.appendChild(makeScaleRow('Names', 'atomLabelSize',
+    'Size of the atom names in the 3D view (the Aₓ switch in the Structure window;'
+      + ` drawn for up to ${MAX_LABELLED_ATOMS} atoms). The inspectors have their own size sliders.`,
+    () => general.atomLabelScale ?? 1, (v) => { general.atomLabelScale = v; },
+    () => requestRender())); // the main view sizes its names every frame
+  group.appendChild(makeScaleRow('Charges', 'chargeLabelSize',
+    'Size of the charge badges in the 3D view (the Aˣ⁺ switch in the Structure window,'
+      + ' or Features ▸ Show Charges). The inspectors have their own size sliders.',
+    () => general.chargeLabelScale ?? 1, (v) => { general.chargeLabelScale = v; },
+    () => { rebuildChargeBadges(); updateChargeBadges(); requestRender(); }));
   body.appendChild(group);
 }

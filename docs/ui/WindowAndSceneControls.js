@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general, saveLockPrefs } from '../state/store.js';
-import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline, clearChargeTextureCache, rebuildChargeBadges } from '../render/index.js';
+import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline, clearChargeTextureCache, rebuildChargeBadges, clearAtomLabelTextureCache, rebuildAtomLabels } from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 import { createLockToggleButton } from './LockToggleButton.js';
@@ -73,8 +73,10 @@ function wireFontRefresh() {
   const boundedFontLoad = loadCrysVizFonts();
   document.fonts.ready.then(() => boundedFontLoad).then(() => {
     clearChargeTextureCache();
+    clearAtomLabelTextureCache();
     app.gizmoScene?.userData?.rebuildLabels?.();
     rebuildChargeBadges();
+    rebuildAtomLabels();
     requestRender();
   });
 }

@@ -20,4 +20,5 @@ written with their error: `2.3456(12) Å` in the measurement labels and in the S
 Polyhedron Inspectors, including the values they derive (mean bond length; polyhedron volume,
 distortion index and angle variance). **Show CIF Errors** switches that off (plain values) and on
 again; nothing is lost either way. It does nothing for structures loaded without errors. The
-Bonds tab, the histograms, the atom tooltip and the Files window's Parameters show plain values.
+Files window's Parameters write the lattice vectors, cell parameters, volume and fractional positions with their
+errors too; the Bonds tab, the histograms and the atom tooltip show plain values.
