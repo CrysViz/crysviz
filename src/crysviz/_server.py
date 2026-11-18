@@ -27,6 +27,16 @@ _SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "Cross-Origin-Resource-Policy": "same-origin",
+    # Cross-origin isolation: unlocks SharedArrayBuffer, which the threaded
+    # PET-MAD wasm (docs/external/mlip_wasm/cpu-mt) needs to run ggml on more
+    # than one core. GitHub Pages cannot send these, so the web app uses an
+    # opt-in service worker instead (docs/coi-serviceworker.js); the desktop
+    # host can simply set them. COEP is `credentialless` rather than
+    # `require-corp` so the few cross-origin resources the app pulls without
+    # CORS (Plotly from its CDN) still load; engines without credentialless
+    # ignore the header and stay un-isolated, which only costs the threads.
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "credentialless",
 }
 _CHUNK_SIZE = 64 * 1024
 _MAX_COMPLETION_BODY = 16 * 1024
