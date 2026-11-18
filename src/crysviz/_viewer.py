@@ -628,16 +628,23 @@ class Viewer:
             raise ViewerProtocolError("browser returned an invalid active pipeline")
         return result
 
-    def save_image(self, path: str | os.PathLike[str], *, width: int = 800, height: int = 600,
+    def save_image(self, path: str | os.PathLike[str], *, width: int | None = None, height: int | None = None,
                    margin: int = 0, transparent: bool = False, structure_only: bool = False,
-                   timeout: float | None = None) -> Path:
-        if isinstance(width, bool) or not isinstance(width, int) or not 1 <= width <= 16384:
-            raise ValueError("width must be an integer from 1 through 16384")
-        if isinstance(height, bool) or not isinstance(height, int) or not 1 <= height <= 16384:
-            raise ValueError("height must be an integer from 1 through 16384")
+                   timeout: float | None = None, max_side: int | None = None) -> Path:
+        """Render the current view to a PNG at ``path``.
+
+        Without ``width``/``height`` the image is the view as the user sees it (its size and
+        aspect); with one of them, the other follows the view's aspect. ``max_side`` scales such a
+        default size down to fit.
+        """
+        for label, value in (("width", width), ("height", height)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 16384):
+                raise ValueError(f"{label} must be an integer from 1 through 16384")
+        if max_side is not None and (isinstance(max_side, bool) or not isinstance(max_side, int) or not 16 <= max_side <= 16384):
+            raise ValueError("max_side must be an integer from 16 through 16384")
         if isinstance(margin, bool) or not isinstance(margin, int) or not 0 <= margin <= 4096:
             raise ValueError("margin must be an integer from 0 through 4096")
-        if margin * 2 >= width or margin * 2 >= height:
+        if (width is not None and margin * 2 >= width) or (height is not None and margin * 2 >= height):
             raise ValueError("margin must be smaller than half of each dimension")
         if not isinstance(transparent, bool):
             raise TypeError("transparent must be boolean")
@@ -652,11 +659,11 @@ class Viewer:
             if not valid_timeout:
                 raise ValueError("timeout must be a positive finite number")
         target = Path(path)
-        result, received = self._command(
-            "save_image", {"width": width, "height": height, "margin": margin,
-                           "transparent": transparent, "structureOnly": structure_only},
-            timeout=timeout, include_attachments=True,
-        )
+        args: dict[str, object] = {"margin": margin, "transparent": transparent, "structureOnly": structure_only}
+        for key, value in (("width", width), ("height", height), ("maxSide", max_side)):
+            if value is not None:
+                args[key] = value
+        result, received = self._command("save_image", args, timeout=timeout, include_attachments=True)
         try:
             if not isinstance(result, dict) or result.get("contentType") != "image/png" \
                     or result.get("attachment") != "image" or set(received) != {"image"}:
@@ -698,11 +705,16 @@ class Viewer:
         """
         if format not in {"cif", "poscar"}:
             raise ValueError("format must be cif or poscar")
-        result = self._command("export_structure", {"format": format})
-        if not isinstance(result, dict) or not isinstance(result.get("text"), str):
-            raise ViewerProtocolError("browser export_structure result is invalid")
-        target = Path(path)
-        target.write_text(result["text"], encoding="utf-8")
+        result, received = self._command("export_structure", {"format": format}, include_attachments=True)
+        try:
+            # The text arrives as an attachment (the host's managed upload), so size is not capped by IPC.
+            if not isinstance(result, dict) or result.get("attachment") != "text" or set(received) != {"text"}:
+                raise ViewerProtocolError("browser export_structure response is missing its text attachment")
+            target = Path(path)
+            target.write_bytes(received["text"].read())
+        finally:
+            for attachment in received.values():
+                attachment.close()
         return {"rows": result.get("rows"), "order": None if result.get("sameOrder") else result.get("order"),
                 "warning": result.get("warning")}
 

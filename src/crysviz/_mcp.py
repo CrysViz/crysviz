@@ -31,13 +31,20 @@ from ._viewer import BrowserCommandError, Viewer, ViewerError
 # Commands that move files are wrapped by hand (below); the rest map 1:1.
 _FILE_COMMANDS = {"load", "save_image", "export_structure"}
 _EXPORT_EXTENSIONS = {"cif": ".cif", "poscar": ".vasp"}
+# Largest side of an image returned to the model; a saved-only image may be up to the app's 16384.
 MAX_IMAGE_SIDE = 2048
+MAX_SAVED_SIDE = 16384
 MAX_INLINE_TEXT = 16 * 1024 * 1024
 _EXPORT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 
 INSTRUCTIONS = (
-    "Controls a local CrysViz crystal-structure viewer window. Load a structure with load "
-    "(a file path or inline file text), then change the view (set_view, rotate_camera, "
+    "Controls a local CrysViz crystal-structure viewer window that the user shares with you: they may "
+    "rotate, zoom, select or change settings by hand between your calls. Call get_state to see the current "
+    "state (camera, structure, the user's selection) before acting on it. Do not change the camera, zoom, "
+    "renderer or display settings unless the user asks; when asked for a picture, save_image what they set "
+    "up, as it is. "
+    "Load a structure with load "
+    "(a file path or inline file text); when asked, change the view (set_view, rotate_camera, "
     "set_render_pipeline) and look at the result with save_image, which returns the picture. "
     "get_state reports the structure and camera as text: use it to check a view instead of taking "
     "a picture, take a picture only when the look matters, and do not keep adjusting a view to make "
@@ -70,11 +77,16 @@ LOAD_SCHEMA: dict[str, Any] = {
 SAVE_IMAGE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "width": {"type": "integer", "minimum": 16, "maximum": MAX_IMAGE_SIDE, "default": 800},
-        "height": {"type": "integer", "minimum": 16, "maximum": MAX_IMAGE_SIDE, "default": 600},
+        "width": {"type": "integer", "minimum": 16, "maximum": MAX_SAVED_SIDE,
+                  "description": "Pixels. Leave width and height out to get the view exactly as the user sees it; "
+                                 "give one and the other follows the view's aspect."},
+        "height": {"type": "integer", "minimum": 16, "maximum": MAX_SAVED_SIDE},
         "transparent": {"type": "boolean", "default": False},
         "structureOnly": {"type": "boolean", "default": False, "description": "Hide the cell, axes and other helpers."},
         "filename": {"type": "string", "description": "Also save the PNG under this name in the export folder."},
+        "returnImage": {"type": "boolean", "default": True,
+                        "description": f"false (with filename) saves without returning the picture, at up to "
+                                       f"{MAX_SAVED_SIDE} px a side; a returned picture is at most {MAX_IMAGE_SIDE} px a side."},
     },
     "additionalProperties": False,
 }
@@ -128,8 +140,10 @@ class CrysVizTools:
             "schema": EXPORT_STRUCTURE_SCHEMA, "tier": "file",
         }
         self.tools["save_image"] = {
-            "description": "Render the current view and return it as a PNG image. With filename, also save it "
-                           f"in the export folder ({export_dir}).",
+            "description": "Render the current view, exactly as the user has framed it (camera, zoom and window "
+                           "aspect are kept; nothing is moved), and return it as a PNG image. With filename, also "
+                           f"save it in the export folder ({export_dir}). For a large figure, pass filename and "
+                           "returnImage: false.",
             "schema": SAVE_IMAGE_SCHEMA, "tier": "file",
         }
 
@@ -192,21 +206,34 @@ class CrysVizTools:
         return {"id": info.id, "name": info.name, "frames": info.frames}
 
     def _save_image(self, args: dict[str, Any]) -> list[dict[str, Any]]:
-        width, height = args.get("width", 800), args.get("height", 600)
-        for label, value in (("width", width), ("height", height)):
-            if isinstance(value, bool) or not isinstance(value, int) or not 16 <= value <= MAX_IMAGE_SIDE:
-                raise ToolError(f"{label} must be an integer from 16 through {MAX_IMAGE_SIDE}")
+        width, height = args.get("width"), args.get("height")
+        return_image = args.get("returnImage", True)
+        if not isinstance(return_image, bool):
+            raise ToolError("returnImage must be true or false")
         filename = args.get("filename")
+        if not return_image and filename is None:
+            raise ToolError("returnImage: false needs a filename to save to")
+        limit = MAX_IMAGE_SIDE if return_image else MAX_SAVED_SIDE
+        for label, value in (("width", width), ("height", height)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 16 <= value <= limit):
+                raise ToolError(f"{label} must be an integer from 16 through {limit}"
+                                + ("" if not return_image else "; for a bigger saved image pass returnImage: false"))
         target = None if filename is None else self._export_target(filename, ".png")
+        options = {"width": width, "height": height, "transparent": bool(args.get("transparent", False)),
+                   "structure_only": bool(args.get("structureOnly", False)),
+                   # A default (view-sized) picture that is returned must still fit the returned-image cap.
+                   "max_side": limit if width is None or height is None else None}
         viewer = self.viewer()
-        with tempfile.TemporaryDirectory(prefix="crysviz-mcp-") as scratch:
-            png = viewer.save_image(Path(scratch) / "view.png", width=width, height=height,
-                                    transparent=bool(args.get("transparent", False)),
-                                    structure_only=bool(args.get("structureOnly", False)))
-            data = png.read_bytes()
-        content = [{"type": "image", "data": base64.b64encode(data).decode("ascii"), "mimeType": "image/png"}]
         if target is not None:
             self.export_dir.mkdir(parents=True, exist_ok=True)
+        if not return_image:
+            assert target is not None
+            viewer.save_image(target, **options)
+            return [_text({"saved": str(target)})]
+        with tempfile.TemporaryDirectory(prefix="crysviz-mcp-") as scratch:
+            data = viewer.save_image(Path(scratch) / "view.png", **options).read_bytes()
+        content = [{"type": "image", "data": base64.b64encode(data).decode("ascii"), "mimeType": "image/png"}]
+        if target is not None:
             target.write_bytes(data)
             content.append(_text({"saved": str(target)}))
         return content

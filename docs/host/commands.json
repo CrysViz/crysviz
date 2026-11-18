@@ -15,7 +15,7 @@
     {
       "name": "get_state",
       "tier": "read",
-      "description": "Describe what the viewer shows now, including changes the user made by hand: the active structure (id, name, frame, atom count, formula, lattice vectors and a, b, c, alpha, beta, gamma, whether positions changed by update_fractional_positions are committed), the camera (direction from the view centre to the camera, the convention set_view takes; screen up; distance; zoom; orthographic or perspective) and the renderer. Atoms are listed only with atoms: true, at most 500. Also lists the jobs (run_md) with their status.",
+      "description": "Describe what the viewer shows now, including changes the user made by hand: the active structure (id, name, frame, atom count, formula, lattice vectors and a, b, c, alpha, beta, gamma, whether positions changed by update_fractional_positions are committed), the camera (direction from the view centre to the camera, the convention set_view takes; screen up; distance; zoom; orthographic or perspective) and the renderer. Atoms are listed only with atoms: true, at most 500. selection: the atoms the user has selected in the window. Also lists the jobs (run_md) with their status.",
       "args": {
         "type": "object",
         "properties": {
@@ -75,9 +75,20 @@
       }
     },
     {
+      "name": "read_window",
+      "tier": "read",
+      "description": "Read a window's status line and visible text (up to 4000 characters), opening it if needed: the fallback for a result that is only shown in a window. Prefer a command's own structured result when there is one. panel is the window id, as search_controls returns it in window:<id> (e.g. eos, symmetry, phonon).",
+      "args": {
+        "type": "object",
+        "properties": { "panel": { "type": "string", "description": "Window id, e.g. \"eos\"." } },
+        "required": ["panel"],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "find",
       "tier": "read",
-      "description": "Pick out atoms, bonds, polyhedra or voids of the active structure and keep them as a selection for apply. atoms: where {element or elements, indices}; items [index, element, fractional position]. bonds: the bonds CrysViz draws now, where {elements: [A, B], minLength, maxLength}; items [a, b, image, length], b's copy being at its fractional position + image relative to a. A bond across the cell edge is listed only while a periodic copy of it is drawn; for the full periodic bond graph use export_structure and get_bonding. polyhedra: where {type: centered|cage, center: element, cn}. voids: where {minRadius}. For heavy analysis on many atoms (rings, graph searches), use export_structure and get_bonding and run your own script, then apply with the atom indices it finds.",
+      "description": "Pick out atoms, bonds, polyhedra or voids of the active structure and keep them as a selection for apply. atoms: where {element or elements, indices}; items [index, element, fractional position]. bonds: every bond of the periodic structure under the get_bonding rule, drawn or not (cells up to 3000 atoms), where {elements: [A, B], minLength, maxLength}; items [a, b, image, length], b's copy being at its fractional position + image relative to a; each bond once. polyhedra: where {type: centered|cage, center: element, cn}. voids: where {minRadius}. For heavy analysis on many atoms (rings, graph searches), use export_structure and get_bonding and run your own script, then apply with the atom indices it finds.",
       "args": {
         "type": "object",
         "properties": {
@@ -92,11 +103,13 @@
     {
       "name": "apply",
       "tier": "write",
-      "description": "Act on atoms: a selection from find, or atom indices (structure order, 0-based, as find, get_state and export_structure's order use). action: highlight (glow), select (the app's selection, which the Selection Inspector and measuring use), clear (highlight and selection), color (value '#rrggbb', every copy of each atom, kept for the session), hide, show. A bonds or polyhedra selection acts on its atoms.",
+      "description": "Act on atoms: a selection from find, or atom indices (structure order, 0-based, as find, get_state and export_structure's order use). action: highlight (glow), select (the app's selection, which the Selection Inspector and measuring use), clear (highlight and selection), color (value '#rrggbb', every copy of each atom, kept for the session), hide, show. A bonds selection acts on its atoms; a polyhedra selection's color colours the polyhedra themselves (target: atoms colours their atoms instead). bondPair: [A, B] with color colours every A-B bond. selection: \"user\" is what the user has selected in the window.",
       "args": {
         "type": "object",
         "properties": {
-          "selection": { "type": "string", "description": "A selection id from find." },
+          "selection": { "type": "string", "description": "A selection id from find, or \"user\" for the user's own selection in the window." },
+          "bondPair": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2, "description": "With color: two element symbols; colours every bond of that pair." },
+          "target": { "type": "string", "enum": ["atoms", "polyhedra"], "description": "For a polyhedra selection: what color colours (default polyhedra)." },
           "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "Atom indices, instead of selection." },
           "action": { "type": "string", "enum": ["highlight", "select", "clear", "color", "hide", "show"] },
           "value": { "type": "string", "description": "For color: '#rrggbb'." }
@@ -381,17 +394,18 @@
     {
       "name": "save_image",
       "tier": "file",
-      "description": "Render the current view to a PNG image.",
+      "description": "Render the current view, as the user has framed it, to a PNG image. Without width and height it is the view's own size and aspect; with one of them the other follows the view's aspect. The camera is never moved.",
       "args": {
         "type": "object",
         "properties": {
           "width": { "type": "integer", "minimum": 1, "maximum": 16384 },
           "height": { "type": "integer", "minimum": 1, "maximum": 16384 },
+          "maxSide": { "type": "integer", "minimum": 16, "maximum": 16384, "description": "Scale a default (view-sized) image down to fit this side." },
           "margin": { "type": "integer", "minimum": 0, "maximum": 4096 },
           "transparent": { "type": "boolean" },
           "structureOnly": { "type": "boolean", "description": "Hide the cell, axes and other helpers." }
         },
-        "required": ["width", "height", "margin", "transparent", "structureOnly"],
+        "required": ["margin", "transparent", "structureOnly"],
         "additionalProperties": false
       }
     }

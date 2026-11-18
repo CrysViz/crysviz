@@ -9,7 +9,6 @@
 import { commandError } from './commands.js';
 import { getActiveStructure } from '../state/structures.js';
 import { general } from '../state/store.js';
-import { cartToFractional } from '../math/index.js';
 
 /** Below this squared distance two atoms are never bonded (BondsFracUpdateModule BOND_MIN_DIST_SQ). */
 export const BOND_MIN_DISTANCE = 0.005;
@@ -22,6 +21,12 @@ export const BOND_RULE = 'Atoms i and j of the pair\'s elements are bonded, acro
 const round = (value, digits = 4) => { const f = 10 ** digits; return Math.round(value * f) / f; };
 const elementOf = (structure, i) => structure.atoms[i]?.getRepresentativeElement?.() ?? structure.elements?.[i] ?? '';
 
+/** One element pair's cutoffs (general.bondLengths / bondVisibility keys are "A-B", sorted). */
+export function pairCutoffs(lengths, visibility, e1, e2) {
+  const key = e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`;
+  return { min: lengths[key]?.min || 0, max: lengths[key]?.max || 0, shown: visibility[key] !== false };
+}
+
 /**
  * get_bonding: the bond cutoffs of every element pair present (vacancies left out).
  * @param {string[]} elements the structure's elements
@@ -33,44 +38,62 @@ export function bondingTable(elements, lengths, visibility) {
   const pairs = [];
   for (let a = 0; a < unique.length; a++) {
     for (let b = a; b < unique.length; b++) {
-      const key = `${unique[a]}-${unique[b]}`;
-      pairs.push({
-        elements: [unique[a], unique[b]],
-        min: round(lengths[key]?.min || 0),
-        max: round(lengths[key]?.max || 0),
-        shown: visibility[key] !== false,
-      });
+      const { min, max, shown } = pairCutoffs(lengths, visibility, unique[a], unique[b]);
+      pairs.push({ elements: [unique[a], unique[b]], min: round(min), max: round(max), shown });
     }
   }
   return { rule: BOND_RULE, pairs };
 }
 
+/** find bonds works on cells up to this many atoms (all pairs x images); bigger: export_structure. */
+export const MAX_BOND_SEARCH_ATOMS = 3000;
+
+const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+const norm = (u) => Math.hypot(u[0], u[1], u[2]);
+
 /**
- * The drawn bonds of `structure` as [a, b, image, length]: atom b's image
- * [i, j, k] is the cell translation from b's stored fractional position to the
- * bonded copy, relative to a. A bond drawn more than once (at several periodic
- * copies) is listed once.
+ * Every bond of the periodic structure under BOND_RULE (the get_bonding rule),
+ * drawn or not, as [a, b, image, length] with a <= b: atom b's copy at its
+ * stored fractional position + image (cell translation [i, j, k]) is bonded
+ * to atom a. Each bond once.
  */
-export function bondItems(structure) {
-  const wrapped = structure.periodic?.visibleWrapped;
-  const cart = wrapped?.cart;
-  const seen = new Set();
+export function periodicBonds(structure, lengths, visibility) {
+  const n = structure.atoms.length;
+  if (n > MAX_BOND_SEARCH_ATOMS) {
+    throw commandError('TOO_LARGE', `find bonds handles up to ${MAX_BOND_SEARCH_ATOMS} atoms; use export_structure and get_bonding`);
+  }
+  const L = structure.lattice;
+  const elements = structure.atoms.map((_, i) => elementOf(structure, i));
+  let maxCut = 0;
+  for (const p of bondingTable(elements, lengths, visibility).pairs) {
+    if (p.shown && p.max > BOND_MAX_FLOOR) maxCut = Math.max(maxCut, p.max);
+  }
+  if (!maxCut) return [];
+  // Images within reach of the largest cutoff along each axis (perpendicular cell widths).
+  const volume = Math.abs(L[0][0] * cross(L[1], L[2])[0] + L[0][1] * cross(L[1], L[2])[1] + L[0][2] * cross(L[1], L[2])[2]);
+  const reach = [cross(L[1], L[2]), cross(L[2], L[0]), cross(L[0], L[1])]
+    .map((c) => Math.ceil(maxCut / Math.max(volume / Math.max(norm(c), 1e-9), 1e-6)));
   const items = [];
-  for (const bond of structure.bonds || []) {
-    let a = bond.srcA, b = bond.srcB;
-    const pa = cart?.[bond.indexA], pb = cart?.[bond.indexB];
-    if (a < 0 || b < 0 || !pa || !pb) continue;
-    const d = cartToFractional([pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]], structure.lattice);
-    const fa = structure.atoms[a].position, fb = structure.atoms[b].position;
-    let image = [0, 1, 2].map((k) => Math.round(d[k] - (fb[k] - fa[k])) || 0);
-    if (b < a || (a === b && image.find((x) => x !== 0) < 0)) {
-      [a, b] = [b, a];
-      image = image.map((x) => -x || 0);
+  for (let a = 0; a < n; a++) {
+    if (elements[a] === 'Va') continue;
+    const fa = structure.atoms[a].position;
+    for (let b = a; b < n; b++) {
+      if (elements[b] === 'Va') continue;
+      const rule = pairCutoffs(lengths, visibility, elements[a], elements[b]);
+      if (!rule.shown || rule.max <= BOND_MAX_FLOOR) continue;
+      const lo = Math.max(rule.min, BOND_MIN_DISTANCE);
+      const fb = structure.atoms[b].position;
+      for (let i = -reach[0]; i <= reach[0]; i++) for (let j = -reach[1]; j <= reach[1]; j++) for (let k = -reach[2]; k <= reach[2]; k++) {
+        // An atom and its own copy: count +t, not also -t.
+        if (a === b && (i < 0 || (i === 0 && (j < 0 || (j === 0 && k <= 0))))) continue;
+        const f = [fb[0] - fa[0] + i, fb[1] - fa[1] + j, fb[2] - fa[2] + k];
+        const d = Math.hypot(
+          f[0] * L[0][0] + f[1] * L[1][0] + f[2] * L[2][0],
+          f[0] * L[0][1] + f[1] * L[1][1] + f[2] * L[2][1],
+          f[0] * L[0][2] + f[1] * L[1][2] + f[2] * L[2][2]);
+        if (d >= lo && d <= rule.max) items.push([a, b, [i, j, k], round(d)]);
+      }
     }
-    const key = `${a},${b},${image.join(',')}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    items.push([a, b, image, round(bond.dist)]);
   }
   return items;
 }
@@ -91,9 +114,9 @@ export const FINDERS = {
     });
     return { items, atoms: items.map((it) => it[0]) };
   },
-  bonds(structure, where) {
+  bonds(structure, where, lengths = general.bondLengths || {}, visibility = general.bondVisibility || {}) {
     const pair = where.elements ? [...where.elements].sort().join('-') : null;
-    const items = bondItems(structure).filter(([a, b, , length]) => {
+    const items = periodicBonds(structure, lengths, visibility).filter(([a, b, , length]) => {
       if (pair && [elementOf(structure, a), elementOf(structure, b)].sort().join('-') !== pair) return false;
       if (where.minLength !== undefined && length < where.minLength) return false;
       if (where.maxLength !== undefined && length > where.maxLength) return false;
@@ -107,9 +130,9 @@ const selections = new Map();
 let nextSelection = 1;
 const MAX_SELECTIONS = 20;
 
-function remember(structure, what, atoms) {
+function remember(structure, what, atoms, polyhedra = null) {
   const id = `s${nextSelection++}`;
-  selections.set(id, { structure, what, atoms });
+  selections.set(id, { structure, what, atoms, polyhedra });
   if (selections.size > MAX_SELECTIONS) selections.delete(selections.keys().next().value);
   return id;
 }
@@ -124,6 +147,7 @@ export async function find(args, { polyhedraSummary, voidSites }) {
   if (!Number.isInteger(limit) || limit < 1 || limit > 5000) throw commandError('INVALID_ARGS', 'find.limit must be 1 to 5000');
   const structure = getActiveStructure();
   if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+  /** @type {{items: any[], atoms: number[], polyhedra?: string[]}} */
   let found;
   let note;
   if (what === 'polyhedra') {
@@ -131,20 +155,20 @@ export async function find(args, { polyhedraSummary, voidSites }) {
       (where.center === undefined || p.centerElement === where.center)
       && (where.cn === undefined || p.vertexCount === where.cn));
     found = { items: rows, atoms: [...new Set(rows.flatMap((p) => [...(p.centerAtom !== undefined ? [p.centerAtom] : []), ...p.cornerAtoms]))] };
+    // The drawn polyhedra (every periodic copy) behind these rows, so apply can colour them.
+    found.polyhedra = (structure.polyhedra?.polyhedra || []).filter((p) =>
+      (where.type === undefined || p.type === where.type)
+      && (where.center === undefined || p.centerElement === where.center)
+      && (where.cn === undefined || p.vertices.length === where.cn)).map((p) => p.key).filter(Boolean);
     if (!(structure.polyhedra?.polyhedra?.length)) note = 'No polyhedra are built: switch on Show Polyhedra first.';
   } else if (what === 'voids') {
     const minRadius = where.minRadius ?? 0.7;
     found = { items: voidSites(structure, minRadius), atoms: [] };
   } else {
     found = FINDERS[what](structure, where);
-    if (what === 'bonds') {
-      note = structure.bonds?.length
-        ? 'Drawn bonds only: bonds across the cell edge appear when their periodic copies are drawn. For the full periodic graph use export_structure and get_bonding.'
-        : 'No bonds are drawn: switch on Show Bonds first, or use export_structure and get_bonding.';
-    }
   }
   return {
-    selection: remember(structure, what, found.atoms),
+    selection: remember(structure, what, found.atoms, found.polyhedra ?? null),
     count: found.items.length,
     atomCount: found.atoms.length,
     items: found.items.slice(0, limit),
@@ -170,6 +194,13 @@ export function applyTargets(structure, args) {
   return [...new Set(atoms)];
 }
 
+/** The atoms the user has selected in the window (source indices, sorted). */
+export async function userSelection() {
+  const { getSelectedAtoms } = await import('../ui/SelectAndHighlightModule.js');
+  return [...new Set(getSelectedAtoms().map((atom) => atom.sourceIndex))]
+    .filter((i) => Number.isInteger(i) && i >= 0).sort((a, b) => a - b);
+}
+
 /** apply: act on atoms through the UI's own paths. */
 export async function apply(args) {
   if (!args || typeof args !== 'object') throw commandError('INVALID_ARGS', 'apply requires an object');
@@ -177,6 +208,30 @@ export async function apply(args) {
   const structure = getActiveStructure();
   if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
   const highlight = () => import('../ui/SelectAndHighlightModule.js');
+  // selection: "user" is whatever the user has selected in the window right now.
+  if (args.selection === 'user') args = { ...args, selection: undefined, atoms: await userSelection() };
+  if (action === 'color') {
+    if (typeof args.value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(args.value)) {
+      throw commandError('INVALID_ARGS', 'apply color needs value "#rrggbb"');
+    }
+    const hex = args.value.toLowerCase();
+    // Every bond of one element pair, as the Bonds window's pair colour does.
+    if (args.bondPair !== undefined) {
+      if (!Array.isArray(args.bondPair) || args.bondPair.length !== 2 || !args.bondPair.every((e) => typeof e === 'string')) {
+        throw commandError('INVALID_ARGS', 'apply.bondPair must be two element symbols, e.g. ["Ti", "O"]');
+      }
+      const pair = [...args.bondPair].sort().join('-');
+      (await import('../ui/BondLengthPanel.js')).setBondPairColor(structure, pair, hex);
+      return { action, bondPair: pair };
+    }
+    // A polyhedra selection colours the polyhedra themselves (target: "atoms" colours their atoms).
+    const saved = args.selection !== undefined ? selections.get(args.selection) : null;
+    if (saved?.polyhedra && args.target !== 'atoms') {
+      if (saved.structure !== structure) throw commandError('SELECTION_STALE', `${args.selection} belongs to another structure; find again`);
+      (await import('../render/PolyhedraModule.js')).setPolyhedronStyles(structure, saved.polyhedra, { color: hex });
+      return { action, polyhedra: saved.polyhedra.length };
+    }
+  }
   if (action === 'clear') {
     const { clearHighlightAtom, selectAtomsByInstances } = await highlight();
     clearHighlightAtom();
@@ -190,9 +245,6 @@ export async function apply(args) {
     const instances = atoms.flatMap((i) => structure.atomImages?.[i] ?? [i]);
     (await highlight()).selectAtomsByInstances(instances, { reason: 'host' });
   } else if (action === 'color') {
-    if (typeof args.value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(args.value)) {
-      throw commandError('INVALID_ARGS', 'apply color needs value "#rrggbb"');
-    }
     (await import('../ui/StructureInfoPanel/SelectionActionBar.js')).colorSourceAtoms(atoms, args.value.toLowerCase());
   } else if (action === 'hide' || action === 'show') {
     const { commitHideRestore } = await import('../ui/SceneInteraction.js');

@@ -153,3 +153,29 @@ export async function clickControl(ref) {
   await nextFrames(2);
   return describe(entry, el);
 }
+
+/** read_window: a window's status line and visible text, so a result shown only there can be read. */
+export const MAX_WINDOW_TEXT = 4000;
+
+export async function readWindow(panelId) {
+  if (typeof panelId !== 'string' || !panelId) throw commandError('INVALID_ARGS', 'panel must be a window id, e.g. "eos" (see search_controls)');
+  const { getPanel, listPanels } = await import('../ui/panels/PanelManager.js');
+  const info = listPanels().find((p) => p.id === panelId);
+  if (!info) throw commandError('CONTROL_NOT_FOUND', `No window ${panelId}; search_controls lists windows as window:<id>`);
+  let panel = getPanel(panelId);
+  if (!panel?.built || panel.closed || panel.collapsed) {
+    // Open it the way choosing the window in the feature search does.
+    await (await featureSearch()).activateEntry({ type: 'window', panelId });
+    await nextFrames(2);
+    panel = getPanel(panelId);
+  }
+  const status = panel?.statusEl && !panel.statusEl.hidden ? panel.statusEl.textContent?.trim() || '' : '';
+  const text = (panel?.body?.innerText || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return {
+    panel: panelId,
+    title: info.title,
+    status,
+    text: text.slice(0, MAX_WINDOW_TEXT),
+    ...(text.length > MAX_WINDOW_TEXT ? { truncated: true } : {}),
+  };
+}

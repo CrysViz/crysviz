@@ -14,8 +14,8 @@ import { app, general } from '../state/store.js';
 import { cancelJob, getJob, jobView, listJobs, runningJob, startJob, waitJob } from './jobs.js';
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
-import { clickControl, getControl, searchControls, setControl } from './controls.js';
-import { apply, exportStructure, find, getBonding } from './query.js';
+import { clickControl, getControl, readWindow, searchControls, setControl } from './controls.js';
+import { apply, exportStructure, find, getBonding, userSelection } from './query.js';
 
 export const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
 
@@ -100,6 +100,39 @@ export async function responseOrThrow(response, code, message) {
 
 export function strictFetch(url, options = {}) {
   return fetch(url, { ...options, redirect: 'error' });
+}
+
+/** The host's one-use upload URL for a command's output (save_image, export_structure), validated. */
+function managedOutputUrl(raw, origin) {
+  const outputUrl = sameOriginURL(raw, origin);
+  if (!outputUrl || outputUrl.username || outputUrl.password || outputUrl.search || outputUrl.hash
+    || outputUrl.href !== raw
+    || !/^\/_crysviz\/output\/[A-Za-z0-9_-]{32,}$/.test(outputUrl.pathname)) {
+    throw commandError('INVALID_OUTPUT_URL', 'Managed output URL is invalid');
+  }
+  return outputUrl;
+}
+
+async function uploadOutput(outputUrl, body, contentType) {
+  const response = await strictFetch(outputUrl, { method: 'POST', headers: { 'Content-Type': contentType }, body });
+  await responseOrThrow(response, 'OUTPUT_UPLOAD_FAILED', 'Could not upload managed output');
+}
+
+/**
+ * save_image's size when width or height is left out: the view as the user
+ * sees it (CSS size x devicePixelRatio, or the given side at the view's
+ * aspect), scaled down to fit maxSide. Same aspect as the view, so the user's
+ * framing comes out without letterbox bands.
+ */
+export function fitImageSize({ viewWidth, viewHeight, dpr = 1, width, height, maxSide }) {
+  const aspect = viewWidth > 0 && viewHeight > 0 ? viewWidth / viewHeight : 4 / 3;
+  let w = width ?? (height !== undefined ? height * aspect : viewWidth * dpr);
+  let h = height ?? (width !== undefined ? width / aspect : viewHeight * dpr);
+  const limit = Math.min(maxSide ?? 16384, 16384);
+  const scale = Math.min(1, limit / Math.max(w, h));
+  w = Math.max(1, Math.round(w * scale));
+  h = Math.max(1, Math.round(h * scale));
+  return { width: w, height: h };
 }
 
 function requireArgs(args, name) {
@@ -347,14 +380,18 @@ export const COMMAND_HANDLERS = Object.freeze({
     return getContainers().map((container) => snapshotForContainer(container, active));
   },
 
-  get_state(args, { deps }) {
+  async get_state(args, { deps }) {
     requireOptionalArgs(args, 'get_state');
     const includeAtoms = args?.atoms ?? false;
     if (typeof includeAtoms !== 'boolean') throw commandError('INVALID_ARGS', 'get_state.atoms must be boolean');
     const structure = getActiveStructure();
+    const selected = structure ? await userSelection() : [];
     return {
       structureCount: getContainers().length,
       structure: structure ? structureState(structure, includeAtoms) : null,
+      // What the user has selected in the window (apply also takes selection: "user").
+      selection: { count: selected.length, atoms: selected.slice(0, MAX_STATE_ATOMS),
+        ...(selected.length > MAX_STATE_ATOMS ? { truncated: true } : {}) },
       camera: cameraState(),
       renderPipeline: typeof deps.getRenderPipeline === 'function' ? deps.getRenderPipeline() : null,
       jobs: listJobs(),
@@ -382,6 +419,10 @@ export const COMMAND_HANDLERS = Object.freeze({
     return clickControl(requireArgs(args, 'click_control').ref);
   },
 
+  read_window(args) {
+    return readWindow(requireArgs(args, 'read_window').panel);
+  },
+
   find(args) {
     return find(requireArgs(args, 'find'), { polyhedraSummary, voidSites });
   },
@@ -395,8 +436,14 @@ export const COMMAND_HANDLERS = Object.freeze({
     return getBonding();
   },
 
-  export_structure(args) {
-    return exportStructure(requireArgs(args, 'export_structure'));
+  async export_structure(args, { origin }) {
+    const input = requireArgs(args, 'export_structure');
+    // From the host the text goes to its managed output URL (no IPC size limit); inline otherwise.
+    const outputUrl = input.outputUrl === undefined ? null : managedOutputUrl(input.outputUrl, origin);
+    const { text, ...result } = await exportStructure(input);
+    if (!outputUrl) return { text, ...result };
+    await uploadOutput(outputUrl, new Blob([text], { type: 'text/plain;charset=utf-8' }), 'text/plain; charset=utf-8');
+    return result;
   },
 
   get_polyhedra(args) {
@@ -715,8 +762,20 @@ export const COMMAND_HANDLERS = Object.freeze({
     const input = requireArgs(args, 'save_image');
     const integerInRange = (value, min, max) => typeof value === 'number'
       && Number.isInteger(value) && value >= min && value <= max;
-    if (!integerInRange(input.width, 1, 16384) || !integerInRange(input.height, 1, 16384)) {
-      throw commandError('INVALID_ARGS', 'save_image dimensions must be integers from 1 through 16384');
+    for (const key of ['width', 'height']) {
+      if (input[key] !== undefined && !integerInRange(input[key], 1, 16384)) {
+        throw commandError('INVALID_ARGS', 'save_image dimensions must be integers from 1 through 16384');
+      }
+    }
+    if (input.maxSide !== undefined && !integerInRange(input.maxSide, 16, 16384)) {
+      throw commandError('INVALID_ARGS', 'save_image.maxSide must be an integer from 16 through 16384');
+    }
+    if (input.width === undefined || input.height === undefined) {
+      const view = (await import('../render/ImageExportModule.js')).mainExportSource().viewEl;
+      Object.assign(input, fitImageSize({
+        viewWidth: view?.clientWidth, viewHeight: view?.clientHeight, dpr: window.devicePixelRatio || 1,
+        width: input.width, height: input.height, maxSide: input.maxSide,
+      }));
     }
     if (!integerInRange(input.margin, 0, 4096)) {
       throw commandError('INVALID_ARGS', 'save_image.margin must be an integer from 0 through 4096');
@@ -731,12 +790,7 @@ export const COMMAND_HANDLERS = Object.freeze({
       throw commandError('INVALID_ARGS', 'save_image.structureOnly must be boolean');
     }
     if (typeof deps.captureSceneToPng !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'PNG capture is unavailable');
-    const outputUrl = sameOriginURL(input.outputUrl, origin);
-    if (!outputUrl || outputUrl.username || outputUrl.password || outputUrl.search || outputUrl.hash
-      || outputUrl.href !== input.outputUrl
-      || !/^\/_crysviz\/output\/[A-Za-z0-9_-]{32,}$/.test(outputUrl.pathname)) {
-      throw commandError('INVALID_OUTPUT_URL', 'Managed output URL is invalid');
-    }
+    const outputUrl = managedOutputUrl(input.outputUrl, origin);
     const blob = await deps.captureSceneToPng({
       width: input.width, height: input.height, margin: input.margin,
       transparent: input.transparent, structureOnly: input.structureOnly,
@@ -744,10 +798,7 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (!(blob instanceof Blob) || blob.type !== 'image/png') {
       throw commandError('CAPTURE_FAILED', 'PNG capture did not return an image/png Blob');
     }
-    const response = await strictFetch(outputUrl, {
-      method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob,
-    });
-    await responseOrThrow(response, 'OUTPUT_UPLOAD_FAILED', 'Could not upload managed PNG');
-    return { contentType: 'image/png', size: blob.size };
+    await uploadOutput(outputUrl, blob, 'image/png');
+    return { contentType: 'image/png', size: blob.size, width: input.width, height: input.height };
   },
 });

@@ -120,6 +120,22 @@ class ToolLayerTests(unittest.TestCase):
         with self.assertRaises(ToolError):
             self.tools.call("save_image", {"width": 100000})
 
+    def test_save_image_defaults_to_the_view_and_saves_large_figures_without_returning(self):
+        # No size: the view as the user framed it, capped for the returned picture.
+        self.tools.call("save_image", {})
+        options = _FakeViewer.instances[0].calls[-1][1]
+        self.assertEqual((options["width"], options["height"], options["max_side"]), (None, None, 2048))
+        # A returned picture is capped; a saved-only one may be big.
+        with self.assertRaises(ToolError):
+            self.tools.call("save_image", {"width": 3000, "height": 2000})
+        with self.assertRaisesRegex(ToolError, "filename"):
+            self.tools.call("save_image", {"width": 3000, "height": 2000, "returnImage": False})
+        content = self.tools.call("save_image", {"width": 3000, "height": 2000, "returnImage": False, "filename": "fig2"})
+        self.assertEqual([item["type"] for item in content], ["text"])
+        self.assertEqual((self.export / "fig2.png").read_bytes(), PNG)
+        options = _FakeViewer.instances[0].calls[-1][1]
+        self.assertEqual((options["width"], options["height"], options["max_side"]), (3000, 2000, None))
+
     def test_export_structure_writes_into_export_folder_with_order_file(self):
         out = json.loads(self.tools.call("export_structure", {"format": "poscar", "filename": "graphite"})[0]["text"])
         target = self.export / "graphite.vasp"

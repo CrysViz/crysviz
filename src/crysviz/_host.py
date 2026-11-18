@@ -18,6 +18,14 @@ from ._windowing import create_native_window
 
 _FIXED_TRIGGER = "window.crysvizHost.processBridgeCommand()"
 
+# Commands whose output the browser uploads to a one-use managed URL instead of
+# returning it inline (no 1 MiB IPC frame limit): the Content-Type the upload
+# must carry and the attachment name the response carries it under.
+_OUTPUT_COMMANDS = {
+    "save_image": ("image/png", "image"),
+    "export_structure": ("text/plain; charset=utf-8", "text"),
+}
+
 
 def _prepared_sources(payload: object, attachments: dict[str, Attachment]) -> list[PreparedSource]:
     if not isinstance(payload, dict) or set(payload) != {"sources"} or not isinstance(payload["sources"], list):
@@ -131,10 +139,10 @@ class HostRuntime:
         return None
 
     def _prepare_request(self, request_id: str, command: str, args: object, attachments: dict[str, Attachment]) -> dict[str, object]:
-        if command == "save_image":
+        if command in _OUTPUT_COMMANDS:
             if attachments:
-                raise ProtocolError("save_image accepts no attachment")
-            output_url = self.server.reserve_output()
+                raise ProtocolError(f"{command} accepts no attachment")
+            output_url = self.server.reserve_output(_OUTPUT_COMMANDS[command][0])
             if not isinstance(args, dict):
                 self.server.discard_output(output_url)
                 return {"id": request_id, "request": {"command": command, "args": args}}
@@ -231,32 +239,35 @@ class HostRuntime:
                         raise ProtocolError("browser result has an invalid schema")
                     response = {"id": request_id, **result}
                     output_url = descriptor["request"]["args"].get("outputUrl") if (
-                        command == "save_image" and isinstance(descriptor.get("request"), dict)
+                        command in _OUTPUT_COMMANDS and isinstance(descriptor.get("request"), dict)
                         and isinstance(descriptor["request"].get("args"), dict)
                     ) else None
                     output = self.server.take_output(output_url) if isinstance(output_url, str) and result.get("ok") else None
-                    if command == "save_image" and result.get("ok"):
+                    if command in _OUTPUT_COMMANDS and result.get("ok"):
                         if output is None:
-                            raise ProtocolError("PNG upload is missing")
+                            raise ProtocolError(f"{command} upload is missing")
+                        content_type, attachment_name = _OUTPUT_COMMANDS[command]
                         try:
+                            browser_result = result.get("result") if isinstance(result.get("result"), dict) else {}
                             response["result"] = {
-                                "contentType": "image/png", "size": output.seek(0, 2), "attachment": "image",
+                                **browser_result, "contentType": content_type,
+                                "size": output.seek(0, 2), "attachment": attachment_name,
                             }
                             output.seek(0)
-                            self.send("response", response, {"image": output})
+                            self.send("response", response, {attachment_name: output})
                         finally:
                             output.close()
                     else:
                         self.send("response", response)
                 except Exception as error:
-                    if command == "save_image" and isinstance(locals().get("descriptor"), dict):
+                    if command in _OUTPUT_COMMANDS and isinstance(locals().get("descriptor"), dict):
                         request_args = descriptor.get("request", {}).get("args", {})
                         if isinstance(request_args, dict) and isinstance(request_args.get("outputUrl"), str):
                             self.server.discard_output(request_args["outputUrl"])
                     self.send("response", {"id": request_id, "ok": False,
                                            "error": {"code": "HOST_COMMAND_FAILED", "message": str(error)}})
                 finally:
-                    if command == "save_image" and isinstance(locals().get("descriptor"), dict):
+                    if command in _OUTPUT_COMMANDS and isinstance(locals().get("descriptor"), dict):
                         request_args = descriptor.get("request", {}).get("args", {})
                         if isinstance(request_args, dict) and isinstance(request_args.get("outputUrl"), str):
                             self.server.discard_output(request_args["outputUrl"])

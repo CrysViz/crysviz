@@ -135,26 +135,35 @@ test('get_bonding lists every element pair present with min, max and shown', asy
   assert.match(table.rule, /max\(min, 0\.005\) <= d <= max/);
 });
 
-test('find bonds: image offsets relative to stored positions, each periodic bond once', async () => {
-  const { bondItems, FINDERS } = await import('../../docs/host/query.js');
+test('find bonds: the full periodic graph under the get_bonding rule, each bond once', async () => {
+  const { periodicBonds, FINDERS } = await import('../../docs/host/query.js');
   const atom = (element, position) => ({ position, getRepresentativeElement: () => element });
-  // A 1D chain C0 (x=0.1) — C1 (x=0.6) along a 2 Å cell: bonds 0-1 in the cell and 1-0' across x.
+  // A 1D chain C0 (x=0.1) - C1 (x=0.6) along a 2 Å cell: bond 0-1 in the cell and 0-1' across x,
+  // none along the 5 Å axes. Nothing is drawn: the search does not need the renderer.
   const structure = {
     lattice: [[2, 0, 0], [0, 5, 0], [0, 0, 5]],
     atoms: [atom('C', [0.1, 0, 0]), atom('C', [0.6, 0, 0])],
-    periodic: { visibleWrapped: { cart: [[0.2, 0, 0], [1.2, 0, 0], [2.2, 0, 0]] } },
-    bonds: [
-      { srcA: 0, srcB: 1, indexA: 0, indexB: 1, dist: 1.0 },
-      { srcA: 1, srcB: 0, indexA: 1, indexB: 2, dist: 1.0 },
-      // the same in-cell bond drawn again from the other end
-      { srcA: 1, srcB: 0, indexA: 1, indexB: 0, dist: 1.0 },
-    ],
   };
-  assert.deepEqual(bondItems(structure), [[0, 1, [0, 0, 0], 1], [0, 1, [-1, 0, 0], 1]]);
-  const { items, atoms } = FINDERS.bonds(structure, { elements: ['C', 'C'], maxLength: 1.5 });
+  const lengths = { 'C-C': { min: 0, max: 1.5 } };
+  assert.deepEqual(periodicBonds(structure, lengths, {}), [[0, 1, [-1, 0, 0], 1], [0, 1, [0, 0, 0], 1]]);
+  // An atom bonds to its own periodic copy once (+t only).
+  const single = { lattice: [[1.4, 0, 0], [0, 5, 0], [0, 0, 5]], atoms: [atom('C', [0, 0, 0])] };
+  assert.deepEqual(periodicBonds(single, lengths, {}), [[0, 0, [1, 0, 0], 1.4]]);
+  // Hidden pairs and the min cutoff are honoured.
+  assert.deepEqual(periodicBonds(structure, lengths, { 'C-C': false }), []);
+  assert.deepEqual(periodicBonds(structure, { 'C-C': { min: 1.2, max: 1.5 } }, {}), []);
+  const { items, atoms } = FINDERS.bonds(structure, { elements: ['C', 'C'], maxLength: 1.5 }, lengths, {});
   assert.equal(items.length, 2);
   assert.deepEqual(atoms, [0, 1]);
   assert.deepEqual(FINDERS.atoms(structure, { element: 'C', indices: [1] }).items, [[1, 'C', [0.6, 0, 0]]]);
+});
+
+test('save_image default size: the view as seen, one side given keeps its aspect, fits maxSide', async () => {
+  const { fitImageSize } = await import('../../docs/host/commands.js');
+  assert.deepEqual(fitImageSize({ viewWidth: 1200, viewHeight: 600, dpr: 2 }), { width: 2400, height: 1200 });
+  assert.deepEqual(fitImageSize({ viewWidth: 1200, viewHeight: 600, dpr: 2, maxSide: 2048 }), { width: 2048, height: 1024 });
+  assert.deepEqual(fitImageSize({ viewWidth: 1200, viewHeight: 600, width: 3000 }), { width: 3000, height: 1500 });
+  assert.deepEqual(fitImageSize({ viewWidth: 1200, viewHeight: 600, height: 300 }), { width: 600, height: 300 });
 });
 
 test('apply checks atom indices and selection ownership', async () => {
