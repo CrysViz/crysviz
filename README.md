@@ -108,6 +108,17 @@ viewer = show(["structure.cif"])
 
 For more, see [examples](https://github.com/CrysViz/crysviz/tree/deploy/examples).
 
+### Claude and other AI assistants (MCP)
+
+`crysviz-mcp` is a local MCP server that lets Claude or another MCP client load structures, change the view and get pictures back from a CrysViz window on your computer:
+
+```bash
+pip install 'crysviz[mcp,qt]'
+claude mcp add crysviz -- crysviz-mcp
+```
+
+Then ask, for example, "load ~/NaCl.cif and show me the view along c". See [agent_guides/MCP.md](agent_guides/MCP.md) for the tools and options.
+
 ## Widget mode / embedding
 
 CrysViz can be embedded in another site as a compact interactive viewer with

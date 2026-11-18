@@ -546,6 +546,7 @@ class PackagingMetadataTests(unittest.TestCase):
         self.assertEqual(project["optional-dependencies"], {
             "qt": ["pywebview[qt]>=6.2,<7"],
             "gtk": ["pywebview[gtk]>=6.2,<7"],
+            "mcp": ["mcp>=2.3,<3"],
         })
 
     def test_generated_frontend_directories_are_excluded(self):

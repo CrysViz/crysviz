@@ -4,6 +4,8 @@
 
 ### Highlights
 
+- **MCP server:** `crysviz-mcp` (`pip install 'crysviz[mcp]'`) lets Claude and other MCP clients drive a local CrysViz window: load structures, look along a lattice direction, rotate, switch the renderer and get the picture back
+- Python `Viewer.set_view()` looks along a, b, c, x, y, z or a lattice direction [u, v, w]; `Viewer.load(..., interactive=False)` loads a CIF without the symmetry dialog
 - Refined camera controls with shortcuts (desktop)
 - Setting view along/opposite plane normal
 - Added resolution control to plane colormaps
