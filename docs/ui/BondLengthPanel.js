@@ -287,6 +287,30 @@ document.addEventListener('crysviz:colors-changed', () => {
   Object.values(bondCategorySwatchUpdateFunctions).forEach((updateFn) => updateFn());
 });
 
+/**
+ * Colour every bond of an element pair ("Ti-O", sorted): the pair's category
+ * colour, fanned out live to its bonds except those with their own colour
+ * (individual > category). Shared by the Bonds window and the host's apply.
+ * @param {any} structure
+ * @param {string} pair
+ * @param {string} hex '#rrggbb'
+ */
+export function setBondPairColor(structure, pair, hex) {
+  ((structure.bondCategoryStyles ??= {})[pair] ??= {}).color = hex;
+  for (const b of bondsOfPair(structure.bonds, pair)) {
+    if (structure.bondUserStyles?.[bondKey(b.indices)]?.color != null) continue;
+    b.color = [hex, hex];
+    b.userColor = [hex, hex];
+    if (b.instanceIds && groups.bondsMesh) {
+      updateSingleBondColor(b.instanceIds[0], hex, true);
+      updateSingleBondColor(b.instanceIds[1], hex, true);
+    }
+  }
+  if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+  bondCategorySwatchUpdateFunctions[pair]?.();
+  scheduleBondStyleSave(structure);
+}
+
 export function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
     general.bondLengths[pair] = { ...general.defaultBondLengths[pair] };
@@ -587,20 +611,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
     const currentCatColor = safeColor(
       structure()?.bondCategoryStyles?.[pair]?.color ?? structure()?.getDefaultElementColor(pair.split('-')[0]));
     const catPicker = createColorPicker(currentCatColor, (hex) => {
-      catStyle().color = hex;
-      for (const b of memberBonds()) {
-        if (structure().bondUserStyles?.[bondKey(b.indices)]?.color != null) continue;
-        b.color = [hex, hex];
-        b.userColor = [hex, hex];
-        if (b.instanceIds && groups.bondsMesh) {
-          updateSingleBondColor(b.instanceIds[0], hex, true);
-          updateSingleBondColor(b.instanceIds[1], hex, true);
-        }
-      }
-      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
-      refreshHeader();
+      setBondPairColor(structure(), pair, hex);
       refreshExpandedBondLists(bondControls);
-      scheduleBondStyleSave(structure());
     });
 
     const currentCatAlpha = clampOpacity(structure()?.bondCategoryStyles?.[pair]?.alpha ?? 1);

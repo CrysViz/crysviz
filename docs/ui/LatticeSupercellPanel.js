@@ -7,83 +7,13 @@ import { createSupercell, supercellAtomCount } from './SuperCellModule.js';
 import { setLoadStep, finishLoadProgress, nextPaint } from './BootProgress.js';
 import { schedulePeriodicBoundsSave, saveSupercellPref, pinCellPrefsKey } from '../state/cellPrefs.js';
 import { recenterView, recenterCamera } from './WindowAndSceneControls.js';
-import { fracToCart, cartToFrac } from '../render/index.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
+import { applyVacuumToStructure, resetVacuumForStructure } from './addToStructureModule/AddVacuumModule.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 import { createNewStructureFromAtoms, createTrajectoryFromFrames } from './addToStructureModule/CommitAtoms.js';
 import { buildOrderedStructure, planOrdering, listMultiplierOptions } from '../atomistic/order_structure.js';
 import { mountPotentialNotice, potentialLabel, potentialSource } from '../atomistic/potentialNotice.js';
 import { Atom, Structure } from '../model/index.js';
-
-// Grow the current structure's cell by the requested vacuum (Å) along each
-// lattice vector, keeping the atoms' Cartesian positions fixed - a standard
-// slab-with-vacuum construction (vacuum is added on one side only; atoms do
-// not recenter, so their fractional coordinates compress toward the origin
-// side of whichever vector(s) grew).
-//
-// _vacuumApplied is an in-memory (not saved/exported) bookkeeping field on
-// the structure - the running total added per axis, plus the lattice as it
-// was before any vacuum was ever applied to this structure - so the panel
-// can show a running counter and Reset can undo the whole thing in one step
-// (restoring baseLattice; atoms' Cartesian positions never changed, so their
-// fractional coordinates just get recomputed against it).
-function applyVacuumToStructure(vacX, vacY, vacZ) {
-  const s = fileBrowser.selectedStructure;
-  if (!s) {
-    console.warn('Add vacuum: no structure selected.');
-    return;
-  }
-  if (!vacX && !vacY && !vacZ) return;
-
-  if (!s._vacuumApplied) {
-    s._vacuumApplied = { x: 0, y: 0, z: 0, baseLattice: s.lattice.map(row => row.slice()) };
-  }
-  s._vacuumApplied.x += vacX;
-  s._vacuumApplied.y += vacY;
-  s._vacuumApplied.z += vacZ;
-
-  const lattice = s.lattice;
-  const vac = [vacX, vacY, vacZ];
-
-  // Cartesian positions to preserve.
-  const carts = fracToCart(s.atoms.map(a => a.position), lattice);
-
-  // Scale each lattice vector's length by its added vacuum.
-  const newLattice = lattice.map((row, i) => {
-    const len = Math.hypot(row[0], row[1], row[2]);
-    const k = (len > 0 && vac[i]) ? (len + vac[i]) / len : 1;
-    return [row[0] * k, row[1] * k, row[2] * k];
-  });
-
-  s.atoms.forEach((atom, idx) => {
-    atom.position = cartToFrac(carts[idx], newLattice);
-  });
-
-  s.lattice = newLattice;
-  s.periodic = { wrapped: null, hash: null }; // force periodic-wrap recompute
-
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
-  // Vacuum is added on one side only (see the comment above), so the cell's
-  // Cartesian center genuinely shifts — recenter on it, but keep whatever
-  // direction/distance the camera was already at rather than snapping to a
-  // canonical view the way resetView() would.
-  recenterCamera();
-}
-
-// Undoes every vacuum addition made so far on this structure in one step.
-function resetVacuumForStructure(s) {
-  if (!s || !s._vacuumApplied) return;
-  const carts = fracToCart(s.atoms.map(a => a.position), s.lattice);
-  s.lattice = s._vacuumApplied.baseLattice.map(row => row.slice());
-  s.atoms.forEach((atom, idx) => {
-    atom.position = cartToFrac(carts[idx], s.lattice);
-  });
-  s.periodic = { wrapped: null, hash: null };
-  delete s._vacuumApplied;
-
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
-  recenterCamera();
-}
 
 /** eV/atom, formatted for the sample list (sign-free — rank and Δ carry the
  *  comparison, this is just the value). */
@@ -563,12 +493,14 @@ function addVacuumSection(container) {
     const vacX = parseFloat(container.querySelector('#vacX').value) || 0;
     const vacY = parseFloat(container.querySelector('#vacY').value) || 0;
     const vacZ = parseFloat(container.querySelector('#vacZ').value) || 0;
-    applyVacuumToStructure(vacX, vacY, vacZ);
+    // Vacuum goes on one side, so the cell's centre moves: recentre on it,
+    // keeping the camera's direction and distance.
+    if (applyVacuumToStructure(vacX, vacY, vacZ)) recenterCamera();
     refreshVacuumStatus();
   });
 
   resetBtn.addEventListener('click', () => {
-    resetVacuumForStructure(fileBrowser.selectedStructure);
+    if (resetVacuumForStructure(fileBrowser.selectedStructure)) recenterCamera();
     refreshVacuumStatus();
   });
 }

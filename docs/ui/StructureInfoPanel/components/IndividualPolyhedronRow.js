@@ -1,7 +1,7 @@
 import { fileBrowser } from '../../../state/store.js';
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
-import { updatePolyhedraColors, resolvePolyhedronStyle } from '../../../render/index.js';
+import { setPolyhedronStyles, updatePolyhedraColors, resolvePolyhedronStyle } from '../../../render/index.js';
 import { elementAtomNumber, clampOpacity, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { selectPolyhedronFromRow } from '../../SelectAndHighlightModule.js';
 import { createMaterialEditor } from './MaterialEditor.js';
@@ -81,12 +81,8 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   row.appendChild(nameContainer);
 
   // Write style fields into every member's persistent record (survives
-  // rebuilds). In linked mode this fans the edit out to all periodic copies.
-  function setMemberStyles(patch) {
-    for (const k of memberKeys) {
-      Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
-    }
-  }
+  // rebuilds) and redraw. In linked mode this fans the edit out to all periodic copies.
+  const setMemberStyles = (patch) => setPolyhedronStyles(structure, memberKeys, patch);
 
   const resolved = resolvePolyhedronStyle(
     structure, key, catKey, poly.type, poly.centerIndex, poly.colorElem);
@@ -121,7 +117,6 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
     // Persist across polyhedra rebuilds (structure.polyhedraUserStyles survives
     // them); restyle in place — no geometry recompute needed.
     setMemberStyles({ color: hex });
-    updatePolyhedraColors();
     colorBtn.style.background = hexToRgba(hex, 0.8);
   });
 
@@ -152,7 +147,6 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
     alphaSlider.value = String(value);
     alphaValue.value = value.toFixed(2);
     setMemberStyles({ alpha: value });
-    updatePolyhedraColors();
   }
   alphaSlider.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
   alphaValue.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
@@ -164,7 +158,6 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
 
   const edgePicker = createColorPicker(safeColor(resolved.edgeColor), (hex) => {
     setMemberStyles({ edgeColor: hex });
-    updatePolyhedraColors();
   });
 
   const currentEdgeAlpha = clampOpacity(resolved.edgeOpacity);
@@ -190,7 +183,6 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
     edgeAlphaSlider.value = String(value);
     edgeAlphaValue.value = value.toFixed(2);
     setMemberStyles({ edgeAlpha: value });
-    updatePolyhedraColors();
   }
   edgeAlphaSlider.oninput = (e) => applyPolyEdgeAlpha(/** @type {any} */ (e.target).value);
   edgeAlphaValue.oninput = (e) => applyPolyEdgeAlpha(/** @type {any} */ (e.target).value);

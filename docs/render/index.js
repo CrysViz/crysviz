@@ -88,7 +88,7 @@ export {
 } from './AsymmetricUnitModule.js';
 
 export {
-  updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory, holdPolyhedra, releasePolyhedra,
+  updatePolyhedra, updatePolyhedraColors, setPolyhedronStyles, groupPolyhedraByCategory, holdPolyhedra, releasePolyhedra,
   resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
   polyhedronFaceColor, applyFocusToPolyhedra,
 } from './PolyhedraModule.js';

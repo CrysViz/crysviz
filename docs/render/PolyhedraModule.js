@@ -1296,6 +1296,20 @@ export function applyFocusToPolyhedra(structure = fileBrowser.selectedStructure)
  * without a full (async) `updatePolyhedra`. Never touches material.emissive —
  * that channel is owned by the selection highlight. No-op when nothing drawn.
  */
+/**
+ * Set style fields (color, alpha, ...) on individual polyhedra by key, the
+ * persistent per-polyhedron record (individual > category), and redraw their
+ * colours. Shared by the Polyhedra rows and the host's apply.
+ * @param {any} structure
+ * @param {string[]} keys
+ * @param {Record<string, any>} patch
+ */
+export function setPolyhedronStyles(structure, keys, patch) {
+  structure.polyhedraUserStyles ??= {};
+  for (const k of keys) Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
+  updatePolyhedraColors();
+}
+
 export function updatePolyhedraColors() {
   notifyColorsChanged();
   const grp = groups.polyhedraGroup;

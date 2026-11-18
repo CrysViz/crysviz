@@ -35,13 +35,17 @@ const PANEL_ID = 'addAtomsVacuum';
 // can show a running counter and Reset can undo the whole thing in one step
 // (restoring baseLattice; atoms' Cartesian positions never changed, so their
 // fractional coordinates just get recomputed against it).
-function applyVacuumToStructure(vacX, vacY, vacZ) {
+//
+// Shared by this window and the Cell & Supercell window's vacuum section. It
+// never moves the camera; a caller that wants the view recentred does that.
+// Returns whether vacuum was added.
+export function applyVacuumToStructure(vacX, vacY, vacZ) {
   const s = fileBrowser.selectedStructure;
   if (!s) {
     console.warn('Add vacuum: no structure selected.');
-    return;
+    return false;
   }
-  if (!vacX && !vacY && !vacZ) return;
+  if (!vacX && !vacY && !vacZ) return false;
 
   if (!s._vacuumApplied) {
     s._vacuumApplied = { x: 0, y: 0, z: 0, baseLattice: s.lattice.map(row => row.slice()) };
@@ -71,11 +75,13 @@ function applyVacuumToStructure(vacX, vacY, vacZ) {
   s.periodic = { wrapped: null, hash: null }; // force periodic-wrap recompute
 
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+  return true;
 }
 
 // Undoes every vacuum addition made so far on this structure in one step.
-function resetVacuumForStructure(s) {
-  if (!s || !s._vacuumApplied) return;
+// Returns whether there was any to undo.
+export function resetVacuumForStructure(s) {
+  if (!s || !s._vacuumApplied) return false;
   const carts = fracToCart(s.atoms.map(a => a.position), s.lattice);
   s.lattice = s._vacuumApplied.baseLattice.map(row => row.slice());
   s.atoms.forEach((atom, idx) => {
@@ -85,6 +91,7 @@ function resetVacuumForStructure(s) {
   delete s._vacuumApplied;
 
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+  return true;
 }
 
 function addVacuumPanel(container) {
