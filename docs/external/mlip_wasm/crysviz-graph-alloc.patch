@@ -1,0 +1,102 @@
+diff --git a/src/runtime/graph_model.cpp b/src/runtime/graph_model.cpp
+index 45528a8..704e862 100644
+--- a/src/runtime/graph_model.cpp
++++ b/src/runtime/graph_model.cpp
+@@ -343,6 +343,9 @@ GraphModel::GraphModel()
+     : neighbor_builder_(NeighborListOptions{cutoff_, true, false}) {}
+ 
+ GraphModel::~GraphModel() {
++  if (compute_galloc_) {
++    ggml_gallocr_free(compute_galloc_);
++  }
+   if (weight_buffer_) {
+     ggml_backend_buffer_free(weight_buffer_);
+   }
+@@ -828,14 +831,41 @@ ModelResult GraphModel::predict_single(
+     } else {
+       compute_forces = false;
+     }
++    // Read back for the adaptive-cutoff stress correction.
++    if (cutoff_values_t && num_neighbors_adaptive_ > 0.0f) {
++      if (ggml_tensor *cv_grad = ggml_graph_get_grad(cgraph, cutoff_values_t)) {
++        ggml_set_output(cv_grad);
++      }
++    }
+   } else {
+     cgraph = ggml_new_graph(compute_ctx);
+     ggml_build_forward_expand(cgraph, output);
+   }
+ 
+-  ggml_backend_buffer_t compute_buffer =
+-      ggml_backend_alloc_ctx_tensors(compute_ctx, compute_backend_);
+-  if (!compute_buffer) {
++  // Allocate the graph's tensors. With the graph allocator, intermediate
++  // tensors share memory once nothing reads them any more, and the buffer
++  // persists across predictions (reallocated only when the graph grows);
++  // every tensor read after compute is marked as an output above. Giving
++  // each tensor of the forward + backward graph its own memory, as
++  // ggml_backend_alloc_ctx_tensors does, needed several times the memory
++  // (out of the 4 GB wasm address space at a few hundred atoms) and a new,
++  // zero-filled device buffer on every prediction on GPU backends. A capture
++  // hook reads arbitrary intermediates, so it keeps the old allocation.
++  ggml_backend_buffer_t compute_buffer = nullptr;
++  if (post_compute_hook) {
++    compute_buffer = ggml_backend_alloc_ctx_tensors(compute_ctx, compute_backend_);
++  } else {
++    if (!compute_galloc_) {
++      compute_galloc_ = ggml_gallocr_new(ggml_backend_get_default_buffer_type(compute_backend_));
++    }
++    if (!compute_galloc_ || !ggml_gallocr_alloc_graph(compute_galloc_, cgraph)) {
++      ggml_free(compute_ctx);
++      ggml_backend_buffer_free(input_buffer);
++      ggml_free(input_ctx);
++      throw std::runtime_error("Failed to allocate compute graph");
++    }
++  }
++  if (post_compute_hook && !compute_buffer) {
+     ggml_free(compute_ctx);
+     ggml_backend_buffer_free(input_buffer);
+     ggml_free(input_ctx);
+@@ -850,7 +880,7 @@ ModelResult GraphModel::predict_single(
+ 
+   ggml_status status = ggml_backend_graph_compute(compute_backend_, cgraph);
+   if (status != GGML_STATUS_SUCCESS) {
+-    ggml_backend_buffer_free(compute_buffer);
++    if (compute_buffer) ggml_backend_buffer_free(compute_buffer);
+     ggml_free(compute_ctx);
+     ggml_backend_buffer_free(input_buffer);
+     ggml_free(input_ctx);
+@@ -1040,8 +1070,8 @@ ModelResult GraphModel::predict_single(
+     post_compute_hook();
+   }
+ 
+-  // Cleanup
+-  ggml_backend_buffer_free(compute_buffer);
++  // Cleanup (the graph allocator's buffer stays for the next prediction)
++  if (compute_buffer) ggml_backend_buffer_free(compute_buffer);
+   ggml_free(compute_ctx);
+   ggml_backend_buffer_free(input_buffer);
+   ggml_free(input_ctx);
+diff --git a/src/runtime/graph_model.h b/src/runtime/graph_model.h
+index 301ad1d..ffed4f0 100644
+--- a/src/runtime/graph_model.h
++++ b/src/runtime/graph_model.h
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include "core/backend.h"
++#include "ggml-alloc.h"
+ #include "graph_interpreter.h"
+ #include "mlipcpp/model.h"
+ #include "mlipcpp/neighbor_list.h"
+@@ -107,6 +108,10 @@ private:
+   std::shared_ptr<BackendProvider> backend_provider_;
+   ggml_backend_buffer_t weight_buffer_ = nullptr;
+   ggml_backend_t compute_backend_ = nullptr;
++  // Graph allocator for the compute graph, kept across predictions: tensors
++  // share memory once dead (forward + backward graphs), and the buffer is
++  // reused while the graph's shape is unchanged instead of allocated anew.
++  ggml_gallocr_t compute_galloc_ = nullptr;
+ 
+   // Species mapping (atomic number -> index)
+   std::map<int, int> species_to_index_;

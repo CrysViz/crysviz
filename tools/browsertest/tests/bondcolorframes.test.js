@@ -3,10 +3,10 @@
 //   - "length": each bond's colour maps its current length (bond.dist);
 //   - "elements" (default): bonds mirror their endpoint atom colours, which are
 //     themselves recomputed per frame when atoms are coloured by force.
-// The full rebuild path already recoloured bonds (buildBondObjects); the render
-// FAST path (applyFrameFast, used by trajectory playback and in-browser MD/relax)
-// moved bond endpoints but left their colours frozen. refreshBondColors, called
-// from applyFrameFast, fixes that. This test pins both paths for both modes.
+// The full rebuild path recolours bonds (buildBondObjects); the render FAST path
+// (applyFrameFast, used by trajectory playback and in-browser MD/relax) recolours
+// the bonds it moves to the same colours (render/FrameColorsModule.js). This
+// test pins both paths for both modes.
 'use strict';
 const H = require('../harness');
 
@@ -55,9 +55,8 @@ const TRAJ = [
     await new Promise((r) => setTimeout(r, 200));
     const lenFull1 = bondColors();
 
-    // Fast path (what Auto playback would run): it writes positions only, so a
-    // frame-dependent colour map must NOT take it — applyFrameFast bails and the
-    // caller falls back to the full rebuild, which recolours (asserted above).
+    // Fast path (what Auto playback runs): back to frame 0 in place — the bond
+    // colours must become frame 0's, as the full path paints them.
     showTrajectoryFrame(1, container);
     await new Promise((r) => setTimeout(r, 150));
     const fastBefore = bondColors();
@@ -92,11 +91,9 @@ const TRAJ = [
 
   H.check('length-mode bond colours change between frames on the FULL path',
     JSON.stringify(res.lenFull0) !== JSON.stringify(res.lenFull1), JSON.stringify(res));
-  // The bail leaves the (stale) colours untouched: nothing half-applied, and
-  // the caller's full rebuild is what recolours.
-  H.check('length mode refuses the positions-only FAST path (applyFrameFast bails)',
-    res.okFast === false && /colour mode/.test(res.bailReason || '')
-      && JSON.stringify(res.fastBefore) === JSON.stringify(res.fastAfter),
+  H.check('length mode on the FAST path: bonds recoloured to the frame, as the full path paints them',
+    res.okFast === true && JSON.stringify(res.fastBefore) === JSON.stringify(res.lenFull1)
+      && JSON.stringify(res.fastAfter) === JSON.stringify(res.lenFull0),
     JSON.stringify(res));
   // Every snapshotted bond is a periodic image of the same C–C bond, so its
   // colour[0] (the srcIndices[0] endpoint, atom 0) equals atom 0's force colour.

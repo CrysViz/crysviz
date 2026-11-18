@@ -1,4 +1,5 @@
 import { fileBrowser, structureShip } from '../../../state/store.js';
+import { rowBatchMemo } from './PagedRows.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { updateSingleAtomCutPlaneImmunity } from '../../../render/AtomsFracUpdateModule.js';
 import { applyWyckoffOrbitPosition } from '../../SymmetryEditModule.js';
@@ -55,13 +56,36 @@ export function clampRadiusScale(value) {
 // forever, surviving even a later restore.
 export function getElementAtomIndices(element, { includeHidden = false } = {}) {
   const structure = fileBrowser.selectedStructure;
+  const atoms = includeHidden ? null : structure.atoms;
   const atomIndices = [];
   structure.elements.forEach((currentElement, index) => {
-    if (currentElement === element && (includeHidden || !structure.atoms[index]?.hidden)) {
+    if (currentElement === element && (includeHidden || !atoms[index]?.hidden)) {
       atomIndices.push(index);
     }
   });
   return atomIndices;
+}
+
+/**
+ * An atom's number among the visible atoms of its element ("Si12" -> 12; 0
+ * when it is not one of them), as getElementAtomIndices numbers them. The
+ * rows of one list build share one pass over the atoms per element
+ * (PagedRows.js rowBatchMemo) — a page of bond rows on a 50k-atom structure
+ * otherwise scanned every atom twice per row.
+ * @param {string} element
+ * @param {number} atomIndex
+ * @returns {number}
+ */
+export function elementAtomNumber(element, atomIndex) {
+  const memo = rowBatchMemo();
+  if (!memo) return getElementAtomIndices(element).indexOf(atomIndex) + 1;
+  let numbers = memo.get(`atomNumbers:${element}`);
+  if (!numbers) {
+    numbers = new Map();
+    getElementAtomIndices(element).forEach((index, i) => numbers.set(index, i + 1));
+    memo.set(`atomNumbers:${element}`, numbers);
+  }
+  return numbers.get(atomIndex) ?? 0;
 }
 
 /**
@@ -128,9 +152,10 @@ export function getSiteSignatureGroups({ includeHidden = false } = {}) {
 }
 
 export function getElementOpacityValues(element) {
+  const atoms = fileBrowser.selectedStructure.atoms;
   return Array.from(new Set(
     getElementAtomIndices(element).map((atomIndex) => {
-      const atom = fileBrowser.selectedStructure.atoms[atomIndex];
+      const atom = atoms[atomIndex];
       return atom.getOpacity?.() ?? atom.opacity ?? 1;
     })
   ));

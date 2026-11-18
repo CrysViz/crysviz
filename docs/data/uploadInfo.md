@@ -38,6 +38,8 @@ Currently it is possible to view the following file types:
 
 - **.xyz and .exzy format**: Currently under implementation
 
+- **ASE trajectory (`.traj`)**: the frames ASE writes (MD runs, relaxations, MLIP trajectories), with per-frame cell, energy, forces, stress and magnetic moments. A frame without a cell (a molecule) loads in a centered box.
+
 - **FHI-aims**:
     - `geometry.in`: structure and magnetism (`initial_moment`, collinear or non-collinear). A non-periodic geometry loads as a molecule in a centered box.
     - `aims.out` output: the full relaxation/MD trajectory with per-frame energy and forces, plus per-atom spin moments when the Mulliken analysis is present.

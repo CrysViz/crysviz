@@ -207,7 +207,9 @@ export function disposeGroup(grp) {
     if (obj.geometry) { try { obj.geometry.dispose(); } catch(_){} }
     if (obj.material) {
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach(m => { try { m.dispose(); } catch(_){} });
+      // Rebuild-surviving materials (render/MaterialStyles.js
+      // acquirePersistentMaterial) are owned by their cache, not the group.
+      mats.forEach(m => { if (m?.userData?.persistent) return; try { m.dispose(); } catch(_){} });
     }
   });
   app.scene.remove(grp);

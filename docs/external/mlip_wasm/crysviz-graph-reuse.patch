@@ -1,0 +1,79 @@
+--- a/src/runtime/graph_model.h
++++ b/src/runtime/graph_model.h
+@@ -112,6 +112,10 @@
+   // share memory once dead (forward + backward graphs), and the buffer is
+   // reused while the graph's shape is unchanged instead of allocated anew.
+   ggml_gallocr_t compute_galloc_ = nullptr;
++  // The input tensors' buffer, kept across predictions and regrown when too
++  // small. A new buffer per call means new buffer handles each time, which on
++  // WebGPU defeats the bind group cache of every kernel that reads an input.
++  ggml_backend_buffer_t input_buffer_ = nullptr;
+ 
+   // Species mapping (atomic number -> index)
+   std::map<int, int> species_to_index_;
+--- a/src/runtime/graph_model.cpp
++++ b/src/runtime/graph_model.cpp
+@@ -346,6 +346,9 @@
+   if (compute_galloc_) {
+     ggml_gallocr_free(compute_galloc_);
+   }
++  if (input_buffer_) {
++    ggml_backend_buffer_free(input_buffer_);
++  }
+   if (weight_buffer_) {
+     ggml_backend_buffer_free(weight_buffer_);
+   }
+@@ -597,6 +600,14 @@
+   if (max_neighbors == 0) {
+     max_neighbors = 1;
+   }
++  // On GPU backends round the neighbour count up to a multiple of 8: in MD it
++  // changes by one or two between steps, and each change means new tensor
++  // shapes, a new graph allocation and (WebGPU) new bind groups for every
++  // kernel. The extra slots are padding, masked like those of an atom with
++  // fewer neighbours than the most.
++  if (!ggml_backend_is_cpu(compute_backend_)) {
++    max_neighbors = (max_neighbors + 7) / 8 * 8;
++  }
+ 
+   // Set symbolic dimensions for this system
+   interp_.set_dimension("n_atoms", n_atoms);
+@@ -661,12 +672,32 @@
+     }
+   }
+ 
+-  // Allocate input buffer
+-  ggml_backend_buffer_t input_buffer =
+-      ggml_backend_alloc_ctx_tensors(input_ctx, compute_backend_);
+-  if (!input_buffer) {
+-    ggml_free(input_ctx);
+-    throw std::runtime_error("Failed to allocate input buffer");
++  // Allocate the inputs in input_buffer_ (kept across predictions, regrown
++  // with some headroom when this system needs more). `input_buffer` stays
++  // null: the cleanup paths below free it, and freeing null is a no-op.
++  ggml_backend_buffer_t input_buffer = nullptr;
++  {
++    ggml_backend_buffer_type_t buft = ggml_backend_get_default_buffer_type(compute_backend_);
++    const size_t align = ggml_backend_buft_get_alignment(buft);
++    size_t need = 0;
++    for (ggml_tensor *t = ggml_get_first_tensor(input_ctx); t; t = ggml_get_next_tensor(input_ctx, t)) {
++      need += GGML_PAD(ggml_backend_buft_get_alloc_size(buft, t), align);
++    }
++    if (!input_buffer_ || ggml_backend_buffer_get_size(input_buffer_) < need) {
++      if (input_buffer_) ggml_backend_buffer_free(input_buffer_);
++      input_buffer_ = ggml_backend_buft_alloc_buffer(buft, need + need / 4);
++    }
++    if (!input_buffer_) {
++      ggml_free(input_ctx);
++      throw std::runtime_error("Failed to allocate input buffer");
++    }
++    ggml_tallocr talloc = ggml_tallocr_new(input_buffer_);
++    for (ggml_tensor *t = ggml_get_first_tensor(input_ctx); t; t = ggml_get_next_tensor(input_ctx, t)) {
++      if (ggml_tallocr_alloc(&talloc, t) != GGML_STATUS_SUCCESS) {
++        ggml_free(input_ctx);
++        throw std::runtime_error("Failed to allocate input tensors");
++      }
++    }
+   }
+ 
+   // --- Pack neighbor list data ---

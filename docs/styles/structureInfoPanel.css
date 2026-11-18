@@ -422,6 +422,27 @@
   border-left: 2px solid var(--line-1);
   padding-left: var(--sp-2);
 }
+/* Pager above a long per-atom/bond/polyhedron list (one page of rows at a
+   time, components/PagedRows.js). */
+.row-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-xs);
+}
+.row-pager-range {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-pager .btn-mini { min-width: 24px; }
+.row-pager-goto {
+  width: 64px;
+  font-size: var(--fs-xs);
+}
 /* A mixed-site ("(K,Na)") group's row gets one dot PER element instead of a
    single blended swatch — .comp-mixed-dots is the wrapper around them, added
    alongside .dot (styles.css) rather than replacing it, so the "remove old

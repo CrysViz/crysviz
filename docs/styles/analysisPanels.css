@@ -504,6 +504,14 @@
   100% { left: 100%; }
 }
 
+/* The same sweep for showBusyProgress, in transform (percentages of the 40%
+   segment: -100% .. 250% is -40% .. 100% of the strip) so the compositor keeps
+   it moving while a long rebuild blocks the main thread. */
+@keyframes tracerBusySlide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
 /* ===========================================================================
    PeriodicTableSelectPanel.js / PeriodicTableSelectTwoPanel.js — the shared
    element-picker popup (single-element / bond-pair variants build the same

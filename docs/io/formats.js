@@ -513,9 +513,13 @@ export const FORMATS = [
   {
     id: 'xyz',
     label: '(ext)XYZ',
-    kind: SourceKind.TEXT,
+    // A long MD trajectory easily passes the ~512 M-character limit of a
+    // browser string: the reader takes the FileSource and parses a large file
+    // in chunks straight from it (io/ReadeXYZModule.js parseXYZBlob); smaller
+    // ones it still reads as text.
+    kind: SourceKind.RANDOM_ACCESS,
     handledBy: HandledBy.PARSE_ANY,
-    matchesName: (lower) => lower.endsWith('.xyz') || lower.endsWith('.exyz'),
+    matchesName: (lower) => lower.endsWith('.xyz') || lower.endsWith('.exyz') || lower.endsWith('.extxyz'),
     sniff: sniffXYZ,
   },
   {

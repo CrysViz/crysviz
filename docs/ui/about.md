@@ -35,7 +35,7 @@ You should have received a copy of the GNU Affero General Public License along w
 - Use custom bond lengths with the optional ability to display atoms outside the unit cell that are bonded neighbours.
 - Customizable color schemes can be choosen for any individual atoms 
 - Forces and spin visualisation. Dynamically for relaxaton or MD trajectories
-- Trajectory player. Load VASP OUTCARs and Quantum Espresso vc-relax output files directly and visualise the trajectories. Long MD trajecetories might be beyond your browsers memory limits.
+- Trajectory player. Load VASP OUTCARs and Quantum Espresso vc-relax output files directly and visualise the trajectories. A trajectory larger than the memory limit in Settings asks what to load (every n-th frame, the first frames, or everything).
 - Symmetry anlysis and structure refinement (powered by Moyo WASM)
 - Relxations and molecular dynamics simulations directly on your device with NEP potentials with upt to several hundred atoms. 
 - Possibility to activate a calculation backend. This allows structural relaxations with any ASE compatible calculater, e.g., MACE, UPET, VASP, QE; trajectory is added and can be played using the trajectory player.

@@ -17,3 +17,7 @@ out until the view turns. In the 3D view the labels keep one size on screen at a
 ▸ Atom labels** sizes the names (**Names**) and the charge badges (**Charges**) in the 3D view (the
 inspectors have their own **Size** sliders).
 Structures of more than 1000 atoms get no labels in the 3D view.
+
+**Long lists.** A species, bond pair or polyhedron category with more than 1,000 entries lists them
+100 at a time: use ◀ ▶ to page, or type a number into **#** to jump to the page that holds it.
+Picking an atom, bond or polyhedron in the 3D view opens its list on the page that holds its row.

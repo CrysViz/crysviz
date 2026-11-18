@@ -509,6 +509,61 @@ font-size: var(--fs-base);
   border-radius: var(--radius) !important;
 }
 
+/* PET-MAD "threads": its widest option ("auto") is no wider than the arrow
+   needs, so the content-sized select clipped it. */
+.atomistic-threads-select {
+  min-width: 5.5em;
+}
+
+/* PET-MAD model list: the "from a link…" box and the selected model's line
+   (ui/BackendPanel/PetModelList.js), each a full row of the wrapping flex. */
+.atomistic-model-link {
+  flex-basis: 100%;
+  display: flex;
+  gap: var(--sp-3);
+}
+
+.atomistic-model-link input {
+  flex: 1;
+  min-width: 0;
+}
+
+.atomistic-model-info {
+  flex-basis: 100%;
+  color: var(--fg-75);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  overflow-wrap: anywhere;
+}
+
+.atomistic-model-info:has(> span:empty):has(> button.hidden) {
+  display: none;
+}
+
+/* ASE model menu: as wide as the panel at most; long specs are cut, the
+   option's full text stays in the list. */
+.atomistic-ase-model {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.atomistic-ase-model select {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.atomistic-text-button {
+  background: none;
+  border: none;
+  padding: 0 var(--sp-2);
+  color: var(--accent-color);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 /* ---- Rattle card: two labeled inputs (coordinate / lattice) plus the action
    button, sharing one 3-column grid so the inputs get the same size and
    captions as every other atomistic control. ---- */
@@ -581,6 +636,14 @@ font-size: var(--fs-base);
   border-radius: var(--radius-12);
   border: 1px solid var(--wash-2);
   font-weight: var(--fw-bold);
+}
+
+/* Start/stop pairs (Relax/Stop, MD start/stop): the one that cannot be used
+   right now is dimmed, like the app's other disabled buttons. */
+.atomistic-button-row .calcButton:disabled {
+  opacity: 0.35;
+  cursor: default;
+  box-shadow: none;
 }
 
 .atomistic-button-row-compact {
@@ -688,4 +751,131 @@ font-size: var(--fs-base);
 .atomistic-collapse-toggle.active .atomistic-anneal-title,
 .atomistic-collapse-toggle.active > span:first-child {
   color: var(--ok-bright);
+}
+
+/* Progress bars in the Atomistic window (AtomisticPanels.js showProgress):
+   the potential's loading bar under the potential picker, and MD's and
+   Relax's run progress under their buttons. A known fraction fills it (a
+   model download, MD steps; width set inline), anything without an end
+   sweeps it (.is-indeterminate: wasm start-up, a server load, a relaxation). */
+.atomistic-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: var(--sp-2) 0;
+}
+
+.atomistic-progress[hidden] {
+  display: none;
+}
+
+.atomistic-progress-label {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+}
+
+.atomistic-progress-track {
+  position: relative;
+  height: 6px;
+  border-radius: var(--radius-sm);
+  background: var(--track-bg);
+  overflow: hidden;
+}
+
+.atomistic-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--highlight-color);
+  transition: width 0.15s linear;
+}
+
+.atomistic-progress-track.is-indeterminate .atomistic-progress-fill {
+  width: 40%;
+  animation: atomisticProgressSweep 1.2s ease-in-out infinite;
+}
+
+@keyframes atomisticProgressSweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+/* Which potential a window computes with, and how far to trust it
+   (atomistic/potentialNotice.js): in the Atomistic window under the potential
+   picker, and in EOS, Order Structure and phonon mode maps. */
+.potential-notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-3);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+.potential-notice-line {
+  color: var(--fg-2);
+}
+
+.potential-notice-line strong {
+  color: var(--fg-1);
+}
+
+.potential-notice-caveat,
+.potential-notice-alert {
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  color: var(--fg-1);
+}
+
+.potential-notice-caveat {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  background: rgb(var(--warn-rgb) / 0.14);
+  border: 1px solid rgb(var(--warn-rgb) / 0.55);
+}
+
+.potential-notice-caveat > span {
+  flex: 1 1 auto;
+}
+
+/* Folds the caveat to its ⚠ everywhere (.potential-notice-expand). */
+.potential-notice-collapse {
+  flex: 0 0 auto;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  background: transparent;
+  border: 1px solid rgb(var(--warn-rgb) / 0.55);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.potential-notice-collapse:hover {
+  color: var(--fg-1);
+  border-color: rgb(var(--warn-rgb) / 0.9);
+}
+
+/* The collapsed caveat: a small orange ⚠ that expands it again. On its own
+   line in the Atomistic window, at the end of "Runs with …" elsewhere. */
+.potential-notice-expand {
+  align-self: flex-start;
+  margin-left: var(--sp-1);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
+  color: var(--warn-bright);
+  background: rgb(var(--warn-rgb) / 0.14);
+  border: 1px solid rgb(var(--warn-rgb) / 0.55);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.potential-notice-expand:hover {
+  background: rgb(var(--warn-rgb) / 0.28);
+}
+
+.potential-notice-alert {
+  background: rgb(var(--danger-rgb) / 0.18);
+  border: 1px solid var(--danger);
+  font-weight: 600;
 }

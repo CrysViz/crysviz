@@ -11,6 +11,7 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 import { createNewStructureFromAtoms, createTrajectoryFromFrames } from './addToStructureModule/CommitAtoms.js';
 import { buildOrderedStructure, planOrdering, listMultiplierOptions } from '../atomistic/order_structure.js';
+import { mountPotentialNotice, potentialLabel } from '../atomistic/potentialNotice.js';
 import { Atom, Structure } from '../model/index.js';
 
 // Grow the current structure's cell by the requested vacuum (Å) along each
@@ -270,8 +271,8 @@ function resetOrderSession() {
  *   (click a row)  -> swap that same preview to look at any other sample.
  *   Compare Energy -> single-point energy for every built sample with
  *                      whatever potential is selected in the Atomistic panel
- *                      (NEP/PET-MAD; ASE can't run headless — see
- *                      ensureCalculatorRunner); results re-sort best first.
+ *                      (NEP, PET-MAD or ASE; the section names it, with the
+ *                      accuracy caveat); results re-sort best first.
  *   Use Shown      -> keep whichever sample is currently previewed as the
  *                      final structure (one new file-browser row).
  *   Keep All       -> every built sample becomes one frame of a new
@@ -316,6 +317,7 @@ function addOrderStructureSection(container) {
       <button id="osMajorityBtn" class="btn-mini lsc-build-row-btn"
         title="Every site takes its most-occupied species. Faster, but destroys stoichiometry — a 50/50 Fe/Ni alloy becomes pure Fe.">Use Majority</button>
     </div>
+    <div id="osPotentialNotice"></div>
     <div id="osStatus" class="lsc-status-text"></div>
     <div id="osList" class="order-structure-list" hidden></div>
     <div id="osResultsActions" class="lsc-results-actions-row" hidden>
@@ -326,6 +328,10 @@ function addOrderStructureSection(container) {
     </div>
   `;
 
+  // Compare Energy ranks the samples with the Atomistic window's potential:
+  // name it, with the accuracy caveat.
+  const noticeHost = container.querySelector('#osPotentialNotice');
+  if (noticeHost) mountPotentialNotice(noticeHost);
   const sampleCountInput = container.querySelector('#osSampleCount');
   const sizeSelect = container.querySelector('#osSizeSelect');
   const buildBtn = container.querySelector('#osBuildBtn');
@@ -417,7 +423,8 @@ function addOrderStructureSection(container) {
     try {
       const { ensureCalculatorRunner } = await import('./BackendPanel/AtomisticPanels.js');
       const { buildNEPStructure } = await import('../atomistic/relaxer.js');
-      const { runner } = await ensureCalculatorRunner((msg) => { setOrderStatus(msg); });
+      const { runner, potential } = await ensureCalculatorRunner((msg) => { setOrderStatus(msg); });
+      const usedLabel = potentialLabel(potential);
       const samples = orderSession.builtSamples;
       for (let i = 0; i < samples.length; i += 1) {
         const sample = samples[i];
@@ -434,7 +441,7 @@ function addOrderStructureSection(container) {
       orderSession.energiesComputed = true;
       renderOrderList();
       showOrderCandidate(samples[0]); // land on the best one now that ranking is known
-      setOrderStatus(`${samples.length} energ${samples.length === 1 ? 'y' : 'ies'} computed, lowest first — showing #1. Click a row to look at another.`);
+      setOrderStatus(`${samples.length} energ${samples.length === 1 ? 'y' : 'ies'} computed with ${usedLabel}, lowest first — showing #1. Click a row to look at another.`);
     } catch (error) {
       setOrderStatus(`Could not compute energies: ${error.message || String(error)}`);
     } finally {

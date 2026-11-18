@@ -5,7 +5,7 @@ import { updateSingleBondColor, updateSingleBondOpacity, applyBondRadius, bondKe
 import { createMaterialEditor } from './MaterialEditor.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
 import { notifyColorsChanged } from '../../../render/index.js';
-import { getElementAtomIndices, clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
+import { elementAtomNumber, clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { saveBondStyles, scheduleBondStyleSave } from '../../SizePrefs.js';
 import { selectBondFromRow, suppressSelectionHighlightFor3D, restoreSelectionHighlight } from '../../SelectAndHighlightModule.js';
 
@@ -50,8 +50,8 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
   const pair = el1 < el2 ? `${el1}-${el2}` : `${el2}-${el1}`;
   // Same per-element display numbering as the Atoms tab (position within the
   // element's source-order atom list, 1-based), applied to the source atoms.
-  const n1 = getElementAtomIndices(el1).indexOf(bond.srcIndices[0]) + 1;
-  const n2 = getElementAtomIndices(el2).indexOf(bond.srcIndices[1]) + 1;
+  const n1 = elementAtomNumber(el1, bond.srcIndices[0]);
+  const n2 = elementAtomNumber(el2, bond.srcIndices[1]);
   const bondName = `${el1}${n1}–${el2}${n2}`;
 
   const row = document.createElement('div');

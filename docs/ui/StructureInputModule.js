@@ -36,7 +36,6 @@ export {
 
 
 export  function parsePOSCAR(content, fileName, options = undefined) {
-   console.log(content)
   const structure = readPOSCAR(content, fileName);
   return initializeWithPOSCAR(structure, fileName, options);
 }
@@ -98,7 +97,9 @@ export function isLikelyOUTCARContent(content) {
  *   (host/early.js) unless the embed URL carries `prefs=1`.
  */
 export function initializeUIOnLoad(structureContainer, { restoreStoredPrefs = general.restoreStoredPrefs } = {}) {
-  console.log(structureContainer);
+  // (No console.log of the container or the file text: with DevTools open the
+  // console keeps every logged object alive, i.e. every loaded trajectory and
+  // the full text of every loaded file, even after its row is deleted.)
   const fileName = structureContainer.fileName;
   const structures = structureContainer.structures;
 

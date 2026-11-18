@@ -1,7 +1,7 @@
 import { createColorPicker } from './ColorPickerModule.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
 import { app, groups,fileBrowser, general, RENDERING_DEFAULTS} from '../state/store.js';
-import {getHeatMapColors,getBatlowColors,getHawaiiColors,getManaguaColors, getViridisColors,getPlasmaColors,getSpectralRColors,getJetColors} from '../defaults/color_texture_defaults.js'
+import { colorMapColors, colorMapTable, colorBin } from '../render/ColorMapBins.js'
 
 import { updateBonds } from '../render/index.js'
 import { updateAtoms } from '../render/index.js'
@@ -171,47 +171,15 @@ function updateBondColorsByLength() {
   }
 }
 
-function colorMapColors(colorMapName) {
-  switch (colorMapName) {
-    case "batlow": return getBatlowColors();
-    case "hawaii": return getHawaiiColors();
-    case "managua": return getManaguaColors();
-    case "viridis": return getViridisColors();
-    case "plasma": return getPlasmaColors();
-    case "spectralR": return getSpectralRColors();
-    case "jet": return getJetColors();
-    default: return getHeatMapColors();
-  }
-}
-
-const COLOR_LOG_EPS = 1e-6;
-
 function valueToColor(value, minVal, maxVal, colorMapName, useLog = false) {
-  const colors = colorMapColors(colorMapName);
-  if (!colors || colors.length === 0) {
+  // The map's '#rrggbb' strings, built once (render/ColorMapBins.js): this
+  // runs once per atom or bond, and building the map's colours each call cost
+  // ~1 s per recolour at 50k atoms.
+  const table = colorMapTable(colorMapName);
+  if (!table.n) {
     return "#ffffff";
   }
-
-  const nBins = colors.length;
-  const clamped = Math.max(minVal, Math.min(maxVal, value));
-  let t;
-  if (useLog) {
-    const lo = Math.log10(Math.max(minVal, COLOR_LOG_EPS));
-    const hi = Math.log10(Math.max(maxVal, COLOR_LOG_EPS));
-    const v = Math.log10(Math.max(clamped, COLOR_LOG_EPS));
-    t = hi > lo ? (v - lo) / (hi - lo) : 0.5;
-  } else {
-    t = (maxVal > minVal) ? (clamped - minVal) / (maxVal - minVal) : 0.5;
-  }
-  const bin = Math.min(Math.max(0, Math.floor(t * nBins)), nBins - 1);
-  // getHexString(), not manual r*255 truncation: these THREE.Color objects
-  // store their intended sRGB appearance internally as linear (color
-  // management), so reading .r/.g/.b directly and truncating them as if
-  // they were already 0-255 sRGB values skips the linear->sRGB conversion
-  // getHexString() does — same value ends up a visibly different color than
-  // what the same colormap+value renders as on an instanced mesh (which
-  // reads .r/.g/.b directly, correctly, as linear).
-  return `#${colors[bin].getHexString()}`;
+  return table.hex[colorBin(value, minVal, maxVal, table.n, useLog)];
 }
 
 export function bondLengthToColor(bondLength, minVal = general.BondMin, maxVal = general.BondMax) {
@@ -361,6 +329,7 @@ export function addColorPanel(target = "colorContainer") {
     // is a tracer-only analytic-mirror control, so its row is toggled here.
     groundReflectRow.style.display = isTracer ? "grid" : "none";
     renderStyleMenu.style.display = isRaster ? "grid" : "none";
+    atomDetailMenu.style.display = isRaster ? "grid" : "none";
     outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
     // Structure-window tracer-only blocks (material editors) hide under the
     // raster pipelines via this body class (see styles.css). The underlying
@@ -396,6 +365,18 @@ export function addColorPanel(target = "colorContainer") {
     // the atoms' look (the Composition Display swatches) re-render on the
     // same event every bulk recolour already broadcasts.
     document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
+  });
+
+  // Atom level of detail (render/AtomLodModule.js). Rebuilds the atoms mesh:
+  // the two variants have different geometry and a different material, so
+  // nothing can be re-parameterised in place.
+  const atomDetailMenu = createDropdown("atomDetailMenu", "Atom detail", [
+    { value: "auto", text: "Auto (imposters for large structures)", selected: general.atomDetail === "auto" },
+    { value: "spheres", text: "Spheres", selected: general.atomDetail === "spheres" },
+    { value: "imposters", text: "Imposters", selected: general.atomDetail === "imposters" },
+  ], () => {
+    general.atomDetail = atomDetailMenu.querySelector("select").value;
+    updateVisualization({ reRenderAtoms: true, reRenderBonds: false });
   });
 
   // Rendering pipeline (how a frame is drawn) — the top of the tree.
@@ -763,6 +744,7 @@ export function addColorPanel(target = "colorContainer") {
 
   // Render Style follows the per-pipeline knobs (raster pipelines only).
   content.appendChild(renderStyleMenu);
+  content.appendChild(atomDetailMenu);
 
   // Cel outline controls: mode selector plus mode-specific width sliders.
   // Both widths are world units. 'Screen space' = post-process with clean
@@ -951,6 +933,7 @@ export function addColorPanel(target = "colorContainer") {
     // pipeline + style first: they drive the visibility tree and rebuilds
     if (general.renderPipeline !== D.renderPipeline) fire('renderPipelineMenu', D.renderPipeline, 'change');
     if (general.renderStyle !== D.renderStyle) fire('renderStyleMenu', D.renderStyle, 'change');
+    if (general.atomDetail !== D.atomDetail) fire('atomDetailMenu', D.atomDetail, 'change');
     if (general.celOutlineMode !== D.celOutlineMode) fire('celOutlineModeMenu', D.celOutlineMode, 'change');
     if (general.celOutlineColorMode !== D.celOutlineColorMode) fire('celOutlineColorMenu', D.celOutlineColorMode, 'change');
     fire('depthPeelLayersSlider', D.depthPeelLayers, 'input');
@@ -1283,8 +1266,7 @@ export function addColorPanel(target = "colorContainer") {
     updatePolyhedraColors();
     // A mode switch is a bulk recolour: broadcast on the same event every other
     // bulk recolour uses, so UIs mirroring the colour state (the Composition
-    // swatches, the trajectory player's "full render" note for force colouring)
-    // learn about it without polling.
+    // swatches) learn about it without polling.
     document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
   }
 
@@ -1538,8 +1520,8 @@ export function addColorPanel(target = "colorContainer") {
       bondsSolidColorPicker = null;
     }
     updatePolyhedraColors();
-    // Bulk recolour broadcast (see onAtomsModeChange): lets the trajectory
-    // player show/hide its "full render each frame" note for Length mode.
+    // Bulk recolour broadcast (see onAtomsModeChange): UIs mirroring the
+    // colour state learn about the switch.
     document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
   }
 

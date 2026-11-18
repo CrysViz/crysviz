@@ -20,7 +20,7 @@
 // setSize(), and dispose() (call super.dispose() to clean the overlays).
 
 import { app, groups } from '../../state/store.js';
-import { createAtomsMaterial } from '../AtomsFracUpdateModule.js';
+import { atomsMaterialFactoryFor } from '../AtomsFracUpdateModule.js';
 import { createBondsMaterial } from '../BondsFracUpdateModule.js';
 import { setAlphaPass } from '../MaterialStyles.js';
 import { ForwardPipeline } from './ForwardPipeline.js';
@@ -34,7 +34,7 @@ export class StagedTransparencyPipeline extends SplitAtomsPipeline {
   applyTransparency(material, spec = {}) {
     switch (spec.kind) {
       case 'atoms':
-        if (spec.mesh) return this._applyInstancedSplit(material, spec, createAtomsMaterial);
+        if (spec.mesh) return this._applyInstancedSplit(material, spec, atomsMaterialFactoryFor(spec.mesh));
         break;
       case 'bonds':
         if (spec.mesh) return this._applyInstancedSplit(material, spec, createBondsMaterial);

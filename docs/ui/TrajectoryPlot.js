@@ -85,6 +85,14 @@ function fmt(v, digits) {
   return Number.isFinite(v) ? v.toFixed(digits) : 'n/a';
 }
 
+// English ordinal for the decimation note ("every 4th step"): 1st, 2nd, 3rd,
+// 4th … 11th–13th, 21st.
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
 /**
  * Create a standalone trajectory time-series plot.
  *
@@ -110,11 +118,17 @@ function fmt(v, digits) {
  *   carry an x coordinate.
  * @param {boolean} [options.showComputeStats=true] - keep the "Compute step
  *   stats" toolbar slot (hidden until setComputeStatsAvailable(true)).
+ * @param {any} [options.plotly] - test seam: a pre-resolved Plotly-like module
+ *   to draw with instead of lazy-loading the real one from the CDN.
  * @returns {{update, setSeries, clear, setCursor, onSeek, onComputeStats,
  *            setComputeStatsAvailable, addMarker, clearMarkers, getEl, remove}}
  */
 export function createTrajectoryPlot(hostEl, options = {}) {
   const maxPts = Number.isFinite(options.maxPts) ? options.maxPts : 5000;
+  // Test seam: a pre-resolved Plotly-like module. Production leaves it null and
+  // drawFull lazy-loads the real one; a browser test with the CDN blocked can
+  // pass a recorder to exercise the draw path.
+  const plotlyOverride = options.plotly || null;
   const plotId = options.id || PLOT_ID;
   const seriesSpec = options.seriesSpec || SERIES_SPEC;
   const groupMeta = options.groupMeta || GROUP_META;
@@ -235,8 +249,19 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // the axis reads real steps. cursor/seek map between frame index and these.
   const xValues = [];
   let xTitle = xTitleDefault;
-  let sampleCount = 0;       // longest series length == number of x samples
+  let sampleCount = 0;       // longest series length == number of PLOTTED samples
   let cursorIndex = null;
+  // setSeries downsamples a long series so Plotly never redraws more than
+  // maxPts points. `decimation` is the frame stride between kept samples,
+  // `fullSampleCount` the original frame count, and `sampleFrame[k]` the
+  // original frame index of the k-th kept sample (the last frame is always
+  // kept). cursor/seek map between original frame indices and this decimated
+  // sample space. The live `update` path uses the maxPts ring instead, so it
+  // leaves these at their 1:1 defaults.
+  let decimation = 1;
+  let fullSampleCount = 0;
+  /** @type {number[] | null} */
+  let sampleFrame = null;
   // Vertical event markers ({x, label}) — a loaded file, play/pause, a GC
   // hint — drawn as dotted lines with a small rotated label. Pruned with the
   // ring buffer so they never outlive the samples they annotate.
@@ -660,6 +685,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   // set of plotted series or their axis assignment changes.
   async function drawFull() {
     if (removed) return;
+    if (!Plotly && plotlyOverride) Plotly = plotlyOverride;
     if (!Plotly) {
       // Offline, the loader rejects and forgets its promise so a later attempt
       // can succeed; a streaming caller (live MD, the debug sampler) calls
@@ -779,18 +805,21 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       // Map the clicked x back to the nearest FRAME INDEX. x may be step numbers
       // (non-unit spacing), so find the closest recorded step rather than assume
       // x == frame index.
-      let frame;
+      let sample;
       if (xValues.length) {
         let best = 0; let bestD = Infinity;
         for (let i = 0; i < xValues.length; i++) {
           const d = Math.abs(xValues[i] - dataX);
           if (d < bestD) { bestD = d; best = i; }
         }
-        frame = best;
+        sample = best;
       } else {
-        frame = Math.round(dataX) - 1;
+        sample = Math.round(dataX) - 1;
       }
-      seekCb(Math.max(0, Math.min(sampleCount - 1, frame)));
+      sample = Math.max(0, Math.min(sampleCount - 1, sample));
+      // Map the decimated sample back to the original frame the panel seeks to.
+      const frame = sampleFrame ? sampleFrame[sample] : sample * decimation;
+      seekCb(Math.max(0, Math.min((fullSampleCount || sampleCount) - 1, frame)));
     });
   }
 
@@ -880,12 +909,35 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     // `step` key on the object (or opts.steps) supplies the per-frame step
     // numbers for the x-axis; without it the x-axis falls back to 1-based frames.
     setSeries(seriesObj = {}, opts = {}) {
+      // Downsample to at most maxPts: a compute-stats / replay path can hand us
+      // 100k+ points, and Plotly redraws every one of them on each relayout
+      // (10-15 ms) — a 100k-point trace makes the whole panel jerk. Keep every
+      // `stride`-th frame plus the last, so the line's shape and its endpoint
+      // survive; the cursor/seek mapping below works in this decimated space.
+      let full = 0;
+      for (const arr of Object.values(seriesObj)) {
+        if (Array.isArray(arr)) full = Math.max(full, arr.length);
+      }
+      const stride = full > maxPts ? Math.ceil(full / maxPts) : 1;
+      /** @type {number[]} original frame index of each kept sample */
+      const keep = [];
+      for (let i = 0; i < full; i += stride) keep.push(i);
+      // Pin the last kept sample to the final frame so the line ends where the
+      // data does — overwriting, not appending, keeps the count ≤ maxPts.
+      if (full > 0) keep[keep.length - 1] = full - 1;
+      const pick = (/** @type {any[]} */ arr) =>
+        keep.map((i) => (i < arr.length ? arr[i] : NaN));
+
+      decimation = stride;
+      fullSampleCount = full;
+      sampleFrame = keep;
+
       series.clear();
       seriesOrder.length = 0;
       for (const [name, arr] of Object.entries(seriesObj)) {
         if (name === xKey) continue; // reserved: x-axis values, not a plotted series
         if (seriesSpec[name] && seriesSpec[name].plot === false) continue;
-        series.set(name, Array.isArray(arr) ? arr.slice() : []);
+        series.set(name, Array.isArray(arr) ? pick(arr) : []);
         seriesOrder.push(name);
         noteGroup(specFor(name).group);
       }
@@ -895,15 +947,15 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       const steps = Array.isArray(opts.steps) ? opts.steps
         : (Array.isArray(seriesObj[xKey]) ? seriesObj[xKey] : null);
       if (steps) {
-        for (let i = 0; i < sampleCount; i++) {
-          xValues.push(Number.isFinite(steps[i]) ? steps[i] : i + 1);
-        }
+        for (const i of keep) xValues.push(Number.isFinite(steps[i]) ? steps[i] : i + 1);
         xTitle = xTitleWithX;
       } else {
         xTitle = xTitleDefault;
       }
 
-      statsEl.textContent = '';
+      statsEl.textContent = stride > 1
+        ? `showing every ${ordinal(stride)} step (${sampleCount} of ${full})`
+        : '';
       drawFull();
     },
 
@@ -914,6 +966,9 @@ export function createTrajectoryPlot(hostEl, options = {}) {
       xTitle = xTitleDefault;
       sampleCount = 0;
       cursorIndex = null;
+      decimation = 1;
+      fullSampleCount = 0;
+      sampleFrame = null;
       markers = [];
       statsEl.textContent = '';
       drawFull();
@@ -934,7 +989,11 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     },
 
     setCursor(frameIndex) {
-      cursorIndex = Number.isFinite(frameIndex) ? frameIndex : null;
+      // frameIndex is an ORIGINAL frame index; map it into the decimated
+      // sample space the plot draws in (a no-op when decimation === 1).
+      cursorIndex = Number.isFinite(frameIndex)
+        ? Math.round(frameIndex / decimation)
+        : null;
       scheduleCursor();
     },
 

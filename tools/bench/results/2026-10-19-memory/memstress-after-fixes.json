@@ -1,0 +1,693 @@
+{
+ "meta": {
+  "date": "2026-10-19T13:21:00.929Z",
+  "isolated": true,
+  "gpu": false
+ },
+ "playback": [
+  {
+   "n": 6,
+   "atoms": 1728,
+   "framesExpected": 60,
+   "steps": [
+    {
+     "label": "idle (default structure)",
+     "heapMB": 7,
+     "uaMB": 97.8,
+     "uaWorkersMB": 5.8,
+     "pssMB": 505.9,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 14,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 42,
+     "imposter": false,
+     "bondsCount": 100,
+     "dom": 1843
+    },
+    {
+     "label": "after load",
+     "heapMB": 12.8,
+     "uaMB": 113.9,
+     "uaWorkersMB": 5.8,
+     "pssMB": 513.4,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 14,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 1784,
+     "imposter": false,
+     "bondsCount": 6286,
+     "dom": 1528
+    },
+    {
+     "label": "after Auto loop 1",
+     "heapMB": 13,
+     "uaMB": 114.1,
+     "uaWorkersMB": 5.8,
+     "pssMB": 519,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 14,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 1784,
+     "imposter": false,
+     "bondsCount": 6286,
+     "dom": 1528,
+     "updateMsPerFrame": 12.7,
+     "renderMedianMs": 4.5
+    },
+    {
+     "label": "after Auto loop 2",
+     "heapMB": 13.2,
+     "uaMB": 114.3,
+     "uaWorkersMB": 5.8,
+     "pssMB": 434.8,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 14,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 1784,
+     "imposter": false,
+     "bondsCount": 6286,
+     "dom": 1528,
+     "updateMsPerFrame": 13.6,
+     "renderMedianMs": 3.2
+    },
+    {
+     "label": "after Full loop",
+     "heapMB": 13.5,
+     "uaMB": 114.7,
+     "uaWorkersMB": 5.8,
+     "pssMB": 434.6,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 14,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 1784,
+     "imposter": false,
+     "bondsCount": 6286,
+     "dom": 1528,
+     "updateMsPerFrame": 74.8,
+     "renderMedianMs": 7.5
+    },
+    {
+     "label": "after deleting the row",
+     "heapMB": 8.2,
+     "uaMB": 100.6,
+     "uaWorkersMB": 5.8,
+     "pssMB": 419.9,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 0,
+     "textures": 1,
+     "programs": 3,
+     "atomsMeshCount": 42,
+     "imposter": false,
+     "bondsCount": 100,
+     "dom": 1843
+    }
+   ],
+   "textMB": 2.6,
+   "loadMs": 2132,
+   "frames": 60,
+   "bonds": 3143,
+   "playStats": {
+    "shown": 121,
+    "reused": 120,
+    "rebuilt": 1,
+    "detached": 0,
+    "pristine": 0,
+    "styled": 0
+   },
+   "errors": [],
+   "ok": true
+  },
+  {
+   "n": 10,
+   "atoms": 8000,
+   "framesExpected": 40,
+   "steps": [
+    {
+     "label": "idle (default structure)",
+     "heapMB": 6.9,
+     "uaMB": 97.8,
+     "uaWorkersMB": 5.8,
+     "pssMB": 398.1,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 14,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 42,
+     "imposter": false,
+     "bondsCount": 100,
+     "dom": 1843
+    },
+    {
+     "label": "after load",
+     "heapMB": 33.3,
+     "uaMB": 159,
+     "uaWorkersMB": 5.8,
+     "pssMB": 464.9,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 12,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 8293,
+     "imposter": false,
+     "bondsCount": 30756,
+     "dom": 1528
+    },
+    {
+     "label": "after Auto loop 1",
+     "heapMB": 33.6,
+     "uaMB": 159.5,
+     "uaWorkersMB": 5.8,
+     "pssMB": 509.2,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 12,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 8293,
+     "imposter": false,
+     "bondsCount": 30756,
+     "dom": 1528,
+     "updateMsPerFrame": 97.7,
+     "renderMedianMs": 16
+    },
+    {
+     "label": "after Auto loop 2",
+     "heapMB": 33.7,
+     "uaMB": 159.6,
+     "uaWorkersMB": 5.8,
+     "pssMB": 616.4,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 12,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 8293,
+     "imposter": false,
+     "bondsCount": 30756,
+     "dom": 1528,
+     "updateMsPerFrame": 65.1,
+     "renderMedianMs": 5.3
+    },
+    {
+     "label": "after Full loop",
+     "heapMB": 34.1,
+     "uaMB": 160,
+     "uaWorkersMB": 5.8,
+     "pssMB": 614.9,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 12,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 8293,
+     "imposter": false,
+     "bondsCount": 30756,
+     "dom": 1528,
+     "updateMsPerFrame": 303.4,
+     "renderMedianMs": 13.6
+    },
+    {
+     "label": "after deleting the row",
+     "heapMB": 8.5,
+     "uaMB": 105.6,
+     "uaWorkersMB": 5.8,
+     "pssMB": 556.1,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 0,
+     "textures": 1,
+     "programs": 3,
+     "atomsMeshCount": 42,
+     "imposter": false,
+     "bondsCount": 100,
+     "dom": 1843
+    }
+   ],
+   "textMB": 8.1,
+   "loadMs": 9883,
+   "frames": 40,
+   "bonds": 15378,
+   "playStats": {
+    "shown": 81,
+    "reused": 80,
+    "rebuilt": 1,
+    "detached": 0,
+    "pristine": 0,
+    "styled": 0
+   },
+   "errors": [],
+   "ok": true
+  },
+  {
+   "n": 14,
+   "atoms": 21952,
+   "framesExpected": 20,
+   "steps": [
+    {
+     "label": "idle (default structure)",
+     "heapMB": 7,
+     "uaMB": 97.8,
+     "uaWorkersMB": 5.8,
+     "pssMB": 502,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 14,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 42,
+     "imposter": false,
+     "bondsCount": 100,
+     "dom": 1843
+    },
+    {
+     "label": "after load",
+     "heapMB": 80.5,
+     "uaMB": 228.5,
+     "uaWorkersMB": 5.8,
+     "pssMB": 638.5,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 9,
+     "textures": 2,
+     "programs": 4,
+     "atomsMeshCount": 22919,
+     "imposter": true,
+     "bondsCount": 86876,
+     "dom": 1528
+    },
+    {
+     "label": "after Auto loop 1",
+     "heapMB": 80.8,
+     "uaMB": 229,
+     "uaWorkersMB": 5.8,
+     "pssMB": 696,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 9,
+     "textures": 2,
+     "programs": 4,
+     "atomsMeshCount": 22919,
+     "imposter": true,
+     "bondsCount": 86876,
+     "dom": 1528,
+     "updateMsPerFrame": 139.2,
+     "renderMedianMs": 21.8
+    },
+    {
+     "label": "after Auto loop 2",
+     "heapMB": 80.9,
+     "uaMB": 229.1,
+     "uaWorkersMB": 5.8,
+     "pssMB": 700.3,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 9,
+     "textures": 2,
+     "programs": 4,
+     "atomsMeshCount": 22919,
+     "imposter": true,
+     "bondsCount": 86876,
+     "dom": 1528,
+     "updateMsPerFrame": 125.6,
+     "renderMedianMs": 31.6
+    },
+    {
+     "label": "after Full loop",
+     "heapMB": 81.2,
+     "uaMB": 229.4,
+     "uaWorkersMB": 5.8,
+     "pssMB": 699.3,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 9,
+     "textures": 2,
+     "programs": 4,
+     "atomsMeshCount": 22919,
+     "imposter": true,
+     "bondsCount": 86876,
+     "dom": 1528,
+     "updateMsPerFrame": 867.4,
+     "renderMedianMs": 9010.1
+    },
+    {
+     "label": "after deleting the row",
+     "heapMB": 9.6,
+     "uaMB": 117.7,
+     "uaWorkersMB": 5.8,
+     "pssMB": 578.9,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 0,
+     "textures": 1,
+     "programs": 4,
+     "atomsMeshCount": 42,
+     "imposter": false,
+     "bondsCount": 100,
+     "dom": 1843
+    }
+   ],
+   "textMB": 11.1,
+   "loadMs": 9315,
+   "frames": 20,
+   "bonds": 43438,
+   "playStats": {
+    "shown": 41,
+    "reused": 40,
+    "rebuilt": 1,
+    "detached": 0,
+    "pristine": 0,
+    "styled": 0
+   },
+   "errors": [],
+   "ok": true
+  },
+  {
+   "n": 19,
+   "atoms": 54872,
+   "framesExpected": 10,
+   "steps": [
+    {
+     "label": "idle (default structure)",
+     "heapMB": 7,
+     "uaMB": 97.8,
+     "uaWorkersMB": 5.8,
+     "pssMB": 505,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 14,
+     "textures": 2,
+     "programs": 3,
+     "atomsMeshCount": 42,
+     "imposter": false,
+     "bondsCount": 100,
+     "dom": 1843
+    },
+    {
+     "label": "after load",
+     "heapMB": 190.2,
+     "uaMB": 374.2,
+     "uaWorkersMB": 5.8,
+     "pssMB": 824.8,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 9,
+     "textures": 2,
+     "programs": 4,
+     "atomsMeshCount": 57096,
+     "imposter": true,
+     "bondsCount": 219488,
+     "dom": 1528
+    },
+    {
+     "label": "after Auto loop 1",
+     "heapMB": 191.1,
+     "uaMB": 376.6,
+     "uaWorkersMB": 5.8,
+     "pssMB": 843.5,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 9,
+     "textures": 2,
+     "programs": 4,
+     "atomsMeshCount": 57096,
+     "imposter": true,
+     "bondsCount": 219488,
+     "dom": 1528,
+     "updateMsPerFrame": 342.3,
+     "renderMedianMs": 16374.4
+    },
+    {
+     "label": "after Auto loop 2",
+     "heapMB": 191.2,
+     "uaMB": 375.2,
+     "uaWorkersMB": 5.8,
+     "pssMB": 871.6,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 9,
+     "textures": 2,
+     "programs": 4,
+     "atomsMeshCount": 57096,
+     "imposter": true,
+     "bondsCount": 219488,
+     "dom": 1528,
+     "updateMsPerFrame": 468.6,
+     "renderMedianMs": 16032.3
+    },
+    {
+     "label": "after deleting the row",
+     "heapMB": 11.6,
+     "uaMB": 144.2,
+     "uaWorkersMB": 5.8,
+     "pssMB": 629.8,
+     "rendererMB": 0,
+     "gpuProcMB": 0,
+     "geometries": 0,
+     "textures": 1,
+     "programs": 4,
+     "atomsMeshCount": 42,
+     "imposter": false,
+     "bondsCount": 100,
+     "dom": 1843
+    }
+   ],
+   "textMB": 14,
+   "loadMs": 12570,
+   "frames": 10,
+   "bonds": 109744,
+   "playStats": {
+    "shown": 21,
+    "reused": 20,
+    "rebuilt": 1,
+    "detached": 0,
+    "pristine": 0,
+    "styled": 0
+   },
+   "errors": [],
+   "ok": true
+  }
+ ],
+ "md": {
+  "steps": [
+   {
+    "label": "before MD (1625 atoms)",
+    "heapMB": 17.8,
+    "uaMB": 116.3,
+    "uaWorkersMB": 5.8,
+    "pssMB": 517.3,
+    "rendererMB": 0,
+    "gpuProcMB": 0,
+    "geometries": 14,
+    "textures": 2,
+    "programs": 3,
+    "atomsMeshCount": 2055,
+    "imposter": false,
+    "bondsCount": 17020,
+    "dom": 2778
+   },
+   {
+    "label": "after MD",
+    "heapMB": 37,
+    "uaMB": 305.2,
+    "uaWorkersMB": 135.1,
+    "pssMB": 766,
+    "rendererMB": 0,
+    "gpuProcMB": 0,
+    "geometries": 0,
+    "textures": 1,
+    "programs": 3,
+    "atomsMeshCount": 1734,
+    "imposter": false,
+    "bondsCount": 16032,
+    "dom": 2847
+   },
+   {
+    "label": "after deleting the MD row",
+    "heapMB": 40.7,
+    "uaMB": 306.7,
+    "uaWorkersMB": 135.1,
+    "pssMB": 766.2,
+    "rendererMB": 0,
+    "gpuProcMB": 0,
+    "geometries": 14,
+    "textures": 2,
+    "programs": 3,
+    "atomsMeshCount": 2055,
+    "imposter": false,
+    "bondsCount": 17020,
+    "dom": 2834
+   }
+  ],
+  "samples": [
+   {
+    "t": 5.678,
+    "step": null,
+    "heapMB": 114.4,
+    "pssMB": 712.3
+   },
+   {
+    "t": 10.736,
+    "step": 10,
+    "heapMB": 133.4,
+    "pssMB": 783.7
+   },
+   {
+    "t": 15.781,
+    "step": 28,
+    "heapMB": 123,
+    "pssMB": 798
+   },
+   {
+    "t": 20.816,
+    "step": 45,
+    "heapMB": 139.8,
+    "pssMB": 817.2
+   },
+   {
+    "t": 25.881,
+    "step": 63,
+    "heapMB": 152.9,
+    "pssMB": 832.1
+   },
+   {
+    "t": 30.93,
+    "step": 79,
+    "heapMB": 156,
+    "pssMB": 842.8
+   },
+   {
+    "t": 35.989,
+    "step": 98,
+    "heapMB": 178.3,
+    "pssMB": 855.8
+   },
+   {
+    "t": 41.031,
+    "step": 117,
+    "heapMB": 195.4,
+    "pssMB": 875.8
+   },
+   {
+    "t": 46.076,
+    "step": 135,
+    "heapMB": 209.1,
+    "pssMB": 894.8
+   },
+   {
+    "t": 51.123,
+    "step": 153,
+    "heapMB": 223.6,
+    "pssMB": 911.1
+   },
+   {
+    "t": 56.198,
+    "step": 169,
+    "heapMB": 143.4,
+    "pssMB": 889.5
+   },
+   {
+    "t": 61.253,
+    "step": 184,
+    "heapMB": 142.6,
+    "pssMB": 892.7
+   },
+   {
+    "t": 66.302,
+    "step": 201,
+    "heapMB": 148.5,
+    "pssMB": 896.3
+   },
+   {
+    "t": 71.366,
+    "step": 218,
+    "heapMB": 151.8,
+    "pssMB": 897
+   },
+   {
+    "t": 76.415,
+    "step": 235,
+    "heapMB": 186.9,
+    "pssMB": 901.3
+   },
+   {
+    "t": 81.479,
+    "step": 252,
+    "heapMB": 197.9,
+    "pssMB": 906.5
+   },
+   {
+    "t": 86.558,
+    "step": 269,
+    "heapMB": 208.6,
+    "pssMB": 910.5
+   },
+   {
+    "t": 91.619,
+    "step": 285,
+    "heapMB": 210.8,
+    "pssMB": 918.8
+   },
+   {
+    "t": 96.664,
+    "step": 301,
+    "heapMB": 235.4,
+    "pssMB": 927.6
+   },
+   {
+    "t": 101.726,
+    "step": 316,
+    "heapMB": 139.5,
+    "pssMB": 914.2
+   },
+   {
+    "t": 106.801,
+    "step": 332,
+    "heapMB": 142.8,
+    "pssMB": 917.8
+   },
+   {
+    "t": 111.883,
+    "step": 349,
+    "heapMB": 178.6,
+    "pssMB": 923
+   },
+   {
+    "t": 117.019,
+    "step": 368,
+    "heapMB": 197.7,
+    "pssMB": 927.3
+   },
+   {
+    "t": 122.061,
+    "step": 386,
+    "heapMB": 186,
+    "pssMB": 931.1
+   },
+   {
+    "t": 127.102,
+    "step": null,
+    "heapMB": 225.4,
+    "pssMB": 941.4
+   }
+  ],
+  "trajectory": {
+   "frames": 101,
+   "accountedMB": 45,
+   "name": "md_nep_YBCO"
+  },
+  "errors": []
+ }
+}

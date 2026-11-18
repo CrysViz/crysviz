@@ -1,0 +1,119 @@
+diff --git a/scripts/export_pytorch/export_pet_full.py b/scripts/export_pytorch/export_pet_full.py
+index 859c24e..0320592 100644
+--- a/scripts/export_pytorch/export_pet_full.py
++++ b/scripts/export_pytorch/export_pet_full.py
+@@ -84,6 +84,14 @@ def load_pet_model(model_name: str):
+     Returns:
+         The raw PET model (with gnn_layers, node_embedders, etc.)
+     """
++    # A local metatrain checkpoint (for example a fine-tuned model): load it
++    # as it is, without resolving a upet name.
++    if model_name.endswith(".ckpt") and Path(model_name).is_file():
++        from metatrain.utils.io import load_model as load_metatrain_model
++        with warnings.catch_warnings():
++            warnings.filterwarnings("ignore")
++            return _merge_lora(_unwrap_to_pet(load_metatrain_model(model_name)))
++
+     if model_name == "pet-mad-1.0.2":
+         from pet_mad._models import get_pet_mad
+         atomistic = get_pet_mad(version="1.0.2")
+@@ -144,6 +152,27 @@ def load_pet_model(model_name: str):
+     return _unwrap_to_pet(pet_model)
+ 
+ 
++def _merge_lora(model):
++    """Fold LoRA adapters (metatrain fine-tuning with method: lora) into the
++    linear layers they wrap: W' = W + scaling * B @ A. The exported graph and
++    its weight names are then exactly those of the base architecture (LoRA
++    weight names would also pass ggml's 64-character tensor-name limit), and
++    the result is the same function the LoRA model computes."""
++    import torch.nn as nn
++    for name, child in list(model.named_children()):
++        if all(hasattr(child, a) for a in ("linear", "lora_A", "lora_B", "scaling")):
++            base = child.linear
++            merged = nn.Linear(base.in_features, base.out_features, bias=base.bias is not None)
++            with torch.no_grad():
++                merged.weight.copy_(base.weight + child.scaling * (child.lora_B.weight @ child.lora_A.weight))
++                if base.bias is not None:
++                    merged.bias.copy_(base.bias)
++            setattr(model, name, merged.to(base.weight.dtype))
++        else:
++            _merge_lora(child)
++    return model
++
++
+ def _unwrap_to_pet(model):
+     """Peel metatrain wrappers (LLPRUncertaintyModel, etc.) until we reach the
+     raw PET module that exposes .gnn_layers.
+diff --git a/scripts/export_pytorch/export_pet_gguf.py b/scripts/export_pytorch/export_pet_gguf.py
+index a0ca935..27a6603 100644
+--- a/scripts/export_pytorch/export_pet_gguf.py
++++ b/scripts/export_pytorch/export_pet_gguf.py
+@@ -230,6 +230,25 @@ class GGUFWriter:
+         f.write(encoded)
+ 
+ 
++ELEMENTS = (
++    "H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn "
++    "Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce "
++    "Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn "
++    "Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr Rf Db Sg Bh Hs Mt Ds Rg Cn Nh Fl "
++    "Mc Lv Ts Og"
++).split()
++
++
++def parse_elements(text: str) -> List[int]:
++    """'Cu, Ni' -> [29, 28]."""
++    numbers = []
++    for symbol in text.replace(",", " ").split():
++        if symbol not in ELEMENTS:
++            raise SystemExit(f"--training-elements: unknown element {symbol!r}")
++        numbers.append(ELEMENTS.index(symbol) + 1)
++    return numbers
++
++
+ def main():
+     parser = argparse.ArgumentParser(
+         description="Export PET model to GGUF with computation graph"
+@@ -254,6 +273,20 @@ def main():
+         "--max-neighbors", type=int, default=11,
+         help="Example max-neighbors count used for tracing",
+     )
++    # What the file says about itself (GGUF general.* keys); CrysViz shows it
++    # for a model loaded from a file or a link, and tools/pet_catalogue in
++    # CrysViz turns it into a catalogue entry.
++    meta = parser.add_argument_group("model description (written into the GGUF)")
++    meta.add_argument("--name", help="general.name (default: the checkpoint's file name, or --model)")
++    meta.add_argument("--description", help="general.description: what the model is for")
++    meta.add_argument("--license", help="general.license, e.g. BSD-3-Clause")
++    meta.add_argument("--author", help="general.author")
++    meta.add_argument("--url", help="general.url: where the model is described")
++    meta.add_argument("--version", help="general.version of this model")
++    meta.add_argument("--base-model", help="general.base_model.0.name, e.g. 'PET-MAD-XS v1.5.0'")
++    meta.add_argument("--training-elements",
++                      help="elements it was trained for, e.g. 'Cu,Ni' (pet.training_species); "
++                           "the model still has parameters for every element of its base")
+     args = parser.parse_args()
+ 
+     n_atoms = args.n_atoms
+@@ -380,8 +413,18 @@ def main():
+ 
+     # General metadata
+     writer.add_string("general.architecture", "pet-graph")
+-    writer.add_string("general.name", args.model)
+-    writer.add_string("general.version", "1.0.2")
++    default_name = Path(args.model).stem if args.model.endswith(".ckpt") else args.model
++    writer.add_string("general.name", args.name or default_name)
++    for key, value in (("general.description", args.description), ("general.license", args.license),
++                       ("general.author", args.author), ("general.url", args.url),
++                       ("general.version", args.version)):
++        if value:
++            writer.add_string(key, value)
++    if args.base_model:
++        writer.add_uint32("general.base_model.count", 1)
++        writer.add_string("general.base_model.0.name", args.base_model)
++    if args.training_elements:
++        writer.add_array_int32("pet.training_species", parse_elements(args.training_elements))
+ 
+     # Model hyperparameters
+     writer.add_float32("pet.cutoff", cutoff)

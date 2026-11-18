@@ -320,7 +320,16 @@ function syncAtomCutPlanesFromSelectedStructure() {
     });
   }
 
+  // Only re-sync the scene when the cut-plane set actually changed. This runs
+  // on every trajectory frame (TrajectoryPanel's applyFrameStructure), and the
+  // updateVisualization below is a full per-bond matrix/colour pass — paid for
+  // nothing when, as in most sessions, there are no planes at all.
+  const signature = JSON.stringify(retainedPlanes);
+  const unchanged = signature === lastAtomCutPlaneSignature
+    && JSON.stringify(general.atomCutPlanes || []) === signature;
   general.atomCutPlanes = retainedPlanes;
+  if (unchanged) return;
+  lastAtomCutPlaneSignature = signature;
   updateAtomCutPlaneState();
   updateVisualization({
     atomsUpdate: false,
@@ -332,6 +341,7 @@ function syncAtomCutPlanesFromSelectedStructure() {
     reRenderComposition: false,
   });
 }
+let lastAtomCutPlaneSignature = null;
 
 export function syncPlanesForSelectedStructure() {
   const structure = getSelectedStructure();

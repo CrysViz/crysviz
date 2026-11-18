@@ -29,6 +29,7 @@ import { initReleaseNote } from '../ui/ReleaseNote.js';
 import { initProjectionOverlay } from '../ui/notagameatall.js';
 import { loadPhonopyFile } from '../phonon/phononSession.js';
 import { offerCifSymmetryChoice } from '../ui/CifSymmetryLoad.js';
+import { installTrajectoryMemoryLimit } from '../ui/TrajectoryMemoryLimit.js';
 
 // Callbacks the shared core reaches back into once the full app is loaded — the
 // phonopy loader and the CIF "keep symmetry?" prompt are only ever hit from a
@@ -65,4 +66,7 @@ export function initFullAppUI() {
   initLeaveGuard();
   // "New: Search everything" card until "Don't show this again".
   initReleaseNote();
+  // Settings ▸ Memory: large trajectory loads ask what to load when their
+  // frames would exceed the limit (embeds load everything).
+  installTrajectoryMemoryLimit();
 }

@@ -10,6 +10,7 @@ import { createElementColorEditor } from './ColorEditor.js';
 import { setSpeciesColorBulk, refreshBondColorsForAtoms } from '../../../render/index.js';
 import { openSwatchColorPicker } from '../../SwatchColorPicker.js';
 import { createSpinForceCategoryEditor } from './SpinForceCategoryEditor.js';
+import { fillRows, rememberedPage } from './PagedRows.js';
 
 import { applyWyckoffOrbitPosition, getOrbitAxisFreedom } from '../../SymmetryEditModule.js';
 
@@ -119,6 +120,14 @@ export function createCompositionRow(el, count, total, options = {}) {
     // the structure actually selected right now instead of crashing.
     const atomCount = structure?.atoms?.length ?? 0;
     const validIndices = elementAtomIndices.filter((index) => index < atomCount);
+    // Each distinct colour is formatted once: a 50k-atom element is mostly a
+    // handful of colours, and this runs on every recolour (a picker drag step).
+    const cssOf = new Map();
+    const css = (color) => {
+      let out = cssOf.get(color);
+      if (out === undefined) cssOf.set(color, out = safeColor(color));
+      return out;
+    };
     const atomColors = (!general.linkPeriodicCopies && structure?.atomImages)
       ? validIndices.flatMap((index) =>
           (structure.atomImages[index] ?? []).map((img) => safeColor(getAtomImageColor(structure, img))))
@@ -141,7 +150,7 @@ export function createCompositionRow(el, count, total, options = {}) {
           }
           return slices;
         }
-        return [safeColor(getAtomColor(index))];
+        return [css(getAtomColor(index))];
       });
     const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
@@ -354,51 +363,67 @@ export function createCompositionRow(el, count, total, options = {}) {
   // them on every load dominated load time for large structures, so populate
   // lazily on first expand instead. The populate fn is also exposed on the
   // container so code that expands it programmatically (e.g. highlight/scroll
-  // to a specific atom) can ensure the rows exist first.
+  // to a specific atom) can ensure the rows exist first. A long list shows one
+  // page of rows (PagedRows.js); _showAtomRow brings up an atom's page.
   let atomsPopulated = false;
-  function populateAtomRows() {
+  let atomRows = null;
+  let atomItemIndex = null;
+  // focus: [atomIndex, instanceId] whose page to open on.
+  function populateAtomRows(focus = null) {
     if (atomsPopulated) return;
     atomsPopulated = true;
     const structure = fileBrowser.selectedStructure;
+    const paging = { ...rememberedPage(structure, `atoms:${options.key ?? el}`), focus: -1 };
     // "Link periodic copies" off: one row per DISPLAYED atom (per periodic
     // image), so boundary copies can be styled individually. The toggle
     // rebuilds the whole composition DOM, so no extra staleness handling is
     // needed here. (This function is never reached in wyckoff mode.)
     if (!general.linkPeriodicCopies && structure?.atomImages) {
+      const items = []; // [atomIndex, position in element, imageIndex, copy, copies]
       elementAtomIndices.forEach((atomIndex, i) => {
         const images = structure.atomImages[atomIndex] ?? [];
-        images.forEach((imageIndex, j) => {
-          const frac = structure.periodic?.visibleWrapped?.frac?.[imageIndex];
-          const off = frac
-            ? [0, 1, 2].map((a) => Math.round(frac[a] - structure.atoms[atomIndex].position[a]))
-            : [0, 0, 0];
-          atomsContainer.appendChild(createIndividualAtomRow(el, atomIndex, i + 1, {
-            imageIndex,
-            imageOffset: off,
-            displayCoords: frac,
-            metaText: `copy ${j + 1}/${images.length}  (${off.join(',')})`,
-            onColorChange: updatePieDotForRow,
-            // The (0,0,0) copy still exposes Position; give it the live updater
-            // so a drag doesn't rebuild this panel out from under the slider
-            // (the default here is the full-rebuild path — that's why the
-            // unlinked slider only responded to clicks, not drags).
-            livePositionUpdater: (coords) => updateAtomCoordinatesLive(atomIndex, coords),
-          }));
-        });
+        images.forEach((imageIndex, j) => items.push([atomIndex, i, imageIndex, j, images.length]));
       });
+      atomItemIndex = (atomIndex, instanceId) => items.findIndex(
+        ([a, , imageIndex]) => a === atomIndex && (instanceId == null || imageIndex === instanceId));
+      if (focus) paging.focus = atomItemIndex(...focus);
+      atomRows = fillRows(atomsContainer, items.length, (k) => {
+        const [atomIndex, i, imageIndex, j, copies] = items[k];
+        const frac = structure.periodic?.visibleWrapped?.frac?.[imageIndex];
+        const off = frac
+          ? [0, 1, 2].map((a) => Math.round(frac[a] - structure.atoms[atomIndex].position[a]))
+          : [0, 0, 0];
+        return createIndividualAtomRow(el, atomIndex, i + 1, {
+          imageIndex,
+          imageOffset: off,
+          displayCoords: frac,
+          metaText: `copy ${j + 1}/${copies}  (${off.join(',')})`,
+          onColorChange: updatePieDotForRow,
+          // The (0,0,0) copy still exposes Position; give it the live updater
+          // so a drag doesn't rebuild this panel out from under the slider
+          // (the default here is the full-rebuild path — that's why the
+          // unlinked slider only responded to clicks, not drags).
+          livePositionUpdater: (coords) => updateAtomCoordinatesLive(atomIndex, coords),
+        });
+      }, { noun: 'atom copies', ...paging });
       return;
     }
-    for (let i = 0; i < elementAtomIndices.length; i++) {
+    atomItemIndex = (atomIndex) => elementAtomIndices.indexOf(atomIndex);
+    if (focus) paging.focus = atomItemIndex(...focus);
+    atomRows = fillRows(atomsContainer, elementAtomIndices.length, (i) => {
       const atomIndex = elementAtomIndices[i];
-      const atomRow = createIndividualAtomRow(el, atomIndex, i + 1, {
+      return createIndividualAtomRow(el, atomIndex, i + 1, {
         onColorChange: updatePieDotForRow,  // Pass callback to update pie dot
         // Drag the coordinate sliders live without rebuilding this very panel
         // out from under them — the release/Apply still runs the full update.
         livePositionUpdater: (coords) => updateAtomCoordinatesLive(atomIndex, coords),
       });
-      atomsContainer.appendChild(atomRow);
-    }
+    }, { noun: 'atoms', ...paging });
   }
+  /** @type {any} */ (atomsContainer)._showAtomRow = (atomIndex, instanceId = null) => {
+    if (!atomsPopulated) populateAtomRows([atomIndex, instanceId]);
+    else atomRows.showItem(atomItemIndex(atomIndex, instanceId));
+  };
   /** @type {any} */ (atomsContainer)._populateAtomRows = populateAtomRows;
 
   // =========================================

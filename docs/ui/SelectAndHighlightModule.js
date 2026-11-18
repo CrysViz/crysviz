@@ -470,8 +470,10 @@ function findBondRow(pair, key, groupKey = null) {
   if (!bondsContainer) return null;
 
   // Individual bond rows are populated lazily on first expand (see
-  // BondLengthPanel.js). We expand programmatically here, so ensure they exist.
-  /** @type {any} */ (bondsContainer)._populateBondRows?.();
+  // BondLengthPanel.js). We expand programmatically here, so ensure they exist
+  // and that a long list shows the page holding this bond.
+  if (/** @type {any} */ (bondsContainer)._showBondRow) /** @type {any} */ (bondsContainer)._showBondRow(key, groupKey);
+  else /** @type {any} */ (bondsContainer)._populateBondRows?.();
 
   if (bondsContainer.style.display === 'none') {
     bondsContainer.style.display = 'block';
@@ -624,8 +626,10 @@ function findPolyhedronRow(catKey, key, groupKey = null) {
   const listContainer = /** @type {HTMLElement} */ (control.querySelector('.individual-polyhedra'));
   if (!listContainer) return null;
 
-  // Rows are populated lazily on first expand (see PolyhedraListPanel.js).
-  /** @type {any} */ (listContainer)._populatePolyhedronRows?.();
+  // Rows are populated lazily on first expand (see PolyhedraListPanel.js); a
+  // long list shows the page holding this polyhedron.
+  if (/** @type {any} */ (listContainer)._showPolyhedronRow) /** @type {any} */ (listContainer)._showPolyhedronRow(key, groupKey);
+  else /** @type {any} */ (listContainer)._populatePolyhedronRows?.();
 
   if (listContainer.style.display === 'none') {
     listContainer.style.display = 'block';
@@ -823,7 +827,13 @@ function findAtomRow(element, sourceIndex, instanceId = null, revealPanel = true
 
   // Individual atom rows are populated lazily on first expand (see
   // CompositionRow.js). We expand programmatically here, so ensure they exist.
-  /** @type {any} */ (atomsContainer)._populateAtomRows?.();
+  // A long list shows one page of rows (components/PagedRows.js): open it on
+  // the atom's page — only when revealing, so a modifier pick leaves it alone.
+  if (revealPanel && /** @type {any} */ (atomsContainer)._showAtomRow) {
+    /** @type {any} */ (atomsContainer)._showAtomRow(targetAtomIndex, instanceId);
+  } else {
+    /** @type {any} */ (atomsContainer)._populateAtomRows?.();
+  }
 
   // Only force the row list open when the caller actually wants the panel
   // revealed — a Shift-add pick still highlights the row once expanded

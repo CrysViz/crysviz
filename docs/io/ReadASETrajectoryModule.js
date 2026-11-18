@@ -15,7 +15,53 @@ import { Force } from "../model/index.js";
 import { Stress, fromTensionPositive } from "../model/index.js";
 import { StructureContainer, TrajectoryContainer } from "../model/index.js";
 import { Structure } from "../model/index.js";
-import { generateID } from "../utils/index.js";
+import { generateID, releaseIDs } from "../utils/index.js";
+import { TrajectoryFrameStore } from "../model/TrajectoryFrameStore.js";
+import { Spin } from "../model/index.js";
+import { isUlm, readUlmTrajectory } from "./ulm.js";
+
+/**
+ * A real ASE `.traj` (the binary ULM container, io/ulm.js). A multi-frame
+ * file goes straight into a store-backed trajectory — each frame already is a
+ * FramePhysics record, so no Structure, Atom or Force is built per frame; a
+ * single frame becomes an editable Structure.
+ * @param {ArrayBuffer} arrayBuffer @param {string} fileName
+ */
+function parseUlmFile(arrayBuffer, fileName) {
+  const { frames } = readUlmTrajectory(arrayBuffer);
+  // ASE's stress is tension-positive (eV/Å³); the app stores it
+  // compression-positive (model/Stress.js).
+  const stressOf = (f) => (f.stress ? fromTensionPositive(f.stress) : null);
+  if (frames.length > 1) {
+    const physics = frames.map((f) => ({
+      elements: f.elements,
+      spinFrame: { fileSaxis: [0, 0, 1] },
+      lattice: f.lattice,
+      positions: f.positions,
+      forces: f.forces,
+      spinVectors: f.spins,
+      spinRaw: f.spins,
+      energy: f.energy,
+      stress: stressOf(f),
+    }));
+    return new TrajectoryContainer({ fileName, store: new TrajectoryFrameStore({ frames: physics }) });
+  }
+  const f = frames[0];
+  if (f.elements.length === 0) throw new Error('ASE trajectory: the frame has no atoms');
+  const vec = (arr, i) => [arr[i * 3], arr[i * 3 + 1], arr[i * 3 + 2]];
+  const stress = stressOf(f);
+  const structure = new Structure({
+    elements: [...f.elements],
+    uniqueElements: [...new Set(f.elements)],
+    lattice: f.lattice,
+    atoms: f.elements.map((element, i) => new Atom({ position: vec(f.positions, i), element, uuid: generateID([element]) })),
+    forces: f.forces ? f.elements.map((_, i) => new Force({ vector: vec(f.forces, i), scaling: 1.0 })) : [],
+    spins: f.spins ? f.elements.map((_, i) => new Spin({ vector: vec(f.spins, i), scaling: 1.0 })) : [],
+    energy: f.energy,
+    stress: stress ? new Stress({ tensor: stress }) : null,
+  });
+  return new StructureContainer({ fileName, structures: [structure] });
+}
 
 /**
  * Parses an ASE ULM trajectory file and returns a StructureContainer.
@@ -38,6 +84,10 @@ export function parseASETrajectory(arrayBuffer, fileName) {
   if (bytes.length === 0) {
     throw new Error("parseASETrajectory: Empty file");
   }
+
+  // A real ASE trajectory: the binary ULM container. What follows reads the
+  // older JSON-header layout.
+  if (isUlm(bytes)) return parseUlmFile(arrayBuffer, fileName);
 
   // --- Step 1: Extract JSON header ---
   // ULM JSON header starts at byte 0 and is a valid JSON object
@@ -253,7 +303,13 @@ export function parseASETrajectory(arrayBuffer, fileName) {
   // Return a container; the loader registers it in the UI/store. Multi-frame
   // trajectories become store-backed (physics packed per frame, one live
   // Structure for rendering); single frames stay eager.
-  return structures.length > 1
-    ? TrajectoryContainer.fromStructures(fileName, structures)
-    : new StructureContainer({ fileName, structures });
+  if (structures.length > 1) {
+    const container = TrajectoryContainer.fromStructures(fileName, structures);
+    // The store keeps the packed physics and mints its own unregistered atom
+    // ids (model/materializeFrame.js); the parsed frames are dropped, so their
+    // registered ids go back too instead of growing usedIDs by atoms x frames.
+    for (const s of structures) releaseIDs(s.atoms);
+    return container;
+  }
+  return new StructureContainer({ fileName, structures });
 }
