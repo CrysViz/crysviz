@@ -10,7 +10,7 @@ import { fitEOS, fitReferencePV } from '../eos/eosFit.js';
 import { plotEV, plotPV, clearPlot, onEOSPointClick } from '../eos/eosPlots.js';
 import { runEOSScan } from '../eos/eosCompute.js';
 import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsPanel.js';
-import { openPanel, closePanel } from './panels/PanelManager.js';
+import { openPanel, closePanel, getPanel } from './panels/PanelManager.js';
 import { ensureActiveCalculator, snapshotCurrentStructure } from './BackendPanel/AtomisticPanels.js';
 import { mountPotentialNotice, potentialLabel, potentialSource } from '../atomistic/potentialNotice.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
@@ -161,10 +161,12 @@ async function fitAndDisplay(container) {
     setStatus(container, unconverged.length
       ? `The ${unconverged.join(' and ')} fit did not converge: the values shown are its starting guesses.`
       : 'Fit complete.');
+    return { pvResult, evResult };
   } catch (error) {
     setStatus(container, `Error: ${error.message}`);
     console.error(error);
   }
+  return null;
 }
 
 async function resetFit(container) {
@@ -285,7 +287,8 @@ function wireComputedPointClicks() {
  * detectColumns shape so fitAndDisplay runs unchanged, the scan becomes a
  * file-browser row, and plot clicks map points to its frames. Exported
  * separately from the Compute button so tests can drive it with a synthetic
- * scan (no wasm).
+ * scan (no wasm). Resolves to the fit ({ pvResult, evResult }, see fitEOS),
+ * or null when it could not run (the window says why).
  */
 export async function ingestComputedScan(scan, { potential = general.atomisticPotential || 'nep', label = potentialLabel(potential) } = {}) {
   const container = document.getElementById('cvPanelBody-eos');
@@ -318,7 +321,31 @@ export async function ingestComputedScan(scan, { potential = general.atomisticPo
 
   if (state.computedStructures) registerScanRow(scan, potential);
   wireComputedPointClicks();
-  await fitAndDisplay(container);
+  return fitAndDisplay(container);
+}
+
+/**
+ * Compute an EOS scan of the selected structure with the active potential
+ * and fit it in this window, as a loaded file would be: the Compute button
+ * and the host's run_eos job both call this. Scan options as runEOSScan's
+ * (by pressure, or by volume with volumeRangePct). Resolves to
+ * { scan, fit, label }; fit is null with fewer than 3 points.
+ * @param {any} options
+ * @param {{ onProgress?: (text: string) => void, shouldStop?: () => boolean }} [hooks]
+ */
+export async function computeEOS(options, { onProgress = (_text) => {}, shouldStop = () => false } = {}) {
+  if (!fileBrowser.selectedStructure) throw new Error('no structure loaded.');
+  const base = snapshotCurrentStructure();
+  onProgress('Preparing calculator…');
+  const { runner, potential } = await ensureActiveCalculator(onProgress);
+  // The model as it is now: the label is read again for the result line.
+  const label = potentialLabel(potential);
+  const scan = await runEOSScan(runner, base, { ...options, onProgress, shouldStop });
+  if (scan.volumes.length < 3) return { scan, fit: null, label };
+  // The window's body exists while it is folded, but its content is built on first open.
+  if (!getPanel('eos')?.built) openPanel('eos');
+  const fit = await ingestComputedScan(scan, { potential, label });
+  return { scan, fit, label };
 }
 
 async function runComputeFromPotential(container) {
@@ -337,24 +364,13 @@ async function runComputeFromPotential(container) {
     setComputeStatus(container, 'Error: P min must be below P max.');
     return;
   }
-  if (!fileBrowser.selectedStructure) {
-    setComputeStatus(container, 'Error: no structure loaded.');
-    return;
-  }
-
   computeRunning = true;
   computeStopRequested = false;
   /** @type {HTMLButtonElement} */ (q('#eosComputeBtn')).disabled = true;
   /** @type {HTMLButtonElement} */ (q('#eosComputeStopBtn')).disabled = false;
 
   try {
-    const base = snapshotCurrentStructure();
-    setComputeStatus(container, 'Preparing calculator…');
-    const { runner, potential } = await ensureActiveCalculator((text) => setComputeStatus(container, text));
-    // The model as it is now: the label is read again for the result line.
-    const label = potentialLabel(potential);
-    const scan = await runEOSScan(runner, base, {
-      nPoints, pMinGPa, pMaxGPa, fmaxTol, maxSteps,
+    const { scan } = await computeEOS({ nPoints, pMinGPa, pMaxGPa, fmaxTol, maxSteps }, {
       onProgress: (text) => setComputeStatus(container, text),
       shouldStop: () => computeStopRequested,
     });
@@ -362,7 +378,6 @@ async function runComputeFromPotential(container) {
       setComputeStatus(container, `Stopped — only ${scan.volumes.length} point(s) computed, need 3 to fit.`);
       return;
     }
-    await ingestComputedScan(scan, { potential, label });
     const unconverged = scan.converged.filter((c) => !c).length;
     const convergedNote = unconverged ? ` (${unconverged} did not converge)` : '';
     setComputeStatus(container, scan.stopped
