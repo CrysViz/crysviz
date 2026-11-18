@@ -630,6 +630,7 @@ export async function initializeCore(browserHostController, { structureFirst = f
     },
     setRenderPipeline: setActivePipelineFromController,
     getRenderPipeline: () => getActivePipeline()?.id ?? null,
+    requestRender,
     captureSceneToPng,
   });
   await initApp();

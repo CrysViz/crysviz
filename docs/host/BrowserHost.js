@@ -74,7 +74,7 @@ function removeQueryParameter(name) {
  * intentionally private to the bootstrap coordinator; only the frozen facade
  * is put on window.
  */
-/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, updateLattice?: Function, recenterCamera?: Function, rotateCamera?: Function, setViewDirection?: Function, setRenderPipeline?: Function, getRenderPipeline?: Function, captureSceneToPng?: Function}} [initialDeps] */
+/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, updateLattice?: Function, recenterCamera?: Function, rotateCamera?: Function, setViewDirection?: Function, setRenderPipeline?: Function, getRenderPipeline?: Function, requestRender?: Function, captureSceneToPng?: Function}} [initialDeps] */
 export function createBrowserHost(initialDeps = {}) {
   const initialOrigin = window.location.origin;
   const subscribers = new Set();
@@ -158,6 +158,12 @@ export function createBrowserHost(initialDeps = {}) {
       const normalized = errorFromThrown(error);
       emit('error', normalized);
       return { ok: false, error: normalized };
+    } finally {
+      // The app redraws on demand, asked by a catch-all on the user's DOM
+      // events (render/AnimateModule.js wireRenderOnDemand). A host command
+      // has no such event, so it asks once itself, or a change it made (a
+      // colour, a highlight) would show only on the user's next click.
+      deps.requestRender?.();
     }
   }
 
