@@ -14,6 +14,7 @@
 // read here is validated and bounded (see validate* helpers).
 
 import { BASELINES, LATEST_BASELINE_ID, SETTING_KEYS, STRUCTURE_DERIVED_KEYS } from './shareBaselines.js';
+import { validSpeciesList } from '../../model/siteSpecies.js';
 
 export { LATEST_BASELINE_ID };
 
@@ -230,6 +231,44 @@ function decodeAtomMap(encoded, n, checkValue, label) {
     }
   }
   return out;
+}
+
+// Site occupancies (model/siteSpecies.js): {index: [{element, occupancy,
+// oxidationState?, color?}]} travels as a per-atom map of species tuples,
+// [element, occupancy] / [element, occupancy, oxidationState] /
+// [element, occupancy, oxidationState | null, color], so the many copies of one
+// site in a supercell share a single entry.
+
+function encodeSiteSpecies(record) {
+  if (!isPlainObject(record)) return null;
+  const tuples = {};
+  for (const [k, list] of Object.entries(record)) {
+    if (!Array.isArray(list)) continue;
+    tuples[k] = list.map((sp) => {
+      const t = [sp.element, sp.occupancy];
+      if (sp.color != null) t.push(sp.oxidationState ?? null, sp.color);
+      else if (sp.oxidationState != null) t.push(sp.oxidationState);
+      return t;
+    });
+  }
+  return encodeAtomMap(tuples);
+}
+
+function speciesFromTuples(value) {
+  if (!Array.isArray(value)) return null;
+  const list = [];
+  for (const t of value) {
+    if (!Array.isArray(t) || t.length < 2 || t.length > 4) return null;
+    list.push({ element: t[0], occupancy: t[1], oxidationState: t[2] ?? null, color: t[3] ?? null });
+  }
+  return validSpeciesList(list);
+}
+
+function decodeSiteSpecies(encoded, n) {
+  const tuples = decodeAtomMap(encoded, n, (v) => speciesFromTuples(v) !== null, 'site species');
+  const out = {};
+  for (const [k, v] of Object.entries(tuples)) out[k] = speciesFromTuples(v);
+  return Object.keys(out).length ? out : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +497,8 @@ export function encodeCompact(state, { supercell = null, reference = null, basel
   if (ao) out.ao = ao;
   const ar = encodeAtomMap(colors.atomRadiusScales);
   if (ar) out.ar = ar;
+  const sp = encodeSiteSpecies(state.structure.species);
+  if (sp) out.sp = sp;
 
   // --- per-structure style stores (sparse already) ---
   const t = {};
@@ -721,6 +762,7 @@ export function expandCompact(obj, { referenceStructure = null } = {}) {
   colors.atomColors = perAtomOk ? decodeAtomMap(obj.ac, n, isColor, 'atom colours') : {};
   colors.atomOpacities = perAtomOk ? decodeAtomMap(obj.ao, n, (v) => isFiniteNumber(v) && v >= 0 && v <= 1, 'atom opacities') : {};
   colors.atomRadiusScales = perAtomOk ? decodeAtomMap(obj.ar, n, (v) => isFiniteNumber(v) && v > 0 && v < 100, 'atom radius scales') : {};
+  const siteSpecies = perAtomOk ? decodeSiteSpecies(obj.sp, n) : null;
 
   // --- per-structure stores ---
   if (obj.t != null) {
@@ -734,7 +776,7 @@ export function expandCompact(obj, { referenceStructure = null } = {}) {
 
   const state = {
     version: STATE_VERSION,
-    structure,
+    structure: siteSpecies ? { ...structure, species: siteSpecies } : structure,
     colors,
     display,
     style,

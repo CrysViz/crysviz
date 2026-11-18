@@ -35,9 +35,9 @@ const handlers = {
     const { inputs: I, cs, ce, ss, se } = payload;
     const r = compute_candidates(
       I.fracFlat, I.elemIdx, I.latticeFlat, I.cutoffMatrix, I.nElem,
-      I.electroneg, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages,
+      I.electroneg, I.anionFormer, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages,
       I.centerSrc, I.centerShift, I.centerCart, I.centerKeys, I.seedVisible,
-      I.cutPlaneImmune, I.cutPlanesFlat, I.cutPlaneCount,
+      I.cutPlaneImmune, I.cutPlanesFlat, I.cutPlaneCount, I.cageBoundsFlat,
       cs, ce, ss, se,
     );
     const result = {

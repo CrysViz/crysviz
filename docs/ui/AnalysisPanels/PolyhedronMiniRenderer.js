@@ -18,7 +18,8 @@ import { TrackballControls } from '../../external/three/TrackballControls.js';
 import { ConvexGeometry } from '../../external/three/ConvexGeometry.js';
 import { defaultColorMap, getAtomVisSettings, getBondVisSettings } from '../../defaults/color_texture_defaults.js';
 import { createStyledMaterial } from '../../render/MaterialStyles.js';
-import { app, general } from '../../state/store.js';
+import { app, general, fileBrowser } from '../../state/store.js';
+import { wedgeDataForAtom, applySingleMeshWedge } from '../../render/WedgeAtoms.js';
 import { formatWithSu } from '../../model/cifErrors.js';
 
 const FALLBACK_COLOR = 0x999999;
@@ -373,7 +374,7 @@ export function createPolyhedronMiniRenderer(container) {
    * model/cifErrors.js) is written with it in parentheses, 2.3456(12) Å; a
    * compared value with its own (lengthSu2 / angleSu2) likewise.
    * @param {null | {
-   *   atoms: Array<{key:string, pos:number[], color?:number|null, element?:string|null, radius?:number|null, ghost?:boolean}>,
+   *   atoms: Array<{key:string, pos:number[], srcIndex?:number|null, color?:number|null, element?:string|null, radius?:number|null, ghost?:boolean}>,
    *   bonds: Array<{key?:string, a:number, b:number, colorA?:number|null, colorB?:number|null, trimA?:number|null, trimB?:number|null, length?:number|null, length2?:number|null, lengthSu?:number|null, lengthSu2?:number|null, labelAt?:number, ghost?:boolean}>,
    *   angles: Array<{key:string, at:number, i:number, j:number, angleDeg:number, angleDeg2?:number|null, angleSu?:number|null, angleSu2?:number|null}>,
    *   hull?: null | {points:number[][], faceColor?:number|string, faceOpacity?:number, edgeColor?:number|string},
@@ -461,6 +462,12 @@ export function createPolyhedronMiniRenderer(container) {
 
     model.atoms.forEach((a, i) => {
       const material = atomMaterial(atomColors[i]);
+      // A disordered site gets the main view's wedge split (one colour per
+      // species, sized by occupancy, vacancy hatched) instead of its single
+      // representative colour.
+      const site = a.srcIndex != null ? fileBrowser.selectedStructure?.atoms?.[a.srcIndex] : null;
+      const wedge = site ? wedgeDataForAtom(site) : null;
+      if (wedge) applySingleMeshWedge(material, wedge);
       if (a.ghost) makeGhost(material);
       const mesh = new THREE.Mesh(sphereGeom, material);
       mesh.position.copy(atomVecs[i]);

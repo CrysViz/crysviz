@@ -1,4 +1,5 @@
 import { Structure } from './Structure.js';
+import { siteSpeciesRecord } from './siteSpecies.js';
 
 export class StructureContainer {
   constructor({
@@ -178,8 +179,11 @@ export class StructureContainer {
   /**
    * Per-frame geometry/arrow data in plain form for session serialisation
    * (ShareModule's includeFrames path). May return a Promise in subclasses.
+   * `species` is the frame's mixed / partially occupied sites
+   * (model/siteSpecies.js), null when it has none.
    * @returns {Array<{elements: string[], lattice: number[][],
-   *   positions: number[][], forces: Force[] | null, spins: Spin[] | null}>
+   *   positions: number[][], forces: Force[] | null, spins: Spin[] | null,
+   *   species: Record<number, Array<object>> | null}>
    *   | Promise<Array<object>>}
    */
   framePhysicsList() {
@@ -189,6 +193,7 @@ export class StructureContainer {
       positions: frame.atoms.map(a => [...a.position]),
       forces: frame.forces?.length ? frame.forces : null,
       spins: frame.spins?.length ? frame.spins : null,
+      species: siteSpeciesRecord(frame.atoms.map(a => a.species)),
     }));
   }
   flushColorToAllStructures(targetStructure) {

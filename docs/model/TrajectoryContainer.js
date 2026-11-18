@@ -28,6 +28,7 @@
 import { StructureContainer } from './StructureContainer.js';
 import { TrajectoryFrameStore } from './TrajectoryFrameStore.js';
 import { pressureGPa } from './Stress.js';
+import { siteSpeciesRecord } from './siteSpecies.js';
 import {
   materializeFrame, applyFramePhysics, extractFrameStyles, applyFrameStyles,
 } from './materializeFrame.js';
@@ -548,6 +549,10 @@ export class TrajectoryContainer extends StructureContainer {
       positions,
       forces: arrows(ph.forces, rec?.forces, false),
       spins: ph.spinRaw ? arrows(ph.spinVectors, rec?.spins, true) : null,
+      // A frame's mixed sites live in its style record (extractFrameStyles
+      // keeps the species of every non-plain site).
+      species: siteSpeciesRecord(Array.from({ length: n },
+        (_, a) => /** @type {any} */ (rec?.atoms?.get(a))?.species ?? null)),
     };
   }
 }

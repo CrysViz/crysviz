@@ -43,6 +43,10 @@ const compositionRowUpdateFunctions = {};
  * @param {number} total - Total number of atoms in the structure
  * @returns {HTMLElement} - The composition row container
  */
+/** A mixed site with more species than this always puts its "(A,B,C,D)"
+ *  label on its own line under the dots (.comp-body--stacked). */
+const LABEL_UNDER_DOTS_FROM = 3;
+
 export function createCompositionRow(el, count, total, options = {}) {
   // `el` is the group's representative element and still keys everything that
   // is genuinely element-scoped (visibility, the colour editor, the pie-dot
@@ -79,6 +83,12 @@ export function createCompositionRow(el, count, total, options = {}) {
     });
   };
   left.appendChild(visCheckboxSwitch);
+  // Everything after the toggle — the dot(s), then the label with its caret —
+  // lives in one block, so when a mixed site's label has to wrap below its
+  // dots it still starts after the toggle (.comp-body, structureInfoPanel.css).
+  const body = document.createElement('div');
+  body.className = 'comp-body';
+  left.appendChild(body);
 
   // Get all atom indices for this element — including hidden ones. This
   // feeds the color/opacity/immunity editors below (and the per-atom row
@@ -137,8 +147,8 @@ export function createCompositionRow(el, count, total, options = {}) {
 
     // Remove the old dot(s) if present — a single element, or a wrapper of
     // several for a mixed group (see below).
-    const oldDot = left.querySelector('.dot');
-    if (oldDot) left.removeChild(oldDot);
+    const oldDot = body.querySelector('.dot');
+    if (oldDot) oldDot.remove();
 
     const groupElements = options.elements ?? [el];
     // A vacancy-only "disorder" (one real species, e.g. "(U,Vac)") still needs
@@ -156,7 +166,7 @@ export function createCompositionRow(el, count, total, options = {}) {
       // still show their own split when expanded into individual rows.
       const wrapper = document.createElement('div');
       // .dot (styles.css) is kept so the "remove old dot" query below
-      // (`left.querySelector('.dot')`) still matches this wrapper the same
+      // (`body.querySelector('.dot')`) still matches this wrapper the same
       // way it matches the single-dot case; .comp-mixed-dots (this file's
       // own class) overrides .dot's fixed 15x15 size and lays the two mini
       // dots out — see structureInfoPanel.css for why each property is there
@@ -219,7 +229,7 @@ export function createCompositionRow(el, count, total, options = {}) {
       });
 
       setSwatchOpacity(wrapper, currentOpacity);
-      left.insertBefore(wrapper, visCheckboxSwitch.nextSibling);
+      body.insertBefore(wrapper, body.firstChild);
       return;
     }
 
@@ -231,7 +241,7 @@ export function createCompositionRow(el, count, total, options = {}) {
     dot.style.border = '1px solid rgba(255,255,255,0.4)';
     setSwatchOpacity(dot, currentOpacity);
     // Keep DOM order checkbox -> dot -> name -> caret across repaints.
-    left.insertBefore(dot, visCheckboxSwitch.nextSibling);
+    body.insertBefore(dot, body.firstChild);
 
     // Make the dot clickable to open the color editor
     dot.title = `Customize color for all ${el} atoms`;
@@ -261,7 +271,14 @@ export function createCompositionRow(el, count, total, options = {}) {
   // =========================================
 
   const name = document.createElement('span');
-  name.textContent = options.label ?? el;
+  // A break opportunity after each comma (<wbr>, so textContent stays the
+  // plain label): "(Fe,K,Ni,Ta)" has no spaces, and next to four dots it ran
+  // under the Spin/Force button instead of wrapping inside its own column.
+  const labelParts = String(options.label ?? el).split(',');
+  labelParts.forEach((part, i) => {
+    name.append(i < labelParts.length - 1 ? `${part},` : part);
+    if (i < labelParts.length - 1) name.append(document.createElement('wbr'));
+  });
   // Explicit, scale-respecting size matching Bonds'/Poly's category labels
   // (styles.css's global `label` rule) so all three tabs render identically
   // regardless of viewport width — this span isn't a <label>, so it doesn't
@@ -278,8 +295,15 @@ export function createCompositionRow(el, count, total, options = {}) {
     `Keep all ${el} atoms visible across cut planes`
   );
 
-  left.appendChild(name);
-  left.appendChild(expandIcon);
+  // Label and caret travel as one unit, so when the row is narrow they move
+  // under the dots together (.comp-label, structureInfoPanel.css).
+  const labelGroup = document.createElement('span');
+  labelGroup.className = 'comp-label';
+  labelGroup.append(name, expandIcon);
+  body.appendChild(labelGroup);
+  // Many species: the label always goes under the dots, even where it would
+  // still fit beside them, so such rows read the same way.
+  body.classList.toggle('comp-body--stacked', (options.elements ?? [el]).length > LABEL_UNDER_DOTS_FROM);
 
   const right = document.createElement('div');
   right.className = 'comp-right';

@@ -467,6 +467,7 @@ export function compute_bond_pairs(cart, elem_idx, cutoff_sq, min_cutoff_sq, n_e
  * @param {Float64Array} cutoff_matrix
  * @param {number} n_elem
  * @param {Float64Array} electroneg
+ * @param {Uint8Array} anion_former
  * @param {Float64Array} radii
  * @param {number} max_cutoff
  * @param {boolean} use_chem_filter
@@ -479,13 +480,14 @@ export function compute_bond_pairs(cart, elem_idx, cutoff_sq, min_cutoff_sq, n_e
  * @param {Uint8Array} cut_plane_immune
  * @param {Float64Array} cut_planes
  * @param {number} cut_plane_count
+ * @param {Float64Array} cage_bounds
  * @param {number} center_start
  * @param {number} center_end
  * @param {number} seed_start
  * @param {number} seed_end
  * @returns {CandidateResult}
  */
-export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff, use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys, seed_visible, cut_plane_immune, cut_planes, cut_plane_count, center_start, center_end, seed_start, seed_end) {
+export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff, use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys, seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds, center_start, center_end, seed_start, seed_end) {
     const ptr0 = passArrayF64ToWasm0(frac, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(elem_idx, wasm.__wbindgen_malloc);
@@ -496,23 +498,27 @@ export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, 
     const len3 = WASM_VECTOR_LEN;
     const ptr4 = passArrayF64ToWasm0(electroneg, wasm.__wbindgen_malloc);
     const len4 = WASM_VECTOR_LEN;
-    const ptr5 = passArrayF64ToWasm0(radii, wasm.__wbindgen_malloc);
+    const ptr5 = passArray8ToWasm0(anion_former, wasm.__wbindgen_malloc);
     const len5 = WASM_VECTOR_LEN;
-    const ptr6 = passArray32ToWasm0(center_src, wasm.__wbindgen_malloc);
+    const ptr6 = passArrayF64ToWasm0(radii, wasm.__wbindgen_malloc);
     const len6 = WASM_VECTOR_LEN;
-    const ptr7 = passArray32ToWasm0(center_shift, wasm.__wbindgen_malloc);
+    const ptr7 = passArray32ToWasm0(center_src, wasm.__wbindgen_malloc);
     const len7 = WASM_VECTOR_LEN;
-    const ptr8 = passArrayF64ToWasm0(center_cart, wasm.__wbindgen_malloc);
+    const ptr8 = passArray32ToWasm0(center_shift, wasm.__wbindgen_malloc);
     const len8 = WASM_VECTOR_LEN;
-    const ptr9 = passArray32ToWasm0(center_keys, wasm.__wbindgen_malloc);
+    const ptr9 = passArrayF64ToWasm0(center_cart, wasm.__wbindgen_malloc);
     const len9 = WASM_VECTOR_LEN;
-    const ptr10 = passArray8ToWasm0(seed_visible, wasm.__wbindgen_malloc);
+    const ptr10 = passArray32ToWasm0(center_keys, wasm.__wbindgen_malloc);
     const len10 = WASM_VECTOR_LEN;
-    const ptr11 = passArray8ToWasm0(cut_plane_immune, wasm.__wbindgen_malloc);
+    const ptr11 = passArray8ToWasm0(seed_visible, wasm.__wbindgen_malloc);
     const len11 = WASM_VECTOR_LEN;
-    const ptr12 = passArrayF64ToWasm0(cut_planes, wasm.__wbindgen_malloc);
+    const ptr12 = passArray8ToWasm0(cut_plane_immune, wasm.__wbindgen_malloc);
     const len12 = WASM_VECTOR_LEN;
-    const ret = wasm.compute_candidates(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, max_cutoff, use_chem_filter, detect_cages, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, cut_plane_count, center_start, center_end, seed_start, seed_end);
+    const ptr13 = passArrayF64ToWasm0(cut_planes, wasm.__wbindgen_malloc);
+    const len13 = WASM_VECTOR_LEN;
+    const ptr14 = passArrayF64ToWasm0(cage_bounds, wasm.__wbindgen_malloc);
+    const len14 = WASM_VECTOR_LEN;
+    const ret = wasm.compute_candidates(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, ptr6, len6, max_cutoff, use_chem_filter, detect_cages, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, cut_plane_count, ptr14, len14, center_start, center_end, seed_start, seed_end);
     return CandidateResult.__wrap(ret);
 }
 
@@ -525,6 +531,7 @@ export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, 
  * @param {Float64Array} cutoff_matrix
  * @param {number} n_elem
  * @param {Float64Array} electroneg
+ * @param {Uint8Array} anion_former
  * @param {Float64Array} radii
  * @param {number} max_cutoff
  * @param {boolean} use_chem_filter
@@ -537,9 +544,10 @@ export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, 
  * @param {Uint8Array} cut_plane_immune
  * @param {Float64Array} cut_planes
  * @param {number} cut_plane_count
+ * @param {Float64Array} cage_bounds
  * @returns {PolyhedraResult}
  */
-export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff, use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys, seed_visible, cut_plane_immune, cut_planes, cut_plane_count) {
+export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff, use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys, seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds) {
     const ptr0 = passArrayF64ToWasm0(frac, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(elem_idx, wasm.__wbindgen_malloc);
@@ -550,23 +558,27 @@ export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n
     const len3 = WASM_VECTOR_LEN;
     const ptr4 = passArrayF64ToWasm0(electroneg, wasm.__wbindgen_malloc);
     const len4 = WASM_VECTOR_LEN;
-    const ptr5 = passArrayF64ToWasm0(radii, wasm.__wbindgen_malloc);
+    const ptr5 = passArray8ToWasm0(anion_former, wasm.__wbindgen_malloc);
     const len5 = WASM_VECTOR_LEN;
-    const ptr6 = passArray32ToWasm0(center_src, wasm.__wbindgen_malloc);
+    const ptr6 = passArrayF64ToWasm0(radii, wasm.__wbindgen_malloc);
     const len6 = WASM_VECTOR_LEN;
-    const ptr7 = passArray32ToWasm0(center_shift, wasm.__wbindgen_malloc);
+    const ptr7 = passArray32ToWasm0(center_src, wasm.__wbindgen_malloc);
     const len7 = WASM_VECTOR_LEN;
-    const ptr8 = passArrayF64ToWasm0(center_cart, wasm.__wbindgen_malloc);
+    const ptr8 = passArray32ToWasm0(center_shift, wasm.__wbindgen_malloc);
     const len8 = WASM_VECTOR_LEN;
-    const ptr9 = passArray32ToWasm0(center_keys, wasm.__wbindgen_malloc);
+    const ptr9 = passArrayF64ToWasm0(center_cart, wasm.__wbindgen_malloc);
     const len9 = WASM_VECTOR_LEN;
-    const ptr10 = passArray8ToWasm0(seed_visible, wasm.__wbindgen_malloc);
+    const ptr10 = passArray32ToWasm0(center_keys, wasm.__wbindgen_malloc);
     const len10 = WASM_VECTOR_LEN;
-    const ptr11 = passArray8ToWasm0(cut_plane_immune, wasm.__wbindgen_malloc);
+    const ptr11 = passArray8ToWasm0(seed_visible, wasm.__wbindgen_malloc);
     const len11 = WASM_VECTOR_LEN;
-    const ptr12 = passArrayF64ToWasm0(cut_planes, wasm.__wbindgen_malloc);
+    const ptr12 = passArray8ToWasm0(cut_plane_immune, wasm.__wbindgen_malloc);
     const len12 = WASM_VECTOR_LEN;
-    const ret = wasm.compute_polyhedra(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, max_cutoff, use_chem_filter, detect_cages, ptr6, len6, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, cut_plane_count);
+    const ptr13 = passArrayF64ToWasm0(cut_planes, wasm.__wbindgen_malloc);
+    const len13 = WASM_VECTOR_LEN;
+    const ptr14 = passArrayF64ToWasm0(cage_bounds, wasm.__wbindgen_malloc);
+    const len14 = WASM_VECTOR_LEN;
+    const ret = wasm.compute_polyhedra(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, ptr6, len6, max_cutoff, use_chem_filter, detect_cages, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, cut_plane_count, ptr14, len14);
     return PolyhedraResult.__wrap(ret);
 }
 

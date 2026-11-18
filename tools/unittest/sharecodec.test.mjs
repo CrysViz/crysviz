@@ -216,6 +216,41 @@ test('per-atom maps group by value with index ranges', () => {
   assert.deepEqual(expandCompact(obj).colors.atomColors, s.colors.atomColors);
 });
 
+test('site occupancies travel with the link, one entry per distinct site', () => {
+  const s = clone(load('nacl-supercell-222.json').state);
+  const mixed = [{ element: 'Na', occupancy: 0.5 }, { element: 'K', occupancy: 0.3, color: 0x00ff00 }];
+  const partial = [{ element: 'Cl', occupancy: 0.8, oxidationState: -1 }];
+  s.structure.species = { 0: mixed, 1: mixed, 2: mixed, 5: partial };
+  const obj = encodeCompact(s);
+  assert.deepEqual(obj.sp, [
+    [[['Na', 0.5], ['K', 0.3, null, 0x00ff00]], [[0, 2]]],
+    [[['Cl', 0.8, -1]], [5]],
+  ]);
+  const out = roundTrip(s);
+  const full = (sp) => sp.map((x) => ({ element: x.element, occupancy: x.occupancy,
+    oxidationState: x.oxidationState ?? null, color: x.color ?? null }));
+  assert.deepEqual(out.structure.species, { 0: full(mixed), 1: full(mixed), 2: full(mixed), 5: full(partial) });
+
+  // An ordered structure writes nothing.
+  assert.equal(encodeCompact(load('nacl.json').state).sp, undefined);
+  assert.equal(roundTrip(load('nacl.json').state).structure.species, undefined);
+});
+
+test('malformed site occupancies are rejected', () => {
+  const good = encodeCompact(load('nacl.json').state);
+  const bad = (sp, pattern) => {
+    const obj = clone(good);
+    obj.sp = sp;
+    assert.throws(() => expandCompact(obj), pattern);
+  };
+  bad([[[['Na', 1.5]], [0]]], /bad site species value/);
+  bad([[[['Na']], [0]]], /bad site species value/);
+  bad([[[['', 0.5]], [0]]], /bad site species value/);
+  bad([[[['Na', 0.5, 'x']], [0]]], /bad site species value/);
+  bad([[[['Na', 0.5, null, -1]], [0]]], /bad site species value/);
+  bad([[[['Na', 0.5]], [99]]], /index out of range/);
+});
+
 test('supercell: base cell plus multipliers, verified by re-expansion', () => {
   const { state, supercell } = load('nacl-supercell-222.json');
   assert.deepEqual(supercell, { nx: 2, ny: 2, nz: 2 });
