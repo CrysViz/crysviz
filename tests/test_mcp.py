@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import importlib.util
 import tempfile
 import unittest
@@ -48,6 +49,11 @@ class _FakeViewer:
         assert interactive is False, "MCP loads must never wait on a dialog"
         self.calls.append(("load", source))
         return LoadResult(StructureInfo("s1", getattr(source, "name", "x"), 1, True, 0))
+
+    def export_structure(self, path, *, format):
+        self.calls.append(("export_structure", format))
+        Path(path).write_text("POSCAR text")
+        return {"rows": 3, "order": [2, 0, 1] if format == "poscar" else None, "warning": None}
 
     def save_image(self, path, **options):
         self.calls.append(("save_image", options))
@@ -113,6 +119,21 @@ class ToolLayerTests(unittest.TestCase):
                 self.tools.call("save_image", {"filename": bad})
         with self.assertRaises(ToolError):
             self.tools.call("save_image", {"width": 100000})
+
+    def test_export_structure_writes_into_export_folder_with_order_file(self):
+        out = json.loads(self.tools.call("export_structure", {"format": "poscar", "filename": "graphite"})[0]["text"])
+        target = self.export / "graphite.vasp"
+        self.assertEqual(Path(out["path"]), target.resolve())
+        self.assertEqual(target.read_text(), "POSCAR text")
+        self.assertFalse(out["sameOrder"])
+        self.assertEqual(json.loads(Path(out["orderFile"]).read_text()), [2, 0, 1])
+        cif = json.loads(self.tools.call("export_structure", {"format": "cif"})[0]["text"])
+        self.assertTrue(cif["sameOrder"])
+        self.assertTrue(cif["path"].endswith("structure.cif"))
+        with self.assertRaises(ToolError):
+            self.tools.call("export_structure", {"format": "poscar", "filename": "../x"})
+        with self.assertRaises(ToolError):
+            self.tools.call("export_structure", {"format": "xyz"})
 
     def test_unknown_tool(self):
         with self.assertRaises(ToolError):

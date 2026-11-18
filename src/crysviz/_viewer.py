@@ -689,6 +689,23 @@ class Viewer:
                 attachment.close()
         return target
 
+    def export_structure(self, path: str | os.PathLike[str], *, format: str) -> dict[str, Any]:
+        """Write the active structure as the Save window does (``"cif"`` or ``"poscar"``).
+
+        Returns ``{"rows", "order", "warning"}``: ``order[k]`` is the CrysViz atom index of
+        file atom ``k`` (``None`` when the order is the same), so results computed on the file
+        map back to the viewer's atoms.
+        """
+        if format not in {"cif", "poscar"}:
+            raise ValueError("format must be cif or poscar")
+        result = self._command("export_structure", {"format": format})
+        if not isinstance(result, dict) or not isinstance(result.get("text"), str):
+            raise ViewerProtocolError("browser export_structure result is invalid")
+        target = Path(path)
+        target.write_text(result["text"], encoding="utf-8")
+        return {"rows": result.get("rows"), "order": None if result.get("sameOrder") else result.get("order"),
+                "warning": result.get("warning")}
+
     def wait(self, timeout: float | None = None) -> None:
         if self._callback_thread == threading.get_ident():
             raise ViewerReentrancyError("Viewer.wait() cannot be called from a viewer event callback")

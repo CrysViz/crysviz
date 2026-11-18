@@ -123,3 +123,47 @@ test('jobs: done, failed and cancelled runs; wait_job returns at the end or the 
   assert.deepEqual(cancelled.result, { stopped: true });
   assert.throws(() => getJob('nope'), (e) => e.code === 'JOB_NOT_FOUND');
 });
+
+test('get_bonding lists every element pair present with min, max and shown', async () => {
+  const { bondingTable } = await import('../../docs/host/query.js');
+  const table = bondingTable(['C', 'N', 'C', 'Va'], { 'C-C': { min: 0.1, max: 1.8 }, 'C-N': { max: 1.7 } }, { 'N-N': false });
+  assert.deepEqual(table.pairs, [
+    { elements: ['C', 'C'], min: 0.1, max: 1.8, shown: true },
+    { elements: ['C', 'N'], min: 0, max: 1.7, shown: true },
+    { elements: ['N', 'N'], min: 0, max: 0, shown: false },
+  ]);
+  assert.match(table.rule, /max\(min, 0\.005\) <= d <= max/);
+});
+
+test('find bonds: image offsets relative to stored positions, each periodic bond once', async () => {
+  const { bondItems, FINDERS } = await import('../../docs/host/query.js');
+  const atom = (element, position) => ({ position, getRepresentativeElement: () => element });
+  // A 1D chain C0 (x=0.1) — C1 (x=0.6) along a 2 Å cell: bonds 0-1 in the cell and 1-0' across x.
+  const structure = {
+    lattice: [[2, 0, 0], [0, 5, 0], [0, 0, 5]],
+    atoms: [atom('C', [0.1, 0, 0]), atom('C', [0.6, 0, 0])],
+    periodic: { visibleWrapped: { cart: [[0.2, 0, 0], [1.2, 0, 0], [2.2, 0, 0]] } },
+    bonds: [
+      { srcA: 0, srcB: 1, indexA: 0, indexB: 1, dist: 1.0 },
+      { srcA: 1, srcB: 0, indexA: 1, indexB: 2, dist: 1.0 },
+      // the same in-cell bond drawn again from the other end
+      { srcA: 1, srcB: 0, indexA: 1, indexB: 0, dist: 1.0 },
+    ],
+  };
+  assert.deepEqual(bondItems(structure), [[0, 1, [0, 0, 0], 1], [0, 1, [-1, 0, 0], 1]]);
+  const { items, atoms } = FINDERS.bonds(structure, { elements: ['C', 'C'], maxLength: 1.5 });
+  assert.equal(items.length, 2);
+  assert.deepEqual(atoms, [0, 1]);
+  assert.deepEqual(FINDERS.atoms(structure, { element: 'C', indices: [1] }).items, [[1, 'C', [0.6, 0, 0]]]);
+});
+
+test('apply checks atom indices and selection ownership', async () => {
+  const { applyTargets } = await import('../../docs/host/query.js');
+  const structure = { atoms: [{}, {}, {}] };
+  assert.deepEqual(applyTargets(structure, { atoms: [2, 0, 2] }), [2, 0]);
+  const code = (fn) => { try { fn(); } catch (error) { return error.code; } return null; };
+  assert.equal(code(() => applyTargets(structure, { atoms: [3] })), 'INVALID_ARGS');
+  assert.equal(code(() => applyTargets(structure, { atoms: [1.5] })), 'INVALID_ARGS');
+  assert.equal(code(() => applyTargets(structure, { selection: 's999' })), 'SELECTION_NOT_FOUND');
+  assert.equal(code(() => applyTargets(structure, {})), 'INVALID_ARGS');
+});

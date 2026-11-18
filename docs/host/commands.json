@@ -75,6 +75,54 @@
       }
     },
     {
+      "name": "find",
+      "tier": "read",
+      "description": "Pick out atoms, bonds, polyhedra or voids of the active structure and keep them as a selection for apply. atoms: where {element or elements, indices}; items [index, element, fractional position]. bonds: the bonds CrysViz draws now, where {elements: [A, B], minLength, maxLength}; items [a, b, image, length], b's copy being at its fractional position + image relative to a. A bond across the cell edge is listed only while a periodic copy of it is drawn; for the full periodic bond graph use export_structure and get_bonding. polyhedra: where {type: centered|cage, center: element, cn}. voids: where {minRadius}. For heavy analysis on many atoms (rings, graph searches), use export_structure and get_bonding and run your own script, then apply with the atom indices it finds.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "what": { "type": "string", "enum": ["atoms", "bonds", "polyhedra", "voids"] },
+          "where": { "type": "object", "description": "Filters for the kind, see the description." },
+          "limit": { "type": "integer", "minimum": 1, "maximum": 5000, "description": "Items to return, default 100; count is always the full number." }
+        },
+        "required": ["what"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "apply",
+      "tier": "write",
+      "description": "Act on atoms: a selection from find, or atom indices (structure order, 0-based, as find, get_state and export_structure's order use). action: highlight (glow), select (the app's selection, which the Selection Inspector and measuring use), clear (highlight and selection), color (value '#rrggbb', every copy of each atom, kept for the session), hide, show. A bonds or polyhedra selection acts on its atoms.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "selection": { "type": "string", "description": "A selection id from find." },
+          "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "Atom indices, instead of selection." },
+          "action": { "type": "string", "enum": ["highlight", "select", "clear", "color", "hide", "show"] },
+          "value": { "type": "string", "description": "For color: '#rrggbb'." }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_bonding",
+      "tier": "read",
+      "description": "The bond rule CrysViz draws bonds with: per element pair present, min and max cutoff (Å, including the user's edits) and whether the pair is shown, plus the exact rule. With export_structure, a script reproduces CrysViz's bonds exactly (e.g. to find rings) instead of another program's defaults.",
+      "args": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "export_structure",
+      "tier": "file",
+      "description": "Write the active structure as the Save window does (cif keeps partial occupancy; poscar groups atoms by element) and return the file's atom order: file atom k is CrysViz atom order[k], or sameOrder when identical.",
+      "args": {
+        "type": "object",
+        "properties": { "format": { "type": "string", "enum": ["cif", "poscar"] } },
+        "required": ["format"],
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "get_polyhedra",
       "tier": "read",
       "description": "The coordination polyhedra and cages CrysViz built for the active structure, one per site: type (centered or cage), centre (fractional; for a cage, the centroid of its corners, a natural interstitial site), corner elements and atom indices. Polyhedra exist only while Show Polyhedra is on, and cages only with Detect Cages on (both via search_controls/set_control).",

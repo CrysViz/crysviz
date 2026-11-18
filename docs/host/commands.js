@@ -15,6 +15,7 @@ import { cancelJob, getJob, jobView, listJobs, runningJob, startJob, waitJob } f
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
 import { clickControl, getControl, searchControls, setControl } from './controls.js';
+import { apply, exportStructure, find, getBonding } from './query.js';
 
 export const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
 
@@ -379,6 +380,23 @@ export const COMMAND_HANDLERS = Object.freeze({
 
   click_control(args) {
     return clickControl(requireArgs(args, 'click_control').ref);
+  },
+
+  find(args) {
+    return find(requireArgs(args, 'find'), { polyhedraSummary, voidSites });
+  },
+
+  apply(args) {
+    return apply(requireArgs(args, 'apply'));
+  },
+
+  get_bonding(args) {
+    requireOptionalArgs(args, 'get_bonding');
+    return getBonding();
+  },
+
+  export_structure(args) {
+    return exportStructure(requireArgs(args, 'export_structure'));
   },
 
   get_polyhedra(args) {
