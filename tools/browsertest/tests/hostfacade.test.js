@@ -418,6 +418,17 @@ async function waitForHostFailure(page) {
       afterCamera.position[1] - afterCamera.target[1],
       afterCamera.position[2] - afterCamera.target[2],
     );
+    // set_view: the camera ends up looking along the lattice c vector.
+    const viewedC = await host.dispatch({ command: 'set_view', args: { direction: 'c' } });
+    const viewC = (() => {
+      const p = app.camera.position, t = app.controls.target;
+      const d = [p.x - t.x, p.y - t.y, p.z - t.z];
+      const c = (viewedC.result?.direction || [0, 0, 0]);
+      const cross = [d[1] * c[2] - d[2] * c[1], d[2] * c[0] - d[0] * c[2], d[0] * c[1] - d[1] * c[0]];
+      return { along: Math.hypot(...cross) / (Math.hypot(...d) * Math.hypot(...c)), sameSide: d[0] * c[0] + d[1] * c[1] + d[2] * c[2] > 0 };
+    })();
+    const badView = await host.dispatch({ command: 'set_view', args: { direction: 'q' } });
+    const state = await host.dispatch({ command: 'get_state', args: {} });
     const raytrace = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'raytrace' } });
     const raytraceState = {
       select: document.getElementById('renderPipelineMenu')?.value,
@@ -472,6 +483,7 @@ async function waitForHostFailure(page) {
       asyncRejection,
       fallback,
       rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
+      viewedC, viewC, badView, state,
       raytrace, raytraceState, unknownPipeline, raster, saved, invalidOutput,
       injected: window.__hostInjected === 1,
       injectedNodes: document.querySelectorAll('img[src="x"], img[onerror]').length,
@@ -552,6 +564,15 @@ async function waitForHostFailure(page) {
       && protocol.beforeCamera.target.every((value, index) => Math.abs(value - protocol.afterCamera.target[index]) < 1e-9)
       && Math.abs(protocol.beforeRadius - protocol.afterRadius) < 1e-6
       && protocol.beforeCamera.position.some((value, index) => Math.abs(value - protocol.afterCamera.position[index]) > 1e-6));
+  H.check('set_view aims the camera along the lattice c vector',
+    protocol.viewedC.ok && protocol.viewC.along < 1e-6 && protocol.viewC.sameSide);
+  H.check('get_state reports the camera set_view just set, and the active structure',
+    protocol.state.ok && protocol.state.result.structure?.atomCount > 0
+      && protocol.state.result.camera.direction.every((value, i) =>
+        Math.abs(value - protocol.viewedC.result.direction[i] / Math.hypot(...protocol.viewedC.result.direction)) < 1e-5),
+    protocol.state.result?.camera);
+  H.check('set_view rejects an unknown direction',
+    !protocol.badView.ok && protocol.badView.error.code === 'INVALID_ARGS');
   H.check('controller pipeline selection synchronizes UI without warning',
     protocol.raytrace.ok && protocol.raytrace.result === 'raytrace'
       && protocol.raytraceState.select === 'raytrace'

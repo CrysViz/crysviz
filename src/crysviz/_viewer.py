@@ -481,15 +481,20 @@ class Viewer:
             with self._lock:
                 self._pending.pop(request_id, None)
 
-    def load(self, source: object, *, periodic: bool | None = None) -> LoadResult:
+    def load(self, source: object, *, periodic: bool | None = None, interactive: bool = True) -> LoadResult:
+        """Load a structure. ``interactive=False`` skips load-time questions (CIF symmetry)."""
         if periodic is not None and not isinstance(periodic, bool):
             raise TypeError("periodic must be True, False or None")
+        if not isinstance(interactive, bool):
+            raise TypeError("interactive must be boolean")
         sources = prepare_sources([source])
         prepared = sources[0]
         try:
             payload: dict[str, object] = {"name": prepared.name, "format": prepared.format, "binary": prepared.binary}
             if periodic is not None:
                 payload["periodic"] = periodic
+            if not interactive:
+                payload["interactive"] = False
             result = self._command("load", payload, {"data": prepared.open()})
             return LoadResult(_structure(result))
         finally:
@@ -500,6 +505,15 @@ class Viewer:
         if not isinstance(value, list):
             raise ViewerProtocolError("browser list_structures result is invalid")
         return [_structure(item) for item in value]
+
+    def get_state(self, *, atoms: bool = False) -> dict[str, Any]:
+        """What the viewer shows now: active structure, camera and renderer (see docs/host/commands.json)."""
+        if not isinstance(atoms, bool):
+            raise TypeError("atoms must be boolean")
+        value = self._command("get_state", {"atoms": atoms} if atoms else None)
+        if not isinstance(value, dict):
+            raise ViewerProtocolError("browser get_state result is invalid")
+        return value
 
     def select(self, structure_id: str, *, frame: int = 0) -> None:
         self._command("select", {"id": structure_id, "frame": frame})
@@ -573,6 +587,25 @@ class Viewer:
         if axis not in {"x", "y", "z"}:
             raise ValueError("axis must be x, y, or z")
         self._command("rotate_camera", {"angleDegrees": angle, "axis": axis})
+
+    def set_view(self, direction: str | Sequence[float]) -> list[float]:
+        """Look along ``"a"``/``"b"``/``"c"``, ``"x"``/``"y"``/``"z"`` or a lattice direction [u, v, w].
+
+        Returns the Cartesian view direction the browser used.
+        """
+        if isinstance(direction, str):
+            if direction not in {"a", "b", "c", "x", "y", "z"}:
+                raise ValueError("direction must be a, b, c, x, y, z or three finite numbers")
+            value: object = direction
+        else:
+            if isinstance(direction, bytes) or not isinstance(direction, Sequence) or len(direction) != 3 or any(
+                    isinstance(v, bool) or not isinstance(v, Real) or not math.isfinite(v) for v in direction):
+                raise ValueError("direction must be a, b, c, x, y, z or three finite numbers")
+            value = [float(v) for v in direction]
+        result = self._command("set_view", {"direction": value})
+        if not isinstance(result, dict) or not isinstance(result.get("direction"), list):
+            raise ViewerProtocolError("browser set_view result is invalid")
+        return result["direction"]
 
     def set_render_pipeline(self, pipeline_id: str) -> str:
         valid = {"depthpeel", "wboit", "forward", "raytrace", "pathtrace", "split-atoms", "sorted-atoms"}
