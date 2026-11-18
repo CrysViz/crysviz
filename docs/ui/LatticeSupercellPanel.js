@@ -188,6 +188,77 @@ function resetOrderSession() {
   renderOrderList();
 }
 
+const NOTHING_TO_ORDER = 'This structure has no fractionally occupied sites — there is nothing to order.';
+
+/**
+ * `count` random ordered decorations of the disordered `structure` (seeds
+ * 1..count) in a cell `multiplier` times larger. Shared by the window's Build
+ * button and the host's order_structure job.
+ * @returns {Array<{seed: number, built: any, energyPerAtom: number|null}>}
+ */
+export function buildOrderSamples(structure, count, multiplier = 1) {
+  if (!structureHasFractionalOccupancy(structure)) throw Object.assign(new Error(NOTHING_TO_ORDER), { code: 'NOTHING_TO_ORDER' });
+  const samples = [];
+  for (let i = 0; i < count; i += 1) {
+    const seed = i + 1;
+    samples.push({ seed, built: buildOrderedStructure(structure, { method: 'random', seed, multiplier }), energyPerAtom: null });
+  }
+  return samples;
+}
+
+/**
+ * Single-point energy per atom of every sample with the Atomistic window's
+ * potential, then sorted lowest first (in place). Shared by Compare Energy
+ * and the host's order_structure job.
+ * @returns {Promise<{potential: string, label: string}>}
+ */
+export async function scoreOrderSamples(samples, { onProgress = (_text) => {}, shouldStop = () => false } = {}) {
+  const { ensureCalculatorRunner } = await import('./BackendPanel/AtomisticPanels.js');
+  const { buildNEPStructure } = await import('../atomistic/relaxer.js');
+  const { runner, potential } = await ensureCalculatorRunner(onProgress);
+  for (let i = 0; i < samples.length; i += 1) {
+    if (shouldStop()) throw new Error('Stopped before every energy was computed');
+    const sample = samples[i];
+    onProgress(`Computing energy ${i + 1} / ${samples.length} (seed ${sample.seed})…`);
+    const nepStruct = buildNEPStructure(runner, sample.built);
+    // Sequential, not Promise.all: the wasm/gguf runner is a single
+    // instance, not safely reentrant across concurrent compute() calls.
+    const out = await runner.compute(nepStruct);
+    sample.energyPerAtom = Number.isFinite(out.energy_per_atom)
+      ? Number(out.energy_per_atom)
+      : Number(out.total_energy) / sample.built.atoms.length;
+  }
+  samples.sort((a, b) => a.energyPerAtom - b.energyPerAtom);
+  return { potential, label: potentialLabel(potential) };
+}
+
+/** The samples as trajectory frames, in their order, each with its total
+ *  energy when computed (Keep All, and the host's order_structure job). */
+export function orderSampleFrames(samples) {
+  return samples.map((s) => {
+    const elements = s.built.elements;
+    const frame = new Structure({
+      elements,
+      uniqueElements: [...new Set(elements)],
+      lattice: s.built.lattice.map((row) => [...row]),
+      atoms: s.built.atoms.map((atom, i) => new Atom({
+        position: [...atom.position],
+        element: elements[i],
+        uuid: atom.uuid,
+      })),
+      periodic: { hash: 'None', wrapped: null },
+    });
+    // Per-frame total energy (like an MD/relax trajectory) if this sample
+    // was compared — the Trajectory panel picks it up automatically via
+    // its own "Compute step stats" action.
+    if (Number.isFinite(s.energyPerAtom)) {
+      frame.energy = s.energyPerAtom * s.built.atoms.length;
+      frame.dataSource = potentialSource();
+    }
+    return frame;
+  });
+}
+
 /**
  * "Order Structure" section content — builds an ordered (one definite species
  * per site) approximation of a disordered structure, needed before MD/
@@ -287,7 +358,7 @@ function addOrderStructureSection(container) {
     const structure = fileBrowser.selectedStructure;
     if (!structure) return;
     if (!structureHasFractionalOccupancy(structure)) {
-      alert('This structure has no fractionally occupied sites — there is nothing to order.');
+      setOrderStatus(NOTHING_TO_ORDER);
       return;
     }
     // The structure's disorder can have changed since this section last
@@ -302,12 +373,7 @@ function addOrderStructureSection(container) {
     resetOrderSession(); // clear out any leftover row/state from a previous build
     setOrderStatus(`Building ${sampleCount} sample${sampleCount === 1 ? '' : 's'}…`);
     try {
-      const built = [];
-      for (let i = 0; i < sampleCount; i += 1) {
-        const seed = i + 1;
-        const b = buildOrderedStructure(structure, { method: 'random', seed, multiplier });
-        built.push({ seed, built: b, energyPerAtom: null });
-      }
+      const built = buildOrderSamples(structure, sampleCount, multiplier);
       // Keep the disordered source so refreshOrderSizeOptions reports ITS cell
       // sizes, not the ordered preview's, once a preview becomes the selection.
       orderSession = { builtSamples: built, energiesComputed: false, previewStructure: null, previewRow: null, shownSeed: null, sourceStructure: structure };
@@ -324,7 +390,7 @@ function addOrderStructureSection(container) {
     const structure = fileBrowser.selectedStructure;
     if (!structure) return;
     if (!structureHasFractionalOccupancy(structure)) {
-      alert('This structure has no fractionally occupied sites — there is nothing to order.');
+      setOrderStatus(NOTHING_TO_ORDER);
       return;
     }
     const result = buildOrderedStructure(structure, { method: 'majority', seed: 1 });
@@ -352,23 +418,8 @@ function addOrderStructureSection(container) {
     if (orderBusy || !orderSession?.builtSamples?.length) return;
     setOrderBusy(true);
     try {
-      const { ensureCalculatorRunner } = await import('./BackendPanel/AtomisticPanels.js');
-      const { buildNEPStructure } = await import('../atomistic/relaxer.js');
-      const { runner, potential } = await ensureCalculatorRunner((msg) => { setOrderStatus(msg); });
-      const usedLabel = potentialLabel(potential);
       const samples = orderSession.builtSamples;
-      for (let i = 0; i < samples.length; i += 1) {
-        const sample = samples[i];
-        setOrderStatus(`Computing energy ${i + 1} / ${samples.length} (seed ${sample.seed})…`);
-        const nepStruct = buildNEPStructure(runner, sample.built);
-        // Sequential, not Promise.all: the wasm/gguf runner is a single
-        // instance, not safely reentrant across concurrent compute() calls.
-        const out = await runner.compute(nepStruct);
-        sample.energyPerAtom = Number.isFinite(out.energy_per_atom)
-          ? Number(out.energy_per_atom)
-          : Number(out.total_energy) / sample.built.atoms.length;
-      }
-      samples.sort((a, b) => a.energyPerAtom - b.energyPerAtom);
+      const { label: usedLabel } = await scoreOrderSamples(samples, { onProgress: setOrderStatus });
       orderSession.energiesComputed = true;
       renderOrderList();
       showOrderCandidate(samples[0]); // land on the best one now that ranking is known
@@ -395,28 +446,7 @@ function addOrderStructureSection(container) {
     setOrderBusy(true);
     try {
       const samples = orderSession.builtSamples;
-      const frames = samples.map((s) => {
-        const elements = s.built.elements;
-        const frame = new Structure({
-          elements,
-          uniqueElements: [...new Set(elements)],
-          lattice: s.built.lattice.map((row) => [...row]),
-          atoms: s.built.atoms.map((atom, i) => new Atom({
-            position: [...atom.position],
-            element: elements[i],
-            uuid: atom.uuid,
-          })),
-          periodic: { hash: 'None', wrapped: null },
-        });
-        // Per-frame total energy (like an MD/relax trajectory) if this sample
-        // was compared — the Trajectory panel picks it up automatically via
-        // its own "Compute step stats" action.
-        if (Number.isFinite(s.energyPerAtom)) {
-          frame.energy = s.energyPerAtom * s.built.atoms.length;
-          frame.dataSource = potentialSource();
-        }
-        return frame;
-      });
+      const frames = orderSampleFrames(samples);
       const hadEnergy = Number.isFinite(samples[0].energyPerAtom);
       const count = frames.length;
       // The in-progress preview row (if any) duplicates one of these frames,
