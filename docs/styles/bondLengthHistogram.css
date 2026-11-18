@@ -29,6 +29,17 @@
   width: 80px;
 }
 
+/* "Group by Wyckoff" outside Wyckoff mode: greyed out, with a tooltip saying
+   why (BondLengthHistogram.js's syncWyckoffToggle). */
+.blh-wyckoff-row.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.blh-wyckoff-row.is-disabled input {
+  cursor: not-allowed;
+}
+
 .blh-pair-list {
   display: flex;
   flex-direction: column;
@@ -76,6 +87,21 @@
 
 .blh-pair-name {
   flex: 1 1 auto;
+}
+
+/* The pair's own chart colour, set from BondLengthHistogram.js (it depends on
+   the structure's element pairs). */
+.blh-pair-swatch {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+/* Expanded (fullscreen) card: the header's bond count otherwise sits under
+   the ✕ close button (.split-item-close-btn, top-right). */
+.split-item.expanded.blh-pair-card h4 {
+  padding-right: 44px;
 }
 
 .blh-pair-count {

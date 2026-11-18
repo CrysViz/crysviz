@@ -525,6 +525,10 @@ body.panel-hidden #viewArea.split-dock-bottom .split-pane-tabs {
   height: 90dvh !important;
   z-index: var(--z-dock-expanded) !important;
   box-shadow: 0 0 24px var(--overlay) !important;
+  /* The compact card's --group-bg (80% opaque in the default theme) is meant
+     to sit on a panel; over the fullscreen scrim the 3D scene showed through
+     the chart. Use the opaque panel surface, as .trajPlot.expanded does. */
+  background: var(--panel-bg) !important;
 }
 
 .split-item-close-btn {

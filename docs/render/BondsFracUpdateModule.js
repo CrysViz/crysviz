@@ -19,6 +19,7 @@ import { refreshAsuHighlight } from './asuHighlightHook.js';
 //import {bondLengthToColor} from '../ui/ColorPanel.js'
 import {refreshBondLengthHistogram, isBondLengthHistogramOpen} from '../ui/AnalysisPanels/BondLengthHistogram.js'
 import {refreshCoordinationHistogram, isCoordinationHistogramOpen} from '../ui/AnalysisPanels/CoordinationHistogram.js'
+import { hasCifErrors, distanceSu } from '../model/cifErrors.js'
 import {generateID, releaseIDs} from '../utils/index.js'
 import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
@@ -577,6 +578,22 @@ export function getBondByInstanceId(instanceId) {
   return structure.bonds?.[mapping[0]] ?? null;
 }
 
+/** Standard uncertainty (Å) of a bond's length from the CIF's errors, or null
+ *  when the structure has no read errors or an atom has moved off its CIF
+ *  site (model/cifErrors.js). The two ends are the copies the bond joins, so a
+ *  bond to a periodic image propagates through the right lattice translation.
+ *  Used by the Bond Length Histogram's hover list and its distance labels. */
+export function bondLengthSu(structure, bond) {
+  if (!hasCifErrors(structure)) return null;
+  const frac = structure.periodic?.visibleWrapped?.frac;
+  const fa = frac?.[bond.indices?.[0]];
+  const fb = frac?.[bond.indices?.[1]];
+  if (!fa || !fb || !bond.srcIndices) return null;
+  return distanceSu(structure,
+    { atomIndex: bond.srcIndices[0], frac: [...fa] },
+    { atomIndex: bond.srcIndices[1], frac: [...fb] });
+}
+
 function populateBondHistogramData(structure) {
   for (const key in bondLengths) delete bondLengths[key];
   for (const key in coordinationNumbers) delete coordinationNumbers[key];
@@ -605,6 +622,7 @@ function populateBondHistogramData(structure) {
     // (hover list, distance labels) without re-deriving them from instanceIds.
     const entry = {
       dist: bond.dist,
+      su: bondLengthSu(structure, bond), // null without read CIF errors
       instanceIds: bond.instanceIds ? [...bond.instanceIds] : [],
       srcIndices: [...bond.srcIndices],
     };

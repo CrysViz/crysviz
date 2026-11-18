@@ -119,17 +119,29 @@ function clearBondEmissiveOnly() {
   highlightHover.currentlyHighlightedBondInstances = [];
 }
 
+/** Fired after an atom or bond highlight is cleared, whoever cleared it. A
+ *  window that marks what it highlighted (the Bond Length and Force
+ *  histograms outline the bar) compares highlightHover's instance lists with
+ *  its own and drops the mark once its highlight is gone. */
+export const HIGHLIGHT_CLEARED = 'crysviz:highlight-cleared';
+
+function announceHighlightCleared() {
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent(HIGHLIGHT_CLEARED));
+}
+
 export function clearHighlightAtom() {
   // Under a tracer, clear only the emissive attrs of the tracked instances (no
   // instanceColor bump → no accumulation restart). Raster pipelines keep the
   // classic full rebuild-from-model.
   if (isTracerPipelineActive()) {
     clearAtomEmissiveOnly();
+    announceHighlightCleared();
     return;
   }
   highlightHover.currentlyHighlightedAtomInstances = [];
   updateAtoms(1.0);
   clearForceSpinHighlight();
+  announceHighlightCleared();
 }
 
 // Force/spin arrows are drawn once per SOURCE atom, never once per periodic
@@ -237,10 +249,12 @@ function clearForceSpinHighlight() {
 export function clearHighlightBond() {
   if (isTracerPipelineActive()) {
     clearBondEmissiveOnly();
+    announceHighlightCleared();
     return;
   }
   highlightHover.currentlyHighlightedBondInstances = [];
   updateBonds(1.0);
+  announceHighlightCleared();
 }
 
 function clearUIHighlight() {
