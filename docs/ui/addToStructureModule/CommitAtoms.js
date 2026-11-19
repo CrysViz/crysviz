@@ -453,6 +453,24 @@ export function revertStructureToOriginal(structure) {
   if (structure.symmetry) structure.symmetry = null;
 }
 
+// Revert to the as-loaded structure and show it: the Modify Structure window's
+// "Revert Changes" (after its confirm) and the host's revert_structure. The
+// selection and highlight go first, while they still match the live mesh: the
+// revert rebuilds structure.atoms, and updateVisualization re-sizes the mesh
+// only afterwards. Returns false when the structure has no as-loaded snapshot.
+export function commitRevertToOriginal(structure) {
+  if (!structure?.original) return false;
+  clearSelectedAtoms();
+  clearHighlightAtom();
+  revertStructureToOriginal(structure);
+  delete structure._modify;        // held indices into the old array
+  delete structure._wyckoffModify;
+  createBondLengthControls();
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true, reRenderOther: true, reRenderComposition: 'open' });
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+  return true;
+}
+
 // Restore only the cell to its as-loaded value - the lattice section's own
 // "Reset Lattice", independent of the atom edits.
 export function resetLatticeToOriginal(structure) {

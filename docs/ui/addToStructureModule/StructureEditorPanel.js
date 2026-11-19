@@ -54,6 +54,7 @@ import {
   colorToHex,
   commitStructureEdits,
   revertStructureToOriginal,
+  commitRevertToOriginal,
   resetLatticeToOriginal,
 } from './CommitAtoms.js';
 import { fracToCartPoint } from '../../math/index.js';
@@ -523,18 +524,11 @@ function buildFreeformModifyEditor(body, structure) {
   revertBtn.addEventListener('click', () => {
     // Reverting throws away every live edit, so make the user confirm.
     if (!window.confirm('Revert all changes? This restores the structure exactly as it was loaded and discards every edit (moved, added and removed atoms, and the lattice).')) return;
-    // Clear the selection first, while it still matches the live mesh - the
-    // revert rebuilds structure.atoms and updateVisualization only re-sizes the
-    // mesh afterwards, so clearing in between would index the old, larger mesh.
-    clearSelectedAtoms();
-    revertStructureToOriginal(structure);
-    delete structure._modify;
+    commitRevertToOriginal(structure);               // the shared revert (also the host's)
     initialAtoms = structureToTableAtoms(structure); // fresh uuids
     mod = ensureModifyState(structure);              // recapture baseline
     editor.reload(initialAtoms);
     latticePanel.setLattice(structure.lattice);
-    createBondLengthControls();
-    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true, reRenderOther: true, reRenderComposition: 'open' });
     renderSummary();
     warningHost.innerHTML = '';
     editor.clearConflicts();
