@@ -705,18 +705,33 @@ class Viewer:
         """
         if format not in {"cif", "poscar"}:
             raise ValueError("format must be cif or poscar")
-        result, received = self._command("export_structure", {"format": format}, include_attachments=True)
+        result = self._write_text_output("export_structure", {"format": format}, path)
+        return {"rows": result.get("rows"), "order": None if result.get("sameOrder") else result.get("order"),
+                "warning": result.get("warning")}
+
+    def export_trajectory(self, path: str | os.PathLike[str], *, frames: str | Sequence[int] = "all") -> dict[str, Any]:
+        """Write the active trajectory (or the given frame indices) as extended XYZ.
+
+        Returns ``{"frames", "atoms", "name"}``.
+        """
+        if frames != "all" and (isinstance(frames, (str, bytes)) or not isinstance(frames, Sequence)):
+            raise ValueError('frames must be "all" or a sequence of frame indices')
+        args: dict[str, object] = {"format": "extxyz", "frames": frames if frames == "all" else list(frames)}
+        result = self._write_text_output("export_trajectory", args, path)
+        return {"frames": result.get("frames"), "atoms": result.get("atoms"), "name": result.get("name")}
+
+    def _write_text_output(self, command: str, args: dict[str, object], path: str | os.PathLike[str]) -> dict[str, Any]:
+        """Run a text-export command and write its text to ``path``; return the browser's result."""
+        result, received = self._command(command, args, include_attachments=True)
         try:
             # The text arrives as an attachment (the host's managed upload), so size is not capped by IPC.
             if not isinstance(result, dict) or result.get("attachment") != "text" or set(received) != {"text"}:
-                raise ViewerProtocolError("browser export_structure response is missing its text attachment")
-            target = Path(path)
-            target.write_bytes(received["text"].read())
+                raise ViewerProtocolError(f"browser {command} response is missing its text attachment")
+            Path(path).write_bytes(received["text"].read())
         finally:
             for attachment in received.values():
                 attachment.close()
-        return {"rows": result.get("rows"), "order": None if result.get("sameOrder") else result.get("order"),
-                "warning": result.get("warning")}
+        return result
 
     def wait(self, timeout: float | None = None) -> None:
         if self._callback_thread == threading.get_ident():

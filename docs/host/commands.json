@@ -474,6 +474,279 @@
         "required": ["margin", "transparent", "structureOnly"],
         "additionalProperties": false
       }
+    },
+    {
+      "name": "get_symmetry",
+      "tier": "read",
+      "description": "Space group of the active structure at a tolerance, as the Symmetry window reads it (Moyo): number, Hermann-Mauguin symbol, Hall number, Pearson symbol, and atom indices per Wyckoff letter. Hidden atoms are left out (hiddenExcluded says how many). Call at two tolerances to see how robust the symmetry is.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "tolerance": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Symmetry tolerance in Å (symprec). Default: the app's setting."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "symmetrize",
+      "tier": "write",
+      "description": "Standardise the active structure at a tolerance into a new, selected row, as the Symmetry window's Conv. Cell / Prim. Cell buttons do: atoms snapped to the space group's ideal sites in the conventional (default) or primitive cell. The original row is kept. Then export_structure writes it out.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "tolerance": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Symmetry tolerance in Å (symprec). Default: the app's setting."
+          },
+          "cell": {
+            "type": "string",
+            "enum": [
+              "conventional",
+              "primitive"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_phonon_state",
+      "tier": "read",
+      "description": "The loaded phonon data (from a phonopy band.yaml / mesh.yaml / qpoints.yaml loaded with load): q-point count and labelled path points, band count, frequencies (THz, negative = imaginary) at the selected q-point or Γ, the selected mode, the animation amplitude/speed, the length unit taken for the cell and how it was decided.",
+      "args": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_phonon_mode",
+      "tier": "write",
+      "description": "Show a phonon mode as the Phonons window does: a q-point (index, \"Gamma\", or a band-path label) and a band (index, or \"lowest_optical\" for the first band above the three acoustic ones). Plays the animation unless play is false.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "qpoint": {
+            "description": "Index, \"Gamma\", or a label from get_phonon_state.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "band": {
+            "description": "Index or \"lowest_optical\".",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "lowest_optical"
+                ]
+              }
+            ]
+          },
+          "play": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phonon_animation",
+      "tier": "write",
+      "description": "Control the phonon animation: play, pause or stop (stop returns atoms to equilibrium), and set the amplitude (largest atomic excursion, Å) and speed (cycles per second).",
+      "args": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "play",
+              "pause",
+              "stop"
+            ]
+          },
+          "amplitude": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          },
+          "speed": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "phonon_frames",
+      "tier": "write",
+      "description": "The selected phonon mode as `count` frames over one period (at the current or given amplitude), as a new trajectory row. Select a frame with select {id, frame} and save_image each, for a picture series.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 200,
+            "description": "Default 10."
+          },
+          "amplitude": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 5
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_field_info",
+      "tier": "read",
+      "description": "The active structure's volumetric fields (CHGCAR, cube, ...): their labels and, for the shown one, the iso level, data min/max and grid size.",
+      "args": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_isosurface",
+      "tier": "write",
+      "description": "Set the isosurface level of a volumetric field, as typing it in the Volumetric Field window does (clamped to the data range). Values are in the file's units (CHGCAR: e/Å³ after the app's volume normalisation).",
+      "args": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "number"
+          },
+          "field": {
+            "type": "string",
+            "description": "A label from get_field_info; default the shown field."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "value"
+        ]
+      }
+    },
+    {
+      "name": "add_field_slice",
+      "tier": "write",
+      "description": "Add a Crystal Planes plane with Miller indices hkl, coloured by the volumetric field (a 2D slice), as the Crystal Planes window does. Place it through an atom (throughAtom index, e.g. a Ti) or at offset Å along the normal; default the first lattice plane.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "hkl": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "throughAtom": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "number"
+          },
+          "field": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "hkl"
+        ]
+      }
+    },
+    {
+      "name": "build_slab",
+      "tier": "write",
+      "description": "Cut a surface slab from the active (ordered) crystal along (h k l) as a new, selected row: `layers` repeats of the stacking period (for fcc (111) one repeat is one atomic layer; for (100) of a conventional cell it is two), with `vacuum` Å as one gap along the surface normal (c is made perpendicular to the surface, slab centred). View it side-on with set_view x or y.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "hkl": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "layers": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Default 4."
+          },
+          "vacuum": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 200,
+            "description": "Default 15 Å."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "hkl"
+        ]
+      }
+    },
+    {
+      "name": "export_trajectory",
+      "tier": "file",
+      "description": "Write the active trajectory (or chosen frames) as an extended XYZ file (Lattice, species, Cartesian positions in Å, energy and MD step when known), which ASE, pymatgen and OVITO read. Use for analysis in your own scripts, e.g. mean-squared displacement after run_md.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "extxyz"
+            ]
+          },
+          "frames": {
+            "description": "\"all\" (default) or frame indices.",
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "all"
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "minItems": 1
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
     }
   ]
 }

@@ -50,6 +50,11 @@ class _FakeViewer:
         self.calls.append(("load", source))
         return LoadResult(StructureInfo("s1", getattr(source, "name", "x"), 1, True, 0))
 
+    def export_trajectory(self, path, *, frames="all"):
+        self.calls.append(("export_trajectory", frames))
+        Path(path).write_text("1\nLattice=\"1 0 0 0 1 0 0 0 1\" Properties=species:S:1:pos:R:3\nH 0 0 0\n")
+        return {"frames": 1, "atoms": 1, "name": "md"}
+
     def export_structure(self, path, *, format):
         self.calls.append(("export_structure", format))
         Path(path).write_text("POSCAR text")
@@ -135,6 +140,14 @@ class ToolLayerTests(unittest.TestCase):
         self.assertEqual((self.export / "fig2.png").read_bytes(), PNG)
         options = _FakeViewer.instances[0].calls[-1][1]
         self.assertEqual((options["width"], options["height"], options["max_side"]), (3000, 2000, None))
+
+    def test_export_trajectory_writes_extxyz_into_export_folder(self):
+        out = json.loads(self.tools.call("export_trajectory", {"filename": "md-run"})[0]["text"])
+        self.assertEqual(Path(out["path"]), (self.export / "md-run.extxyz").resolve())
+        self.assertTrue(Path(out["path"]).read_text().startswith("1\n"))
+        self.assertEqual(out["frames"], 1)
+        with self.assertRaises(ToolError):
+            self.tools.call("export_trajectory", {"filename": "../x"})
 
     def test_export_structure_writes_into_export_folder_with_order_file(self):
         out = json.loads(self.tools.call("export_structure", {"format": "poscar", "filename": "graphite"})[0]["text"])

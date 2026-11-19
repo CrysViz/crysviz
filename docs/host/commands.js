@@ -16,6 +16,7 @@ import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
 import { clickControl, getControl, readWindow, searchControls, setControl } from './controls.js';
 import { apply, exportStructure, find, getBonding, userSelection } from './query.js';
+import * as tools from './structureTools.js';
 
 export const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
 
@@ -475,6 +476,63 @@ export const COMMAND_HANDLERS = Object.freeze({
     // From the host the text goes to its managed output URL (no IPC size limit); inline otherwise.
     const outputUrl = input.outputUrl === undefined ? null : managedOutputUrl(input.outputUrl, origin);
     const { text, ...result } = await exportStructure(input);
+    if (!outputUrl) return { text, ...result };
+    await uploadOutput(outputUrl, new Blob([text], { type: 'text/plain;charset=utf-8' }), 'text/plain; charset=utf-8');
+    return result;
+  },
+
+  get_symmetry(args) {
+    requireOptionalArgs(args, 'get_symmetry');
+    return tools.getSymmetry(args);
+  },
+
+  symmetrize(args) {
+    requireOptionalArgs(args, 'symmetrize');
+    return tools.symmetrize(args);
+  },
+
+  get_phonon_state(args) {
+    requireOptionalArgs(args, 'get_phonon_state');
+    return tools.getPhononState();
+  },
+
+  set_phonon_mode(args) {
+    requireOptionalArgs(args, 'set_phonon_mode');
+    return tools.setPhononMode(args);
+  },
+
+  phonon_animation(args) {
+    requireOptionalArgs(args, 'phonon_animation');
+    return tools.phononAnimation(args);
+  },
+
+  phonon_frames(args) {
+    requireOptionalArgs(args, 'phonon_frames');
+    return tools.phononFrames(args);
+  },
+
+  get_field_info(args) {
+    requireOptionalArgs(args, 'get_field_info');
+    return tools.getFieldInfo();
+  },
+
+  set_isosurface(args) {
+    return tools.setIsosurface(requireArgs(args, 'set_isosurface'));
+  },
+
+  add_field_slice(args) {
+    return tools.addFieldSlice(requireArgs(args, 'add_field_slice'));
+  },
+
+  build_slab(args) {
+    return tools.buildSlabCommand(requireArgs(args, 'build_slab'));
+  },
+
+  async export_trajectory(args, { origin }) {
+    requireOptionalArgs(args, 'export_trajectory');
+    const input = args ?? {};
+    const outputUrl = input.outputUrl === undefined ? null : managedOutputUrl(input.outputUrl, origin);
+    const { text, ...result } = await tools.exportTrajectory(input);
     if (!outputUrl) return { text, ...result };
     await uploadOutput(outputUrl, new Blob([text], { type: 'text/plain;charset=utf-8' }), 'text/plain; charset=utf-8');
     return result;

@@ -29,8 +29,8 @@ from ._payload import Payload
 from ._viewer import BrowserCommandError, Viewer, ViewerError
 
 # Commands that move files are wrapped by hand (below); the rest map 1:1.
-_FILE_COMMANDS = {"load", "save_image", "export_structure"}
-_EXPORT_EXTENSIONS = {"cif": ".cif", "poscar": ".vasp"}
+_FILE_COMMANDS = {"load", "save_image", "export_structure", "export_trajectory"}
+_EXPORT_EXTENSIONS = {"cif": ".cif", "poscar": ".vasp", "extxyz": ".extxyz"}
 # Largest side of an image returned to the model; a saved-only image may be up to the app's 16384.
 MAX_IMAGE_SIDE = 2048
 MAX_SAVED_SIDE = 16384
@@ -104,6 +104,19 @@ EXPORT_STRUCTURE_SCHEMA: dict[str, Any] = {
 }
 
 
+EXPORT_TRAJECTORY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "format": {"type": "string", "enum": ["extxyz"]},
+        "frames": {"description": '"all" (default) or frame indices.',
+                   "anyOf": [{"type": "string", "enum": ["all"]},
+                             {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1}]},
+        "filename": {"type": "string", "description": "File name in the export folder; default: trajectory.extxyz."},
+    },
+    "additionalProperties": False,
+}
+
+
 class ToolError(Exception):
     """A tool call failed in a way the model should see and can fix."""
 
@@ -140,6 +153,11 @@ class CrysVizTools:
               " CrysViz atom order[k]), so it never has to pass through the conversation.",
             "schema": EXPORT_STRUCTURE_SCHEMA, "tier": "file",
         }
+        self.tools["export_trajectory"] = {
+            "description": next(c for c in spec["commands"] if c["name"] == "export_trajectory")["description"]
+            + f" The file goes in the export folder ({export_dir}); the result gives its absolute path.",
+            "schema": EXPORT_TRAJECTORY_SCHEMA, "tier": "file",
+        }
         self.tools["save_image"] = {
             "description": "Render the current view, exactly as the user has framed it (camera, zoom and window "
                            "aspect are kept; nothing is moved), and return it as a PNG image. With filename, also "
@@ -174,6 +192,8 @@ class CrysVizTools:
                 return self._save_image(args)
             if name == "export_structure":
                 return [_text(self._export_structure(args))]
+            if name == "export_trajectory":
+                return [_text(self._export_trajectory(args))]
             return [_text(self.viewer().call(name, **args))]
         except BrowserCommandError as error:
             raise ToolError(f"{error.code}: {error.message}") from error
@@ -263,6 +283,15 @@ class CrysVizTools:
         if result.get("warning"):
             out["warning"] = result["warning"]
         return out
+
+
+    def _export_trajectory(self, args: dict[str, Any]) -> dict[str, Any]:
+        if args.get("format", "extxyz") != "extxyz":
+            raise ToolError("format must be extxyz")
+        target = self._export_target(args.get("filename", "trajectory"), _EXPORT_EXTENSIONS["extxyz"]).resolve()
+        self.export_dir.mkdir(parents=True, exist_ok=True)
+        result = self.viewer().export_trajectory(target, frames=args.get("frames", "all"))
+        return {"path": str(target), "format": "extxyz", **result}
 
 
 def _text(value: object) -> dict[str, Any]:
