@@ -330,7 +330,26 @@ async def w3_charge_density(s: Session):
     check(distinct_colours(image) > 20, "charge-density picture looks blank")
     grid = (info.get("selected") or {}).get("grid")
     check(grid == [24, 24, 24], f"field grid {grid}")
-    return f"iso 0.05, (001) slice at {slice_['d']} A, grid {grid}"
+    # Past Chromium's ~512 MiB string limit, where fetching the file as text
+    # gave '' and the load failed with "POSCAR: missing scale factor".
+    big = s.out / "big" / "CHGCAR"
+    big.parent.mkdir(exist_ok=True)
+    n = 330  # n*n is a multiple of 5, so each z plane is whole lines
+    with big.open("w") as f:
+        f.write(f"Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n2\nDirect\n0 0 0\n.25 .25 .25\n\n{n} {n} {n}\n")
+        plane = (" 0.12345678901E+01" * 5 + "\n") * (n * n // 5)
+        for _ in range(n):
+            f.write(plane)
+    size = big.stat().st_size
+    t0 = time.time()
+    try:
+        await s.call("load", {"path": str(big)})
+        seconds = time.time() - t0
+        big_grid = ((await s.state(["field"]))["field"].get("selected") or {}).get("grid")
+        check(big_grid == [n] * 3 and (await s.state())["structure"]["atomCount"] == 2, f"large CHGCAR grid {big_grid}")
+    finally:
+        big.unlink()
+    return f"iso 0.05, (001) slice at {slice_['d']} A, grid {grid}; {size / 2**20:.0f} MiB CHGCAR in {seconds:.1f}s"
 
 
 async def w4_diffusion(s: Session):

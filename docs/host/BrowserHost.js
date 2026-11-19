@@ -217,8 +217,10 @@ export function createBrowserHost(initialDeps = {}) {
         }
         const response = await strictFetch(inputUrl);
         await responseOrThrow(response, 'INPUT_FETCH_FAILED', 'Could not fetch managed host input');
-        const binary = request.args.binary === true;
-        request.args = { ...request.args, data: binary ? await response.arrayBuffer() : await response.text() };
+        // A Blob, as the file picker hands over: loadStructure reads it by its
+        // detected format, so a random-access CHGCAR or WAVECAR is never made
+        // one string (Chromium returns '' from text() past ~512 MiB).
+        request.args = { ...request.args, data: await response.blob() };
         delete request.args.inputUrl;
       }
       const result = await dispatch(request);
@@ -410,10 +412,9 @@ export async function bootstrapAuthoritative(deps) {
       for (const input of inputs) {
         const inputResponse = await responseOrThrow(
           await strictFetch(input.url), 'INPUT_FETCH_FAILED', `Could not fetch host input ${input.name}`);
-        const data = input.binary ? await inputResponse.arrayBuffer() : await inputResponse.text();
         const result = await host.dispatchInternal({
           command: 'load',
-          args: { name: input.name, data, format: input.format, binary: input.binary },
+          args: { name: input.name, data: await inputResponse.blob(), format: input.format, binary: input.binary },
         });
         if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
       }

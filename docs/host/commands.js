@@ -72,7 +72,8 @@ export function safeName(value) {
 function isBufferData(value) {
   return typeof value === 'string'
     || (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer)
-    || (typeof Uint8Array !== 'undefined' && value instanceof Uint8Array);
+    || (typeof Uint8Array !== 'undefined' && value instanceof Uint8Array)
+    || (typeof Blob !== 'undefined' && value instanceof Blob);
 }
 
 export function snapshotForContainer(container, activeStructure) {
