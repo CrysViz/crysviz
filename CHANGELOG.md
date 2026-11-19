@@ -4,8 +4,8 @@
 
 ### Highlights
 
-- **MCP server:** `crysviz-mcp` (`pip install 'crysviz[mcp]'`) lets Claude and other MCP clients drive a local CrysViz window: load structures, look along a lattice direction, rotate, switch the renderer and get the picture back
-- Python `Viewer.set_view()` looks along a, b, c, x, y, z or a lattice direction [u, v, w]; `Viewer.load(..., interactive=False)` loads a CIF without the symmetry dialog
+- **MCP server:** `crysviz-mcp` (`pip install 'crysviz[mcp]'`) lets Claude and other MCP clients drive a local CrysViz window shared with the user: load and edit structures, find atoms, bonds, polyhedra and voids, set the view, run MD, relaxations, EOS and ordering as jobs, read symmetry, phonons and fields, export files and get pictures back (35 tools; see agent_guides/MCP.md)
+- Python: `Viewer.call(name, **args)` runs any command (snake_case arguments accepted), `Viewer.run_job()` waits for a calculation, `Viewer.set_view()` looks along a, b, c, x, y, z or [u, v, w] with up and zoom, `Viewer.export_structure()` writes CIF, POSCAR or extended XYZ; `Viewer.load(..., interactive=False)` loads a CIF without the symmetry dialog
 - Refined camera controls with shortcuts (desktop)
 - Setting view along/opposite plane normal
 - Added resolution control to plane colormaps

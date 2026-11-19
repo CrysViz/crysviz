@@ -27,109 +27,121 @@ keep first.
 The window is shared: you may rotate, zoom or change settings by hand
 between Claude's calls, and Claude sees it through `get_state`.
 
-- Nothing moves the camera or zoom unless that is its job (`set_view`,
-  `rotate_camera`, `recenter_camera`). `save_image` photographs the view as
-  you framed it; without a size it uses the window's own size and shape.
-- Building a supercell or transforming the lattice keeps your viewing
-  direction and refits the zoom.
-- `get_state` includes your selection; `apply` and `remove_atoms` take
-  `selection: "user"` to act on it.
+- Nothing moves the camera or zoom unless that is its job (`set_view`).
+  `save_image` photographs the view as you framed it; without a size it uses
+  the window's own size and shape.
+- `set_supercell` and lattice changes keep your viewing direction and refit
+  the zoom.
+- `get_state` includes your selection; atom-addressed tools take
+  `selection: "user"` to act on it. `apply clear` clears only the highlight
+  unless asked to clear the selection, and `apply select` says what selection
+  of yours it replaced.
 - Every command redraws the window itself; no click is needed to see a change.
-- You may edit the structure by hand between Claude's calls (a supercell,
-  deleting atoms), which renumbers atoms. `get_state` reports
-  `structure.revision`, a token that changes with any structural edit (never
-  with a colour). Every write tool takes `expectedRevision` and refuses with
-  `STRUCTURE_CHANGED` if the structure moved on, and a `find` selection goes
-  stale on any structural change. The server tells the model to pass it before
-  editing by index.
-- If the Modify Structure window is open while Claude edits atoms, that
-  window's next keystroke writes its own table back: close it first.
+- Your edits renumber atoms (a supercell, deleting atoms): edits by index take
+  `expectedRevision` (from `get_state` or `find`) and refuse with
+  `STRUCTURE_CHANGED` when the structure changed meanwhile. An open Modify
+  Structure window follows Claude's edits and never writes a stale table back.
 - The server's instructions tell the model the same: leave the camera,
   zoom, renderer and display alone unless asked, check views as text with
   `get_state`, take a picture only when the look matters.
 
-## Tools
+## Conventions
 
-A tool called without a required argument answers with what it needs, e.g.
-`find needs: what (atoms | bonds | polyhedra | voids); optional: where, limit`.
+One set of rules for every tool, so a model that learns one knows them all:
 
-### Structure
+- **Verbs.** `get_*` and `find` read; `set_*` change the active structure or
+  view in place; `build_*` make a new structure row and show it; `run_*`
+  start a calculation job; `export_structure` and `save_image` write files.
+- **Atoms.** Tools that act on atoms (`apply`, `remove_atoms`,
+  `set_element`, `move_atoms`) take `atoms` (0-based indices) or `selection`
+  (a `find` id, `"user"` for the user's selection, `"all"`), never both.
+- **Results** are always objects. Structural edits return `atomCount` and
+  `revision`; tools that make or show a row return
+  `{structure, name, frames, activeFrame, atomCount, revision}`. A row id is
+  `structure` in arguments and results (`id` inside `get_state`'s
+  `structure` and `structures`).
+- **Units.** Å, eV and fractional coordinates are unsuffixed; other units are
+  suffixed (`temperatureK`, `timestepFs`, `pressureGPa`, `volumeRangePct`,
+  `frequencyTHz`, `waitS`). Forces are `fmax` (eV/Å).
+- **Errors** are `{code, message, details}`; `INVALID_ARGS` names the
+  argument. A tool called without a required argument, or with one it does
+  not take, answers with what it takes, e.g. `find needs: what (atoms | bonds
+  | polyhedra | voids); optional: where, limit, fields, groupBy`. Unknown keys
+  are refused, never ignored.
+
+## Tools (35)
+
+### State and query
 | Tool | What it does |
 |---|---|
-| `load` | A structure from `path`, or `text` plus `name` (the extension picks the format). Never stops to ask (no CIF symmetry or unit dialog). |
-| `list_structures`, `select` | Loaded structures; make one (and a frame) active. |
-| `add_atoms`, `remove_atoms` | As the Add Atom window: fractional positions, a 0.5 Å collision check (`force` to override). `remove_atoms` returns what it removed, so `add_atoms` can undo it. A removed atom's colour goes with it; an added one starts at its element colour. |
-| `set_element` | Change atoms to another element in place, as the structure editor does: index and position stay; a custom colour is kept, a default one follows the new element. |
-| `build_supercell` | `n: [nx, ny, nz]`, as the Cell & Supercell window. |
-| `build_slab` | `hkl`, `layers`, `vacuum` (Å, along the surface normal) as a new structure. |
-| `symmetrize` | The standardised (conventional or primitive) cell at a tolerance, as a new structure. |
-| `update_lattice`, `update_fractional_positions`, `commit_positions` | Edit the active structure in memory. |
-
-### View
-| Tool | What it does |
-|---|---|
-| `set_view` | Direction (`a`/`b`/`c`, `x`/`y`/`z`, `[u, v, w]`, or Cartesian with `cartesian: true`), optional `up` and `zoom`, in one call. `get_state`'s camera passed back with `cartesian: true` restores a view. |
-| `rotate_camera`, `recenter_camera` | Orbit about a world axis; bring the structure back to the middle. |
-| `set_render_pipeline` | `forward`, `raytrace`, `pathtrace`, ... |
-| `save_image` | PNG of the view as framed (a different aspect than the window is letterboxed, never cropped). Returned to the model up to 2048 px a side; with `filename` and `returnImage: false`, saved at up to 16384 px without returning it. A large ray-traced image can take a minute; the call waits up to 15 minutes. `transparent` works with the raster renderers; the ray and path tracers paint their own backdrop, and the result then carries a warning. |
-
-### Display and every other control
-| Tool | What it does |
-|---|---|
-| `search_controls` | Any window, action or labelled control by what it does ("bonds off", "detect cages", "atom size"), through the app's own feature search. |
-| `get_control`, `set_control`, `click_control` | Read, set or press it as a user would, so the app reacts exactly as to a click. |
+| `get_state` | The active structure (formula, lattice, frame, `revision`) and renderer; `include` adds `structures` (every loaded row), `camera`, `selection`, `jobs` (the default three), `colors`, `phonons`, `field`. |
+| `find` | `atoms`, `bonds` (full periodic graph with image offsets; `where.atoms` gives neighbour lists), `polyhedra` (centred and cages, built on demand) or `voids` (interstitial sites with their first shell); filters, selection algebra (`in`, `notIn`), compact output (`fields`, `groupBy`). Returns a selection id (not for voids). |
+| `get_bonding` | CrysViz's bond rule: `{min, max, shown}` per element pair, and the exact rule as text. |
+| `get_symmetry` | Space group (number, symbol, Hall, Pearson) and Wyckoff letters at a tolerance (Moyo). |
+| `search_controls`, `get_control`, `set_control`, `click_control` | Any window, action or labelled control by what it does ("bonds off", "detect cages"); read, set or press it as a user would. |
 | `read_window` | A window's visible status and result text, when no command returns the result. |
 
-### Query and act
+### The active structure, in place
 | Tool | What it does |
 |---|---|
-| `get_state` | Active structure (formula, lattice, frame, commit state, `revision`, `colors`: each element's colour and the atoms with their own colour; atoms on request, up to 500), camera, renderer, your selection, jobs. |
-| `find` | `atoms`, `bonds` (full periodic graph, with image offsets; with `where.atoms`, each centre's neighbour list), `polyhedra` (centred and cages; computed on demand when not shown) or `voids`. Filters: element, indices, a periodic fractional box `frac`, a sphere `near`, and selection algebra `in` / `notIn`. Output: items, `fields: "indices"`, or `groupBy: "element"`. Returns a selection id tied to the structure's revision. |
-| `apply` | `highlight`, `select`, `clear`, `color`, `reset_color` (`all: true` is the Atoms tab's Reset Colors), `hide`, `show` on a selection, atom indices or `selection: "user"`; `color` also takes polyhedra selections and `bondPair`. |
-| `get_polyhedra`, `get_voids` | Polyhedra per site; interstitial sites with their first shell. |
-| `get_bonding` | CrysViz's bond rule: `{min, max, shown}` per element pair, and the exact rule as text. |
+| `select_structure` | Show a loaded row and frame. |
+| `add_atoms`, `remove_atoms` | As the Add Atom window: fractional positions, a 0.5 Å collision check (`force` to override). `remove_atoms` returns what it removed, so `add_atoms` can undo it. |
+| `set_element` | Change atoms to another element in place (indices, positions and selections kept). |
+| `move_atoms` | `to` (one position per atom) or `by` (one shift), fractional or `cartesian`. |
+| `set_lattice` | New lattice vectors; fractional positions kept. |
+| `set_supercell` | `n: [nx, ny, nz]` in place, as the Cell & Supercell window; `[1, 1, 1]` goes back. |
+
+### New rows
+| Tool | What it does |
+|---|---|
+| `build_slab` | `hkl`, `layers`, `vacuum` (Å, along the surface normal). |
+| `build_symmetrized` | The standardised (conventional or primitive) cell at a tolerance. |
+| `build_phonon_frames` | The chosen phonon mode as N displaced frames, a trajectory. |
+
+### View and display
+| Tool | What it does |
+|---|---|
+| `set_view` | In one call: `direction` (`a`/`b`/`c`, `x`/`y`/`z`, `[u, v, w]`, or Cartesian with `cartesian: true`), `up`, `zoom`, `rotate: {axis, degrees}`, `recenter`. Returns the camera; `get_state`'s camera passed back with `cartesian: true` restores a view. |
+| `set_renderer` | `forward`, `raytrace`, `pathtrace`, ... |
+| `apply` | `highlight`, `select`, `clear`, `color` (`color: "#rrggbb"`), `reset_color`, `hide`, `show`; a drawn polyhedra selection's `color` colours the polyhedra, `bondPair` colours a bond pair. |
+| `set_phonon` | Mode (`qpoint`: index, `"Gamma"` or a label; `band`: index or `"lowest_optical"`), `animate` (play, pause, stop), `amplitude`, `speed`. |
+| `set_isosurface` | A volumetric field's iso level (CHGCAR, cube). |
+| `add_plane` | A Crystal Planes plane `hkl` through an atom or at an offset; `show: "field"` makes it a 2D slice of the field, `cut` hides one side. |
 
 ### Calculations (jobs)
-Long runs start a job and return `jobId` at once; poll with `wait_job`
-(up to 25 s per call), stop with `cancel_job`, inspect with `job_status`.
-One calculation runs at a time. The potential is the Atomistic window's
-(NEP89 by default).
+A `run_*` tool starts a job and returns `{jobId, kind, status, progress,
+elapsedS}` at once, or with its `result` if it ends within `waitS` (0 to 25 s;
+a quick `run_energy` with `waitS: 25` is one call). Poll with `wait_job`
+(`timeoutS` 0 to 25; 0 just reports), stop with `cancel_job`. A finished job
+says which structure and frame are on show (`active`). One calculation runs
+at a time. The potential is the Atomistic window's (NEP89 by default).
 
 | Tool | What it does |
 |---|---|
-| `run_md` | NVT or NPT MD: steps, temperature, timestep, save stride; a new trajectory row. |
-| `run_relax` | Positions (and cell with `relaxCell`) to `fmax`; a new trajectory row. The result starts with the `targetPressureGPa` and `relaxCell` it used, plus a `pressureHint` when the structure's name mentions another pressure (never acted on). |
-| `compute_energy` | Energy, forces, stress of the active structure. |
-| `run_eos` | Volume (`volumeRangePct`) or pressure scan, then the EOS fit: E0, V0, B0, B0'. The fit loads SciPy (Pyodide) from the network. |
-| `order_structure` | Ordered approximants of a disordered structure, with energies, best first. |
+| `run_md` | NVT or NPT MD: steps, temperatureK, timestepFs, saveStride; a new trajectory row. |
+| `run_relax` | Positions (and cell with `relaxCell`) to `fmax`; a new trajectory row whose last frame is shown. Says which `targetPressureGPa` it used and hints at a pressure in the file name. |
+| `run_energy` | Energy, energy per atom, `fmax`, pressure of the active structure. |
+| `run_eos` | Volume (`volumeRangePct`) or pressure scan, then the EOS fit: E0, V0, B0GPa, B0Prime. The fit loads SciPy (Pyodide) from the network. |
+| `run_ordering` | Ordered approximants of a disordered structure, with energies, best first. |
 
-### Analysis
+### Files
 | Tool | What it does |
 |---|---|
-| `get_symmetry` | Space group (number, symbol, Hall, Pearson) and Wyckoff letters at a tolerance (Moyo). |
-| `get_phonon_state`, `set_phonon_mode`, `phonon_animation`, `phonon_frames` | phonopy files: q-points and frequencies, choose a mode (`"Gamma"`, `"lowest_optical"`), animate, or write N displaced frames as a trajectory. |
-| `get_field_info`, `set_isosurface`, `add_field_slice` | Volumetric data (CHGCAR, cube): range, iso level, a slice plane `hkl` through an atom or at an offset. |
-
-### Exports
-| Tool | What it does |
-|---|---|
-| `export_structure` | CIF or POSCAR, as the Save window, to the export folder. Returns the absolute path and the atom order (POSCAR groups by element: `<name>.order.json` maps file atoms to CrysViz indices). |
-| `export_trajectory` | extxyz (lattice, species, positions, energy) of all or chosen frames. |
-
-New relax and MD trajectory rows start at element colours: per-atom colours
-stay on the source structure.
+| `load` | A structure from `path`, or `text` plus `name` (the extension picks the format). Never stops to ask (no CIF symmetry or unit dialog). Returns the row, its formula, and `restored` when the Cell & Supercell window restored a remembered supercell. |
+| `save_image` | PNG of the view as framed (a different aspect than the window is letterboxed, never cropped). Returned to the model up to 2048 px a side; with `filename` and `returnImage: false`, saved at up to 16384 px without returning it. A large ray-traced image can take a minute; the call waits up to 15 minutes. `transparent` works with the raster renderers; the ray and path tracers still paint their backdrop (known limitation; `save_image` warns). |
+| `export_structure` | `cif` or `poscar` (one frame, as the Save window; POSCAR's atom order goes to `<name>.order.json`) or `extxyz` (frames, for ASE, pymatgen, OVITO), into the export folder; `structure` and `frame` export a row or frame that is not on show, without showing it. Returns the absolute path. |
 
 ## Heavy analysis: export, script, apply
 
 The model need not see a structure atom by atom. For rings, displacements,
 statistics or anything else CrysViz does not compute:
 
-1. `export_structure` (or `export_trajectory`) writes the file;
+1. `export_structure` (cif, poscar, or extxyz for trajectories) writes the file;
    `get_bonding` gives CrysViz's exact bond rule.
 2. A script (networkx, pymatgen, numpy) rebuilds the bond graph with that
    rule and computes what is needed.
 3. The answer goes back as atom indices (through the order map for POSCAR):
-   `apply {atoms: [...], action: "color", value: "#ff0000"}`.
+   `apply {atoms: [...], action: "color", color: "#ff0000"}`.
 
 Only file paths and indices pass through the conversation, so it scales
 with the structure.
@@ -152,17 +164,29 @@ checks, and prints a PASS/FAIL table. A window opens; it needs a display.
   for every transport (the pywebview bridge in `docs/host/BrowserHost.js`
   today; Electron and an MCP App later). Handlers reuse the windows' own
   functions: a command and its button run the same code. Related handlers
-  live in `controls.js` (generic controls), `query.js` (find, apply,
-  bonding, export), `jobs.js` (long runs) and `structureTools.js`
-  (symmetry, phonons, fields, slabs, trajectory export).
+  live in `controls.js` (generic controls), `query.js` (find, apply, the
+  shared atoms/selection resolver, bonding, export), `jobs.js` (long runs)
+  and `structureTools.js` (symmetry, phonons, fields, planes, slabs).
 - `docs/host/commands.json` describes each command: description, JSON Schema
   for the arguments, tier (`read`, `write`, `file`). The MCP server builds its
   tools from it, without opening a window. `tools/unittest/hostcommands.test.mjs`
   fails if it and the handlers disagree.
 - The host dispatch redraws after every command.
 - `src/crysviz/_mcp.py` is the server (official `mcp` SDK 2.x, low-level
-  `Server`). Tools that move files (`load`, `save_image`, `export_structure`,
-  `export_trajectory`) are written by hand; every other command maps one to one.
+  `Server`). Tools that move files (`load`, `save_image`, `export_structure`)
+  are written by hand; every other command maps one to one. Commands marked
+  `"mcp": false` (`update_fractional_positions`, `commit_positions`) are for
+  the Python `Viewer` only.
+
+## From Python
+
+Every tool is also `Viewer.call(name, **args)`; arguments may be snake_case
+(`viewer.call("run_md", temperature_k=600)` sends `temperatureK`).
+`Viewer.run_job(name, **args)` starts a `run_*` job and blocks until it ends.
+The released methods (`list_structures`, `select`, `update_lattice`,
+`update_fractional_positions`, `commit_positions`, `recenter_camera`,
+`rotate_camera`, `set_render_pipeline`, `save_image`, `load`) keep working
+as thin wrappers over these commands.
 
 ## Safety
 
@@ -178,8 +202,9 @@ checks, and prints a PASS/FAIL table. A window opens; it needs a display.
    the window's function (extract it from the click handler if needed, so
    both call one path). Pass app functions it needs through `BrowserHost`
    `configure()` (`initializeCore` in `docs/core/crystal-viewer.js`).
-2. Describe it in `docs/host/commands.json`; it becomes an MCP tool and a
-   `Viewer.call` command with no Python change.
+2. Describe it in `docs/host/commands.json`, following the conventions
+   above (verb, `atoms`/`selection`, result envelope, unit suffixes); it
+   becomes an MCP tool and a `Viewer.call` command with no Python change.
 3. Test it: `make unittest`, a check in
    `tools/browsertest/tests/hostfacade.test.js`, and, for a user workflow, a
    step in `tools/mcp_acceptance.py`.
