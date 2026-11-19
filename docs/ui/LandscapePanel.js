@@ -1,5 +1,5 @@
 // Energy Landscape windows: a CONTROLS window in the main dock (description +
-// the addon's 📂 load button / drop target) and a separate PLOTS window
+// the addon's folder load button / drop target) and a separate PLOTS window
 // ('landscapePlots') defaulting to the wide side dock. The plots window is
 // not opened by hand — loading a landscape JSON (button or drop) opens it via
 // the addon's onContent hook, so it appears exactly when there is something

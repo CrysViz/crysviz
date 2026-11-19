@@ -195,7 +195,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   exportBtn.type = 'button';
   exportBtn.className = 'split-item-action-btn';
   exportBtn.title = 'Export PNG';
-  exportBtn.textContent = '📥';
+  exportBtn.dataset.splitAction = 'export'; // its icon (sideDock.css)
   exportBtn.onclick = () => {
     exportHistogramPNG(plotId).catch((error) => console.error('Trajectory plot export failed:', error));
   };
@@ -204,7 +204,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   expandBtn.type = 'button';
   expandBtn.className = 'split-item-action-btn';
   expandBtn.title = 'Expand';
-  expandBtn.textContent = '⛶';
+  expandBtn.dataset.splitAction = 'expand';
   expandBtn.onclick = () => {
     expandSplitItem(root);
     isExpanded = true;

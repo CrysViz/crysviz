@@ -93,9 +93,9 @@ function cardMarkup(card) {
         <div id="${card.id}" class="split-item-body la-plot" title="Drag the bottom-right corner to change this plot's height"></div>
         <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
         <div class="split-item-actions">
-          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="${card.id}" title="Toggle light/dark">🌓︎</button>
-          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="${card.id}" title="Export PNG">📥</button>
-          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="${card.id}" title="Expand">⛶</button>
+          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="${card.id}" title="Toggle light/dark"></button>
+          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="${card.id}" title="Export PNG"></button>
+          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="${card.id}" title="Expand"></button>
         </div>
       </div>`;
 }

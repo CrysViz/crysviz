@@ -232,7 +232,7 @@
 
     /* Slim toolbar above the chart; the light/dark toggle (always shown) and
        the "Compute step stats" action (only when there's data to crunch) both
-       read as part of the plot chrome, matching the EOS plot cards' 🌓 button. */
+       read as part of the plot chrome, matching the EOS plot cards' light/dark button. */
     .trajPlotToolbar {
       flex: 0 0 auto;
       display: flex;
