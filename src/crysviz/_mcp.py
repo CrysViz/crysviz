@@ -185,6 +185,9 @@ class CrysVizTools:
         if name not in self.tools:
             raise ToolError(f"unknown tool {name!r}")
         args = dict(arguments or {})
+        missing = missing_required(name, self.tools[name]["schema"], args)
+        if missing:
+            raise ToolError(missing)
         try:
             if name == "load":
                 return [_text(self._load(args))]
@@ -292,6 +295,34 @@ class CrysVizTools:
         self.export_dir.mkdir(parents=True, exist_ok=True)
         result = self.viewer().export_trajectory(target, frames=args.get("frames", "all"))
         return {"path": str(target), "format": "extxyz", **result}
+
+
+def _brief(prop: dict[str, Any]) -> str:
+    """A field's allowed values or type, in a few words: "atoms | bonds", "string", "array"."""
+    choices = prop.get("enum") or [value for option in prop.get("anyOf", ()) for value in option.get("enum", ())]
+    if choices:
+        kinds = [option.get("type") for option in prop.get("anyOf", ()) if "enum" not in option and option.get("type")]
+        return " | ".join([*map(str, choices), *kinds])
+    kind = prop.get("type")
+    if isinstance(kind, list):
+        return " | ".join(kind)
+    return kind or " | ".join(option.get("type", "?") for option in prop.get("anyOf", ())) or "any"
+
+
+def missing_required(name: str, schema: dict[str, Any], args: dict[str, Any]) -> str | None:
+    """The error when `args` leaves out a required argument, or None.
+
+    One check for every tool, built from its schema. A client may call a tool before it has
+    seen the schema (Claude Code defers them), so the message carries the schema itself:
+    every required field with its allowed values, then the optional names.
+    """
+    required = list(schema.get("required", ()))
+    if all(key in args for key in required):
+        return None
+    properties = schema.get("properties", {})
+    needs = "; ".join(f"{key} ({_brief(properties.get(key, {}))})" for key in required)
+    optional = [key for key in properties if key not in required]
+    return f"INVALID_ARGS: {name} needs: {needs}" + (f"; optional: {', '.join(optional)}" if optional else "")
 
 
 def _text(value: object) -> dict[str, Any]:

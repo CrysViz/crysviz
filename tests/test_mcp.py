@@ -164,6 +164,18 @@ class ToolLayerTests(unittest.TestCase):
         with self.assertRaises(ToolError):
             self.tools.call("export_structure", {"format": "xyz"})
 
+    def test_missing_required_argument_is_named(self):
+        with self.assertRaises(ToolError) as caught:
+            self.tools.call("find", {})
+        self.assertEqual(str(caught.exception),
+                         "INVALID_ARGS: find needs: what (atoms | bonds | polyhedra | voids); optional: where, limit")
+        with self.assertRaisesRegex(ToolError, r"^INVALID_ARGS: set_control needs: ref \(string\); "
+                                               r"value \(boolean \| number \| string\)$"):
+            self.tools.call("set_control", {"ref": "x"})
+        with self.assertRaisesRegex(ToolError, r"set_view needs: direction \(a \| b \| c \| x \| y \| z \| array\)"):
+            self.tools.call("set_view", None)
+        self.assertEqual(_FakeViewer.instances, [], "a missing argument never reaches the viewer")
+
     def test_unknown_tool(self):
         with self.assertRaises(ToolError):
             self.tools.call("evaluate", {"code": "1"})
