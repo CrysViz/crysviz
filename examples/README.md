@@ -27,11 +27,25 @@ python3 -m pip install .
 
 ## Overview
 
-The rotation example performs a short orbit and then closes its window.
-The ray-tracing example writes `crysviz-raytrace.png` in the current directory,
-prints its resolved path, and closes as soon as the synchronous image export
-finishes. The lattice-and-positions example visibly deforms a two-atom silicon
-cell, changes both fractional positions, recenters the camera, then closes.
+The full Python guide is [agent_guides/Python.md](../agent_guides/Python.md).
+Each script below closes its window when it ends; run it with `--keep-open`
+(where offered) to look around first, or paste its lines into a REPL or
+notebook, where the window stays open.
+
+- [`polyhedra_colours.py`](polyhedra_colours.py) shows the octahedra of a
+  ReO3-type WO3 supercell in blue and saves `octahedra.png`.
+- [`rings_networkx.py`](rings_networkx.py) exports a graphene sheet, finds its
+  six-membered rings with networkx using CrysViz's own bond cutoffs, colours
+  one red and saves `ring.png` (needs `networkx`).
+- [`slab_picture.py`](slab_picture.py) cuts a four-layer Cu(111) slab with
+  15 Å of vacuum and saves an edge-on `cu111_slab.png`.
+- [`rotate_camera.py`](rotate_camera.py) performs a short orbit and closes.
+- [`raytrace_snapshot.py`](raytrace_snapshot.py) writes `crysviz-raytrace.png`
+  in the current directory and closes once the export finishes.
+- [`update_lattice_and_positions.py`](update_lattice_and_positions.py)
+  deforms a two-atom silicon cell, moves both atoms, recentres the camera,
+  then waits until you close the window.
+
 Ctrl-C or a context exit also closes the managed window and cleans up its
 private host.
 

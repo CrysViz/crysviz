@@ -212,15 +212,20 @@ checks, and prints a PASS/FAIL table. A window opens; it needs a display.
 
 ## From Python
 
-Every tool is also `Viewer.call(name, **args)`; arguments may be snake_case
+The guide for people scripting by hand (REPL, IPython, Jupyter) is
+[Python.md](Python.md). In short: every tool is also a `Viewer` method
+(`viewer.find(...)`, `viewer.run_relax(...)`, which blocks until the job
+ends) and `Viewer.call(name, **args)`; arguments may be snake_case
 (`viewer.call("run_md", temperature_k=600)` sends `temperatureK`). A refusal
 comes back as the result (`{"applied": False, "reason": ..., "code": ...}`,
 writes that applied have `"applied": True`); a wrong call raises
 `BrowserCommandError`. The typed methods (`load`, `save_image`,
 `update_lattice`, ...) raise `CommandRefused`, a subclass of
 `BrowserCommandError`, for a refusal, so existing `except` clauses still
-catch it. `Viewer.take_user_changes()` returns (and clears) the
-`sinceLastCall` notes of recent commands.
+catch it. `Viewer.take_user_changes()` checks the window, then returns (and
+clears) what the user changed by hand; `viewer.on("user_changed", callback)`
+hears it as it happens. In an MCP session those pushed changes are merged into
+the next tool result's `sinceLastCall`, so the model still sees every change once.
 `Viewer.run_job(name, **args)` starts a `run_*` job and blocks until it ends.
 The released methods (`list_structures`, `select`, `update_lattice`,
 `update_fractional_positions`, `commit_positions`, `recenter_camera`,

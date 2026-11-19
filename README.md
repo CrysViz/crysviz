@@ -88,25 +88,22 @@ crysviz
 
 ### Python API
 
-If you have the standalone application installed, you can also use the Python API for visualization and remote-control from Python. For example:
+Drive a CrysViz window from a Python REPL, IPython or Jupyter: every command is a method, and the window stays yours to rotate and edit by hand (Python is told what you changed).
 
 ```python
-from crysviz import Payload, Viewer, show
+from crysviz import show
 
-payload = Payload("silicon.cif", "data_Si\n_cell_length_a 5.43\n")
-with Viewer([payload]) as viewer:
-    structures = viewer.list_structures()
-    viewer.select(structures[0].id, frame=0)
-    viewer.update_lattice([[5.7, 0.0, 0.0], [0.2, 5.4, 0.0], [0.0, 0.0, 5.2]])
-    viewer.update_fractional_positions([[0.0, 0.0, 0.0]], commit=False)
-    viewer.commit_positions()
-    viewer.recenter_camera()
-
-# Equivalent concise construction; returns once the window is ready.
-viewer = show(["structure.cif"])
+v = show(["SrTiO3.cif"])                 # the window opens; the prompt returns at once
+v.set_supercell(n=[2, 2, 2])
+oxygens = v.find(what="atoms", where={"element": "O"})
+v.apply(selection=oxygens["selection"], action="color", color="#3366ff")
+v.set_view(direction="c")
+v.save_image("view.png")                  # shown inline in Jupyter
+v.run_relax(fmax=0.02)                    # blocks until the relaxation ends
+v.take_user_changes()                     # what you changed by hand meanwhile
 ```
 
-For more, see [examples](https://github.com/CrysViz/crysviz/tree/deploy/examples).
+`help(v.find)` lists a command's arguments and `dir(v)` lists every command. The full guide (install with uv or pip, working together with the window, calculations, exports, recipes) is [agent_guides/Python.md](agent_guides/Python.md); runnable scripts are in [examples](examples/).
 
 ### Claude and other AI assistants (MCP)
 
