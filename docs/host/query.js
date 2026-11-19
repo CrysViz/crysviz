@@ -359,6 +359,29 @@ export async function resolveTargets(structure, args, name) {
   return [...new Set(atoms)];
 }
 
+// How the user's selection last changed, from the app's own selection events:
+// reason "pick" is a click on one atom (atom is that atom), others (marquee,
+// focus-region, row-click, host, ...) select a group at once (atom null).
+let lastPick = null;
+let watchingSelection = null;
+
+/** Start listening to selection changes (once); BrowserHost starts it in host windows. */
+export function watchSelection() {
+  watchingSelection ??= import('../ui/SelectAndHighlightModule.js').then(({ subscribeToAtomSelection }) => {
+    subscribeToAtomSelection(({ event }) => {
+      const atom = event?.atom?.sourceIndex;
+      lastPick = { by: event?.reason ?? null, atom: Number.isInteger(atom) ? atom : null };
+    });
+  }).catch(() => { watchingSelection = null; });
+  return watchingSelection;
+}
+
+/** {by, atom} for the selection as it is now, or null when nothing is known. */
+export async function selectionOrigin() {
+  await watchSelection();
+  return lastPick;
+}
+
 /** The atoms the user has selected in the window (source indices, sorted). */
 export async function userSelection() {
   const { getSelectedAtoms } = await import('../ui/SelectAndHighlightModule.js');

@@ -1,5 +1,6 @@
 import { fileBrowser } from '../state/store.js';
 import { captureState } from './ShareModule.js';
+import { sendToDownloadSink } from '../host/downloadSink.js';
 import { isVacancy } from '../render/VacancyMarkerModule.js';
 import { latticeParameters } from '../math/index.js';
 import { elementData } from './PeriodicTablePickerCore.js';
@@ -312,8 +313,13 @@ export function currentBaseName() {
   return String(rawName || 'structure').replace(/\.[^.]+$/, '');
 }
 
-/** Trigger a browser download of a Blob under the given file name. */
+/** Trigger a browser download of a Blob under the given file name. In a window
+ *  the Python host launched, the host may save it instead (host/downloadSink.js). */
 export function downloadBlob(fileName, blob) {
+  if (!sendToDownloadSink(fileName, blob, browserDownload)) browserDownload(fileName, blob);
+}
+
+function browserDownload(fileName, blob) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   link.href = url;

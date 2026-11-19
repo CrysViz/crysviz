@@ -6,6 +6,7 @@ import base64
 import json
 import os
 import queue
+import re
 import sys
 import threading
 from multiprocessing.connection import Listener
@@ -25,6 +26,16 @@ _OUTPUT_COMMANDS = {
     "save_image": ("image/png", "image"),
     "export_structure": ("text/plain; charset=utf-8", "text"),
 }
+# A download handed over by the app (host/downloadSink.js): a file name and a media type.
+_DOWNLOAD_TYPE_RE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}(;[ a-z0-9=._+-]{1,64})?$")
+_MAX_PENDING_DOWNLOADS = 32
+
+
+def _output_spec(command: str, args: object) -> tuple[str, str]:
+    """The Content-Type an output command's upload carries, and its attachment name."""
+    if command == "save_image" and isinstance(args, dict) and args.get("format") == "svg":
+        return ("image/svg+xml", "image")
+    return _OUTPUT_COMMANDS[command]
 
 
 def _prepared_sources(payload: object, attachments: dict[str, Attachment]) -> list[PreparedSource]:
@@ -74,9 +85,16 @@ class _BridgeAPI:
     def command_result(self, capability: object, request_id: object, result: object) -> None:
         return self._runtime._command_result(capability, request_id, result)
 
+    def reserve_download(self, capability: object, name: object, content_type: object) -> object:
+        return self._runtime._reserve_download(capability, name, content_type)
+
+    def download_done(self, capability: object, url: object) -> object:
+        return self._runtime._download_done(capability, url)
+
 
 class HostRuntime:
-    def __init__(self, connection: object, sources: list[PreparedSource], *, gui: str | None = None, debug: bool = False):
+    def __init__(self, connection: object, sources: list[PreparedSource], *, gui: str | None = None, debug: bool = False,
+                 capture_downloads: bool = False):
         self.connection = connection
         self.gui, self.debug = gui, debug
         self.server = CrysVizServer(
@@ -91,6 +109,11 @@ class HostRuntime:
         self._commands: queue.Queue[tuple[dict[str, object], dict[str, Attachment]] | None] = queue.Queue()
         self._closing = threading.Event()
         self._bridge_api = _BridgeAPI(self)
+        # Whether Python saves the app's downloads (Viewer download_dir); otherwise the window does.
+        self.capture_downloads = capture_downloads
+        # App downloads in flight: upload URL -> (file name, media type).
+        self._download_lock = threading.Lock()
+        self._downloads: dict[str, tuple[str, str]] = {}
 
     def send(self, message_type: str, payload: object, attachments: dict[str, object] | None = None) -> None:
         with self._send_lock:
@@ -138,11 +161,50 @@ class HostRuntime:
             pending.put(result)
         return None
 
+    def _reserve_download(self, capability: object, name: object, content_type: object) -> object:
+        """A one-use upload URL for a file the app is downloading (host/downloadSink.js), or None:
+        then the window downloads it itself."""
+        if not self.capture_downloads or not self._authorized(capability):
+            return None
+        if not isinstance(name, str) or not 0 < len(name) <= 255 or "\x00" in name:
+            return None
+        if not isinstance(content_type, str) or not _DOWNLOAD_TYPE_RE.fullmatch(content_type.strip().lower()):
+            return None
+        content_type = content_type.strip().lower()
+        url = self.server.reserve_output(content_type)
+        with self._download_lock:
+            if len(self._downloads) >= _MAX_PENDING_DOWNLOADS:  # drop the oldest unfinished one
+                stale = next(iter(self._downloads))
+                self._downloads.pop(stale)
+                self.server.discard_output(stale)
+            self._downloads[url] = (name, content_type)
+        return url
+
+    def _download_done(self, capability: object, url: object) -> object:
+        """Pass an uploaded download to Python, which saves it in its download folder."""
+        if not self._authorized(capability) or not isinstance(url, str):
+            return False
+        with self._download_lock:
+            entry = self._downloads.pop(url, None)
+        if entry is None:
+            return False
+        output = self.server.take_output(url)
+        if output is None:
+            return False
+        try:
+            name, content_type = entry
+            size = output.seek(0, 2)
+            output.seek(0)
+            self.send("download", {"name": name, "contentType": content_type, "size": size}, {"file": output})
+        finally:
+            output.close()
+        return True
+
     def _prepare_request(self, request_id: str, command: str, args: object, attachments: dict[str, Attachment]) -> dict[str, object]:
         if command in _OUTPUT_COMMANDS:
             if attachments:
                 raise ProtocolError(f"{command} accepts no attachment")
-            output_url = self.server.reserve_output(_OUTPUT_COMMANDS[command][0])
+            output_url = self.server.reserve_output(_output_spec(command, args)[0])
             if not isinstance(args, dict):
                 self.server.discard_output(output_url)
                 return {"id": request_id, "request": {"command": command, "args": args}}
@@ -247,7 +309,7 @@ class HostRuntime:
                     if command in _OUTPUT_COMMANDS and result.get("ok"):
                         if output is None:
                             raise ProtocolError(f"{command} upload is missing")
-                        content_type, attachment_name = _OUTPUT_COMMANDS[command]
+                        content_type, attachment_name = _output_spec(command, args)
                         try:
                             browser_result = result.get("result") if isinstance(result.get("result"), dict) else {}
                             response["result"] = {
@@ -356,8 +418,10 @@ def main() -> int:
         bootstrap = json.loads(sys.stdin.readline())
         secret = base64.b64decode(bootstrap["auth"], validate=True)
         gui, debug = bootstrap.get("gui"), bootstrap.get("debug", False)
+        downloads = bootstrap.get("downloads", False)
         if (bootstrap.get("version") != 1 or len(secret) < 16
-                or gui not in {None, "gtk", "qt", "cef"} or not isinstance(debug, bool)):
+                or gui not in {None, "gtk", "qt", "cef"} or not isinstance(debug, bool)
+                or not isinstance(downloads, bool)):
             raise ValueError
     except Exception:
         return 2
@@ -370,7 +434,7 @@ def main() -> int:
         if message_type != "bootstrap":
             raise ProtocolError("first host frame must be bootstrap")
         sources = _prepared_sources(payload, attachments)
-        HostRuntime(connection, sources, gui=gui, debug=debug).run()
+        HostRuntime(connection, sources, gui=gui, debug=debug, capture_downloads=downloads).run()
     except (EOFError, OSError, ProtocolError):
         return 2
     finally:

@@ -11,13 +11,13 @@
     {
       "name": "get_state",
       "tier": "read",
-      "description": "What the viewer shows now, including changes the user made by hand. Always: structure (the active one: id, name, frame, frames, atomCount, revision, formula, composition, periodic, lattice vectors and a, b, c, alpha, beta, gamma, positionsCommitted, hiddenCount) and renderer. revision is a token that changes with any structural edit (atoms added, removed or re-elemented, the cell), the user's or yours, never with a colour or a move: pass it as expectedRevision to edits by atom index. include picks the other sections (default camera, selection, jobs): structures (every loaded row: id, name, frames, active, activeFrame), camera (direction from the view centre to the camera, the convention set_view takes; screen up; distance; zoom; orthographic or perspective), selection (the atoms the user has selected), jobs (id, kind, status), colors (each element's colour and the atoms with their own colour, grouped by colour), phonons (the loaded phonon data: q-points, labelled path points, bands, frequencies in THz at the selected q-point or Γ, the mode, amplitude, speed, length unit), field (volumetric fields: labels and, for the shown one, iso level, data min/max, grid). Atom lists come from find.",
+      "description": "What the viewer shows now, including changes the user made by hand. Always: structure (the active one: id, name, frame, frames, atomCount, revision, formula, composition, periodic, lattice vectors and a, b, c, alpha, beta, gamma, positionsCommitted, hiddenCount) and renderer. revision is a token that changes with any structural edit (atoms added, removed or re-elemented, the cell), the user's or yours, never with a colour or a move: pass it as expectedRevision to edits by atom index. include picks the other sections (default camera, selection, jobs): structures (every loaded row: id, name, frames, active, activeFrame), camera (direction from the view centre to the camera, the convention set_view takes; screen up; distance; zoom; orthographic or perspective), selection (the atoms the user has selected), jobs (id, kind, status), colors (each element's colour and the atoms with their own colour, grouped by colour), phonons (the loaded phonon data: q-points, labelled path points, bands, frequencies in THz at the selected q-point or Γ, the mode, amplitude, speed, length unit), field (volumetric fields: labels and, for the shown one, iso level, data min/max, grid), windows (every window: ref window:<id> for read_window and click_control, title, open). selection carries origin {by, atom} when known: by \"pick\" is a click on one atom (atom is the clicked atom); marquee, focus-region, row-click, host and others selected a group at once (atom null). Atom lists come from find.",
       "args": {
         "type": "object",
         "properties": {
           "include": {
             "type": "array",
-            "items": { "type": "string", "enum": ["structures", "camera", "selection", "jobs", "colors", "phonons", "field"] },
+            "items": { "type": "string", "enum": ["structures", "camera", "selection", "jobs", "colors", "phonons", "field", "windows"] },
             "description": "Sections besides structure and renderer. Default [camera, selection, jobs]."
           }
         },
@@ -155,7 +155,7 @@
     {
       "name": "click_control",
       "tier": "write",
-      "description": "Press a button, open a window or run an action from search_controls, as a user's click would.",
+      "description": "Press a button, open a window or run an action from search_controls, as a user's click would. The result says what happened: the control's state, effects (windowsOpened, windowsClosed, dialogsOpened with title and short text) and, when the click saved files through the app's Download or Save path, savedFiles with their absolute paths (in a host window, downloads go to the download folder: the export folder under crysviz-mcp).",
       "args": {
         "type": "object",
         "properties": { "ref": { "type": "string", "description": "A ref from search_controls." } },
@@ -166,10 +166,10 @@
     {
       "name": "read_window",
       "tier": "read",
-      "description": "Read a window's status line and visible text (up to 4000 characters), opening it if needed: the fallback for a result that is only shown in a window. Prefer a command's own structured result when there is one. panel is the window id, as search_controls returns it in window:<id> (e.g. eos, symmetry, phonon).",
+      "description": "Read a window's status line and visible text (up to 4000 characters), opening it if needed: the fallback for a result that is only shown in a window. Prefer a command's own structured result when there is one. panel is a window ref (window:<id>, from get_state include [\"windows\"] or search_controls) or the bare id (e.g. eos, symmetry, phonon).",
       "args": {
         "type": "object",
-        "properties": { "panel": { "type": "string", "description": "Window id, e.g. \"eos\"." } },
+        "properties": { "panel": { "type": "string", "description": "Window ref or id, e.g. \"window:eos\" or \"eos\"." } },
         "required": ["panel"],
         "additionalProperties": false
       }
@@ -246,6 +246,12 @@
         },
         "additionalProperties": false
       }
+    },
+    {
+      "name": "revert_structure",
+      "tier": "write",
+      "description": "Put the active structure back as it was loaded, discarding every edit since (moved, added, removed and re-elemented atoms, the lattice), as the Modify Structure window's Revert Changes does, without its confirm. As loaded is the structure's own snapshot from when it was created: for a file, as read, so a supercell is undone too (set_supercell again if wanted); a row made by build_* or a job reverts to how it was made. A Wyckoff lock is dropped. Returns {reverted, revision, atomCount}; a structure with no snapshot returns applied: false.",
+      "args": { "type": "object", "properties": {}, "additionalProperties": false }
     },
     {
       "name": "set_element",
@@ -735,7 +741,7 @@
       "name": "save_image",
       "wire": "Wire form: the browser renders and uploads the PNG to a managed output URL the Python host adds. The MCP tool adds filename and returnImage (src/crysviz/_mcp.py SAVE_IMAGE_SCHEMA); Viewer.save_image takes a path.",
       "tier": "file",
-      "description": "Render the current view, as the user has framed it, to a PNG image. Without width and height it is the view's own size and aspect; with one of them the other follows the view's aspect. The camera is never moved.",
+      "description": "Render the current view, as the user has framed it, to PNG or SVG. Without width and height it is the view's own size and aspect; with one of them the other follows the view's aspect. The camera is never moved. format svg is the Download Image window's SVG export: the structure as an embedded image with labels, axes and colour bars as editable layers, or with vector: true as vector shapes (large for big views). PNG size: one GPU render surface (the driver's limit, often 4096 to 8192 px a side, and the Settings > Graphics GPU memory budget); raster renderers tile larger images, and when the GPU cannot allocate a surface the error says what it got, so ask for less.",
       "args": {
         "type": "object",
         "properties": {
@@ -749,7 +755,9 @@
           },
           "margin": { "type": "integer", "minimum": 0, "maximum": 4096 },
           "transparent": { "type": "boolean" },
-          "structureOnly": { "type": "boolean", "description": "Hide the cell, axes and other helpers." }
+          "structureOnly": { "type": "boolean", "description": "Hide the cell, axes and other helpers." },
+          "format": { "type": "string", "enum": ["png", "svg"], "description": "Default png." },
+          "vector": { "type": "boolean", "description": "svg only: atoms and bonds as vector shapes instead of an embedded image." }
         },
         "required": ["margin", "transparent", "structureOnly"],
         "additionalProperties": false

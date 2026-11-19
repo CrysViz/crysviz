@@ -110,7 +110,17 @@ class _Host:
                 result = {"renderer": "raytrace"}
             elif command == "set_view":
                 result = {"direction": [0, 0, 1], "up": [0, 1, 0], "zoom": 1}
-            if command == "save_image":
+            elif command == "click_control":
+                result = {"ref": payload["args"].get("ref"), "kind": "button"}
+            # A click that makes the app download a file: the host passes it on before the response.
+            for name, body in getattr(self, "downloads", {}).get(command, []):
+                send_frame(self.connection, "download", {"name": name, "contentType": "image/png", "size": len(body)},
+                           {"file": body})
+            if command == "save_image" and payload["args"].get("format") == "svg":
+                svg = b'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>'
+                send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": {
+                    "contentType": "image/svg+xml", "size": len(svg), "attachment": "image"}}, {"image": svg})
+            elif command == "save_image":
                 png = b"\x89PNG\r\n\x1a\nmanaged-png"
                 if self.response_mode == "bad_signature":
                     png = b"not-a-png"
@@ -517,3 +527,59 @@ class UserChangeMergeTests(unittest.TestCase):
             _add_user_change(changes, note)
         # A rotation in steps is where the camera ended; other changes keep their place.
         self.assertEqual(changes, [{"camera": 2, "note": "b"}, {"structure": 1, "note": "s"}, {"camera": 4, "note": "d"}])
+
+
+class DownloadAndSvgTests(unittest.TestCase):
+    start_fake = None  # bound below from ViewerControllerTests
+
+    def test_app_downloads_during_a_command_are_saved_and_named_in_its_result(self):
+        client, server = _pair()
+        host = _Host(server)
+        host.downloads = {"click_control": [("view.png", b"one"), ("view.png", b"two"), ("../../.secret", b"three")]}
+        with tempfile.TemporaryDirectory() as directory:
+            folder = pathlib.Path(directory) / "downloads"
+            viewer = ViewerControllerTests.start_fake(self, Viewer(download_dir=folder), host)
+            try:
+                result = viewer.call("click_control", ref="control:files:#imageButton")
+                saved = [pathlib.Path(p) for p in result["savedFiles"]]
+                self.assertEqual([p.name for p in saved], ["view.png", "view-1.png", "secret"])
+                self.assertTrue(all(p.parent == folder for p in saved))
+                self.assertEqual([p.read_bytes() for p in saved], [b"one", b"two", b"three"])
+                # Saved because of a command, so not reported as the user's own change.
+                self.assertEqual(viewer.take_user_changes(check=False), [])
+            finally:
+                viewer.close()
+
+    def test_a_download_outside_any_command_is_the_users_and_raises_file_saved(self):
+        client, server = _pair()
+        host = _Host(server)
+        with tempfile.TemporaryDirectory() as directory:
+            viewer = ViewerControllerTests.start_fake(self, Viewer(download_dir=directory), host)
+            seen: queue.Queue[object] = queue.Queue()
+            viewer.on("file_saved", seen.put)
+            try:
+                send_frame(server, "download", {"name": "fig.svg", "contentType": "image/svg+xml", "size": 3}, {"file": b"svg"})
+                event = seen.get(timeout=3)
+                self.assertEqual(pathlib.Path(event.data["path"]).read_bytes(), b"svg")
+                self.assertFalse(event.data["byCommand"])
+                changes = viewer.take_user_changes(check=False)
+                self.assertEqual(changes[0]["files"], [event.data["path"]])
+            finally:
+                viewer.close()
+
+    def test_save_image_writes_an_svg_by_extension_and_shows_it_as_svg(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = ViewerControllerTests.start_fake(self, Viewer(), host)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                saved = viewer.save_image(pathlib.Path(directory) / "view.svg", vector=True)
+                self.assertEqual(host.commands[-1][1]["format"], "svg")
+                self.assertTrue(host.commands[-1][1]["vector"])
+                self.assertIn("<svg", saved._repr_svg_())
+                self.assertIsNone(saved._repr_png_())
+                with self.assertRaises(ValueError):
+                    viewer.save_image(pathlib.Path(directory) / "view.png", vector=True)
+        finally:
+            viewer.close()
+

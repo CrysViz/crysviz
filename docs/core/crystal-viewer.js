@@ -27,7 +27,7 @@ import { setupControlsWiring, sizeSliderToValue, ATOM_SIZE_RANGE, BOND_RADIUS_RA
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
 import { pauseRendering, resumeRendering,animation_update,requestRender,runPeriodicWrapped,
-  applyRotationFromUI, captureSceneToPng, getActivePipeline } from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+  applyRotationFromUI, captureSceneToPng, captureSceneToSvg, getActivePipeline } from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
 import { setActivePipelineFromController, reapplyAtomForceColors } from '../ui/ColorPanel.js';
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
@@ -634,6 +634,7 @@ export async function initializeCore(browserHostController, { structureFirst = f
     getRenderPipeline: () => getActivePipeline()?.id ?? null,
     requestRender,
     captureSceneToPng,
+    captureSceneToSvg,
   });
   await initApp();
   setupMobileMenu();

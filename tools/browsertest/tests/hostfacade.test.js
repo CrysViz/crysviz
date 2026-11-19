@@ -245,6 +245,13 @@ async function waitForHostFailure(page) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
 
+  // An app download handed to the host goes to its own one-use upload URL.
+  const downloadBodies = [];
+  await page.route(`${origin}/_crysviz/output/download-capability-12345678901234567890123`, async (route) => {
+    downloadBodies.push({ contentType: await route.request().headerValue('content-type'), body: route.request().postData() });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
   const protocol = await page.evaluate(async () => {
     const host = window.crysvizHost;
     const before = await host.dispatch({ command: 'get_state', args: { include: ['structures'] } });
@@ -479,6 +486,54 @@ async function waitForHostFailure(page) {
     const colored = await host.dispatch({ command: 'apply', args: { atoms: [0], action: 'color', color: '#ff0000' } });
     await twoFrames();
     const redrawn = { colored: colored.ok, before: rendersBefore, after: counters().render || 0 };
+
+    // The app's downloads in a host window: offered to the host (reserve, upload, done);
+    // when the host declines (no download folder in Python), the app downloads as usual.
+    const { downloadBlob } = await import('./ui/SavePanel.js');
+    const { settleDownloads } = await import('./host/downloadSink.js');
+    const reserved = [];
+    let doneCalls = 0;
+    let accept = true;
+    window.pywebview.api.reserve_download = async (capability, name, type) => {
+      reserved.push({ capability, name, type });
+      return accept ? `${location.origin}/_crysviz/output/download-capability-12345678901234567890123` : null;
+    };
+    window.pywebview.api.download_done = async () => { doneCalls += 1; return true; };
+    const anchorClicks = [];
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function click() { anchorClicks.push(this.download); };
+    try {
+      downloadBlob('figure.svg', new Blob(['<svg/>'], { type: 'image/svg+xml' }));
+      await settleDownloads();
+      accept = false;
+      downloadBlob('declined.txt', new Blob(['x'], { type: 'text/plain' }));
+      await settleDownloads();
+    } finally {
+      HTMLAnchorElement.prototype.click = realClick;
+    }
+    const downloads = { reserved, doneCalls, anchorClicks };
+
+    // click_control says what a click opened; read_window takes the window refs get_state lists.
+    const imageRef = (await host.dispatch({ command: 'search_controls', args: { query: 'download image', limit: 10 } }))
+      .result?.controls?.find((c) => c.ref.endsWith('#saveImageButton'))?.ref;
+    const clicked = imageRef ? await host.dispatch({ command: 'click_control', args: { ref: imageRef } }) : null;
+    // Close the Download image dialog again (its own Escape handling).
+    for (const dialog of document.querySelectorAll('[role="dialog"][aria-label="Download image"]')) {
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }
+    const windows = await host.dispatch({ command: 'get_state', args: { include: ['windows'] } });
+    const firstWindow = windows.result?.windows?.[0];
+    const readByRef = firstWindow ? await host.dispatch({ command: 'read_window', args: { panel: firstWindow.ref } }) : null;
+
+    // revert_structure: back to the as-loaded atoms; selection origin names who selected.
+    const active = (await import('./state/structures.js')).getActiveStructure();
+    const loadedElements = [...(active.original?.elements ?? [])];
+    await host.dispatch({ command: 'set_element', args: { atoms: [0], element: 'Xe' } });
+    const reverted = await host.dispatch({ command: 'revert_structure', args: {} });
+    const afterRevert = [...active.elements];
+    await host.dispatch({ command: 'apply', args: { atoms: [0], action: 'select' } });
+    const origin = (await host.dispatch({ command: 'get_state', args: { include: ['selection'] } })).result?.selection?.origin;
+    await host.dispatch({ command: 'apply', args: { action: 'clear', what: 'selection' } });
     const raytrace = await host.dispatch({ command: 'set_renderer', args: { renderer: 'raytrace' } });
     const raytraceState = {
       select: document.getElementById('renderPipelineMenu')?.value,
@@ -534,6 +589,7 @@ async function waitForHostFailure(page) {
       fallback,
       rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
       viewedC, viewC, badView, state, redrawn, releaseNoteShown, userChanges, pushedChanges,
+      downloads, clicked, windows, readByRef, reverted, loadedElements, afterRevert, origin,
       raytrace, raytraceState, unknownPipeline, raster, saved, invalidOutput,
       injected: window.__hostInjected === 1,
       injectedNodes: document.querySelectorAll('img[src="x"], img[onerror]').length,
@@ -636,6 +692,26 @@ async function waitForHostFailure(page) {
       p.pushed.length === 1 && p.pushed[0]?.structure?.elementChanges?.pairs?.[pair] === 1, p);
     H.check('user_changed: a pushed change is not reported again by the next command', p.repeated === null, p.repeated);
     H.check('user_changed: a host command\'s own edit sends no event', p.hostEditApplied === true && p.eventsAfterHostEdit === 1, JSON.stringify(p));
+  }
+  {
+    const d = protocol.downloads;
+    H.check('an app download in a host window goes to the host: reserved, uploaded, done',
+      d.reserved[0]?.name === 'figure.svg' && d.reserved[0]?.type === 'image/svg+xml' && d.doneCalls === 1
+        && !d.anchorClicks.includes('figure.svg')
+        && downloadBodies.length === 1 && downloadBodies[0].contentType === 'image/svg+xml' && downloadBodies[0].body === '<svg/>',
+      { d, downloadBodies });
+    H.check('a download the host declines is downloaded by the app as usual',
+      d.reserved[1]?.name === 'declined.txt' && d.anchorClicks.includes('declined.txt'), d);
+    H.check('click_control reports the dialog it opened',
+      protocol.clicked?.ok && protocol.clicked.result?.effects?.dialogsOpened?.some((x) => /image/i.test(x.title)),
+      protocol.clicked);
+    H.check('get_state lists windows with refs read_window takes',
+      protocol.windows.ok && protocol.windows.result.windows.every((w) => w.ref === `window:${w.id}` && typeof w.open === 'boolean')
+        && protocol.readByRef?.ok && protocol.readByRef.result.panel === protocol.windows.result.windows[0].id, protocol.readByRef);
+    H.check('revert_structure restores the as-loaded atoms',
+      protocol.reverted.ok && protocol.reverted.result.reverted === true
+        && JSON.stringify(protocol.afterRevert) === JSON.stringify(protocol.loadedElements), protocol.reverted);
+    H.check('get_state says how the selection was made', protocol.origin?.by === 'host' && protocol.origin.atom === null, protocol.origin);
   }
   H.check('a host command redraws without any user event', protocol.redrawn.colored && protocol.redrawn.after > protocol.redrawn.before, protocol.redrawn);
   H.check('set_view rejects an unknown direction',

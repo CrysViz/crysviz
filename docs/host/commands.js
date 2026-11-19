@@ -15,8 +15,8 @@ import { atomIds, structureRevision } from '../model/structureRevision.js';
 import { cancelJob, jobView, listJobs, runningJob, startJob, waitJob } from './jobs.js';
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
-import { clickControl, getControl, readWindow, searchControls, setControl } from './controls.js';
-import { apply, exportStructure, find, getBonding, resolveTargets, userSelection } from './query.js';
+import { clickControl, getControl, listWindows, readWindow, searchControls, setControl } from './controls.js';
+import { apply, exportStructure, find, getBonding, resolveTargets, selectionOrigin, userSelection } from './query.js';
 import * as tools from './structureTools.js';
 
 export const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
@@ -292,7 +292,7 @@ export const ERROR_KINDS = Object.freeze({
   NO_ACTIVE_STRUCTURE: 'outcome', NO_LATTICE: 'outcome', DISORDERED: 'outcome', NO_PHONONS: 'outcome',
   NO_EIGENVECTORS: 'outcome', NO_FIELD: 'outcome', TOO_LARGE: 'outcome', LOAD_CANCELLED: 'outcome',
   NO_MODE: 'outcome', PNG_CAPTURE_IN_PROGRESS: 'outcome', POTENTIAL_TOO_MANY_ATOMS: 'outcome',
-  SYMMETRY_UNAVAILABLE: 'outcome',
+  SYMMETRY_UNAVAILABLE: 'outcome', NOTHING_TO_REVERT: 'outcome',
   // errors: a wrong call
   INVALID_ARGS: 'error', INVALID_ELEMENT: 'error', INVALID_REQUEST: 'error', UNKNOWN_COMMAND: 'error',
   NOT_A_CONTROL: 'error', NOT_SETTABLE: 'error', CONTROL_NOT_FOUND: 'error', SELECTION_NOT_FOUND: 'error',
@@ -305,7 +305,7 @@ export const ERROR_KINDS = Object.freeze({
   VIEWER_CLOSED: 'error', NOT_READY: 'error', JOB_FAILED: 'error',
   // errors of the launch path (bootstrap, manifest), never a command's
   INVALID_MANIFEST: 'error', MANIFEST_FETCH_FAILED: 'error', MANIFEST_COMPLETE_FAILED: 'error',
-  INPUT_FETCH_FAILED: 'error', OUTPUT_UPLOAD_FAILED: 'error', BOOTSTRAP_FAILED: 'error',
+  INPUT_FETCH_FAILED: 'error', OUTPUT_UPLOAD_FAILED: 'error', BOOTSTRAP_FAILED: 'error', DOWNLOAD_UPLOAD_FAILED: 'error',
   DEFAULT_LOAD_UNAVAILABLE: 'error', SHARED_STATE_FAILED: 'error', HASH_LOAD_FAILED: 'error',
   OPTIMADE_CORS_OR_NETWORK: 'error',
 });
@@ -659,7 +659,7 @@ function trajectoryOf(container, frames) {
 }
 
 /** get_state's sections: the active structure and renderer always, these on request. */
-export const STATE_SECTIONS = Object.freeze(['structures', 'camera', 'selection', 'jobs', 'colors', 'phonons', 'field']);
+export const STATE_SECTIONS = Object.freeze(['structures', 'camera', 'selection', 'jobs', 'colors', 'phonons', 'field', 'windows']);
 const DEFAULT_STATE_SECTIONS = ['camera', 'selection', 'jobs'];
 
 /** One calculator job at a time: they share the potential and the selected structure. */
@@ -760,13 +760,17 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (want.has('selection')) {
       // What the user has selected in the window (atom-addressed commands also take selection: "user").
       const selected = structure ? await userSelection() : [];
+      // origin: how the selection last changed. by "pick" is a click on one atom (atom),
+      // others (marquee, focus-region, row-click, host, ...) select a group at once.
+      const origin = selected.length ? await selectionOrigin() : null;
       state.selection = { count: selected.length, atoms: selected.slice(0, MAX_STATE_ATOMS),
-        ...(selected.length > MAX_STATE_ATOMS ? { truncated: true } : {}) };
+        ...(selected.length > MAX_STATE_ATOMS ? { truncated: true } : {}), ...(origin ? { origin } : {}) };
     }
     if (want.has('jobs')) state.jobs = listJobs();
     if (want.has('colors')) state.colors = structure ? colorSummary(structure) : null;
     if (want.has('phonons')) state.phonons = await tools.getPhononState();
     if (want.has('field')) state.field = structure ? await tools.getFieldInfo() : null;
+    if (want.has('windows')) state.windows = await listWindows();
     return state;
   },
 
@@ -888,6 +892,16 @@ export const COMMAND_HANDLERS = Object.freeze({
     const { commitRemovedAtoms } = await import('../ui/addToStructureModule/CommitAtoms.js');
     commitRemovedAtoms(structure, indices.map((i) => structure.atoms[i].uuid));
     return { removed, ...structureEnvelope(structure) };
+  },
+
+  async revert_structure(args) {
+    requireOptionalArgs(args, 'revert_structure');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    // The Modify Structure window's "Revert Changes", without its confirm (a host call is not interactive).
+    const { commitRevertToOriginal } = await import('../ui/addToStructureModule/CommitAtoms.js');
+    if (!commitRevertToOriginal(structure)) throw commandError('NOTHING_TO_REVERT', 'This structure has no as-loaded state to go back to');
+    return { reverted: true, ...structureEnvelope(structure) };
   },
 
   async set_element(args) {
@@ -1377,16 +1391,27 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (typeof input.structureOnly !== 'boolean') {
       throw commandError('INVALID_ARGS', 'save_image.structureOnly must be boolean');
     }
-    if (typeof deps.captureSceneToPng !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'PNG capture is unavailable');
+    const format = input.format ?? 'png';
+    if (format !== 'png' && format !== 'svg') throw commandError('INVALID_ARGS', 'save_image.format must be png or svg');
+    if (input.vector !== undefined && (typeof input.vector !== 'boolean' || format !== 'svg')) {
+      throw commandError('INVALID_ARGS', 'save_image.vector is a boolean for format svg');
+    }
     const outputUrl = managedOutputUrl(input.outputUrl, origin);
-    const blob = await deps.captureSceneToPng({
+    const options = {
       width: input.width, height: input.height, margin: input.margin,
       transparent: input.transparent, structureOnly: input.structureOnly,
-    });
-    if (!(blob instanceof Blob) || blob.type !== 'image/png') {
-      throw commandError('CAPTURE_FAILED', 'PNG capture did not return an image/png Blob');
+    };
+    // The Download Image window's own captures: PNG, or SVG with the structure as an
+    // embedded image (labels, axes and colour bars editable) or, with vector, as shapes.
+    const capture = format === 'svg' ? deps.captureSceneToSvg : deps.captureSceneToPng;
+    if (typeof capture !== 'function') throw commandError('COMMAND_UNAVAILABLE', `${format.toUpperCase()} capture is unavailable`);
+    // A size the GPU cannot hold fails with the app's own message, which says what it got.
+    const blob = await capture(format === 'svg' ? { ...options, structure: input.vector ? 'vector' : 'raster' } : options);
+    const contentType = format === 'svg' ? 'image/svg+xml' : 'image/png';
+    if (!(blob instanceof Blob) || !blob.type.startsWith(contentType)) {
+      throw commandError('CAPTURE_FAILED', `${format.toUpperCase()} capture did not return a ${contentType} Blob`);
     }
-    await uploadOutput(outputUrl, blob, 'image/png');
-    return { contentType: 'image/png', size: blob.size, width: input.width, height: input.height };
+    await uploadOutput(outputUrl, blob, contentType);
+    return { contentType, size: blob.size, width: input.width, height: input.height };
   },
 });

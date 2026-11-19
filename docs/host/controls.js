@@ -145,28 +145,70 @@ export async function setControl(ref, value) {
   return describe(entry, el);
 }
 
+/** The open windows and the dialogs on screen, to tell what a click did. */
+async function screenState() {
+  const { listPanels } = await import('../ui/panels/PanelManager.js');
+  const windows = new Map(listPanels().filter((p) => !p.closed).map((p) => [p.id, p.title]));
+  const dialogs = new Map();
+  for (const el of document.querySelectorAll('[role="dialog"]')) {
+    if (!el.getClientRects().length || el.closest('[hidden]')) continue; // not on screen
+    const labelId = el.getAttribute('aria-labelledby');
+    const title = el.getAttribute('aria-label')
+      || (labelId && document.getElementById(labelId)?.textContent?.trim()) || '';
+    const text = /** @type {HTMLElement} */ (el).innerText?.replace(/\s+/g, ' ').trim() || '';
+    dialogs.set(el, { title, ...(text && text.length <= 300 ? { text } : {}) });
+  }
+  return { windows, dialogs };
+}
+
+/** What changed on screen between two screenState()s: windows and dialogs opened or closed. */
+function screenEffects(before, after) {
+  const effects = {};
+  const opened = [...after.windows].filter(([id]) => !before.windows.has(id)).map(([id, title]) => ({ id, title }));
+  const closed = [...before.windows].filter(([id]) => !after.windows.has(id)).map(([id, title]) => ({ id, title }));
+  const dialogs = [...after.dialogs].filter(([el]) => !before.dialogs.has(el)).map(([, d]) => d);
+  if (opened.length) effects.windowsOpened = opened;
+  if (closed.length) effects.windowsClosed = closed;
+  if (dialogs.length) effects.dialogsOpened = dialogs;
+  return effects;
+}
+
 export async function clickControl(ref) {
   const entry = await resolve(ref);
+  const before = await screenState();
+  let result;
   if (entry.type !== 'control') {
     await (await featureSearch()).activateEntry(entry);
     await nextFrames(2);
-    return { ref, done: true };
+    result = { ref, done: true };
+  } else {
+    const el = await elementFor(entry);
+    if (/** @type {HTMLButtonElement} */ (el).disabled) throw commandError('CONTROL_DISABLED', `${entry.label} is disabled now`);
+    el.click();
+    await nextFrames(2);
+    result = describe(entry, el);
   }
-  const el = await elementFor(entry);
-  if (/** @type {HTMLButtonElement} */ (el).disabled) throw commandError('CONTROL_DISABLED', `${entry.label} is disabled now`);
-  el.click();
-  await nextFrames(2);
-  return describe(entry, el);
+  // Files the click saved come back from Python as savedFiles (host/downloadSink.js).
+  const effects = screenEffects(before, await screenState());
+  return Object.keys(effects).length ? { ...result, effects } : result;
+}
+
+/** The windows the app has, for get_state's "windows" section: what read_window and click_control take. */
+export async function listWindows() {
+  const { listPanels } = await import('../ui/panels/PanelManager.js');
+  return listPanels().map((p) => ({ ref: `window:${p.id}`, id: p.id, title: p.title, open: !p.closed }));
 }
 
 /** read_window: a window's status line and visible text, so a result shown only there can be read. */
 export const MAX_WINDOW_TEXT = 4000;
 
-export async function readWindow(panelId) {
-  if (typeof panelId !== 'string' || !panelId) throw commandError('INVALID_ARGS', 'panel must be a window id, e.g. "eos" (see search_controls)');
+export async function readWindow(ref) {
+  if (typeof ref !== 'string' || !ref) throw commandError('INVALID_ARGS', 'panel must be a window ref or id, e.g. "window:eos" (get_state include ["windows"], or search_controls)');
+  // A ref from search_controls or get_state ("window:eos") or the bare id.
+  const panelId = ref.startsWith('window:') ? ref.slice('window:'.length) : ref;
   const { getPanel, listPanels } = await import('../ui/panels/PanelManager.js');
   const info = listPanels().find((p) => p.id === panelId);
-  if (!info) throw commandError('CONTROL_NOT_FOUND', `No window ${panelId}; search_controls lists windows as window:<id>`);
+  if (!info) throw commandError('CONTROL_NOT_FOUND', `No window ${panelId}; get_state include ["windows"] lists them`);
   let panel = getPanel(panelId);
   if (!panel?.built || panel.closed || panel.collapsed) {
     // Open it the way choosing the window in the feature search does.

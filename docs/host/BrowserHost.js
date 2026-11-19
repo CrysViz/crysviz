@@ -7,6 +7,7 @@ import {
 import { LOAD_HASH_RE } from '../io/SessionReceiver.js';
 import { structureContent } from '../model/structureRevision.js';
 import { diffSnapshots, takeSnapshot } from './userChanges.js';
+import { setDownloadSink, settleDownloads } from './downloadSink.js';
 import {
   COMMAND_HANDLERS,
   ERROR_KINDS,
@@ -22,6 +23,7 @@ import {
   snapshotForContainer,
   strictFetch,
 } from './commands.js';
+import { watchSelection } from './query.js';
 
 const PROTOCOL_VERSION = 1;
 const EVENT_NAMES = new Set([
@@ -84,7 +86,7 @@ function removeQueryParameter(name) {
  * intentionally private to the bootstrap coordinator; only the frozen facade
  * is put on window.
  */
-/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, updateLattice?: Function, recenterCamera?: Function, rotateCamera?: Function, setViewDirection?: Function, setRenderPipeline?: Function, getRenderPipeline?: Function, requestRender?: Function, captureSceneToPng?: Function}} [initialDeps] */
+/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, updateLattice?: Function, recenterCamera?: Function, rotateCamera?: Function, setViewDirection?: Function, setRenderPipeline?: Function, getRenderPipeline?: Function, requestRender?: Function, captureSceneToPng?: Function, captureSceneToSvg?: Function}} [initialDeps] */
 export function createBrowserHost(initialDeps = {}) {
   const initialOrigin = window.location.origin;
   const subscribers = new Set();
@@ -114,6 +116,21 @@ export function createBrowserHost(initialDeps = {}) {
     for (const [name, value] of Object.entries(next)) {
       if (typeof value === 'function') deps[name] = value;
     }
+  }
+
+  // A download offered by downloadBlob: when Python saves downloads (a download
+  // folder is set), the host reserves a one-use upload URL (the route save_image
+  // uses), the file goes there, and Python saves it. Resolves false when the host
+  // declines, and the app downloads it the usual way.
+  async function saveThroughHost(fileName, blob) {
+    const api = window.pywebview?.api;
+    if (!bridgeCapability || typeof api?.reserve_download !== 'function') return false;
+    const type = (blob.type || 'application/octet-stream').toLowerCase();
+    const url = await api.reserve_download(bridgeCapability, String(fileName), type);
+    if (typeof url !== 'string') return false;
+    const response = await strictFetch(url, { method: 'POST', headers: { 'Content-Type': type }, body: blob });
+    await responseOrThrow(response, 'DOWNLOAD_UPLOAD_FAILED', 'Could not hand the download to the host');
+    return await api.download_done(bridgeCapability, url) === true;
   }
 
   function captureBridgeReceiver() {
@@ -201,6 +218,9 @@ export function createBrowserHost(initialDeps = {}) {
         args = rest;
       }
       const result = await COMMAND_HANDLERS[request.command](args, ctx);
+      // Files a command caused through the app's own download path (a clicked
+      // Save or Download button) are written before the command answers.
+      await settleDownloads();
       const plain = result && typeof result === 'object' && !Array.isArray(result);
       return { ok: true, result: sinceLastCall && plain ? { ...result, sinceLastCall } : result };
     } catch (error) {
@@ -386,8 +406,13 @@ export function createBrowserHost(initialDeps = {}) {
     setBridgeCapability(value) {
       bridgeCapability = typeof value === 'string' ? value : undefined;
       captureBridgeReceiver();
-      // A host-launched window (Python): its hand edits go out as user_changed.
-      if (bridgeCapability) watchUserChanges();
+      // A host-launched window (Python): its hand edits go out as user_changed,
+      // and the app's downloads are saved by the host (host/downloadSink.js).
+      if (bridgeCapability) {
+        watchUserChanges();
+        setDownloadSink(saveThroughHost);
+        watchSelection(); // so get_state can say how the user's selection was made
+      }
     },
     observeSelection: onActiveStructureChange((structure) => {
       const snapshot = activeSnapshot();

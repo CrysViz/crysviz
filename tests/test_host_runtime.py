@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import unittest
 from unittest import mock
 
@@ -8,13 +9,43 @@ from crysviz._host import HostRuntime, _BridgeAPI
 
 
 class BridgeSurfaceTests(unittest.TestCase):
-    def test_pywebview_api_exposes_exactly_three_callbacks(self):
+    def test_pywebview_api_exposes_exactly_its_five_callbacks(self):
         api = _BridgeAPI(mock.Mock())
         public_callables = {
             name for name in dir(api)
             if not name.startswith("_") and callable(getattr(api, name))
         }
-        self.assertEqual(public_callables, {"receive_event", "next_command", "command_result"})
+        self.assertEqual(public_callables, {"receive_event", "next_command", "command_result",
+                                            "reserve_download", "download_done"})
+
+    def test_app_downloads_go_to_python_only_when_captured_and_authorized(self):
+        runtime = HostRuntime(mock.Mock(), [])
+        runtime.server = mock.Mock(bridge_capability="cap")
+        runtime.server.reserve_output.return_value = "http://127.0.0.1:1/_crysviz/output/" + "b" * 32
+        runtime.origin_ok = lambda: True
+        # Not captured (no Viewer download_dir): the window downloads it itself.
+        self.assertIsNone(runtime._reserve_download("cap", "a.png", "image/png"))
+        runtime.capture_downloads = True
+        self.assertIsNone(runtime._reserve_download("wrong", "a.png", "image/png"))
+        self.assertIsNone(runtime._reserve_download("cap", "", "image/png"))
+        self.assertIsNone(runtime._reserve_download("cap", "a.png", "image/png\r\nX-Evil: 1"))
+        url = runtime._reserve_download("cap", "a.svg", "image/svg+xml;charset=utf-8")
+        runtime.server.reserve_output.assert_called_once_with("image/svg+xml;charset=utf-8")
+        output = io.BytesIO(b"<svg/>")
+        runtime.server.take_output.return_value = output
+        runtime.send = mock.Mock()
+        self.assertTrue(runtime._download_done("cap", url))
+        message_type, payload, attachments = runtime.send.call_args.args
+        self.assertEqual((message_type, payload["name"], payload["size"]), ("download", "a.svg", 6))
+        self.assertIs(attachments["file"], output)
+        self.assertFalse(runtime._download_done("cap", url))  # one use
+
+    def test_save_image_svg_reserves_an_svg_upload(self):
+        runtime = HostRuntime(mock.Mock(), [])
+        runtime.server = mock.Mock()
+        runtime.server.reserve_output.return_value = "http://127.0.0.1:1234/_crysviz/output/" + "c" * 32
+        runtime._prepare_request("request", "save_image", {"format": "svg"}, {})
+        runtime.server.reserve_output.assert_called_once_with("image/svg+xml")
 
     def test_bridge_authorization_requires_live_exact_loopback_origin(self):
         runtime = HostRuntime(mock.Mock(), [])

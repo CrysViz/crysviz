@@ -30,6 +30,7 @@ import sys
 import tempfile
 import time
 import traceback
+import xml.etree.ElementTree as ElementTree
 import zlib
 from pathlib import Path
 
@@ -668,6 +669,42 @@ async def outcomes(s: Session):
     return "identity guard applies past other edits, refuses after a shift; ATOMS_TOO_CLOSE as applied:false"
 
 
+async def files_and_windows(s: Session):
+    """SVG export, an app button that downloads, window refs, and going back to the loaded structure."""
+    await s.load_cell(STO, "SrTiO3.vasp", 5)
+    exports = s.out / "exports"
+    # SVG: the Download Image window's export, saved in the export folder, path returned.
+    svg = await s.call("save_image", {"format": "svg", "filename": "view", "width": 400, "height": 300})
+    text = Path(svg["saved"]).read_text(encoding="utf-8")
+    root = ElementTree.fromstring(text)
+    check(root.tag.endswith("svg") and ("<image" in text or "<circle" in text), "embedded SVG has no picture")
+    vector = await s.call("save_image", {"format": "svg", "vector": True, "filename": "view-vector"})
+    vtext = Path(vector["saved"]).read_text(encoding="utf-8")
+    ElementTree.fromstring(vtext)
+    check("<circle" in vtext or "<path" in vtext, "vector SVG has no shapes")
+    # An app Save button clicked through click_control: the file lands in the export folder.
+    controls = (await s.call("search_controls", {"query": "POSCAR download", "limit": 10}))["controls"]
+    poscar = next((c["ref"] for c in controls if c["ref"].endswith("#saveButton")), None)
+    check(poscar is not None, f"Files > Download > POSCAR not found: {[c['ref'] for c in controls]}")
+    clicked = await s.call("click_control", {"ref": poscar})
+    saved = [Path(p) for p in clicked.get("savedFiles", [])]
+    check(saved and saved[0].parent == exports.resolve() and "Sr" in saved[0].read_text(),
+          f"POSCAR button did not save into the export folder: {clicked}")
+    # Window refs from get_state work in read_window.
+    windows = (await s.state(["windows"]))["windows"]
+    files_window = next(w for w in windows if w["id"] == "files")
+    read = await s.call("read_window", {"panel": files_window["ref"]})
+    check(read["panel"] == "files" and read["title"], f"read_window by ref: {read}")
+    # revert_structure: an edit, then back to the structure as loaded.
+    before = (await s.state([]))["structure"]["formula"]
+    await s.call("set_element", {"atoms": [0], "element": "Ba"})
+    check((await s.state([]))["structure"]["formula"] != before, "set_element did not change the formula")
+    reverted = await s.call("revert_structure")
+    check(reverted.get("reverted") and (await s.state([]))["structure"]["formula"] == before, f"revert: {reverted}")
+    return (f"svg {len(text) // 1024} KiB embedded, {len(vtext) // 1024} KiB vector; POSCAR button -> "
+            f"{saved[0].name}; read_window by ref; revert to {before}")
+
+
 WORKFLOWS = [
     ("1", "vacancy + relax", w1_vacancy_relax), ("2", "publication figure", w2_figure),
     ("3", "charge density", w3_charge_density), ("4", "diffusion (MD + MSD)", w4_diffusion),
@@ -675,7 +712,7 @@ WORKFLOWS = [
     ("7", "EOS", w7_eos), ("8", "phonon frames", w8_phonons), ("9", "slab", w9_slab),
     ("10", "screening 20 CIFs", w10_screening), ("collab", "shared window", collaboration),
     ("edits", "edits between calls", edits), ("outcomes", "refusals vs errors", outcomes),
-    ("sym", "symmetry jobs + EOS check", symmetry_jobs),
+    ("sym", "symmetry jobs + EOS check", symmetry_jobs), ("files", "svg, downloads, windows, revert", files_and_windows),
 ]
 
 

@@ -127,8 +127,26 @@ def _command_method(viewer: "Viewer", command: dict[str, Any]) -> Callable[..., 
 class SavedImage(Path):
     """The path :meth:`Viewer.save_image` wrote; Jupyter and IPython show it as the picture."""
 
-    def _repr_png_(self) -> bytes:
-        return self.read_bytes()
+    def _repr_png_(self) -> bytes | None:
+        return self.read_bytes() if self.suffix.lower() != ".svg" else None
+
+    def _repr_svg_(self) -> str | None:
+        return self.read_text(encoding="utf-8") if self.suffix.lower() == ".svg" else None
+
+
+# Events the Viewer raises itself, besides those the window sends (VIEWER_EVENTS).
+_LOCAL_EVENTS = frozenset({"file_saved"})
+_UNSAFE_NAME_RE = re.compile(r"[^\w.() +-]")
+
+
+def _download_path(folder: Path, name: str) -> Path:
+    """A free path in ``folder`` for a downloaded file named ``name`` (never a path, never hidden)."""
+    clean = _UNSAFE_NAME_RE.sub("_", Path(name.replace("\\", "/")).name).lstrip(".") or "download"
+    stem, suffix = Path(clean).stem or "download", Path(clean).suffix
+    candidate, n = folder / clean, 1
+    while candidate.exists():
+        candidate, n = folder / f"{stem}-{n}{suffix}", n + 1
+    return candidate
 
 
 class ViewerError(RuntimeError):
@@ -244,7 +262,8 @@ class Viewer:
     """
 
     def __init__(self, sources: Sequence[object] = (), *, startup_timeout: float = DEFAULT_STARTUP_TIMEOUT,
-                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, gui: str | None = None, debug: bool = False):
+                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, gui: str | None = None, debug: bool = False,
+                 download_dir: str | os.PathLike[str] | None = None):
         if startup_timeout <= 0 or command_timeout <= 0:
             raise ValueError("timeouts must be positive")
         if gui not in {None, "gtk", "qt", "cef"}:
@@ -274,6 +293,10 @@ class Viewer:
         self._user_changes: list[dict[str, object]] = []
         # The active structure's name as the last event said, for repr (no round trip to the window).
         self._active_name: str | None = None
+        # With download_dir, the app's downloads (a Save or Download button) are written there, in
+        # order; without it the window downloads them itself (its own Save dialog).
+        self._download_dir = None if download_dir is None else Path(download_dir).expanduser()
+        self._saved_files: list[str] = []
 
     def __enter__(self) -> "Viewer":
         return self.start()
@@ -308,9 +331,10 @@ class Viewer:
         """Call ``callback(ViewerEvent)`` on every ``event``: ready, structure_loaded,
         active_structure_changed, error, closed, or user_changed (the user edited, selected,
         turned the camera or switched the renderer by hand; ``event.data`` is the same note as a
-        result's ``sinceLastCall``). Callbacks run on a background thread, one at a time; they may
-        call viewer commands but not :meth:`wait`."""
-        if event not in VIEWER_EVENTS:
+        result's ``sinceLastCall``), or file_saved (the app downloaded a file, e.g. its Save or
+        Download button; ``event.data`` has ``path``). Callbacks run on a background thread, one at a
+        time; they may call viewer commands but not :meth:`wait`."""
+        if event not in VIEWER_EVENTS and event not in _LOCAL_EVENTS:
             raise ValueError("unknown viewer event")
         if not callable(callback):
             raise TypeError("event callback must be callable")
@@ -385,6 +409,8 @@ class Viewer:
         bootstrap = json.dumps({
             "version": 1, "auth": base64.b64encode(secret).decode("ascii"),
             "gui": self._gui, "debug": self._debug,
+            # The window hands the app's downloads to Python only when there is a folder for them.
+            "downloads": self._download_dir is not None,
         }) + "\n"
         process: subprocess.Popen[str] | None = None
         connection: Any | None = None
@@ -494,6 +520,8 @@ class Viewer:
                         for attachment in attachments.values():
                             attachment.close()
                         raise ViewerProtocolError("response arrived for an unknown request")
+                elif message_type == "download":
+                    self._accept_download(payload, attachments)
                 elif message_type == "event":
                     for attachment in attachments.values():
                         attachment.close()
@@ -521,6 +549,37 @@ class Viewer:
                 if stderr:
                     message = f"host exited unexpectedly:\n{stderr}"
             self._fail(ViewerProtocolError(message or "host connection closed unexpectedly"))
+
+    def _accept_download(self, payload: object, attachments: dict[str, Any]) -> None:
+        """Save a file the app downloaded (its Save or Download path) in the download folder."""
+        try:
+            if (not isinstance(payload, dict) or not isinstance(payload.get("name"), str)
+                    or set(attachments) != {"file"}):
+                raise ViewerProtocolError("download has an invalid schema")
+            folder = self._download_dir
+            if folder is None:
+                raise ViewerProtocolError("a download arrived although downloads are not captured")
+            folder.mkdir(parents=True, exist_ok=True)
+            target = _download_path(folder, payload["name"])
+            stream = attachments["file"].stream
+            stream.seek(0)
+            with open(target, "xb") as output:
+                shutil.copyfileobj(stream, output, length=1024 * 1024)
+        finally:
+            for attachment in attachments.values():
+                attachment.close()
+        with self._lock:
+            by_command = bool(self._pending)
+            self._saved_files.append(str(target))
+            if not by_command:
+                # Saved from the window by hand: the next result's sinceLastCall says so too.
+                _add_user_change(self._user_changes, {"files": [str(target)],
+                                                      "note": f"the user saved {target.name} from the window"})
+            callbacks = tuple(self._subscribers.get("file_saved", ()))
+        event = ViewerEvent("file_saved", {"path": str(target), "name": target.name,
+                                           "size": target.stat().st_size, "byCommand": by_command})
+        for callback in callbacks:
+            self._enqueue_event((event, callback))
 
     def _accept_event(self, payload: object) -> None:
         if not isinstance(payload, dict) or set(payload) != {"event", "data"} or not isinstance(payload["event"], str):
@@ -593,6 +652,7 @@ class Viewer:
         pending: queue.Queue[object] = queue.Queue(maxsize=1)
         with self._lock:
             self._pending[request_id] = pending
+            files_before = len(self._saved_files)
         try:
             with self._send_lock:
                 if self._connection is None:
@@ -640,9 +700,16 @@ class Viewer:
                 for item in received.values():
                     item.close()
                 raise ViewerProtocolError("browser response has unexpected attachments")
+            result = response.get("result")
+            # Files the command made the app download (a Save or Download button clicked through
+            # click_control) arrive before its response: name them in the result.
+            with self._lock:
+                saved = self._saved_files[files_before:]
+            if saved and isinstance(result, dict):
+                result = {**result, "savedFiles": saved}
             if include_attachments:
-                return response.get("result"), received
-            return response.get("result")
+                return result, received
+            return result
         finally:
             with self._lock:
                 self._pending.pop(request_id, None)
@@ -886,13 +953,21 @@ class Viewer:
 
     def save_image(self, path: str | os.PathLike[str], *, width: int | None = None, height: int | None = None,
                    margin: int = 0, transparent: bool = False, structure_only: bool = False,
-                   timeout: float | None = None, max_side: int | None = None) -> Path:
-        """Render the current view to a PNG at ``path``.
+                   timeout: float | None = None, max_side: int | None = None,
+                   format: str | None = None, vector: bool = False) -> Path:
+        """Render the current view to a PNG or SVG at ``path``.
 
         Without ``width``/``height`` the image is the view as the user sees it (its size and
         aspect); with one of them, the other follows the view's aspect. ``max_side`` scales such a
-        default size down to fit.
+        default size down to fit. ``format`` is ``"png"`` or ``"svg"``; left out, a path ending in
+        ``.svg`` makes an SVG. An SVG is the Download Image window's: the structure as an embedded
+        image with editable labels and axes, or with ``vector=True`` as vector shapes.
         """
+        format = format or ("svg" if Path(path).suffix.lower() == ".svg" else "png")
+        if format not in {"png", "svg"}:
+            raise ValueError("format must be png or svg")
+        if not isinstance(vector, bool) or (vector and format != "svg"):
+            raise ValueError("vector is a boolean for SVG images")
         for label, value in (("width", width), ("height", height)):
             if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 16384):
                 raise ValueError(f"{label} must be an integer from 1 through 16384")
@@ -919,17 +994,24 @@ class Viewer:
         for key, value in (("width", width), ("height", height), ("maxSide", max_side)):
             if value is not None:
                 args[key] = value
+        if format == "svg":
+            args["format"] = "svg"
+            if vector:
+                args["vector"] = True
+        content_type = "image/svg+xml" if format == "svg" else "image/png"
         result, received = self._command("save_image", args, timeout=timeout, include_attachments=True)
         try:
-            if not isinstance(result, dict) or result.get("contentType") != "image/png" \
+            if not isinstance(result, dict) or result.get("contentType") != content_type \
                     or result.get("attachment") != "image" or set(received) != {"image"}:
-                raise ViewerProtocolError("browser PNG response is missing its image attachment")
+                raise ViewerProtocolError(f"browser {format.upper()} response is missing its image attachment")
             attachment = received["image"]
             if not isinstance(result.get("size"), int) or result["size"] != attachment.size:
-                raise ViewerProtocolError("browser PNG response has an invalid image size")
+                raise ViewerProtocolError(f"browser {format.upper()} response has an invalid image size")
             attachment.stream.seek(0)
-            if attachment.stream.read(8) != b"\x89PNG\r\n\x1a\n":
-                raise ViewerProtocolError("browser PNG response has an invalid signature")
+            head = attachment.stream.read(256)
+            if (format == "png" and not head.startswith(b"\x89PNG\r\n\x1a\n")) or \
+                    (format == "svg" and b"<svg" not in head and not head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"<?xml")):
+                raise ViewerProtocolError(f"browser {format.upper()} response has an invalid signature")
             attachment.stream.seek(0)
             temp_path: Path | None = None
             try:
