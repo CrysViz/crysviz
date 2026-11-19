@@ -162,6 +162,12 @@ function sniffCrysviz(head) {
   return /^\s*\{/.test(head.text) && /"format"\s*:\s*"crysviz"/.test(head.text);
 }
 
+/** An OPTIMADE response (JSON:API) holding a structures resource. */
+function sniffOptimade(head) {
+  return /^\s*\{/.test(head.text) && /"type"\s*:\s*"structures"/.test(head.text)
+    && /"lattice_vectors"|"cartesian_site_positions"/.test(head.text);
+}
+
 /**
  * The tell is the RTAG in the third float64: 45200 or 45210 is a very specific
  * bit pattern to hit by chance, and it sits alongside a plausible record length
@@ -399,6 +405,15 @@ export const FORMATS = [
     handledBy: HandledBy.VIEWER,
     matchesName: (lower) => lower.endsWith('.crysviz'),
     sniff: sniffCrysviz,
+  },
+  {
+    id: 'optimade',
+    label: 'OPTIMADE JSON',
+    kind: SourceKind.TEXT,
+    handledBy: HandledBy.PARSE_ANY,
+    // `.json` alone says nothing about the contents: only the sniffer decides.
+    matchesName: () => false,
+    sniff: sniffOptimade,
   },
   {
     id: 'wavecar',

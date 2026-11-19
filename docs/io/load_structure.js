@@ -13,6 +13,7 @@ import { parseCastepGeom } from './ReadCastepGeomModule.js';
 import { parseAimsGeometry } from './ReadAimsGeometryModule.js';
 import { parseAimsOut } from './ReadAimsOutModule.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
+import { optimadeJSONToPOSCAR } from './OptimadeModule.js';
 import { parseASETrajectory } from './ReadASETrajectoryModule.js';
 import {generateID} from '../utils/index.js'
 import { detectFormat, headOf, looksLike } from './formats.js';
@@ -97,6 +98,10 @@ async function parseByFormat(formatId, content, fileName) {
     case 'aims-out':
       console.log("This is probably an FHI-aims output file");
       return parseAimsOut(content, fileName);
+
+    case 'optimade':
+      // A saved or pasted OPTIMADE response: converted as the URL route does.
+      return parseByFormat('poscar', optimadeJSONToPOSCAR(content), fileName);
 
     default: {
       console.log("This is probably a POSCAR file")
