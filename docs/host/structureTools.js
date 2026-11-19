@@ -190,21 +190,10 @@ export async function setPhonon(args) {
   };
 }
 
+// The Phonons window's Make Trajectory path: it validates, sets the amplitude and adds the row.
 export async function buildPhononFrames(args) {
   const ph = await phononDataset();
-  const count = args?.count ?? 10;
-  if (!Number.isInteger(count) || count < 2 || count > 200) throw commandError('INVALID_ARGS', 'build_phonon_frames.count must be 2 to 200');
-  if (args?.amplitude !== undefined) {
-    if (!isFiniteNumber(args.amplitude) || args.amplitude < 0 || args.amplitude > 5) throw commandError('INVALID_ARGS', 'build_phonon_frames.amplitude must be 0 to 5 Å');
-    ph.setAmplitude(args.amplitude);
-  }
-  if (!ph.phononState.selected) throw commandError('NO_MODE', 'Choose a mode first with set_phonon {qpoint, band}');
-  ph.pause();
-  const frames = ph.modeFrames(count);
-  if (!frames) throw commandError('NO_MODE', 'The selected mode has no displacement pattern');
-  const { iq, ib } = ph.phononState.selected;
-  const { createTrajectoryFromFrames } = await import('../ui/addToStructureModule/CommitAtoms.js');
-  const container = createTrajectoryFromFrames(frames, `${ph.phononState.sourceName || 'phonon'}_q${iq}_band${ib}`);
+  const container = ph.keepModeFrames({ count: args?.count, amplitude: args?.amplitude });
   return { ...rowEnvelope(container), amplitude: ph.phononState.amplitude };
 }
 

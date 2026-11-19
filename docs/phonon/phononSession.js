@@ -18,6 +18,7 @@ import { fitCameraToCurrentStructure } from '../ui/WindowAndSceneControls.js';
 import { onActiveStructureChange } from '../state/structures.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { selectStructure, updateRow } from '../ui/FileBrowswerPanel.js';
+import { createTrajectoryFromFrames } from '../ui/addToStructureModule/CommitAtoms.js';
 import { applyFrameFast, requestRender } from '../render/index.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { generateID } from '../utils/UUIDModule.js';
@@ -791,7 +792,7 @@ export function setArrowColor(hex) {
 /**
  * The selected mode as `count` frames over one period at the current
  * amplitude: new Structures (the displayed supercell, displaced), for a
- * trajectory row (the host's phonon_frames). Null when no mode is selected.
+ * trajectory row (keepModeFrames). Null when no mode is selected.
  */
 export function modeFrames(count) {
   const { pattern, supercell } = phononState;
@@ -805,6 +806,32 @@ export function modeFrames(count) {
     frames.push(frame);
   }
   return frames;
+}
+
+/** @returns {never} */
+function refuse(code, message) {
+  throw Object.assign(new Error(message), { code });
+}
+
+/**
+ * The selected mode as a new, selected trajectory row of `count` frames over
+ * one period, at `amplitude` Å (the current one when not given): the Phonons
+ * window's Make Trajectory and the host's build_phonon_frames. Refusals carry
+ * the command's error codes.
+ * @param {{count?: number, amplitude?: number}} [options]
+ */
+export function keepModeFrames({ count = 10, amplitude } = {}) {
+  if (!Number.isInteger(count) || count < 2 || count > 200) refuse('INVALID_ARGS', 'count must be 2 to 200 frames');
+  if (amplitude !== undefined && (typeof amplitude !== 'number' || !Number.isFinite(amplitude) || amplitude < 0 || amplitude > 5)) {
+    refuse('INVALID_ARGS', 'amplitude must be 0 to 5 Å');
+  }
+  if (amplitude !== undefined) setAmplitude(amplitude);
+  if (!phononState.selected) refuse('NO_MODE', 'Choose a mode first (a band in Phonon Plots, an imaginary mode, or set_phonon {qpoint, band})');
+  pause();
+  const frames = modeFrames(count);
+  if (!frames) refuse('NO_MODE', 'The selected mode has no displacement pattern');
+  const { iq, ib } = phononState.selected;
+  return createTrajectoryFromFrames(frames, `${phononState.sourceName || 'phonon'}_q${iq}_band${ib}`);
 }
 
 /** Freeze the animation at the current phase (a static snapshot of the
