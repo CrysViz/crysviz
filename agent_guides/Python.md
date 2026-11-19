@@ -124,12 +124,25 @@ selection, the camera, the renderer. Python finds out in three ways, and
    commands, but not `wait()`, which raises `ViewerReentrancyError` there.
 
    The other events are `ready`, `structure_loaded`, `active_structure_changed`,
-   `error` and `closed`. Use `v.off(event, callback)` to unsubscribe.
+   `error`, `closed` and `file_saved` (below). Use `v.off(event, callback)` to
+   unsubscribe.
+
+`get_state()["selection"]` also says how the selection was made: `origin`
+`{"by": "pick", "atom": 12}` is a click on atom 12; `by` `marquee`,
+`focus-region` or `row-click` selected a group at once (`atom` is `None`).
 
 **Index-based edits are guarded.** If you add or remove atoms while a script
 holds indices, an edit given `expected_revision=` (the `revision` from
 `get_state()["structure"]`) is not applied to the wrong atoms. Edits to other
-atoms, such as another atom's element, don't block it.
+atoms, such as another atom's element, don't block it. The revision follows
+which atoms there are (identity, species, the cell), not where they sit, so
+`move_atoms` keeps it: a live MD run or relaxation moves every atom every frame
+and would otherwise break every guard. Moves you make by hand are still
+reported in `sinceLastCall`.
+
+**After a relaxation, check the chemistry.** Relaxing badly placed atoms (far
+too close) can break bonds and destroy the structure while `get_symmetry()`
+still reports the same space group. Look at the bonding before building on it.
 
 ## Refused is not an error
 
@@ -187,7 +200,19 @@ the job keeps running.
 - **`v.load(path)`** loads a file. `v.load(Payload("si.cif", text))` loads text.
   `interactive=False` skips load-time dialogs such as the CIF symmetry question.
 - **`v.save_image(path)`** saves the view as you see it. With no size it uses
-  the window's own size and shape. It never moves the camera.
+  the window's own size and shape. It never moves the camera. A path ending in
+  `.svg` (or `format="svg"`) writes the Download Image window's SVG: the
+  structure as an embedded image with editable labels and axes, or as vector
+  shapes with `vector=True`. In Jupyter either shows inline.
+- **`v.revert_structure()`** puts the structure back as it was created (a file
+  as read, which also undoes a supercell), as the Modify Structure window's
+  Revert Changes does, without asking.
+- **The app's own downloads** (Files > Download, Save, the Download Image
+  window) normally open the window's Save dialog. Give the viewer a folder and
+  they are saved there instead: `Viewer(download_dir="exports")`. A command
+  that caused one (for example `v.click_control(ref=...)` on a Download button)
+  lists them in its result as `savedFiles`; a file saved by hand raises
+  `file_saved` (`event.data["path"]`) and appears in `take_user_changes()`.
 - **`v.export_structure(path, format="cif" | "poscar" | "extxyz")`** writes a
   structure file. extxyz writes every frame of a trajectory (`frames="all"`).
   A POSCAR groups atoms by element, so the result's `order` maps file atom `k`

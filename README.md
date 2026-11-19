@@ -134,7 +134,7 @@ commands, and Python is told what you changed.
 >>> octahedra = v.find(what="polyhedra", where={"cn": 6})
 >>> v.apply(selection=octahedra["selection"], action="color", color="#3366ff")
 >>> v.set_view(direction="c")              # look along c
->>> v.save_image("view.png")               # shown inline in Jupyter
+>>> v.save_image("view.png")               # or view.svg; shown inline in Jupyter
 >>> v.run_relax(fmax=0.02)                 # waits until the relaxation ends
 ```
 

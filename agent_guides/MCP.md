@@ -48,7 +48,9 @@ between Claude's calls, and Claude sees it through `get_state`.
 - `set_supercell` and lattice changes keep your viewing direction and refit
   the zoom.
 - `get_state` includes your selection; atom-addressed tools take
-  `selection: "user"` to act on it. `apply clear` clears only the highlight
+  `selection: "user"` to act on it. The selection's `origin` says how it was
+  made: `by: "pick"` is a click on one atom (`atom` is that atom), while
+  `marquee`, `focus-region`, `row-click` or `host` selected a group at once. `apply clear` clears only the highlight
   unless asked to clear the selection, and `apply select` says what selection
   of yours it replaced.
 - Every command redraws the window itself; no click is needed to see a change.
@@ -74,9 +76,26 @@ between Claude's calls, and Claude sees it through `get_state`.
   point at other atoms. `exactRevision: true` refuses on any change. An open
   Modify Structure window follows Claude's edits and never writes a stale
   table back.
+- The revision follows which atoms there are (their identity and species,
+  and the cell), not where they sit, so `move_atoms` keeps it: a live MD run
+  or relaxation moves every atom every frame and would otherwise make every
+  guarded edit fail. Atoms you move by hand are still reported, in
+  `sinceLastCall`.
+- The app's own downloads (the Files > Download buttons, Save, the Download
+  Image window) go to the export folder in a window crysviz-mcp opened: the
+  click's result lists them as `savedFiles`, and a file you save by hand is
+  mentioned in the next `sinceLastCall`. (A plain `crysviz.Viewer` window
+  keeps the usual Save dialog unless it is given a `download_dir`.)
 - The server's instructions tell the model the same: leave the camera,
   zoom, renderer and display alone unless asked, check views as text with
   `get_state`, take a picture only when the look matters.
+- **After a relaxation, check the chemistry, not only the space group.** A
+  relax or MD on badly placed atoms (atoms far too close) can break bonds and
+  destroy the structure while `get_symmetry` still reports the same group.
+  Look at the bonding (`find bonds`, `get_bonding`) before building on the
+  result.
+- New tools and fixes arrive with a reconnect (`/mcp` in Claude Code), which
+  opens a fresh window: export what you want to keep first.
 
 ## Conventions
 
@@ -114,17 +133,17 @@ One set of rules for every tool, so a model that learns one knows them all:
   | polyhedra | voids); optional: where, limit, fields, groupBy`. Unknown keys
   are refused, never ignored.
 
-## Tools (35)
+## Tools (36)
 
 ### State and query
 | Tool | What it does |
 |---|---|
-| `get_state` | The active structure (formula, lattice, frame, `revision`) and renderer; `include` adds `structures` (every loaded row), `camera`, `selection`, `jobs` (the default three), `colors`, `phonons`, `field`. |
+| `get_state` | The active structure (formula, lattice, frame, `revision`) and renderer; `include` adds `structures` (every loaded row), `camera`, `selection` (with its `origin`), `jobs` (the default three), `colors`, `phonons`, `field`, `windows` (every window's ref for `read_window` and `click_control`). |
 | `find` | `atoms`, `bonds` (full periodic graph with image offsets; `where.atoms` gives neighbour lists), `polyhedra` (centred and cages, built on demand) or `voids` (interstitial sites with their first shell); filters, selection algebra (`in`, `notIn`), compact output (`fields`, `groupBy`). Returns a selection id (not for voids). |
 | `get_bonding` | CrysViz's bond rule: `{min, max, shown}` per element pair, and the exact rule as text. |
 | `get_symmetry` | Space group (number, symbol, Hall, Pearson) and the number of atoms per Wyckoff letter at a tolerance (Moyo); `listAtoms: true` gives the indices. |
-| `search_controls`, `get_control`, `set_control`, `click_control` | Any window, action or labelled control by what it does ("bonds off", "detect cages"); read, set or press it as a user would. |
-| `read_window` | A window's visible status and result text, when no command returns the result. |
+| `search_controls`, `get_control`, `set_control`, `click_control` | Any window, action or labelled control by what it does ("bonds off", "detect cages"); read, set or press it as a user would. `click_control` reports what the click did: `effects` (windows and dialogs opened or closed) and `savedFiles` (files the app downloaded, in the export folder). |
+| `read_window` | A window's visible status and result text, when no command returns the result; takes a window ref (`window:eos`) or id. |
 
 ### The active structure, in place
 | Tool | What it does |
@@ -135,6 +154,7 @@ One set of rules for every tool, so a model that learns one knows them all:
 | `move_atoms` | `to` (one position per atom) or `by` (one shift), fractional or `cartesian`. |
 | `set_lattice` | New lattice vectors; fractional positions kept. |
 | `set_supercell` | `n: [nx, ny, nz]` in place, as the Cell & Supercell window; `[1, 1, 1]` goes back. |
+| `revert_structure` | Back to the structure as it was created (a file as read, which also undoes a supercell), discarding every edit, as the Modify Structure window's Revert Changes. |
 
 ### New rows
 | Tool | What it does |
@@ -182,7 +202,7 @@ symmetric: each site is idealised onto its exact position.
 | Tool | What it does |
 |---|---|
 | `load` | A structure from `path`, or `text` plus `name` (the extension picks the format). Never stops to ask (no CIF symmetry or unit dialog). Returns the row, its formula, and `restored` when the Cell & Supercell window restored a remembered supercell. |
-| `save_image` | PNG of the view as framed (a different aspect than the window is letterboxed, never cropped). Returned to the model up to 2048 px a side; with `filename` and `returnImage: false`, saved at up to 16384 px without returning it. A large ray-traced image can take a minute; the call waits up to 15 minutes. `transparent` works with the raster renderers; the ray and path tracers still paint their backdrop (known limitation; `save_image` warns). |
+| `save_image` | PNG or SVG (`format: "svg"`) of the view as framed (a different aspect than the window is letterboxed, never cropped). An SVG is the Download Image window's: the structure as an embedded image with editable labels and axes, or as vector shapes with `vector: true`; it is saved in the export folder and its path returned. Returned to the model up to 2048 px a side; with `filename` and `returnImage: false`, saved at up to 16384 px without returning it. A large ray-traced image can take a minute; the call waits up to 15 minutes. `transparent` works with the raster renderers; the ray and path tracers still paint their backdrop (known limitation; `save_image` warns). |
 | `export_structure` | `cif` or `poscar` (one frame, as the Save window; POSCAR's atom order goes to `<name>.order.json`) or `extxyz` (frames, for ASE, pymatgen, OVITO), into the export folder; `structure` and `frame` export a row or frame that is not on show, without showing it. Returns the absolute path. |
 
 ## Heavy analysis: export, script, apply
