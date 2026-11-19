@@ -55,6 +55,9 @@ INSTRUCTIONS = (
     "it nicer unless the user asks. set_view sets direction, up and zoom in one call. "
     "Calculations are jobs (run_md, run_relax, compute_energy, run_eos, order_structure; one at a time): "
     "start one, then call wait_job until its status is not running. "
+    "The user may also edit the structure (a supercell, deleting atoms) between your calls, which renumbers "
+    "atoms: before an edit by atom index (apply, remove_atoms, set_element, add_atoms, update_*), take "
+    "structure.revision from get_state or find and pass it as expectedRevision; on STRUCTURE_CHANGED, look again. "
     "To pick out atoms use find, then act on them with apply (highlight, select, color, hide). For heavy "
     "analysis such as rings or graph searches, call export_structure and get_bonding, compute in your own "
     "script with that exact bond rule, map file atoms back through the order, then apply with atom indices. "
@@ -121,6 +124,16 @@ EXPORT_TRAJECTORY_SCHEMA: dict[str, Any] = {
 }
 
 
+# Renderers that paint their own backdrop, so a transparent background is not possible (yet).
+TRACER_PIPELINES = {"raytrace", "pathtrace"}
+
+REVISION_PROPERTY: dict[str, Any] = {
+    "type": "string",
+    "description": "structure.revision from get_state (or find): run only if the structure has not changed since; "
+                   "otherwise STRUCTURE_CHANGED.",
+}
+
+
 class ToolError(Exception):
     """A tool call failed in a way the model should see and can fix."""
 
@@ -142,8 +155,12 @@ class CrysVizTools:
         for command in spec["commands"]:
             if command["name"] in _FILE_COMMANDS:
                 continue
+            schema = command["args"]
+            if command["tier"] == "write":
+                # Every command takes expectedRevision (commands.json "revisionGuard"); list it where it matters.
+                schema = {**schema, "properties": {**schema.get("properties", {}), "expectedRevision": REVISION_PROPERTY}}
             self.tools[command["name"]] = {
-                "description": command["description"], "schema": command["args"], "tier": command["tier"],
+                "description": command["description"], "schema": schema, "tier": command["tier"],
             }
         self.tools["load"] = {
             "description": next(c for c in spec["commands"] if c["name"] == "load")["description"]
@@ -253,18 +270,25 @@ class CrysVizTools:
                    # A default (view-sized) picture that is returned must still fit the returned-image cap.
                    "max_side": limit if width is None or height is None else None}
         viewer = self.viewer()
+        notes: dict[str, Any] = {}
+        if options["transparent"]:
+            pipeline = viewer.call("get_state").get("renderPipeline")
+            if pipeline in TRACER_PIPELINES:
+                notes["warning"] = (f"transparent is not supported by the {pipeline} renderer: it paints its own "
+                                    "backdrop. For a transparent background use a raster renderer (forward).")
         if target is not None:
             self.export_dir.mkdir(parents=True, exist_ok=True)
         if not return_image:
             assert target is not None
             viewer.save_image(target, **options)
-            return [_text({"saved": str(target)})]
+            return [_text({"saved": str(target), **notes})]
         with tempfile.TemporaryDirectory(prefix="crysviz-mcp-") as scratch:
             data = viewer.save_image(Path(scratch) / "view.png", **options).read_bytes()
         content = [{"type": "image", "data": base64.b64encode(data).decode("ascii"), "mimeType": "image/png"}]
-        if target is not None:
-            target.write_bytes(data)
-            content.append(_text({"saved": str(target)}))
+        if target is not None or notes:
+            if target is not None:
+                target.write_bytes(data)
+            content.append(_text({**({"saved": str(target)} if target is not None else {}), **notes}))
         return content
 
 

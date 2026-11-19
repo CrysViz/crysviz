@@ -17,6 +17,7 @@ PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 
 class _FakeViewer:
     instances: list["_FakeViewer"] = []
+    pipeline = "forward"
 
     def __init__(self):
         self.calls: list[tuple[str, object]] = []
@@ -43,6 +44,8 @@ class _FakeViewer:
         self.calls.append((name, args))
         if name == "set_view" and args.get("direction") == "q":
             raise BrowserCommandError("INVALID_ARGS", "set_view.direction must be a, b, c, x, y, z or three finite numbers")
+        if name == "get_state":
+            return {"renderPipeline": _FakeViewer.pipeline}
         return {"direction": [0, 0, 5]} if name == "set_view" else True
 
     def load(self, source, *, periodic=None, interactive=True):
@@ -164,13 +167,29 @@ class ToolLayerTests(unittest.TestCase):
         with self.assertRaises(ToolError):
             self.tools.call("export_structure", {"format": "xyz"})
 
+    def test_write_tools_take_expected_revision(self):
+        for name, tool in self.tools.tools.items():
+            listed = "expectedRevision" in tool["schema"].get("properties", {})
+            self.assertEqual(listed, tool["tier"] == "write", name)
+
+    def test_transparent_with_a_tracer_warns(self):
+        try:
+            _FakeViewer.pipeline = "raytrace"
+            content = self.tools.call("save_image", {"transparent": True})
+            self.assertIn("not supported by the raytrace renderer", content[-1]["text"])
+            _FakeViewer.pipeline = "forward"
+            content = self.tools.call("save_image", {"transparent": True})
+            self.assertEqual([c["type"] for c in content], ["image"])
+        finally:
+            _FakeViewer.pipeline = "forward"
+
     def test_missing_required_argument_is_named(self):
         with self.assertRaises(ToolError) as caught:
             self.tools.call("find", {})
         self.assertEqual(str(caught.exception),
-                         "INVALID_ARGS: find needs: what (atoms | bonds | polyhedra | voids); optional: where, limit")
+                         "INVALID_ARGS: find needs: what (atoms | bonds | polyhedra | voids); optional: where, limit, fields, groupBy")
         with self.assertRaisesRegex(ToolError, r"^INVALID_ARGS: set_control needs: ref \(string\); "
-                                               r"value \(boolean \| number \| string\)$"):
+                                               r"value \(boolean \| number \| string\); optional: expectedRevision$"):
             self.tools.call("set_control", {"ref": "x"})
         with self.assertRaisesRegex(ToolError, r"set_view needs: direction \(a \| b \| c \| x \| y \| z \| array\)"):
             self.tools.call("set_view", None)

@@ -6,7 +6,8 @@
 // indices come back. Every action reuses the UI's own path; the UI modules are
 // imported on first use so this file stays importable in Node.
 
-import { commandError } from './commands.js';
+import { commandError, structureRevision } from './commands.js';
+import { fracToCartPoint } from '../math/index.js';
 import { getActiveStructure } from '../state/structures.js';
 import { general } from '../state/store.js';
 
@@ -56,6 +57,7 @@ const norm = (u) => Math.hypot(u[0], u[1], u[2]);
  * drawn or not, as [a, b, image, length] with a <= b: atom b's copy at its
  * stored fractional position + image (cell translation [i, j, k]) is bonded
  * to atom a. Each bond once.
+ * @returns {Array<[number, number, number[], number]>}
  */
 export function periodicBonds(structure, lengths, visibility) {
   const n = structure.atoms.length;
@@ -73,6 +75,7 @@ export function periodicBonds(structure, lengths, visibility) {
   const volume = Math.abs(L[0][0] * cross(L[1], L[2])[0] + L[0][1] * cross(L[1], L[2])[1] + L[0][2] * cross(L[1], L[2])[2]);
   const reach = [cross(L[1], L[2]), cross(L[2], L[0]), cross(L[0], L[1])]
     .map((c) => Math.ceil(maxCut / Math.max(volume / Math.max(norm(c), 1e-9), 1e-6)));
+  /** @type {Array<[number, number, number[], number]>} */
   const items = [];
   for (let a = 0; a < n; a++) {
     if (elements[a] === 'Va') continue;
@@ -99,32 +102,108 @@ export function periodicBonds(structure, lengths, visibility) {
 }
 
 const asList = (v) => (v === undefined ? undefined : Array.isArray(v) ? v : [v]);
+const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite);
+
+/** Shortest periodic distance (Å) between fractional points p and q. */
+export function periodicDistance(p, q, lattice) {
+  const d = [0, 1, 2].map((k) => { const x = q[k] - p[k]; return x - Math.round(x); });
+  let best = Infinity;
+  // Neighbouring images too: in a skewed cell the rounded difference is not always the shortest.
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) {
+    best = Math.min(best, Math.hypot(...fracToCartPoint([d[0] + i, d[1] + j, d[2] + k], lattice)));
+  }
+  return best;
+}
+
+/** Is fractional x inside [lo, hi] along one axis, periodically (lo > hi wraps through 0)? */
+const insideAxis = (x, lo, hi) => {
+  const w = (v) => v - Math.floor(v);
+  if (hi - lo >= 1) return true;
+  const [a, b, v] = [w(lo), w(hi), w(x)];
+  return a <= b ? v >= a - 1e-9 && v <= b + 1e-9 : v >= a - 1e-9 || v <= b + 1e-9;
+};
+
+/**
+ * The atom-level part of where shared by every finder: element(s), indices,
+ * a fractional box (frac: {min, max}, periodic) and a sphere (near: {point
+ * (fractional) | atom, within Å}). Returns a predicate on atom index.
+ */
+export function atomFilter(structure, where) {
+  const elements = asList(where.element ?? where.elements);
+  const only = where.indices ? new Set(where.indices) : null;
+  const box = where.frac;
+  if (box !== undefined && !(isVec3(box?.min) && isVec3(box?.max))) {
+    throw commandError('INVALID_ARGS', 'where.frac needs min and max, each [x, y, z] fractional');
+  }
+  const near = where.near;
+  let centre = null;
+  if (near !== undefined) {
+    if (!near || typeof near !== 'object' || !(Number.isFinite(near.within) && near.within > 0)) {
+      throw commandError('INVALID_ARGS', 'where.near needs within (Å) and point [x, y, z] (fractional) or atom (index)');
+    }
+    if (Number.isInteger(near.atom) && structure.atoms[near.atom]) centre = structure.atoms[near.atom].position;
+    else if (isVec3(near.point)) centre = near.point;
+    else throw commandError('INVALID_ARGS', 'where.near needs point [x, y, z] (fractional) or atom (an index)');
+  }
+  return (i) => {
+    if (only && !only.has(i)) return false;
+    if (elements && !elements.includes(elementOf(structure, i))) return false;
+    const p = structure.atoms[i].position;
+    if (box && ![0, 1, 2].every((k) => insideAxis(p[k], box.min[k], box.max[k]))) return false;
+    if (centre && periodicDistance(centre, p, structure.lattice) > near.within) return false;
+    return true;
+  };
+}
 
 /** Pure filters for find; each returns { items, atoms } (atoms: indices apply acts on). */
 export const FINDERS = {
   atoms(structure, where) {
-    const elements = asList(where.element ?? where.elements);
-    const only = where.indices ? new Set(where.indices) : null;
+    const keep = atomFilter(structure, where);
     const items = [];
     structure.atoms.forEach((atom, i) => {
-      if (only && !only.has(i)) return;
-      const el = elementOf(structure, i);
-      if (elements && !elements.includes(el)) return;
-      items.push([i, el, atom.position.map((x) => round(x, 5))]);
+      if (keep(i)) items.push([i, elementOf(structure, i), atom.position.map((x) => round(x, 5))]);
     });
     return { items, atoms: items.map((it) => it[0]) };
   },
+  /**
+   * Bonds of the full periodic graph. where.atoms (centre indices) gives each
+   * centre's neighbours: items [centre, neighbour, image, length], the image
+   * being the neighbour's cell offset as seen from the centre.
+   */
   bonds(structure, where, lengths = general.bondLengths || {}, visibility = general.bondVisibility || {}) {
     const pair = where.elements ? [...where.elements].sort().join('-') : null;
-    const items = periodicBonds(structure, lengths, visibility).filter(([a, b, , length]) => {
+    const keep = (a, b, length) => {
       if (pair && [elementOf(structure, a), elementOf(structure, b)].sort().join('-') !== pair) return false;
       if (where.minLength !== undefined && length < where.minLength) return false;
       if (where.maxLength !== undefined && length > where.maxLength) return false;
       return true;
-    });
+    };
+    const all = periodicBonds(structure, lengths, visibility);
+    if (where.atoms !== undefined) {
+      const centres = new Set(asList(where.atoms));
+      /** @type {Array<[number, number, number[], number]>} */
+      const items = [];
+      for (const [a, b, image, length] of all) {
+        if (!keep(a, b, length)) continue;
+        if (centres.has(a)) items.push([a, b, image, length]);
+        if (centres.has(b) && a !== b) items.push([b, a, image.map((t) => -t), length]);
+        if (a === b && centres.has(a)) items.push([a, a, image.map((t) => -t), length]);
+      }
+      items.sort((p, q) => p[0] - q[0] || p[3] - q[3]);
+      return { items, atoms: [...new Set(items.flatMap(([c, n]) => [c, n]))] };
+    }
+    const items = all.filter(([a, b, , length]) => keep(a, b, length));
     return { items, atoms: [...new Set(items.flatMap(([a, b]) => [a, b]))] };
   },
 };
+
+/** where.in / where.notIn: keep atoms that are in every named selection and in none of the others. */
+function setFilter(structure, where) {
+  const named = (ids) => (asList(ids) || []).map((id) => new Set(savedAtoms(structure, id)));
+  const inside = named(where.in);
+  const outside = named(where.notIn);
+  return (i) => inside.every((s) => s.has(i)) && !outside.some((s) => s.has(i));
+}
 
 const selections = new Map();
 let nextSelection = 1;
@@ -132,26 +211,65 @@ const MAX_SELECTIONS = 20;
 
 function remember(structure, what, atoms, polyhedra = null) {
   const id = `s${nextSelection++}`;
-  selections.set(id, { structure, what, atoms, polyhedra });
+  selections.set(id, { structure, revision: structureRevision(structure), what, atoms, polyhedra });
   if (selections.size > MAX_SELECTIONS) selections.delete(selections.keys().next().value);
   return id;
 }
 
+/** A saved selection, refused when its structure is gone or has changed since find. */
+function savedSelection(structure, id) {
+  const saved = selections.get(id);
+  if (!saved) throw commandError('SELECTION_NOT_FOUND', `No selection ${id}`);
+  if (saved.structure !== structure) throw commandError('SELECTION_STALE', `${id} belongs to another structure; find again`);
+  const now = structureRevision(structure);
+  if (saved.revision !== now) {
+    throw commandError('SELECTION_STALE', `The structure changed since ${id} was found (revision ${saved.revision} -> ${now}); find again`);
+  }
+  return saved;
+}
+
+const savedAtoms = (structure, id) => savedSelection(structure, id).atoms;
+
+/** fields: "indices" keeps a big answer small; groupBy: "element" counts and lists per element. */
+function shapeOutput(structure, what, found, { fields, groupBy, limit }) {
+  if (groupBy === 'element') {
+    /** @type {Record<string, number[]>} */
+    const groups = {};
+    for (const i of found.atoms) (groups[elementOf(structure, i)] ??= []).push(i);
+    return { groups: Object.fromEntries(Object.entries(groups).map(([el, atoms]) => [el, {
+      count: atoms.length, atoms: atoms.slice(0, limit), ...(atoms.length > limit ? { truncated: true } : {}),
+    }])) };
+  }
+  if (fields === 'indices') {
+    return { atoms: found.atoms.slice(0, limit), ...(found.atoms.length > limit ? { truncated: true } : {}) };
+  }
+  return { items: found.items.slice(0, limit), ...(found.items.length > limit ? { truncated: true } : {}) };
+}
+
 /** find: run a finder on the active structure and keep its atoms as a selection. */
 export async function find(args, { polyhedraSummary, voidSites }) {
-  const { what, where = {}, limit = 100 } = args || {};
+  const { what, where = {}, limit = 100, fields, groupBy } = args || {};
   if (!['atoms', 'bonds', 'polyhedra', 'voids'].includes(what)) {
     throw commandError('INVALID_ARGS', 'find.what must be atoms, bonds, polyhedra or voids');
   }
   if (!where || typeof where !== 'object' || Array.isArray(where)) throw commandError('INVALID_ARGS', 'find.where must be an object');
   if (!Number.isInteger(limit) || limit < 1 || limit > 5000) throw commandError('INVALID_ARGS', 'find.limit must be 1 to 5000');
+  if (fields !== undefined && fields !== 'indices' && fields !== 'items') throw commandError('INVALID_ARGS', 'find.fields must be indices or items');
+  if (groupBy !== undefined && groupBy !== 'element') throw commandError('INVALID_ARGS', 'find.groupBy must be element');
   const structure = getActiveStructure();
   if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
   /** @type {{items: any[], atoms: number[], polyhedra?: string[]}} */
   let found;
   let note;
   if (what === 'polyhedra') {
-    const rows = polyhedraSummary(structure, where.type).filter((p) =>
+    let source = structure;
+    if (!(structure.polyhedra?.polyhedra?.length)) {
+      // Not drawn: compute them as Show Polyhedra would, without drawing.
+      const model = await (await import('../render/PolyhedraModule.js')).computePolyhedra(structure);
+      source = { atoms: structure.atoms, elements: structure.elements, lattice: structure.lattice, polyhedra: model };
+      note = 'Computed on demand: polyhedra are not shown, so apply can colour their atoms, not the polyhedra.';
+    }
+    const rows = polyhedraSummary(source, where.type).filter((p) =>
       (where.center === undefined || p.centerElement === where.center)
       && (where.cn === undefined || p.vertexCount === where.cn));
     found = { items: rows, atoms: [...new Set(rows.flatMap((p) => [...(p.centerAtom !== undefined ? [p.centerAtom] : []), ...p.cornerAtoms]))] };
@@ -160,19 +278,26 @@ export async function find(args, { polyhedraSummary, voidSites }) {
       (where.type === undefined || p.type === where.type)
       && (where.center === undefined || p.centerElement === where.center)
       && (where.cn === undefined || p.vertices.length === where.cn)).map((p) => p.key).filter(Boolean);
-    if (!(structure.polyhedra?.polyhedra?.length)) note = 'No polyhedra are built: switch on Show Polyhedra first.';
   } else if (what === 'voids') {
     const minRadius = where.minRadius ?? 0.7;
     found = { items: voidSites(structure, minRadius), atoms: [] };
   } else {
     found = FINDERS[what](structure, where);
   }
+  if (where.in !== undefined || where.notIn !== undefined) {
+    const keep = setFilter(structure, where);
+    found = what === 'atoms'
+      ? { items: found.items.filter((it) => keep(it[0])), atoms: found.atoms.filter(keep) }
+      : what === 'bonds'
+        ? (() => { const items = found.items.filter(([a, b]) => keep(a) && keep(b)); return { items, atoms: [...new Set(items.flatMap(([a, b]) => [a, b]))] }; })()
+        : { ...found, atoms: found.atoms.filter(keep) };
+  }
   return {
     selection: remember(structure, what, found.atoms, found.polyhedra ?? null),
+    revision: structureRevision(structure),
     count: found.items.length,
     atomCount: found.atoms.length,
-    items: found.items.slice(0, limit),
-    ...(found.items.length > limit ? { truncated: true } : {}),
+    ...shapeOutput(structure, what, found, { fields, groupBy, limit }),
     ...(note ? { note } : {}),
   };
 }
@@ -180,12 +305,7 @@ export async function find(args, { polyhedraSummary, voidSites }) {
 /** The atom indices apply acts on: a selection's atoms, or a list given directly. */
 export function applyTargets(structure, args) {
   let atoms = args.atoms;
-  if (args.selection !== undefined) {
-    const saved = selections.get(args.selection);
-    if (!saved) throw commandError('SELECTION_NOT_FOUND', `No selection ${args.selection}`);
-    if (saved.structure !== structure) throw commandError('SELECTION_STALE', `${args.selection} belongs to another structure; find again`);
-    atoms = saved.atoms;
-  }
+  if (args.selection !== undefined) atoms = savedAtoms(structure, args.selection);
   if (!Array.isArray(atoms)) throw commandError('INVALID_ARGS', 'apply needs selection or atoms');
   const n = structure.atoms.length;
   for (const i of atoms) {
@@ -225,12 +345,16 @@ export async function apply(args) {
       return { action, bondPair: pair };
     }
     // A polyhedra selection colours the polyhedra themselves (target: "atoms" colours their atoms).
-    const saved = args.selection !== undefined ? selections.get(args.selection) : null;
-    if (saved?.polyhedra && args.target !== 'atoms') {
-      if (saved.structure !== structure) throw commandError('SELECTION_STALE', `${args.selection} belongs to another structure; find again`);
+    const saved = args.selection !== undefined ? savedSelection(structure, args.selection) : null;
+    if (saved?.polyhedra?.length && args.target !== 'atoms') {
       (await import('../render/PolyhedraModule.js')).setPolyhedronStyles(structure, saved.polyhedra, { color: hex });
       return { action, polyhedra: saved.polyhedra.length };
     }
+  }
+  // reset_color with all: true is the Atoms tab's Reset Colors (atoms, bonds, polyhedra, arrows).
+  if (action === 'reset_color' && args.all === true) {
+    (await import('../ui/StructureInfoPanel/General.js')).resetColors(structure);
+    return { action, all: true };
   }
   if (action === 'clear') {
     const { clearHighlightAtom, selectAtomsByInstances } = await highlight();
@@ -246,12 +370,14 @@ export async function apply(args) {
     (await highlight()).selectAtomsByInstances(instances, { reason: 'host' });
   } else if (action === 'color') {
     (await import('../ui/StructureInfoPanel/SelectionActionBar.js')).colorSourceAtoms(atoms, args.value.toLowerCase());
+  } else if (action === 'reset_color') {
+    (await import('../ui/StructureInfoPanel/SelectionActionBar.js')).resetSourceAtomColors(atoms);
   } else if (action === 'hide' || action === 'show') {
     const { commitHideRestore } = await import('../ui/SceneInteraction.js');
     if (action === 'hide') commitHideRestore(atoms, []);
     else commitHideRestore([], atoms);
   } else {
-    throw commandError('INVALID_ARGS', 'apply.action must be highlight, select, clear, color, hide or show');
+    throw commandError('INVALID_ARGS', 'apply.action must be highlight, select, clear, color, reset_color, hide or show');
   }
   return { action, atoms: atoms.length };
 }

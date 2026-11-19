@@ -187,3 +187,73 @@ test('run_eos reports the EOS window fit as named numbers', async () => {
   assert.equal(fit.pressureVolume.failed, 'not-converged');
   assert.equal(eosFitSummary({ evResult: null, pvResult: { params: [1, 2, 3], fitStats: { rms: 0 } } }).energyVolume, null);
 });
+
+test('structure revision: any structural change gives a new one, a colour change does not', async () => {
+  const { structureRevision } = await import('../../docs/host/commands.js');
+  const atom = (element, position, extra = {}) => ({ position, species: [{ element, occupancy: 1 }], ...extra });
+  const s = { lattice: [[3, 0, 0], [0, 3, 0], [0, 0, 3]], atoms: [atom('Si', [0, 0, 0]), atom('O', [0.5, 0.5, 0.5])] };
+  const r0 = structureRevision(s);
+  assert.match(r0, /^r[0-9a-f]{8}$/);
+  s.atoms[0].userColor = '#ff0000';
+  assert.equal(structureRevision(s), r0, 'colour is not structure');
+  s.atoms[1].position = [0.5, 0.5, 0.500001];
+  const r1 = structureRevision(s);
+  assert.notEqual(r1, r0, 'a moved atom');
+  s.atoms[1].species[0].element = 'N';
+  assert.notEqual(structureRevision(s), r1, 'a changed element');
+  const r2 = structureRevision(s);
+  s.atoms.push(atom('H', [0.25, 0.25, 0.25]));
+  assert.notEqual(structureRevision(s), r2, 'an added atom');
+  const r3 = structureRevision(s);
+  s.lattice = [[6, 0, 0], [0, 3, 0], [0, 0, 3]];
+  assert.notEqual(structureRevision(s), r3, 'a new cell (supercell)');
+});
+
+test('pressure hint read from a structure name, uncertainty in brackets ignored', async () => {
+  const { namedPressureGPa } = await import('../../docs/host/commands.js');
+  assert.equal(namedPressureGPa('La3B32-LD177_p487_dom3_2_112(3) GPa_ID11_202610.cif'), 112);
+  assert.equal(namedPressureGPa('Si_50GPa.vasp'), 50);
+  assert.equal(namedPressureGPa('Si at -2.5 gpa'), -2.5);
+  assert.equal(namedPressureGPa('Si.cif'), null);
+});
+
+test('colour summary: element colours, and custom colours grouped with their atoms', async () => {
+  const { colorSummary } = await import('../../docs/host/commands.js');
+  const atom = (element, color, userColor = null) => ({
+    species: [{ element, occupancy: 1 }], color, elementColor: element === 'B' ? 0xffb5b5 : 0x909090, userColor,
+    getRepresentativeElement: () => element, getColor: () => userColor ?? color,
+  });
+  const summary = colorSummary({ atoms: [atom('B', 0xffb5b5), atom('B', '#ffc0cb', '#ffc0cb'), atom('C', 0x909090), atom('B', '#ffc0cb', '#ffc0cb')] });
+  assert.deepEqual(summary.elements, { B: '#ffb5b5', C: '#909090' });
+  assert.deepEqual(summary.custom, [{ color: '#ffc0cb', count: 2, atoms: [1, 3] }]);
+});
+
+test('find filters: periodic fractional box and a sphere around a point', async () => {
+  const { atomFilter } = await import('../../docs/host/query.js');
+  const atom = (element, position) => ({ position, getRepresentativeElement: () => element });
+  const s = {
+    lattice: [[4, 0, 0], [0, 4, 0], [0, 0, 4]],
+    atoms: [atom('C', [0.05, 0.5, 0.5]), atom('C', [0.95, 0.5, 0.5]), atom('C', [0.5, 0.5, 0.5]), atom('N', [0.02, 0.5, 0.5])],
+  };
+  const pick = (where) => s.atoms.map((_, i) => i).filter(atomFilter(s, where));
+  // min > max wraps through 0: x in [0.9, 1) or [0, 0.1].
+  assert.deepEqual(pick({ frac: { min: [0.9, 0, 0], max: [0.1, 1, 1] } }), [0, 1, 3]);
+  assert.deepEqual(pick({ frac: { min: [0.9, 0, 0], max: [0.1, 1, 1] }, element: 'C' }), [0, 1]);
+  // 0.05 and 0.95 are 0.4 Å apart across the boundary.
+  assert.deepEqual(pick({ near: { atom: 0, within: 0.5 } }), [0, 1, 3]);
+  assert.deepEqual(pick({ near: { point: [0.5, 0.5, 0.5], within: 0.1 } }), [2]);
+  assert.throws(() => atomFilter(s, { near: { within: 1 } }), (e) => e.code === 'INVALID_ARGS');
+});
+
+test('find bonds where.atoms: each centre with its neighbours, images as seen from the centre', async () => {
+  const { FINDERS } = await import('../../docs/host/query.js');
+  const atom = (element, position) => ({ position, getRepresentativeElement: () => element });
+  // A 1D chain along a: C at 0 and 0.5 of a 3 Å cell, bonds of 1.5 Å both ways.
+  const s = { lattice: [[3, 0, 0], [0, 10, 0], [0, 0, 10]], atoms: [atom('C', [0, 0, 0]), atom('C', [0.5, 0, 0])] };
+  const lengths = { 'C-C': { min: 0, max: 1.6 } };
+  const { items } = FINDERS.bonds(s, { atoms: [0] }, lengths, {});
+  assert.deepEqual(items.map(([c, n, image, d]) => [c, n, image.join(','), d]).sort(),
+    [[0, 1, '-1,0,0', 1.5], [0, 1, '0,0,0', 1.5]]);
+  const both = FINDERS.bonds(s, { atoms: [1] }, lengths, {}).items;
+  assert.deepEqual(both.map(([c, n, image]) => [c, n, image.join(',')]).sort(), [[1, 0, '0,0,0'], [1, 0, '1,0,0']]);
+});

@@ -7,6 +7,7 @@ import {
 import { LOAD_HASH_RE } from '../io/SessionReceiver.js';
 import {
   COMMAND_HANDLERS,
+  checkExpectedRevision,
   commandError,
   errorRecord,
   requirePeriodicOption,
@@ -153,7 +154,15 @@ export function createBrowserHost(initialDeps = {}) {
     }
     try {
       const ctx = { deps, emit, origin: window.location.origin };
-      return { ok: true, result: await COMMAND_HANDLERS[request.command](request.args, ctx) };
+      let args = request.args;
+      // Any command may carry expectedRevision (get_state's structure.revision):
+      // it runs only if the structure is still the one the caller looked at.
+      if (args && typeof args === 'object' && !Array.isArray(args) && 'expectedRevision' in args) {
+        const { expectedRevision, ...rest } = args;
+        checkExpectedRevision(expectedRevision);
+        args = rest;
+      }
+      return { ok: true, result: await COMMAND_HANDLERS[request.command](args, ctx) };
     } catch (error) {
       const normalized = errorFromThrown(error);
       emit('error', normalized);

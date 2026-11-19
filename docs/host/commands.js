@@ -234,6 +234,89 @@ export function composition(atoms) {
   return { counts, formula };
 }
 
+/**
+ * A token for what the structure IS (atoms, species, occupancies, positions,
+ * lattice), not how it looks: any structural change — the user's edits in a
+ * window, a supercell, Claude's add/remove/set_element, a relax step — gives a
+ * new one, a colour change does not. Derived from the content, so no edit path
+ * has to remember to bump it. Mutating commands take expectedRevision.
+ * @param {any} structure
+ */
+export function structureRevision(structure) {
+  let h = 0x811c9dc5;
+  const mix = (v) => { h = Math.imul(h ^ (v | 0), 16777619); };
+  const num = (x) => mix(Math.round(x * 1e6));
+  const text = (t) => { for (let i = 0; i < t.length; i++) mix(t.charCodeAt(i)); mix(0); };
+  mix(structure.atoms.length);
+  for (const row of structure.lattice || []) row.forEach(num);
+  for (const atom of structure.atoms) {
+    for (const s of atom.species || []) { text(String(s.element)); num(s.occupancy ?? 1); }
+    atom.position.forEach(num);
+  }
+  return `r${(h >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+/** expectedRevision guard (host dispatch, every command): refuse when the active structure changed. */
+export function checkExpectedRevision(expected) {
+  const structure = getActiveStructure();
+  const current = structure ? structureRevision(structure) : null;
+  if (expected !== current) {
+    throw commandError('STRUCTURE_CHANGED',
+      `The structure changed since revision ${expected} (now ${current}, ${structure?.atoms.length ?? 0} atoms); `
+      + 'call get_state again before acting on atom indices',
+      { revision: current, atomCount: structure?.atoms.length ?? 0 });
+  }
+}
+
+/** A pressure in a structure's name ("... 112 GPa ..."), or null: a hint only, never acted on. */
+export function namedPressureGPa(name) {
+  // "112(3) GPa": a value with its uncertainty in brackets.
+  const match = /(-?\d+(?:\.\d+)?)(?:\(\d+\))?\s*GPa/i.exec(String(name ?? ''));
+  return match ? Number(match[1]) : null;
+}
+
+const colorHex = (c) => {
+  if (typeof c === 'string') return (c.startsWith('#') ? c : `#${c}`).toLowerCase();
+  if (Number.isFinite(c)) return `#${(c >>> 0).toString(16).padStart(6, '0')}`;
+  if (c && typeof c.getHex === 'function') return `#${c.getHex().toString(16).padStart(6, '0')}`;
+  return null;
+};
+
+/** Max atom indices listed per custom colour in get_state. */
+const MAX_COLOR_SAMPLE = 20;
+
+/**
+ * Colours as text: each element's colour, and the per-atom colours that differ
+ * from it (a user's or apply color's), grouped by colour. An atom is custom as
+ * the structure editor judges it (a userColor, or a colour other than its
+ * element colour); a disordered site counts when a species has its own colour.
+ * @param {any} structure
+ */
+export function colorSummary(structure) {
+  /** @type {Record<string, string|null>} */
+  const elements = {};
+  /** @type {Map<string, number[]>} */
+  const custom = new Map();
+  structure.atoms.forEach((atom, i) => {
+    const element = atom.getRepresentativeElement?.() ?? structure.elements?.[i] ?? '';
+    const disordered = (atom.species?.length ?? 1) > 1;
+    const own = disordered
+      ? atom.species.some((s) => s.color != null)
+      : Boolean(atom.userColor) || colorHex(atom.color) !== colorHex(atom.elementColor);
+    if (!own) { elements[element] ??= colorHex(atom.color); return; }
+    const hex = colorHex(atom.getColor?.() ?? atom.color) ?? 'mixed';
+    if (!custom.has(hex)) custom.set(hex, []);
+    custom.get(hex).push(i);
+  });
+  return {
+    elements,
+    custom: [...custom].map(([color, atoms]) => ({
+      color, count: atoms.length, atoms: atoms.slice(0, MAX_COLOR_SAMPLE),
+      ...(atoms.length > MAX_COLOR_SAMPLE ? { truncated: true } : {}),
+    })),
+  };
+}
+
 function structureState(structure, includeAtoms) {
   const container = getContainerForStructure(structure);
   const frame = container ? container.structures.indexOf(structure) : -1;
@@ -245,11 +328,13 @@ function structureState(structure, includeAtoms) {
     frame: frame >= 0 ? frame : null,
     frames: container ? container.structures.length : 1,
     atomCount: structure.atoms.length,
+    revision: structureRevision(structure),
     formula,
     composition: counts,
     periodic: structure.periodic !== false,
     lattice: lattice ? { vectors: lattice.map((row) => row.map(round)), ...latticeParameters(lattice) } : null,
     positionsCommitted: !uncommitted.has(structure),
+    colors: colorSummary(structure),
   };
   if (includeAtoms) {
     state.atoms = structure.atoms.slice(0, MAX_STATE_ATOMS).map((atom) => ({
@@ -572,6 +657,29 @@ export const COMMAND_HANDLERS = Object.freeze({
     return { total: sites.length, voids: sites.slice(0, limit) };
   },
 
+  async set_element(args) {
+    const input = requireArgs(args, 'set_element');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    if (typeof input.element !== 'string' || !input.element.trim()) throw commandError('INVALID_ARGS', 'set_element.element must be an element symbol');
+    const element = input.element.trim();
+    const { invalidElementMessage } = await import('../ui/addToStructureModule/ElementValidation.js');
+    const invalid = invalidElementMessage([{ element }]);
+    if (invalid) throw commandError('INVALID_ELEMENT', invalid);
+    const query = await import('./query.js');
+    const resolved = input.selection === 'user' ? { atoms: await query.userSelection() } : input;
+    const indices = query.applyTargets(structure, resolved);
+    if (!indices.length) throw commandError('INVALID_ARGS', 'set_element needs at least one atom');
+    const disordered = indices.filter((i) => (structure.atoms[i].species?.length ?? 1) > 1);
+    if (disordered.length) {
+      throw commandError('DISORDERED_SITE', `Atoms ${disordered.slice(0, 10).join(', ')} are disordered sites; set their species in the structure editor`);
+    }
+    const { structureToTableAtoms } = await import('../ui/addToStructureModule/StructureEditorPanel.js');
+    const { setAtomElements } = await import('../ui/addToStructureModule/CommitAtoms.js');
+    setAtomElements(structure, indices, element, structureToTableAtoms(structure));
+    return { changed: indices.length, element, atomCount: structure.atoms.length, revision: structureRevision(structure) };
+  },
+
   async remove_atoms(args) {
     const input = requireArgs(args, 'remove_atoms');
     const structure = getActiveStructure();
@@ -701,6 +809,7 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (!isFiniteNumber(params.targetPressure)) throw commandError('INVALID_ARGS', 'run_relax.pressureGPa must be a number');
     if (!(isFiniteNumber(params.stressTol) && params.stressTol > 0)) throw commandError('INVALID_ARGS', 'run_relax.pressureTolGPa must be a positive number');
     const atomistic = await calculatorPrecheck();
+    const pressureHint = namedPressureGPa(getContainerForStructure(getActiveStructure())?.fileName);
     const job = startJob('relax', async (job) => {
       job.progress = { text: 'getting the potential ready' };
       const { runner, potential } = await atomistic.ensureActiveCalculator((text) => { job.progress = { text }; });
@@ -711,6 +820,11 @@ export const COMMAND_HANDLERS = Object.freeze({
         onProgress: ({ step, maxSteps, maxForce }) => { job.progress = { step, maxSteps, maxForce: round(maxForce) }; },
       });
       return {
+        targetPressureGPa: params.targetPressure,
+        relaxCell: params.relaxCell,
+        ...(pressureHint !== null && pressureHint !== params.targetPressure
+          ? { pressureHint: `The structure's name mentions ${pressureHint} GPa; this run used ${params.targetPressure} GPa (pressureGPa sets it).` }
+          : {}),
         potential,
         trajectory: { id: getContainerId(result.container), name: String(result.container.fileName), frames: result.frames },
         steps: result.steps,
