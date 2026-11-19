@@ -203,7 +203,7 @@
 .blh-range-slider .blh-range-fill {
   position: absolute;
   height: 3px;
-  background: rgba(34, 197, 94, 0.9);
+  background: var(--range-fill);
   border-radius: 2px;
   top: 50%;
   transform: translateY(-50%);
@@ -289,6 +289,11 @@
   margin: 0 var(--sp-3);
 }
 
+/* A hydrogen-bond pair switched off (BondLengthPanel.js applyEnabled). */
+.bond-range-slider.is-off {
+  opacity: 0.4;
+}
+
 .bond-range-slider .background-track {
   position: absolute;
   height: 4px;
@@ -308,7 +313,7 @@
 .bond-range-slider .range-track {
   position: absolute;
   height: 4px;
-  background: rgba(6, 140, 50, 0.8);
+  background: var(--bond-range-track);
   border-radius: 2px;
   top: 50%;
   transform: translateY(-50%);
@@ -449,9 +454,12 @@
   font-size: var(--fs-lg);
   transition: transform 0.2s ease;
   color: var(--fg-75);
-  transform: rotate(0deg); /* JS overrides this inline (rotate(90deg)) on expand — the
-    inline style always wins over this class rule regardless of specificity */
+  transform: rotate(0deg);
   cursor: pointer;
+}
+
+.bond-expand-icon.is-expanded {
+  transform: rotate(90deg);
 }
 
 .bond-count {
@@ -466,15 +474,12 @@
   width: 20px;
   height: 20px;
   margin-right: var(--sp-2);
-  border: 1px solid var(--fg-3);
   cursor: pointer;
 }
 
-/* ---- category style editor (color + alpha + size), closed by default —
-   catEditor.style.display is toggled inline at runtime (dot click, expand/
-   collapse, Apply), which still overrides this base rule regardless. ---- */
+/* ---- category style editor (color + alpha + size), closed (hidden) by
+   default; dot click, expand/collapse and Apply toggle it. ---- */
 .bond-cat-editor {
-  display: none;
   margin-top: var(--sp-2);
   padding: var(--sp-3);
   background: var(--wash-0);
@@ -518,9 +523,10 @@
 }
 
 /* Reset/Apply buttons: same box as the shared .btn-mini, just narrower and
-   flush with the alpha/size rows above. Reset's background/border/color/
-   text-shadow are set inline in JS when the pair has bonds — that's a
-   species-derived gradient preview, genuinely data, not a constant. */
+   flush with the alpha/size rows above. Reset's background and color are
+   set inline in JS when the pair has bonds — that's a species-derived
+   gradient preview, genuinely data, not a constant (.is-swatch, styles.css,
+   draws its border and glyph shadow). */
 .bond-cat-btn {
   height: 32px;
   padding: 0 var(--sp-1);
@@ -534,7 +540,6 @@
 
 /* ---- individual-bond list (expandable, lazily built) ---- */
 .individual-bonds {
-  display: none;
   margin-left: 20px;
   margin-top: var(--sp-3);
   border-left: 2px solid var(--line-1);

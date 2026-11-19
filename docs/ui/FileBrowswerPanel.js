@@ -28,8 +28,8 @@ export function getRowObject(row) {
 
 export function showError(message) {
   errorPanel.textContent = message;
-  errorPanel.style.display = "block";
-  setTimeout(() => (errorPanel.style.display = "none"), 2000);
+  errorPanel.hidden = false;
+  setTimeout(() => { errorPanel.hidden = true; }, 2000);
 }
 
 export function countChecked() {
@@ -858,7 +858,7 @@ function setErrorText(elementId, text) {
   const el = document.getElementById(elementId);
   if (!el) return;
   el.textContent = text || '';
-  el.style.display = text ? 'block' : 'none';
+  el.hidden = !text;
 }
 
 /** Push the main structure's lattice + every overlay entry's lattice into the

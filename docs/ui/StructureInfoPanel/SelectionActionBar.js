@@ -412,10 +412,10 @@ function refreshSelectionActionBar() {
   const selected = getSelectedAtoms();
   container.innerHTML = '';
   if (!selected.length) {
-    container.style.display = 'none';
+    container.hidden = true;
     return;
   }
-  container.style.display = 'block';
+  container.hidden = false;
 
   const structure = fileBrowser.selectedStructure;
   const first = selected[0];
@@ -483,8 +483,7 @@ function refreshSelectionActionBar() {
   swatch.title = 'Apply a color to every selected atom';
   swatch.dataset.hex = currentHex;
   const dot = createPieDot(selectionColors(selected), 22);
-  dot.className = 'si-selbar-dot';
-  dot.style.border = 'none'; // createPieDot sets an inline border; the button already draws one
+  dot.classList.add('si-selbar-dot'); // borderless: the button already draws one
   swatch.appendChild(dot);
   const refreshDot = () => updatePieDot(dot, selectionColors(selected));
 

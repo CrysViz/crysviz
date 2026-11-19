@@ -103,7 +103,7 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
   // --- Hidden color editor panel ---
   const editor = document.createElement('div');
   editor.className = 'bond-color-editor';
-  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  editor.hidden = true; // read back via .hidden in General.js's UI-state capture
 
   const structure = fileBrowser.selectedStructure;
 
@@ -224,7 +224,7 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
     holdLabel: 'Apply to Trajectory',
     onPress: (e) => {
       e.stopPropagation();
-      editor.style.display = 'none';
+      editor.hidden = true;
       restoreSelectionHighlight();
     },
     onConfirm: (e) => {
@@ -297,8 +297,8 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
 
   colorBtn.onclick = (e) => {
     e.stopPropagation();
-    const shouldOpen = editor.style.display === 'none';
-    editor.style.display = shouldOpen ? 'block' : 'none';
+    const shouldOpen = editor.hidden;
+    editor.hidden = !shouldOpen;
     // The 3D selection glow overwrites the bond's real color — hide it while
     // the editor is open so a live color change is actually visible.
     if (shouldOpen) suppressSelectionHighlightFor3D();
@@ -307,9 +307,9 @@ export function createIndividualBondRow(bond, bondIndex, options = {}) {
 
   // --- Selection / hover ---
   // Hover tint is plain CSS (:hover, structureInfoPanel.css) — a selected row
-  // gets its amber highlight from an inline style (SelectAndHighlightModule.js
-  // highlightAtomRow), which as an inline style always outranks the :hover
-  // rule, so hovering a selected row never overwrites its highlight.
+  // gets its amber highlight from .is-highlighted (SelectAndHighlightModule.js
+  // highlightAtomRow), declared after the :hover rule at the same
+  // specificity, so hovering a selected row never overwrites its highlight.
   const hasRenderable = () => memberBonds().some((b) => b.instanceIds);
   if (!hasRenderable()) {
     row.title = 'Bond too short to render — cannot highlight in 3D';

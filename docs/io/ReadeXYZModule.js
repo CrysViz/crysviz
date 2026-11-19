@@ -346,36 +346,19 @@ function parseXYZColumns(content, opts) {
 function showProgressBar() {
   const progressPanel = document.createElement("div");
   progressPanel.id = "progressPanel";
-  progressPanel.style.display = "block";
-  progressPanel.style.position = "fixed";
-  progressPanel.style.top = "50%";
-  progressPanel.style.left = "50%";
-  progressPanel.style.transform = "translate(-50%, -50%)";
-  progressPanel.style.background = "rgba(0, 0, 0, 0.8)";
-  progressPanel.style.color = "white";
-  progressPanel.style.padding = "20px";
-  progressPanel.style.borderRadius = "5px";
-  progressPanel.style.zIndex = "9999";
-  progressPanel.style.textAlign = "center";
+  progressPanel.className = "cv-file-progress"; // styles.css
 
   const heading = document.createElement("h3");
   heading.textContent = "Loading Large File";
   progressPanel.appendChild(heading);
 
   const progressBarContainer = document.createElement("div");
-  progressBarContainer.style.width = "300px";
-  progressBarContainer.style.height = "20px";
-  progressBarContainer.style.background = "#333";
-  progressBarContainer.style.borderRadius = "5px";
-  progressBarContainer.style.margin = "10px auto";
-  progressBarContainer.style.overflow = "hidden";
+  progressBarContainer.className = "cv-file-progress-track";
 
   const progressBar = document.createElement("div");
   progressBar.id = "progressBar";
+  progressBar.className = "cv-file-progress-fill";
   progressBar.style.width = "0%";
-  progressBar.style.height = "100%";
-  progressBar.style.background = "#4CAF50";
-  progressBar.style.transition = "width 0.3s";
   progressBarContainer.appendChild(progressBar);
 
   const progressText = document.createElement("p");

@@ -271,9 +271,9 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     selectAtomFromRow(atomIndex, e, perImage ? imageIndex : null);
   });
   // Hover tint is plain CSS (:hover, structureInfoPanel.css) — a selected row
-  // gets its amber highlight from an inline style (SelectAndHighlightModule.js
-  // highlightAtomRow), which as an inline style always outranks the :hover
-  // rule, so hovering a selected row never overwrites its highlight.
+  // gets its amber highlight from .is-highlighted (SelectAndHighlightModule.js
+  // highlightAtomRow), declared after the :hover rule at the same
+  // specificity, so hovering a selected row never overwrites its highlight.
 
   // Button container
   const buttonContainer = document.createElement('div');
@@ -304,11 +304,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       const colors = speciesPieColors(rowAtom);
       if (pieCanvas) { updatePieDot(pieCanvas, colors); return; }
       pieCanvas = createPieDot(colors, 24);
-      pieCanvas.className = 'iar-pie-canvas';
-      // createPieDot() always sets its own inline `border: 1px solid #666`
-      // (utils/ColorModule.js) — an inline style beats any class rule, so
-      // this has to override it the same way, not through CSS.
-      pieCanvas.style.border = 'none';
+      pieCanvas.classList.add('iar-pie-canvas');
       colorBtn.style.background = 'transparent';
       colorBtn.appendChild(pieCanvas);
       return;
@@ -376,7 +372,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // --- Editors ---
   const editor = document.createElement('div');
   editor.className = 'atom-color-editor';
-  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  editor.hidden = true; // read back via .hidden in General.js's UI-state capture
 
   // A disordered site is genuinely more than one thing sharing a position, so
   // its colour editor is N small square boxes (one per species) instead of
@@ -598,7 +594,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // Coordinate editor
   const coordEditor = document.createElement('div');
   coordEditor.className = 'atom-coord-editor';
-  coordEditor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  coordEditor.hidden = true; // read back via .hidden in General.js's UI-state capture
 
   const coordTitle = document.createElement('div');
   coordTitle.className = 'coord-editor-title';
@@ -689,7 +685,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // open — a mode switch inside a closed/hidden editor (state restore,
     // e.g.) shouldn't touch the highlight.
     onModeChange: (mode) => {
-      if (spinEditor.style.display !== 'none') setArrowHighlightOverride(atomIndex, mode);
+      if (!spinEditor.hidden) setArrowHighlightOverride(atomIndex, mode);
     },
   });
 
@@ -715,7 +711,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // The 3D selection glow overwrites the atom's real color — hide it while
     // the color editor is open so a live color change is actually visible,
     // and bring it back once the editor closes (or another editor opens).
-    const wasColorOpen = editor.style.display !== 'none';
+    const wasColorOpen = !editor.hidden;
     if (editorType === 'color') suppressSelectionHighlightFor3D();
     else if (wasColorOpen) restoreSelectionHighlight();
 
@@ -723,12 +719,12 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // targets its arrow (whichever tab — spin or force — is active) instead
     // of the atom sphere; closing it (or switching to another editor)
     // reverts to the normal atom-sphere highlight.
-    const wasSpinOpen = spinEditor.style.display !== 'none';
+    const wasSpinOpen = !spinEditor.hidden;
     if (editorType === 'spin') setArrowHighlightOverride(atomIndex, /** @type {any} */ (spinEditor).getMode());
     else if (wasSpinOpen) clearArrowHighlightOverride();
 
     Object.entries(editorMap).forEach(([type, panel]) => {
-      panel.style.display = type === editorType ? 'block' : 'none';
+      panel.hidden = type !== editorType;
     });
 
     Object.entries(buttonMap).forEach(([type, button]) => {
@@ -804,20 +800,20 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   colorBtn.onclick = (e) => {
     e.stopPropagation();
-    const shouldOpen = editor.style.display === 'none';
+    const shouldOpen = editor.hidden;
     setActiveEditor(shouldOpen ? 'color' : null);
   };
 
   coordBtn.onclick = (e) => {
     if (!positionEditable) return;
     e.stopPropagation();
-    const shouldOpen = coordEditor.style.display === 'none';
+    const shouldOpen = coordEditor.hidden;
     setActiveEditor(shouldOpen ? 'coord' : null);
   };
 
   spinBtn.onclick = (e) => {
     e.stopPropagation();
-    const shouldOpen = spinEditor.style.display === 'none';
+    const shouldOpen = spinEditor.hidden;
     if (shouldOpen) /** @type {any} */ (spinEditor).refresh?.();
     setActiveEditor(shouldOpen ? 'spin' : null);
   };

@@ -21,7 +21,7 @@ export function createSpinForceCategoryEditor(elements) {
   const categoryElementSet = new Set(categoryElements);
   const editor = document.createElement('div');
   editor.className = 'spin-force-category-editor';
-  editor.style.display = 'none';
+  editor.hidden = true;
 
   let mode = 'spin';
   const switchRow = document.createElement('div');

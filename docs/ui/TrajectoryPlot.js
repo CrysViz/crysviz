@@ -186,7 +186,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   computeBtn.type = 'button';
   computeBtn.className = 'trajPlotComputeBtn';
   computeBtn.textContent = 'Compute step stats';
-  computeBtn.style.display = 'none';
+  computeBtn.hidden = true;
   if (options.showComputeStats !== false) toolbar.appendChild(computeBtn);
   // Export + expand, same icons/styling as the analysis histograms'
   // .split-item-action-btn corner buttons — reused directly (sideDock.css)
@@ -1018,7 +1018,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     },
 
     setComputeStatsAvailable(available) {
-      computeBtn.style.display = available ? '' : 'none';
+      computeBtn.hidden = !available;
     },
 
     getEl() { return root; },

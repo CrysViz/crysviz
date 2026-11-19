@@ -654,11 +654,7 @@ function syncWyckoffButton() {
   wyckoffBtn.textContent = active
     ? 'Disable Wyckoff Editor'
     : 'Enable Wyckoff Editor';
-  wyckoffBtn.style.background = active
-    ? 'linear-gradient(135deg, #1c5fb8, #2493ff)'
-    : '';
-  wyckoffBtn.style.color = active ? '#f5fbff' : '';
-  wyckoffBtn.style.boxShadow = active ? '0 0 0 1px rgba(91,168,255,0.45)' : '';
+  wyckoffBtn.classList.toggle('sym-wyckoff-on', active); // symmetryPanel.css
 }
 
 /**

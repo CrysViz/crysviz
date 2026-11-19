@@ -178,13 +178,19 @@
     }
     .trajRenderNote[hidden] { display: none; }
 
-    /* ---- Resizable Plotly plot region (unified MD Monitor). Hidden by default
-       via inline style until hasPlottableData() decides there's something to
+    /* ---- Resizable Plotly plot region (unified MD Monitor). Hidden (the
+       hidden attribute) until hasPlottableData() decides there's something to
        show (file-loaded energy, forces, or a live MD/relax feed). Legend,
        zoom/pan and PNG/data export come from Plotly's own chrome. ---- */
     #trajPlotHost {
       display: block;
       width: 100%;
+    }
+
+    /* !important: the side-docked layout below gives it display:flex at a
+       higher specificity. */
+    #trajPlotHost[hidden] {
+      display: none !important;
     }
 
     .trajPlot {

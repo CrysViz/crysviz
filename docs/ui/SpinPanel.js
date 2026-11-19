@@ -949,7 +949,7 @@ autoRangeBtn.addEventListener("click", () => applyAutoRange(true));
   // showing. Nudge any editor that's currently open.
   function refreshOpenStructureInfoSpinEditors() {
     document.querySelectorAll('.atom-spin-editor').forEach((el) => {
-      if (el.style.display !== 'none') /** @type {any} */ (el).refresh?.();
+      if (!el.hidden) /** @type {any} */ (el).refresh?.();
     });
   }
 

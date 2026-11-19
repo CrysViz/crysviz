@@ -989,6 +989,15 @@ font-size: var(--fs-xl);
   z-index: 3;
 }
 
+/* Once a thumb is grabbed it stays on top (PlanesPanel.js bringThumbToFront). */
+.planes-slider.is-front {
+  z-index: 3;
+}
+
+.planes-slider.is-back {
+  z-index: 2;
+}
+
 #planesRangeDisplay {
   color: var(--fg-2);
   font-size: var(--fs-sm);

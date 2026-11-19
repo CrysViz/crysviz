@@ -55,6 +55,7 @@ export function addCompPanel(container) {
   const comparisonError = document.createElement("div");
   comparisonError.id = "comparisonErrorField";
   comparisonError.className = "cmp-comparison-error";
+  comparisonError.hidden = true;
   if (general.compareModeOn && fileBrowser.overlayEntries.length === 0) {
     // Distinguish "nothing checked" from "too many checked" the same way
     // syncOverlayFromCheckboxes does — both leave overlayEntries empty, so
@@ -65,7 +66,7 @@ export function addCompPanel(container) {
     comparisonError.textContent = checkedCount > 1
       ? 'Only one structure can be selected for comparison.'
       : 'Please select a structure to compare to.';
-    comparisonError.style.display = 'block';
+    comparisonError.hidden = false;
   }
   container.appendChild(comparisonError);
 

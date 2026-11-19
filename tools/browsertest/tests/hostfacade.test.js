@@ -769,13 +769,14 @@ async function waitForHostFailure(page) {
     };
     const { openPanel } = await import('./ui/panels/PanelManager.js');
     openPanel('visual');
+    const shownAs = (el) => (el ? getComputedStyle(el).display : undefined);
     return {
       before, dispatched, beforeOpen,
       afterOpen: {
         select: document.getElementById('renderPipelineMenu')?.value,
-        rtControls: document.getElementById('rtControlsBlock')?.style.display,
-        groundReflect: document.getElementById('rtGroundReflect')?.closest('.control-row')?.style.display,
-        renderStyle: document.getElementById('renderStyleMenu')?.closest('.control-row')?.style.display,
+        rtControls: shownAs(document.getElementById('rtControlsBlock')),
+        groundReflect: shownAs(document.getElementById('rtGroundReflect')?.closest('.control-row')),
+        renderStyle: shownAs(document.getElementById('renderStyleMenu')?.closest('.control-row')),
       },
     };
   });

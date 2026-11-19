@@ -237,7 +237,7 @@ async function expandPanel(page, id) {
 
   // --- background picker toggle + in-panel swatch --------------------------------
   // The dot is off by default; the toggle must flip it either way and back.
-  const dotShown = () => page.evaluate(() => document.getElementById('backgroundDot').style.display !== 'none');
+  const dotShown = () => page.evaluate(() => !document.getElementById('backgroundDot').hidden);
   const dotBefore = await dotShown();
   await H.clickById(page, 'backgroundDotToggle');
   const dotFlipped = (await dotShown()) !== dotBefore;

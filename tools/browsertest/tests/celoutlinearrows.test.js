@@ -251,7 +251,7 @@ async function setForces(page, on) {
   });
   H.check('3D hull: the arrows get no hull shell', (await hulls()).every((v) => !v), JSON.stringify(await hulls()));
   H.check('3D hull: the "Outline arrows" switch is a screen-space control (hidden here)',
-    await page.evaluate(() => document.getElementById('celOutlineArrowsToggle').closest('div[style]')?.style.display === 'none'
+    await page.evaluate(() => document.getElementById('celOutlineArrowsToggle').closest('[hidden]') !== null
       || getComputedStyle(document.getElementById('celOutlineArrowsToggle')).display === 'none'));
   await setHullWidth(0.025);
   const hOwn = read(await H.shotCanvas(page, 'celspins_hull_own'));

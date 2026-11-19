@@ -76,7 +76,7 @@ async function openFirstCoordEditor(page) {
     });
     return {
       atomIndex: Number(/** @type {HTMLElement} */(row).dataset.atomIndex),
-      editorOpen: editor.style.display !== 'none',
+      editorOpen: editor.hidden !== true,
       note: editor.querySelector('.coord-editor-note')?.textContent,
       axes,
     };
@@ -138,7 +138,7 @@ async function openFirstCoordEditor(page) {
 
   const dragged = await page.evaluate(({ axis, target }) => {
     const row = [...document.querySelectorAll('.individual-atom-row')]
-      .find((r) => /** @type {HTMLElement} */(r.querySelector('.atom-coord-editor')).style.display !== 'none');
+      .find((r) => /** @type {HTMLElement} */(r.querySelector('.atom-coord-editor')).hidden !== true);
     const slider = /** @type {HTMLInputElement} */(
       row.querySelectorAll('.coord-axis-row')[axis].querySelector('input[type="range"]'));
     slider.value = String(target);
@@ -151,7 +151,7 @@ async function openFirstCoordEditor(page) {
   const after = await page.evaluate(async (i) => {
     const { fileBrowser } = await import('./state/store.js');
     const row = [...document.querySelectorAll('.individual-atom-row')]
-      .find((r) => /** @type {HTMLElement} */(r.querySelector('.atom-coord-editor'))?.style.display !== 'none');
+      .find((r) => /** @type {HTMLElement} */(r.querySelector('.atom-coord-editor'))?.hidden !== true);
     const boxes = row
       ? [...row.querySelectorAll('.coord-axis-row input[type="number"]')].map((b) => parseFloat(/** @type {HTMLInputElement} */(b).value))
       : null;
@@ -186,7 +186,7 @@ async function openFirstCoordEditor(page) {
     symmetryHolds.number === symmetryHolds.before,
     `${symmetryHolds.before} -> ${symmetryHolds.number}`);
 
-  const shot = await page.$('.individual-atom-row .atom-coord-editor:not([style*="display: none"])');
+  const shot = await page.$('.individual-atom-row .atom-coord-editor:not([hidden])');
   if (shot) {
     const handle = await shot.evaluateHandle((el) => el.closest('.individual-atom-row'));
     await handle.asElement().screenshot({

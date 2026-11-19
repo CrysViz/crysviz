@@ -2052,6 +2052,34 @@ input[type="checkbox"] {
 .cv-rotation-lock-badge[hidden] {
   display: none;
 }
+/* "Loading Large File" card over everything while a big XYZ or OUTCAR is
+   parsed (io/ReadeXYZModule.js, io/ReadOutcarModule.js showProgressBar).
+   The fill's width is the progress, set from JS. */
+.cv-file-progress {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--overlay-80);
+  color: var(--on-overlay);
+  padding: 20px;
+  border-radius: var(--radius-5);
+  z-index: 9999;
+  text-align: center;
+}
+.cv-file-progress-track {
+  width: 300px;
+  height: 20px;
+  background: var(--chrome-2-5);
+  border-radius: var(--radius-5);
+  margin: var(--sp-3-5) auto;
+  overflow: hidden;
+}
+.cv-file-progress-fill {
+  height: 100%;
+  background: var(--progress-fill);
+  transition: width 0.3s;
+}
 /* Start-up (and large share link) progress over the 3D view: index.html
    #bootProgress, driven by ui/BootProgress.js. Above the canvas, below every
    window; it never takes a click. No continuous animation: see BootProgress.js. */
@@ -2689,56 +2717,19 @@ justify-content: center;
 #measureRow { display:flex; justify-content:space-between; gap:var(--sp-3); color:var(--info-tint); }
 
 
-/* Custom color picker as a modifiable UI component*/
-
-
-.custom-color-picker {
-  width: 200px;
-  font-family: var(--font-ui);
-  user-select: none;
-}
-
-.custom-color-picker .sb-picker {
-  position: relative;
-  width: 100%;
-  height: 150px;
-  background: red;
-  cursor: crosshair;
-  margin-bottom: var(--sp-3-5);
-}
-
-.custom-color-picker .sb-picker::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  /* Saturation/brightness gradient stops must stay literal white/black
-     regardless of theme — these are colour-space axes, not themeable UI. */
-  background:
-    linear-gradient(to right, #fff, transparent),
-    linear-gradient(to top, #000, transparent);
-}
-
-.custom-color-picker .hue-slider {
-  width: 100%;
-  margin-bottom: var(--sp-3-5);
-}
-
-.custom-color-picker .color-preview {
-  width: 100%;
-  height: 30px;
-  border: 1px solid var(--ink-3);
-  background: red;
-}
-
-
-
-
 /* Small actions */
 .btn-mini { background:transparent; border:1px solid var(--wash-2); color:var(--info-tint); padding:var(--sp-2) var(--sp-3-5); border-radius: var(--radius-sm); cursor:pointer; }
 .btn-mini:hover { transform: translateY(-1px);background:var(--wash-0); border: 1px solid var(--accent-color);}
 
 .btn-mini.highlight { background:var(--bg-color); border-color:var(--line-dark); color:var(--fg-1); }
 .btn-mini.highlight:hover { transform: translateY(-1px);filter:brightness(1.03); border: 1px solid var(--accent-color);}
+
+/* A Reset button painted with the default colour it restores (fill and
+   ink are inline: data). A dark hairline in place of the accent one, also
+   on hover; the bond pair's two-colour gradient also shadows its glyphs. */
+.btn-mini.is-swatch,
+.btn-mini.is-swatch:hover { border-color: rgb(var(--shadow-rgb) / 0.2); }
+.bond-cat-btn.is-swatch { text-shadow: 0 0 3px rgb(var(--shadow-rgb) / 0.6); }
 
 #composition h4 {
   margin: 0 0 var(--sp-3) 0;
@@ -2762,6 +2753,16 @@ justify-content: center;
   width: 10px; height: 10px; border-radius: 50%; margin-right: var(--sp-3);
   border: 1px solid var(--fg-3);
 }
+/* Pie-dot canvas (utils/ColorModule.js createPieDot). canvas.-qualified so
+   it outranks the single-class rules of the rows that host one (.dot,
+   .bond-cat-dot, .iar-pie-canvas, ...), as the inline style it replaces
+   did; a row that wants another border says so with two classes
+   (structureInfoPanel.css). */
+canvas.cv-pie-dot {
+  border-radius: 50%;
+  border: 1px solid var(--swatch-border);
+  display: inline-block;
+}
 /* --sp-2, not --sp-3: the Structure panel's category row shares 266px between
    this cluster and count + Spin/Force + toggle, and 2px per gap here is what
    keeps that right-hand group on one line (structureInfoPanel.css .comp-row). */
@@ -2770,6 +2771,20 @@ justify-content: center;
   display: inline-flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3); background: var(--bg-color);
   border: 1px solid var(--accent-color); border-radius: var(--radius-md);
+}
+/* The CSS2DRenderer's label overlay (WindowAndSceneControls.js
+   initLabelRenderer): laid over the canvas, never taking a click itself
+   (labels that need one opt back in, see .measure-label). */
+.cv-label-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+/* The three.js scene canvas (ui/SceneInteraction.js): no browser zoom,
+   scroll or long-press menu over it. */
+.cv-scene-canvas {
+  touch-action: none;
 }
 #view canvas {
   cursor: pointer; /* for click affordance */
@@ -3299,7 +3314,7 @@ body > #structureInfoContent {
  * hide-drag. See dragSelectKind === 'select' in ui/SceneInteraction.js. */
 .cv-drag-select-rect.select-mode {
   border-color: var(--highlight-color);
-  background: rgb(255 140 0 / 0.14);
+  background: var(--select-drag-bg);
 }
 
 .tool-icon {
@@ -3336,6 +3351,29 @@ body > #structureInfoContent {
   backdrop-filter: blur(6px); white-space:nowrap;
 }
 
+/* The picking previews (render/MeasurementModule.js drawMeasureGraphics):
+   "choose 2nd atom" on a light label, and the angle prompt in the angle
+   arc's orange. Two classes, so they also beat responsive.css's phone
+   .measure-label size. */
+.measure-label.measure-preview-distance {
+  background: var(--measure-preview-bg);
+  border: 2px solid var(--label-ink);
+  color: var(--label-ink);
+  font-weight: 700;
+  font-size: var(--fs-base);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-4);
+}
+.measure-label.measure-preview-angle {
+  background: rgb(var(--angle-preview-rgb) / 0.85);
+  border: none;
+  color: var(--angle-preview-fg);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  padding: 2px var(--sp-1);
+  border-radius: var(--radius-4);
+}
+
 /* Hover target for a measurement's remove button. The measurement's value
  * label is a depth-tested WebGL sprite now (so it clips correctly behind
  * atoms), which cannot host a DOM child — this invisible box is pinned to the
@@ -3365,20 +3403,22 @@ body > #structureInfoContent {
   font-size: calc(var(--measure-remove-size, 16px) * 0.72);
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--measure-remove-border);
   /* Solid white, not a theme/backdrop-blur tint — this button floats over
    * the 3D viewport itself, not a panel, and the viewport renders black
    * regardless of UI theme, so anything less than a fully opaque, fixed
-   * light color reads as invisible against it. */
-  background: #ffffff;
-  color: #2a2a2a;
+   * light color reads as invisible against it. The --measure-remove-*
+   * tokens are defined once in themes/default/theme.css and no palette
+   * overrides them. */
+  background: var(--measure-remove-bg);
+  color: var(--measure-remove-fg);
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 3px var(--measure-remove-shadow);
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
@@ -3389,8 +3429,8 @@ body > #structureInfoContent {
 
 .measure-label-remove:hover {
   background: var(--danger-fill);
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.6);
+  color: var(--measure-remove-hover-fg);
+  border-color: var(--measure-remove-hover-border);
 }
 
 /* Dock toggle - always top left. One more scene window: the same chrome as

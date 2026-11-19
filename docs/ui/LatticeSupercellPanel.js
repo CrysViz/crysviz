@@ -514,9 +514,7 @@ function addVacuumSection(container) {
     } else {
       statusText.textContent = 'No vacuum applied yet.';
     }
-    resetBtn.disabled = !applied;
-    resetBtn.style.opacity = applied ? '1' : '0.4';
-    resetBtn.style.cursor = applied ? 'pointer' : 'default';
+    resetBtn.disabled = !applied; // greyed by .lsc-reset-vacuum-btn:disabled
   }
   refreshVacuumStatus();
 

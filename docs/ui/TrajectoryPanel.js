@@ -68,7 +68,7 @@ function hasPlottableData(container) {
 }
 
 function setPlotVisible(visible) {
-  if (trajPlotHostEl) trajPlotHostEl.style.display = visible ? '' : 'none';
+  if (trajPlotHostEl) trajPlotHostEl.hidden = !visible;
 }
 
 // Show the "Compute step stats" button only for a loaded trajectory that has
@@ -207,7 +207,7 @@ function ensurePlot() {
     trajPlotHostEl.id = 'trajPlotHost';
     panelBody.appendChild(trajPlotHostEl);
   }
-  trajPlotHostEl.style.display = 'none';
+  trajPlotHostEl.hidden = true;
 
   trajPlot = createTrajectoryPlot(trajPlotHostEl, { maxPts: 5000 });
   trajPlot.onSeek((f) => {
@@ -769,7 +769,7 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
         </label>
       </div>
       <div id="trajLockNote" class="trajRenderNote" hidden title="Bonds, periodic images, neighbour bonds and polyhedra rebuild every atom and bond: seconds on a structure this large. Pause to change them.">Large structure: pause to change bonds, images or polyhedra</div>
-      <div id="trajPlotHost" style="display:none;"></div>
+      <div id="trajPlotHost" hidden></div>
     </div>
   `;
   targetPanel.appendChild(trajControlPanel);

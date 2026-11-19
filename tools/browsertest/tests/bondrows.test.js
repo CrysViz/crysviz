@@ -112,8 +112,8 @@ function changedPixelCount(fileA, fileB) {
     return {
       state,
       glow,
-      rowHighlighted: !!row && /** @type {HTMLElement} */ (row).style.borderLeft.includes('rgb(255, 179, 71)'),
-      listVisible: !!row && /** @type {HTMLElement} */ (row.closest('.individual-bonds')).style.display !== 'none',
+      rowHighlighted: !!row && getComputedStyle(/** @type {HTMLElement} */ (row)).borderLeftColor === 'rgb(255, 179, 71)',
+      listVisible: !!row && /** @type {HTMLElement} */ (row.closest('.individual-bonds')).hidden !== true,
     };
   });
   H.check('selectBondFromInstance sets the selection state and orange emissive on both halves',

@@ -84,7 +84,7 @@ function createHydrogenBondControl(pair) {
   // pattern as the covalent category dot's editor above.
   const colorEditor = document.createElement('div');
   colorEditor.className = 'hbond-color-editor';
-  colorEditor.style.display = 'none';
+  colorEditor.hidden = true;
   const colorPicker = createColorPicker(hydrogenBondColorFor(pair), (hex) => {
     general.hydrogenBondColors[pair] = hex;
     updatePieDot(dot, [hex]);
@@ -98,7 +98,7 @@ function createHydrogenBondControl(pair) {
   dot.title = `Choose the ${pair} hydrogen-bond colour`;
   dot.onclick = (e) => {
     e.stopPropagation();
-    colorEditor.style.display = colorEditor.style.display === 'none' ? 'block' : 'none';
+    colorEditor.hidden = !colorEditor.hidden;
   };
 
   const label = document.createElement('span');
@@ -190,7 +190,7 @@ function createHydrogenBondControl(pair) {
 
   function applyEnabled(on) {
     general.hydrogenBondVisibility[pair] = on;
-    sliderContainer.style.opacity = on ? '' : '0.4';
+    sliderContainer.classList.toggle('is-off', !on);
     minSlider.disabled = !on;
     maxSlider.disabled = !on;
     updateHydrogenBonds(fileBrowser.selectedStructure);
@@ -232,7 +232,7 @@ function textColorForBg(cssHex) {
 // lazily on next expand via general.bondsBuildCounter.
 function refreshExpandedBondLists(panelRoot) {
   panelRoot.querySelectorAll('.individual-bonds').forEach((container) => {
-    if (/** @type {HTMLElement} */ (container).style.display !== 'none') {
+    if (!/** @type {HTMLElement} */ (container).hidden) {
       /** @type {any} */ (container)._populateBondRows?.();
     }
   });
@@ -565,7 +565,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       dot.title = `Customize color/alpha/size for all ${pair} bonds`;
       dot.onclick = (e) => {
         e.stopPropagation();
-        catEditor.style.display = catEditor.style.display === 'none' ? 'block' : 'none';
+        catEditor.hidden = !catEditor.hidden;
       };
       dotEl.replaceWith(dot);
       dotEl = dot;
@@ -596,12 +596,9 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // --- Category style editor (color + alpha + size for the whole pair) ---
     const catEditor = document.createElement('div');
     catEditor.className = 'bond-cat-editor';
-    // Explicit inline default alongside the CSS class's own `display: none`:
-    // this codebase reads `.style.display` back in several places (this
-    // file, StructureInfoPanel/General.js's expand-state capture) as the
-    // source of truth for open/closed — the CSS class alone would make
-    // those reads see '' instead of 'none' before the first toggle.
-    catEditor.style.display = 'none';
+    // Closed until opened: .hidden is the open/closed state read back here
+    // and by StructureInfoPanel/General.js's expand-state capture.
+    catEditor.hidden = true;
 
     // Live edits fan out to every bond of the pair, but SKIP members that have
     // a per-copy override for the same field so individual > category holds
@@ -700,10 +697,9 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // own endpoint element by default.
     const [defColor1, defColor2] = (memberBonds()[0]?.defaultColor ?? []).map(safeColor);
     if (defColor1 && defColor2) {
+      catResetBtn.classList.add('is-swatch'); // dark hairline + glyph shadow (styles.css)
       catResetBtn.style.background = `linear-gradient(90deg, ${defColor1} 50%, ${defColor2} 50%)`;
-      catResetBtn.style.borderColor = 'rgba(0,0,0,0.2)';
       catResetBtn.style.color = textColorForBg(defColor1);
-      catResetBtn.style.textShadow = '0 0 3px rgba(0,0,0,0.6)';
     }
     function resetPairOnFrame(frame) {
       delete frame.bondCategoryStyles?.[pair];
@@ -742,7 +738,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       holdLabel: 'Apply to Trajectory',
       onPress: (e) => {
         e.stopPropagation();
-        catEditor.style.display = 'none';
+        catEditor.hidden = true;
       },
       onConfirm: (e) => {
         e.stopPropagation();
@@ -786,8 +782,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // --- Individual bond list (expandable, lazily built) ---
     const bondsContainer = document.createElement('div');
     bondsContainer.className = 'individual-bonds';
-    // See the matching comment on catEditor.style.display above.
-    bondsContainer.style.display = 'none';
+    // See the matching comment on catEditor.hidden above.
+    bondsContainer.hidden = true;
 
     // One row per bond is expensive and hidden until expanded, so build lazily
     // on first expand (mirrors the Atoms tab). structure.bonds is recreated by
@@ -857,11 +853,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     function toggleBondList(e) {
       e.stopPropagation();
-      const isExpanded = bondsContainer.style.display !== 'none';
+      const isExpanded = !bondsContainer.hidden;
       if (!isExpanded) populateBondRows(); // build rows lazily on first expand
-      bondsContainer.style.display = isExpanded ? 'none' : 'block';
-      expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
-      catEditor.style.display = 'none'; // expanding/collapsing closes the category color editor
+      bondsContainer.hidden = isExpanded;
+      expandIcon.classList.toggle('is-expanded', !isExpanded);
+      catEditor.hidden = true; // expanding/collapsing closes the category color editor
     }
     expandIcon.onclick = toggleBondList;
     checkboxLabel.onclick = toggleBondList;

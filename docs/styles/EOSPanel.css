@@ -190,8 +190,8 @@
 }
 
 .eos-copy-value.eos-copied {
-  background: rgba(46, 204, 113, 0.25);
-  color: #2ecc71;
+  background: rgb(var(--copied-rgb) / 0.25);
+  color: rgb(var(--copied-rgb));
 }
 
 .eos-result-table {

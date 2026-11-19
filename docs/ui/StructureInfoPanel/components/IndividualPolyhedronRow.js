@@ -111,7 +111,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   // --- Hidden editor panel ---
   const editor = document.createElement('div');
   editor.className = 'poly-color-editor';
-  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  editor.hidden = true; // read back via .hidden in General.js's UI-state capture
 
   const picker = createColorPicker(currentColor, (hex) => {
     // Persist across polyhedra rebuilds (structure.polyhedraUserStyles survives
@@ -198,7 +198,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
     holdLabel: 'Apply to Trajectory',
     onPress: (e) => {
       e.stopPropagation();
-      editor.style.display = 'none';
+      editor.hidden = true;
     },
     onConfirm: (e) => {
       e.stopPropagation();
@@ -266,14 +266,14 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
 
   colorBtn.onclick = (e) => {
     e.stopPropagation();
-    editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
+    editor.hidden = !editor.hidden;
   };
 
   // --- Selection / hover ---
   // Hover tint is plain CSS (:hover, structureInfoPanel.css) — a selected row
-  // gets its amber highlight from an inline style (SelectAndHighlightModule.js
-  // highlightAtomRow), which as an inline style always outranks the :hover
-  // rule, so hovering a selected row never overwrites its highlight.
+  // gets its amber highlight from .is-highlighted (SelectAndHighlightModule.js
+  // highlightAtomRow), declared after the :hover rule at the same
+  // specificity, so hovering a selected row never overwrites its highlight.
   row.addEventListener('click', (e) => {
     e.stopPropagation();
     selectPolyhedronFromRow(key, row);

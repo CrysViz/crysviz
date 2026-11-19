@@ -224,6 +224,11 @@ font-size: var(--fs-base);
   text-align: center;
 }
 
+.segmented-backend-control button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .segmented-backend-control button:hover {
   background: var(--hover-color);
 

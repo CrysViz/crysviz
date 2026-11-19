@@ -1072,7 +1072,7 @@ function applyStyleSettings(style) {
     setSelect('celOutlineColorMenu', style.celOutlineColorMode);
     const customBlock = /** @type {any} */ (document.getElementById('celOutlineCustomColorBlock'));
     if (customBlock) {
-      customBlock.style.display = style.celOutlineColorMode === 'custom' ? 'block' : 'none';
+      customBlock.hidden = style.celOutlineColorMode !== 'custom';
       // Sync the inline picker's swatch/inputs to the restored custom color.
       if (style.celOutlineColor) customBlock.setHex?.(style.celOutlineColor);
     }

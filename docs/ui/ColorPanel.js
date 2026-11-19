@@ -320,18 +320,18 @@ export function addColorPanel(target = "colorContainer") {
   function updateRenderingControlsVisibility() {
     const isRaster = RASTER_PIPELINES.includes(general.renderPipeline);
     const isTracer = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
-    depthPeelBlock.style.display = general.renderPipeline === "depthpeel" ? "grid" : "none";
-    rtControlsBlock.style.display = isTracer ? "block" : "none";
+    depthPeelBlock.hidden = general.renderPipeline !== "depthpeel";
+    rtControlsBlock.hidden = !isTracer;
     // The denoiser lives in the shared tracer "Advanced" section (visible for
     // both tracers), but is a path-tracing-only control, so its row is toggled
     // individually here.
-    ptDenoiseRow.style.display = general.renderPipeline === "pathtrace" ? "grid" : "none";
+    ptDenoiseRow.hidden = general.renderPipeline !== "pathtrace";
     // The ground block is always visible (all pipelines), but "Ground reflect"
     // is a tracer-only analytic-mirror control, so its row is toggled here.
-    groundReflectRow.style.display = isTracer ? "grid" : "none";
-    renderStyleMenu.style.display = isRaster ? "grid" : "none";
-    atomDetailMenu.style.display = isRaster ? "grid" : "none";
-    outlineBlock.style.display = isRaster && general.renderStyle === "cel" ? "block" : "none";
+    groundReflectRow.hidden = !isTracer;
+    renderStyleMenu.hidden = !isRaster;
+    atomDetailMenu.hidden = !isRaster;
+    outlineBlock.hidden = !(isRaster && general.renderStyle === "cel");
     // Structure-window tracer-only blocks (material editors) hide under the
     // raster pipelines via this body class (see styles.css). The underlying
     // material stores are always persisted regardless.
@@ -427,8 +427,8 @@ export function addColorPanel(target = "colorContainer") {
   // Depth-peeling quality/performance knob: number of peel passes per frame
   // (transparent surfaces deeper than this many layers are dropped). Shown
   // only while the depthpeel pipeline is selected.
-  const depthPeelBlock = createElement("div", { class: "control-row" },
-    { display: general.renderPipeline === "depthpeel" ? "grid" : "none" });
+  const depthPeelBlock = createElement("div", { class: "control-row" });
+  depthPeelBlock.hidden = general.renderPipeline !== "depthpeel";
   const depthPeelLabel = createElement("label", { for: "depthPeelLayersSlider" }, {},
     `Peel layers: ${general.depthPeelLayers}`);
   const depthPeelSlider = createElement("input", {
@@ -449,8 +449,8 @@ export function addColorPanel(target = "colorContainer") {
   // pipelines so the two can be compared apples to apples; changes take
   // effect on the next accumulated frame (the pipelines read `general`).
   const isTracerPipeline = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
-  const rtControlsBlock = createElement("div", { id: "rtControlsBlock" },
-    { display: isTracerPipeline ? "block" : "none" });
+  const rtControlsBlock = createElement("div", { id: "rtControlsBlock" });
+  rtControlsBlock.hidden = !isTracerPipeline;
   const rtResRow = createElement("div", { class: "control-row" });
   const rtResLabel = createElement("label", { for: "rtResolutionScale" }, {},
     `RT resolution: ${Math.round((general.rtResolutionScale ?? 0.95) * 100)}%`);
@@ -473,8 +473,7 @@ export function addColorPanel(target = "colorContainer") {
   // "Advanced" section built below.
   const rtTiledRow = createElement("div", { class: "control-row" });
   const rtTiledLabel = createElement("label", { for: "rtTiledToggle" }, {}, "Tiled rendering");
-  const rtTiledToggle = createElement("input", { type: "checkbox", id: "rtTiledToggle" },
-    { justifySelf: "start", width: "auto" });
+  const rtTiledToggle = createElement("input", { type: "checkbox", class: "control-row-check", id: "rtTiledToggle" });
   rtTiledToggle.checked = general.rtTiledRender !== false;
   rtTiledToggle.addEventListener("change", () => {
     general.rtTiledRender = rtTiledToggle.checked;
@@ -491,8 +490,7 @@ export function addColorPanel(target = "colorContainer") {
   // drawn, not the converged image. Lives in the "Advanced" section below.
   const rtPreviewRow = createElement("div", { class: "control-row" });
   const rtPreviewLabel = createElement("label", { for: "rtPreviewToggle" }, {}, "Interactive raster preview");
-  const rtPreviewToggle = createElement("input", { type: "checkbox", id: "rtPreviewToggle" },
-    { justifySelf: "start", width: "auto" });
+  const rtPreviewToggle = createElement("input", { type: "checkbox", class: "control-row-check", id: "rtPreviewToggle" });
   rtPreviewToggle.checked = general.rtRasterPreview !== false;
   rtPreviewToggle.addEventListener("change", () => {
     general.rtRasterPreview = rtPreviewToggle.checked;
@@ -507,8 +505,7 @@ export function addColorPanel(target = "colorContainer") {
   // tone-mapped along with the scene. Lives in the "Advanced" section below.
   const rtBgMatchRow = createElement("div", { class: "control-row" });
   const rtBgMatchLabel = createElement("label", { for: "rtBgMatchToggle" }, {}, "Match background color");
-  const rtBgMatchToggle = createElement("input", { type: "checkbox", id: "rtBgMatchToggle" },
-    { justifySelf: "start", width: "auto" });
+  const rtBgMatchToggle = createElement("input", { type: "checkbox", class: "control-row-check", id: "rtBgMatchToggle" });
   rtBgMatchToggle.checked = general.rtBackgroundMatch !== false;
   rtBgMatchToggle.addEventListener("change", () => {
     general.rtBackgroundMatch = rtBgMatchToggle.checked;
@@ -525,8 +522,7 @@ export function addColorPanel(target = "colorContainer") {
   // Lives in the "Advanced" section below.
   const rtLegacyToneRow = createElement("div", { class: "control-row" });
   const rtLegacyToneLabel = createElement("label", { for: "rtLegacyToneToggle" }, {}, "Legacy tone mapping");
-  const rtLegacyToneToggle = createElement("input", { type: "checkbox", id: "rtLegacyToneToggle" },
-    { justifySelf: "start", width: "auto" });
+  const rtLegacyToneToggle = createElement("input", { type: "checkbox", class: "control-row-check", id: "rtLegacyToneToggle" });
   rtLegacyToneToggle.checked = general.rtToneMapLegacy === true;
   rtLegacyToneToggle.addEventListener("change", () => {
     general.rtToneMapLegacy = rtLegacyToneToggle.checked;
@@ -540,8 +536,7 @@ export function addColorPanel(target = "colorContainer") {
   // row is shown only under the pathtrace pipeline (updateRenderingControlsVisibility).
   const ptDenoiseRow = createElement("div", { class: "control-row" });
   const ptDenoiseLabel = createElement("label", { for: "ptDenoiseToggle" }, {}, "Denoiser");
-  const ptDenoiseToggle = createElement("input", { type: "checkbox", id: "ptDenoiseToggle" },
-    { justifySelf: "start", width: "auto" });
+  const ptDenoiseToggle = createElement("input", { type: "checkbox", class: "control-row-check", id: "ptDenoiseToggle" });
   ptDenoiseToggle.checked = general.ptDenoise !== false;
   ptDenoiseToggle.addEventListener("change", () => {
     general.ptDenoise = ptDenoiseToggle.checked;
@@ -635,12 +630,11 @@ export function addColorPanel(target = "colorContainer") {
 
   const groundRow = createElement("div", { class: "control-row" });
   const groundLabel = createElement("label", { for: "rtGroundToggle" }, {}, "Ground plane");
-  const groundToggle = createElement("input", { type: "checkbox", id: "rtGroundToggle" },
-    { justifySelf: "start", width: "auto" });
+  const groundToggle = createElement("input", { type: "checkbox", class: "control-row-check", id: "rtGroundToggle" });
   groundToggle.checked = !!general.rtGroundPlane;
   groundToggle.addEventListener("change", () => {
     general.rtGroundPlane = groundToggle.checked;
-    groundOptions.style.display = groundToggle.checked ? "block" : "none";
+    groundOptions.hidden = !groundToggle.checked;
     updateGroundPlane(); // create/position/hide the raster disc
     app.pipeline?.resetAccumulation?.();
     requestRender();
@@ -653,8 +647,8 @@ export function addColorPanel(target = "colorContainer") {
   // the two pattern colors (default: follow the background), tile size and
   // the mirror fraction. All changes restart the accumulation via the
   // pipeline's look key; the handlers also reset explicitly for snappiness.
-  const groundOptions = createElement("div", {},
-    { display: general.rtGroundPlane ? "block" : "none" });
+  const groundOptions = createElement("div", {});
+  groundOptions.hidden = !general.rtGroundPlane;
   const groundSelectRow = (id, labelText, options, current, onChange) => {
     const rowEl = createElement("div", { class: "control-row" });
     rowEl.appendChild(createElement("label", { for: id }, {}, labelText));
@@ -686,8 +680,7 @@ export function addColorPanel(target = "colorContainer") {
   const groundColorRow = (id, labelText, key) => {
     const rowEl = createElement("div", { class: "control-row" });
     rowEl.appendChild(createElement("label", { for: id }, {}, labelText));
-    const input = createElement("input", { type: "color", id },
-      { justifySelf: "start", width: "48px", height: "24px", padding: "0" });
+    const input = createElement("input", { type: "color", class: "control-row-color", id });
     const bg = app.scene?.background;
     input.value = general[key]
       ?? (bg?.isColor ? `#${bg.getHexString()}` : '#e8e8e8');
@@ -759,8 +752,8 @@ export function addColorPanel(target = "colorContainer") {
   // the classic inverted-hull geometry (general.celHullWidth /
   // celHullPolyWidth, live uniform updates; switching MODE rebuilds the
   // meshes since hulls are created at build time).
-  const outlineBlock = createElement("div", {},
-    { display: general.renderStyle === "cel" ? "block" : "none" });
+  const outlineBlock = createElement("div", {});
+  outlineBlock.hidden = general.renderStyle !== "cel";
 
   const makeSliderRow = (labelText, forId, input) => {
     const row = createElement("div", { class: "control-row" });
@@ -775,8 +768,8 @@ export function addColorPanel(target = "colorContainer") {
   ], () => {
     general.celOutlineMode = outlineModeMenu.querySelector("select").value;
     const isHull = general.celOutlineMode === "hull";
-    screenControls.style.display = isHull ? "none" : "block";
-    hullControls.style.display = isHull ? "block" : "none";
+    screenControls.hidden = isHull;
+    hullControls.hidden = !isHull;
     const hasComparison = fileBrowser.overlayEntries.length > 0;
     updateVisualization({
       reRenderAtoms: true,
@@ -790,8 +783,8 @@ export function addColorPanel(target = "colorContainer") {
   });
   outlineBlock.appendChild(outlineModeMenu);
 
-  const screenControls = createElement("div", {},
-    { display: general.celOutlineMode === "screen" ? "block" : "none" });
+  const screenControls = createElement("div", {});
+  screenControls.hidden = general.celOutlineMode !== "screen";
   // Force, spin and phonon arrows get the screen-space outline too, unless
   // switched off: thin arrows coloured by a colour map can read better bare.
   // Either way an arrow hides the lines behind it. In 3D-hull mode the
@@ -826,8 +819,8 @@ export function addColorPanel(target = "colorContainer") {
   screenControls.appendChild(makeSliderRow("Outline", "celOutlineWidth", outlineSlider));
   outlineBlock.appendChild(screenControls);
 
-  const hullControls = createElement("div", {},
-    { display: general.celOutlineMode === "hull" ? "block" : "none" });
+  const hullControls = createElement("div", {});
+  hullControls.hidden = general.celOutlineMode !== "hull";
   const hullSlider = createElement("input", {
     type: "range", id: "celHullWidth", min: "0", max: "0.2", step: "0.005",
     value: String(general.celHullWidth),
@@ -866,7 +859,7 @@ export function addColorPanel(target = "colorContainer") {
     { value: "custom", text: "Custom", selected: general.celOutlineColorMode === "custom" },
   ], () => {
     general.celOutlineColorMode = outlineColorMenu.querySelector("select").value;
-    customColorBlock.style.display = general.celOutlineColorMode === "custom" ? "block" : "none";
+    customColorBlock.hidden = general.celOutlineColorMode !== "custom";
     setCelOutlineColor();
     requestRender();
   });
@@ -875,23 +868,20 @@ export function addColorPanel(target = "colorContainer") {
   // Custom color: a small swatch box that toggles the app's inline HSV picker
   // (not the OS color input) — shown only in 'custom' mode. The box has a thin
   // border, unlike the chunky OS color input it replaces.
-  const customColorBlock = createElement("div", { id: "celOutlineCustomColorBlock" },
-    { display: general.celOutlineColorMode === "custom" ? "block" : "none", marginTop: "6px" });
+  const customColorBlock = createElement("div", { id: "celOutlineCustomColorBlock", class: "control-sub-block" });
+  customColorBlock.hidden = general.celOutlineColorMode !== "custom";
 
   const swatchRow = createElement("div", { class: "control-row" });
   swatchRow.appendChild(createElement("label", { for: "celOutlineColorSwatch" }, {}, "Custom Color"));
   const swatchBox = createElement("button",
-    { type: "button", id: "celOutlineColorSwatch", title: "Pick outline color" },
-    {
-      width: "28px", height: "20px", borderRadius: "4px", padding: "0",
-      border: "1px solid var(--line-3)", cursor: "pointer", flex: "none",
-      background: general.celOutlineColor || "#000000",
-    });
+    { type: "button", id: "celOutlineColorSwatch", class: "control-row-swatch", title: "Pick outline color" },
+    { background: general.celOutlineColor || "#000000" }); // the colour itself: data
   swatchRow.appendChild(swatchBox);
   customColorBlock.appendChild(swatchRow);
 
   // The picker is revealed below the swatch on click (starts closed).
-  const pickerContainer = createElement("div", {}, { display: "none", marginTop: "6px" });
+  const pickerContainer = createElement("div", { class: "control-sub-block" });
+  pickerContainer.hidden = true;
   const outlineCustomPicker = createColorPicker(general.celOutlineColor || "#000000", (hex) => {
     general.celOutlineColor = hex;
     swatchBox.style.background = hex;
@@ -902,7 +892,7 @@ export function addColorPanel(target = "colorContainer") {
   customColorBlock.appendChild(pickerContainer);
 
   swatchBox.addEventListener("click", () => {
-    pickerContainer.style.display = pickerContainer.style.display === "none" ? "block" : "none";
+    pickerContainer.hidden = !pickerContainer.hidden;
   });
 
   // Expose a setter so a restored shared view can sync picker + swatch.
@@ -975,10 +965,10 @@ export function addColorPanel(target = "colorContainer") {
     requestRender();
   }
 
-  const resetRenderingRow = createElement("div", {}, { margin: "8px 0 4px" });
+  const resetRenderingRow = createElement("div", { class: "control-reset-row" });
   const resetRenderingBtn = createElement("button",
     { id: "resetRenderingBtn", type: "button", class: "btn-mini" },
-    { padding: "3px 10px", fontSize: "0.85em" }, "Reset rendering settings");
+    {}, "Reset rendering settings");
   resetRenderingBtn.addEventListener('click', resetRenderingSettings);
   resetRenderingRow.appendChild(resetRenderingBtn);
   content.appendChild(resetRenderingRow);
@@ -1080,7 +1070,8 @@ export function addColorPanel(target = "colorContainer") {
   });
   atomsElementMaterialsMapMenu.classList.add("tracer-only-control");
 
-  const atomsColorMapBlock = createElement("div", { style: "display:none;" });
+  const atomsColorMapBlock = createElement("div", {});
+  atomsColorMapBlock.hidden = true;
 
   const atomsColorMapMenu = createDropdown("atomsColorMapMenu", "Color Map", [
     { value: "heatmap", text: "Heatmap", selected: true },
@@ -1107,13 +1098,8 @@ export function addColorPanel(target = "colorContainer") {
   // checkboxes: the floating color bar's layout menu only exists once
   // .cv-colorbar-floating applies, so a docked bar needs its own reachable
   // toggle too, not just the menu item.)
-  const atomsBarControlsRow = createElement("div", {}, {
-    display: "flex", alignItems: "center", gap: "12px", margin: "4px 0",
-  });
-  const atomsLogLabel = createElement("label", {}, {
-    display: "flex", alignItems: "center", gap: "4px", fontSize: "var(--fs-base)",
-    color: "white", whiteSpace: "nowrap", cursor: "pointer",
-  });
+  const atomsBarControlsRow = createElement("div", { class: "cv-force-bar-controls cv-force-bar-controls--spin" });
+  const atomsLogLabel = createElement("label", { class: "cv-force-check control-log-check" });
   const atomsLogCheckbox = createElement("input", { type: "checkbox", id: "atomsLogScaleCheckbox" });
   atomsLogCheckbox.checked = general.atomColorScale === "log";
   atomsLogLabel.appendChild(atomsLogCheckbox);
@@ -1176,7 +1162,8 @@ export function addColorPanel(target = "colorContainer") {
   }
   atomsAutoRangeBtn.addEventListener("click", applyAtomAutoRange);
 
-  const atomsColorBarContainer = createElement("div", {}, { display: "none", marginTop: "8px" });
+  const atomsColorBarContainer = createElement("div", { class: "control-bar-block" });
+  atomsColorBarContainer.hidden = true;
   atomsColorMapBlock.appendChild(atomsColorMapMenu);
   atomsColorMapBlock.appendChild(atomsBarControlsRow);
   atomsColorMapBlock.appendChild(atomsColorBarContainer);
@@ -1205,9 +1192,9 @@ export function addColorPanel(target = "colorContainer") {
     const isForce = mode === "force";
     const isElements = mode === "elements";
 
-    atomsElementColorMapBlock.style.display = isElements ? "block" : "none";
-    atomsColorMapBlock.style.display = isForce ? "block" : "none";
-    atomsColorBarContainer.style.display = isForce ? "block" : "none";
+    atomsElementColorMapBlock.hidden = !isElements;
+    atomsColorMapBlock.hidden = !isForce;
+    atomsColorBarContainer.hidden = !isForce;
 
 
     if (isForce) {
@@ -1317,7 +1304,8 @@ export function addColorPanel(target = "colorContainer") {
   ], onBondsModeChange);
 
   // Color map section (for Length mode)
-  const bondsColorMapBlock = createElement("div", { style: "display:none;" });
+  const bondsColorMapBlock = createElement("div", {});
+  bondsColorMapBlock.hidden = true;
   const bondsColorMapMenu = createDropdown("bondsColorMapMenu", "Color Map", [
     { value: "heatmap", text: "Heatmap", selected: true },
     { value: "batlow", text: "Batlow" },
@@ -1338,13 +1326,8 @@ export function addColorPanel(target = "colorContainer") {
 
   // --- Log Scale + Auto Range, side by side --- (see the atoms ones above
   // for why docked-reachable controls are needed alongside the layout menu.)
-  const bondsBarControlsRow = createElement("div", {}, {
-    display: "flex", alignItems: "center", gap: "12px", margin: "4px 0",
-  });
-  const bondsLogLabel = createElement("label", {}, {
-    display: "flex", alignItems: "center", gap: "4px", fontSize: "var(--fs-base)",
-    color: "white", whiteSpace: "nowrap", cursor: "pointer",
-  });
+  const bondsBarControlsRow = createElement("div", { class: "cv-force-bar-controls cv-force-bar-controls--spin" });
+  const bondsLogLabel = createElement("label", { class: "cv-force-check control-log-check" });
   const bondsLogCheckbox = createElement("input", { type: "checkbox", id: "bondsLogScaleCheckbox" });
   bondsLogCheckbox.checked = general.bondColorScale === "log";
   bondsLogLabel.appendChild(bondsLogCheckbox);
@@ -1396,14 +1379,16 @@ export function addColorPanel(target = "colorContainer") {
   }
   bondsAutoRangeBtn.addEventListener("click", applyBondAutoRange);
 
-  const bondsColorBarContainer = createElement("div", {}, { display: "none", marginTop: "8px" });
+  const bondsColorBarContainer = createElement("div", { class: "control-bar-block" });
+  bondsColorBarContainer.hidden = true;
   bondsColorMapBlock.appendChild(bondsColorMapMenu);
   bondsColorMapBlock.appendChild(bondsBarControlsRow);
   bondsColorMapBlock.appendChild(bondsColorBarContainer);
 
   // Solid color picker section (separate block)
-  const bondsSolidColorBlock = createElement("div", { style: "display:none;" });
-  const bondsSolidColorContainer = createElement("div", {}, { marginTop: "8px" });
+  const bondsSolidColorBlock = createElement("div", {});
+  bondsSolidColorBlock.hidden = true;
+  const bondsSolidColorContainer = createElement("div", { class: "control-bar-block" });
   bondsSolidColorBlock.appendChild(bondsSolidColorContainer);
 
   // Append all bond-related elements
@@ -1424,9 +1409,9 @@ export function addColorPanel(target = "colorContainer") {
     general.bondsColor = mode;
 
     // Control visibility of each section independently
-    bondsColorMapBlock.style.display = isLength ? "block" : "none";
-    bondsColorBarContainer.style.display = isLength ? "block" : "none";
-    bondsSolidColorBlock.style.display = isSolid ? "block" : "none";
+    bondsColorMapBlock.hidden = !isLength;
+    bondsColorBarContainer.hidden = !isLength;
+    bondsSolidColorBlock.hidden = !isSolid;
 
     // The color bar can be floating over the scene (outside this container),
     // so leaving Length mode has to tear it down explicitly rather than just

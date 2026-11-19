@@ -164,7 +164,7 @@ const H = require('../harness');
       rowKey: row.dataset.polyKey,
       state,
       emissive: mesh ? mesh.material.emissive.getHex() : 0,
-      rowHighlighted: row.style.borderLeft.includes('rgb(255, 179, 71)'),
+      rowHighlighted: getComputedStyle(row).borderLeftColor === 'rgb(255, 179, 71)',
     };
   });
   H.check('clicking a polyhedron row sets selection state, orange emissive and amber row',
@@ -186,7 +186,7 @@ const H = require('../harness');
       prevGlowCleared: prevMesh.material.emissive.getHex() === 0x000000,
       newGlow: other.material.emissive.getHex(),
       rowFoundAndListVisible: !!row
-        && /** @type {HTMLElement} */ (row.closest('.individual-polyhedra')).style.display !== 'none',
+        && /** @type {HTMLElement} */ (row.closest('.individual-polyhedra')).hidden !== true,
     };
   });
   H.check('selectPolyhedronFromMesh moves the glow and opens/expands the right row',

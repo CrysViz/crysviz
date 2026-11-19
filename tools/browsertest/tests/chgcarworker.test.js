@@ -71,9 +71,9 @@ const H = require('../harness');
     running = false;
     observer.disconnect();
     Worker.prototype.postMessage = post;
-    const opacityAtEnd = document.getElementById('loadProgress')?.style.opacity;
+    const opacityAtEnd = (document.getElementById('loadProgress')?.classList.contains('is-shown') ? '1' : '0');
     await new Promise((r) => setTimeout(r, 800));
-    const opacityLater = document.getElementById('loadProgress')?.style.opacity;
+    const opacityLater = (document.getElementById('loadProgress')?.classList.contains('is-shown') ? '1' : '0');
 
     const s = fileBrowser.selectedStructure;
     const fields = s.volumetricFields?.fields ?? [];

@@ -66,7 +66,7 @@ function resolvedColorOf(structure, poly) {
 // (styles changed in place). Collapsed lists refresh lazily on next expand.
 export function refreshExpandedPolyhedraLists(panelRoot) {
   panelRoot.querySelectorAll('.individual-polyhedra').forEach((container) => {
-    if (/** @type {HTMLElement} */ (container).style.display !== 'none') {
+    if (!/** @type {HTMLElement} */ (container).hidden) {
       /** @type {any} */ (container)._populatePolyhedronRows?.(true);
     }
   });
@@ -77,7 +77,7 @@ function rerenderPreservingExpansion(panelId = 'infoPolyControls') {
   const panel = document.getElementById(panelId);
   if (!panel) return;
   const expanded = [...panel.querySelectorAll('.poly-control')]
-    .filter((c) => /** @type {HTMLElement} */ (c.querySelector('.individual-polyhedra'))?.style.display !== 'none')
+    .filter((c) => !/** @type {HTMLElement} */ (c.querySelector('.individual-polyhedra'))?.hidden)
     .map((c) => /** @type {HTMLElement} */ (c).dataset.catKey);
   createPolyhedraListControls(panelId);
   for (const catKey of expanded) {
@@ -86,8 +86,8 @@ function rerenderPreservingExpansion(panelId = 'infoPolyControls') {
     const list = /** @type {HTMLElement} */ (control.querySelector('.individual-polyhedra'));
     const icon = /** @type {HTMLElement} */ (control.querySelector('.poly-expand-icon'));
     /** @type {any} */ (list)?._populatePolyhedronRows?.();
-    if (list) list.style.display = 'block';
-    if (icon) icon.style.transform = 'rotate(90deg)';
+    if (list) list.hidden = false;
+    if (icon) icon.classList.add('is-expanded');
   }
 }
 
@@ -225,8 +225,8 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     // --- Group editor (color + alpha for the whole category) ---
     const catEditor = document.createElement('div');
     catEditor.className = 'poly-cat-editor phl-cat-editor';
-    // See the matching comment on listContainer.style.display below.
-    catEditor.style.display = 'none';
+    // See the matching comment on listContainer.hidden below.
+    catEditor.hidden = true;
 
     const currentCatColor = safeColor(
       structure.polyhedraCategoryStyles[catKey]?.color ?? memberColors[0]);
@@ -327,8 +327,8 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     const representative = model.polyhedra[entry.indices[0]];
     if (representative) {
       const defColor = safeColor(polyhedronFaceColor(representative.type, representative.centerIndex, representative.colorElem));
+      catResetBtn.classList.add('is-swatch'); // dark hairline (styles.css)
       catResetBtn.style.background = defColor;
-      catResetBtn.style.borderColor = 'rgba(0,0,0,0.2)';
       catResetBtn.style.color = textColorForBg(defColor);
     }
     function resetCategoryOnFrame(frame) {
@@ -369,7 +369,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       holdLabel: 'Apply to Trajectory',
       onPress: (e) => {
         e.stopPropagation();
-        catEditor.style.display = 'none';
+        catEditor.hidden = true;
       },
       onConfirm: (e) => {
         e.stopPropagation();
@@ -405,18 +405,15 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     dot.onclick = (e) => {
       e.stopPropagation();
-      catEditor.style.display = (catEditor.style.display === 'none') ? 'block' : 'none';
+      catEditor.hidden = !catEditor.hidden;
     };
 
     // --- Individual polyhedra list (expandable, lazily built) ---
     const listContainer = document.createElement('div');
     listContainer.className = 'individual-polyhedra phl-individual-list';
-    // Explicit inline default alongside the CSS class's own `display: none`:
-    // this codebase reads `.style.display` back in several places (this
-    // file, StructureInfoPanel/General.js's expand-state capture) as the
-    // source of truth for open/closed — the CSS class alone would make
-    // those reads see '' instead of 'none' before the first toggle.
-    listContainer.style.display = 'none';
+    // Closed until expanded: .hidden is the open/closed state read back here
+    // and by StructureInfoPanel/General.js's expand-state capture.
+    listContainer.hidden = true;
 
     // Lazy + stale-aware (general.polyhedraBuildCounter bumps on every group
     // swap). `force` repopulates even when not stale — used after in-place
@@ -482,11 +479,11 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
     function togglePolyList(e) {
       e.stopPropagation();
-      const isExpanded = listContainer.style.display !== 'none';
+      const isExpanded = !listContainer.hidden;
       if (!isExpanded) populatePolyhedronRows(); // build rows lazily on first expand
-      listContainer.style.display = isExpanded ? 'none' : 'block';
-      expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
-      catEditor.style.display = 'none'; // expanding/collapsing closes the category color editor
+      listContainer.hidden = isExpanded;
+      expandIcon.classList.toggle('is-expanded', !isExpanded);
+      catEditor.hidden = true; // expanding/collapsing closes the category color editor
     }
     expandIcon.onclick = togglePolyList;
     label.onclick = togglePolyList;

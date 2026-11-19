@@ -936,12 +936,8 @@ function refreshPlaneColorBar() {
   }
   container.innerHTML = '';
 
-  if (!hasField) {
-    container.style.display = 'none';
-    return;
-  }
-
-  container.style.display = 'block';
+  container.hidden = !hasField;
+  if (!hasField) return;
 
   // Same rounding as the fieldSelect handler's plane.colormapMin/Max
   // assignment — this fallback only fires when those are somehow still
@@ -1078,7 +1074,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
       <!-- Planes table in container -->
       <div class="planes-table-wrapper">
         <p id="noPlanesMsg" class="planes-empty-msg">No planes added yet.</p>
-        <table id="planesTable" class="planes-table">
+        <table id="planesTable" class="planes-table" hidden>
           <thead>
             <tr>
               <th class="planes-th planes-th-narrow"></th>
@@ -1106,7 +1102,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
       </div>
 
       <!-- Plane parameter controls (hidden until plane selected) -->
-      <div class="planes-params-section" id="planesParamsSection">
+      <div class="planes-params-section" id="planesParamsSection" hidden>
         <h4 class="planes-section-title">Plane Parameters</h4>
 
         <div class="control-group">
@@ -1210,7 +1206,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
       </div>
 
       <!-- Field + colormap grouped -->
-      <div class="planes-field-section" id="planesFieldSection">
+      <div class="planes-field-section" id="planesFieldSection" hidden>
         <h4 class="planes-section-title">Field &amp; Colormap</h4>
         <div class="planes-field-colormap-container">
 
@@ -1287,7 +1283,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
                slider above stays as an additional inline range control,
                synced to this bar's own Min/Max in both directions. -->
           <div class="planes-field-control">
-            <div id="planesColorBarContainer"></div>
+            <div id="planesColorBarContainer" hidden></div>
           </div>
 
         </div>
@@ -1464,8 +1460,10 @@ function setupPlanesEvents(container) {
 
   if (rangeMin && rangeMax) {
     const bringThumbToFront = activeInput => {
-      rangeMin.style.zIndex = activeInput === rangeMin ? '3' : '2';
-      rangeMax.style.zIndex = activeInput === rangeMax ? '3' : '2';
+      for (const input of [rangeMin, rangeMax]) {
+        input.classList.toggle('is-front', activeInput === input);
+        input.classList.toggle('is-back', activeInput !== input);
+      }
     };
 
     rangeMin.addEventListener('input', () => {
@@ -1728,8 +1726,8 @@ function loadSelectedPlaneParameters() {
 
   const paramsSection = document.getElementById('planesParamsSection');
   const fieldSection = document.getElementById('planesFieldSection');
-  if (paramsSection) paramsSection.style.display = 'block';
-  if (fieldSection) fieldSection.style.display = 'block';
+  if (paramsSection) paramsSection.hidden = false;
+  if (fieldSection) fieldSection.hidden = false;
 
   // Enable/disable controls
   enablePlaneControls(true);
@@ -1832,8 +1830,8 @@ function disablePlaneControls() {
 
   const paramsSection = document.getElementById('planesParamsSection');
   const fieldSection = document.getElementById('planesFieldSection');
-  if (paramsSection) paramsSection.style.display = 'none';
-  if (fieldSection) fieldSection.style.display = 'none';
+  if (paramsSection) paramsSection.hidden = true;
+  if (fieldSection) fieldSection.hidden = true;
   refreshPlaneColorBar();
 }
 
@@ -2008,8 +2006,8 @@ function renderPlanesTable() {
   const lattice = structure?.lattice;
 
   const empty = planes.length === 0;
-  if (noMsg) noMsg.style.display = empty ? 'block' : 'none';
-  if (table) table.style.display = empty ? 'none' : 'table';
+  if (noMsg) noMsg.hidden = !empty;
+  if (table) table.hidden = empty;
   if (empty) {
     selectedPlaneIndex = null;
     disablePlaneControls();

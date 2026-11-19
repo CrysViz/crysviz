@@ -336,8 +336,9 @@ export function setupSceneInteraction() {
 // --- Event setup for Three.js renderer element ---
 const el = app.renderer.domElement;
 
-// Prevent browser gestures (zoom, scroll, long-press menu)
-el.style.touchAction = 'none';
+// Prevent browser gestures (zoom, scroll, long-press menu): touch-action
+// none on .cv-scene-canvas (styles.css).
+el.classList.add('cv-scene-canvas');
 
 // Touch tap config. Atom selection on touch is a DOUBLE-TAP now, not a
 // long-press: a held press over the scene no longer picks (scene-widget
