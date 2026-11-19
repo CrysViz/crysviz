@@ -83,6 +83,8 @@ class BridgeSurfaceTests(unittest.TestCase):
         runtime = self._load_runtime()
         descriptor = runtime._prepare_request("r", "load", {"name": "a.cube", "format": None, "binary": False}, self._attachment())
         self.assertNotIn("periodic", descriptor["request"]["args"])
+        # An unknown format is left out (the browser detects it), never sent as null.
+        self.assertNotIn("format", descriptor["request"]["args"])
 
     def test_DW_6_2_load_rewrite_rejects_non_boolean_periodic(self):
         for bad in ("false", 0, None):

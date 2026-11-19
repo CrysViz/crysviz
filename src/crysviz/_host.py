@@ -24,6 +24,7 @@ _FIXED_TRIGGER = "window.crysvizHost.processBridgeCommand()"
 _OUTPUT_COMMANDS = {
     "save_image": ("image/png", "image"),
     "export_structure": ("text/plain; charset=utf-8", "text"),
+    "export_trajectory": ("text/plain; charset=utf-8", "text"),
 }
 
 
@@ -173,9 +174,10 @@ class HostRuntime:
             raise
         # Remove the attachment only after the server has accepted ownership.
         attachments.pop("data")
-        load_args: dict[str, object] = {
-            "name": source.name, "format": source.format, "binary": source.binary, "inputUrl": input_url,
-        }
+        load_args: dict[str, object] = {"name": source.name, "binary": source.binary, "inputUrl": input_url}
+        # No format (an unrecognised extension, e.g. CHGCAR) means the browser detects it from the contents.
+        if source.format is not None:
+            load_args["format"] = source.format
         for option in ("periodic", "interactive"):
             if option in args:
                 load_args[option] = args[option]
