@@ -1,93 +1,95 @@
 # Python API examples
 
+Small, runnable scripts that drive a CrysViz window from Python. The full guide
+is [agent_guides/Python.md](../agent_guides/Python.md).
+
 ## Installation
 
-The Python CrysViz API requires a working native pywebview GUI backend.
-This sometimes works automatically via CrysViz dependency handling,
-but if not, follow the [installation instructions for pywebview](https://pywebview.flowrl.com/guide/installation.html)).
+The Python API opens CrysViz in a pywebview window, which needs a native GUI
+backend. The `qt` or `gtk` extra installs one:
 
-We suggest that you set up pywebview and CrysViz in a venv.
-For pywebview to access its required system packages, you may need to create it as, e.g.:
 ```bash
-python3 -m venv --system-site-packages .venv
-source .venv/bin/activate
-python -m pip install pywebview
+pip install 'crysviz[qt]'          # or 'crysviz[gtk]'
 ```
-And then test that the pywebview backend works:
+
+On Linux you can reuse the system's Qt and WebEngine instead. Create the venv
+with access to the system packages, then install CrysViz into it:
+
+```bash
+uv venv --system-site-packages .venv
+uv pip install --python .venv/bin/python crysviz
+# or with plain venv + pip:
+python3 -m venv --system-site-packages .venv
+.venv/bin/python -m pip install crysviz
+```
+
+The commands these examples use are newer than the latest release. Until the
+next release, install from a checkout of this repository instead:
+`pip install -e '.[qt]'` (or `uv pip install --python .venv/bin/python -e .`).
+
+If no window opens, check that pywebview works on its own:
+
 ```python
 import webview
 webview.create_window('Hello world', 'https://pywebview.flowrl.com/')
 webview.start()
 ```
 
-Now you can install CrysViz with its dependencies as:
+and follow the [pywebview installation guide](https://pywebview.flowrl.com/guide/installation.html)
+if it does not.
+
+## Running the examples
+
+Run a script with the venv's Python, from the folder where you want its
+pictures:
+
+```bash
+.venv/bin/python examples/polyhedra_colours.py
+.venv/bin/python examples/polyhedra_colours.py --keep-open   # look around before it closes
 ```
-python3 -m pip install .
-```
 
-## Overview
+A script owns its window: when the script ends, the window closes. The scripts
+therefore close by themselves; `--keep-open` makes them wait (`v.wait()`)
+until you close the window. In a REPL, IPython or Jupyter you do not need
+`wait()`: the window stays open between commands. Paste the lines of a script's
+`main()` one by one to follow along.
 
-The full Python guide is [agent_guides/Python.md](../agent_guides/Python.md).
-Each script below closes its window when it ends; run it with `--keep-open`
-(where offered) to look around first, or paste its lines into a REPL or
-notebook, where the window stays open.
+| Script | What it shows |
+|---|---|
+| [`polyhedra_colours.py`](polyhedra_colours.py) | The WO6 octahedra of a ReO3-type WO3 supercell in blue: display toggles by name, `find`, `apply`. Saves `octahedra.png`. |
+| [`rings_networkx.py`](rings_networkx.py) | Export plus your own script: finds the six-membered rings of a graphene sheet with networkx using CrysViz's own bond cutoffs, colours one red. Saves `ring.png`. Needs `networkx`. |
+| [`slab_picture.py`](slab_picture.py) | A four-layer Cu(111) slab with 15 Å of vacuum, viewed edge-on. Saves `cu111_slab.png`. |
+| [`relax_then_eos.py`](relax_then_eos.py) | Calculations as jobs: relaxes fcc copper, then scans the volume and fits an equation of state (prints V0 and B0). Needs the Internet for the fit. |
+| [`watch_user_edits.py`](watch_user_edits.py) | Working together: prints your edits in the window (elements, atoms, selection, camera, renderer) as you make them. `--seconds N` sets how long it watches. |
+| [`raytrace_snapshot.py`](raytrace_snapshot.py) | Switches to the ray tracer and saves `crysviz-raytrace.png`. |
+| [`rotate_camera.py`](rotate_camera.py) | A short orbit with `set_view(rotate=...)`. |
+| [`update_lattice_and_positions.py`](update_lattice_and_positions.py) | Deforms a two-atom silicon cell (`set_lattice`) and moves an atom (`move_atoms`). |
+| [`mcp_quickstart.md`](mcp_quickstart.md) | Not a script: connecting Claude Code or Claude Desktop to CrysViz through MCP. |
 
-- [`polyhedra_colours.py`](polyhedra_colours.py) shows the octahedra of a
-  ReO3-type WO3 supercell in blue and saves `octahedra.png`.
-- [`rings_networkx.py`](rings_networkx.py) exports a graphene sheet, finds its
-  six-membered rings with networkx using CrysViz's own bond cutoffs, colours
-  one red and saves `ring.png` (needs `networkx`).
-- [`slab_picture.py`](slab_picture.py) cuts a four-layer Cu(111) slab with
-  15 Å of vacuum and saves an edge-on `cu111_slab.png`.
-- [`rotate_camera.py`](rotate_camera.py) performs a short orbit and closes.
-- [`raytrace_snapshot.py`](raytrace_snapshot.py) writes `crysviz-raytrace.png`
-  in the current directory and closes once the export finishes.
-- [`update_lattice_and_positions.py`](update_lattice_and_positions.py)
-  deforms a two-atom silicon cell, moves both atoms, recentres the camera,
-  then waits until you close the window.
+## Notes on the API
 
-Ctrl-C or a context exit also closes the managed window and cleans up its
-private host.
-
-## Details
-
-Three self-contained remote-control examples are in [`examples/`](examples/):
-[`rotate_camera.py`](examples/rotate_camera.py) demonstrates a camera orbit,
-[`raytrace_snapshot.py`](examples/raytrace_snapshot.py) selects ray tracing
-and saves a PNG, and
-[`update_lattice_and_positions.py`](examples/update_lattice_and_positions.py)
-updates a two-atom structure. The managed controller also provides
-`rotate_camera(angle_degrees, axis="y")`, `set_render_pipeline(pipeline_id)`,
-and `save_image(path, width=800, height=600, margin=0, transparent=False, structure_only=False,
-timeout=None)`. `save_image` returns the written `pathlib.Path`; PNG capture is
-full-view and restores the browser's render state after export.
-
-`load`, `list_structures`, `select`, `update_lattice`,
-`update_fractional_positions`, `commit_positions`, and `recenter_camera` are
-synchronous controller methods.
-They return `LoadResult`, `StructureInfo`, and `PositionUpdateResult` where
-appropriate. Structure IDs are opaque and stable for the lifetime of a viewer.
-Position updates require exactly one finite three-component fractional point
-per atom; a failed fast update automatically performs the full periodic and
-topology rebuild, and `commit=True` completes that full synchronization.
-`update_lattice` takes exactly three finite Cartesian row vectors in Å. It
-preserves fractional positions, affects only the active frame, synchronously
-performs a full browser rebuild, and leaves the camera untouched.
-
-Subscribe before or after startup with `viewer.on("ready", callback)` and
-remove a callback with `off`. Callbacks receive `ViewerEvent` records and run
-on a dedicated event worker, so they may issue controller commands or call
-`close`; `wait()` from a callback raises `ViewerReentrancyError`. The events
-are `ready`, `structure_loaded`, `active_structure_changed`, `error`, and
-`closed`; `ready` and `closed` replay to late subscribers. `close()` is
-idempotent and `wait()` waits for the window to close.
-
-Failures are typed: `ViewerStartupError`, `ViewerClosedError`,
-`ViewerCommandTimeout`, `ViewerProtocolError`, and `BrowserCommandError`
-(also exported under the short names `StartupError`, `ClosedViewerError`,
-`CommandTimeoutError`, and `ProtocolError`). A command timeout intentionally
-closes the private host rather than allowing a potentially wedged GUI to keep
-accepting mutations.
+- **Every command is a method**, e.g. `v.find(...)`, `v.set_view(...)`,
+  `v.run_relax(...)`. `dir(v)` lists them and `help(v.find)` shows the
+  arguments. `v.call(name, **args)` is the same thing by name.
+- **Refusals and errors.** A command the situation refused (the structure
+  changed under the atoms you named, a calculation is already running, atoms
+  would be too close) returns `{"applied": False, "reason": ..., "code": ...}`
+  and changes nothing. A wrong call (bad arguments, an unknown control) raises
+  `BrowserCommandError`.
+- **Events.** `v.on(name, callback)` subscribes to `ready`, `structure_loaded`,
+  `active_structure_changed`, `user_changed`, `error` and `closed`; `off`
+  removes a callback. Callbacks receive `ViewerEvent` records on a dedicated
+  event thread, so they may issue commands, but must not call `wait()` (that
+  raises `ViewerReentrancyError`). `ready` and `closed` replay to late
+  subscribers.
+- **Failures are typed:** `ViewerStartupError`, `ViewerClosedError`,
+  `ViewerCommandTimeout`, `ViewerProtocolError`, `BrowserCommandError` and its
+  subclass `CommandRefused` (also exported under the short names
+  `StartupError`, `ClosedViewerError`, `CommandTimeoutError` and
+  `ProtocolError`). A command that times out closes the private host rather
+  than letting a possibly stuck window keep accepting changes.
+- `close()` can be called more than once; Ctrl-C or leaving a `with` block also
+  closes the window and cleans up its private host.
 
 The parent and child authenticate over a private loopback IPC connection. The
 bootstrap secret travels only through inherited stdin, never command-line
