@@ -690,6 +690,7 @@
     },
     {
       "name": "load",
+      "wire": "Wire form: the browser receives name plus the file as data (fetched from the host). The MCP tool and Viewer.load take a path or text instead (src/crysviz/_mcp.py LOAD_SCHEMA).",
       "tier": "file",
       "description": "Load a structure file (CIF, POSCAR, XYZ, extxyz and the other formats CrysViz reads) and make it the active structure.",
       "args": {
@@ -710,6 +711,7 @@
     },
     {
       "name": "save_image",
+      "wire": "Wire form: the browser renders and uploads the PNG to a managed output URL the Python host adds. The MCP tool adds filename and returnImage (src/crysviz/_mcp.py SAVE_IMAGE_SCHEMA); Viewer.save_image takes a path.",
       "tier": "file",
       "description": "Render the current view, as the user has framed it, to a PNG image. Without width and height it is the view's own size and aspect; with one of them the other follows the view's aspect. The camera is never moved.",
       "args": {
@@ -733,6 +735,7 @@
     },
     {
       "name": "export_structure",
+      "wire": "Wire form: the browser writes the text and uploads it to a managed output URL the Python host adds. The MCP tool adds filename (export folder); Viewer.export_structure takes a path.",
       "tier": "file",
       "description": "Write a structure file. cif and poscar write one frame as the Save window does (cif keeps partial occupancy; poscar groups atoms by element, so the result gives order: file atom k is CrysViz atom order[k], or sameOrder when identical). extxyz writes frames (all of the row by default) with Lattice, species, Cartesian positions (Å), energy and MD step, for ASE, pymatgen or OVITO scripts (e.g. a mean-squared displacement after run_md). structure and frame pick a row and frame other than the one on show, without selecting it.",
       "args": {

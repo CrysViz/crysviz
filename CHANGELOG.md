@@ -5,6 +5,7 @@
 ### Highlights
 
 - **MCP server:** `crysviz-mcp` (`pip install 'crysviz[mcp]'`) lets Claude and other MCP clients drive a local CrysViz window shared with the user: load and edit structures, find atoms, bonds, polyhedra and voids, set the view, run MD, relaxations, EOS and ordering as jobs, read symmetry, phonons and fields, export files and get pictures back (35 tools; see agent_guides/MCP.md)
+- MCP shares the window with the user: every result reports what the user changed by hand since the model's last call (`sinceLastCall`); a call the situation refused (structure changed under its atoms, a job running, atoms too close) returns `applied: false` with a reason instead of a failed tool; the revision guard refuses only when the addressed atoms are no longer the same atoms
 - Python: `Viewer.call(name, **args)` runs any command (snake_case arguments accepted), `Viewer.run_job()` waits for a calculation, `Viewer.set_view()` looks along a, b, c, x, y, z or [u, v, w] with up and zoom, `Viewer.export_structure()` writes CIF, POSCAR or extended XYZ; `Viewer.load(..., interactive=False)` loads a CIF without the symmetry dialog
 - Refined camera controls with shortcuts (desktop)
 - Setting view along/opposite plane normal
@@ -12,6 +13,9 @@
 
 ### Fixes
 
+- Loading a structure file larger than ~512 MB through the Python launcher or MCP (e.g. a 1 GB CHGCAR) no longer fails with "POSCAR: missing scale factor": host inputs are read as files, like the file picker
+- An open Modify Structure window no longer writes its table back over edits made elsewhere
+- A change made by a script or MCP command shows without clicking the window; host-launched windows no longer show the release-note card on every launch
 - CHGCAR loading made in parallel worker, with loading bar
 - Atoms with default colors being changed to different element, now changes color properly
 - Element change and occupation change made slightly faster

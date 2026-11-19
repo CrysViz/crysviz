@@ -180,10 +180,9 @@ class CrysVizTools:
             "schema": export_structure_schema(spec), "tier": "file",
         }
         self.tools["save_image"] = {
-            "description": "Render the current view, exactly as the user has framed it (camera, zoom and window "
-                           "aspect are kept; nothing is moved), and return it as a PNG image. With filename, also "
-                           f"save it in the export folder ({export_dir}). For a large figure, pass filename and "
-                           "returnImage: false.",
+            "description": next(c for c in spec["commands"] if c["name"] == "save_image")["description"]
+            + " The picture is returned to you; with filename it is also saved in the export folder"
+              f" ({export_dir}). For a large figure, pass filename and returnImage: false.",
             "schema": SAVE_IMAGE_SCHEMA, "tier": "file",
         }
 

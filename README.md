@@ -110,10 +110,12 @@ For more, see [examples](https://github.com/CrysViz/crysviz/tree/deploy/examples
 
 ### Claude and other AI assistants (MCP)
 
-`crysviz-mcp` is a local MCP server that lets Claude or another MCP client load structures, change the view and get pictures back from a CrysViz window on your computer:
+`crysviz-mcp` is a local MCP server (35 tools) that lets Claude or another MCP client work in a CrysViz window on your computer, together with you: load and edit structures, find atoms, bonds, polyhedra and voids, set the view, run MD, relaxations, EOS and ordering, read symmetry, phonons and fields, export files and get pictures back. Changes you make by hand are reported to Claude on its next call. Install with pip or uv:
 
 ```bash
 pip install 'crysviz[mcp,qt]'
+# or with uv, reusing the system Qt:
+#   uv venv --system-site-packages .venv && uv pip install --python .venv/bin/python 'crysviz[mcp]'
 claude mcp add crysviz -- crysviz-mcp
 ```
 

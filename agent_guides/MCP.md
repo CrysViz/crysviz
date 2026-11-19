@@ -11,7 +11,9 @@ channel the Python `Viewer` uses. Every tool is also a Python call:
 
 ```bash
 pip install 'crysviz[mcp,qt]'          # or crysviz[mcp,gtk]
-claude mcp add crysviz -- crysviz-mcp  # Claude Code
+# or with uv, using the system Qt (no PyPI Qt download):
+uv venv --system-site-packages .venv && uv pip install --python .venv/bin/python -e '.[mcp]'
+claude mcp add crysviz -- crysviz-mcp  # Claude Code (or the venv's .venv/bin/crysviz-mcp)
 ```
 
 Options: `--export-dir DIR` (default `./crysviz-exports`, or
@@ -37,10 +39,28 @@ between Claude's calls, and Claude sees it through `get_state`.
   unless asked to clear the selection, and `apply select` says what selection
   of yours it replaced.
 - Every command redraws the window itself; no click is needed to see a change.
-- Your edits renumber atoms (a supercell, deleting atoms): edits by index take
-  `expectedRevision` (from `get_state` or `find`) and refuse with
-  `STRUCTURE_CHANGED` when the structure changed meanwhile. An open Modify
-  Structure window follows Claude's edits and never writes a stale table back.
+- **Claude hears about your changes on its next call, whatever it is.** Every
+  result carries `sinceLastCall` when something changed in the window that no
+  call of Claude's did: elements changed (per atom, e.g. `B->C x8`), atoms
+  added or removed, atoms moved, the active structure or frame, your
+  selection, the camera, the renderer. It comes with a one-line `note` and is
+  reported once. Changes made while a calculation job runs are left out (the
+  job reports its own result), and so are a playing phonon animation's moves.
+  Example after you swapped two B for C and selected them:
+  `"sinceLastCall": {"structure": {"from": "La1B4", "to": "La1B2C2",
+  "elementChanges": {"count": 2, "atoms": [1, 3], "pairs": {"B->C": 2}}, ...},
+  "selection": {"count": 2, "atoms": [1, 3]}, "note": "Changed in the window
+  since your last call (not by you): 2 atoms changed element (B->C x2); the
+  user's selection is now 2 atoms."}`. Python reads the same with
+  `Viewer.take_user_changes()`.
+- Your edits can renumber atoms (a supercell, deleting atoms). An edit by
+  index can carry `expectedRevision` (from `get_state`, `find` or any edit's
+  result): it runs as long as the atoms it addresses are still the same atoms,
+  so your edits elsewhere never block Claude, and is refused
+  (`applied: false`, `STRUCTURE_CHANGED`, with `movedAtoms`) when they now
+  point at other atoms. `exactRevision: true` refuses on any change. An open
+  Modify Structure window follows Claude's edits and never writes a stale
+  table back.
 - The server's instructions tell the model the same: leave the camera,
   zoom, renderer and display alone unless asked, check views as text with
   `get_state`, take a picture only when the look matters.
@@ -63,8 +83,20 @@ One set of rules for every tool, so a model that learns one knows them all:
 - **Units.** Å, eV and fractional coordinates are unsuffixed; other units are
   suffixed (`temperatureK`, `timestepFs`, `pressureGPa`, `volumeRangePct`,
   `frequencyTHz`, `waitS`). Forces are `fmax` (eV/Å).
-- **Errors** are `{code, message, details}`; `INVALID_ARGS` names the
-  argument. A tool called without a required argument, or with one it does
+- **Refusals are results, not errors.** When the call was fine but the
+  situation said no, the tool returns an ordinary result
+  `{applied: false, reason, code, ...details}` and changed nothing:
+  `STRUCTURE_CHANGED`, `SELECTION_STALE`, `ATOMS_TOO_CLOSE` (pass `force`),
+  `JOB_BUSY`, `TOO_LARGE`, `NO_ACTIVE_STRUCTURE`, `NO_LATTICE`, `DISORDERED`,
+  `NO_PHONONS`, `NO_FIELD`, `CONTROL_DISABLED`, `CONTROL_UNAVAILABLE`, and the
+  others classified `outcome` in `ERROR_KINDS` (`docs/host/commands.js`).
+  Writes that did apply say `applied: true`. A client therefore never shows a
+  failed tool for something that was not a mistake; the model reads `reason`
+  and adapts (looks again, waits, asks).
+- **Errors** are for calls that were wrong (or a real failure):
+  `{code, message, details}`, `INVALID_ARGS` naming the argument,
+  `INVALID_ELEMENT`, `NOT_A_CONTROL`, unknown structures, frames, jobs or
+  controls. A tool called without a required argument, or with one it does
   not take, answers with what it takes, e.g. `find needs: what (atoms | bonds
   | polyhedra | voids); optional: where, limit, fields, groupBy`. Unknown keys
   are refused, never ignored.
@@ -181,12 +213,39 @@ checks, and prints a PASS/FAIL table. A window opens; it needs a display.
 ## From Python
 
 Every tool is also `Viewer.call(name, **args)`; arguments may be snake_case
-(`viewer.call("run_md", temperature_k=600)` sends `temperatureK`).
+(`viewer.call("run_md", temperature_k=600)` sends `temperatureK`). A refusal
+comes back as the result (`{"applied": False, "reason": ..., "code": ...}`,
+writes that applied have `"applied": True`); a wrong call raises
+`BrowserCommandError`. The typed methods (`load`, `save_image`,
+`update_lattice`, ...) raise `CommandRefused`, a subclass of
+`BrowserCommandError`, for a refusal, so existing `except` clauses still
+catch it. `Viewer.take_user_changes()` returns (and clears) the
+`sinceLastCall` notes of recent commands.
 `Viewer.run_job(name, **args)` starts a `run_*` job and blocks until it ends.
 The released methods (`list_structures`, `select`, `update_lattice`,
 `update_fractional_positions`, `commit_positions`, `recenter_camera`,
 `rotate_camera`, `set_render_pipeline`, `save_image`, `load`) keep working
 as thin wrappers over these commands.
+
+## Known limitations
+
+- **Transparent backgrounds with the ray and path tracers:** they paint their
+  own backdrop, so `transparent` has no effect there (`save_image` warns; the
+  app's export window has the same gap). Use a raster renderer for a
+  transparent figure.
+- **Polyhedra on very large cells:** turning on Show Polyhedra for a few
+  thousand atoms can keep the page busy for minutes and may crash the
+  renderer (a click in the window does the same; not an MCP issue).
+- **State is lost on reconnect:** reconnecting the server (`/mcp`) opens a
+  fresh window; export what you want to keep first. Selections and jobs do
+  not survive it either.
+- **Settings reset per launch:** each launch serves the window from a new
+  loopback port, so the browser keeps no saved preferences (sidebar layout,
+  custom bond lengths, colours) between launches. Release notes are skipped in
+  host windows for this reason; a stable origin is a follow-up.
+- **User changes during a job:** while a calculation runs, `sinceLastCall`
+  leaves structure changes out (the job's own); camera, selection and
+  renderer changes are still reported.
 
 ## Safety
 
