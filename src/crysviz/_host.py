@@ -34,17 +34,17 @@ def _prepared_sources(payload: object, attachments: dict[str, Attachment]) -> li
     used: set[str] = set()
     try:
         for item in payload["sources"]:
-            if not isinstance(item, dict) or set(item) != {"attachment", "name", "format", "binary"}:
+            if not isinstance(item, dict) or set(item) != {"attachment", "name", "format"}:
                 raise ProtocolError("bootstrap source has an invalid schema")
-            name, format_name, binary, attachment_name = item["name"], item["format"], item["binary"], item["attachment"]
+            name, format_name, attachment_name = item["name"], item["format"], item["attachment"]
             if (not isinstance(name, str) or not isinstance(attachment_name, str) or attachment_name in used
-                    or (format_name is not None and not isinstance(format_name, str)) or not isinstance(binary, bool)):
+                    or (format_name is not None and not isinstance(format_name, str))):
                 raise ProtocolError("bootstrap source fields are invalid")
             attachment = attachments.get(attachment_name)
             if attachment is None:
                 raise ProtocolError("bootstrap source attachment is missing")
             used.add(attachment_name)
-            sources.append(PreparedSource(name=name, format=format_name, binary=binary,
+            sources.append(PreparedSource(name=name, format=format_name,
                                           stream=attachment.stream, spool=attachment.stream))
         if set(attachments) != used:
             raise ProtocolError("bootstrap has unreferenced attachments")
@@ -156,10 +156,10 @@ class HostRuntime:
             raise ProtocolError("load requires exactly one data attachment")
         attachment = attachments["data"]
         source = PreparedSource(
-            name=args.get("name"), format=args.get("format"), binary=args.get("binary"),
+            name=args.get("name"), format=args.get("format"),
             stream=attachment.stream, spool=attachment.stream,
         )
-        if not isinstance(source.name, str) or (source.format is not None and not isinstance(source.format, str)) or not isinstance(source.binary, bool):
+        if not isinstance(source.name, str) or (source.format is not None and not isinstance(source.format, str)):
             source.close()
             raise ProtocolError("load arguments are invalid")
         for option in ("periodic", "interactive"):
@@ -173,7 +173,7 @@ class HostRuntime:
             raise
         # Remove the attachment only after the server has accepted ownership.
         attachments.pop("data")
-        load_args: dict[str, object] = {"name": source.name, "binary": source.binary, "inputUrl": input_url}
+        load_args: dict[str, object] = {"name": source.name, "inputUrl": input_url}
         # No format (an unrecognised extension, e.g. CHGCAR) means the browser detects it from the contents.
         if source.format is not None:
             load_args["format"] = source.format

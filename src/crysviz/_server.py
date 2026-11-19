@@ -85,8 +85,6 @@ class _LaunchState:
             }
             if source.format is not None:
                 item["format"] = source.format
-            if source.binary:
-                item["binary"] = True
             inputs.append(item)
         manifest: dict[str, object] = {"version": 1, "inputs": inputs}
         if self.bridge_capability is not None:
@@ -402,9 +400,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         try:
             stream = source.open()
             size = self._stream_length(stream)
-            content_type = "application/octet-stream" if source.binary else "text/plain; charset=utf-8"
+            # The browser reads every input as a Blob, as its detected format needs.
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(size))
             for key, value in _SECURITY_HEADERS.items():
                 self.send_header(key, value)

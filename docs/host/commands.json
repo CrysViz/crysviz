@@ -698,7 +698,6 @@
           "name": { "type": "string", "minLength": 1, "description": "File name; its extension selects the format unless format is given." },
           "data": { "type": "string", "description": "File contents." },
           "format": { "type": "string", "minLength": 1, "description": "Format name overriding the file extension." },
-          "binary": { "type": "boolean" },
           "periodic": { "type": "boolean", "description": "Force the structure to be treated as periodic or not." },
           "interactive": {
             "type": "boolean",

@@ -323,7 +323,7 @@ function validateManifest(manifest) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
       throw commandError('INVALID_MANIFEST', 'Host manifest input must be an object');
     }
-    if (Object.keys(input).some((key) => !['url', 'name', 'format', 'binary'].includes(key))) {
+    if (Object.keys(input).some((key) => !['url', 'name', 'format'].includes(key))) {
       throw commandError('INVALID_MANIFEST', 'Host manifest input contains an unknown field');
     }
     if (!safeName(input.name) || typeof input.url !== 'string') {
@@ -336,10 +336,7 @@ function validateManifest(manifest) {
     if (input.format !== undefined && (!safeName(input.format) || input.format.includes('/'))) {
       throw commandError('INVALID_MANIFEST', 'Host manifest input format must be a nonempty format name');
     }
-    if (input.binary !== undefined && typeof input.binary !== 'boolean') {
-      throw commandError('INVALID_MANIFEST', 'Host manifest input binary must be boolean');
-    }
-    return { url, name: input.name, format: input.format, binary: input.binary === true };
+    return { url, name: input.name, format: input.format };
   });
 }
 
@@ -414,7 +411,7 @@ export async function bootstrapAuthoritative(deps) {
           await strictFetch(input.url), 'INPUT_FETCH_FAILED', `Could not fetch host input ${input.name}`);
         const result = await host.dispatchInternal({
           command: 'load',
-          args: { name: input.name, data: await inputResponse.blob(), format: input.format, binary: input.binary },
+          args: { name: input.name, data: await inputResponse.blob(), format: input.format },
         });
         if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
       }

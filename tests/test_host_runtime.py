@@ -77,11 +77,11 @@ class BridgeSurfaceTests(unittest.TestCase):
     def test_DW_6_2_load_rewrite_carries_periodic(self):
         for value in (True, False):
             runtime = self._load_runtime()
-            args = {"name": "a.cube", "format": None, "binary": False, "periodic": value}
+            args = {"name": "a.cube", "format": None, "periodic": value}
             descriptor = runtime._prepare_request("r", "load", args, self._attachment())
             self.assertIs(descriptor["request"]["args"]["periodic"], value)
         runtime = self._load_runtime()
-        descriptor = runtime._prepare_request("r", "load", {"name": "a.cube", "format": None, "binary": False}, self._attachment())
+        descriptor = runtime._prepare_request("r", "load", {"name": "a.cube", "format": None}, self._attachment())
         self.assertNotIn("periodic", descriptor["request"]["args"])
         # An unknown format is left out (the browser detects it), never sent as null.
         self.assertNotIn("format", descriptor["request"]["args"])
@@ -91,7 +91,7 @@ class BridgeSurfaceTests(unittest.TestCase):
             runtime = self._load_runtime()
             attachments = self._attachment()
             with self.assertRaises(ProtocolError):
-                runtime._prepare_request("r", "load", {"name": "a", "format": None, "binary": False, "periodic": bad}, attachments)
+                runtime._prepare_request("r", "load", {"name": "a", "format": None, "periodic": bad}, attachments)
             runtime.server.publish.assert_not_called()
 
 

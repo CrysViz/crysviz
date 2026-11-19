@@ -147,7 +147,7 @@ const PAGE_HELPERS = `(() => {
   await H.waitFor(bridge, () => window.crysvizHost?.dispatch ? true : null, { timeout: 60000, interval: 500 });
   await bridge.waitForTimeout(3000);
   const bridgeLoad = (periodic, withKey = true) => bridge.evaluate(async ({ periodic, withKey }) => {
-    const args = { name: 'i.cube', inputUrl: '/host/cube', binary: false };
+    const args = { name: 'i.cube', inputUrl: '/host/cube' };
     if (withKey) args.periodic = periodic;
     window.__results.length = 0;
     window.__queue.push({ id: 'r', request: { command: 'load', args } });

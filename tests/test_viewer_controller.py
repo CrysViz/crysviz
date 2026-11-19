@@ -140,7 +140,7 @@ class ViewerControllerTests(unittest.TestCase):
             for index, source in enumerate(sources):
                 assert isinstance(source, Payload)
                 name = f"source-{index}"
-                descriptors.append({"attachment": name, "name": source.name, "format": source.format, "binary": source.format == "traj"})
+                descriptors.append({"attachment": name, "name": source.name, "format": source.format})
                 attachments[name] = source.data.encode() if isinstance(source.data, str) else source.data
             send_frame(viewer._connection, "bootstrap", {"sources": descriptors}, attachments)
         viewer._launch = launch  # type: ignore[method-assign]

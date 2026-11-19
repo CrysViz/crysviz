@@ -42,7 +42,7 @@ class PayloadTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             crysviz.Payload("a", "x", "")
 
-    def test_source_order_and_binary_spooling(self):
+    def test_source_order_and_spooling(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
             first = root / "first.cif"
@@ -53,9 +53,6 @@ class PayloadTests(unittest.TestCase):
             sources = prepare_sources([first, payload, trajectory])
             try:
                 self.assertEqual([source.name for source in sources], ["first.cif", "memory.cif", "second.traj"])
-                self.assertFalse(sources[0].binary)
-                self.assertFalse(sources[1].binary)
-                self.assertTrue(sources[2].binary)
                 self.assertEqual(sources[0].format, "cif")
                 self.assertEqual(sources[1].format, "cif")
                 self.assertEqual(sources[2].format, "traj")
@@ -73,16 +70,6 @@ class PayloadTests(unittest.TestCase):
         finally:
             sources[0].close()
 
-    def test_payload_binary_flag_depends_on_format_not_transport_type(self):
-        text_source = prepare_sources([crysviz.Payload("x.cif", b"CIF bytes")])[0]
-        binary_source = prepare_sources([crysviz.Payload("x.traj", b"traj bytes")])[0]
-        try:
-            self.assertFalse(text_source.binary)
-            self.assertTrue(binary_source.binary)
-        finally:
-            text_source.close()
-            binary_source.close()
-
     def test_payload_format_canonicalization(self):
         self.assertEqual(crysviz.Payload("x", b"x", "TRAJ").format, "traj")
         self.assertEqual(crysviz.Payload("x", b"x", ".Traj").format, "traj")
@@ -92,7 +79,6 @@ class PayloadTests(unittest.TestCase):
                 source = prepare_sources([crysviz.Payload("x", b"x", format_name)])[0]
                 try:
                     self.assertEqual(source.format, "traj")
-                    self.assertTrue(source.binary)
                 finally:
                     source.close()
         for invalid in ("..traj", ".", "traj ", "tra/j", ""):
@@ -244,7 +230,8 @@ class ServerTests(unittest.TestCase):
         self.assertNotIn("memory.dat", input_path)
         status, headers, body = self.request("GET", input_path)
         self.assertEqual((status, body), (200, b"a\x00b"))
-        self.assertEqual(headers["Content-Type"], "text/plain; charset=utf-8")
+        # Every input is bytes to the browser, which reads it by its detected format.
+        self.assertEqual(headers["Content-Type"], "application/octet-stream")
         status, headers, body = self.request("HEAD", input_path)
         self.assertEqual(status, 200)
         self.assertEqual(body, b"")
@@ -384,7 +371,7 @@ class ServerTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             server.start()
 
-    def test_manifest_omits_binary_for_bytes_text_source(self):
+    def test_manifest_carries_no_binary_flag(self):
         server = self.start([crysviz.Payload("x.cif", b"CIF bytes")])
         token = urlsplit(server.url).query.split("=", 1)[1]
         status, headers, body = self.request("GET", f"/_crysviz/manifest/{token}")
@@ -394,7 +381,8 @@ class ServerTests(unittest.TestCase):
         input_route = urlsplit(item["url"]).path
         status, headers, body = self.request("GET", input_route)
         self.assertEqual(status, 200)
-        self.assertEqual(headers["Content-Type"], "text/plain; charset=utf-8")
+        # Every input is bytes to the browser, which reads it by its detected format.
+        self.assertEqual(headers["Content-Type"], "application/octet-stream")
         self.assertEqual(body, b"CIF bytes")
 
     def test_exact_host_and_capability_expiration(self):

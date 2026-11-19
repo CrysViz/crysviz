@@ -1162,9 +1162,6 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (input.format !== undefined && (!safeName(input.format) || input.format.includes('/'))) {
       throw commandError('INVALID_ARGS', 'load.format must be a nonempty format name');
     }
-    if (input.binary !== undefined && typeof input.binary !== 'boolean') {
-      throw commandError('INVALID_ARGS', 'load.binary must be boolean');
-    }
     requirePeriodicOption(input.periodic);
     if (input.interactive !== undefined && typeof input.interactive !== 'boolean') {
       throw commandError('INVALID_ARGS', 'load.interactive must be boolean');

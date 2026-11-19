@@ -327,7 +327,6 @@ class Viewer:
                         attachment_name = f"source-{index}"
                         descriptors.append({
                             "attachment": attachment_name, "name": source.name, "format": source.format,
-                            "binary": source.binary,
                         })
                         attachments[attachment_name] = source.open()
                     with self._send_lock:
@@ -519,7 +518,7 @@ class Viewer:
         sources = prepare_sources([source])
         prepared = sources[0]
         try:
-            payload: dict[str, object] = {"name": prepared.name, "format": prepared.format, "binary": prepared.binary}
+            payload: dict[str, object] = {"name": prepared.name, "format": prepared.format}
             if periodic is not None:
                 payload["periodic"] = periodic
             if not interactive:

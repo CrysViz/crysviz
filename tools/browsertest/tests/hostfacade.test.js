@@ -112,7 +112,7 @@ async function waitForHostFailure(page) {
         inputs: [
           { url: '/host/input-a', name: 'manifest-a', format: 'vasp' },
           { url: '/host/input-b', name: 'manifest-b', format: 'vasp' },
-          { url: '/host/input-traj', name: 'binary trajectory', format: 'traj', binary: true },
+          { url: '/host/input-traj', name: 'binary trajectory', format: 'traj' },
         ],
       }),
     });
