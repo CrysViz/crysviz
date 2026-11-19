@@ -90,7 +90,8 @@ test('get_voids finds the empty perovskite A site of ReO3-type WO3 with its 12 O
     lattice: [[3.75, 0, 0], [0, 3.75, 0], [0, 0, 3.75]],
     atoms: [atom('W', [0, 0, 0]), atom('O', [0.5, 0, 0]), atom('O', [0, 0.5, 0]), atom('O', [0, 0, 0.5])],
   };
-  const [site] = voidSites(structure, 0.7);
+  const { total, sites: [site] } = voidSites(structure, 0.7);
+  assert.equal(total, 1);
   assert.deepEqual(site.position, [0.5, 0.5, 0.5]);
   assert.ok(Math.abs(site.radius - 3.75 / Math.SQRT2) < 1e-6);
   assert.deepEqual(site.neighbours, { O: 12 });
@@ -188,25 +189,55 @@ test('run_eos reports the EOS window fit as named numbers', async () => {
   assert.equal(eosFitSummary({ evResult: null, pvResult: { params: [1, 2, 3], fitStats: { rms: 0 } } }).energyVolume, null);
 });
 
-test('structure revision: any structural change gives a new one, a colour change does not', async () => {
-  const { structureRevision } = await import('../../docs/host/commands.js');
-  const atom = (element, position, extra = {}) => ({ position, species: [{ element, occupancy: 1 }], ...extra });
-  const s = { lattice: [[3, 0, 0], [0, 3, 0], [0, 0, 3]], atoms: [atom('Si', [0, 0, 0]), atom('O', [0.5, 0.5, 0.5])] };
+test('structure revision: atoms, species and the cell; not positions, not colours', async () => {
+  const { structureRevision, structureContent, atomIdentity } = await import('../../docs/host/commands.js');
+  const atom = (element, position, uuid) => ({ uuid, position, species: [{ element, occupancy: 1 }] });
+  const s = { lattice: [[3, 0, 0], [0, 3, 0], [0, 0, 3]], atoms: [atom('Si', [0, 0, 0], 'a'), atom('O', [0.5, 0.5, 0.5], 'b')] };
   const r0 = structureRevision(s);
+  const c0 = structureContent(s);
+  const i0 = atomIdentity(s);
   assert.match(r0, /^r[0-9a-f]{8}$/);
   s.atoms[0].userColor = '#ff0000';
   assert.equal(structureRevision(s), r0, 'colour is not structure');
+  // A phonon animation or a live MD moves the active structure every frame: no new revision,
+  // or every guarded edit would fail while it runs. Indices still mean the same atoms.
   s.atoms[1].position = [0.5, 0.5, 0.500001];
-  const r1 = structureRevision(s);
-  assert.notEqual(r1, r0, 'a moved atom');
+  assert.equal(structureRevision(s), r0, 'a moved atom keeps the revision');
+  assert.notEqual(structureContent(s), c0, 'but changes the content (what the editor table shows)');
   s.atoms[1].species[0].element = 'N';
-  assert.notEqual(structureRevision(s), r1, 'a changed element');
+  const r1 = structureRevision(s);
+  assert.notEqual(r1, r0, 'a changed element');
+  assert.equal(atomIdentity(s), i0, 'the same atoms: a selection stays valid');
+  s.atoms.push(atom('H', [0.25, 0.25, 0.25], 'c'));
+  assert.notEqual(structureRevision(s), r1, 'an added atom');
+  assert.notEqual(atomIdentity(s), i0, 'an added atom: selections go stale');
   const r2 = structureRevision(s);
-  s.atoms.push(atom('H', [0.25, 0.25, 0.25]));
-  assert.notEqual(structureRevision(s), r2, 'an added atom');
-  const r3 = structureRevision(s);
   s.lattice = [[6, 0, 0], [0, 3, 0], [0, 0, 3]];
-  assert.notEqual(structureRevision(s), r3, 'a new cell (supercell)');
+  assert.notEqual(structureRevision(s), r2, 'a new cell (supercell)');
+  s.atoms.reverse();
+  assert.notEqual(atomIdentity({ atoms: [s.atoms[2], s.atoms[1], s.atoms[0]] }), atomIdentity(s), 'reordered atoms');
+});
+
+test('find refuses where keys its kind does not take, never ignores them', async () => {
+  const { checkWhere, WHERE_KEYS } = await import('../../docs/host/query.js');
+  const code = (fn) => { try { fn(); } catch (error) { return error.message; } return null; };
+  assert.equal(code(() => checkWhere('atoms', { element: 'O', near: { atom: 0, within: 1 } })), null);
+  assert.match(code(() => checkWhere('bonds', { element: 'O' })), /bonds where takes elements, atoms.*not element.*elements: \["A", "B"\]/);
+  assert.match(code(() => checkWhere('voids', { element: 'O' })), /voids where takes minRadius; not element/);
+  assert.match(code(() => checkWhere('polyhedra', { cn: 6, radius: 2 })), /not radius/);
+  // commands.json describes every key some kind takes, and no other.
+  const where = spec.commands.find((c) => c.name === 'find').args.properties.where;
+  assert.equal(where.additionalProperties, false);
+  assert.deepEqual(Object.keys(where.properties).sort(), [...new Set(Object.values(WHERE_KEYS).flat())].sort());
+});
+
+test('get_state lists jobs briefly (wait_job gives one job in full)', async () => {
+  const { startJob, listJobs, waitJob } = await import('../../docs/host/jobs.js');
+  const job = startJob('test', async () => ({ big: 'x'.repeat(1000) }));
+  await waitJob(job.id, 1);
+  const listed = listJobs().find((j) => j.jobId === job.id);
+  assert.deepEqual(listed, { jobId: job.id, kind: 'test', status: 'done' });
+  assert.equal((await waitJob(job.id, 0)).result.big.length, 1000);
 });
 
 test('pressure hint read from a structure name, uncertainty in brackets ignored', async () => {

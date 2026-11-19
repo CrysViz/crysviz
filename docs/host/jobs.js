@@ -4,6 +4,15 @@
 // controller's command timeout. Jobs live for the page's lifetime.
 
 import { commandError, safeError } from './commands.js';
+import { getActiveStructure, getContainerForStructure, getContainerId } from '../state/structures.js';
+
+/** The structure and frame on show: what the next command acts on. */
+function activeNow() {
+  const structure = getActiveStructure();
+  const container = structure ? getContainerForStructure(structure) : null;
+  if (!container) return null;
+  return { structure: getContainerId(container), name: String(container.fileName), frame: container.structures.indexOf(structure) };
+}
 
 /** @type {Map<string, any>} */
 const jobs = new Map();
@@ -20,6 +29,8 @@ export function jobView(job) {
     elapsedS: Math.round((end - job.startedAt) / 100) / 10,
     ...(job.result !== undefined ? { result: job.result } : {}),
     ...(job.error ? { error: job.error } : {}),
+    // A run may switch rows (a new trajectory); say what is active now it ended.
+    ...(job.active ? { active: job.active } : {}),
   };
 }
 
@@ -42,6 +53,7 @@ export function startJob(kind, run) {
       (error) => { job.error = safeError(error, 'JOB_FAILED'); job.status = 'failed'; })
     .finally(() => {
       job.finishedAt = Date.now();
+      job.active = activeNow();
       for (const wake of job.waiters.splice(0)) wake();
     });
   return job;
@@ -59,8 +71,9 @@ export function runningJob(kind = null) {
   return null;
 }
 
+/** Every job, briefly; wait_job gives one job's progress and result. */
 export function listJobs() {
-  return [...jobs.values()].map(jobView);
+  return [...jobs.values()].map((job) => ({ jobId: job.id, kind: job.kind, status: job.status }));
 }
 
 /** Resolves when the job ends or after timeoutS, whichever is first. */

@@ -185,6 +185,7 @@ def parse_extxyz(text: str):
 class Session:
     def __init__(self, client: Client, out: Path):
         self.client, self.out = client, out
+        self.last_job: dict = {}
 
     async def raw(self, name, args=None):
         return await self.client.call_tool(name, args or {})
@@ -216,6 +217,9 @@ class Session:
             view = await self.call("wait_job", {"jobId": started["jobId"], "timeoutS": 25})
             if view["status"] != "running":
                 check(view["status"] == "done", f"{name} job {view['status']}: {view.get('error')}")
+                # A finished job says which structure and frame are on show: the next step acts on it.
+                check(view.get("active", {}).get("structure") is not None, f"{name} job does not say what is active: {view}")
+                self.last_job = view
                 return view["result"]
 
     async def toggle(self, query: str, on: bool) -> None:
@@ -248,6 +252,9 @@ async def w1_vacancy_relax(s: Session):
     before = (await s.state(atoms=True))["structure"]
     relax = await s.job("run_relax", {"maxSteps": 40, "fmax": 0.05})
     check(relax["steps"] > 0 and relax["trajectory"]["frames"] >= 2, f"relax: {relax}")
+    active = s.last_job["active"]
+    check(active["structure"] == relax["trajectory"]["id"] and active["frame"] == relax["trajectory"]["frames"] - 1,
+          f"after the relax the relaxed (last) frame should be on show: {active} vs {relax['trajectory']}")
     await s.call("select", {"id": relax["trajectory"]["id"], "frame": relax["trajectory"]["frames"] - 1})
     after = (await s.state(atoms=True))["structure"]
     check(after["atomCount"] == 134, "relaxed structure lost atoms")
@@ -479,13 +486,30 @@ async def edits(s: Session):
     colors = st["structure"]["colors"]
     check(colors["custom"] == [{"color": "#ff00ff", "count": 1, "atoms": [2]}] and "F" in colors["elements"],
           f"colours after set_element: {colors}")
-    # The old selection is stale now; an old revision is refused.
-    stale = await s.error("apply", {"selection": oxygens["selection"], "action": "highlight"})
-    check("SELECTION_STALE" in stale, stale)
+    # The same atoms at the same indices: the old selection is still valid after an element change.
+    await s.call("apply", {"selection": oxygens["selection"], "action": "highlight"})
     r1 = st["structure"]["revision"]
     await s.call("build_supercell", {"n": [2, 1, 1]})  # what the user might do by hand
     refused = await s.error("remove_atoms", {"atoms": [0], "expectedRevision": r1})
-    check("STRUCTURE_CHANGED" in refused and "10 atoms" in refused, refused)
+    check("STRUCTURE_CHANGED" in refused and "10 atoms" in refused and '"atomCount": 10' in refused, refused)
+    # (Once seen under heavy load: the old selection accepted after the supercell. If it recurs,
+    # this says whether the supercell had silently reverted.)
+    check((await s.state())["structure"]["atomCount"] == 10, "the 2x1x1 supercell did not stay built")
+    stale = await s.error("apply", {"selection": oxygens["selection"], "action": "highlight"})
+    check("SELECTION_STALE" in stale, f"a supercell must make old selections stale: {stale}")
+    # A filter on the wrong kind, or a misplaced one, is refused, never ignored.
+    wrong = await s.error("find", {"what": "bonds", "where": {"element": "O"}})
+    check("not element" in wrong and "elements" in wrong, wrong)
+    misplaced = await s.error("find", {"what": "atoms", "element": "O"})
+    check("does not take element" in misplaced, misplaced)
+    # The user's selection is theirs: clear leaves it unless asked; select says what it replaced.
+    await s.call("apply", {"atoms": [0, 1], "action": "select"})
+    cleared = await s.call("apply", {"action": "clear"})
+    check(cleared.get("what") == "highlight" and (await s.state())["selection"]["count"] == 2, f"clear: {cleared}")
+    replaced = await s.call("apply", {"atoms": [2], "action": "select"})
+    check(replaced.get("replacedUserSelection") == [0, 1], f"select did not report the replaced selection: {replaced}")
+    gone = await s.call("apply", {"action": "clear", "what": "selection"})
+    check(gone.get("clearedUserSelection") == 1 and (await s.state())["selection"]["count"] == 0, f"clear selection: {gone}")
     check((await s.state())["structure"]["atomCount"] == 10, "a refused remove_atoms removed atoms")
     # Selection algebra and position filters.
     fluorine = await s.call("find", {"what": "atoms", "where": {"element": "F"}, "fields": "indices"})
@@ -501,6 +525,18 @@ async def edits(s: Session):
     # reset_color: back to the element colour.
     await s.call("apply", {"selection": fluorine["selection"], "action": "reset_color"})
     check((await s.state())["structure"]["colors"]["custom"] == [], "reset_color left custom colours")
+    # A supercell too big to build inside the command timeout is refused, not left to close the window.
+    big = "STO2\n1.0\n7.81 0 0\n0 7.81 0\n0 0 7.81\nSr Ti O\n8 8 24\nDirect\n" + "".join(
+        f"{(x + i) / 2} {(y + j) / 2} {(z + k) / 2}\n"
+        for x, y, z in [(0, 0, 0)] for i in (0, 1) for j in (0, 1) for k in (0, 1)) + "".join(
+        f"{(x + i) / 2} {(y + j) / 2} {(z + k) / 2}\n"
+        for x, y, z in [(0.5, 0.5, 0.5)] for i in (0, 1) for j in (0, 1) for k in (0, 1)) + "".join(
+        f"{(x + i) / 2} {(y + j) / 2} {(z + k) / 2}\n"
+        for x, y, z in [(0.5, 0.5, 0), (0.5, 0, 0.5), (0, 0.5, 0.5)] for i in (0, 1) for j in (0, 1) for k in (0, 1))
+    await s.load_cell(big, "STO_222.vasp", 40)
+    too_big = await s.error("build_supercell", {"n": [20, 20, 20]})
+    check("TOO_LARGE" in too_big and "320000" in too_big, too_big)
+    check((await s.state())["structure"]["atomCount"] == 40, "a refused supercell changed the structure")
     # run_relax says which pressure it used, and what the name hints.
     await s.load_cell(STO, "SrTiO3_10GPa.vasp", 5)
     relaxed = await s.job("run_relax", {"maxSteps": 3})

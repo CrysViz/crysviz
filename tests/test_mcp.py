@@ -27,6 +27,7 @@ class _FakeViewer:
             def is_set(inner) -> bool:  # noqa: N805 - tiny stand-in for threading.Event
                 return self.closed
         self.closed = False
+        self.fail_next = None
         self._closed = _Closed()
         _FakeViewer.instances.append(self)
 
@@ -42,6 +43,9 @@ class _FakeViewer:
 
     def _command(self, name, args):
         self.calls.append((name, args))
+        if self.fail_next is not None:
+            error, self.fail_next = self.fail_next, None
+            raise error
         if name == "set_view" and args.get("direction") == "q":
             raise BrowserCommandError("INVALID_ARGS", "set_view.direction must be a, b, c, x, y, z or three finite numbers")
         if name == "get_state":
@@ -167,10 +171,15 @@ class ToolLayerTests(unittest.TestCase):
         with self.assertRaises(ToolError):
             self.tools.call("export_structure", {"format": "xyz"})
 
-    def test_write_tools_take_expected_revision(self):
+    def test_expected_revision_listed_on_index_addressed_tools_only(self):
+        guarded = {c["name"] for c in command_spec()["commands"] if c.get("guard")}
+        self.assertEqual(guarded, {"add_atoms", "remove_atoms", "set_element", "apply", "update_lattice",
+                                   "update_fractional_positions", "build_supercell"})
         for name, tool in self.tools.tools.items():
             listed = "expectedRevision" in tool["schema"].get("properties", {})
-            self.assertEqual(listed, tool["tier"] == "write", name)
+            self.assertEqual(listed, name in guarded, name)
+        self.assertTrue(self.tools.tools["remove_atoms"]["destructive"])
+        self.assertFalse(self.tools.tools["set_view"]["destructive"])
 
     def test_transparent_with_a_tracer_warns(self):
         try:
@@ -189,11 +198,35 @@ class ToolLayerTests(unittest.TestCase):
         self.assertEqual(str(caught.exception),
                          "INVALID_ARGS: find needs: what (atoms | bonds | polyhedra | voids); optional: where, limit, fields, groupBy")
         with self.assertRaisesRegex(ToolError, r"^INVALID_ARGS: set_control needs: ref \(string\); "
-                                               r"value \(boolean \| number \| string\); optional: expectedRevision$"):
+                                               r"value \(boolean \| number \| string\)$"):
             self.tools.call("set_control", {"ref": "x"})
         with self.assertRaisesRegex(ToolError, r"set_view needs: direction \(a \| b \| c \| x \| y \| z \| array\)"):
             self.tools.call("set_view", None)
         self.assertEqual(_FakeViewer.instances, [], "a missing argument never reaches the viewer")
+
+    def test_unknown_arguments_are_refused_not_ignored(self):
+        # A misplaced filter ("element" at the top, or under where for bonds) used to be dropped,
+        # answering a different question than the one asked.
+        with self.assertRaisesRegex(ToolError, r"^INVALID_ARGS: find does not take element\. find needs: what"):
+            self.tools.call("find", {"what": "atoms", "element": "O"})
+        with self.assertRaisesRegex(ToolError, r"find does not take where\.colour"):
+            self.tools.call("find", {"what": "atoms", "where": {"colour": "red"}})
+        with self.assertRaisesRegex(ToolError, r"find does not take where\.near\.radius"):
+            self.tools.call("find", {"what": "atoms", "where": {"near": {"atom": 0, "within": 1, "radius": 2}}})
+        with self.assertRaisesRegex(ToolError, r"save_image does not take size"):
+            self.tools.call("save_image", {"size": 400})
+        self.assertEqual(_FakeViewer.instances, [], "a refused call never reaches the viewer")
+
+    def test_browser_error_details_reach_the_model(self):
+        content = self.tools.call("get_state", {})  # starts the fake viewer
+        self.assertTrue(content)
+        _FakeViewer.instances[0].fail_next = BrowserCommandError("STRUCTURE_CHANGED", "changed", {"revision": "r1", "atomCount": 9})
+        with self.assertRaisesRegex(ToolError, r'STRUCTURE_CHANGED: changed \{"revision": "r1", "atomCount": 9\}'):
+            self.tools.call("get_state", {})
+
+    def test_mcp_commands_get_a_long_timeout(self):
+        from crysviz import _mcp
+        self.assertGreaterEqual(_mcp.MCP_COMMAND_TIMEOUT, 120)
 
     def test_save_image_gets_a_long_timeout(self):
         # A slow (large or ray-traced) image must not hit the 30 s command timeout, which closes the window.

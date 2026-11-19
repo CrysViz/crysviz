@@ -7,6 +7,7 @@
 // imported on first use so this file stays importable in Node.
 
 import { commandError, structureRevision } from './commands.js';
+import { atomIdentity } from '../model/structureRevision.js';
 import { fracToCartPoint } from '../math/index.js';
 import { getActiveStructure } from '../state/structures.js';
 import { general } from '../state/store.js';
@@ -211,7 +212,9 @@ const MAX_SELECTIONS = 20;
 
 function remember(structure, what, atoms, polyhedra = null) {
   const id = `s${nextSelection++}`;
-  selections.set(id, { structure, revision: structureRevision(structure), what, atoms, polyhedra });
+  // Keyed on atom identity, not the revision: a selection of indices stays valid while the
+  // same atoms sit at the same indices, whatever their elements or positions do.
+  selections.set(id, { structure, identity: atomIdentity(structure), what, atoms, polyhedra });
   if (selections.size > MAX_SELECTIONS) selections.delete(selections.keys().next().value);
   return id;
 }
@@ -221,9 +224,8 @@ function savedSelection(structure, id) {
   const saved = selections.get(id);
   if (!saved) throw commandError('SELECTION_NOT_FOUND', `No selection ${id}`);
   if (saved.structure !== structure) throw commandError('SELECTION_STALE', `${id} belongs to another structure; find again`);
-  const now = structureRevision(structure);
-  if (saved.revision !== now) {
-    throw commandError('SELECTION_STALE', `The structure changed since ${id} was found (revision ${saved.revision} -> ${now}); find again`);
+  if (saved.identity !== atomIdentity(structure)) {
+    throw commandError('SELECTION_STALE', `Atoms were added, removed or reordered since ${id} was found (${structure.atoms.length} atoms now); find again`);
   }
   return saved;
 }
@@ -246,6 +248,24 @@ function shapeOutput(structure, what, found, { fields, groupBy, limit }) {
   return { items: found.items.slice(0, limit), ...(found.items.length > limit ? { truncated: true } : {}) };
 }
 
+/** The where keys each kind of find takes. An unknown key is an error, never ignored: a
+ *  filter silently dropped answers a different question than the one asked. */
+export const WHERE_KEYS = Object.freeze({
+  atoms: ['element', 'elements', 'indices', 'frac', 'near', 'in', 'notIn'],
+  bonds: ['elements', 'atoms', 'minLength', 'maxLength', 'in', 'notIn'],
+  polyhedra: ['type', 'center', 'cn', 'in', 'notIn'],
+  voids: ['minRadius'],
+});
+
+/** Refuse where keys that this kind of find does not take, naming the ones it does. */
+export function checkWhere(what, where) {
+  const unknown = Object.keys(where).filter((key) => !WHERE_KEYS[what].includes(key));
+  if (!unknown.length) return;
+  const hint = what === 'bonds' && unknown.some((key) => key === 'element')
+    ? ' (for bonds of a pair give elements: ["A", "B"]; for one element use find atoms)' : '';
+  throw commandError('INVALID_ARGS', `find ${what} where takes ${WHERE_KEYS[what].join(', ')}; not ${unknown.join(', ')}${hint}`);
+}
+
 /** find: run a finder on the active structure and keep its atoms as a selection. */
 export async function find(args, { polyhedraSummary, voidSites }) {
   const { what, where = {}, limit = 100, fields, groupBy } = args || {};
@@ -253,12 +273,13 @@ export async function find(args, { polyhedraSummary, voidSites }) {
     throw commandError('INVALID_ARGS', 'find.what must be atoms, bonds, polyhedra or voids');
   }
   if (!where || typeof where !== 'object' || Array.isArray(where)) throw commandError('INVALID_ARGS', 'find.where must be an object');
+  checkWhere(what, where);
   if (!Number.isInteger(limit) || limit < 1 || limit > 5000) throw commandError('INVALID_ARGS', 'find.limit must be 1 to 5000');
   if (fields !== undefined && fields !== 'indices' && fields !== 'items') throw commandError('INVALID_ARGS', 'find.fields must be indices or items');
   if (groupBy !== undefined && groupBy !== 'element') throw commandError('INVALID_ARGS', 'find.groupBy must be element');
   const structure = getActiveStructure();
   if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-  /** @type {{items: any[], atoms: number[], polyhedra?: string[]}} */
+  /** @type {{items: any[], atoms: number[], polyhedra?: string[], total?: number}} */
   let found;
   let note;
   if (what === 'polyhedra') {
@@ -280,7 +301,9 @@ export async function find(args, { polyhedraSummary, voidSites }) {
       && (where.cn === undefined || p.vertices.length === where.cn)).map((p) => p.key).filter(Boolean);
   } else if (what === 'voids') {
     const minRadius = where.minRadius ?? 0.7;
-    found = { items: voidSites(structure, minRadius), atoms: [] };
+    // Only the returned sites get their neighbours counted; count stays the full number.
+    const { total, sites } = voidSites(structure, minRadius, limit);
+    found = { items: sites, atoms: [], total };
   } else {
     found = FINDERS[what](structure, where);
   }
@@ -295,9 +318,10 @@ export async function find(args, { polyhedraSummary, voidSites }) {
   return {
     selection: remember(structure, what, found.atoms, found.polyhedra ?? null),
     revision: structureRevision(structure),
-    count: found.items.length,
+    count: found.total ?? found.items.length,
     atomCount: found.atoms.length,
     ...shapeOutput(structure, what, found, { fields, groupBy, limit }),
+    ...(found.total > found.items.length ? { truncated: true } : {}),
     ...(note ? { note } : {}),
   };
 }
@@ -357,17 +381,28 @@ export async function apply(args) {
     return { action, all: true };
   }
   if (action === 'clear') {
+    // The selection is the user's as much as ours: clear it only when asked.
+    const what = args.what ?? 'highlight';
+    if (what !== 'highlight' && what !== 'selection') throw commandError('INVALID_ARGS', 'apply clear what must be highlight or selection');
     const { clearHighlightAtom, selectAtomsByInstances } = await highlight();
-    clearHighlightAtom();
-    selectAtomsByInstances([]);
-    return { action, atoms: 0 };
+    if (what === 'highlight') clearHighlightAtom();
+    else {
+      const had = (await userSelection()).length;
+      selectAtomsByInstances([]);
+      return { action, what, clearedUserSelection: had };
+    }
+    return { action, what };
   }
   const atoms = applyTargets(structure, args);
   if (action === 'highlight') {
     (await highlight()).highlightAtomsIn3D(atoms);
   } else if (action === 'select') {
+    // Selecting replaces what the user had selected: say so, with what it was.
+    const before = await userSelection();
     const instances = atoms.flatMap((i) => structure.atomImages?.[i] ?? [i]);
     (await highlight()).selectAtomsByInstances(instances, { reason: 'host' });
+    const lost = before.filter((i) => !atoms.includes(i));
+    if (lost.length) return { action, atoms: atoms.length, replacedUserSelection: before.slice(0, 500) };
   } else if (action === 'color') {
     (await import('../ui/StructureInfoPanel/SelectionActionBar.js')).colorSourceAtoms(atoms, args.value.toLowerCase());
   } else if (action === 'reset_color') {

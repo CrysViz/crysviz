@@ -38,6 +38,10 @@ MAX_SAVED_SIDE = 16384
 # the window (Viewer treats the host as stuck), losing what the user had open, so an image
 # gets far longer than the 30 s command default.
 SAVE_IMAGE_TIMEOUT = 900.0
+# Every other command. The Viewer default (30 s) suits a script; here a slow command (a big
+# supercell, polyhedra or bonds of a large cell, loading a large file) must not cost the user
+# their window. Calculations are jobs and return at once.
+MCP_COMMAND_TIMEOUT = 300.0
 MAX_INLINE_TEXT = 16 * 1024 * 1024
 _EXPORT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 
@@ -156,11 +160,13 @@ class CrysVizTools:
             if command["name"] in _FILE_COMMANDS:
                 continue
             schema = command["args"]
-            if command["tier"] == "write":
-                # Every command takes expectedRevision (commands.json "revisionGuard"); list it where it matters.
+            if command.get("guard"):
+                # Every command takes expectedRevision (commands.json "revisionGuard"); listed on the
+                # ones that edit by atom index, where it matters.
                 schema = {**schema, "properties": {**schema.get("properties", {}), "expectedRevision": REVISION_PROPERTY}}
             self.tools[command["name"]] = {
                 "description": command["description"], "schema": schema, "tier": command["tier"],
+                "destructive": bool(command.get("destructive")),
             }
         self.tools["load"] = {
             "description": next(c for c in spec["commands"] if c["name"] == "load")["description"]
@@ -206,9 +212,9 @@ class CrysVizTools:
         if name not in self.tools:
             raise ToolError(f"unknown tool {name!r}")
         args = dict(arguments or {})
-        missing = missing_required(name, self.tools[name]["schema"], args)
-        if missing:
-            raise ToolError(missing)
+        problem = check_args(name, self.tools[name]["schema"], args)
+        if problem:
+            raise ToolError(problem)
         try:
             if name == "load":
                 return [_text(self._load(args))]
@@ -220,7 +226,9 @@ class CrysVizTools:
                 return [_text(self._export_trajectory(args))]
             return [_text(self.viewer().call(name, **args))]
         except BrowserCommandError as error:
-            raise ToolError(f"{error.code}: {error.message}") from error
+            # details carry what the model needs to fix the call (too-close pairs, the current revision).
+            details = f" {json.dumps(error.details)}" if error.details else ""
+            raise ToolError(f"{error.code}: {error.message}{details}") from error
         except (ViewerError, TypeError, ValueError, OSError) as error:
             # A startup failure's cause holds the host's stderr (e.g. no display).
             cause = f" ({error.__cause__})" if error.__cause__ else ""
@@ -338,20 +346,42 @@ def _brief(prop: dict[str, Any]) -> str:
     return kind or " | ".join(option.get("type", "?") for option in prop.get("anyOf", ())) or "any"
 
 
-def missing_required(name: str, schema: dict[str, Any], args: dict[str, Any]) -> str | None:
-    """The error when `args` leaves out a required argument, or None.
-
-    One check for every tool, built from its schema. A client may call a tool before it has
-    seen the schema (Claude Code defers them), so the message carries the schema itself:
-    every required field with its allowed values, then the optional names.
-    """
+def _usage(name: str, schema: dict[str, Any]) -> str:
+    """ "<name> needs: a (x | y); optional: b, c" from a schema: the schema itself, in words."""
     required = list(schema.get("required", ()))
-    if all(key in args for key in required):
-        return None
     properties = schema.get("properties", {})
-    needs = "; ".join(f"{key} ({_brief(properties.get(key, {}))})" for key in required)
     optional = [key for key in properties if key not in required]
-    return f"INVALID_ARGS: {name} needs: {needs}" + (f"; optional: {', '.join(optional)}" if optional else "")
+    needs = "; ".join(f"{key} ({_brief(properties.get(key, {}))})" for key in required)
+    head = f"{name} needs: {needs}" if required else f"{name} takes"
+    return head + (f"{';' if required else ''} optional: {', '.join(optional)}" if optional else ("" if required else " no arguments"))
+
+
+def _unknown_keys(schema: dict[str, Any], value: object, path: str) -> list[str]:
+    """Keys of `value` (and of nested objects) that a closed schema does not name."""
+    if not isinstance(value, dict) or schema.get("type") != "object":
+        return []
+    properties = schema.get("properties", {})
+    bad = [f"{path}{key}" for key in value if key not in properties] if schema.get("additionalProperties") is False else []
+    for key, item in value.items():
+        if key in properties:
+            bad += _unknown_keys(properties[key], item, f"{path}{key}.")
+    return bad
+
+
+def check_args(name: str, schema: dict[str, Any], args: dict[str, Any]) -> str | None:
+    """The error for arguments that a tool's schema does not allow, or None.
+
+    One check for every tool, built from its schema: a required argument left out, or a key
+    the schema does not name (top level or nested), which would otherwise be ignored and
+    answer a different question. A client may call a tool before it has seen the schema
+    (Claude Code defers them), so the message carries the schema itself.
+    """
+    if any(key not in args for key in schema.get("required", ())):
+        return f"INVALID_ARGS: {_usage(name, schema)}"
+    unknown = _unknown_keys(schema, args, "")
+    if unknown:
+        return f"INVALID_ARGS: {name} does not take {', '.join(unknown)}. {_usage(name, schema)}"
+    return None
 
 
 def _text(value: object) -> dict[str, Any]:
@@ -370,8 +400,9 @@ def build_server(tools: CrysVizTools):
                 name=name, description=tool["description"], input_schema=tool["schema"],
                 annotations=types.ToolAnnotations(
                     read_only_hint=tool["tier"] == "read",
-                    # Nothing here deletes data: write tools change only what the window shows.
-                    destructive_hint=False,
+                    # Write tools change only what the window shows; remove_atoms deletes atoms
+                    # (undoable from its result, but destructive all the same).
+                    destructive_hint=tool.get("destructive", False),
                     open_world_hint=False,
                 ),
             )
@@ -413,7 +444,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.exit(2, "crysviz-mcp needs the MCP SDK: pip install 'crysviz[mcp]'\n")
 
     tools = CrysVizTools(export_dir=Path(options.export_dir).expanduser().resolve(),
-                         viewer_factory=lambda: Viewer(gui=options.gui, debug=options.debug))
+                         viewer_factory=lambda: Viewer(gui=options.gui, debug=options.debug,
+                                                       command_timeout=MCP_COMMAND_TIMEOUT))
     server = build_server(tools)
 
     async def serve() -> None:

@@ -5,7 +5,7 @@
     "write": "Changes what the viewer shows; no files are read or written.",
     "file": "Reads or writes data outside the viewer (structure files, images)."
   },
-  "revisionGuard": "Every command accepts expectedRevision (get_state's structure.revision): it then runs only if the active structure is unchanged since, and otherwise fails with STRUCTURE_CHANGED (current revision and atom count). The MCP server lists it on every write-tier tool.",
+  "revisionGuard": "Every command accepts expectedRevision (get_state's structure.revision): it then runs only if the active structure is unchanged since, and otherwise fails with STRUCTURE_CHANGED (current revision and atom count). The MCP server lists it on the commands marked \"guard\": true (they edit by atom index). The revision covers atom identity, species and the cell, not positions: moving atoms never renumbers them.",
   "commands": [
     {
       "name": "list_structures",
@@ -94,7 +94,27 @@
         "type": "object",
         "properties": {
           "what": { "type": "string", "enum": ["atoms", "bonds", "polyhedra", "voids"] },
-          "where": { "type": "object", "description": "Filters for the kind, see the description." },
+          "where": {
+            "type": "object",
+            "description": "Filters; each kind takes only its own keys (others are refused). atoms: element(s), indices, frac, near, in, notIn. bonds: elements (a pair), atoms (centres: their neighbour lists), minLength, maxLength, in, notIn. polyhedra: type, center, cn, in, notIn. voids: minRadius.",
+            "properties": {
+              "element": { "type": "string" },
+              "elements": { "type": "array", "items": { "type": "string" } },
+              "indices": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+              "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "bonds: centre atoms." },
+              "frac": { "type": "object", "properties": { "min": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }, "max": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 } }, "required": ["min", "max"], "additionalProperties": false },
+              "near": { "type": "object", "properties": { "point": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }, "atom": { "type": "integer", "minimum": 0 }, "within": { "type": "number", "exclusiveMinimum": 0 } }, "required": ["within"], "additionalProperties": false },
+              "in": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+              "notIn": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+              "minLength": { "type": "number" },
+              "maxLength": { "type": "number" },
+              "type": { "type": "string", "enum": ["centered", "cage"] },
+              "center": { "type": "string" },
+              "cn": { "type": "integer", "minimum": 1 },
+              "minRadius": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "additionalProperties": false
+          },
           "limit": { "type": "integer", "minimum": 1, "maximum": 5000, "description": "Items to return, default 100; count is always the full number." },
           "fields": { "type": "string", "enum": ["items", "indices"], "description": "items (default): details per item; indices: only the atom indices." },
           "groupBy": { "type": "string", "enum": ["element"], "description": "Counts and atom indices per element." }
@@ -105,8 +125,9 @@
     },
     {
       "name": "apply",
+      "guard": true,
       "tier": "write",
-      "description": "Act on atoms: a selection from find, or atom indices (structure order, 0-based, as find, get_state and export_structure's order use). action: highlight (glow), select (the app's selection, which the Selection Inspector and measuring use), clear (highlight and selection), color (value '#rrggbb', every copy of each atom, kept for the session), reset_color (back to the element colour; with all: true, the Atoms tab's Reset Colors for atoms, bonds, polyhedra and arrows), hide, show. A bonds selection acts on its atoms; a polyhedra selection's color colours the polyhedra themselves (target: atoms colours their atoms instead). bondPair: [A, B] with color colours every A-B bond. selection: \"user\" is what the user has selected in the window.",
+      "description": "Act on atoms: a selection from find, or atom indices (structure order, 0-based, as find, get_state and export_structure's order use). action: highlight (glow), select (the app's selection, which the Selection Inspector and measuring use), clear (what: highlight (default) or selection: the selection is the user's too, so it is cleared only when asked), color (value '#rrggbb', every copy of each atom, kept for the session), reset_color (back to the element colour; with all: true, the Atoms tab's Reset Colors for atoms, bonds, polyhedra and arrows), hide, show. A bonds selection acts on its atoms; a polyhedra selection's color colours the polyhedra themselves (target: atoms colours their atoms instead). bondPair: [A, B] with color colours every A-B bond. selection: \"user\" is what the user has selected in the window.",
       "args": {
         "type": "object",
         "properties": {
@@ -116,6 +137,7 @@
           "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "Atom indices, instead of selection." },
           "action": { "type": "string", "enum": ["highlight", "select", "clear", "color", "reset_color", "hide", "show"] },
           "value": { "type": "string", "description": "For color: '#rrggbb'." },
+          "what": { "type": "string", "enum": ["highlight", "selection"], "description": "For clear: which one (default highlight)." },
           "all": { "type": "boolean", "description": "With reset_color: every colour customization of the structure, not only the given atoms." }
         },
         "required": ["action"],
@@ -167,6 +189,7 @@
     },
     {
       "name": "remove_atoms",
+      "guard": true, "destructive": true,
       "tier": "write",
       "description": "Delete atoms from the active structure, as the structure editor does. Give atom indices (from get_state, find or your own script), a find selection id, or selection: \"user\" for what the user has selected. The result lists each removed atom's element, fractional position and occupancy, so add_atoms can put them back (undo). Indices of the atoms after them shift down.",
       "args": {
@@ -180,6 +203,7 @@
     },
     {
       "name": "set_element",
+      "guard": true,
       "tier": "write",
       "description": "Change atoms to another element in place, as an element edit in the structure editor: index, position and uuid stay, so no index shifts. An atom with its own colour keeps it; one at its element's default colour takes the new element's default. Give atom indices, a find selection id, or selection: \"user\". Ordered sites only (a disordered site's species are edited in the structure editor). Returns the new revision.",
       "args": {
@@ -195,6 +219,7 @@
     },
     {
       "name": "add_atoms",
+      "guard": true,
       "tier": "write",
       "description": "Add atoms to the active structure at fractional positions, as the Add Atom window does. Refuses atoms closer than 0.5 Å to another atom unless force is true.",
       "args": {
@@ -223,6 +248,7 @@
     },
     {
       "name": "build_supercell",
+      "guard": true,
       "tier": "write",
       "description": "Repeat the active structure's cell n = [nx, ny, nz] times, as the Cell & Supercell window does. [1, 1, 1] goes back to the original cell.",
       "args": {
@@ -375,6 +401,7 @@
     },
     {
       "name": "update_fractional_positions",
+      "guard": true,
       "tier": "write",
       "description": "Replace the fractional positions of every atom of the active structure.",
       "args": {
@@ -393,6 +420,7 @@
     },
     {
       "name": "update_lattice",
+      "guard": true,
       "tier": "write",
       "description": "Replace the lattice vectors of the active structure (rows a, b, c in Angstrom).",
       "args": {

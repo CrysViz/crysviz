@@ -11,6 +11,7 @@ import {
   getContainers,
 } from '../state/structures.js';
 import { app, general } from '../state/store.js';
+import { structureRevision } from '../model/structureRevision.js';
 import { cancelJob, getJob, jobView, listJobs, runningJob, startJob, waitJob } from './jobs.js';
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
@@ -234,27 +235,9 @@ export function composition(atoms) {
   return { counts, formula };
 }
 
-/**
- * A token for what the structure IS (atoms, species, occupancies, positions,
- * lattice), not how it looks: any structural change — the user's edits in a
- * window, a supercell, Claude's add/remove/set_element, a relax step — gives a
- * new one, a colour change does not. Derived from the content, so no edit path
- * has to remember to bump it. Mutating commands take expectedRevision.
- * @param {any} structure
- */
-export function structureRevision(structure) {
-  let h = 0x811c9dc5;
-  const mix = (v) => { h = Math.imul(h ^ (v | 0), 16777619); };
-  const num = (x) => mix(Math.round(x * 1e6));
-  const text = (t) => { for (let i = 0; i < t.length; i++) mix(t.charCodeAt(i)); mix(0); };
-  mix(structure.atoms.length);
-  for (const row of structure.lattice || []) row.forEach(num);
-  for (const atom of structure.atoms) {
-    for (const s of atom.species || []) { text(String(s.element)); num(s.occupancy ?? 1); }
-    atom.position.forEach(num);
-  }
-  return `r${(h >>> 0).toString(16).padStart(8, '0')}`;
-}
+// Revision tokens live in model/structureRevision.js (shared with the structure editor).
+export { structureRevision, structureContent, atomIdentity } from '../model/structureRevision.js';
+
 
 /** expectedRevision guard (host dispatch, every command): refuse when the active structure changed. */
 export function checkExpectedRevision(expected) {
@@ -396,14 +379,28 @@ function periodicDistance(p, q, lattice) {
   return best;
 }
 
+/** Largest supercell build_supercell makes (atoms): it must finish well inside the host timeout. */
+export const MAX_HOST_SUPERCELL_ATOMS = 300000;
+
 /** A void's neighbours: atom images within this factor of its nearest distance (the first shell). */
 const VOID_SHELL_FACTOR = 1.15;
+/** Grid maxima this close (Å) are one void (a flat maximum spans several grid points). */
+const VOID_MERGE = 0.5;
 
-/** Periodic images of fractional point q within `cutoff` Å of p. */
-function imagesWithin(p, q, lattice, cutoff) {
+/** Perpendicular widths of the cell (Å): how many cells a distance can reach along each axis. */
+function cellWidths(lattice) {
+  const [a, b, c] = lattice;
+  const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const volume = Math.abs(a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0]));
+  return [cross(b, c), cross(c, a), cross(a, b)].map((n) => volume / Math.max(Math.hypot(...n), 1e-9));
+}
+
+/** Periodic images of fractional point q within `cutoff` Å of p (only the cells the cutoff can reach). */
+function imagesWithin(p, q, lattice, cutoff, widths) {
   const d = [0, 1, 2].map((k) => { const x = q[k] - p[k]; return x - Math.round(x); });
+  const reach = widths.map((w) => Math.ceil(cutoff / w));
   let count = 0;
-  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) for (let k = -2; k <= 2; k++) {
+  for (let i = -reach[0]; i <= reach[0]; i++) for (let j = -reach[1]; j <= reach[1]; j++) for (let k = -reach[2]; k <= reach[2]; k++) {
     if (Math.hypot(...fracToCartPoint([d[0] + i, d[1] + j, d[2] + k], lattice)) <= cutoff) count++;
   }
   return count;
@@ -411,29 +408,55 @@ function imagesWithin(p, q, lattice, cutoff) {
 
 /**
  * Interstitial sites of `structure`: the void centres of the cage search
- * (render/voidSearch.js), one per void, largest first, with the atoms around
- * each.
+ * (render/voidSearch.js), one per void, largest first. `total` counts them
+ * all; the first `limit` come with the atoms around each. Both steps scale
+ * with the cell (grid-maxima merge through a spatial hash, neighbours only for
+ * the sites returned): an all-pairs version took minutes on a 3600-atom cell.
  * @param {any} structure
  * @param {number} minRadius smallest distance (Å) from a site to every atom
+ * @param {number} [limit] how many sites to describe
+ * @returns {{total: number, sites: Array<{position: number[], radius: number, neighbours: Record<string, number>}>}}
  */
-export function voidSites(structure, minRadius) {
+export function voidSites(structure, minRadius, limit = Infinity) {
+  const { lattice } = structure;
   const positions = structure.atoms.map((atom) => atom.position);
-  const { voids } = findVoidCentres(structure.lattice, positions, minRadius);
+  const { voids } = findVoidCentres(lattice, positions, minRadius);
   voids.sort((p, q) => q.radius - p.radius);
-  const element = (i) => structure.atoms[i]?.getRepresentativeElement?.() ?? structure.elements?.[i] ?? '';
-  const sites = [];
+  // Merge: bins at least VOID_MERGE wide along each axis, so a void only meets the sites in its own and adjacent bins.
+  const widths = cellWidths(lattice);
+  const bins = widths.map((w) => Math.max(1, Math.floor(w / VOID_MERGE)));
+  const binOf = (f) => f.map((x, k) => Math.min(bins[k] - 1, Math.floor((x - Math.floor(x)) * bins[k])));
+  /** @type {Map<string, number[][]>} */
+  const byBin = new Map();
+  const kept = [];
   for (const v of voids) {
-    // Grid points of one void (a flat maximum, or its periodic copy) merge into the largest.
-    if (sites.some((s) => periodicDistance(s.position, v.frac, structure.lattice) < 0.5)) continue;
+    const [bi, bj, bk] = binOf(v.frac);
+    let merged = false;
+    const seen = new Set();
+    for (let di = -1; di <= 1 && !merged; di++) for (let dj = -1; dj <= 1 && !merged; dj++) for (let dk = -1; dk <= 1 && !merged; dk++) {
+      const key = `${(bi + di + bins[0]) % bins[0]},${(bj + dj + bins[1]) % bins[1]},${(bk + dk + bins[2]) % bins[2]}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged = (byBin.get(key) || []).some((p) => periodicDistance(p, v.frac, lattice) < VOID_MERGE);
+    }
+    if (merged) continue;
+    const key = `${bi},${bj},${bk}`;
+    if (!byBin.has(key)) byBin.set(key, []);
+    byBin.get(key).push(v.frac);
+    kept.push(v);
+  }
+  const element = (i) => structure.atoms[i]?.getRepresentativeElement?.() ?? structure.elements?.[i] ?? '';
+  const sites = kept.slice(0, limit).map((v) => {
     /** @type {Record<string, number>} */
     const neighbours = {};
+    const cutoff = v.radius * VOID_SHELL_FACTOR;
     positions.forEach((p, i) => {
-      const n = imagesWithin(v.frac, p, structure.lattice, v.radius * VOID_SHELL_FACTOR);
+      const n = imagesWithin(v.frac, p, lattice, cutoff, widths);
       if (n) neighbours[element(i)] = (neighbours[element(i)] || 0) + n;
     });
-    sites.push({ position: v.frac.map(wrap), radius: round(v.radius), neighbours });
-  }
-  return sites;
+    return { position: v.frac.map(wrap), radius: round(v.radius), neighbours };
+  });
+  return { total: kept.length, sites };
 }
 
 function cameraState() {
@@ -653,8 +676,8 @@ export const COMMAND_HANDLERS = Object.freeze({
     const structure = getActiveStructure();
     if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
     if (!Array.isArray(structure.lattice) || structure.periodic === false) throw commandError('NO_LATTICE', 'Voids need a periodic structure');
-    const sites = voidSites(structure, minRadius);
-    return { total: sites.length, voids: sites.slice(0, limit) };
+    const { total, sites } = voidSites(structure, minRadius, limit);
+    return { total, voids: sites };
   },
 
   async set_element(args) {
@@ -738,7 +761,16 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (!Array.isArray(n) || n.length !== 3 || !n.every((k) => Number.isInteger(k) && k >= 1 && k <= 20)) {
       throw commandError('INVALID_ARGS', 'build_supercell.n must be three integers from 1 to 20');
     }
-    if (!getActiveStructure()?.lattice) throw commandError('NO_LATTICE', 'The active structure has no lattice');
+    const structure = getActiveStructure();
+    if (!structure?.lattice) throw commandError('NO_LATTICE', 'The active structure has no lattice');
+    // A host command must finish well inside its timeout, or the window is closed with
+    // everything the user had open: 224 000 atoms build in ~6 s, a 20x20x20 of a big cell would not.
+    const { supercellAtomCount } = await import('../ui/SuperCellModule.js');
+    const atoms = supercellAtomCount(structure, n[0], n[1], n[2]);
+    if (atoms > MAX_HOST_SUPERCELL_ATOMS) {
+      throw commandError('TOO_LARGE', `A ${n.join('x')} supercell would have ${atoms} atoms; the limit here is ${MAX_HOST_SUPERCELL_ATOMS}`,
+        { atoms, limit: MAX_HOST_SUPERCELL_ATOMS });
+    }
     // The same path as the Cell & Supercell window and the feature search's "222".
     await (await import('../ui/LatticeSupercellPanel.js')).applySupercell(n[0], n[1], n[2]);
     return { supercell: n, atomCount: getActiveStructure()?.atoms.length ?? 0 };
@@ -907,9 +939,12 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
     assertNoCalculatorJob();
     const panel = await import('../ui/LatticeSupercellPanel.js');
-    // Built here, not in the job: "nothing to order" fails this call.
-    const samples = panel.buildOrderSamples(structure, count, multiplier);
+    // "Nothing to order" fails this call (zero samples is only the check); building the
+    // samples can take long for a big multiplier, so that happens in the job.
+    panel.buildOrderSamples(structure, 0, multiplier);
     const job = startJob('order', async (job) => {
+      job.progress = { text: `building ${count} ordered samples` };
+      const samples = panel.buildOrderSamples(structure, count, multiplier);
       let potential = null;
       if (withEnergies) {
         ({ potential } = await panel.scoreOrderSamples(samples, {
