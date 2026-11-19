@@ -469,7 +469,7 @@ function addOrderStructureSection(container) {
 }
 
 /** "Add Vacuum" section content — grows the cell along X/Y/Z (Å), independent
- *  of the Supercell/Transformation sections above/below it. Lives here (Cell &
+ *  of the Supercell/Transformation sections above it. Lives here (Cell &
  *  Supercell) rather than the add-atoms popup: it modifies the cell, not the
  *  atom list, so it fits this panel's job much better. */
 function addVacuumSection(container) {
@@ -1108,12 +1108,14 @@ transformResetBtn.onclick = () => {
 };
 
   // --- Build Structure ---
+  // The transformation follows the active cell boundary: both reshape the
+  // cell itself, before the sections that build on it.
   group.appendChild(supercellPanel);
   group.appendChild(boundaryPanel);
+  group.appendChild(transformPanel);
   group.appendChild(vacuumPanel);
   group.appendChild(slabPanel);
   group.appendChild(orderPanel);
-  group.appendChild(transformPanel);
   targetPanel.appendChild(group);
 
 }

@@ -325,11 +325,12 @@ async function expandPanel(page, id) {
   // that cell is now edited through the Modify Structure panel's lattice
   // inputs. "Order Structure" (build an ordered approximant of a disordered
   // cell) was added by the fractional-occupation work, and "Cut Slab (h k l)"
-  // (the slab cutter build_slab shares) beside Vacuum.
+  // (the slab cutter build_slab shares) beside Vacuum. Lattice Transformation
+  // follows Active Cell Boundary: both reshape the cell itself.
   H.check('Cell: flip-outs replaced by flat headlines',
     cell.flipouts === 0
       && JSON.stringify(cell.headlines)
-        === JSON.stringify(['Supercell', 'Active Cell Boundary', 'Vacuum', 'Cut Slab (h k l)', 'Order Structure', 'Lattice Transformation']),
+        === JSON.stringify(['Supercell', 'Active Cell Boundary', 'Lattice Transformation', 'Vacuum', 'Cut Slab (h k l)', 'Order Structure']),
     JSON.stringify(cell));
   H.check('Cell: remaining sections\' content visible',
     cell.supercellVisible && cell.transformVisible, JSON.stringify(cell));
