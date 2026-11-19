@@ -661,7 +661,8 @@ function renderAsuResult(asu, hallNumber) {
   box.hidden = false;
 }
 
-function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec(), structure = fileBrowser.selectedStructure) {
+/** The Symmetry window's reading of a structure (and the host's get_symmetry / symmetrize). Call ensureMoyoReady() first. */
+export function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec(), structure = fileBrowser.selectedStructure) {
   // Display-only strings or a freshly-computed primitive/conventional cell with
   // no back-reference to original atom indices — unlike SymmetryEditModule.js's
   // Wyckoff editing, which mutates structure.atoms by raw index. The hidden-atom
@@ -674,6 +675,7 @@ function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec(), struct
     hall_number: result.hall_number,
     pearson: result.pearson_symbol,
     protostructure,
+    wyckoffs: result.wyckoffs,
   };
 
   if (calcType === "getSymmetryInfo"){
@@ -735,7 +737,8 @@ export function buildSymmetrisedContainer(fileName, positions, lattice, elements
   return container;
 }
 
-function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
+/** Register a standardised cell as a new, selected row: the Prim./Conv. Cell buttons and the host's symmetrize. */
+export function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
   const fileName = `sym_${primConv}_${structureShip.container[fileBrowser.selectedRowIndex].fileName}`;
   const container = buildSymmetrisedContainer(fileName, positions, lattice, elements);
   structureShip.container.push(container)
@@ -743,5 +746,5 @@ function newContainerFromSymmetrisation(primConv,positions,lattice,elements){
   document.querySelector("#objectTable tbody").appendChild(row);
   fileBrowser.fileData.push({ name: fileName, traj: container.structures.length, step: container.structures.length });
   selectLastAddedRow();
-
+  return container;
   }

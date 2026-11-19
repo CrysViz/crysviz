@@ -454,7 +454,8 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         // in the full app (via fullApp's hook) — widget mode loads .crysviz, not
         // phonopy, so the phonon module is never pulled into the embed.
         if (!fullAppHooks.loadPhonopyFile) throw new Error('Phonopy loading is unavailable in this mode');
-        structureContainer = await fullAppHooks.loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id);
+        structureContainer = await fullAppHooks.loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id,
+          { interactive: options?.interactive !== false });
         break;
 
       case 'incar': {

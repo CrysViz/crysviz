@@ -247,7 +247,7 @@ function recallUnit(lattice) {
  * @param {any} cellRaw  the cell as written in the file
  * @param {string} fileName
  */
-async function settleUnitFor(cellRaw, fileName) {
+async function settleUnitFor(cellRaw, fileName, { interactive = true } = {}) {
   const known = recallUnit(cellRaw?.lattice);
   if (known) {
     phononState.detectedUnit = known.unit;
@@ -259,7 +259,8 @@ async function settleUnitFor(cellRaw, fileName) {
   assessment.lattice = cellRaw?.lattice?.map((row) => [...row]) ?? null;
   let unit = assessment.guess;
   let source = /** @type {'user'|'geometry'} */ ('geometry');
-  if (phononState.lengthUnit === 'auto') {
+  // Non-interactive (a host load): take the geometry's guess, as dismissing the dialog does.
+  if (phononState.lengthUnit === 'auto' && interactive) {
     const chosen = await promptLengthUnit(assessment, fileName);
     if (chosen) { unit = chosen; source = 'user'; }
     // Only a decision the user saw is worth remembering: under a forced unit
@@ -402,7 +403,7 @@ function rebuildDisplayed() {
  * @param {string} fileName
  * @param {string} kind
  */
-export async function loadPhonopyFile(text, fileName, kind) {
+export async function loadPhonopyFile(text, fileName, kind, { interactive = true } = {}) {
   if (kind === 'phonopy-dos') {
     phononState.dos = parsePhonopyDos(text);
     saveToRecord();
@@ -429,7 +430,7 @@ export async function loadPhonopyFile(text, fileName, kind) {
       // No physical_unit and an unknown (or absent) calculator: judge the cell,
       // and let the other cell of the same run share the answer.
       const judged = cells.unit || cells.primitive;
-      await settleUnitFor(judged, fileName);
+      await settleUnitFor(judged, fileName, { interactive });
       const twin = judged === cells.unit ? cells.primitive : cells.unit;
       rememberUnit(twin?.lattice, phononState.detectedUnit, phononState.detectedUnitSource, phononState.unitAssessment);
     }
@@ -469,7 +470,7 @@ export async function loadPhonopyFile(text, fileName, kind) {
   // Mode files never state their unit. This cell may be known already (its
   // phonopy.yaml, or a sibling mesh/qpoints file of the same run); a new cell
   // is judged and confirmed on its own, whatever earlier files settled on.
-  await settleUnitFor(dataset.cell, fileName);
+  await settleUnitFor(dataset.cell, fileName, { interactive });
   // A fresh dataset gets its own row and record; the previous one stays on
   // its row (select that row to get it back).
   saveToRecord();
@@ -590,19 +591,24 @@ function isDisplayed() {
   return !!phononState.structure && fileBrowser.selectedStructure === phononState.structure && containerRowIndex() >= 0;
 }
 
+/** Fractional positions of the supercell with the mode at `phase` (fresh arrays). */
+function displacedFrac(phase, uBuf = phononState.uBuf) {
+  const { pattern, supercell } = phononState;
+  const u = animationDisplacement(pattern, phase, phononState.amplitude, uBuf);
+  const inv = phononState.invLattice;
+  return supercell.frac.map((base, j) => {
+    const du = cartToFracWithInverse(inv, [u[j * 3], u[j * 3 + 1], u[j * 3 + 2]]);
+    return [base[0] + du[0], base[1] + du[1], base[2] + du[2]];
+  });
+}
+
 /** Write the mode's displacement at `phase` into the shown structure. */
 function applyPhase(phase) {
   const { pattern, structure, supercell } = phononState;
   if (!pattern || !structure || !supercell || !isDisplayed()) return;
-  const u = animationDisplacement(pattern, phase, phononState.amplitude, phononState.uBuf);
-  const inv = phononState.invLattice;
-  const atoms = structure.atoms;
-  const base = supercell.frac;
-  for (let j = 0; j < atoms.length; j++) {
-    const du = cartToFracWithInverse(inv, [u[j * 3], u[j * 3 + 1], u[j * 3 + 2]]);
-    // Replace, never mutate: the as-loaded snapshot aliases the initial arrays.
-    atoms[j].position = [base[j][0] + du[0], base[j][1] + du[1], base[j][2] + du[2]];
-  }
+  const positions = displacedFrac(phase);
+  // Replace, never mutate: the as-loaded snapshot aliases the initial arrays.
+  structure.atoms.forEach((atom, j) => { atom.position = positions[j]; });
   if (!applyFrameFast(structure)) {
     updateVisualization({
       atomsUpdate: true, bondsUpdate: true, reRenderAtoms: true, reRenderBonds: true,
@@ -780,6 +786,25 @@ export function setArrowColor(hex) {
   refreshArrows();
   requestRender();
   emit('arrows');
+}
+
+/**
+ * The selected mode as `count` frames over one period at the current
+ * amplitude: new Structures (the displayed supercell, displaced), for a
+ * trajectory row (the host's phonon_frames). Null when no mode is selected.
+ */
+export function modeFrames(count) {
+  const { pattern, supercell } = phononState;
+  if (!pattern || !supercell) return null;
+  const uBuf = new Float64Array(supercell.frac.length * 3);
+  const frames = [];
+  for (let k = 0; k < count; k++) {
+    const frame = buildStructure(supercell);
+    const positions = displacedFrac((2 * Math.PI * k) / count, uBuf);
+    frame.atoms.forEach((atom, j) => { atom.position = positions[j]; });
+    frames.push(frame);
+  }
+  return frames;
 }
 
 /** Freeze the animation at the current phase (a static snapshot of the

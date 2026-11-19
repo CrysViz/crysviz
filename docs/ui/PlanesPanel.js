@@ -1352,7 +1352,7 @@ function setupPlanesEvents(container) {
   });
 
   container.querySelector('#addPlaneBtn').addEventListener('click', () => {
-    if (addPlaneFromCurrentInputs()) persistPlanes();
+    addPlaneFromCurrentInputs();
   });
   container.querySelector('#createFromAtomsBtn').addEventListener('click', () => {
     if (createPlaneFromSelectedAtoms()) persistPlanes();
@@ -1412,8 +1412,9 @@ function setupPlanesEvents(container) {
         // as something like 0.009999999776482582 — round it to a clean 4
         // digits before it ever reaches the Min/Max boxes, rather than
         // showing that noise until the user hits Auto Range.
-        plane.colormapMin = Number.isFinite(selectedField?.minValue) ? roundToSigFigs(selectedField.minValue, 4) : selectedField?.minValue;
-        plane.colormapMax = Number.isFinite(selectedField?.maxValue) ? roundToSigFigs(selectedField.maxValue, 4) : selectedField?.maxValue;
+        const range = fieldColormapRange(selectedField);
+        plane.colormapMin = range.min;
+        plane.colormapMax = range.max;
         configurePlaneRangeInputs(selectedField, plane);
       }
       else {
@@ -1544,9 +1545,35 @@ function addPlaneFromCurrentInputs() {
     return false;
   }
 
-  ensureStructurePlaneState(structure);
-  addPlane(structure, createDefaultPlane());
+  addPlaneToStructure(structure, { type: 'hkl', h: 1, k: 1, l: 1 });
   return true;
+}
+
+/** A field's data range rounded to 4 significant digits, for a plane's colour map. */
+function fieldColormapRange(field) {
+  const round = (v) => (Number.isFinite(v) ? roundToSigFigs(v, 4) : v);
+  return { min: round(field?.minValue), max: round(field?.maxValue) };
+}
+
+/**
+ * Add a plane to `structure` and select it: the Crystal Planes "Add" button
+ * and the host's add_field_slice. With `field`, the plane shows that field as
+ * a colour map, as choosing it in the plane's Field list does.
+ * @param {any} structure @param {PlaneParams} params @param {{field?: any}} [options]
+ */
+export function addPlaneToStructure(structure, params, { field = null } = {}) {
+  ensureStructurePlaneState(structure);
+  const plane = createDefaultPlane(params, planeLabelForParams(params));
+  if (field) {
+    plane.visualization = PLANE_VIS_FIELD;
+    plane.field = field;
+    const range = fieldColormapRange(field);
+    plane.colormapMin = range.min;
+    plane.colormapMax = range.max;
+  }
+  addPlane(structure, plane);
+  if (structure === getSelectedStructure()) persistPlanes();
+  return plane;
 }
 
 /**
@@ -1687,6 +1714,8 @@ function calculatePlaneFromSelectedAtoms() {
  * Load parameters from the selected plane into the input fields.
  */
 function loadSelectedPlaneParameters() {
+  // Called after any plane change; the window's inputs exist only while it is built.
+  if (!document.getElementById('radioHKL')) return;
   const structure = getSelectedStructure();
   if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) {
     return;
