@@ -2,7 +2,8 @@
 
 Focus Regions make a selected atom, molecule, or defect easier to inspect in a
 large structure. Select atoms in the scene or Structure panel and choose **Add
-from selection**.
+from selection**, or type a center in fractional coordinates under **New
+center** and choose **Add**: that needs no selection.
 
 When the inner region is active, its center is shown in fractional coordinates.
 Edit those values for fine positioning, or use **Reset** to return to the
