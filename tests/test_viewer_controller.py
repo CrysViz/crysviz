@@ -372,6 +372,10 @@ class ViewerControllerTests(unittest.TestCase):
             self.assertEqual(viewer.set_render_pipeline("raytrace"), "raytrace")
             self.assertEqual(host.commands[-2][:2], ("set_view", {"rotate": {"axis": "z", "degrees": 12.5}}))
             self.assertEqual(host.commands[-1][:2], ("set_renderer", {"renderer": "raytrace"}))
+            viewer.set_view(rotate={"axis": "y", "degrees": 5}, recenter=True)
+            self.assertEqual(host.commands[-1][:2], ("set_view", {"rotate": {"axis": "y", "degrees": 5}, "recenter": True}))
+            with self.assertRaises(ValueError):
+                viewer.set_view()
         finally:
             viewer.close()
 

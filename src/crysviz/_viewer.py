@@ -817,10 +817,13 @@ class Viewer:
         self._command("set_view", {"rotate": {"axis": axis, "degrees": angle}})
 
     def set_view(self, direction: str | Sequence[float] | None = None, *, up: str | Sequence[float] | None = None,
-                 zoom: float | None = None, cartesian: bool = False) -> dict[str, Any]:
+                 zoom: float | None = None, cartesian: bool = False, rotate: dict[str, object] | None = None,
+                 recenter: bool = False) -> dict[str, Any]:
         """Look along ``"a"``/``"b"``/``"c"``, ``"x"``/``"y"``/``"z"`` or a lattice direction [u, v, w]
-        (Cartesian with ``cartesian=True``), with ``up`` on screen and ``zoom``; give only what
-        should change. Returns the camera as :meth:`get_state` reports it."""
+        (Cartesian with ``cartesian=True``), with ``up`` on screen and ``zoom``; orbit with
+        ``rotate={"axis": "y", "degrees": 30}``; bring the structure back to the middle with
+        ``recenter=True``. Give only what should change. Returns the camera as :meth:`get_state`
+        reports it."""
         def vector(value: object, name: str) -> object:
             if isinstance(value, str):
                 if value not in {"a", "b", "c", "x", "y", "z"}:
@@ -842,8 +845,16 @@ class Viewer:
             args["up"] = vector(up, "up")
         if zoom is not None:
             args["zoom"] = float(zoom)
+        if rotate is not None:
+            if not isinstance(rotate, dict):
+                raise TypeError('rotate must be a dict such as {"axis": "y", "degrees": 30}')
+            args["rotate"] = rotate
+        if not isinstance(recenter, bool):
+            raise TypeError("recenter must be boolean")
+        if recenter:
+            args["recenter"] = True
         if not args:
-            raise ValueError("give direction, up or zoom")
+            raise ValueError("give direction, up, zoom, rotate or recenter")
         if cartesian:
             args["cartesian"] = True
         result = self._command("set_view", args)
