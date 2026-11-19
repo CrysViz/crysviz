@@ -91,6 +91,7 @@ export const CONTROL_INDEX = [
   {"panel":"files","label":"CIF (symmetry)","section":"Download","kind":"button","id":"saveCifSymButton"},
   {"panel":"files","label":"CASTEP cell","section":"Download","kind":"button","id":"saveCellButton"},
   {"panel":"files","label":"FHI-aims geometry","section":"Download","kind":"button","id":"saveGeometryButton"},
+  {"panel":"files","label":"Extended XYZ (all frames)","section":"Download","kind":"button","id":"saveExtxyzButton"},
   {"panel":"files","label":"Quantum ESPRESSO","section":"Download","kind":"button","id":"qeInputButton"},
   {"panel":"files","label":"CrysViz","section":"Download","kind":"button","id":"saveCrysvizButton"},
   {"panel":"files","label":"Image","section":"Download","kind":"button","id":"saveImageButton"},

@@ -15,6 +15,7 @@
 - README brought up to date (features, installation, Python API, MCP), and the examples rewritten for the current API with new ones for user-edit events, relax + EOS jobs and an MCP quickstart
 - **Cut Slab (h k l)** in the Cell & Supercell window: a surface slab along (h k l), N layers thick with vacuum along the normal, as a new row. It is the same cutter as the MCP `build_slab`, and the feature search's *make slab*, *surface slab* and *surface* now lead to it (Add Vacuum keeps the vacuum phrases)
 - Phonons window: **Make trajectory** keeps one period of the selected mode (2 to 200 frames, at the current amplitude) as a new trajectory row to step through or export, the same path as the MCP `build_phonon_frames`
+- Download menu: **Extended XYZ (all frames)** writes every frame of the row on show for ASE, pymatgen or OVITO, the same file the MCP `export_structure` extxyz writes
 - Refined camera controls with shortcuts (desktop)
 - Setting view along/opposite plane normal
 - Added resolution control to plane colormaps

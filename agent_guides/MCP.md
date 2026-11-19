@@ -203,7 +203,7 @@ symmetric: each site is idealised onto its exact position.
 |---|---|
 | `load` | A structure from `path`, or `text` plus `name` (the extension picks the format). Never stops to ask (no CIF symmetry or unit dialog). Returns the row, its formula, and `restored` when the Cell & Supercell window restored a remembered supercell. |
 | `save_image` | PNG or SVG (`format: "svg"`) of the view as framed (a different aspect than the window is letterboxed, never cropped). An SVG is the Download Image window's: the structure as an embedded image with editable labels and axes, or as vector shapes with `vector: true`; it is saved in the export folder and its path returned. Returned to the model up to 2048 px a side; with `filename` and `returnImage: false`, saved at up to 16384 px without returning it. A large ray-traced image can take a minute; the call waits up to 15 minutes. `transparent` works with the raster renderers; the ray and path tracers still paint their backdrop (known limitation; `save_image` warns). |
-| `export_structure` | `cif` or `poscar` (one frame, as the Save window; POSCAR's atom order goes to `<name>.order.json`) or `extxyz` (frames, for ASE, pymatgen, OVITO), into the export folder; `structure` and `frame` export a row or frame that is not on show, without showing it. Returns the absolute path. |
+| `export_structure` | `cif` or `poscar` (one frame, as the Save window; POSCAR's atom order goes to `<name>.order.json`) or `extxyz` (frames, for ASE, pymatgen, OVITO; the Download menu's Extended XYZ), into the export folder; `structure` and `frame` export a row or frame that is not on show, without showing it. Returns the absolute path. |
 
 ## Heavy analysis: export, script, apply
 

@@ -230,6 +230,7 @@ export const CONCEPTS = [
   { to: { control: 'qeInputButton' }, phrases: ['quantum espresso input', 'pw.x input', 'qe input', 'pwscf input'] },
   { to: { control: 'saveCellButton' }, phrases: ['castep cell file', 'castep input'] },
   { to: { control: 'saveGeometryButton' }, phrases: ['fhi-aims geometry', 'geometry.in', 'aims input'] },
+  { to: { control: 'saveExtxyzButton' }, phrases: ['export extxyz', 'extended xyz', 'export trajectory', 'save trajectory', 'ase trajectory', 'ovito'] },
   { to: { control: 'saveCrysvizButton' }, phrases: [
     'save session', 'save everything', 'project file', 'save workspace', 'save state', 'keep my structures',
     'back up structures', 'continue later',

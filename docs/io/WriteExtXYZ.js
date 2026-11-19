@@ -1,6 +1,6 @@
 // Extended XYZ writer: frames of a trajectory as one text file, the format
-// ASE, pymatgen and OVITO read. Plain arrays in, text out (the host's
-// export_trajectory gathers the frames and writes the file).
+// ASE, pymatgen and OVITO read. Plain arrays in, text out (SavePanel.js
+// extxyzExport gathers a row's frames, for the Download menu and the host).
 
 const fmt = (x) => (Number.isFinite(x) ? x.toFixed(8) : 'nan');
 

@@ -498,36 +498,21 @@ export async function exportStructure(args) {
   if (!container && !active) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
   const count = container ? (container.frameCount ?? container.structures.length) : 1;
   const shownFrame = container && active ? container.structures.indexOf(active) : -1;
-  // The frame on show is the live structure; any other is read detached, never selected.
-  const frameAt = async (i) => (i === shownFrame ? active : container ? await (container.frameAtDetached?.(i) ?? container.structures[i]) : active);
+  const save = await import('../ui/SavePanel.js');
   const base = { format, structure: container ? getContainerId(container) : null, name: container ? String(container.fileName) : null };
   if (format === 'extxyz') {
     if (args.frames !== undefined && args.frame !== undefined) throw commandError('INVALID_ARGS', 'export_structure takes frames or frame, not both');
     const indices = frameIndices(count, args.frame !== undefined ? [args.frame] : args.frames);
-    const steps = container?.plotSeries?.step;
-    const frames = [];
-    for (const i of indices) {
-      const frame = await frameAt(i);
-      if (!frame) continue;
-      frames.push({
-        lattice: frame.periodic === false ? null : frame.lattice,
-        positions: frame.atoms.map((a) => a.position),
-        elements: frame.atoms.map((a, k) => a.getRepresentativeElement?.() ?? frame.elements[k]),
-        energy: frame.energy,
-        step: Number.isInteger(steps?.[i]) ? steps[i] : undefined,
-      });
-    }
-    const { writeExtXYZ } = await import('../io/WriteExtXYZ.js');
-    // extxyz keeps the atom order (one line per atom): no order map needed.
-    return { ...base, text: writeExtXYZ(frames), frames: frames.length, atomCount: frames[0]?.positions.length ?? 0, sameOrder: true };
+    // The Download menu's Extended XYZ; it keeps the atom order (one line per atom): no order map needed.
+    const { text, frames, atomCount } = await save.extxyzExport(container, active, indices);
+    return { ...base, text, frames, atomCount, sameOrder: true };
   }
   if (args.frames !== undefined) throw commandError('INVALID_ARGS', 'export_structure.frames is for extxyz; cif and poscar write one frame (frame)');
   const frameIndex = args.frame ?? (shownFrame >= 0 ? shownFrame : 0);
   if (!Number.isInteger(frameIndex) || frameIndex < 0 || frameIndex >= count) {
     throw commandError('INVALID_ARGS', `export_structure.frame must be 0 to ${count - 1}`);
   }
-  const structure = await frameAt(frameIndex);
-  const save = await import('../ui/SavePanel.js');
+  const structure = await save.rowFrame(container, active, frameIndex);
   const name = container ? String(container.fileName).replace(/\.[^.]+$/, '') : undefined;
   const { text, order } = format === 'cif' ? save.cifExport(structure, name) : save.poscarExport(structure);
   const sameOrder = order.every((atom, row) => atom === row);

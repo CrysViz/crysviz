@@ -1,4 +1,6 @@
 import { fileBrowser } from '../state/store.js';
+import { getContainerForStructure } from '../state/structures.js';
+import { writeExtXYZ } from '../io/WriteExtXYZ.js';
 import { captureState } from './ShareModule.js';
 import { sendToDownloadSink } from '../host/downloadSink.js';
 import { isVacancy } from '../render/VacancyMarkerModule.js';
@@ -334,6 +336,37 @@ function browserDownload(fileName, blob) {
   setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
 }
 
+/** Frame `i` of a row: the live structure when it is the frame on show,
+ *  otherwise the frame read detached (never selected). */
+export async function rowFrame(container, active, i) {
+  const shownFrame = container && active ? container.structures.indexOf(active) : -1;
+  if (i === shownFrame) return active;
+  return container ? await (container.frameAtDetached?.(i) ?? container.structures[i]) : active;
+}
+
+/**
+ * Frames `indices` of a row as extended XYZ (Lattice, species, Cartesian Å,
+ * energy and MD step; atom order kept): the Download menu's Extended XYZ and
+ * the host's export_structure extxyz.
+ * @returns {Promise<{text: string, frames: number, atomCount: number}>}
+ */
+export async function extxyzExport(container, active, indices) {
+  const steps = container?.plotSeries?.step;
+  const frames = [];
+  for (const i of indices) {
+    const frame = await rowFrame(container, active, i);
+    if (!frame) continue;
+    frames.push({
+      lattice: frame.periodic === false ? null : frame.lattice,
+      positions: frame.atoms.map((a) => a.position),
+      elements: frame.atoms.map((a, k) => a.getRepresentativeElement?.() ?? frame.elements[k]),
+      energy: frame.energy,
+      step: Number.isInteger(steps?.[i]) ? steps[i] : undefined,
+    });
+  }
+  return { text: writeExtXYZ(frames), frames: frames.length, atomCount: frames[0]?.positions.length ?? 0 };
+}
+
 export function downloadTextFile(fileName, content) {
   downloadBlob(fileName, new Blob([content], { type: 'text/plain' }));
 }
@@ -389,6 +422,22 @@ export function addSavePanel() {
       }
     });
   }
+
+  // Extended XYZ: every frame of the row on show, for ASE, pymatgen or OVITO
+  // (one atom per line, so a disordered site is its majority species).
+  document.getElementById('saveExtxyzButton')?.addEventListener('click', async () => {
+    try {
+      // Not selectedForExport: a molecule without a cell is a valid extxyz frame.
+      const active = fileBrowser.selectedStructure;
+      if (!active?.atoms?.length) throw new Error('No structure loaded.');
+      const container = getContainerForStructure(active);
+      const count = container ? (container.frameCount ?? container.structures.length) : 1;
+      const { text } = await extxyzExport(container, active, [...Array(count).keys()]);
+      downloadTextFile(currentBaseName() + '.extxyz', text);
+    } catch (e) {
+      alert(e.message);
+    }
+  });
 
   // CIF with symmetry: a dialog, not a direct download — the symmetry found
   // depends on a tolerance the user has to see (and can change) before the
