@@ -34,6 +34,10 @@ _EXPORT_EXTENSIONS = {"cif": ".cif", "poscar": ".vasp", "extxyz": ".extxyz"}
 # Largest side of an image returned to the model; a saved-only image may be up to the app's 16384.
 MAX_IMAGE_SIDE = 2048
 MAX_SAVED_SIDE = 16384
+# A large or ray-traced image can take minutes. A command that outlives its timeout closes
+# the window (Viewer treats the host as stuck), losing what the user had open, so an image
+# gets far longer than the 30 s command default.
+SAVE_IMAGE_TIMEOUT = 900.0
 MAX_INLINE_TEXT = 16 * 1024 * 1024
 _EXPORT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$")
 
@@ -245,6 +249,7 @@ class CrysVizTools:
         target = None if filename is None else self._export_target(filename, ".png")
         options = {"width": width, "height": height, "transparent": bool(args.get("transparent", False)),
                    "structure_only": bool(args.get("structureOnly", False)),
+                   "timeout": SAVE_IMAGE_TIMEOUT,
                    # A default (view-sized) picture that is returned must still fit the returned-image cap.
                    "max_side": limit if width is None or height is None else None}
         viewer = self.viewer()

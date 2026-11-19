@@ -176,6 +176,12 @@ class ToolLayerTests(unittest.TestCase):
             self.tools.call("set_view", None)
         self.assertEqual(_FakeViewer.instances, [], "a missing argument never reaches the viewer")
 
+    def test_save_image_gets_a_long_timeout(self):
+        # A slow (large or ray-traced) image must not hit the 30 s command timeout, which closes the window.
+        self.tools.call("save_image", {"width": 400, "height": 300})
+        options = next(o for name, o in _FakeViewer.instances[0].calls if name == "save_image")
+        self.assertGreaterEqual(options["timeout"], 300)
+
     def test_unknown_tool(self):
         with self.assertRaises(ToolError):
             self.tools.call("evaluate", {"code": "1"})
