@@ -118,6 +118,9 @@ export const CONCEPTS = [
   { to: { control: 'asuHighlightChk' }, phrases: ['highlight unique atoms', 'symmetry unique atoms'] },
   { to: { control: 'getWyckoffBtn' }, phrases: [
     'wyckoff editor', 'edit wyckoff positions', 'move atoms keeping symmetry', 'symmetry constrained editing',
+    // The lock also holds for the Atomistic window: relaxations and MD keep the group.
+    'keep symmetry', 'lock symmetry', 'constrain symmetry', 'symmetry constraint', 'symmetry constrained relaxation',
+    'relax with symmetry', 'relax keeping symmetry', 'symmetric relaxation', 'symmetry constrained md',
   ] },
   { to: { panel: 'cell' }, phrases: [
     'supercell', 'make supercell', 'supercell builder', 'repeat cell', 'repeat unit cell', 'replicate cell', 'expand cell',

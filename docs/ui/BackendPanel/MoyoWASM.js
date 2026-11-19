@@ -243,17 +243,6 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
     });
 
     const wyckoffBtn = document.getElementById("getWyckoffBtn");
-    const syncWyckoffButton = () => {
-      const active = isWyckoffModeActive(fileBrowser.selectedStructure);
-      wyckoffBtn.textContent = active
-        ? 'Disable Wyckoff Editor'
-        : 'Enable Wyckoff Editor';
-      wyckoffBtn.style.background = active
-        ? 'linear-gradient(135deg, #1c5fb8, #2493ff)'
-        : '';
-      wyckoffBtn.style.color = active ? '#f5fbff' : '';
-      wyckoffBtn.style.boxShadow = active ? '0 0 0 1px rgba(91,168,255,0.45)' : '';
-    };
 
     wyckoffBtn.onclick = async () => {
       // Toggling the mode swaps which body the Modify panel would show (orbit
@@ -273,8 +262,7 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
 
       let result;
       try {
-        result = callMoyo("getSymmetryInfo", getTol());
-        await activateWyckoffMode(fileBrowser.selectedStructure, getTol());
+        result = await enableWyckoffEditor(fileBrowser.selectedStructure, getTol());
       } catch (error) {
         // Nothing was locked (activateWyckoffMode assigns only on success), so
         // the structure stays exactly as editable as it was.
@@ -284,12 +272,8 @@ export async function addMoyoPanel(target = "cvPanelBody-symmetry") {
         syncWyckoffButton();
         return;
       }
-      removePanel('modifyStructure');
-      renderComposition('open');
       renderSymmetryResult(result);
       setStatus('Wyckoff editor active');
-      syncWyckoffButton();
-      refreshBackendTheme();
     };
 
     syncWyckoffButton();
@@ -662,6 +646,39 @@ function renderAsuResult(asu, hallNumber) {
 }
 
 /** The Symmetry window's reading of a structure (and the host's get_symmetry / symmetrize). Call ensureMoyoReady() first. */
+/** The Symmetry window's Wyckoff button, labelled for the selected structure's mode (if built). */
+function syncWyckoffButton() {
+  const wyckoffBtn = document.getElementById('getWyckoffBtn');
+  if (!wyckoffBtn) return;
+  const active = isWyckoffModeActive(fileBrowser.selectedStructure);
+  wyckoffBtn.textContent = active
+    ? 'Disable Wyckoff Editor'
+    : 'Enable Wyckoff Editor';
+  wyckoffBtn.style.background = active
+    ? 'linear-gradient(135deg, #1c5fb8, #2493ff)'
+    : '';
+  wyckoffBtn.style.color = active ? '#f5fbff' : '';
+  wyckoffBtn.style.boxShadow = active ? '0 0 0 1px rgba(91,168,255,0.45)' : '';
+}
+
+/**
+ * Lock `structure` to its symmetry at `tolerance` (the Wyckoff editor): edits,
+ * relaxations and MD then keep the space group. The Symmetry window's Enable
+ * button and the host's symmetry-constrained jobs. Throws (moyo) without
+ * locking anything; returns the symmetry the lock was built from.
+ */
+export async function enableWyckoffEditor(structure, tolerance) {
+  const result = callMoyo('getSymmetryInfo', tolerance, structure);
+  await activateWyckoffMode(structure, tolerance);
+  // The Modify panel's body differs by mode (orbit rows vs atom rows): close it,
+  // it reopens in the right mode on the next click of the ✎ button.
+  removePanel('modifyStructure');
+  renderComposition('open');
+  syncWyckoffButton();
+  refreshBackendTheme();
+  return result;
+}
+
 export function callMoyo(calcType="getSymmetryInfo", tolerance=defaultSymprec(), structure = fileBrowser.selectedStructure) {
   // Display-only strings or a freshly-computed primitive/conventional cell with
   // no back-reference to original atom indices — unlike SymmetryEditModule.js's

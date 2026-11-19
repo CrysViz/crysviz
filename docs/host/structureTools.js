@@ -55,9 +55,12 @@ export async function getSymmetry(args) {
     throw commandError('SYMMETRY_FAILED', m.describe(error));
   }
   const { sites, hiddenExcluded } = wyckoffSites(structure, info.wyckoffs);
+  // Counts by default: a big cell lists hundreds of indices per letter.
+  const wyckoff = args?.listAtoms === true ? sites
+    : Object.fromEntries(Object.entries(sites).map(([letter, atoms]) => [letter, atoms.length]));
   return {
     tolerance: m.tol, number: info.spg_number, symbol: info.spg_symbol, hall: info.hall_number,
-    pearson: info.pearson, protostructure: info.protostructure, wyckoff: sites, hiddenExcluded,
+    pearson: info.pearson, protostructure: info.protostructure, wyckoff, hiddenExcluded,
   };
 }
 

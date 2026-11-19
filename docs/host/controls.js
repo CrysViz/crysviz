@@ -12,6 +12,11 @@ import { commandError } from './commands.js';
 
 const featureSearch = () => import('../ui/FeatureSearch.js');
 
+/** What a call sent, for an error: a string "true" and a boolean true read the same otherwise. */
+function received(value) {
+  return `got ${JSON.stringify(value)}, a ${value === null ? 'null' : Array.isArray(value) ? 'list' : typeof value}`;
+}
+
 function nextFrames(n = 2) {
   return new Promise((resolve) => {
     const step = () => (n-- <= 0 ? resolve() : requestAnimationFrame(step));
@@ -108,7 +113,7 @@ export async function setControl(ref, value) {
   const input = /** @type {HTMLInputElement} */ (el);
   if (input.disabled) throw commandError('CONTROL_DISABLED', `${entry.label} is disabled now`);
   if (isToggle(el)) {
-    if (typeof value !== 'boolean') throw commandError('INVALID_ARGS', `${entry.label} is a toggle: value must be true or false`);
+    if (typeof value !== 'boolean') throw commandError('INVALID_ARGS', `${entry.label} is a toggle: value must be true or false (${received(value)})`);
     const { setToggle } = await featureSearch();
     if (!(await setToggle(entry, value))) throw commandError('CONTROL_FAILED', `${entry.label} could not be switched ${value ? 'on' : 'off'}`);
   } else if (el.tagName === 'SELECT') {
@@ -123,12 +128,12 @@ export async function setControl(ref, value) {
   } else if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
     const numeric = input.type === 'range' || input.type === 'number';
     if (numeric) {
-      if (typeof value !== 'number' || !Number.isFinite(value)) throw commandError('INVALID_ARGS', `${entry.label} takes a number`);
+      if (typeof value !== 'number' || !Number.isFinite(value)) throw commandError('INVALID_ARGS', `${entry.label} takes a number (${received(value)})`);
       if ((input.min !== '' && value < Number(input.min)) || (input.max !== '' && value > Number(input.max))) {
         throw commandError('INVALID_ARGS', `${entry.label} takes ${input.min} to ${input.max}`);
       }
     } else if (typeof value !== 'string') {
-      throw commandError('INVALID_ARGS', `${entry.label} takes text`);
+      throw commandError('INVALID_ARGS', `${entry.label} takes text (${received(value)})`);
     }
     input.value = String(value);
     input.dispatchEvent(new Event('input', { bubbles: true }));

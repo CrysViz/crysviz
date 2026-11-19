@@ -223,7 +223,7 @@ class Session:
     async def job(self, name, args=None) -> dict:
         started = await self.call(name, args)
         while True:
-            view = await self.call("wait_job", {"jobId": started["jobId"], "timeoutS": 25})
+            view = await self.call("wait_job", {"jobId": started["jobId"], "waitS": 25})
             if view["status"] != "running":
                 check(view["status"] == "done", f"{name} job {view['status']}: {view.get('error')}")
                 # A finished job says which structure and frame are on show: the next step acts on it.
@@ -411,6 +411,37 @@ async def w5_symmetry(s: Session):
     return f"{tight['symbol']} at 0.01, {loose['symbol']} at 0.1, symmetrized {sym['symbol']}"
 
 
+async def symmetry_jobs(s: Session):
+    """Relax, MD and EOS that keep the space group (the Wyckoff editor's lock), and an EOS fit
+    that says it is not a result."""
+    # Without the constraint, for comparison only: the potential decides where Ti goes.
+    await s.load_cell(STO_DISTORTED, "STO_distorted.vasp", 5)
+    await s.job("run_relax", {"relaxCell": True, "maxSteps": 80, "fmax": 0.005})
+    free = (await s.call("get_symmetry", {"tolerance": 0.001}))["symbol"]
+    # Locked to Pm-3m (found at 0.1 A) before the relaxation: Ti is held on the cube centre.
+    await s.load_cell(STO_DISTORTED, "STO_distorted.vasp", 5)
+    check((await s.call("get_symmetry", {"tolerance": 0.001}))["number"] != 221, "the start is already Pm-3m")
+    relaxed = await s.job("run_relax", {"relaxCell": True, "maxSteps": 80, "fmax": 0.005, "symmetry": {"tolerance": 0.1}})
+    sym = relaxed["symmetry"]
+    check(sym["constrained"] and sym["number"] == 221 and sym["kept"], f"constrained relax: {sym}")
+    strict = await s.call("get_symmetry", {"tolerance": 0.001})
+    check(strict["number"] == 221, f"the constrained relax ends as {strict['symbol']} at 0.001 A")
+    # Counts per Wyckoff letter by default; indices on request.
+    check(all(isinstance(n, int) for n in strict["wyckoff"].values()), f"wyckoff counts: {strict['wyckoff']}")
+    listed = await s.call("get_symmetry", {"tolerance": 0.001, "listAtoms": True})
+    check(all(isinstance(a, list) for a in listed["wyckoff"].values()), f"wyckoff atoms: {listed['wyckoff']}")
+    md = await s.job("run_md", {"steps": 40, "temperatureK": 300, "symmetry": True})
+    check(md["symmetry"]["constrained"] and md["symmetry"]["kept"], f"constrained MD: {md['symmetry']}")
+    # A scan around an unrelaxed cell (as in the user's session): V0 lies outside it, and the
+    # fit must say it is not a result instead of handing back numbers.
+    await s.load_cell(CU, "Cu.vasp", 4)
+    eos = await s.job("run_eos", {"points": 5, "volumeRangePct": 3, "maxSteps": 1})
+    check(eos["fitReliable"] is False and any("outside the scanned volumes" in w for w in eos["warnings"]),
+          f"bad EOS: {eos.get('warnings')}")
+    return (f"free relax {free}; locked relax {strict['symbol']} kept {sym['kept']}; "
+            f"MD kept {md['symmetry']['endSymbol']}; bad EOS flagged ({len(eos['warnings'])} warnings)")
+
+
 async def w6_ordering(s: Session):
     await s.call("load", {"text": FENI_CIF, "name": "FeNi.cif"})
     order = await s.job("run_ordering", {"samples": 5, "multiplier": 2, "energies": True})
@@ -427,6 +458,7 @@ async def w7_eos(s: Session):
     await s.load_cell(CU, "Cu.vasp", 4)
     await s.job("run_relax", {"relaxCell": True, "maxSteps": 60, "fmax": 0.01})
     eos = await s.job("run_eos", {"points": 7, "volumeRangePct": 5})
+    check(eos["fitReliable"] is True, f"a relaxed Cu scan is not reliable: {eos.get('warnings')}")
     fit = eos["fit"]["energyVolume"]
     check(60 < fit["B0GPa"] < 300, f"B0 {fit['B0GPa']}")
     check(40 < fit["V0"] < 52, f"V0 {fit['V0']}")
@@ -643,6 +675,7 @@ WORKFLOWS = [
     ("7", "EOS", w7_eos), ("8", "phonon frames", w8_phonons), ("9", "slab", w9_slab),
     ("10", "screening 20 CIFs", w10_screening), ("collab", "shared window", collaboration),
     ("edits", "edits between calls", edits), ("outcomes", "refusals vs errors", outcomes),
+    ("sym", "symmetry jobs + EOS check", symmetry_jobs),
 ]
 
 

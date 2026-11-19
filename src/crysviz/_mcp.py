@@ -61,7 +61,10 @@ INSTRUCTIONS = (
     "check a view instead of taking a picture, take a picture only when the look matters, and do not keep "
     "adjusting a view to make it nicer unless the user asks. "
     "Calculations are jobs (run_md, run_relax, run_energy, run_eos, run_ordering; one at a time): start one "
-    "(waitS waits up to 25 s for it), then call wait_job until its status is not running. "
+    "(waitS waits up to 25 s for it), then call wait_job (also waitS) until its status is not running. "
+    "To keep a structure's space group during run_relax, run_md or run_eos, pass symmetry: true (the "
+    "Wyckoff editor's lock); the result's symmetry says whether the group held. A run_eos result with "
+    "fitReliable: false is not a result: tell the user the warnings, do not report its numbers as values. "
     "Atom-addressed tools (apply, remove_atoms, set_element, move_atoms) take atoms (indices) or selection (a "
     "find id, \"user\" for the user's selection, \"all\"). The user may also edit the structure (a supercell, "
     "deleting atoms) between your calls, which renumbers atoms: before an edit by atom index, take "
@@ -227,7 +230,12 @@ class CrysVizTools:
         except BrowserCommandError as error:
             # details carry what the model needs to fix the call (too-close pairs, the current revision).
             details = f" {json.dumps(error.details)}" if error.details else ""
-            raise ToolError(f"{error.code}: {error.message}{details}") from error
+            # A wrong argument: the schema in words, as for a missing one; the client may not have
+            # loaded the schema yet (Claude Code defers them).
+            usage = ""
+            if error.code == "INVALID_ARGS":
+                usage = ("" if f"{error.message}{details}".endswith(".") else ".") + f" {_usage(name, self.tools[name]['schema'])}"
+            raise ToolError(f"{error.code}: {error.message}{details}{usage}") from error
         except (ViewerError, TypeError, ValueError, OSError) as error:
             # A startup failure's cause holds the host's stderr (e.g. no display).
             cause = f" ({error.__cause__})" if error.__cause__ else ""

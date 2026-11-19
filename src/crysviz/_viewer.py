@@ -48,6 +48,19 @@ def _changes_state(command: str) -> bool:
     return entry is not None and entry.get("tier") != "read"
 
 
+def _camera_only(note: dict[str, object]) -> bool:
+    return "camera" in note and set(note) <= {"camera", "note"}
+
+
+def _add_user_change(changes: list[dict[str, object]], note: dict[str, object]) -> None:
+    """Collect one user-change note. A camera move that follows another camera move replaces
+    it: a rotation in several steps is one change (where the camera ended), not a list."""
+    if changes and _camera_only(changes[-1]) and _camera_only(note):
+        changes[-1] = note
+    else:
+        changes.append(note)
+
+
 @lru_cache(maxsize=None)
 def _argument_names(command: str) -> dict[str, str]:
     """A command's argument names keyed by their letters alone, so ``temperature_k`` finds ``temperatureK``."""
@@ -521,7 +534,7 @@ class Viewer:
         if event.name == "user_changed" and isinstance(event.data, dict):
             # The same notes a command's sinceLastCall carries; the browser reports each change once.
             with self._lock:
-                self._user_changes.append(event.data)
+                _add_user_change(self._user_changes, event.data)
         if event.name in {"structure_loaded", "active_structure_changed"} and isinstance(event.data, dict):
             with self._lock:
                 self._active_name = event.data.get("name", self._active_name)
@@ -607,7 +620,7 @@ class Viewer:
                     else (response.get("error") or {}).get("details"))
             if isinstance(note, dict) and isinstance(note.get("sinceLastCall"), dict):
                 with self._lock:
-                    self._user_changes.append(note["sinceLastCall"])
+                    _add_user_change(self._user_changes, note["sinceLastCall"])
             if response.get("ok") is not True:
                 for item in received.values():
                     item.close()
@@ -703,7 +716,7 @@ class Viewer:
                 wait = min(wait, deadline - time.monotonic())
                 if wait <= 0:
                     raise TimeoutError(f"job {view.get('jobId')} is still running after {timeout} s")
-            view = self._command("wait_job", {"jobId": view["jobId"], "timeoutS": wait})
+            view = self._command("wait_job", {"jobId": view["jobId"], "waitS": wait})
         if not isinstance(view, dict) or "status" not in view:
             raise ViewerProtocolError(f"browser {command} returned no job")
         if view["status"] == "failed":

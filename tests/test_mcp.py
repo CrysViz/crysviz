@@ -241,6 +241,15 @@ class ToolLayerTests(unittest.TestCase):
         with self.assertRaisesRegex(ToolError, r'INVALID_ARGS: bad \{"field": "where", "atomCount": 9\}'):
             self.tools.call("get_state", {})
 
+    def test_a_wrong_argument_value_also_gets_the_schema_in_words(self):
+        # A client may send a value before it has seen the schema (e.g. the string "true"):
+        # the browser's message says what it got, and the tool's arguments follow, as for a missing one.
+        self.tools.call("get_state", {})
+        _FakeViewer.instances[0].fail_next = BrowserCommandError(
+            "INVALID_ARGS", 'Show Bonds is a toggle: value must be true or false (got "true", a string)')
+        with self.assertRaisesRegex(ToolError, r'got "true", a string\). set_control needs: ref \(string\); value \('):
+            self.tools.call("set_control", {"ref": "control:features:#showBonds", "value": "true"})
+
     def test_a_refusal_is_a_result_not_a_failed_tool(self):
         self.tools.call("get_state", {})
         viewer = _FakeViewer.instances[0]

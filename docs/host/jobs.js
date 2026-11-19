@@ -1,6 +1,6 @@
 // Long-running host work (run_md, run_relax, run_energy, run_eos,
 // run_ordering): a run_* command starts a job and returns it at once (or once
-// it ends within its waitS), and wait_job (timeoutS 0 is a status check) /
+// it ends within its waitS), and wait_job (waitS 0 is a status check) /
 // cancel_job follow it, so no single host command outlives the controller's
 // command timeout. Jobs live for the page's lifetime.
 
@@ -77,12 +77,12 @@ export function listJobs() {
   return [...jobs.values()].map((job) => ({ jobId: job.id, kind: job.kind, status: job.status }));
 }
 
-/** Resolves when the job ends or after timeoutS, whichever is first. */
-export async function waitJob(id, timeoutS) {
+/** Resolves when the job ends or after waitS, whichever is first. */
+export async function waitJob(id, waitS) {
   const job = getJob(id);
   if (job.status === 'running') {
     await new Promise((resolve) => {
-      const timer = setTimeout(resolve, timeoutS * 1000);
+      const timer = setTimeout(resolve, waitS * 1000);
       job.waiters.push(() => { clearTimeout(timer); resolve(undefined); });
     });
   }

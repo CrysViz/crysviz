@@ -292,6 +292,7 @@ export const ERROR_KINDS = Object.freeze({
   NO_ACTIVE_STRUCTURE: 'outcome', NO_LATTICE: 'outcome', DISORDERED: 'outcome', NO_PHONONS: 'outcome',
   NO_EIGENVECTORS: 'outcome', NO_FIELD: 'outcome', TOO_LARGE: 'outcome', LOAD_CANCELLED: 'outcome',
   NO_MODE: 'outcome', PNG_CAPTURE_IN_PROGRESS: 'outcome', POTENTIAL_TOO_MANY_ATOMS: 'outcome',
+  SYMMETRY_UNAVAILABLE: 'outcome',
   // errors: a wrong call
   INVALID_ARGS: 'error', INVALID_ELEMENT: 'error', INVALID_REQUEST: 'error', UNKNOWN_COMMAND: 'error',
   NOT_A_CONTROL: 'error', NOT_SETTABLE: 'error', CONTROL_NOT_FOUND: 'error', SELECTION_NOT_FOUND: 'error',
@@ -594,6 +595,59 @@ function waitSeconds(input, name) {
   return waitS;
 }
 
+/** A job's `symmetry` argument: null (unconstrained), or the tolerance to lock at (null: the app's). */
+function symmetryRequest(input, name) {
+  const value = input.symmetry;
+  if (value === undefined || value === false) return null;
+  if (value === true) return { tolerance: null };
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const tolerance = value.tolerance ?? null;
+    if (tolerance !== null && !(isFiniteNumber(tolerance) && tolerance > 0)) {
+      throw commandError('INVALID_ARGS', `${name}.symmetry.tolerance must be a positive number (Å)`);
+    }
+    return { tolerance };
+  }
+  throw commandError('INVALID_ARGS', `${name}.symmetry must be true or {tolerance}`);
+}
+
+/**
+ * Lock the active structure to its symmetry before a symmetry-constrained job,
+ * through the Symmetry window's own Wyckoff editor (the relaxer and MD keep a
+ * locked structure's space group). A lock already on is kept as it is.
+ * Returns what the job reports as `symmetry`, or null when not asked.
+ */
+async function lockSymmetry(request) {
+  if (!request) return null;
+  const structure = getActiveStructure();
+  if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+  const moyo = await import('../ui/BackendPanel/MoyoWASM.js');
+  const { isWyckoffModeActive, defaultSymprec, describeMoyoFailure } = await import('../ui/SymmetryEditModule.js');
+  if (isWyckoffModeActive(structure)) {
+    const lock = structure.symmetry;
+    return { constrained: true, number: lock.number, symbol: lock.spaceGroup, tolerance: lock.tolerance, lockedBefore: true };
+  }
+  const tolerance = request.tolerance ?? defaultSymprec();
+  await moyo.ensureMoyoReady();
+  try {
+    const info = await moyo.enableWyckoffEditor(structure, tolerance);
+    return { constrained: true, number: info.spg_number, symbol: info.spg_symbol, tolerance, lockedBefore: false };
+  } catch (error) {
+    throw commandError('SYMMETRY_UNAVAILABLE', `Cannot lock this structure's symmetry: ${describeMoyoFailure(error, tolerance)}`);
+  }
+}
+
+/** The space group of the structure on show after a constrained job, against the one it was locked to. */
+async function symmetryKept(symmetry) {
+  const structure = getActiveStructure();
+  const moyo = await import('../ui/BackendPanel/MoyoWASM.js');
+  try {
+    const info = moyo.callMoyo('getSymmetryInfo', symmetry.tolerance, structure);
+    return { ...symmetry, kept: info.spg_number === symmetry.number, endNumber: info.spg_number, endSymbol: info.spg_symbol };
+  } catch {
+    return { ...symmetry, kept: false, endNumber: null, endSymbol: null };
+  }
+}
+
 /** A started job as its starter returns it: at once, or once it ends within waitS. */
 function started(job, waitS) {
   return waitS > 0 ? waitJob(job.id, waitS) : jobView(job);
@@ -629,6 +683,40 @@ async function calculatorPrecheck() {
  * [V0, K0, K0'], K0 in GPa) as plain named numbers.
  * @param {{evResult: any, pvResult: any}} fit
  */
+/**
+ * Whether an EOS fit can be reported as a result, and why not. A fit to points
+ * that did not converge, that do not bracket a minimum, or that lands outside
+ * the scanned volumes is numbers, not a measurement.
+ * @param {{volumes: number[], energies: number[], pressures: number[], converged: boolean[]}} scan
+ * @param {{E0?: number, V0?: number, B0GPa?: number, B0Prime?: number, failed?: string}|null} ev the E(V) fit
+ */
+export function eosReliability(scan, ev) {
+  const warnings = [];
+  const unconverged = scan.converged.filter((c) => !c).length;
+  if (unconverged) warnings.push(`${unconverged} of ${scan.converged.length} points did not converge (raise maxSteps or relax the start structure first)`);
+  const order = scan.volumes.map((v, i) => i).sort((p, q) => scan.volumes[p] - scan.volumes[q]);
+  const e = order.map((i) => scan.energies[i]);
+  const v = order.map((i) => scan.volumes[i]);
+  const lowest = e.indexOf(Math.min(...e));
+  if (lowest === 0 || lowest === e.length - 1) {
+    warnings.push('the lowest energy is at the edge of the scan: the minimum is not bracketed (shift or widen the range)');
+  }
+  const downhill = e.slice(0, lowest + 1).every((x, i, a) => i === 0 || x <= a[i - 1]);
+  const uphill = e.slice(lowest).every((x, i, a) => i === 0 || x >= a[i - 1]);
+  if (!downhill || !uphill) warnings.push('E(V) is not monotonic on either side of its minimum');
+  if (scan.pressures.length && (scan.pressures.every((p) => p > 0) || scan.pressures.every((p) => p < 0))) {
+    warnings.push('the pressure has one sign at every point: the scan does not include zero pressure, so the start structure is probably not relaxed');
+  }
+  if (!ev || ev.failed) {
+    warnings.push(`the E(V) fit failed${ev?.failed ? `: ${ev.failed}` : ''}`);
+  } else {
+    if (!(ev.V0 >= v[0] && ev.V0 <= v[v.length - 1])) warnings.push(`V0 = ${ev.V0} lies outside the scanned volumes (${v[0]} to ${v[v.length - 1]})`);
+    if (!(ev.B0GPa > 0)) warnings.push(`B0 = ${ev.B0GPa} GPa is not positive`);
+    if (!(ev.B0Prime >= 1 && ev.B0Prime <= 15)) warnings.push(`B0' = ${ev.B0Prime} is outside the physical range (about 1 to 15)`);
+  }
+  return { fitReliable: warnings.length === 0, warnings };
+}
+
 export function eosFitSummary({ evResult, pvResult }) {
   const named = (r, keys) => (r ? {
     ...Object.fromEntries(keys.map((k, i) => [k, round(r.params[i])])),
@@ -1023,9 +1111,11 @@ export const COMMAND_HANDLERS = Object.freeze({
     }
     if (input.pressureGPa !== undefined && !isFiniteNumber(input.pressureGPa)) throw commandError('INVALID_ARGS', 'run_md.pressureGPa must be a number');
     const waitS = waitSeconds(input, 'run_md');
+    const symmetryAsked = symmetryRequest(input, 'run_md');
     const atomistic = await calculatorPrecheck();
     const structure = getActiveStructure();
     const { recommendedTimestepFs } = await import('../atomistic/MD.js');
+    const symmetry = await lockSymmetry(symmetryAsked);
     const job = startJob('md', async (job) => {
       job.progress = { text: 'getting the potential ready' };
       const { runner, potential } = await atomistic.ensureActiveCalculator((text) => { job.progress = { text }; });
@@ -1049,6 +1139,7 @@ export const COMMAND_HANDLERS = Object.freeze({
         trajectory: trajectoryOf(result.container, result.frames),
         finalStep: result.finalStep,
         stopped: result.stopped,
+        ...(symmetry ? { symmetry: await symmetryKept(symmetry) } : {}),
       };
     });
     return started(job, waitS);
@@ -1070,7 +1161,9 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (!isFiniteNumber(params.targetPressure)) throw commandError('INVALID_ARGS', 'run_relax.pressureGPa must be a number');
     if (!(isFiniteNumber(params.stressTol) && params.stressTol > 0)) throw commandError('INVALID_ARGS', 'run_relax.pressureTolGPa must be a positive number');
     const waitS = waitSeconds(input, 'run_relax');
+    const symmetryAsked = symmetryRequest(input, 'run_relax');
     const atomistic = await calculatorPrecheck();
+    const symmetry = await lockSymmetry(symmetryAsked);
     const pressureHint = namedPressureGPa(getContainerForStructure(getActiveStructure())?.fileName);
     const job = startJob('relax', async (job) => {
       job.progress = { text: 'getting the potential ready' };
@@ -1096,6 +1189,7 @@ export const COMMAND_HANDLERS = Object.freeze({
         energy: round(result.energyEv),
         energyPerAtom: round(result.energyPerAtomEv),
         pressureGPa: result.pressureGPa === null ? null : round(result.pressureGPa),
+        ...(symmetry ? { symmetry: await symmetryKept(symmetry) } : {}),
       };
     });
     return started(job, waitS);
@@ -1135,7 +1229,10 @@ export const COMMAND_HANDLERS = Object.freeze({
       throw commandError('INVALID_ARGS', 'run_eos needs pMinGPa < pMaxGPa, or volumeRangePct');
     }
     const waitS = waitSeconds(input, 'run_eos');
+    const symmetryAsked = symmetryRequest(input, 'run_eos');
     await calculatorPrecheck();
+    // Every scan point relaxes the atoms through the relaxer, which keeps a locked structure's group.
+    const symmetry = await lockSymmetry(symmetryAsked);
     const job = startJob('eos', async (job) => {
       const { computeEOS } = await import('../ui/EOSPanel.js');
       const { scan, fit } = await computeEOS({
@@ -1148,11 +1245,15 @@ export const COMMAND_HANDLERS = Object.freeze({
       if (!fit) throw commandError(scan.volumes.length < 3 ? 'TOO_FEW_POINTS' : 'FIT_FAILED',
         scan.volumes.length < 3 ? `Only ${scan.volumes.length} point(s) computed; 3 are needed to fit`
           : 'The EOS fit could not run (it needs SciPy via Pyodide from the network); see the EOS window');
+      const summary = eosFitSummary(fit);
       return {
+        // Read first: false means the fit numbers are not a result (warnings say why).
+        ...eosReliability(scan, summary.energyVolume),
         scan: { mode: byVolume ? 'volume' : 'pressure', points: scan.volumes.length, stopped: scan.stopped,
           unconverged: scan.converged.filter((c) => !c).length,
           volumes: scan.volumes.map(round), energies: scan.energies.map(round), pressuresGPa: scan.pressures.map(round) },
-        fit: eosFitSummary(fit),
+        fit: summary,
+        ...(symmetry ? { symmetry } : {}),
       };
     });
     return started(job, waitS);
@@ -1200,10 +1301,10 @@ export const COMMAND_HANDLERS = Object.freeze({
 
   wait_job(args) {
     const input = requireArgs(args, 'wait_job');
-    const timeoutS = input.timeoutS ?? 20;
+    const waitS = input.waitS ?? 20;
     // A wait ends well inside the controller's command timeout; 0 is a status check.
-    if (!isFiniteNumber(timeoutS) || timeoutS < 0 || timeoutS > 25) throw commandError('INVALID_ARGS', 'wait_job.timeoutS must be 0 to 25');
-    return waitJob(input.jobId, timeoutS);
+    if (!isFiniteNumber(waitS) || waitS < 0 || waitS > 25) throw commandError('INVALID_ARGS', 'wait_job.waitS must be 0 to 25');
+    return waitJob(input.jobId, waitS);
   },
 
   cancel_job(args) {

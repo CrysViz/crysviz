@@ -35,9 +35,15 @@ test('conventions: one target schema, one verb per kind, get_state sections in s
   }
   assert.deepEqual(byName.get_state.args.properties.include.items.enum, [...STATE_SECTIONS]);
   // Verbs: run_* are jobs (they all take waitS), build_* make rows, nothing else uses those prefixes.
+  // One name for "how long to wait": the job starters and wait_job alike, nothing else.
   for (const c of spec.commands) {
     if (c.name.startsWith('run_')) assert.ok(c.args.properties.waitS, `${c.name} takes waitS`);
-    if (c.args.properties.waitS) assert.ok(c.name.startsWith('run_'), `${c.name} has waitS but is not run_*`);
+    if (c.args.properties.waitS) assert.ok(c.name.startsWith('run_') || c.name === 'wait_job', `${c.name} has waitS`);
+    assert.ok(!c.args.properties.timeoutS, `${c.name} uses timeoutS; the name is waitS`);
+  }
+  // The symmetry-constrained jobs take the same symmetry option.
+  for (const name of ['run_md', 'run_eos']) {
+    assert.deepEqual(byName[name].args.properties.symmetry, byName.run_relax.args.properties.symmetry, `${name}.symmetry`);
   }
   // Python-only commands are marked, and nothing else is.
   assert.deepEqual(spec.commands.filter((c) => c.mcp === false).map((c) => c.name).sort(), ['commit_positions', 'update_fractional_positions']);
@@ -387,4 +393,27 @@ test('expectedRevision refuses only when the addressed atoms are no longer the s
   // a revision this host never reported cannot be compared
   assert.equal(code(() => checkExpectedRevision('r-unknown', [0], idsAt)), 'STRUCTURE_CHANGED');
   fileBrowser.selectedStructure = null;
+});
+
+test('run_eos flags a fit that is not a result', async () => {
+  const { eosReliability } = await import('../../docs/host/commands.js');
+  const good = {
+    volumes: [40, 42, 44, 46, 48], energies: [-3.95, -4.02, -4.05, -4.03, -3.98],
+    pressures: [12, 5, 0.3, -4, -7], converged: [true, true, true, true, true],
+  };
+  assert.deepEqual(eosReliability(good, { V0: 44.1, B0GPa: 140, B0Prime: 4.8 }), { fitReliable: true, warnings: [] });
+  // The peer session's scan: unconverged, non-monotonic, one pressure sign, V0 far outside, B0' absurd.
+  const bad = {
+    volumes: [12000, 12400, 12800, 13200, 13600], energies: [-2749.40, -2749.64, -2742.62, -2744.15, -2741.0],
+    pressures: [-0.5, -0.7, -0.9, -1.0, -1.2], converged: [false, false, false, false, false],
+  };
+  const r = eosReliability(bad, { V0: 14571, B0GPa: 0.1, B0Prime: -3700 });
+  assert.equal(r.fitReliable, false);
+  const text = r.warnings.join(' | ');
+  for (const part of ['5 of 5 points did not converge', 'not monotonic', 'one sign', 'outside the scanned volumes', "B0' = -3700"]) {
+    assert.ok(text.includes(part), `missing "${part}" in ${text}`);
+  }
+  assert.ok(eosReliability(good, null).warnings.some((w) => w.includes('fit failed')));
+  assert.ok(eosReliability({ ...good, energies: [-4.05, -4.02, -4.0, -3.98, -3.95] }, { V0: 44, B0GPa: 1, B0Prime: 4 })
+    .warnings.some((w) => w.includes('not bracketed')));
 });

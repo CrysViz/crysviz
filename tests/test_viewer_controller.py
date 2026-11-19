@@ -506,3 +506,14 @@ class ViewerControllerTests(unittest.TestCase):
                                 viewer.list_structures()
                 finally:
                     viewer.close()
+
+
+class UserChangeMergeTests(unittest.TestCase):
+    def test_consecutive_camera_moves_are_one_change(self):
+        from crysviz._viewer import _add_user_change
+        changes: list = []
+        for note in ({"camera": 1, "note": "a"}, {"camera": 2, "note": "b"}, {"structure": 1, "note": "s"},
+                     {"camera": 3, "note": "c"}, {"camera": 4, "note": "d"}):
+            _add_user_change(changes, note)
+        # A rotation in steps is where the camera ended; other changes keep their place.
+        self.assertEqual(changes, [{"camera": 2, "note": "b"}, {"structure": 1, "note": "s"}, {"camera": 4, "note": "d"}])

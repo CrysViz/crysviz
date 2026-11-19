@@ -96,7 +96,7 @@
     {
       "name": "get_symmetry",
       "tier": "read",
-      "description": "Space group of the active structure at a tolerance, as the Symmetry window reads it (Moyo): number, Hermann-Mauguin symbol, Hall number, Pearson symbol, and atom indices per Wyckoff letter. Hidden atoms are left out (hiddenExcluded says how many). Call at two tolerances to see how robust the symmetry is.",
+      "description": "Space group of the active structure at a tolerance, as the Symmetry window reads it (Moyo): number, Hermann-Mauguin symbol, Hall number, Pearson symbol, and the number of atoms per Wyckoff letter (listAtoms: true gives their indices). Hidden atoms are left out (hiddenExcluded says how many). Call at two tolerances to see how robust the symmetry is.",
       "args": {
         "type": "object",
         "properties": {
@@ -104,7 +104,8 @@
             "type": "number",
             "exclusiveMinimum": 0,
             "description": "Symmetry tolerance in Å (symprec). Default: the app's setting."
-          }
+          },
+          "listAtoms": { "type": "boolean", "description": "Give the atom indices per Wyckoff letter, not just counts. Default false." }
         },
         "additionalProperties": false
       }
@@ -556,7 +557,7 @@
     {
       "name": "run_md",
       "tier": "write",
-      "description": "Start molecular dynamics on the active structure with the selected potential (default NEP89, 89 elements; PET-MAD if chosen in the Atomistic window), as the MD window's start does: velocity Verlet with a Bussi thermostat (NVT), or with a barostat (NPT). The frames go to a new trajectory row, selected when the run ends. A job: it returns {jobId, kind, status, progress, elapsedS} at once (or with its result if it ends within waitS); follow it with wait_job. One calculation at a time. The result names the trajectory {structure, name, frames}.",
+      "description": "Start molecular dynamics on the active structure with the selected potential (default NEP89, 89 elements; PET-MAD if chosen in the Atomistic window), as the MD window's start does: velocity Verlet with a Bussi thermostat (NVT), or with a barostat (NPT). The frames go to a new trajectory row, selected when the run ends. A job: it returns {jobId, kind, status, progress, elapsedS} at once (or with its result if it ends within waitS); follow it with wait_job. One calculation at a time. The result names the trajectory {structure, name, frames}. symmetry: true keeps the space group during the run.",
       "args": {
         "type": "object",
         "properties": {
@@ -571,6 +572,13 @@
           "ensemble": { "type": "string", "enum": ["nvt", "npt"], "description": "Default nvt (fixed cell)." },
           "pressureGPa": { "type": "number", "description": "NPT target pressure. Default 0." },
           "thermostatTauFs": { "type": "number", "exclusiveMinimum": 0, "description": "Thermostat coupling time. Default 20." },
+          "symmetry": {
+            "description": "Keep the space group: lock the structure to its symmetry first, as the Symmetry window's Enable Wyckoff Editor does (a lock already on is kept). true, or {tolerance} in Å (default: the app's symmetry tolerance). The result's symmetry says which group was locked and whether it still holds at the end. A structure whose symmetry cannot be found is refused (applied: false).",
+            "anyOf": [
+              { "type": "boolean" },
+              { "type": "object", "properties": { "tolerance": { "type": "number", "exclusiveMinimum": 0 } }, "additionalProperties": false }
+            ]
+          },
           "waitS": {
             "type": "number",
             "minimum": 0,
@@ -584,7 +592,7 @@
     {
       "name": "run_relax",
       "tier": "write",
-      "description": "Start relaxing the active structure with the Atomistic window's potential (default NEP89), as the Relax button does: atoms (and the cell, unless relaxCell is false) move until every force is below fmax (eV/Å) and the pressure is within pressureTolGPa of pressureGPa. A job, as run_md. The result: targetPressureGPa and relaxCell it used (and a pressureHint when the structure's name mentions a different pressure: a hint only), the new trajectory {structure, name, frames} (its last frame is the relaxed structure and is shown; the source row is unchanged), steps, converged, stopped, fmax, energy and energyPerAtom (eV), pressureGPa. To compare before and after, export_structure both (structure, frame) and diff them in a script.",
+      "description": "Start relaxing the active structure with the Atomistic window's potential (default NEP89), as the Relax button does: atoms (and the cell, unless relaxCell is false) move until every force is below fmax (eV/Å) and the pressure is within pressureTolGPa of pressureGPa. A job, as run_md. The result: targetPressureGPa and relaxCell it used (and a pressureHint when the structure's name mentions a different pressure: a hint only), the new trajectory {structure, name, frames} (its last frame is the relaxed structure and is shown; the source row is unchanged), steps, converged, stopped, fmax, energy and energyPerAtom (eV), pressureGPa. To compare before and after, export_structure both (structure, frame) and diff them in a script. To continue an unconverged relaxation, call run_relax again: it starts from the structure on show, the relaxed last frame, with maxSteps more steps.",
       "args": {
         "type": "object",
         "properties": {
@@ -593,6 +601,13 @@
           "relaxCell": { "type": "boolean", "description": "Also relax the cell. Default true." },
           "pressureGPa": { "type": "number", "description": "Target pressure for the cell, GPa. Default 0." },
           "pressureTolGPa": { "type": "number", "exclusiveMinimum": 0, "description": "Default 0.2." },
+          "symmetry": {
+            "description": "Keep the space group: lock the structure to its symmetry first, as the Symmetry window's Enable Wyckoff Editor does (a lock already on is kept). true, or {tolerance} in Å (default: the app's symmetry tolerance). The result's symmetry says which group was locked and whether it still holds at the end. A structure whose symmetry cannot be found is refused (applied: false).",
+            "anyOf": [
+              { "type": "boolean" },
+              { "type": "object", "properties": { "tolerance": { "type": "number", "exclusiveMinimum": 0 } }, "additionalProperties": false }
+            ]
+          },
           "waitS": {
             "type": "number",
             "minimum": 0,
@@ -623,7 +638,7 @@
     {
       "name": "run_eos",
       "tier": "write",
-      "description": "Equation of state of the active structure with the Atomistic window's potential, fitted (3rd-order Birch–Murnaghan) and shown in the EOS Fitting window. Scan by volume (volumeRangePct: cell volumes over ±that %, cell fixed, atoms relaxed) or by pressure (pMinGPa..pMaxGPa, cell relaxed to each, the window's own mode). Relax first: the volume scan centres on the current cell. A job, as run_md. The result has every point (volumes Å³ per cell, energies eV, pressuresGPa) and the fit: E0 (eV), V0 (Å³ per cell), B0GPa, B0Prime from the E–V and P–V fits. The fit needs SciPy via Pyodide, fetched from the network on first use.",
+      "description": "Equation of state of the active structure with the Atomistic window's potential, fitted (3rd-order Birch–Murnaghan) and shown in the EOS Fitting window. Scan by volume (volumeRangePct: cell volumes over ±that %, cell fixed, atoms relaxed) or by pressure (pMinGPa..pMaxGPa, cell relaxed to each, the window's own mode). Relax first: the volume scan centres on the current cell. A job, as run_md. The result has every point (volumes Å³ per cell, energies eV, pressuresGPa) and the fit: E0 (eV), V0 (Å³ per cell), B0GPa, B0Prime from the E–V and P–V fits. The fit needs SciPy via Pyodide, fetched from the network on first use. The result starts with fitReliable and warnings: when fitReliable is false (points not converged, the minimum not bracketed, no zero pressure in the scan, V0 outside the scanned volumes, B0 or B0' unphysical), the fit numbers are not a result; tell the user why instead of reporting them.",
       "args": {
         "type": "object",
         "properties": {
@@ -638,6 +653,13 @@
           "pMaxGPa": { "type": "number", "description": "Default 20." },
           "fmax": { "type": "number", "exclusiveMinimum": 0, "description": "Force tolerance per point, eV/Å. Default 0.01." },
           "maxSteps": { "type": "integer", "minimum": 1, "description": "Relax steps per point. Default 200." },
+          "symmetry": {
+            "description": "Keep the space group: lock the structure to its symmetry first, as the Symmetry window's Enable Wyckoff Editor does (a lock already on is kept). true, or {tolerance} in Å (default: the app's symmetry tolerance). The result's symmetry says which group was locked and whether it still holds at the end. A structure whose symmetry cannot be found is refused (applied: false).",
+            "anyOf": [
+              { "type": "boolean" },
+              { "type": "object", "properties": { "tolerance": { "type": "number", "exclusiveMinimum": 0 } }, "additionalProperties": false }
+            ]
+          },
           "waitS": {
             "type": "number",
             "minimum": 0,
@@ -671,12 +693,12 @@
     {
       "name": "wait_job",
       "tier": "read",
-      "description": "Wait until a job ends or timeoutS seconds pass (at most 25; 0 just reports), then return it: {jobId, kind, status (running, done, failed, cancelled), progress, elapsedS, result or error once it ended, active: the structure and frame on show afterwards}. Call again while it is still running.",
+      "description": "Wait until a job ends or waitS seconds pass (at most 25; 0 just reports), then return it: {jobId, kind, status (running, done, failed, cancelled), progress, elapsedS, result or error once it ended, active: the structure and frame on show afterwards}. Call again while it is still running.",
       "args": {
         "type": "object",
         "properties": {
           "jobId": { "type": "string" },
-          "timeoutS": { "type": "number", "minimum": 0, "maximum": 25, "description": "Default 20; 0 is a status check." }
+          "waitS": { "type": "number", "minimum": 0, "maximum": 25, "description": "Default 20; 0 is a status check. The same name as the run_* tools use." }
         },
         "required": ["jobId"],
         "additionalProperties": false
