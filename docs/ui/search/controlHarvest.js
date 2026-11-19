@@ -61,7 +61,7 @@ function clean(text) {
     .replace(/\s+/g, ' ')
     // Live value readouts that share the label's text node ("Peel layers: 10").
     .replace(/:\s*[-+]?\d[\d.,]*\s*\S{0,3}$/u, '')
-    // Leading/trailing glyphs: "📁 Upload", "▸ Coupling times", "Download ▾", "…ⓘ".
+    // Leading/trailing glyphs: "▸ Coupling times", "Download ▾", "…ⓘ".
     .replace(/^[^\p{L}\p{N}(]+/u, '')
     .replace(/[^\p{L}\p{N})%]+$/u, '')
     .trim();

@@ -212,7 +212,7 @@ export const CONCEPTS = [
 
   // ---- files ------------------------------------------------------------------------------
   { to: { control: 'uploadButton' }, phrases: [
-    'open file', 'import structure', 'load structure', 'drag and drop', 'browse files', 'import file',
+    'open file', 'upload', 'upload file', 'import structure', 'load structure', 'drag and drop', 'browse files', 'import file',
     'open poscar', 'open cif', 'load xyz', 'load outcar', 'read vasp output', 'open trajectory',
   ] },
   { to: { control: 'pasteTextButton' }, phrases: [

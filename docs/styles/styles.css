@@ -239,7 +239,7 @@ body.panel-hidden #axesLegend {
   font-weight: var(--fw-medium);
 }
 
-/* File actions row (Files window): Upload / Paste Text / Download (+ Share,
+/* File actions row (Files window): Open / Paste Text / Download (+ Share,
    added once a structure loads). A wrapping flex row, not an equal-column
    grid: with a larger font scale or a narrow panel the four nowrap labels
    summed to more than the row, and equal tracks just let the labels run into
@@ -291,8 +291,23 @@ body.panel-hidden #axesLegend {
   box-shadow: 0px 0px 4px 2px var(--highlight-color);
 }
 
+/* A folder before a label (Open, the landscape loader): an SVG mask in the
+   text colour, not an emoji, which a web view without an emoji font (the
+   Python app's Qt window) shows as a box. */
+.cv-folder-icon::before {
+  content: "";
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 0.35em;
+  vertical-align: -0.2em;
+  background-color: currentColor;
+  -webkit-mask: url("../data/icons/folder-icon.svg") center / contain no-repeat;
+  mask: url("../data/icons/folder-icon.svg") center / contain no-repeat;
+}
+
 /* Auto Range buttons (Forces/Spins/Atoms/Bonds/Planes panels): same look as
-   the file-action-btn (Upload etc.) buttons, but sized to sit inline next to
+   the file-action-btn (Open etc.) buttons, but sized to sit inline next to
    a Log Scale checkbox instead of stretching to fill the row. */
 .cv-auto-range-btn {
   width: auto;

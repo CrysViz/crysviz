@@ -74,7 +74,7 @@ export const CONTROL_INDEX = [
   {"panel":"backend","label":"Simulated Annealing on","kind":"button","id":"mdAnnealHeader","tabs":["MD"]},
   {"panel":"backend","label":"start","kind":"button","id":"mdStartBtn","tabs":["MD"]},
   {"panel":"backend","label":"stop","kind":"button","id":"mdStopBtn","tabs":["MD"]},
-  {"panel":"files","label":"Upload","kind":"button","id":"uploadButton"},
+  {"panel":"files","label":"Open","kind":"button","id":"uploadButton"},
   {"panel":"files","label":"Paste Text","kind":"button","id":"pasteTextButton"},
   {"panel":"files","label":"Download","kind":"button","id":"downloadButton"},
   {"panel":"files","label":"Share","kind":"button","id":"shareBtn"},
