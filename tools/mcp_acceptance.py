@@ -451,12 +451,71 @@ async def collaboration(s: Session):
     return f"camera unchanged by save_image, {w}x{h} default, supercell kept direction"
 
 
+async def edits(s: Session):
+    """The user's test session: in-place element changes, a user edit between calls, selection algebra."""
+    await s.load_cell(STO, "SrTiO3.vasp", 5)
+    # CrysViz remembers per-atom colours per file; an earlier workflow coloured this one.
+    await s.call("apply", {"action": "reset_color", "all": True})
+    check((await s.state())["structure"]["colors"]["custom"] == [], "reset_color all left custom colours")
+    # Neighbours of Ti (index 1) straight from find, no export round trip.
+    ti = await s.call("find", {"what": "bonds", "where": {"atoms": [1], "elements": ["Ti", "O"]}})
+    check(ti["count"] == 6 and all(item[0] == 1 and abs(item[3] - 1.9525) < 1e-3 for item in ti["items"]),
+          f"Ti-O neighbours: {ti}")
+    # Polyhedra computed on demand while they are not shown.
+    await s.toggle("show polyhedra", False)
+    poly = await s.call("find", {"what": "polyhedra", "where": {"center": "Ti"}})
+    check(poly["count"] == 1 and "on demand" in poly.get("note", ""), f"on-demand polyhedra: {poly}")
+    r0 = (await s.state())["structure"]["revision"]
+    oxygens = await s.call("find", {"what": "atoms", "where": {"element": "O"}, "fields": "indices"})
+    check(oxygens["atoms"] == [2, 3, 4] and "items" not in oxygens, f"indices output: {oxygens}")
+    await s.call("apply", {"atoms": [2], "action": "color", "value": "#ff00ff", "expectedRevision": r0})
+    check((await s.state())["structure"]["revision"] == r0, "a colour changed the revision")
+    # O -> F in place: same indices and count, the custom colour kept, the other at F's default.
+    changed = await s.call("set_element", {"atoms": [2, 3], "element": "F", "expectedRevision": r0})
+    st = await s.call("get_state", {"atoms": True})
+    elements = [a["element"] for a in st["structure"]["atoms"]]
+    check(elements == ["Sr", "Ti", "F", "F", "O"], f"set_element order: {elements}")
+    check(changed["revision"] == st["structure"]["revision"] != r0, "set_element did not report the new revision")
+    colors = st["structure"]["colors"]
+    check(colors["custom"] == [{"color": "#ff00ff", "count": 1, "atoms": [2]}] and "F" in colors["elements"],
+          f"colours after set_element: {colors}")
+    # The old selection is stale now; an old revision is refused.
+    stale = await s.error("apply", {"selection": oxygens["selection"], "action": "highlight"})
+    check("SELECTION_STALE" in stale, stale)
+    r1 = st["structure"]["revision"]
+    await s.call("build_supercell", {"n": [2, 1, 1]})  # what the user might do by hand
+    refused = await s.error("remove_atoms", {"atoms": [0], "expectedRevision": r1})
+    check("STRUCTURE_CHANGED" in refused and "10 atoms" in refused, refused)
+    check((await s.state())["structure"]["atomCount"] == 10, "a refused remove_atoms removed atoms")
+    # Selection algebra and position filters.
+    fluorine = await s.call("find", {"what": "atoms", "where": {"element": "F"}, "fields": "indices"})
+    rest = await s.call("find", {"what": "atoms", "where": {"notIn": fluorine["selection"]}, "fields": "indices"})
+    check(fluorine["count"] == 4 and rest["count"] == 6 and not set(rest["atoms"]) & set(fluorine["atoms"]),
+          f"notIn: {fluorine} {rest}")
+    half = await s.call("find", {"what": "atoms", "where": {"in": fluorine["selection"], "frac": {"min": [0, 0, 0], "max": [0.49, 1, 1]}}})
+    check(half["count"] == 2, f"in + frac box: {half}")
+    near = await s.call("find", {"what": "atoms", "where": {"near": {"atom": 0, "within": 0.1}}})
+    check(near["count"] == 1, f"near: {near}")
+    grouped = await s.call("find", {"what": "atoms", "groupBy": "element"})
+    check({el: g["count"] for el, g in grouped["groups"].items()} == {"Sr": 2, "Ti": 2, "F": 4, "O": 2}, f"groupBy: {grouped}")
+    # reset_color: back to the element colour.
+    await s.call("apply", {"selection": fluorine["selection"], "action": "reset_color"})
+    check((await s.state())["structure"]["colors"]["custom"] == [], "reset_color left custom colours")
+    # run_relax says which pressure it used, and what the name hints.
+    await s.load_cell(STO, "SrTiO3_10GPa.vasp", 5)
+    relaxed = await s.job("run_relax", {"maxSteps": 3})
+    check(relaxed["targetPressureGPa"] == 0 and relaxed["relaxCell"] is True and "10 GPa" in relaxed.get("pressureHint", ""),
+          f"run_relax echo: {dict(list(relaxed.items())[:3])}")
+    return "set_element in place, revision guard after a supercell, in/notIn/frac/near, reset_color, relax echo"
+
+
 WORKFLOWS = [
     ("1", "vacancy + relax", w1_vacancy_relax), ("2", "publication figure", w2_figure),
     ("3", "charge density", w3_charge_density), ("4", "diffusion (MD + MSD)", w4_diffusion),
     ("5", "symmetry", w5_symmetry), ("6", "ordering approximants", w6_ordering),
     ("7", "EOS", w7_eos), ("8", "phonon frames", w8_phonons), ("9", "slab", w9_slab),
     ("10", "screening 20 CIFs", w10_screening), ("collab", "shared window", collaboration),
+    ("edits", "edits between calls", edits),
 ]
 
 
