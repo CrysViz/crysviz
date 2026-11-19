@@ -137,21 +137,63 @@ get pictures back.
 Install it (from a checkout until the next release, see above), then add it to
 your client.
 
-Claude Code:
+### What `crysviz-mcp` is
+
+`crysviz-mcp` is a program, not a folder. Installing CrysViz with the `mcp`
+extra puts it in the `bin` folder of the Python environment you installed
+into, next to `python`. With a venv in `.venv`:
+
+- Linux and macOS: `/path/to/.venv/bin/crysviz-mcp`
+- Windows: `C:\path\to\.venv\Scripts\crysviz-mcp.exe`
+
+With the environment active, `which crysviz-mcp` (Windows: `where crysviz-mcp`)
+prints that full path. Your MCP client starts the program itself, usually
+without your environment active, so give the client the **full path**. Check
+that it runs with `/path/to/.venv/bin/crysviz-mcp --help`.
+
+Options: `--gui qt|gtk|cef` picks the window backend (by default pywebview
+chooses), and `--export-dir DIR` sets where pictures and exported files go
+(default `./crysviz-exports`).
+
+### Connect your client
+
+Any MCP client that can start a local (stdio) server works: give it the full
+path of `crysviz-mcp` as the command. Setup for the most common clients:
+
+**Claude Code** (add `-s user` to use it in every project, not only this one):
 
 ```bash
-claude mcp add crysviz -- crysviz-mcp
+claude mcp add crysviz -- /path/to/.venv/bin/crysviz-mcp
 ```
 
-Claude Desktop (config file `claude_desktop_config.json`):
+**Claude Desktop**: add this to `claude_desktop_config.json` (Settings >
+Developer > Edit Config) and restart Claude Desktop:
 
 ```json
 {
   "mcpServers": {
-    "crysviz": { "command": "/path/to/venv/bin/crysviz-mcp", "args": ["--gui", "qt"] }
+    "crysviz": { "command": "/path/to/.venv/bin/crysviz-mcp" }
   }
 }
 ```
+
+**Codex** (CLI and IDE extension): add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.crysviz]
+command = "/path/to/.venv/bin/crysviz-mcp"
+# Linux only: Codex passes a server only a few environment variables, and the
+# window needs these to open on your screen.
+env_vars = ["DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"]
+```
+
+(`codex mcp add crysviz -- /path/to/.venv/bin/crysviz-mcp` writes the first two
+lines for you; on Linux add the `env_vars` line yourself.)
+
+**VS Code** (Copilot Chat in agent mode): run **MCP: Add Server** from the
+Command Palette, choose **Command (stdio)**, enter
+`/path/to/.venv/bin/crysviz-mcp` and the name `crysviz`, and pick the global
+(user) destination.
 
 The window opens on the first request. Then ask, for example:
 
@@ -162,8 +204,8 @@ The window opens on the first request. Then ask, for example:
 
 The window is shared. Claude leaves your camera, zoom and display settings
 alone unless you ask, and it is told about the changes you make by hand. Only
-local clients are supported for now (Claude Code, Claude Desktop); claude.ai in
-the browser is not supported yet. The tools and options are in
+clients on your own computer can use it; claude.ai in the browser is not
+supported yet. The tools and options are in
 [agent_guides/MCP.md](agent_guides/MCP.md), and [examples/mcp_quickstart.md](examples/mcp_quickstart.md)
 walks through a first session.
 

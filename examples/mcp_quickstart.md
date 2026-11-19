@@ -30,28 +30,16 @@ Check that it starts: `.venv/bin/crysviz-mcp --help` (or `crysviz-mcp --help`).
 
 ## 2. Connect your client
 
-**Claude Code**, from the folder you will work in:
+Add `/path/to/.venv/bin/crysviz-mcp` (the full path) to your client. For
+Claude Code, from the folder you will work in:
 
 ```bash
-claude mcp add crysviz -- /path/to/.venv/bin/crysviz-mcp --gui qt
+claude mcp add crysviz -- /path/to/.venv/bin/crysviz-mcp
 ```
 
 Start Claude Code (or restart it if it was running) and run `/mcp`: `crysviz`
-should be listed as connected.
-
-**Claude Desktop**: add the server to `claude_desktop_config.json` and restart
-Claude Desktop:
-
-```json
-{
-  "mcpServers": {
-    "crysviz": { "command": "/path/to/.venv/bin/crysviz-mcp", "args": ["--gui", "qt"] }
-  }
-}
-```
-
-Options: `--gui qt|gtk|cef` picks the window backend, `--export-dir DIR` sets
-where pictures and exported files go (default `./crysviz-exports`).
+should be listed as connected. For Claude Desktop, Codex, VS Code and the
+options, see the README: [Connect your client](../README.md#connect-your-client).
 
 ## 3. First session
 

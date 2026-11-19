@@ -13,21 +13,15 @@ channel the Python `Viewer` uses. Every tool is also a Python call:
 pip install 'crysviz[mcp,qt]'          # or crysviz[mcp,gtk]
 # or with uv, using the system Qt (no PyPI Qt download):
 uv venv --system-site-packages .venv && uv pip install --python .venv/bin/python -e '.[mcp]'
-claude mcp add crysviz -- crysviz-mcp  # Claude Code (or the venv's .venv/bin/crysviz-mcp)
 ```
 
 The `mcp` extra is newer than the latest release: until the next release,
 install from a checkout (`pip install -e '.[mcp,qt]'`).
 
-Claude Desktop reads its servers from `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "crysviz": { "command": "/path/to/venv/bin/crysviz-mcp", "args": ["--gui", "qt"] }
-  }
-}
-```
+What `crysviz-mcp` is (a program in your environment's `bin` folder, given to
+the client by its full path), and how to add it to Claude Code, Claude Desktop,
+Codex, VS Code or another MCP client, is in the README:
+[Connect your client](../README.md#connect-your-client).
 
 Options: `--export-dir DIR` (default `./crysviz-exports`, or
 `$CRYSVIZ_EXPORT_DIR`), `--gui qt|gtk|cef`, `--debug`.
