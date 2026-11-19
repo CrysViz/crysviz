@@ -86,7 +86,7 @@ export async function searchControls(query, limit) {
   for (const { entry } of searchEntries(query, collectEntries())) {
     // A "bonds off" switch result stands for its toggle; set_control does the switching.
     const target = entry.switchOf || entry;
-    if (target.supercell) continue; // build_supercell does this
+    if (target.supercell) continue; // set_supercell does this
     const ref = entryRef(target);
     if (seen.has(ref)) continue;
     seen.add(ref);

@@ -166,7 +166,7 @@ async function waitForHostFailure(page) {
     const events = [];
     const host = window.crysvizHost;
     const off = host.subscribe((record) => events.push(record));
-    const listed = await host.dispatch({ command: 'list_structures' });
+    const listed = await host.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     off();
     return {
       descriptor: Object.getOwnPropertyDescriptor(window, 'crysvizHost'),
@@ -203,12 +203,12 @@ async function waitForHostFailure(page) {
     JSON.stringify(deferredPanels));
   H.check('manifest inputs load in order and ready is replayed',
     bootstrap.listed.ok
-      && bootstrap.listed.result.map((e) => e.name).join(',') === 'manifest-a,manifest-b,binary trajectory'
-      && bootstrap.listed.result[2].frames === 1
+      && bootstrap.listed.result.structures.map((e) => e.name).join(',') === 'manifest-a,manifest-b,binary trajectory'
+      && bootstrap.listed.result.structures[2].frames === 1
       && bootstrap.events.some((e) => e.event === 'ready'));
   H.check('host manifest takes precedence over shared state and legacy hash',
-    bootstrap.listed.ok && bootstrap.listed.result.length === 3
-      && !bootstrap.listed.result.some((entry) => entry.name === 'ignored'));
+    bootstrap.listed.ok && bootstrap.listed.result.structures.length === 3
+      && !bootstrap.listed.result.structures.some((entry) => entry.name === 'ignored'));
   H.check('ready follows every delayed ordered load',
     inputOrder.join(',') === 'manifest-a,manifest-b'
       && bootstrap.earlyEvents.filter((e) => e.event === 'structure_loaded').map((e) => e.data.name).join(',')
@@ -247,9 +247,9 @@ async function waitForHostFailure(page) {
 
   const protocol = await page.evaluate(async () => {
     const host = window.crysvizHost;
-    const before = await host.dispatch({ command: 'list_structures' });
-    const first = before.result[0];
-    const select = await host.dispatch({ command: 'select', args: { id: first.id, frame: 0 } });
+    const before = await host.dispatch({ command: 'get_state', args: { include: ['structures'] } });
+    const first = before.result.structures[0];
+    const select = await host.dispatch({ command: 'select_structure', args: { structure: first.id, frame: 0 } });
     const positionBefore = (await import('./state/structures.js')).getActiveStructure().atoms[0].position.slice();
     const invalid = await host.dispatch({ command: 'update_fractional_positions', args: {
       positions: [[0, 0, Number.NaN]],
@@ -276,15 +276,15 @@ async function waitForHostFailure(page) {
     const { getActiveStructure } = await import('./state/structures.js');
     const activeBeforeLattice = getActiveStructure();
     const oldLattice = activeBeforeLattice.lattice.map((row) => [...row]);
-    const invalidLatticeShape = await host.dispatch({ command: 'update_lattice', args: {
+    const invalidLatticeShape = await host.dispatch({ command: 'set_lattice', args: {
       lattice: [[3, 0, 0], [0, 3, 0]],
     } });
     const latticeAfterShape = getActiveStructure().lattice.map((row) => [...row]);
-    const invalidLatticeNonfinite = await host.dispatch({ command: 'update_lattice', args: {
+    const invalidLatticeNonfinite = await host.dispatch({ command: 'set_lattice', args: {
       lattice: [[3, 0, 0], [0, 3, 0], [0, 0, Number.NaN]],
     } });
     const latticeAfterNonfinite = getActiveStructure().lattice.map((row) => [...row]);
-    const invalidLatticeSingular = await host.dispatch({ command: 'update_lattice', args: {
+    const invalidLatticeSingular = await host.dispatch({ command: 'set_lattice', args: {
       lattice: [[3, 0, 0], [0, 3, 0], [6, 0, 0]],
     } });
     const latticeAfterSingular = getActiveStructure().lattice.map((row) => [...row]);
@@ -318,7 +318,7 @@ async function waitForHostFailure(page) {
       }
       return originalPipelineRender.apply(pipeline, args);
     };
-    const updatedLattice = await host.dispatch({ command: 'update_lattice', args: {
+    const updatedLattice = await host.dispatch({ command: 'set_lattice', args: {
       lattice: newLattice,
     } });
     await new Promise((resolve) => {
@@ -355,14 +355,14 @@ async function waitForHostFailure(page) {
         throw Object.assign(new Error('injected lattice callback failure'), { details: unsafe });
       },
     });
-    const throwingLattice = await throwingController.dispatchInternal({ command: 'update_lattice', args: {
+    const throwingLattice = await throwingController.dispatchInternal({ command: 'set_lattice', args: {
       lattice: newLattice,
     } });
     const fallbackController = createBrowserHost({
       applyFrameFast: () => { throw new Error('injected fast path failure'); },
       commitPositions: () => true,
     });
-    const unavailableLattice = await fallbackController.dispatchInternal({ command: 'update_lattice', args: {
+    const unavailableLattice = await fallbackController.dispatchInternal({ command: 'set_lattice', args: {
       lattice: newLattice,
     } });
     let releaseAsyncLattice;
@@ -373,7 +373,7 @@ async function waitForHostFailure(page) {
         return true;
       },
     });
-    const pendingAsyncLattice = asyncController.dispatchInternal({ command: 'update_lattice', args: {
+    const pendingAsyncLattice = asyncController.dispatchInternal({ command: 'set_lattice', args: {
       lattice: newLattice,
     } });
     const asyncLatticePendingState = await Promise.race([
@@ -390,7 +390,7 @@ async function waitForHostFailure(page) {
         throw new Error('async lattice callback failure');
       },
     });
-    const pendingAsyncRejection = asyncRejectingController.dispatchInternal({ command: 'update_lattice', args: {
+    const pendingAsyncRejection = asyncRejectingController.dispatchInternal({ command: 'set_lattice', args: {
       lattice: newLattice,
     } });
     const asyncRejectionPendingState = await Promise.race([
@@ -411,7 +411,7 @@ async function waitForHostFailure(page) {
       beforeCamera.position[1] - beforeCamera.target[1],
       beforeCamera.position[2] - beforeCamera.target[2],
     );
-    const rotated = await host.dispatch({ command: 'rotate_camera', args: { angleDegrees: 18, axis: 'y' } });
+    const rotated = await host.dispatch({ command: 'set_view', args: { rotate: { axis: 'y', degrees: 18 } } });
     const afterCamera = { position: app.camera.position.toArray(), target: app.controls.target.toArray() };
     const afterRadius = Math.hypot(
       afterCamera.position[0] - afterCamera.target[0],
@@ -436,17 +436,17 @@ async function waitForHostFailure(page) {
     const twoFrames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     await twoFrames();
     const rendersBefore = counters().render || 0;
-    const colored = await host.dispatch({ command: 'apply', args: { atoms: [0], action: 'color', value: '#ff0000' } });
+    const colored = await host.dispatch({ command: 'apply', args: { atoms: [0], action: 'color', color: '#ff0000' } });
     await twoFrames();
     const redrawn = { colored: colored.ok, before: rendersBefore, after: counters().render || 0 };
-    const raytrace = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'raytrace' } });
+    const raytrace = await host.dispatch({ command: 'set_renderer', args: { renderer: 'raytrace' } });
     const raytraceState = {
       select: document.getElementById('renderPipelineMenu')?.value,
       tracerBody: document.body.classList.contains('tracer-pipeline'),
       warningVisible: document.getElementById('raytraceWarningModal')?.hidden === false,
     };
-    const unknownPipeline = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'unknown' } });
-    const raster = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'forward' } });
+    const unknownPipeline = await host.dispatch({ command: 'set_renderer', args: { renderer: 'unknown' } });
+    const raster = await host.dispatch({ command: 'set_renderer', args: { renderer: 'forward' } });
     const saved = await host.dispatch({ command: 'save_image', args: {
       width: 320, height: 240, margin: 16, transparent: false, structureOnly: true,
       outputUrl: `${location.origin}/_crysviz/output/output-capability-123456789012345678901234`,
@@ -501,9 +501,10 @@ async function waitForHostFailure(page) {
     };
   });
   H.check('list/select use stable opaque IDs',
-    protocol.before.result.every((entry) => /^structure-\d+$/.test(entry.id)) && protocol.select.ok);
+    protocol.before.result.structures.every((entry) => /^structure-\d+$/.test(entry.id))
+      && protocol.select.ok && protocol.select.result.structure === protocol.before.result.structures[0].id);
   H.check('invalid coordinates reject without mutation',
-    !protocol.invalid.ok && protocol.invalid.error.code === 'INVALID_POSITIONS'
+    !protocol.invalid.ok && protocol.invalid.error.code === 'INVALID_ARGS'
       && JSON.stringify(protocol.positionBefore) === JSON.stringify(protocol.positionAfterInvalid));
   H.check('commit path reports fast path and rebuild',
     protocol.committed.ok && protocol.committed.result.atomCount === 1
@@ -513,21 +514,21 @@ async function waitForHostFailure(page) {
   H.check('filename is text-only with no injected DOM',
     protocol.loaded.ok && !protocol.injected && protocol.injectedNodes === 0 && protocol.textName);
   H.check('non-plain .crysviz load returns its new container',
-    protocol.sessionLoaded.ok && /^structure-\d+$/.test(protocol.sessionLoaded.result.id)
+    protocol.sessionLoaded.ok && /^structure-\d+$/.test(protocol.sessionLoaded.result.structure)
       && protocol.sessionLoaded.result.name === 'host-session.crysviz');
   H.check('session camera survives awaited .crysviz restoration',
     protocol.sessionLoaded.ok
       && JSON.stringify(protocol.cameraAfterSession.position) === JSON.stringify(protocol.sessionCamera.position)
       && JSON.stringify(protocol.cameraAfterSession.target) === JSON.stringify(protocol.sessionCamera.target));
   H.check('invalid lattice requests reject without mutation',
-    !protocol.invalidLatticeShape.ok && protocol.invalidLatticeShape.error.code === 'INVALID_LATTICE'
-      && !protocol.invalidLatticeNonfinite.ok && protocol.invalidLatticeNonfinite.error.code === 'INVALID_LATTICE'
-      && !protocol.invalidLatticeSingular.ok && protocol.invalidLatticeSingular.error.code === 'INVALID_LATTICE'
+    !protocol.invalidLatticeShape.ok && protocol.invalidLatticeShape.error.code === 'INVALID_ARGS'
+      && !protocol.invalidLatticeNonfinite.ok && protocol.invalidLatticeNonfinite.error.code === 'INVALID_ARGS'
+      && !protocol.invalidLatticeSingular.ok && protocol.invalidLatticeSingular.error.code === 'INVALID_ARGS'
       && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterShape)
       && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterNonfinite)
       && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterSingular));
   H.check('valid lattice update rebuilds geometry while preserving fractional data and camera',
-    protocol.positioned.ok && protocol.updatedLattice.ok && protocol.updatedLattice.result === true
+    protocol.positioned.ok && protocol.updatedLattice.ok && typeof protocol.updatedLattice.result.revision === 'string'
       && JSON.stringify(protocol.updatedState.lattice) === JSON.stringify(protocol.newLattice)
       && JSON.stringify(protocol.updatedState.fractional) === JSON.stringify(protocol.fractionalBeforeLattice)
       && JSON.stringify(protocol.updatedState.originalLattice) === JSON.stringify(protocol.originalLatticeBeforeUpdate)
@@ -560,7 +561,7 @@ async function waitForHostFailure(page) {
       && protocol.unavailableLattice.error.code === 'COMMAND_UNAVAILABLE');
   H.check('lattice update awaits async callback completion and rejection',
     protocol.asyncLatticePendingState === 'pending'
-      && protocol.asyncLattice.ok && protocol.asyncLattice.result === true
+      && protocol.asyncLattice.ok && typeof protocol.asyncLattice.result.revision === 'string'
       && protocol.asyncRejectionPendingState === 'pending'
       && !protocol.asyncRejection.ok
       && protocol.asyncRejection.error.code === 'LATTICE_SYNC_FAILED'
@@ -586,12 +587,12 @@ async function waitForHostFailure(page) {
   H.check('set_view rejects an unknown direction',
     !protocol.badView.ok && protocol.badView.error.code === 'INVALID_ARGS');
   H.check('controller pipeline selection synchronizes UI without warning',
-    protocol.raytrace.ok && protocol.raytrace.result === 'raytrace'
+    protocol.raytrace.ok && protocol.raytrace.result.renderer === 'raytrace'
       && protocol.raytraceState.select === 'raytrace'
       && protocol.raytraceState.tracerBody && !protocol.raytraceState.warningVisible);
   H.check('controller rejects unknown pipeline and returns to raster',
-    !protocol.unknownPipeline.ok && protocol.unknownPipeline.error.code === 'INVALID_PIPELINE'
-      && protocol.raster.ok && protocol.raster.result === 'forward');
+    !protocol.unknownPipeline.ok && protocol.unknownPipeline.error.code === 'INVALID_ARGS'
+      && protocol.raster.ok && protocol.raster.result.renderer === 'forward');
   const pngBody = outputBodies[0]?.body;
   H.check('controller PNG capture uploads a nontrivial PNG to the exact output route',
     protocol.saved.ok && protocol.saved.result.contentType === 'image/png'
@@ -630,7 +631,7 @@ async function waitForHostFailure(page) {
       selectPresent: !!document.getElementById('renderPipelineMenu'),
     };
     const dispatched = await window.crysvizHost.dispatch({
-      command: 'set_render_pipeline', args: { pipelineId: 'raytrace' },
+      command: 'set_renderer', args: { renderer: 'raytrace' },
     });
     const beforeOpen = {
       bodyTracer: document.body.classList.contains('tracer-pipeline'),
@@ -684,14 +685,14 @@ async function waitForHostFailure(page) {
   await page.goto(`${origin}/index.html?_crysviz_manifest=empty`, { waitUntil: 'load', timeout: 90000 });
   await page.waitForTimeout(2500);
   const emptyManifest = await page.evaluate(async () => {
-    const dispatch = await window.crysvizHost.dispatch({ command: 'list_structures' });
+    const dispatch = await window.crysvizHost.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     return {
       dispatch,
-      defaultName: dispatch.ok ? dispatch.result[0]?.name : null,
+      defaultName: dispatch.ok ? dispatch.result.structures[0]?.name : null,
     };
   });
   H.check('empty host manifest loads the built-in default authoritatively',
-    emptyManifest.dispatch.ok && emptyManifest.dispatch.result.length === 1
+    emptyManifest.dispatch.ok && emptyManifest.dispatch.result.structures.length === 1
       // The app's built-in default (crystal-viewer.js loadDefaultStructure).
       && emptyManifest.defaultName === 'oP28-C3N4'
       && emptyManifestCompletions.length === 1 && emptyManifestCompletions[0].ok === true);
@@ -709,7 +710,7 @@ async function waitForHostFailure(page) {
   await waitForHostFailure(page);
   const failedBootstrap = await page.evaluate(async () => {
     const host = window.crysvizHost;
-    const dispatch = await host.dispatch({ command: 'list_structures' });
+    const dispatch = await host.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     const { getContainers } = await import('./state/structures.js');
     return {
       structureCount: getContainers().length,
@@ -745,7 +746,7 @@ async function waitForHostFailure(page) {
   await page.goto(`${origin}/index.html?_crysviz_manifest=dynamic-failure`, { waitUntil: 'load', timeout: 90000 });
   await waitForHostFailure(page);
   const dynamicFailure = await page.evaluate(async () => {
-    const dispatch = await window.crysvizHost.dispatch({ command: 'list_structures' });
+    const dispatch = await window.crysvizHost.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     const { getContainers } = await import('./state/structures.js');
     return {
       structureCount: getContainers().length,

@@ -86,16 +86,26 @@ class _Host:
             if command == self.ignore_command:
                 continue
             result: object = True
-            if command == "list_structures":
-                result = [{"id": "structure-1", "name": "a.cif", "frames": 2, "active": True, "activeFrame": 0}]
+            if command == "get_state":
+                result = {"structure": None, "renderer": "forward",
+                          "structures": [{"id": "structure-1", "name": "a.cif", "frames": 2, "active": True, "activeFrame": 0}]}
             elif command == "load":
-                result = {"id": "structure-2", "name": payload["args"]["name"], "frames": 1, "active": True, "activeFrame": 0}
+                result = {"structure": "structure-2", "name": payload["args"]["name"], "frames": 1, "activeFrame": 0,
+                          "atomCount": 2, "revision": "r1", "formula": "Si2"}
+            elif command == "run_md":
+                result = {"jobId": "md-1", "kind": "md", "status": "running"}
+            elif command == "wait_job":
+                self.waits = getattr(self, "waits", 0) + 1
+                result = {"jobId": "md-1", "kind": "md", "status": "running" if self.waits < 2 else "done",
+                          "result": {"finalStep": 10}}
             elif command == "update_fractional_positions":
                 result = {"atomCount": 2, "fastPathApplied": False, "rebuilt": True, "fallbackReason": "FAST_PATH_UNAVAILABLE"}
-            elif command == "update_lattice":
-                result = True
-            elif command == "set_render_pipeline":
-                result = "raytrace"
+            elif command == "set_lattice":
+                result = {"lattice": {}, "atomCount": 2, "revision": "r1"}
+            elif command == "set_renderer":
+                result = {"renderer": "raytrace"}
+            elif command == "set_view":
+                result = {"direction": [0, 0, 1], "up": [0, 1, 0], "zoom": 1}
             if command == "save_image":
                 png = b"\x89PNG\r\n\x1a\nmanaged-png"
                 if self.response_mode == "bad_signature":
@@ -110,7 +120,7 @@ class _Host:
                     "id": request_id, "ok": True,
                     "result": metadata,
                 }, attachments)
-            elif self.response_mode == "unexpected" and command == "list_structures":
+            elif self.response_mode == "unexpected" and command == "get_state":
                 send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": result}, {"extra": b"unexpected"})
             else:
                 send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": result})
@@ -156,8 +166,12 @@ class ViewerControllerTests(unittest.TestCase):
             viewer.commit_positions()
             viewer.recenter_camera()
             self.assertEqual(next(data for command, _, data in host.commands if command == "load"), {"data": b"later"})
-            for command in ("list_structures", "commit_positions", "recenter_camera"):
-                self.assertEqual(next(args for name, args, _ in host.commands if name == command), {})
+            self.assertEqual(loaded.details["atomCount"], 2)
+            sent = {name: args for name, args, _ in host.commands}
+            self.assertEqual(sent["get_state"], {"include": ["structures"]})
+            self.assertEqual(sent["select_structure"], {"structure": "structure-1", "frame": 0})
+            self.assertEqual(sent["commit_positions"], {})
+            self.assertEqual(sent["set_view"], {"recenter": True})
         finally:
             viewer.close()
 
@@ -192,7 +206,7 @@ class ViewerControllerTests(unittest.TestCase):
             for thread in threads:
                 thread.join(timeout=2)
             self.assertEqual(results, ["structure-1"] * 8)
-            self.assertEqual(sum(command == "list_structures" for command, _, _ in host.commands), 8)
+            self.assertEqual(sum(command == "get_state" for command, _, _ in host.commands), 8)
         finally:
             viewer.close()
 
@@ -215,14 +229,14 @@ class ViewerControllerTests(unittest.TestCase):
 
     def test_timeout_poisoning_and_eof_fail_pending_with_typed_errors(self):
         client, server = _pair()
-        viewer = self.start_fake(Viewer(command_timeout=0.05), _Host(server, ignore_command="recenter_camera"))
+        viewer = self.start_fake(Viewer(command_timeout=0.05), _Host(server, ignore_command="set_view"))
         with self.assertRaises(ViewerCommandTimeout):
             viewer.recenter_camera()
         with self.assertRaises(ViewerClosedError):
             viewer.list_structures()
 
         client, server = _pair()
-        viewer = self.start_fake(Viewer(), _Host(server, crash_command="list_structures"))
+        viewer = self.start_fake(Viewer(), _Host(server, crash_command="get_state"))
         with self.assertRaises(ViewerProtocolError):
             viewer.list_structures()
 
@@ -352,9 +366,30 @@ class ViewerControllerTests(unittest.TestCase):
         try:
             self.assertIsNone(viewer.rotate_camera(12.5, axis="z"))
             self.assertEqual(viewer.set_render_pipeline("raytrace"), "raytrace")
-            self.assertEqual(host.commands[-2][0], "rotate_camera")
-            self.assertEqual(host.commands[-2][1], {"angleDegrees": 12.5, "axis": "z"})
-            self.assertEqual(host.commands[-1][1], {"pipelineId": "raytrace"})
+            self.assertEqual(host.commands[-2][:2], ("set_view", {"rotate": {"axis": "z", "degrees": 12.5}}))
+            self.assertEqual(host.commands[-1][:2], ("set_renderer", {"renderer": "raytrace"}))
+        finally:
+            viewer.close()
+
+    def test_call_takes_snake_case_and_run_job_waits_for_the_end(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            view = viewer.run_job("run_md", temperature_k=600, steps=10, wait_s=0)
+            self.assertEqual((view["status"], view["result"]), ("done", {"finalStep": 10}))
+            self.assertEqual(host.commands[0][:2], ("run_md", {"temperatureK": 600, "steps": 10, "waitS": 0}))
+            self.assertEqual([c for c, _, _ in host.commands], ["run_md", "wait_job", "wait_job"])
+            for command in ("load", "save_image", "export_structure", "close"):
+                with self.assertRaisesRegex(ValueError, "use Viewer"):
+                    viewer.call(command)
+            with self.assertRaises(ValueError):
+                viewer.run_job("set_view")
+            camera = viewer.set_view("c", up="b", zoom=1.5)
+            self.assertEqual(camera["direction"], [0, 0, 1])
+            self.assertEqual(host.commands[-1][:2], ("set_view", {"direction": "c", "up": "b", "zoom": 1.5}))
+            with self.assertRaises(ValueError):
+                viewer.set_view()
         finally:
             viewer.close()
 
@@ -367,7 +402,7 @@ class ViewerControllerTests(unittest.TestCase):
             self.assertIsNone(viewer.update_lattice(lattice))
             lattice[0][0] = 99
             command, args, _ = host.commands[-1]
-            self.assertEqual(command, "update_lattice")
+            self.assertEqual(command, "set_lattice")
             self.assertEqual(args, {"lattice": [[6.0, 0.0, 0.0], [0.5, 5.0, 0.0], [0.0, 0.0, 4.0]]})
 
             invalid_lattices = (
@@ -379,12 +414,12 @@ class ViewerControllerTests(unittest.TestCase):
                 [[float("inf"), 0, 0], [0, 1, 0], [0, 0, 1]],
                 [[1, 0, 0], [2, 0, 0], [0, 0, 1]],
             )
-            dispatched = sum(command == "update_lattice" for command, _, _ in host.commands)
+            dispatched = sum(command == "set_lattice" for command, _, _ in host.commands)
             for lattice in invalid_lattices:
                 with self.subTest(lattice=lattice):
                     with self.assertRaises(ValueError):
                         viewer.update_lattice(lattice)
-            self.assertEqual(sum(command == "update_lattice" for command, _, _ in host.commands), dispatched)
+            self.assertEqual(sum(command == "set_lattice" for command, _, _ in host.commands), dispatched)
         finally:
             viewer.close()
 

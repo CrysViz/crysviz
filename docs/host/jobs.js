@@ -1,7 +1,8 @@
-// Long-running host work (MD first; relaxation and phonons can use the same):
-// a command starts a job and returns its id at once, and job_status /
-// wait_job / cancel_job follow it, so no single host command outlives the
-// controller's command timeout. Jobs live for the page's lifetime.
+// Long-running host work (run_md, run_relax, run_energy, run_eos,
+// run_ordering): a run_* command starts a job and returns it at once (or once
+// it ends within its waitS), and wait_job (timeoutS 0 is a status check) /
+// cancel_job follow it, so no single host command outlives the controller's
+// command timeout. Jobs live for the page's lifetime.
 
 import { commandError, safeError } from './commands.js';
 import { getActiveStructure, getContainerForStructure, getContainerId } from '../state/structures.js';

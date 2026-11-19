@@ -5,22 +5,106 @@
     "write": "Changes what the viewer shows; no files are read or written.",
     "file": "Reads or writes data outside the viewer (structure files, images)."
   },
+  "conventions": "Verbs: get_* and find read; set_* change the active structure or view in place; build_* make a new row and select it; run_* start a job; export_* and save_image write files. Atom-addressed commands take atoms (0-based indices) or selection (a find id, \"user\", \"all\"). A row id is passed and returned as structure (inside get_state's structure and structures it is id). Results are objects; structural edits return atomCount and revision. Units: Å, eV and fractional coordinates carry no suffix; other units are suffixed (K, Fs, GPa, Pct, THz, S). Errors are {code, message, details}; INVALID_ARGS names the argument. \"mcp\": false marks commands for the Python Viewer only.",
   "revisionGuard": "Every command accepts expectedRevision (get_state's structure.revision): it then runs only if the active structure is unchanged since, and otherwise fails with STRUCTURE_CHANGED (current revision and atom count). The MCP server lists it on the commands marked \"guard\": true (they edit by atom index). The revision covers atom identity, species and the cell, not positions: moving atoms never renumbers them.",
   "commands": [
     {
-      "name": "list_structures",
-      "tier": "read",
-      "description": "List the loaded structures with their ids, names, frame counts and which one is active.",
-      "args": { "type": "object", "properties": {}, "additionalProperties": false }
-    },
-    {
       "name": "get_state",
       "tier": "read",
-      "description": "Describe what the viewer shows now, including changes the user made by hand: the active structure (id, name, frame, atom count, formula, lattice vectors and a, b, c, alpha, beta, gamma, whether positions changed by update_fractional_positions are committed; revision, a token that changes with any structural edit, the user's or yours, and never with a colour; colors: each element's colour and the atoms with their own colour, grouped by colour), the camera (direction from the view centre to the camera, the convention set_view takes; screen up; distance; zoom; orthographic or perspective) and the renderer. Atoms are listed only with atoms: true, at most 500. selection: the atoms the user has selected in the window. Also lists the jobs (run_md) with their status.",
+      "description": "What the viewer shows now, including changes the user made by hand. Always: structure (the active one: id, name, frame, frames, atomCount, revision, formula, composition, periodic, lattice vectors and a, b, c, alpha, beta, gamma, positionsCommitted, hiddenCount) and renderer. revision is a token that changes with any structural edit (atoms added, removed or re-elemented, the cell), the user's or yours, never with a colour or a move: pass it as expectedRevision to edits by atom index. include picks the other sections (default camera, selection, jobs): structures (every loaded row: id, name, frames, active, activeFrame), camera (direction from the view centre to the camera, the convention set_view takes; screen up; distance; zoom; orthographic or perspective), selection (the atoms the user has selected), jobs (id, kind, status), colors (each element's colour and the atoms with their own colour, grouped by colour), phonons (the loaded phonon data: q-points, labelled path points, bands, frequencies in THz at the selected q-point or Γ, the mode, amplitude, speed, length unit), field (volumetric fields: labels and, for the shown one, iso level, data min/max, grid). Atom lists come from find.",
       "args": {
         "type": "object",
         "properties": {
-          "atoms": { "type": "boolean", "description": "Also list element and fractional position per atom (first 500). Default false." }
+          "include": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["structures", "camera", "selection", "jobs", "colors", "phonons", "field"] },
+            "description": "Sections besides structure and renderer. Default [camera, selection, jobs]."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "find",
+      "tier": "read",
+      "description": "Pick out atoms, bonds, polyhedra or voids of the active structure. Atoms, bonds and polyhedra are kept as a selection (id) for apply, remove_atoms, set_element and move_atoms; voids are places, so they get none. Every kind but voids takes where.in / where.notIn (selection ids, one or a list): only atoms in all of the first and none of the second (a polyhedra selection's atoms are its centres and corners). atoms: where {element or elements, indices, frac: {min: [x,y,z], max: [x,y,z]} (fractional box, periodic; min > max wraps through 0), near: {point: [x,y,z] fractional | atom: index, within: Å}}; items [index, element, fractional position]. bonds: every bond of the periodic structure under the get_bonding rule, drawn or not (cells up to 3000 atoms), where {elements: [A, B], minLength, maxLength}; items [a, b, image, length], b's copy being at its fractional position + image relative to a; each bond once. With where.atoms (centre indices), bonds lists each centre's neighbours instead: items [centre, neighbour, image, length], nearest first. polyhedra: where {type: centered|cage, center: element, cn}; computed on demand when they are not shown. voids: interstitial sites, largest first, where {minRadius}; items {position (fractional, on a 0.4 Å grid), radius (Å to the nearest atom), neighbours (the first shell, e.g. 12 O for a perovskite A site)}: put an atom there with add_atoms. fields: \"indices\" returns only the atom indices; groupBy: \"element\" returns counts and indices per element (both keep a big structure small). count is always the full number. A selection stays valid while the same atoms sit at the same indices (element changes and moves keep it); adding or removing atoms, or a supercell, makes it stale: find again. For heavy analysis on many atoms (rings, graph searches), use export_structure and get_bonding and run your own script, then act with atom indices.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "what": { "type": "string", "enum": ["atoms", "bonds", "polyhedra", "voids"] },
+          "where": {
+            "type": "object",
+            "description": "Filters; each kind takes only its own keys (others are refused). atoms: element(s), indices, frac, near, in, notIn. bonds: elements (a pair), atoms (centres: their neighbour lists), minLength, maxLength, in, notIn. polyhedra: type, center, cn, in, notIn. voids: minRadius.",
+            "properties": {
+              "element": { "type": "string" },
+              "elements": { "type": "array", "items": { "type": "string" } },
+              "indices": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
+              "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "bonds: centre atoms." },
+              "frac": {
+                "type": "object",
+                "properties": {
+                  "min": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+                  "max": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
+                },
+                "required": ["min", "max"],
+                "additionalProperties": false
+              },
+              "near": {
+                "type": "object",
+                "properties": {
+                  "point": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+                  "atom": { "type": "integer", "minimum": 0 },
+                  "within": { "type": "number", "exclusiveMinimum": 0 }
+                },
+                "required": ["within"],
+                "additionalProperties": false
+              },
+              "in": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+              "notIn": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+              "minLength": { "type": "number" },
+              "maxLength": { "type": "number" },
+              "type": { "type": "string", "enum": ["centered", "cage"] },
+              "center": { "type": "string" },
+              "cn": { "type": "integer", "minimum": 1 },
+              "minRadius": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "additionalProperties": false
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "description": "Items to return, default 100; count is always the full number."
+          },
+          "fields": {
+            "type": "string",
+            "enum": ["items", "indices"],
+            "description": "items (default): details per item; indices: only the atom indices."
+          },
+          "groupBy": { "type": "string", "enum": ["element"], "description": "Counts and atom indices per element." }
+        },
+        "required": ["what"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_bonding",
+      "tier": "read",
+      "description": "The bond rule CrysViz draws bonds with: per element pair present, min and max cutoff (Å, including the user's edits) and whether the pair is shown, plus the exact rule. With export_structure, a script reproduces CrysViz's bonds exactly (e.g. to find rings) instead of another program's defaults.",
+      "args": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "get_symmetry",
+      "tier": "read",
+      "description": "Space group of the active structure at a tolerance, as the Symmetry window reads it (Moyo): number, Hermann-Mauguin symbol, Hall number, Pearson symbol, and atom indices per Wyckoff letter. Hidden atoms are left out (hiddenExcluded says how many). Call at two tolerances to see how robust the symmetry is.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "tolerance": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Symmetry tolerance in Å (symprec). Default: the app's setting."
+          }
         },
         "additionalProperties": false
       }
@@ -28,7 +112,7 @@
     {
       "name": "search_controls",
       "tier": "read",
-      "description": "Find any window, action or labelled control (button, toggle, slider, choice, field) in CrysViz by what it does, as the app's own feature search does: 'bonds', 'detect cages', 'atom size', 'lattice vibrations'. End the query with on or off ('bonds off', 'polyhedra on') to put the matching toggles first. Returns refs for get_control, set_control and click_control. Use this for anything no other tool covers.",
+      "description": "Find any window, action or labelled control (button, toggle, slider, choice, field) in CrysViz by what it does, as the app's own feature search does: 'bonds', 'detect cages', 'atom size', 'lattice vibrations'. End the query with on or off ('bonds off', 'polyhedra on') to put the matching toggles first. Returns {count, controls: [{ref, type, kind, label, path}]}; the refs go to get_control, set_control and click_control. Use this for anything no other tool covers.",
       "args": {
         "type": "object",
         "properties": {
@@ -58,7 +142,10 @@
         "type": "object",
         "properties": {
           "ref": { "type": "string", "description": "A ref from search_controls." },
-          "value": { "description": "true/false, a number, or a string, depending on the control.", "type": ["boolean", "number", "string"] }
+          "value": {
+            "description": "true/false, a number, or a string, depending on the control.",
+            "type": ["boolean", "number", "string"]
+          }
         },
         "required": ["ref", "value"],
         "additionalProperties": false
@@ -87,133 +174,16 @@
       }
     },
     {
-      "name": "find",
-      "tier": "read",
-      "description": "Pick out atoms, bonds, polyhedra or voids of the active structure and keep them as a selection for apply, remove_atoms and set_element. Every kind takes where.in / where.notIn (selection ids, one or a list): only atoms in all of the first and none of the second. atoms: where {element or elements, indices, frac: {min: [x,y,z], max: [x,y,z]} (fractional box, periodic; min > max wraps through 0), near: {point: [x,y,z] fractional | atom: index, within: Å}}; items [index, element, fractional position]. bonds: every bond of the periodic structure under the get_bonding rule, drawn or not (cells up to 3000 atoms), where {elements: [A, B], minLength, maxLength}; items [a, b, image, length], b's copy being at its fractional position + image relative to a; each bond once. With where.atoms (centre indices), bonds lists each centre's neighbours instead: items [centre, neighbour, image, length], nearest first. polyhedra: where {type: centered|cage, center: element, cn}; computed on demand when they are not shown. voids: where {minRadius}. fields: \"indices\" returns only the atom indices; groupBy: \"element\" returns counts and indices per element (both keep a big structure small). A selection is tied to the structure's revision: after any structural change, find again. For heavy analysis on many atoms (rings, graph searches), use export_structure and get_bonding and run your own script, then apply with the atom indices it finds.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "what": { "type": "string", "enum": ["atoms", "bonds", "polyhedra", "voids"] },
-          "where": {
-            "type": "object",
-            "description": "Filters; each kind takes only its own keys (others are refused). atoms: element(s), indices, frac, near, in, notIn. bonds: elements (a pair), atoms (centres: their neighbour lists), minLength, maxLength, in, notIn. polyhedra: type, center, cn, in, notIn. voids: minRadius.",
-            "properties": {
-              "element": { "type": "string" },
-              "elements": { "type": "array", "items": { "type": "string" } },
-              "indices": { "type": "array", "items": { "type": "integer", "minimum": 0 } },
-              "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "bonds: centre atoms." },
-              "frac": { "type": "object", "properties": { "min": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }, "max": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 } }, "required": ["min", "max"], "additionalProperties": false },
-              "near": { "type": "object", "properties": { "point": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }, "atom": { "type": "integer", "minimum": 0 }, "within": { "type": "number", "exclusiveMinimum": 0 } }, "required": ["within"], "additionalProperties": false },
-              "in": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
-              "notIn": { "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
-              "minLength": { "type": "number" },
-              "maxLength": { "type": "number" },
-              "type": { "type": "string", "enum": ["centered", "cage"] },
-              "center": { "type": "string" },
-              "cn": { "type": "integer", "minimum": 1 },
-              "minRadius": { "type": "number", "exclusiveMinimum": 0 }
-            },
-            "additionalProperties": false
-          },
-          "limit": { "type": "integer", "minimum": 1, "maximum": 5000, "description": "Items to return, default 100; count is always the full number." },
-          "fields": { "type": "string", "enum": ["items", "indices"], "description": "items (default): details per item; indices: only the atom indices." },
-          "groupBy": { "type": "string", "enum": ["element"], "description": "Counts and atom indices per element." }
-        },
-        "required": ["what"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "apply",
-      "guard": true,
+      "name": "select_structure",
       "tier": "write",
-      "description": "Act on atoms: a selection from find, or atom indices (structure order, 0-based, as find, get_state and export_structure's order use). action: highlight (glow), select (the app's selection, which the Selection Inspector and measuring use), clear (what: highlight (default) or selection: the selection is the user's too, so it is cleared only when asked), color (value '#rrggbb', every copy of each atom, kept for the session), reset_color (back to the element colour; with all: true, the Atoms tab's Reset Colors for atoms, bonds, polyhedra and arrows), hide, show. A bonds selection acts on its atoms; a polyhedra selection's color colours the polyhedra themselves (target: atoms colours their atoms instead). bondPair: [A, B] with color colours every A-B bond. selection: \"user\" is what the user has selected in the window.",
+      "description": "Show a loaded row (and one of its frames): it becomes the active structure the other commands act on. structure is a row id (get_state include structures lists them; build_* and jobs return theirs). Returns the row as build_* do: {structure, name, frames, activeFrame, atomCount, revision}.",
       "args": {
         "type": "object",
         "properties": {
-          "selection": { "type": "string", "description": "A selection id from find, or \"user\" for the user's own selection in the window." },
-          "bondPair": { "type": "array", "items": { "type": "string" }, "minItems": 2, "maxItems": 2, "description": "With color: two element symbols; colours every bond of that pair." },
-          "target": { "type": "string", "enum": ["atoms", "polyhedra"], "description": "For a polyhedra selection: what color colours (default polyhedra)." },
-          "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "Atom indices, instead of selection." },
-          "action": { "type": "string", "enum": ["highlight", "select", "clear", "color", "reset_color", "hide", "show"] },
-          "value": { "type": "string", "description": "For color: '#rrggbb'." },
-          "what": { "type": "string", "enum": ["highlight", "selection"], "description": "For clear: which one (default highlight)." },
-          "all": { "type": "boolean", "description": "With reset_color: every colour customization of the structure, not only the given atoms." }
+          "structure": { "type": "string", "description": "Row id, e.g. structure-3." },
+          "frame": { "type": "integer", "minimum": 0, "description": "Trajectory frame, default 0." }
         },
-        "required": ["action"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "get_bonding",
-      "tier": "read",
-      "description": "The bond rule CrysViz draws bonds with: per element pair present, min and max cutoff (Å, including the user's edits) and whether the pair is shown, plus the exact rule. With export_structure, a script reproduces CrysViz's bonds exactly (e.g. to find rings) instead of another program's defaults.",
-      "args": { "type": "object", "properties": {}, "additionalProperties": false }
-    },
-    {
-      "name": "export_structure",
-      "tier": "file",
-      "description": "Write the active structure as the Save window does (cif keeps partial occupancy; poscar groups atoms by element) and return the file's atom order: file atom k is CrysViz atom order[k], or sameOrder when identical.",
-      "args": {
-        "type": "object",
-        "properties": { "format": { "type": "string", "enum": ["cif", "poscar"] } },
-        "required": ["format"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "get_polyhedra",
-      "tier": "read",
-      "description": "The coordination polyhedra and cages CrysViz built for the active structure, one per site: type (centered or cage), centre (fractional; for a cage, the centroid of its corners, a natural interstitial site), corner elements and atom indices. Polyhedra exist only while Show Polyhedra is on, and cages only with Detect Cages on (both via search_controls/set_control).",
-      "args": {
-        "type": "object",
-        "properties": {
-          "type": { "type": "string", "enum": ["centered", "cage"], "description": "Only this kind." },
-          "limit": { "type": "integer", "minimum": 1, "maximum": 500, "description": "Default 50." }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "get_voids",
-      "tier": "read",
-      "description": "Interstitial sites of the active structure: the centres of its empty spaces, largest first, each with its radius (distance to the nearest atom, Å) and the atoms around it (e.g. 12 O for a perovskite A site). Positions are fractional, on a 0.4 Å grid. Use with add_atoms to put an atom in a cage or hole. Unlike get_polyhedra's cages, any void counts, not only shells of bonded atoms.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "limit": { "type": "integer", "minimum": 1, "maximum": 100, "description": "Default 10." },
-          "minRadius": { "type": "number", "exclusiveMinimum": 0, "description": "Smallest distance from a site to every atom, Å. Default 0.7." }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "remove_atoms",
-      "guard": true, "destructive": true,
-      "tier": "write",
-      "description": "Delete atoms from the active structure, as the structure editor does. Give atom indices (from get_state, find or your own script), a find selection id, or selection: \"user\" for what the user has selected. The result lists each removed atom's element, fractional position and occupancy, so add_atoms can put them back (undo). Indices of the atoms after them shift down.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "minItems": 1, "maxItems": 10000 },
-          "selection": { "type": "string", "description": "A find selection id, or \"user\"." }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "set_element",
-      "guard": true,
-      "tier": "write",
-      "description": "Change atoms to another element in place, as an element edit in the structure editor: index, position and uuid stay, so no index shifts. An atom with its own colour keeps it; one at its element's default colour takes the new element's default. Give atom indices, a find selection id, or selection: \"user\". Ordered sites only (a disordered site's species are edited in the structure editor). Returns the new revision.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "element": { "type": "string", "description": "Element symbol, or Va for a vacancy." },
-          "atoms": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "minItems": 1, "maxItems": 10000 },
-          "selection": { "type": "string", "description": "A find selection id, or \"user\"." }
-        },
-        "required": ["element"],
+        "required": ["structure"],
         "additionalProperties": false
       }
     },
@@ -221,7 +191,7 @@
       "name": "add_atoms",
       "guard": true,
       "tier": "write",
-      "description": "Add atoms to the active structure at fractional positions, as the Add Atom window does. Refuses atoms closer than 0.5 Å to another atom unless force is true.",
+      "description": "Add atoms to the active structure at fractional positions, as the Add Atom window does; they get the next indices. Refuses atoms closer than 0.5 Å to another atom (details list the pairs) unless force is true. Returns {added, atomCount, revision}.",
       "args": {
         "type": "object",
         "properties": {
@@ -233,7 +203,13 @@
               "type": "object",
               "properties": {
                 "element": { "type": "string", "description": "Element symbol, or Va for a vacancy." },
-                "position": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "Fractional [x, y, z]." },
+                "position": {
+                  "type": "array",
+                  "items": { "type": "number" },
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "description": "Fractional [x, y, z]."
+                },
                 "occupancy": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
               },
               "required": ["element", "position"],
@@ -247,182 +223,91 @@
       }
     },
     {
-      "name": "build_supercell",
+      "name": "remove_atoms",
+      "tier": "write",
       "guard": true,
-      "tier": "write",
-      "description": "Repeat the active structure's cell n = [nx, ny, nz] times, as the Cell & Supercell window does. [1, 1, 1] goes back to the original cell.",
+      "destructive": true,
+      "description": "Delete atoms from the active structure, as the structure editor does. Indices of the atoms after them shift down. The result lists each removed atom's index, element, fractional position and occupancy, so add_atoms can put them back (undo), with the new atomCount and revision.",
       "args": {
         "type": "object",
         "properties": {
-          "n": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 20 }, "minItems": 3, "maxItems": 3 }
-        },
-        "required": ["n"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "run_md",
-      "tier": "write",
-      "description": "Start molecular dynamics on the active structure with the selected potential (default NEP89, 89 elements; PET-MAD if chosen in the Atomistic window), as the MD window's start does: velocity Verlet with a Bussi thermostat (NVT), or with a barostat (NPT). The frames go to a new trajectory row, which is selected when the run ends. Returns a job at once: follow it with wait_job (repeat until status is not running), job_status or cancel_job. One MD run at a time.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "steps": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "Default 500." },
-          "temperatureK": { "type": "number", "exclusiveMinimum": 0, "description": "Default 300." },
-          "timestepFs": { "type": "number", "exclusiveMinimum": 0, "description": "Default: recommended for the elements (shorter with H)." },
-          "saveStride": { "type": "integer", "minimum": 1, "description": "Save a trajectory frame every this many steps. Default 4." },
-          "ensemble": { "type": "string", "enum": ["nvt", "npt"], "description": "Default nvt (fixed cell)." },
-          "pressureGPa": { "type": "number", "description": "NPT target pressure. Default 0." },
-          "thermostatTauFs": { "type": "number", "exclusiveMinimum": 0, "description": "Thermostat coupling time. Default 20." }
+          "atoms": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 },
+            "minItems": 1,
+            "maxItems": 100000,
+            "description": "Atom indices (0-based, structure order), instead of selection."
+          },
+          "selection": {
+            "type": "string",
+            "description": "A find selection id, \"user\" (what the user has selected in the window) or \"all\"."
+          }
         },
         "additionalProperties": false
       }
     },
     {
-      "name": "run_relax",
+      "name": "set_element",
       "tier": "write",
-      "description": "Start relaxing the active structure with the Atomistic window's potential (default NEP89), as the Relax button does: atoms (and the cell, unless relaxCell is false) move until every force is below fmax and the pressure is within pressureTolGPa of pressureGPa. Returns a job at once: poll with wait_job. The result names the new relax_ trajectory (its last frame is the relaxed structure; the source row is unchanged), steps, converged, stopped, maxForce, energy and pressure. To compare before and after, export_structure both (select the frames) and diff them in a script. The result starts with the targetPressureGPa and relaxCell it used, and a pressureHint when the structure's name mentions a different pressure (a hint only; pass pressureGPa to use it).",
-      "args": {
-        "type": "object",
-        "properties": {
-          "fmax": { "type": "number", "exclusiveMinimum": 0, "description": "Force tolerance, eV/Å. Default 0.01." },
-          "maxSteps": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "Default 200." },
-          "relaxCell": { "type": "boolean", "description": "Also relax the cell. Default true." },
-          "pressureGPa": { "type": "number", "description": "Target pressure for the cell, GPa. Default 0." },
-          "pressureTolGPa": { "type": "number", "exclusiveMinimum": 0, "description": "Default 0.2." }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "compute_energy",
-      "tier": "write",
-      "description": "Single-point energy, forces and pressure of the active structure with the Atomistic window's potential, as the window's EFS button does (forces are shown as arrows if Forces are on). Returns a job (it may first load the potential): poll with wait_job. Result: energyEv, energyPerAtomEv, maxForce (eV/Å), pressureGPa.",
-      "args": { "type": "object", "properties": {}, "additionalProperties": false }
-    },
-    {
-      "name": "run_eos",
-      "tier": "write",
-      "description": "Equation of state of the active structure with the Atomistic window's potential, fitted (3rd-order Birch–Murnaghan) and shown in the EOS Fitting window. Scan by volume (volumeRangePct: cell volumes over ±that %, cell fixed, atoms relaxed) or by pressure (pMinGPa..pMaxGPa, cell relaxed to each, the window's own mode). Returns a job: poll with wait_job. The result has every point (V, E, P) and the fit: E0, V0 (Å³ per cell), B0 (GPa), B0' from the E–V and P–V fits. The fit needs SciPy via Pyodide, fetched from the network on first use.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "points": { "type": "integer", "minimum": 3, "maximum": 21, "description": "Default 7." },
-          "volumeRangePct": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 50, "description": "Scan by volume: ±this % around the current cell volume." },
-          "pMinGPa": { "type": "number", "description": "Scan by pressure (when volumeRangePct is not given). Default -2." },
-          "pMaxGPa": { "type": "number", "description": "Default 20." },
-          "fmax": { "type": "number", "exclusiveMinimum": 0, "description": "Force tolerance per point, eV/Å. Default 0.01." },
-          "maxSteps": { "type": "integer", "minimum": 1, "description": "Relax steps per point. Default 200." }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "order_structure",
-      "tier": "write",
-      "description": "Ordered approximants of a disordered structure (fractionally occupied sites), as the Order Structure section of Cell & Supercell does: `samples` random decorations in a cell `multiplier` times larger, each scored with a single-point energy (unless energies is false), kept as one new trajectory row sorted lowest energy first. Returns a job: poll with wait_job. The result lists each frame's seed and energy per atom; frame 0 is the lowest (select it with select).",
-      "args": {
-        "type": "object",
-        "properties": {
-          "samples": { "type": "integer", "minimum": 1, "maximum": 30, "description": "Default 5." },
-          "multiplier": { "type": "integer", "minimum": 1, "description": "Cell size factor, as the window's Size choice. Default 1." },
-          "energies": { "type": "boolean", "description": "Score each sample. Default true." }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "job_status",
-      "tier": "read",
-      "description": "A job's status (running, done, failed, cancelled), progress (step, steps, temperature) and, once it ends, its result or error.",
-      "args": {
-        "type": "object",
-        "properties": { "jobId": { "type": "string" } },
-        "required": ["jobId"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "wait_job",
-      "tier": "read",
-      "description": "Wait until a job ends or timeoutS seconds pass (at most 25), then return its status as job_status does. Call again while it is still running.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "jobId": { "type": "string" },
-          "timeoutS": { "type": "number", "minimum": 0, "maximum": 25, "description": "Default 20." }
-        },
-        "required": ["jobId"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "cancel_job",
-      "tier": "write",
-      "description": "Stop a running job after its current step. An MD run keeps the frames it saved.",
-      "args": {
-        "type": "object",
-        "properties": { "jobId": { "type": "string" } },
-        "required": ["jobId"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "load",
-      "tier": "file",
-      "description": "Load a structure file (CIF, POSCAR, XYZ, extxyz and the other formats CrysViz reads) and make it the active structure.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "name": { "type": "string", "minLength": 1, "description": "File name; its extension selects the format unless format is given." },
-          "data": { "type": "string", "description": "File contents." },
-          "format": { "type": "string", "minLength": 1, "description": "Format name overriding the file extension." },
-          "binary": { "type": "boolean" },
-          "periodic": { "type": "boolean", "description": "Force the structure to be treated as periodic or not." },
-          "interactive": { "type": "boolean", "description": "false skips load-time questions (CIF symmetry) and loads the structure as written. Default true." }
-        },
-        "required": ["name", "data"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "select",
-      "tier": "write",
-      "description": "Make a loaded structure (and optionally one of its trajectory frames) the active structure.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string", "description": "Structure id from list_structures." },
-          "frame": { "type": "integer", "minimum": 0, "description": "Trajectory frame, default 0." }
-        },
-        "required": ["id"],
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "update_fractional_positions",
       "guard": true,
-      "tier": "write",
-      "description": "Replace the fractional positions of every atom of the active structure.",
+      "description": "Change atoms to another element in place, as an element edit in the structure editor: index, position and identity stay, so nothing is renumbered and selections stay valid. An atom with its own colour keeps it; one at its element's default colour takes the new element's default. Ordered sites only (a disordered site's species are edited in the structure editor). Returns {changed, element, atomCount, revision}.",
       "args": {
         "type": "object",
         "properties": {
-          "positions": {
+          "element": { "type": "string", "description": "Element symbol, or Va for a vacancy." },
+          "atoms": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 },
+            "minItems": 1,
+            "maxItems": 100000,
+            "description": "Atom indices (0-based, structure order), instead of selection."
+          },
+          "selection": {
+            "type": "string",
+            "description": "A find selection id, \"user\" (what the user has selected in the window) or \"all\"."
+          }
+        },
+        "required": ["element"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "move_atoms",
+      "tier": "write",
+      "guard": true,
+      "description": "Move atoms of the active structure: to (one position per atom, in the order of atoms or the selection) or by (one shift for all). Fractional unless cartesian is true (then Å). Bonds and polyhedra are rebuilt unless commit is false (a fast redraw for many small steps). Moves never renumber atoms. Returns {moved, committed, atomCount, revision}.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "atoms": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 },
+            "minItems": 1,
+            "maxItems": 100000,
+            "description": "Atom indices (0-based, structure order), instead of selection."
+          },
+          "selection": {
+            "type": "string",
+            "description": "A find selection id, \"user\" (what the user has selected in the window) or \"all\"."
+          },
+          "to": {
             "type": "array",
             "items": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
-            "description": "One [x, y, z] fractional position per atom, in atom order."
+            "minItems": 1,
+            "description": "New positions, one per atom."
           },
-          "commit": { "type": "boolean", "description": "Also rebuild bonds and derived data, default false." }
+          "by": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "One shift for every atom." },
+          "cartesian": { "type": "boolean", "description": "to/by in Å instead of fractional. Default false." },
+          "commit": { "type": "boolean", "description": "Rebuild bonds and polyhedra. Default true." }
         },
-        "required": ["positions"],
         "additionalProperties": false
       }
     },
     {
-      "name": "update_lattice",
-      "guard": true,
+      "name": "set_lattice",
       "tier": "write",
-      "description": "Replace the lattice vectors of the active structure (rows a, b, c in Angstrom).",
+      "guard": true,
+      "description": "Replace the lattice vectors of the active structure (rows a, b, c in Å); atoms keep their fractional positions. Returns the new cell parameters with atomCount and revision.",
       "args": {
         "type": "object",
         "properties": {
@@ -438,69 +323,389 @@
       }
     },
     {
-      "name": "commit_positions",
+      "name": "set_supercell",
       "tier": "write",
-      "description": "Rebuild bonds and derived data after position updates.",
-      "args": { "type": "object", "properties": {}, "additionalProperties": false }
-    },
-    {
-      "name": "recenter_camera",
-      "tier": "write",
-      "description": "Move the structure back to the middle of the view without turning it.",
-      "args": { "type": "object", "properties": {}, "additionalProperties": false }
-    },
-    {
-      "name": "rotate_camera",
-      "tier": "write",
-      "description": "Orbit the camera around the view centre by an angle about the world x, y or z axis.",
+      "guard": true,
+      "description": "Show the active structure as a supercell, its cell repeated n = [nx, ny, nz] times, as the Cell & Supercell window does (in place: atoms are renumbered, so selections go stale). [1, 1, 1] goes back to the original cell. The window remembers it for this structure and restores it on the next load. Returns {supercell, atomCount, revision}.",
       "args": {
         "type": "object",
         "properties": {
-          "angleDegrees": { "type": "number" },
-          "axis": { "type": "string", "enum": ["x", "y", "z"] }
+          "n": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 20 }, "minItems": 3, "maxItems": 3 }
         },
-        "required": ["angleDegrees", "axis"],
+        "required": ["n"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_fractional_positions",
+      "tier": "write",
+      "guard": true,
+      "mcp": false,
+      "description": "Python Viewer only: replace the fractional positions of every atom (MCP has move_atoms).",
+      "args": {
+        "type": "object",
+        "properties": {
+          "positions": {
+            "type": "array",
+            "items": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 },
+            "description": "One [x, y, z] fractional position per atom, in atom order."
+          },
+          "commit": { "type": "boolean", "description": "Also rebuild bonds and derived data, default false." }
+        },
+        "required": ["positions"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "commit_positions",
+      "tier": "write",
+      "mcp": false,
+      "description": "Python Viewer only: rebuild bonds and derived data after update_fractional_positions with commit false.",
+      "args": { "type": "object", "properties": {}, "additionalProperties": false }
+    },
+    {
+      "name": "build_slab",
+      "tier": "write",
+      "description": "Cut a surface slab from the active (ordered) crystal along (h k l) as a new, selected row: `layers` repeats of the stacking period (for fcc (111) one repeat is one atomic layer; for (100) of a conventional cell it is two), with `vacuum` Å as one gap along the surface normal (c is made perpendicular to the surface, slab centred). Returns the row as select_structure does, plus layers, thickness and c (Å). View it side-on with set_view x or y.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "hkl": { "type": "array", "items": { "type": "integer" }, "minItems": 3, "maxItems": 3 },
+          "layers": { "type": "integer", "minimum": 1, "maximum": 50, "description": "Default 4." },
+          "vacuum": { "type": "number", "minimum": 0, "maximum": 200, "description": "Default 15 Å." }
+        },
+        "additionalProperties": false,
+        "required": ["hkl"]
+      }
+    },
+    {
+      "name": "build_symmetrized",
+      "tier": "write",
+      "description": "Standardise the active structure at a tolerance into a new, selected row, as the Symmetry window's Conv. Cell / Prim. Cell buttons do: atoms snapped to the space group's ideal sites in the conventional (default) or primitive cell. The original row is kept. Returns the row as select_structure does, plus number and symbol; then export_structure writes it out.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "tolerance": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Symmetry tolerance in Å (symprec). Default: the app's setting."
+          },
+          "cell": { "type": "string", "enum": ["conventional", "primitive"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "build_phonon_frames",
+      "tier": "write",
+      "description": "The phonon mode chosen with set_phonon as `count` frames over one period (at the current or given amplitude), as a new, selected trajectory row. select_structure {structure, frame} and save_image each frame for a picture series. Returns the row as select_structure does, plus amplitude.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "count": { "type": "integer", "minimum": 2, "maximum": 200, "description": "Default 10." },
+          "amplitude": { "type": "number", "minimum": 0, "maximum": 5 }
+        },
         "additionalProperties": false
       }
     },
     {
       "name": "set_view",
       "tier": "write",
-      "description": "Set the camera in one call: look along a lattice vector (a, b, c), a Cartesian axis (x, y, z) or a lattice direction [u, v, w]; optionally choose which way is up on screen and the zoom. For a tilted view give a direction such as [1, 0.2, 0.1] rather than several rotate_camera calls. With cartesian: true, arrays are Cartesian, so get_state's camera direction and up can be passed back to restore a view. Keeps the zoom unless zoom is given.",
+      "description": "Set the camera in one call, in this order: direction (look along a lattice vector a, b, c, a Cartesian axis x, y, z or a lattice direction [u, v, w]), up (which way is up on screen), zoom, then rotate (orbit about a world axis) and recenter (bring the structure to the middle, rotation and zoom kept). Give only what should change: up or zoom alone keep the current direction. For a tilted view give a direction such as [1, 0.2, 0.1]. With cartesian: true, arrays are Cartesian, so get_state's camera direction and up restore a view. Returns the camera as get_state reports it.",
       "args": {
         "type": "object",
         "properties": {
           "direction": {
-            "description": "\"a\", \"b\", \"c\", \"x\", \"y\", \"z\", or [u, v, w] meaning u*a + v*b + w*c.",
             "anyOf": [
               { "type": "string", "enum": ["a", "b", "c", "x", "y", "z"] },
               { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
-            ]
+            ],
+            "description": "\"a\", \"b\", \"c\", \"x\", \"y\", \"z\", or [u, v, w] meaning u*a + v*b + w*c."
           },
           "up": {
-            "description": "Which way is up on screen, in the same forms as direction; only its part perpendicular to direction counts. Default: the app's choice.",
             "anyOf": [
               { "type": "string", "enum": ["a", "b", "c", "x", "y", "z"] },
               { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }
-            ]
+            ],
+            "description": "Which way is up on screen, in the same forms as direction; only its part perpendicular to the view direction counts."
           },
-          "zoom": { "type": "number", "exclusiveMinimum": 0, "description": "Camera zoom; 1 fits the structure as loaded, larger is closer. Matches get_state's zoom." },
-          "cartesian": { "type": "boolean", "description": "Read direction and up arrays as Cartesian x, y, z instead of lattice [u, v, w]. Default false." }
+          "zoom": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Camera zoom; 1 fits the structure as loaded, larger is closer. Matches get_state's zoom."
+          },
+          "cartesian": {
+            "type": "boolean",
+            "description": "Read direction and up arrays as Cartesian x, y, z instead of lattice [u, v, w]. Default false."
+          },
+          "rotate": {
+            "type": "object",
+            "properties": { "axis": { "type": "string", "enum": ["x", "y", "z"] }, "degrees": { "type": "number" } },
+            "required": ["axis", "degrees"],
+            "additionalProperties": false
+          },
+          "recenter": { "type": "boolean", "enum": [true], "description": "Bring the structure back to the middle." }
         },
-        "required": ["direction"],
         "additionalProperties": false
       }
     },
     {
-      "name": "set_render_pipeline",
+      "name": "set_renderer",
       "tier": "write",
-      "description": "Switch the renderer.",
+      "description": "Switch the renderer. raytrace and pathtrace are progressive tracers (slower; no transparent background). Returns {renderer}.",
       "args": {
         "type": "object",
         "properties": {
-          "pipelineId": { "type": "string", "enum": ["depthpeel", "wboit", "forward", "raytrace", "pathtrace", "split-atoms", "sorted-atoms"] }
+          "renderer": {
+            "type": "string",
+            "enum": ["depthpeel", "wboit", "forward", "raytrace", "pathtrace", "split-atoms", "sorted-atoms"]
+          }
         },
-        "required": ["pipelineId"],
+        "required": ["renderer"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "apply",
+      "tier": "write",
+      "guard": true,
+      "description": "Act on atoms: atoms (indices, structure order, as find, get_state and export_structure's order use) or selection (a find id, \"user\" for what the user has selected in the window, \"all\"). action: highlight (glow), select (the app's selection, which the Selection Inspector and measuring use; it replaces the user's, and the result says what it replaced), clear (what: highlight (default) or selection: the selection is the user's too, so it is cleared only when asked), color (color '#rrggbb', every copy of each atom, kept for the session), reset_color (back to the element colour; on selection \"all\", the Atoms tab's Reset Colors for atoms, bonds, polyhedra and arrows), hide, show. A bonds selection acts on its atoms; a drawn polyhedra selection's color colours the polyhedra themselves (for their atoms: find atoms where {in: <that selection>}). bondPair: [A, B] with color colours every A-B bond. Returns {action, kind, count}.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "action": { "type": "string", "enum": ["highlight", "select", "clear", "color", "reset_color", "hide", "show"] },
+          "atoms": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 },
+            "minItems": 1,
+            "maxItems": 100000,
+            "description": "Atom indices (0-based, structure order), instead of selection."
+          },
+          "selection": {
+            "type": "string",
+            "description": "A find selection id, \"user\" (what the user has selected in the window) or \"all\"."
+          },
+          "color": { "type": "string", "description": "For color: '#rrggbb'." },
+          "bondPair": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "With color: two element symbols; colours every bond of that pair."
+          },
+          "what": { "type": "string", "enum": ["highlight", "selection"], "description": "For clear: which one (default highlight)." }
+        },
+        "required": ["action"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_phonon",
+      "tier": "write",
+      "description": "Show and animate phonon modes (data loaded from a phonopy band.yaml, mesh.yaml or qpoints.yaml with load), as the Phonons window does: a mode (qpoint: index, \"Gamma\" or a band-path label; band: index or \"lowest_optical\", the first band above the three acoustic ones), the animation (animate: play, pause, or stop, which returns atoms to equilibrium), amplitude (largest atomic excursion, Å) and speed (cycles per second). Give only what should change; a new mode plays unless animate says otherwise. get_state include phonons lists the q-points and frequencies.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "qpoint": {
+            "description": "Index, \"Gamma\", or a label from get_state's phonons.",
+            "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "string" }]
+          },
+          "band": {
+            "description": "Index or \"lowest_optical\".",
+            "anyOf": [{ "type": "integer", "minimum": 0 }, { "type": "string", "enum": ["lowest_optical"] }]
+          },
+          "animate": { "type": "string", "enum": ["play", "pause", "stop"] },
+          "amplitude": { "type": "number", "minimum": 0, "maximum": 5 },
+          "speed": { "type": "number", "exclusiveMinimum": 0 }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_isosurface",
+      "tier": "write",
+      "description": "Set the isosurface level of a volumetric field, as typing it in the Volumetric Field window does (clamped to the data range). Values are in the file's units (CHGCAR: e/Å³ after the app's volume normalisation).",
+      "args": {
+        "type": "object",
+        "properties": {
+          "value": { "type": "number" },
+          "field": { "type": "string", "description": "A label from get_state's field; default the shown field." }
+        },
+        "additionalProperties": false,
+        "required": ["value"]
+      }
+    },
+    {
+      "name": "add_plane",
+      "tier": "write",
+      "description": "Add a Crystal Planes plane with Miller indices hkl, as the Crystal Planes window does: through an atom (throughAtom), at offset Å along its normal, or (default) the first lattice plane. show: \"field\" colours it with a volumetric field (a 2D slice; field picks which), \"plane\" (default) draws it plain. cut hides the atoms along or opposite the normal. Returns {hkl, normal, d, show, cut, field, planeCount}.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "hkl": { "type": "array", "items": { "type": "integer" }, "minItems": 3, "maxItems": 3 },
+          "throughAtom": { "type": "integer", "minimum": 0 },
+          "offset": { "type": "number", "description": "Å along the normal." },
+          "show": { "type": "string", "enum": ["plane", "field"] },
+          "field": { "type": "string", "description": "With show: field, a label from get_state's field." },
+          "cut": { "type": "string", "enum": ["none", "along", "opposite"] }
+        },
+        "required": ["hkl"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_md",
+      "tier": "write",
+      "description": "Start molecular dynamics on the active structure with the selected potential (default NEP89, 89 elements; PET-MAD if chosen in the Atomistic window), as the MD window's start does: velocity Verlet with a Bussi thermostat (NVT), or with a barostat (NPT). The frames go to a new trajectory row, selected when the run ends. A job: it returns {jobId, kind, status, progress, elapsedS} at once (or with its result if it ends within waitS); follow it with wait_job. One calculation at a time. The result names the trajectory {structure, name, frames}.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "steps": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "Default 500." },
+          "temperatureK": { "type": "number", "exclusiveMinimum": 0, "description": "Default 300." },
+          "timestepFs": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "description": "Default: recommended for the elements (shorter with H)."
+          },
+          "saveStride": { "type": "integer", "minimum": 1, "description": "Save a trajectory frame every this many steps. Default 4." },
+          "ensemble": { "type": "string", "enum": ["nvt", "npt"], "description": "Default nvt (fixed cell)." },
+          "pressureGPa": { "type": "number", "description": "NPT target pressure. Default 0." },
+          "thermostatTauFs": { "type": "number", "exclusiveMinimum": 0, "description": "Thermostat coupling time. Default 20." },
+          "waitS": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 25,
+            "description": "Wait up to this many seconds for the job to end before returning (default 0: return at once)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_relax",
+      "tier": "write",
+      "description": "Start relaxing the active structure with the Atomistic window's potential (default NEP89), as the Relax button does: atoms (and the cell, unless relaxCell is false) move until every force is below fmax (eV/Å) and the pressure is within pressureTolGPa of pressureGPa. A job, as run_md. The result: targetPressureGPa and relaxCell it used (and a pressureHint when the structure's name mentions a different pressure: a hint only), the new trajectory {structure, name, frames} (its last frame is the relaxed structure and is shown; the source row is unchanged), steps, converged, stopped, fmax, energy and energyPerAtom (eV), pressureGPa. To compare before and after, export_structure both (structure, frame) and diff them in a script.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "fmax": { "type": "number", "exclusiveMinimum": 0, "description": "Force tolerance, eV/Å. Default 0.01." },
+          "maxSteps": { "type": "integer", "minimum": 1, "maximum": 100000, "description": "Default 200." },
+          "relaxCell": { "type": "boolean", "description": "Also relax the cell. Default true." },
+          "pressureGPa": { "type": "number", "description": "Target pressure for the cell, GPa. Default 0." },
+          "pressureTolGPa": { "type": "number", "exclusiveMinimum": 0, "description": "Default 0.2." },
+          "waitS": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 25,
+            "description": "Wait up to this many seconds for the job to end before returning (default 0: return at once)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_energy",
+      "tier": "write",
+      "description": "Single-point energy, forces and pressure of the active structure with the Atomistic window's potential, as the window's EFS button does (forces show as arrows if Forces are on). A job, as run_md (it may first load the potential; waitS 25 usually returns the result in one call). Result: energy, energyPerAtom (eV), fmax (eV/Å), pressureGPa.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "waitS": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 25,
+            "description": "Wait up to this many seconds for the job to end before returning (default 0: return at once)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_eos",
+      "tier": "write",
+      "description": "Equation of state of the active structure with the Atomistic window's potential, fitted (3rd-order Birch–Murnaghan) and shown in the EOS Fitting window. Scan by volume (volumeRangePct: cell volumes over ±that %, cell fixed, atoms relaxed) or by pressure (pMinGPa..pMaxGPa, cell relaxed to each, the window's own mode). Relax first: the volume scan centres on the current cell. A job, as run_md. The result has every point (volumes Å³ per cell, energies eV, pressuresGPa) and the fit: E0 (eV), V0 (Å³ per cell), B0GPa, B0Prime from the E–V and P–V fits. The fit needs SciPy via Pyodide, fetched from the network on first use.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "points": { "type": "integer", "minimum": 3, "maximum": 21, "description": "Default 7." },
+          "volumeRangePct": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "exclusiveMaximum": 50,
+            "description": "Scan by volume: ±this % around the current cell volume."
+          },
+          "pMinGPa": { "type": "number", "description": "Scan by pressure (when volumeRangePct is not given). Default -2." },
+          "pMaxGPa": { "type": "number", "description": "Default 20." },
+          "fmax": { "type": "number", "exclusiveMinimum": 0, "description": "Force tolerance per point, eV/Å. Default 0.01." },
+          "maxSteps": { "type": "integer", "minimum": 1, "description": "Relax steps per point. Default 200." },
+          "waitS": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 25,
+            "description": "Wait up to this many seconds for the job to end before returning (default 0: return at once)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "run_ordering",
+      "tier": "write",
+      "description": "Ordered approximants of a disordered structure (fractionally occupied sites), as the Order Structure section of Cell & Supercell does: `samples` random decorations in a cell `multiplier` times larger, each scored with a single-point energy (unless energies is false), kept as one new trajectory row sorted lowest energy first. A job, as run_md. The result lists each frame's seed and energyPerAtom (eV); frame 0 is the lowest (select_structure {structure, frame: 0}).",
+      "args": {
+        "type": "object",
+        "properties": {
+          "samples": { "type": "integer", "minimum": 1, "maximum": 30, "description": "Default 5." },
+          "multiplier": { "type": "integer", "minimum": 1, "description": "Cell size factor, as the window's Size choice. Default 1." },
+          "energies": { "type": "boolean", "description": "Score each sample. Default true." },
+          "waitS": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 25,
+            "description": "Wait up to this many seconds for the job to end before returning (default 0: return at once)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "wait_job",
+      "tier": "read",
+      "description": "Wait until a job ends or timeoutS seconds pass (at most 25; 0 just reports), then return it: {jobId, kind, status (running, done, failed, cancelled), progress, elapsedS, result or error once it ended, active: the structure and frame on show afterwards}. Call again while it is still running.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "jobId": { "type": "string" },
+          "timeoutS": { "type": "number", "minimum": 0, "maximum": 25, "description": "Default 20; 0 is a status check." }
+        },
+        "required": ["jobId"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "cancel_job",
+      "tier": "write",
+      "description": "Stop a running job after its current step. An MD run keeps the frames it saved.",
+      "args": { "type": "object", "properties": { "jobId": { "type": "string" } }, "required": ["jobId"], "additionalProperties": false }
+    },
+    {
+      "name": "load",
+      "tier": "file",
+      "description": "Load a structure file (CIF, POSCAR, XYZ, extxyz and the other formats CrysViz reads) and make it the active structure.",
+      "args": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "description": "File name; its extension selects the format unless format is given." },
+          "data": { "type": "string", "description": "File contents." },
+          "format": { "type": "string", "minLength": 1, "description": "Format name overriding the file extension." },
+          "binary": { "type": "boolean" },
+          "periodic": { "type": "boolean", "description": "Force the structure to be treated as periodic or not." },
+          "interactive": {
+            "type": "boolean",
+            "description": "false skips load-time questions (CIF symmetry) and loads the structure as written. Default true."
+          }
+        },
+        "required": ["name", "data"],
         "additionalProperties": false
       }
     },
@@ -513,7 +718,12 @@
         "properties": {
           "width": { "type": "integer", "minimum": 1, "maximum": 16384 },
           "height": { "type": "integer", "minimum": 1, "maximum": 16384 },
-          "maxSide": { "type": "integer", "minimum": 16, "maximum": 16384, "description": "Scale a default (view-sized) image down to fit this side." },
+          "maxSide": {
+            "type": "integer",
+            "minimum": 16,
+            "maximum": 16384,
+            "description": "Scale a default (view-sized) image down to fit this side."
+          },
           "margin": { "type": "integer", "minimum": 0, "maximum": 4096 },
           "transparent": { "type": "boolean" },
           "structureOnly": { "type": "boolean", "description": "Hide the cell, axes and other helpers." }
@@ -523,275 +733,24 @@
       }
     },
     {
-      "name": "get_symmetry",
-      "tier": "read",
-      "description": "Space group of the active structure at a tolerance, as the Symmetry window reads it (Moyo): number, Hermann-Mauguin symbol, Hall number, Pearson symbol, and atom indices per Wyckoff letter. Hidden atoms are left out (hiddenExcluded says how many). Call at two tolerances to see how robust the symmetry is.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "tolerance": {
-            "type": "number",
-            "exclusiveMinimum": 0,
-            "description": "Symmetry tolerance in Å (symprec). Default: the app's setting."
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "symmetrize",
-      "tier": "write",
-      "description": "Standardise the active structure at a tolerance into a new, selected row, as the Symmetry window's Conv. Cell / Prim. Cell buttons do: atoms snapped to the space group's ideal sites in the conventional (default) or primitive cell. The original row is kept. Then export_structure writes it out.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "tolerance": {
-            "type": "number",
-            "exclusiveMinimum": 0,
-            "description": "Symmetry tolerance in Å (symprec). Default: the app's setting."
-          },
-          "cell": {
-            "type": "string",
-            "enum": [
-              "conventional",
-              "primitive"
-            ]
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "get_phonon_state",
-      "tier": "read",
-      "description": "The loaded phonon data (from a phonopy band.yaml / mesh.yaml / qpoints.yaml loaded with load): q-point count and labelled path points, band count, frequencies (THz, negative = imaginary) at the selected q-point or Γ, the selected mode, the animation amplitude/speed, the length unit taken for the cell and how it was decided.",
-      "args": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "set_phonon_mode",
-      "tier": "write",
-      "description": "Show a phonon mode as the Phonons window does: a q-point (index, \"Gamma\", or a band-path label) and a band (index, or \"lowest_optical\" for the first band above the three acoustic ones). Plays the animation unless play is false.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "qpoint": {
-            "description": "Index, \"Gamma\", or a label from get_phonon_state.",
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 0
-              },
-              {
-                "type": "string"
-              }
-            ]
-          },
-          "band": {
-            "description": "Index or \"lowest_optical\".",
-            "anyOf": [
-              {
-                "type": "integer",
-                "minimum": 0
-              },
-              {
-                "type": "string",
-                "enum": [
-                  "lowest_optical"
-                ]
-              }
-            ]
-          },
-          "play": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "phonon_animation",
-      "tier": "write",
-      "description": "Control the phonon animation: play, pause or stop (stop returns atoms to equilibrium), and set the amplitude (largest atomic excursion, Å) and speed (cycles per second).",
-      "args": {
-        "type": "object",
-        "properties": {
-          "action": {
-            "type": "string",
-            "enum": [
-              "play",
-              "pause",
-              "stop"
-            ]
-          },
-          "amplitude": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 5
-          },
-          "speed": {
-            "type": "number",
-            "exclusiveMinimum": 0
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "phonon_frames",
-      "tier": "write",
-      "description": "The selected phonon mode as `count` frames over one period (at the current or given amplitude), as a new trajectory row. Select a frame with select {id, frame} and save_image each, for a picture series.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "count": {
-            "type": "integer",
-            "minimum": 2,
-            "maximum": 200,
-            "description": "Default 10."
-          },
-          "amplitude": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 5
-          }
-        },
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "get_field_info",
-      "tier": "read",
-      "description": "The active structure's volumetric fields (CHGCAR, cube, ...): their labels and, for the shown one, the iso level, data min/max and grid size.",
-      "args": {
-        "type": "object",
-        "properties": {},
-        "additionalProperties": false
-      }
-    },
-    {
-      "name": "set_isosurface",
-      "tier": "write",
-      "description": "Set the isosurface level of a volumetric field, as typing it in the Volumetric Field window does (clamped to the data range). Values are in the file's units (CHGCAR: e/Å³ after the app's volume normalisation).",
-      "args": {
-        "type": "object",
-        "properties": {
-          "value": {
-            "type": "number"
-          },
-          "field": {
-            "type": "string",
-            "description": "A label from get_field_info; default the shown field."
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "value"
-        ]
-      }
-    },
-    {
-      "name": "add_field_slice",
-      "tier": "write",
-      "description": "Add a Crystal Planes plane with Miller indices hkl, coloured by the volumetric field (a 2D slice), as the Crystal Planes window does. Place it through an atom (throughAtom index, e.g. a Ti) or at offset Å along the normal; default the first lattice plane.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "hkl": {
-            "type": "array",
-            "items": {
-              "type": "integer"
-            },
-            "minItems": 3,
-            "maxItems": 3
-          },
-          "throughAtom": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "offset": {
-            "type": "number"
-          },
-          "field": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "hkl"
-        ]
-      }
-    },
-    {
-      "name": "build_slab",
-      "tier": "write",
-      "description": "Cut a surface slab from the active (ordered) crystal along (h k l) as a new, selected row: `layers` repeats of the stacking period (for fcc (111) one repeat is one atomic layer; for (100) of a conventional cell it is two), with `vacuum` Å as one gap along the surface normal (c is made perpendicular to the surface, slab centred). View it side-on with set_view x or y.",
-      "args": {
-        "type": "object",
-        "properties": {
-          "hkl": {
-            "type": "array",
-            "items": {
-              "type": "integer"
-            },
-            "minItems": 3,
-            "maxItems": 3
-          },
-          "layers": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 50,
-            "description": "Default 4."
-          },
-          "vacuum": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 200,
-            "description": "Default 15 Å."
-          }
-        },
-        "additionalProperties": false,
-        "required": [
-          "hkl"
-        ]
-      }
-    },
-    {
-      "name": "export_trajectory",
+      "name": "export_structure",
       "tier": "file",
-      "description": "Write the active trajectory (or chosen frames) as an extended XYZ file (Lattice, species, Cartesian positions in Å, energy and MD step when known), which ASE, pymatgen and OVITO read. Use for analysis in your own scripts, e.g. mean-squared displacement after run_md.",
+      "description": "Write a structure file. cif and poscar write one frame as the Save window does (cif keeps partial occupancy; poscar groups atoms by element, so the result gives order: file atom k is CrysViz atom order[k], or sameOrder when identical). extxyz writes frames (all of the row by default) with Lattice, species, Cartesian positions (Å), energy and MD step, for ASE, pymatgen or OVITO scripts (e.g. a mean-squared displacement after run_md). structure and frame pick a row and frame other than the one on show, without selecting it.",
       "args": {
         "type": "object",
         "properties": {
-          "format": {
-            "type": "string",
-            "enum": [
-              "extxyz"
+          "format": { "type": "string", "enum": ["cif", "poscar", "extxyz"] },
+          "frames": {
+            "description": "extxyz: \"all\" (default) or frame indices.",
+            "anyOf": [
+              { "type": "string", "enum": ["all"] },
+              { "type": "array", "items": { "type": "integer", "minimum": 0 }, "minItems": 1 }
             ]
           },
-          "frames": {
-            "description": "\"all\" (default) or frame indices.",
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "all"
-                ]
-              },
-              {
-                "type": "array",
-                "items": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "minItems": 1
-              }
-            ]
-          }
+          "structure": { "type": "string", "description": "Row id; default the row on show." },
+          "frame": { "type": "integer", "minimum": 0, "description": "Frame; default the one on show." }
         },
+        "required": ["format"],
         "additionalProperties": false
       }
     }

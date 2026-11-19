@@ -21,7 +21,7 @@ class BridgeSurfaceTests(unittest.TestCase):
         runtime.server.start()
         try:
             capability = runtime.server.bridge_capability
-            runtime._pending_descriptors.put({"id": "one", "request": {"command": "list_structures"}})
+            runtime._pending_descriptors.put({"id": "one", "request": {"command": "get_state"}})
             runtime.window = mock.Mock()
             runtime.window.get_current_url.side_effect = RuntimeError("unavailable")
             self.assertIsNone(runtime._bridge_api.next_command(capability))

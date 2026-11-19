@@ -24,7 +24,6 @@ _FIXED_TRIGGER = "window.crysvizHost.processBridgeCommand()"
 _OUTPUT_COMMANDS = {
     "save_image": ("image/png", "image"),
     "export_structure": ("text/plain; charset=utf-8", "text"),
-    "export_trajectory": ("text/plain; charset=utf-8", "text"),
 }
 
 

@@ -14,7 +14,9 @@ import sys
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import lru_cache
+from importlib.resources import files
 from multiprocessing.connection import Client
 from numbers import Real
 from pathlib import Path
@@ -26,6 +28,28 @@ from ._sources import prepare_sources
 
 DEFAULT_STARTUP_TIMEOUT = 20.0
 DEFAULT_COMMAND_TIMEOUT = 30.0
+# Longest single wait_job call: well inside the command timeout.
+_JOB_POLL_S = 20.0
+# Commands that move files have their own methods.
+_FILE_COMMANDS = {"load": "load", "save_image": "save_image", "export_structure": "export_structure", "close": "close"}
+
+
+@lru_cache(maxsize=1)
+def command_spec() -> dict[str, Any]:
+    """The browser command registry's description (``crysviz.web/host/commands.json``)."""
+    return json.loads(files("crysviz.web").joinpath("host/commands.json").read_text(encoding="utf-8"))
+
+
+@lru_cache(maxsize=None)
+def _argument_names(command: str) -> dict[str, str]:
+    """A command's argument names keyed by their letters alone, so ``temperature_k`` finds ``temperatureK``."""
+    entry = next((c for c in command_spec()["commands"] if c["name"] == command), None)
+    names = list(entry["args"].get("properties", {})) if entry else []
+    return {name.replace("_", "").lower(): name for name in [*names, "expectedRevision"]}
+
+
+def _argument_name(command: str, key: str) -> str:
+    return _argument_names(command).get(key.replace("_", "").lower(), key)
 
 
 class ViewerError(RuntimeError):
@@ -72,6 +96,9 @@ class StructureInfo:
 @dataclass(frozen=True, slots=True)
 class LoadResult:
     structure: StructureInfo
+    # The browser's whole result: structure (row id), frames, activeFrame, atomCount, revision,
+    # formula, and restored ({supercell}) when the Cell & Supercell window restored one.
+    details: dict[str, Any] = field(default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,10 +116,11 @@ class ViewerEvent:
 
 
 def _structure(value: object) -> StructureInfo:
+    """A row: a command's result (``structure`` is the row id) or a get_state structures entry (``id``)."""
     if not isinstance(value, dict):
         raise ViewerProtocolError("browser returned an invalid structure result")
     try:
-        ident, name, frames = value["id"], value["name"], value["frames"]
+        ident, name, frames = value["structure"] if "structure" in value else value["id"], value["name"], value["frames"]
     except KeyError as error:
         raise ViewerProtocolError("browser structure result is incomplete") from error
     if not isinstance(ident, str) or not isinstance(name, str) or isinstance(frames, bool) or not isinstance(frames, int):
@@ -100,7 +128,8 @@ def _structure(value: object) -> StructureInfo:
     active_frame = value.get("activeFrame")
     if active_frame is not None and (isinstance(active_frame, bool) or not isinstance(active_frame, int)):
         raise ViewerProtocolError("browser structure active frame is invalid")
-    return StructureInfo(ident, name, frames, value.get("active") is True, active_frame)
+    active = value["active"] is True if "active" in value else active_frame is not None
+    return StructureInfo(ident, name, frames, active, active_frame)
 
 
 def _terminate_process(process: subprocess.Popen[str]) -> None:
@@ -496,39 +525,73 @@ class Viewer:
             if not interactive:
                 payload["interactive"] = False
             result = self._command("load", payload, {"data": prepared.open()})
-            return LoadResult(_structure(result))
+            return LoadResult(_structure(result), dict(result) if isinstance(result, dict) else {})
         finally:
             prepared.close()
 
-    def call(self, command: str, **args: object) -> object:
+    def call(self, command: str, **args: object) -> Any:
         """Run any browser command by name (see crysviz.web/host/commands.json) and return its result.
 
-        ``viewer.call("set_control", ref="control:visual:#showBonds", value=False)``. Commands
-        that move files have their own methods: :meth:`load` and :meth:`save_image`.
+        Arguments may be given in snake_case or as the command names them:
+        ``viewer.call("run_md", temperature_k=600, steps=200)`` sends ``temperatureK``.
+        Nested objects (``where``, ``rotate``) are passed as they are. Commands that
+        move files have their own methods: :meth:`load`, :meth:`save_image`,
+        :meth:`export_structure`. For a ``run_*`` job, :meth:`run_job` waits for it.
         """
         if not isinstance(command, str) or not command:
             raise ValueError("command must be a nonempty string")
-        if command in {"load", "save_image", "close"}:
-            raise ValueError(f"use Viewer.{command}() for {command!r}")
-        return self._command(command, args)
+        if command in _FILE_COMMANDS:
+            raise ValueError(f"use Viewer.{_FILE_COMMANDS[command]}() for {command!r}")
+        return self._command(command, {_argument_name(command, key): value for key, value in args.items()})
+
+    def run_job(self, command: str, *, timeout: float | None = None, **args: object) -> dict[str, Any]:
+        """Start a ``run_*`` job (``run_md``, ``run_relax``, ``run_energy``, ``run_eos``,
+        ``run_ordering``) and wait until it ends; return its final status.
+
+        The status has ``status`` (done, failed, cancelled), ``result`` and ``active`` (the
+        structure and frame on show afterwards). A failed job raises
+        :class:`BrowserCommandError`. After ``timeout`` seconds a ``TimeoutError`` is raised
+        and the job keeps running (``call("cancel_job", job_id=...)`` stops it).
+        """
+        if not isinstance(command, str) or not command.startswith("run_"):
+            raise ValueError("run_job runs run_* commands")
+        if timeout is not None and not (isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0):
+            raise ValueError("timeout must be a positive number of seconds")
+        view = self.call(command, **args)
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        while isinstance(view, dict) and view.get("status") == "running":
+            wait = _JOB_POLL_S
+            if deadline is not None:
+                wait = min(wait, deadline - time.monotonic())
+                if wait <= 0:
+                    raise TimeoutError(f"job {view.get('jobId')} is still running after {timeout} s")
+            view = self._command("wait_job", {"jobId": view["jobId"], "timeoutS": wait})
+        if not isinstance(view, dict) or "status" not in view:
+            raise ViewerProtocolError(f"browser {command} returned no job")
+        if view["status"] == "failed":
+            error = view.get("error") if isinstance(view.get("error"), dict) else {}
+            raise BrowserCommandError(str(error.get("code", "JOB_FAILED")), str(error.get("message", f"{command} failed")),
+                                      error.get("details"))
+        return view
 
     def list_structures(self) -> list[StructureInfo]:
-        value = self._command("list_structures")
-        if not isinstance(value, list):
-            raise ViewerProtocolError("browser list_structures result is invalid")
-        return [_structure(item) for item in value]
+        value = self._command("get_state", {"include": ["structures"]})
+        if not isinstance(value, dict) or not isinstance(value.get("structures"), list):
+            raise ViewerProtocolError("browser structure list is invalid")
+        return [_structure(item) for item in value["structures"]]
 
-    def get_state(self, *, atoms: bool = False) -> dict[str, Any]:
-        """What the viewer shows now: active structure, camera and renderer (see docs/host/commands.json)."""
-        if not isinstance(atoms, bool):
-            raise TypeError("atoms must be boolean")
-        value = self._command("get_state", {"atoms": atoms} if atoms else None)
+    def get_state(self, *, include: Sequence[str] | None = None) -> dict[str, Any]:
+        """What the viewer shows now: the active structure and renderer, plus the ``include``
+        sections (default camera, selection, jobs; also structures, colors, phonons, field)."""
+        if include is not None and (isinstance(include, (str, bytes)) or not isinstance(include, Sequence)):
+            raise TypeError("include must be a sequence of section names")
+        value = self._command("get_state", None if include is None else {"include": list(include)})
         if not isinstance(value, dict):
             raise ViewerProtocolError("browser get_state result is invalid")
         return value
 
     def select(self, structure_id: str, *, frame: int = 0) -> None:
-        self._command("select", {"id": structure_id, "frame": frame})
+        self._command("select_structure", {"structure": structure_id, "frame": frame})
 
     def update_fractional_positions(self, positions: Sequence[Sequence[float]], *, commit: bool = False) -> PositionUpdateResult:
         if isinstance(positions, (str, bytes)) or not isinstance(positions, Sequence):
@@ -579,13 +642,13 @@ class Viewer:
         )
         if abs(determinant) < 1e-12:
             raise ValueError("lattice must be nonsingular")
-        self._command("update_lattice", {"lattice": copied})
+        self._command("set_lattice", {"lattice": copied})
 
     def commit_positions(self) -> None:
         self._command("commit_positions")
 
     def recenter_camera(self) -> None:
-        self._command("recenter_camera")
+        self._command("set_view", {"recenter": True})
 
     def rotate_camera(self, angle_degrees: float, *, axis: str = "y") -> None:
         if isinstance(angle_degrees, bool) or not isinstance(angle_degrees, (int, float)):
@@ -598,35 +661,51 @@ class Viewer:
             raise ValueError("angle_degrees must be finite")
         if axis not in {"x", "y", "z"}:
             raise ValueError("axis must be x, y, or z")
-        self._command("rotate_camera", {"angleDegrees": angle, "axis": axis})
+        self._command("set_view", {"rotate": {"axis": axis, "degrees": angle}})
 
-    def set_view(self, direction: str | Sequence[float]) -> list[float]:
-        """Look along ``"a"``/``"b"``/``"c"``, ``"x"``/``"y"``/``"z"`` or a lattice direction [u, v, w].
+    def set_view(self, direction: str | Sequence[float] | None = None, *, up: str | Sequence[float] | None = None,
+                 zoom: float | None = None, cartesian: bool = False) -> dict[str, Any]:
+        """Look along ``"a"``/``"b"``/``"c"``, ``"x"``/``"y"``/``"z"`` or a lattice direction [u, v, w]
+        (Cartesian with ``cartesian=True``), with ``up`` on screen and ``zoom``; give only what
+        should change. Returns the camera as :meth:`get_state` reports it."""
+        def vector(value: object, name: str) -> object:
+            if isinstance(value, str):
+                if value not in {"a", "b", "c", "x", "y", "z"}:
+                    raise ValueError(f"{name} must be a, b, c, x, y, z or three finite numbers")
+                return value
+            if isinstance(value, bytes) or not isinstance(value, Sequence) or len(value) != 3 or any(
+                    isinstance(v, bool) or not isinstance(v, Real) or not math.isfinite(v) for v in value):
+                raise ValueError(f"{name} must be a, b, c, x, y, z or three finite numbers")
+            return [float(v) for v in value]
 
-        Returns the Cartesian view direction the browser used.
-        """
-        if isinstance(direction, str):
-            if direction not in {"a", "b", "c", "x", "y", "z"}:
-                raise ValueError("direction must be a, b, c, x, y, z or three finite numbers")
-            value: object = direction
-        else:
-            if isinstance(direction, bytes) or not isinstance(direction, Sequence) or len(direction) != 3 or any(
-                    isinstance(v, bool) or not isinstance(v, Real) or not math.isfinite(v) for v in direction):
-                raise ValueError("direction must be a, b, c, x, y, z or three finite numbers")
-            value = [float(v) for v in direction]
-        result = self._command("set_view", {"direction": value})
+        if not isinstance(cartesian, bool):
+            raise TypeError("cartesian must be boolean")
+        if zoom is not None and (isinstance(zoom, bool) or not isinstance(zoom, Real) or not math.isfinite(zoom) or zoom <= 0):
+            raise ValueError("zoom must be a positive number")
+        args: dict[str, object] = {}
+        if direction is not None:
+            args["direction"] = vector(direction, "direction")
+        if up is not None:
+            args["up"] = vector(up, "up")
+        if zoom is not None:
+            args["zoom"] = float(zoom)
+        if not args:
+            raise ValueError("give direction, up or zoom")
+        if cartesian:
+            args["cartesian"] = True
+        result = self._command("set_view", args)
         if not isinstance(result, dict) or not isinstance(result.get("direction"), list):
             raise ViewerProtocolError("browser set_view result is invalid")
-        return result["direction"]
+        return result
 
     def set_render_pipeline(self, pipeline_id: str) -> str:
         valid = {"depthpeel", "wboit", "forward", "raytrace", "pathtrace", "split-atoms", "sorted-atoms"}
         if not isinstance(pipeline_id, str) or pipeline_id not in valid:
             raise ValueError("unknown rendering pipeline")
-        result = self._command("set_render_pipeline", {"pipelineId": pipeline_id})
-        if not isinstance(result, str) or result not in valid:
+        result = self._command("set_renderer", {"renderer": pipeline_id})
+        if not isinstance(result, dict) or result.get("renderer") not in valid:
             raise ViewerProtocolError("browser returned an invalid active pipeline")
-        return result
+        return result["renderer"]
 
     def save_image(self, path: str | os.PathLike[str], *, width: int | None = None, height: int | None = None,
                    margin: int = 0, transparent: bool = False, structure_only: bool = False,
@@ -696,29 +775,28 @@ class Viewer:
                 attachment.close()
         return target
 
-    def export_structure(self, path: str | os.PathLike[str], *, format: str) -> dict[str, Any]:
-        """Write the active structure as the Save window does (``"cif"`` or ``"poscar"``).
+    def export_structure(self, path: str | os.PathLike[str], *, format: str, frames: str | Sequence[int] | None = None,
+                         structure: str | None = None, frame: int | None = None) -> dict[str, Any]:
+        """Write a structure file at ``path``: ``"cif"`` or ``"poscar"`` (one frame, as the Save
+        window does) or ``"extxyz"`` (``frames``: ``"all"``, the default, or frame indices).
+        ``structure`` and ``frame`` pick a row and frame other than the one on show.
 
-        Returns ``{"rows", "order", "warning"}``: ``order[k]`` is the CrysViz atom index of
-        file atom ``k`` (``None`` when the order is the same), so results computed on the file
-        map back to the viewer's atoms.
+        Returns the browser's result: ``atomCount`` (atoms in the file), ``frames``,
+        ``sameOrder`` and, when a POSCAR reorders atoms, ``order`` (file atom ``k`` is CrysViz
+        atom ``order[k]``), plus ``warning`` when POSCAR drops partial occupancy.
         """
-        if format not in {"cif", "poscar"}:
-            raise ValueError("format must be cif or poscar")
-        result = self._write_text_output("export_structure", {"format": format}, path)
-        return {"rows": result.get("rows"), "order": None if result.get("sameOrder") else result.get("order"),
-                "warning": result.get("warning")}
-
-    def export_trajectory(self, path: str | os.PathLike[str], *, frames: str | Sequence[int] = "all") -> dict[str, Any]:
-        """Write the active trajectory (or the given frame indices) as extended XYZ.
-
-        Returns ``{"frames", "atoms", "name"}``.
-        """
-        if frames != "all" and (isinstance(frames, (str, bytes)) or not isinstance(frames, Sequence)):
-            raise ValueError('frames must be "all" or a sequence of frame indices')
-        args: dict[str, object] = {"format": "extxyz", "frames": frames if frames == "all" else list(frames)}
-        result = self._write_text_output("export_trajectory", args, path)
-        return {"frames": result.get("frames"), "atoms": result.get("atoms"), "name": result.get("name")}
+        if format not in {"cif", "poscar", "extxyz"}:
+            raise ValueError("format must be cif, poscar or extxyz")
+        args: dict[str, object] = {"format": format}
+        if frames is not None:
+            if frames != "all" and (isinstance(frames, (str, bytes)) or not isinstance(frames, Sequence)):
+                raise ValueError('frames must be "all" or a sequence of frame indices')
+            args["frames"] = frames if frames == "all" else list(frames)
+        if structure is not None:
+            args["structure"] = structure
+        if frame is not None:
+            args["frame"] = frame
+        return self._write_text_output("export_structure", args, path)
 
     def _write_text_output(self, command: str, args: dict[str, object], path: str | os.PathLike[str]) -> dict[str, Any]:
         """Run a text-export command and write its text to ``path``; return the browser's result."""

@@ -9,7 +9,7 @@
 import { commandError, structureRevision } from './commands.js';
 import { atomIdentity } from '../model/structureRevision.js';
 import { fracToCartPoint } from '../math/index.js';
-import { getActiveStructure } from '../state/structures.js';
+import { getActiveStructure, getContainerById, getContainerForStructure, getContainerId } from '../state/structures.js';
 import { general } from '../state/store.js';
 
 /** Below this squared distance two atoms are never bonded (BondsFracUpdateModule BOND_MIN_DIST_SQ). */
@@ -316,7 +316,8 @@ export async function find(args, { polyhedraSummary, voidSites }) {
         : { ...found, atoms: found.atoms.filter(keep) };
   }
   return {
-    selection: remember(structure, what, found.atoms, found.polyhedra ?? null),
+    // Voids are places, not atoms: nothing for apply to act on, so no selection.
+    ...(what === 'voids' ? {} : { selection: remember(structure, what, found.atoms, found.polyhedra ?? null) }),
     revision: structureRevision(structure),
     count: found.total ?? found.items.length,
     atomCount: found.atoms.length,
@@ -326,14 +327,34 @@ export async function find(args, { polyhedraSummary, voidSites }) {
   };
 }
 
-/** The atom indices apply acts on: a selection's atoms, or a list given directly. */
-export function applyTargets(structure, args) {
+/**
+ * The atoms an atom-addressed command acts on (apply, remove_atoms,
+ * set_element, move_atoms), one rule for all: exactly one of atoms (0-based
+ * indices, in the order given) or selection (a find id, "user" for what the
+ * user has selected in the window, or "all"). Indices without repeats.
+ * @param {any} structure
+ * @param {{atoms?: unknown, selection?: unknown}} args
+ * @param {string} name the command, for the error text
+ * @returns {Promise<number[]>}
+ */
+export async function resolveTargets(structure, args, name) {
+  const hasAtoms = args.atoms !== undefined;
+  const hasSelection = args.selection !== undefined;
+  if (hasAtoms === hasSelection) {
+    throw commandError('INVALID_ARGS', `${name} needs atoms (atom indices) or selection (a find id, "user" or "all"), `
+      + `not ${hasAtoms ? 'both' : 'neither'}`);
+  }
   let atoms = args.atoms;
-  if (args.selection !== undefined) atoms = savedAtoms(structure, args.selection);
-  if (!Array.isArray(atoms)) throw commandError('INVALID_ARGS', 'apply needs selection or atoms');
+  if (hasSelection) {
+    if (typeof args.selection !== 'string') throw commandError('INVALID_ARGS', `${name}.selection must be a find id, "user" or "all"`);
+    if (args.selection === 'user') atoms = await userSelection();
+    else if (args.selection === 'all') atoms = structure.atoms.map((_, i) => i);
+    else atoms = savedAtoms(structure, args.selection);
+  }
+  if (!Array.isArray(atoms)) throw commandError('INVALID_ARGS', `${name}.atoms must be a list of atom indices`);
   const n = structure.atoms.length;
   for (const i of atoms) {
-    if (!Number.isInteger(i) || i < 0 || i >= n) throw commandError('INVALID_ARGS', `atom index ${i} is not 0 to ${n - 1}`);
+    if (!Number.isInteger(i) || i < 0 || i >= n) throw commandError('INVALID_ARGS', `${name}.atoms: index ${i} is not 0 to ${n - 1}`);
   }
   return [...new Set(atoms)];
 }
@@ -352,48 +373,49 @@ export async function apply(args) {
   const structure = getActiveStructure();
   if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
   const highlight = () => import('../ui/SelectAndHighlightModule.js');
-  // selection: "user" is whatever the user has selected in the window right now.
-  if (args.selection === 'user') args = { ...args, selection: undefined, atoms: await userSelection() };
-  if (action === 'color') {
-    if (typeof args.value !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(args.value)) {
-      throw commandError('INVALID_ARGS', 'apply color needs value "#rrggbb"');
-    }
-    const hex = args.value.toLowerCase();
-    // Every bond of one element pair, as the Bonds window's pair colour does.
-    if (args.bondPair !== undefined) {
-      if (!Array.isArray(args.bondPair) || args.bondPair.length !== 2 || !args.bondPair.every((e) => typeof e === 'string')) {
-        throw commandError('INVALID_ARGS', 'apply.bondPair must be two element symbols, e.g. ["Ti", "O"]');
-      }
-      const pair = [...args.bondPair].sort().join('-');
-      (await import('../ui/BondLengthPanel.js')).setBondPairColor(structure, pair, hex);
-      return { action, bondPair: pair };
-    }
-    // A polyhedra selection colours the polyhedra themselves (target: "atoms" colours their atoms).
-    const saved = args.selection !== undefined ? savedSelection(structure, args.selection) : null;
-    if (saved?.polyhedra?.length && args.target !== 'atoms') {
-      (await import('../render/PolyhedraModule.js')).setPolyhedronStyles(structure, saved.polyhedra, { color: hex });
-      return { action, polyhedra: saved.polyhedra.length };
-    }
+  const hex = typeof args.color === 'string' ? args.color.toLowerCase() : null;
+  if (action === 'color' && (!hex || !/^#[0-9a-f]{6}$/.test(hex))) {
+    throw commandError('INVALID_ARGS', 'apply color needs color "#rrggbb"');
   }
-  // reset_color with all: true is the Atoms tab's Reset Colors (atoms, bonds, polyhedra, arrows).
-  if (action === 'reset_color' && args.all === true) {
-    (await import('../ui/StructureInfoPanel/General.js')).resetColors(structure);
-    return { action, all: true };
+  if (action !== 'color' && args.color !== undefined) throw commandError('INVALID_ARGS', 'apply.color goes with action color');
+  // Every bond of one element pair, as the Bonds window's pair colour does.
+  if (args.bondPair !== undefined) {
+    if (action !== 'color') throw commandError('INVALID_ARGS', 'apply.bondPair goes with action color');
+    if (!Array.isArray(args.bondPair) || args.bondPair.length !== 2 || !args.bondPair.every((e) => typeof e === 'string')) {
+      throw commandError('INVALID_ARGS', 'apply.bondPair must be two element symbols, e.g. ["Ti", "O"]');
+    }
+    const pair = [...args.bondPair].sort().join('-');
+    (await import('../ui/BondLengthPanel.js')).setBondPairColor(structure, pair, hex);
+    return { action, kind: 'bonds', bondPair: pair };
   }
   if (action === 'clear') {
     // The selection is the user's as much as ours: clear it only when asked.
     const what = args.what ?? 'highlight';
     if (what !== 'highlight' && what !== 'selection') throw commandError('INVALID_ARGS', 'apply clear what must be highlight or selection');
     const { clearHighlightAtom, selectAtomsByInstances } = await highlight();
-    if (what === 'highlight') clearHighlightAtom();
-    else {
-      const had = (await userSelection()).length;
-      selectAtomsByInstances([]);
-      return { action, what, clearedUserSelection: had };
+    if (what === 'highlight') {
+      clearHighlightAtom();
+      return { action, what };
     }
-    return { action, what };
+    const had = (await userSelection()).length;
+    selectAtomsByInstances([]);
+    return { action, what, clearedUserSelection: had };
   }
-  const atoms = applyTargets(structure, args);
+  if (args.what !== undefined) throw commandError('INVALID_ARGS', 'apply.what goes with action clear');
+  // A drawn polyhedra selection's color colours the polyhedra themselves; for
+  // their atoms, find atoms where {in: <that selection>} and colour those.
+  const saved = action === 'color' && typeof args.selection === 'string' && !['user', 'all'].includes(args.selection)
+    ? savedSelection(structure, args.selection) : null;
+  if (saved?.polyhedra?.length) {
+    (await import('../render/PolyhedraModule.js')).setPolyhedronStyles(structure, saved.polyhedra, { color: hex });
+    return { action, kind: 'polyhedra', count: saved.polyhedra.length };
+  }
+  // reset_color on selection "all" is the Atoms tab's Reset Colors (atoms, bonds, polyhedra, arrows).
+  if (action === 'reset_color' && args.selection === 'all') {
+    (await import('../ui/StructureInfoPanel/General.js')).resetColors(structure);
+    return { action, kind: 'structure', count: structure.atoms.length };
+  }
+  const atoms = await resolveTargets(structure, args, 'apply');
   if (action === 'highlight') {
     (await highlight()).highlightAtomsIn3D(atoms);
   } else if (action === 'select') {
@@ -402,9 +424,9 @@ export async function apply(args) {
     const instances = atoms.flatMap((i) => structure.atomImages?.[i] ?? [i]);
     (await highlight()).selectAtomsByInstances(instances, { reason: 'host' });
     const lost = before.filter((i) => !atoms.includes(i));
-    if (lost.length) return { action, atoms: atoms.length, replacedUserSelection: before.slice(0, 500) };
+    if (lost.length) return { action, kind: 'atoms', count: atoms.length, replacedUserSelection: before.slice(0, 500) };
   } else if (action === 'color') {
-    (await import('../ui/StructureInfoPanel/SelectionActionBar.js')).colorSourceAtoms(atoms, args.value.toLowerCase());
+    (await import('../ui/StructureInfoPanel/SelectionActionBar.js')).colorSourceAtoms(atoms, hex);
   } else if (action === 'reset_color') {
     (await import('../ui/StructureInfoPanel/SelectionActionBar.js')).resetSourceAtomColors(atoms);
   } else if (action === 'hide' || action === 'show') {
@@ -414,7 +436,7 @@ export async function apply(args) {
   } else {
     throw commandError('INVALID_ARGS', 'apply.action must be highlight, select, clear, color, reset_color, hide or show');
   }
-  return { action, atoms: atoms.length };
+  return { action, kind: 'atoms', count: atoms.length };
 }
 
 /** get_bonding for the active structure. */
@@ -424,21 +446,77 @@ export function getBonding() {
   return bondingTable(structure.elements || [], general.bondLengths || {}, general.bondVisibility || {});
 }
 
-/** export_structure's browser half: the Save window's writer text and its atom order. */
+/** The frames of a row to export: "all" or a list of frame indices. */
+export function frameIndices(count, frames) {
+  if (frames === undefined || frames === 'all') return [...Array(count).keys()];
+  if (!Array.isArray(frames) || !frames.length) throw commandError('INVALID_ARGS', 'export_structure.frames must be "all" or a list of frame indices');
+  for (const i of frames) {
+    if (!Number.isInteger(i) || i < 0 || i >= count) throw commandError('INVALID_ARGS', `export_structure.frames: ${i} is not 0 to ${count - 1}`);
+  }
+  return frames;
+}
+
+/**
+ * export_structure's browser half: the file's text and how its atoms map back.
+ * cif and poscar write one frame through the Save window's writers (cif keeps
+ * partial occupancy; poscar groups atoms by element, hence order); extxyz
+ * writes frames (all of the row by default) for scripts. structure and frame
+ * pick a row and frame other than the one on show, without selecting it.
+ */
 export async function exportStructure(args) {
   const format = args?.format;
-  if (format !== 'cif' && format !== 'poscar') throw commandError('INVALID_ARGS', 'export_structure.format must be cif or poscar');
-  if (!getActiveStructure()) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+  if (!['cif', 'poscar', 'extxyz'].includes(format)) throw commandError('INVALID_ARGS', 'export_structure.format must be cif, poscar or extxyz');
+  const active = getActiveStructure();
+  let container = active ? getContainerForStructure(active) : null;
+  if (args.structure !== undefined) {
+    container = getContainerById(args.structure);
+    if (!container) throw commandError('STRUCTURE_NOT_FOUND', `No structure ${args.structure}; get_state include structures lists them`);
+  }
+  if (!container && !active) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+  const count = container ? (container.frameCount ?? container.structures.length) : 1;
+  const shownFrame = container && active ? container.structures.indexOf(active) : -1;
+  // The frame on show is the live structure; any other is read detached, never selected.
+  const frameAt = async (i) => (i === shownFrame ? active : container ? await (container.frameAtDetached?.(i) ?? container.structures[i]) : active);
+  const base = { format, structure: container ? getContainerId(container) : null, name: container ? String(container.fileName) : null };
+  if (format === 'extxyz') {
+    if (args.frames !== undefined && args.frame !== undefined) throw commandError('INVALID_ARGS', 'export_structure takes frames or frame, not both');
+    const indices = frameIndices(count, args.frame !== undefined ? [args.frame] : args.frames);
+    const steps = container?.plotSeries?.step;
+    const frames = [];
+    for (const i of indices) {
+      const frame = await frameAt(i);
+      if (!frame) continue;
+      frames.push({
+        lattice: frame.periodic === false ? null : frame.lattice,
+        positions: frame.atoms.map((a) => a.position),
+        elements: frame.atoms.map((a, k) => a.getRepresentativeElement?.() ?? frame.elements[k]),
+        energy: frame.energy,
+        step: Number.isInteger(steps?.[i]) ? steps[i] : undefined,
+      });
+    }
+    const { writeExtXYZ } = await import('../io/WriteExtXYZ.js');
+    // extxyz keeps the atom order (one line per atom): no order map needed.
+    return { ...base, text: writeExtXYZ(frames), frames: frames.length, atomCount: frames[0]?.positions.length ?? 0, sameOrder: true };
+  }
+  if (args.frames !== undefined) throw commandError('INVALID_ARGS', 'export_structure.frames is for extxyz; cif and poscar write one frame (frame)');
+  const frameIndex = args.frame ?? (shownFrame >= 0 ? shownFrame : 0);
+  if (!Number.isInteger(frameIndex) || frameIndex < 0 || frameIndex >= count) {
+    throw commandError('INVALID_ARGS', `export_structure.frame must be 0 to ${count - 1}`);
+  }
+  const structure = await frameAt(frameIndex);
   const save = await import('../ui/SavePanel.js');
-  const { text, order } = format === 'cif' ? save.cifExport() : save.poscarExport();
+  const name = container ? String(container.fileName).replace(/\.[^.]+$/, '') : undefined;
+  const { text, order } = format === 'cif' ? save.cifExport(structure, name) : save.poscarExport(structure);
   const sameOrder = order.every((atom, row) => atom === row);
   return {
-    format,
+    ...base,
     text,
-    rows: order.length,
+    frames: 1,
+    // Atoms written: one per line, so a mixed CIF site counts once per species (order says which).
+    atomCount: order.length,
     sameOrder,
     ...(sameOrder ? {} : { order }),
     // POSCAR writes a partly occupied site as a whole atom of its species.
-    ...(format === 'poscar' && save.poscarLosesOccupancy() ? { warning: 'Partial occupancies are lost in POSCAR; use cif to keep them.' } : {}),
+    ...(format === 'poscar' && save.poscarLosesOccupancy(structure) ? { warning: 'Partial occupancies are lost in POSCAR; use cif to keep them.' } : {}),
   };
 }

@@ -5,8 +5,9 @@ import assert from 'node:assert/strict';
 import { buildSlab } from '../../docs/model/slab.js';
 import { writeExtXYZ } from '../../docs/io/WriteExtXYZ.js';
 import {
-  wyckoffSites, labelledQPoints, resolveQPoint, resolveBand, slicePlane, frameIndices,
+  wyckoffSites, labelledQPoints, resolveQPoint, resolveBand, slicePlane,
 } from '../../docs/host/structureTools.js';
+import { frameIndices } from '../../docs/host/query.js';
 
 const A = 3.615;
 const CU = {
@@ -108,7 +109,7 @@ test('field slices: (001) through an atom, and the default first lattice plane',
   assert.throws(() => slicePlane(lattice, [0, 0, 0]));
 });
 
-test('trajectory frame selection', () => {
+test('export_structure extxyz frame selection', () => {
   assert.deepEqual(frameIndices(3, 'all'), [0, 1, 2]);
   assert.deepEqual(frameIndices(3, undefined), [0, 1, 2]);
   assert.deepEqual(frameIndices(3, [2, 0]), [2, 0]);

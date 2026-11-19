@@ -3,10 +3,9 @@
 // windows use; the UI modules are imported on first use so this module stays
 // importable in Node for the unit tests.
 
-import { getActiveStructure, getContainerForStructure, getContainerId } from '../state/structures.js';
-import { commandError } from './commands.js';
+import { getActiveStructure, getContainerForStructure } from '../state/structures.js';
+import { commandError, rowEnvelope } from './commands.js';
 import { buildSlab } from '../model/slab.js';
-import { writeExtXYZ } from '../io/WriteExtXYZ.js';
 
 const round = (x, digits = 6) => Math.round(x * 10 ** digits) / 10 ** digits;
 const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -62,7 +61,7 @@ export async function getSymmetry(args) {
   };
 }
 
-export async function symmetrize(args) {
+export async function buildSymmetrized(args) {
   const structure = activeStructure();
   requirePeriodic(structure);
   const cell = args?.cell ?? 'conventional';
@@ -76,10 +75,7 @@ export async function symmetrize(args) {
   }
   // The Prim./Conv. Cell buttons' own path: a new, selected row.
   const container = m.newContainerFromSymmetrisation(cell === 'primitive' ? 'prim' : 'conv', result.positions, result.lattice, result.elements);
-  return {
-    id: getContainerId(container), name: String(container.fileName), atomCount: result.elements.length,
-    tolerance: m.tol, number: result.spg_number, symbol: result.spg_symbol,
-  };
+  return { ...rowEnvelope(container), tolerance: m.tol, number: result.spg_number, symbol: result.spg_symbol };
 }
 
 // ---- phonons -------------------------------------------------------------------
@@ -157,54 +153,59 @@ function resolveQPointSafe(dataset) {
   try { return resolveQPoint(dataset, 'Gamma'); } catch { return 0; }
 }
 
-export async function setPhononMode(args) {
+/**
+ * set_phonon: the mode (qpoint, band), the animation (play, pause, stop) and
+ * its amplitude and speed, in one call, as the Phonons window sets them. A
+ * mode given without animate starts playing, as choosing it in the window does.
+ */
+export async function setPhonon(args) {
   const ph = await phononDataset();
   const ds = ph.phononState.dataset;
-  if (!ds.hasEigenvectors) throw commandError('NO_EIGENVECTORS', 'This phonon file has no eigenvectors, so modes cannot be shown');
-  const iq = resolveQPoint(ds, args?.qpoint ?? 'Gamma');
-  const ib = resolveBand(ds, args?.band ?? 'lowest_optical');
-  ph.selectMode(iq, ib, { autoplay: args?.play !== false });
-  return {
-    qpoint: iq, band: ib, q: ds.qpoints[iq].q.map((x) => round(x, 4)), frequencyTHz: round(ph.selectedFrequency(), 4),
-    commensurate: ph.phononState.commensurate, supercell: ph.phononState.dims, playing: ph.phononState.playing,
-  };
-}
-
-export async function phononAnimation(args) {
-  const ph = await phononDataset();
+  const animate = args?.animate;
+  if (animate !== undefined && !['play', 'pause', 'stop'].includes(animate)) throw commandError('INVALID_ARGS', 'set_phonon.animate must be play, pause or stop');
   if (args?.amplitude !== undefined) {
-    if (!isFiniteNumber(args.amplitude) || args.amplitude < 0 || args.amplitude > 5) throw commandError('INVALID_ARGS', 'amplitude must be 0 to 5 Å');
+    if (!isFiniteNumber(args.amplitude) || args.amplitude < 0 || args.amplitude > 5) throw commandError('INVALID_ARGS', 'set_phonon.amplitude must be 0 to 5 Å');
     ph.setAmplitude(args.amplitude);
   }
   if (args?.speed !== undefined) {
-    if (!isFiniteNumber(args.speed) || args.speed <= 0) throw commandError('INVALID_ARGS', 'speed must be a positive number of cycles per second');
+    if (!isFiniteNumber(args.speed) || args.speed <= 0) throw commandError('INVALID_ARGS', 'set_phonon.speed must be a positive number of cycles per second');
     ph.setSpeed(args.speed);
   }
-  const action = args?.action;
-  if (action === 'play') ph.play();
-  else if (action === 'pause') ph.pause();
-  else if (action === 'stop') ph.stopAnimation();
-  else if (action !== undefined) throw commandError('INVALID_ARGS', 'action must be play, pause or stop');
-  const s = ph.phononState;
-  return { playing: s.playing, amplitude: s.amplitude, speed: s.speed, modeSelected: !!s.selected };
+  if (args?.qpoint !== undefined || args?.band !== undefined) {
+    if (!ds.hasEigenvectors) throw commandError('NO_EIGENVECTORS', 'This phonon file has no eigenvectors, so modes cannot be shown');
+    const iq = resolveQPoint(ds, args.qpoint ?? 'Gamma');
+    const ib = resolveBand(ds, args.band ?? 'lowest_optical');
+    ph.selectMode(iq, ib, { autoplay: animate === undefined || animate === 'play' });
+  }
+  if (animate === 'play') ph.play();
+  else if (animate === 'pause') ph.pause();
+  else if (animate === 'stop') ph.stopAnimation();
+  const st = ph.phononState;
+  return {
+    mode: st.selected ? {
+      qpoint: st.selected.iq, band: st.selected.ib, q: ds.qpoints[st.selected.iq].q.map((x) => round(x, 4)),
+      frequencyTHz: round(ph.selectedFrequency(), 4),
+    } : null,
+    commensurate: st.commensurate, supercell: st.dims, playing: st.playing, amplitude: st.amplitude, speed: st.speed,
+  };
 }
 
-export async function phononFrames(args) {
+export async function buildPhononFrames(args) {
   const ph = await phononDataset();
   const count = args?.count ?? 10;
-  if (!Number.isInteger(count) || count < 2 || count > 200) throw commandError('INVALID_ARGS', 'count must be 2 to 200');
+  if (!Number.isInteger(count) || count < 2 || count > 200) throw commandError('INVALID_ARGS', 'build_phonon_frames.count must be 2 to 200');
   if (args?.amplitude !== undefined) {
-    if (!isFiniteNumber(args.amplitude) || args.amplitude < 0 || args.amplitude > 5) throw commandError('INVALID_ARGS', 'amplitude must be 0 to 5 Å');
+    if (!isFiniteNumber(args.amplitude) || args.amplitude < 0 || args.amplitude > 5) throw commandError('INVALID_ARGS', 'build_phonon_frames.amplitude must be 0 to 5 Å');
     ph.setAmplitude(args.amplitude);
   }
-  if (!ph.phononState.selected) throw commandError('NO_MODE', 'Select a mode first with set_phonon_mode');
+  if (!ph.phononState.selected) throw commandError('NO_MODE', 'Choose a mode first with set_phonon {qpoint, band}');
   ph.pause();
   const frames = ph.modeFrames(count);
   if (!frames) throw commandError('NO_MODE', 'The selected mode has no displacement pattern');
   const { iq, ib } = ph.phononState.selected;
   const { createTrajectoryFromFrames } = await import('../ui/addToStructureModule/CommitAtoms.js');
   const container = createTrajectoryFromFrames(frames, `${ph.phononState.sourceName || 'phonon'}_q${iq}_band${ib}`);
-  return { id: getContainerId(container), name: String(container.fileName), frames: frames.length, amplitude: ph.phononState.amplitude };
+  return { ...rowEnvelope(container), amplitude: ph.phononState.amplitude };
 }
 
 // ---- volumetric fields -------------------------------------------------------------
@@ -219,13 +220,12 @@ async function fieldModule() {
 function chooseField(fieldBrowser, label) {
   if (label === undefined) return fieldBrowser.selectedField ?? fieldBrowser.availableFields[0];
   const index = fieldBrowser.availableFields.findIndex((f) => f.label === label);
-  if (index < 0) throw commandError('FIELD_NOT_FOUND', `No field ${label}; get_field_info lists them`);
+  if (index < 0) throw commandError('FIELD_NOT_FOUND', `No field ${label}; get_state include field lists them`);
   if (fieldBrowser.availableFields[index] !== fieldBrowser.selectedField) fieldBrowser.setSelectedField(index);
   return fieldBrowser.availableFields[index];
 }
 
 export async function getFieldInfo() {
-  getActiveStructure();
   const { fieldBrowser } = await import('../ui/FieldPanel.js');
   const fields = fieldBrowser.availableFields;
   const f = fieldBrowser.selectedField;
@@ -263,25 +263,42 @@ export function slicePlane(lattice, hkl, { point = null, offset = null } = {}) {
   return { normal, d };
 }
 
-export async function addFieldSlice(args) {
+/**
+ * add_plane: a Crystal Planes plane (h k l) through an atom, at an offset (Å)
+ * along its normal, or (default) the first lattice plane. show: "field" colours
+ * it with a volumetric field (a 2D slice; field picks which), "plane" (default)
+ * draws it plain; cut hides the atoms on one side.
+ */
+export async function addPlane(args) {
   const structure = activeStructure();
   requirePeriodic(structure);
   const hkl = args?.hkl;
-  if (!Array.isArray(hkl) || hkl.length !== 3 || !hkl.every(Number.isInteger)) throw commandError('INVALID_ARGS', 'hkl must be three integers');
+  if (!Array.isArray(hkl) || hkl.length !== 3 || !hkl.every(Number.isInteger)) throw commandError('INVALID_ARGS', 'add_plane.hkl must be three integers');
+  const show = args.show ?? 'plane';
+  if (show !== 'plane' && show !== 'field') throw commandError('INVALID_ARGS', 'add_plane.show must be plane or field');
+  if (args.field !== undefined && show !== 'field') throw commandError('INVALID_ARGS', 'add_plane.field goes with show: "field"');
+  const cut = args.cut ?? 'none';
+  const { CutModes } = await import('../model/Plane.js');
+  const cutMode = { none: CutModes.NONE, along: CutModes.ALONGN, opposite: CutModes.OPPOSITEN }[cut];
+  if (cutMode === undefined) throw commandError('INVALID_ARGS', 'add_plane.cut must be none, along or opposite');
+  if (args.throughAtom !== undefined && args.offset !== undefined) throw commandError('INVALID_ARGS', 'add_plane takes throughAtom or offset, not both');
   let point = null;
   if (args.throughAtom !== undefined) {
     const i = args.throughAtom;
-    if (!Number.isInteger(i) || i < 0 || i >= structure.atoms.length) throw commandError('INVALID_ARGS', `throughAtom must be 0 to ${structure.atoms.length - 1}`);
+    if (!Number.isInteger(i) || i < 0 || i >= structure.atoms.length) throw commandError('INVALID_ARGS', `add_plane.throughAtom must be 0 to ${structure.atoms.length - 1}`);
     const p = structure.atoms[i].position;
     point = [0, 1, 2].map((k) => p[0] * structure.lattice[0][k] + p[1] * structure.lattice[1][k] + p[2] * structure.lattice[2][k]);
   }
-  if (args.offset !== undefined && !isFiniteNumber(args.offset)) throw commandError('INVALID_ARGS', 'offset must be a number (Å)');
+  if (args.offset !== undefined && !isFiniteNumber(args.offset)) throw commandError('INVALID_ARGS', 'add_plane.offset must be a number (Å)');
   const { normal, d } = slicePlane(structure.lattice, hkl, { point, offset: args.offset ?? null });
-  const { fieldBrowser } = await import('../ui/FieldPanel.js');
-  const field = fieldBrowser.availableFields.length ? chooseField(fieldBrowser, args.field) : null;
+  let field = null;
+  if (show === 'field') {
+    const { fieldBrowser } = await fieldModule();
+    field = chooseField(fieldBrowser, args.field);
+  }
   const { addPlaneToStructure } = await import('../ui/PlanesPanel.js');
-  addPlaneToStructure(structure, { type: 'uvwd', u: normal[0], v: normal[1], w: normal[2], d }, { field });
-  return { hkl, normal: normal.map((x) => round(x)), d: round(d), field: field?.label ?? null, planes: structure.planes.length };
+  addPlaneToStructure(structure, { type: 'uvwd', u: normal[0], v: normal[1], w: normal[2], d }, { field, cutMode });
+  return { hkl, normal: normal.map((x) => round(x)), d: round(d), show, cut, field: field?.label ?? null, planeCount: structure.planes.length };
 }
 
 // ---- slabs -----------------------------------------------------------------------
@@ -296,7 +313,7 @@ export async function buildSlabCommand(args) {
   if (!Number.isInteger(layers) || layers < 1 || layers > 50) throw commandError('INVALID_ARGS', 'layers must be 1 to 50');
   if (!isFiniteNumber(vacuum) || vacuum < 0 || vacuum > 200) throw commandError('INVALID_ARGS', 'vacuum must be 0 to 200 Å');
   if (structure.atoms.some((atom) => atom.isDisordered?.())) {
-    throw commandError('DISORDERED', 'Slabs need an ordered structure (use order_structure first)');
+    throw commandError('DISORDERED', 'Slabs need an ordered structure (use run_ordering first)');
   }
   let slab;
   try {
@@ -312,45 +329,9 @@ export async function buildSlabCommand(args) {
   const { createNewStructureFromAtoms } = await import('../ui/addToStructureModule/CommitAtoms.js');
   createNewStructureFromAtoms(slab.positions.map((p, i) => ({ element: slab.elements[i], x: p[0], y: p[1], z: p[2] })),
     { lattice: slab.lattice, fileName: name });
-  const container = getContainerForStructure(getActiveStructure());
   return {
-    id: container ? getContainerId(container) : null, name, atomCount: slab.positions.length, layers,
-    thicknessA: round(slab.thickness, 4), vacuumA: vacuum, c: round(slab.lattice[2][2], 4),
+    ...rowEnvelope(getContainerForStructure(getActiveStructure())), layers,
+    thickness: round(slab.thickness, 4), vacuum, c: round(slab.lattice[2][2], 4),
     note: 'c is along the surface normal; the slab sits centred with the vacuum as one gap along c.',
   };
-}
-
-// ---- trajectory export ---------------------------------------------------------------
-
-/** The active structure's frames to export: "all" or a list of frame indices. */
-export function frameIndices(count, frames) {
-  if (frames === undefined || frames === 'all') return [...Array(count).keys()];
-  if (!Array.isArray(frames) || !frames.length) throw commandError('INVALID_ARGS', 'frames must be "all" or a list of frame indices');
-  for (const i of frames) {
-    if (!Number.isInteger(i) || i < 0 || i >= count) throw commandError('INVALID_ARGS', `frame ${i} is not 0 to ${count - 1}`);
-  }
-  return frames;
-}
-
-export async function exportTrajectory(args) {
-  if ((args?.format ?? 'extxyz') !== 'extxyz') throw commandError('INVALID_ARGS', 'format must be extxyz');
-  const structure = activeStructure();
-  const container = getContainerForStructure(structure);
-  if (!container) throw commandError('NO_ACTIVE_STRUCTURE', 'The active structure has no file row');
-  const count = container.frameCount ?? container.structures.length;
-  const indices = frameIndices(count, args?.frames);
-  const steps = container.plotSeries?.step;
-  const frames = [];
-  for (const i of indices) {
-    const frame = await (typeof container.frameAtDetached === 'function' ? container.frameAtDetached(i) : container.structures[i]);
-    if (!frame) continue;
-    frames.push({
-      lattice: frame.periodic === false ? null : frame.lattice,
-      positions: frame.atoms.map((a) => a.position),
-      elements: frame.atoms.map((a, k) => a.getRepresentativeElement?.() ?? frame.elements[k]),
-      energy: frame.energy,
-      step: Number.isInteger(steps?.[i]) ? steps[i] : undefined,
-    });
-  }
-  return { text: writeExtXYZ(frames), frames: frames.length, atoms: frames[0]?.positions.length ?? 0, name: String(container.fileName) };
 }

@@ -12,11 +12,11 @@ import {
 } from '../state/structures.js';
 import { app, general } from '../state/store.js';
 import { structureRevision } from '../model/structureRevision.js';
-import { cancelJob, getJob, jobView, listJobs, runningJob, startJob, waitJob } from './jobs.js';
+import { cancelJob, jobView, listJobs, runningJob, startJob, waitJob } from './jobs.js';
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
 import { clickControl, getControl, readWindow, searchControls, setControl } from './controls.js';
-import { apply, exportStructure, find, getBonding, userSelection } from './query.js';
+import { apply, exportStructure, find, getBonding, resolveTargets, userSelection } from './query.js';
 import * as tools from './structureTools.js';
 
 export const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
@@ -199,7 +199,7 @@ export function screenUp(up, direction) {
 // path only: bonds and derived data still describe the old positions.
 const uncommitted = new WeakSet();
 
-/** Max atoms get_state lists with atoms:true, so a big supercell stays small. */
+/** Max atom indices get_state lists for the user's selection, so a big one stays small. */
 export const MAX_STATE_ATOMS = 500;
 
 const round = (value) => Math.round(value * 1e6) / 1e6;
@@ -300,12 +300,12 @@ export function colorSummary(structure) {
   };
 }
 
-function structureState(structure, includeAtoms) {
+function structureState(structure) {
   const container = getContainerForStructure(structure);
   const frame = container ? container.structures.indexOf(structure) : -1;
   const lattice = Array.isArray(structure.lattice) && structure.lattice.length === 3 ? structure.lattice : null;
   const { counts, formula } = composition(structure.atoms);
-  const state = {
+  return {
     id: container ? getContainerId(container) : null,
     name: container ? String(container.fileName) : null,
     frame: frame >= 0 ? frame : null,
@@ -317,16 +317,8 @@ function structureState(structure, includeAtoms) {
     periodic: structure.periodic !== false,
     lattice: lattice ? { vectors: lattice.map((row) => row.map(round)), ...latticeParameters(lattice) } : null,
     positionsCommitted: !uncommitted.has(structure),
-    colors: colorSummary(structure),
+    hiddenCount: structure.atoms.filter((atom) => atom.hidden).length,
   };
-  if (includeAtoms) {
-    state.atoms = structure.atoms.slice(0, MAX_STATE_ATOMS).map((atom) => ({
-      element: atom.getRepresentativeElement?.() ?? atom.species?.[0]?.element ?? '',
-      position: atom.position.map(round),
-    }));
-    state.atomsTruncated = structure.atoms.length > MAX_STATE_ATOMS;
-  }
-  return state;
 }
 
 const wrap = (x) => { const w = round(x - Math.floor(x)); return w === 1 ? 0 : w; };
@@ -379,7 +371,7 @@ function periodicDistance(p, q, lattice) {
   return best;
 }
 
-/** Largest supercell build_supercell makes (atoms): it must finish well inside the host timeout. */
+/** Largest supercell set_supercell makes (atoms): it must finish well inside the host timeout. */
 export const MAX_HOST_SUPERCELL_ATOMS = 300000;
 
 /** A void's neighbours: atom images within this factor of its nearest distance (the first shell). */
@@ -477,6 +469,87 @@ function cameraState() {
   };
 }
 
+/**
+ * What a command that made or selected a row reports, the same for all:
+ * the row (structure: its id), its frames, the frame on show (activeFrame,
+ * null when another row is shown), and that frame's atom count and revision.
+ * @param {any} container
+ */
+export function rowEnvelope(container) {
+  const active = getActiveStructure();
+  const shownFrame = active ? container.structures.indexOf(active) : -1;
+  const shown = shownFrame >= 0 ? active : (container.structures[0] ?? null);
+  return {
+    structure: getContainerId(container),
+    name: String(container.fileName),
+    frames: container.frameCount ?? container.structures.length,
+    activeFrame: shownFrame >= 0 ? shownFrame : null,
+    atomCount: shown ? shown.atoms.length : null,
+    revision: shown ? structureRevision(shown) : null,
+  };
+}
+
+/** What a structural edit reports: the active structure's atom count and its new revision. */
+function structureEnvelope(structure = getActiveStructure()) {
+  return { atomCount: structure ? structure.atoms.length : 0, revision: structure ? structureRevision(structure) : null };
+}
+
+/**
+ * Write fractional positions to every atom and redraw: the fast in-place path
+ * (as MD streams frames), then the full rebuild (bonds, polyhedra) when the
+ * fast path is unavailable or commit asks for it. Shared by move_atoms and
+ * update_fractional_positions.
+ */
+function applyPositions(structure, positions, commit, deps) {
+  for (let i = 0; i < positions.length; i++) structure.atoms[i].position = positions[i];
+  let fastPathApplied = false;
+  let fallbackReason;
+  try {
+    fastPathApplied = deps.applyFrameFast(structure) === true;
+    if (!fastPathApplied) fallbackReason = 'FAST_PATH_UNAVAILABLE';
+  } catch {
+    fallbackReason = 'FAST_PATH_FAILED';
+  }
+  let rebuilt = false;
+  if (!fastPathApplied || commit) {
+    try {
+      if (deps.commitPositions() === false) throw new Error('Full position commit was not applied');
+    } catch (error) {
+      throw commandError('POSITION_SYNC_FAILED', 'Position synchronization failed', {
+        fallbackReason: fallbackReason || 'COMMIT_REQUESTED',
+        cause: safeError(error, 'POSITION_SYNC_FAILED'),
+      });
+    }
+    rebuilt = true;
+  }
+  if (rebuilt) uncommitted.delete(structure);
+  else uncommitted.add(structure);
+  return { fastPathApplied, rebuilt, ...(fallbackReason ? { fallbackReason } : {}) };
+}
+
+const isVec3 = (v) => Array.isArray(v) && v.length === 3 && v.every(isFiniteNumber);
+
+/** A job starter's waitS: how long (0 to 25 s) the call waits for the job before returning it. */
+function waitSeconds(input, name) {
+  const waitS = input.waitS ?? 0;
+  if (!isFiniteNumber(waitS) || waitS < 0 || waitS > 25) throw commandError('INVALID_ARGS', `${name}.waitS must be 0 to 25`);
+  return waitS;
+}
+
+/** A started job as its starter returns it: at once, or once it ends within waitS. */
+function started(job, waitS) {
+  return waitS > 0 ? waitJob(job.id, waitS) : jobView(job);
+}
+
+/** A trajectory row a job made, as job results name it. */
+function trajectoryOf(container, frames) {
+  return { structure: getContainerId(container), name: String(container.fileName), frames };
+}
+
+/** get_state's sections: the active structure and renderer always, these on request. */
+export const STATE_SECTIONS = Object.freeze(['structures', 'camera', 'selection', 'jobs', 'colors', 'phonons', 'field']);
+const DEFAULT_STATE_SECTIONS = ['camera', 'selection', 'jobs'];
+
 /** One calculator job at a time: they share the potential and the selected structure. */
 function assertNoCalculatorJob() {
   const busy = runningJob();
@@ -506,8 +579,8 @@ export function eosFitSummary({ evResult, pvResult }) {
   } : null);
   return {
     form: 'Birch–Murnaghan (3rd order)',
-    energyVolume: named(evResult, ['E0Ev', 'V0A3', 'B0GPa', 'B0Prime']),
-    pressureVolume: named(pvResult, ['V0A3', 'B0GPa', 'B0Prime']),
+    energyVolume: named(evResult, ['E0', 'V0', 'B0GPa', 'B0Prime']),
+    pressureVolume: named(pvResult, ['V0', 'B0GPa', 'B0Prime']),
   };
 }
 
@@ -515,38 +588,49 @@ export function eosFitSummary({ evResult, pvResult }) {
  * Command handlers, keyed by the command name in commands.json. Each takes
  * (args, ctx): ctx.deps holds the app functions BrowserHost was configured
  * with, ctx.emit sends a host event, ctx.origin is the page's own origin.
+ *
+ * Names follow one rule: get_* and find read; set_* change the active
+ * structure or view in place; build_* make a new row and select it; run_*
+ * start a job; export_* and save_image write files. Atom-addressed commands
+ * take atoms (indices) or selection (find id | "user" | "all") through
+ * query.resolveTargets. Every result is an object; structural edits report
+ * atomCount and revision, new rows rowEnvelope.
  */
 export const COMMAND_HANDLERS = Object.freeze({
-  list_structures(args) {
-    requireOptionalArgs(args, 'list_structures');
-    const active = getActiveStructure();
-    return getContainers().map((container) => snapshotForContainer(container, active));
-  },
-
   async get_state(args, { deps }) {
     requireOptionalArgs(args, 'get_state');
-    const includeAtoms = args?.atoms ?? false;
-    if (typeof includeAtoms !== 'boolean') throw commandError('INVALID_ARGS', 'get_state.atoms must be boolean');
+    const include = args?.include ?? DEFAULT_STATE_SECTIONS;
+    if (!Array.isArray(include) || include.some((section) => !STATE_SECTIONS.includes(section))) {
+      throw commandError('INVALID_ARGS', `get_state.include takes ${STATE_SECTIONS.join(', ')}`);
+    }
+    const want = new Set(include);
     const structure = getActiveStructure();
-    const selected = structure ? await userSelection() : [];
-    return {
-      structureCount: getContainers().length,
-      structure: structure ? structureState(structure, includeAtoms) : null,
-      // What the user has selected in the window (apply also takes selection: "user").
-      selection: { count: selected.length, atoms: selected.slice(0, MAX_STATE_ATOMS),
-        ...(selected.length > MAX_STATE_ATOMS ? { truncated: true } : {}) },
-      camera: cameraState(),
-      renderPipeline: typeof deps.getRenderPipeline === 'function' ? deps.getRenderPipeline() : null,
-      jobs: listJobs(),
+    const state = {
+      structure: structure ? structureState(structure) : null,
+      renderer: typeof deps.getRenderPipeline === 'function' ? deps.getRenderPipeline() : null,
     };
+    if (want.has('structures')) state.structures = getContainers().map((container) => snapshotForContainer(container, structure));
+    if (want.has('camera')) state.camera = cameraState();
+    if (want.has('selection')) {
+      // What the user has selected in the window (atom-addressed commands also take selection: "user").
+      const selected = structure ? await userSelection() : [];
+      state.selection = { count: selected.length, atoms: selected.slice(0, MAX_STATE_ATOMS),
+        ...(selected.length > MAX_STATE_ATOMS ? { truncated: true } : {}) };
+    }
+    if (want.has('jobs')) state.jobs = listJobs();
+    if (want.has('colors')) state.colors = structure ? colorSummary(structure) : null;
+    if (want.has('phonons')) state.phonons = await tools.getPhononState();
+    if (want.has('field')) state.field = structure ? await tools.getFieldInfo() : null;
+    return state;
   },
 
-  search_controls(args) {
+  async search_controls(args) {
     const input = requireArgs(args, 'search_controls');
     if (!safeName(input.query)) throw commandError('INVALID_ARGS', 'search_controls.query must be nonempty');
     const limit = input.limit ?? 10;
     if (!Number.isInteger(limit) || limit < 1 || limit > 30) throw commandError('INVALID_ARGS', 'search_controls.limit must be 1 to 30');
-    return searchControls(input.query, limit);
+    const controls = await searchControls(input.query, limit);
+    return { count: controls.length, controls };
   },
 
   get_control(args) {
@@ -579,6 +663,11 @@ export const COMMAND_HANDLERS = Object.freeze({
     return getBonding();
   },
 
+  get_symmetry(args) {
+    requireOptionalArgs(args, 'get_symmetry');
+    return tools.getSymmetry(args);
+  },
+
   async export_structure(args, { origin }) {
     const input = requireArgs(args, 'export_structure');
     // From the host the text goes to its managed output URL (no IPC size limit); inline otherwise.
@@ -589,139 +678,20 @@ export const COMMAND_HANDLERS = Object.freeze({
     return result;
   },
 
-  get_symmetry(args) {
-    requireOptionalArgs(args, 'get_symmetry');
-    return tools.getSymmetry(args);
-  },
+  // ---- structure, in place ---------------------------------------------------------
 
-  symmetrize(args) {
-    requireOptionalArgs(args, 'symmetrize');
-    return tools.symmetrize(args);
-  },
-
-  get_phonon_state(args) {
-    requireOptionalArgs(args, 'get_phonon_state');
-    return tools.getPhononState();
-  },
-
-  set_phonon_mode(args) {
-    requireOptionalArgs(args, 'set_phonon_mode');
-    return tools.setPhononMode(args);
-  },
-
-  phonon_animation(args) {
-    requireOptionalArgs(args, 'phonon_animation');
-    return tools.phononAnimation(args);
-  },
-
-  phonon_frames(args) {
-    requireOptionalArgs(args, 'phonon_frames');
-    return tools.phononFrames(args);
-  },
-
-  get_field_info(args) {
-    requireOptionalArgs(args, 'get_field_info');
-    return tools.getFieldInfo();
-  },
-
-  set_isosurface(args) {
-    return tools.setIsosurface(requireArgs(args, 'set_isosurface'));
-  },
-
-  add_field_slice(args) {
-    return tools.addFieldSlice(requireArgs(args, 'add_field_slice'));
-  },
-
-  build_slab(args) {
-    return tools.buildSlabCommand(requireArgs(args, 'build_slab'));
-  },
-
-  async export_trajectory(args, { origin }) {
-    requireOptionalArgs(args, 'export_trajectory');
-    const input = args ?? {};
-    const outputUrl = input.outputUrl === undefined ? null : managedOutputUrl(input.outputUrl, origin);
-    const { text, ...result } = await tools.exportTrajectory(input);
-    if (!outputUrl) return { text, ...result };
-    await uploadOutput(outputUrl, new Blob([text], { type: 'text/plain;charset=utf-8' }), 'text/plain; charset=utf-8');
-    return result;
-  },
-
-  get_polyhedra(args) {
-    requireOptionalArgs(args, 'get_polyhedra');
-    const type = args?.type;
-    if (type !== undefined && type !== 'cage' && type !== 'centered') {
-      throw commandError('INVALID_ARGS', 'get_polyhedra.type must be cage or centered');
+  select_structure(args, { deps }) {
+    const input = requireArgs(args, 'select_structure');
+    const container = getContainerById(input.structure);
+    if (!container) throw commandError('STRUCTURE_NOT_FOUND', `No structure ${input.structure}; get_state include structures lists them`);
+    const frame = input.frame === undefined ? 0 : input.frame;
+    const count = container.frameCount ?? container.structures.length;
+    if (!Number.isInteger(frame) || frame < 0 || frame >= count) {
+      throw commandError('FRAME_OUT_OF_RANGE', `select_structure.frame must be 0 to ${count - 1}`);
     }
-    const limit = args?.limit ?? 50;
-    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw commandError('INVALID_ARGS', 'get_polyhedra.limit must be 1 to 500');
-    const structure = getActiveStructure();
-    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    const built = (structure.polyhedra?.polyhedra?.length ?? 0) > 0;
-    const sites = polyhedraSummary(structure, type);
-    return {
-      built,
-      detectCages: structure.polyhedraSettings?.detectCages !== false,
-      total: sites.length,
-      polyhedra: sites.slice(0, limit),
-      ...(built ? {} : { hint: 'No polyhedra are built: switch on Show Polyhedra (search_controls "polyhedra on"), then call again.' }),
-    };
-  },
-
-  get_voids(args) {
-    requireOptionalArgs(args, 'get_voids');
-    const limit = args?.limit ?? 10;
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw commandError('INVALID_ARGS', 'get_voids.limit must be 1 to 100');
-    const minRadius = args?.minRadius ?? 0.7;
-    if (!isFiniteNumber(minRadius) || minRadius <= 0) throw commandError('INVALID_ARGS', 'get_voids.minRadius must be a positive number');
-    const structure = getActiveStructure();
-    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    if (!Array.isArray(structure.lattice) || structure.periodic === false) throw commandError('NO_LATTICE', 'Voids need a periodic structure');
-    const { total, sites } = voidSites(structure, minRadius, limit);
-    return { total, voids: sites };
-  },
-
-  async set_element(args) {
-    const input = requireArgs(args, 'set_element');
-    const structure = getActiveStructure();
-    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    if (typeof input.element !== 'string' || !input.element.trim()) throw commandError('INVALID_ARGS', 'set_element.element must be an element symbol');
-    const element = input.element.trim();
-    const { invalidElementMessage } = await import('../ui/addToStructureModule/ElementValidation.js');
-    const invalid = invalidElementMessage([{ element }]);
-    if (invalid) throw commandError('INVALID_ELEMENT', invalid);
-    const query = await import('./query.js');
-    const resolved = input.selection === 'user' ? { atoms: await query.userSelection() } : input;
-    const indices = query.applyTargets(structure, resolved);
-    if (!indices.length) throw commandError('INVALID_ARGS', 'set_element needs at least one atom');
-    const disordered = indices.filter((i) => (structure.atoms[i].species?.length ?? 1) > 1);
-    if (disordered.length) {
-      throw commandError('DISORDERED_SITE', `Atoms ${disordered.slice(0, 10).join(', ')} are disordered sites; set their species in the structure editor`);
-    }
-    const { structureToTableAtoms } = await import('../ui/addToStructureModule/StructureEditorPanel.js');
-    const { setAtomElements } = await import('../ui/addToStructureModule/CommitAtoms.js');
-    setAtomElements(structure, indices, element, structureToTableAtoms(structure));
-    return { changed: indices.length, element, atomCount: structure.atoms.length, revision: structureRevision(structure) };
-  },
-
-  async remove_atoms(args) {
-    const input = requireArgs(args, 'remove_atoms');
-    const structure = getActiveStructure();
-    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    const query = await import('./query.js');
-    const resolved = input.selection === 'user' ? { atoms: await query.userSelection() } : input;
-    const indices = query.applyTargets(structure, resolved);
-    if (!indices.length) throw commandError('INVALID_ARGS', 'remove_atoms needs at least one atom');
-    if (indices.length >= structure.atoms.length) throw commandError('INVALID_ARGS', 'remove_atoms cannot remove every atom');
-    // What add_atoms needs to put them back.
-    const removed = indices.sort((p, q) => p - q).map((i) => ({
-      index: i,
-      element: structure.atoms[i].getRepresentativeElement?.() ?? structure.elements[i],
-      position: structure.atoms[i].position.map(round),
-      occupancy: structure.atoms[i].getTotalOccupancy?.() ?? 1,
-    }));
-    const { commitRemovedAtoms } = await import('../ui/addToStructureModule/CommitAtoms.js');
-    commitRemovedAtoms(structure, indices.map((i) => structure.atoms[i].uuid));
-    return { removed, atomCount: structure.atoms.length };
+    const rowIndex = getContainers().indexOf(container);
+    if (!deps.selectStructure(rowIndex, frame)) throw commandError('SELECT_FAILED', 'Structure selection failed');
+    return rowEnvelope(container);
   },
 
   async add_atoms(args) {
@@ -734,11 +704,11 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (input.force !== undefined && typeof input.force !== 'boolean') throw commandError('INVALID_ARGS', 'add_atoms.force must be boolean');
     const rows = input.atoms.map((atom) => {
       const p = atom?.position;
-      if (typeof atom?.element !== 'string' || !Array.isArray(p) || p.length !== 3 || !p.every(isFiniteNumber)) {
-        throw commandError('INVALID_ARGS', 'Every atom needs an element and a fractional position [x, y, z]');
+      if (typeof atom?.element !== 'string' || !isVec3(p)) {
+        throw commandError('INVALID_ARGS', 'add_atoms.atoms: every atom needs an element and a fractional position [x, y, z]');
       }
       const occupancy = atom.occupancy ?? 1;
-      if (!isFiniteNumber(occupancy) || occupancy <= 0 || occupancy > 1) throw commandError('INVALID_ARGS', 'occupancy must be in (0, 1]');
+      if (!isFiniteNumber(occupancy) || occupancy <= 0 || occupancy > 1) throw commandError('INVALID_ARGS', 'add_atoms.atoms: occupancy must be in (0, 1]');
       return { element: atom.element.trim(), x: p[0], y: p[1], z: p[2], occupancy };
     });
     const { invalidElementMessage } = await import('../ui/addToStructureModule/ElementValidation.js');
@@ -752,14 +722,110 @@ export const COMMAND_HANDLERS = Object.freeze({
     }
     const { commitAddedAtoms } = await import('../ui/addToStructureModule/CommitAtoms.js');
     commitAddedAtoms(structure, rows);
-    return { added: rows.length, atomCount: structure.atoms.length };
+    return { added: rows.length, ...structureEnvelope(structure) };
   },
 
-  async build_supercell(args) {
-    const input = requireArgs(args, 'build_supercell');
+  async remove_atoms(args) {
+    const input = requireArgs(args, 'remove_atoms');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    const indices = await resolveTargets(structure, input, 'remove_atoms');
+    if (!indices.length) throw commandError('INVALID_ARGS', 'remove_atoms needs at least one atom');
+    if (indices.length >= structure.atoms.length) throw commandError('INVALID_ARGS', 'remove_atoms cannot remove every atom');
+    // What add_atoms needs to put them back.
+    const removed = indices.sort((p, q) => p - q).map((i) => ({
+      index: i,
+      element: structure.atoms[i].getRepresentativeElement?.() ?? structure.elements[i],
+      position: structure.atoms[i].position.map(round),
+      occupancy: structure.atoms[i].getTotalOccupancy?.() ?? 1,
+    }));
+    const { commitRemovedAtoms } = await import('../ui/addToStructureModule/CommitAtoms.js');
+    commitRemovedAtoms(structure, indices.map((i) => structure.atoms[i].uuid));
+    return { removed, ...structureEnvelope(structure) };
+  },
+
+  async set_element(args) {
+    const input = requireArgs(args, 'set_element');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    if (typeof input.element !== 'string' || !input.element.trim()) throw commandError('INVALID_ARGS', 'set_element.element must be an element symbol');
+    const element = input.element.trim();
+    const { invalidElementMessage } = await import('../ui/addToStructureModule/ElementValidation.js');
+    const invalid = invalidElementMessage([{ element }]);
+    if (invalid) throw commandError('INVALID_ELEMENT', invalid);
+    const indices = await resolveTargets(structure, input, 'set_element');
+    if (!indices.length) throw commandError('INVALID_ARGS', 'set_element needs at least one atom');
+    const disordered = indices.filter((i) => (structure.atoms[i].species?.length ?? 1) > 1);
+    if (disordered.length) {
+      throw commandError('DISORDERED', `Atoms ${disordered.slice(0, 10).join(', ')} are disordered sites; set their species in the structure editor`);
+    }
+    const { structureToTableAtoms } = await import('../ui/addToStructureModule/StructureEditorPanel.js');
+    const { setAtomElements } = await import('../ui/addToStructureModule/CommitAtoms.js');
+    setAtomElements(structure, indices, element, structureToTableAtoms(structure));
+    return { changed: indices.length, element, ...structureEnvelope(structure) };
+  },
+
+  async move_atoms(args, { deps }) {
+    const input = requireArgs(args, 'move_atoms');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    const targets = await resolveTargets(structure, input, 'move_atoms');
+    if ((input.to === undefined) === (input.by === undefined)) {
+      throw commandError('INVALID_ARGS', 'move_atoms needs to (one [x, y, z] per atom) or by (one [dx, dy, dz] for all), not both');
+    }
+    if (input.cartesian !== undefined && typeof input.cartesian !== 'boolean') throw commandError('INVALID_ARGS', 'move_atoms.cartesian must be boolean');
+    if (input.commit !== undefined && typeof input.commit !== 'boolean') throw commandError('INVALID_ARGS', 'move_atoms.commit must be boolean');
+    if (input.cartesian && !Array.isArray(structure.lattice)) throw commandError('NO_LATTICE', 'Cartesian moves need a lattice');
+    // Cartesian vectors (Å) to fractional; the map is linear, so it serves positions and shifts alike.
+    const fractional = (v) => (input.cartesian ? cartToFractional(v, structure.lattice) : [...v]);
+    const positions = structure.atoms.map((atom) => [...atom.position]);
+    if (input.to !== undefined) {
+      if (!Array.isArray(input.to) || input.to.length !== targets.length || !input.to.every(isVec3)) {
+        throw commandError('INVALID_ARGS', `move_atoms.to needs one [x, y, z] per atom (${targets.length}), in the order of atoms`);
+      }
+      targets.forEach((i, k) => { positions[i] = fractional(input.to[k]); });
+    } else {
+      if (!isVec3(input.by)) throw commandError('INVALID_ARGS', 'move_atoms.by must be [dx, dy, dz]');
+      const shift = fractional(input.by);
+      for (const i of targets) positions[i] = positions[i].map((x, k) => x + shift[k]);
+    }
+    const { rebuilt } = applyPositions(structure, positions, input.commit ?? true, deps);
+    return { moved: targets.length, committed: rebuilt, ...structureEnvelope(structure) };
+  },
+
+  async set_lattice(args, { deps }) {
+    const input = requireArgs(args, 'set_lattice');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    if (!Array.isArray(input.lattice) || input.lattice.length !== 3 || !input.lattice.every(isVec3)) {
+      throw commandError('INVALID_ARGS', 'set_lattice.lattice must be exactly three rows of three finite numbers');
+    }
+    const lattice = input.lattice.map((row) => [...row]);
+    const determinant = lattice[0][0] * (lattice[1][1] * lattice[2][2] - lattice[1][2] * lattice[2][1])
+      - lattice[0][1] * (lattice[1][0] * lattice[2][2] - lattice[1][2] * lattice[2][0])
+      + lattice[0][2] * (lattice[1][0] * lattice[2][1] - lattice[1][1] * lattice[2][0]);
+    if (Math.abs(determinant) < 1e-12) {
+      throw commandError('INVALID_ARGS', 'set_lattice.lattice must be nonsingular');
+    }
+    if (typeof deps.updateLattice !== 'function') {
+      throw commandError('COMMAND_UNAVAILABLE', 'Lattice update is unavailable');
+    }
+    try {
+      if (await deps.updateLattice(lattice) !== true) throw new Error('Lattice update was not applied');
+    } catch (error) {
+      throw commandError('LATTICE_SYNC_FAILED', 'Lattice synchronization failed', {
+        cause: safeError(error, 'LATTICE_SYNC_FAILED'),
+      });
+    }
+    const now = getActiveStructure();
+    return { lattice: latticeParameters(now.lattice), ...structureEnvelope(now) };
+  },
+
+  async set_supercell(args) {
+    const input = requireArgs(args, 'set_supercell');
     const n = input.n;
     if (!Array.isArray(n) || n.length !== 3 || !n.every((k) => Number.isInteger(k) && k >= 1 && k <= 20)) {
-      throw commandError('INVALID_ARGS', 'build_supercell.n must be three integers from 1 to 20');
+      throw commandError('INVALID_ARGS', 'set_supercell.n must be three integers from 1 to 20');
     }
     const structure = getActiveStructure();
     if (!structure?.lattice) throw commandError('NO_LATTICE', 'The active structure has no lattice');
@@ -773,8 +839,116 @@ export const COMMAND_HANDLERS = Object.freeze({
     }
     // The same path as the Cell & Supercell window and the feature search's "222".
     await (await import('../ui/LatticeSupercellPanel.js')).applySupercell(n[0], n[1], n[2]);
-    return { supercell: n, atomCount: getActiveStructure()?.atoms.length ?? 0 };
+    return { supercell: n, ...structureEnvelope() };
   },
+
+  // Python only ("mcp": false): the Viewer's released position API; MCP has move_atoms.
+  update_fractional_positions(args, { deps }) {
+    const input = requireArgs(args, 'update_fractional_positions');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    if (!Array.isArray(input.positions) || input.positions.length !== structure.atoms.length) {
+      throw commandError('INVALID_ARGS', 'update_fractional_positions.positions must contain exactly one point per atom');
+    }
+    if (!input.positions.every(isVec3)) {
+      throw commandError('INVALID_ARGS', 'update_fractional_positions.positions: every position must be exactly three finite numbers');
+    }
+    if (input.commit !== undefined && typeof input.commit !== 'boolean') {
+      throw commandError('INVALID_ARGS', 'update_fractional_positions.commit must be boolean');
+    }
+    const result = applyPositions(structure, input.positions.map((point) => [...point]), input.commit === true, deps);
+    return { ...result, ...structureEnvelope(structure) };
+  },
+
+  // Python only ("mcp": false): the full rebuild after update_fractional_positions with commit false.
+  commit_positions(args, { deps }) {
+    requireOptionalArgs(args, 'commit_positions');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    deps.commitPositions();
+    uncommitted.delete(structure);
+    return { committed: true, ...structureEnvelope(structure) };
+  },
+
+  // ---- new rows ----------------------------------------------------------------------
+
+  build_slab(args) {
+    return tools.buildSlabCommand(requireArgs(args, 'build_slab'));
+  },
+
+  build_symmetrized(args) {
+    requireOptionalArgs(args, 'build_symmetrized');
+    return tools.buildSymmetrized(args);
+  },
+
+  build_phonon_frames(args) {
+    requireOptionalArgs(args, 'build_phonon_frames');
+    return tools.buildPhononFrames(args);
+  },
+
+  // ---- view and display ----------------------------------------------------------------
+
+  set_view(args, { deps }) {
+    const input = requireArgs(args, 'set_view');
+    const structure = getActiveStructure();
+    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
+    const { direction: given, up: givenUp, zoom, cartesian = false, rotate, recenter } = input;
+    if (given === undefined && givenUp === undefined && zoom === undefined && rotate === undefined && recenter === undefined) {
+      throw commandError('INVALID_ARGS', 'set_view needs at least one of direction, up, zoom, rotate, recenter');
+    }
+    if (typeof cartesian !== 'boolean') throw commandError('INVALID_ARGS', 'set_view.cartesian must be boolean');
+    if (zoom !== undefined && !(isFiniteNumber(zoom) && zoom > 0)) {
+      throw commandError('INVALID_ARGS', 'set_view.zoom must be a positive number');
+    }
+    if (rotate !== undefined && !(rotate && typeof rotate === 'object' && ['x', 'y', 'z'].includes(rotate.axis) && isFiniteNumber(rotate.degrees))) {
+      throw commandError('INVALID_ARGS', 'set_view.rotate must be {axis: x | y | z, degrees: number}');
+    }
+    if (recenter !== undefined && recenter !== true) throw commandError('INVALID_ARGS', 'set_view.recenter must be true');
+    if (typeof deps.setViewDirection !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'View direction is unavailable');
+    // In order: aim (direction, up, zoom), then orbit, then recenter.
+    if (given !== undefined || givenUp !== undefined || zoom !== undefined) {
+      const direction = given === undefined ? null : viewDirection(given, structure.lattice, { cartesian });
+      // up and zoom alone keep the direction the camera has now (and its pan: nothing is re-aimed).
+      const along = direction ?? cameraState()?.direction;
+      const up = givenUp === undefined ? undefined
+        : screenUp(viewDirection(givenUp, structure.lattice, { cartesian, name: 'set_view.up' }), along);
+      deps.setViewDirection(direction, { up, zoom });
+    }
+    if (rotate !== undefined) {
+      if (typeof deps.rotateCamera !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'Camera rotation is unavailable');
+      deps.rotateCamera(rotate.degrees, rotate.axis);
+    }
+    if (recenter) deps.recenterCamera();
+    return cameraState();
+  },
+
+  set_renderer(args, { deps }) {
+    const input = requireArgs(args, 'set_renderer');
+    if (typeof input.renderer !== 'string' || !PIPELINE_IDS.has(input.renderer)) {
+      throw commandError('INVALID_ARGS', `set_renderer.renderer must be one of ${[...PIPELINE_IDS].join(', ')}`);
+    }
+    if (typeof deps.setRenderPipeline !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'Renderer selection is unavailable');
+    const activeId = deps.setRenderPipeline(input.renderer);
+    if (typeof activeId !== 'string' || !PIPELINE_IDS.has(activeId)) {
+      throw commandError('PIPELINE_FAILED', 'Renderer selection returned an invalid active id');
+    }
+    return { renderer: activeId };
+  },
+
+  set_phonon(args) {
+    requireOptionalArgs(args, 'set_phonon');
+    return tools.setPhonon(args);
+  },
+
+  set_isosurface(args) {
+    return tools.setIsosurface(requireArgs(args, 'set_isosurface'));
+  },
+
+  add_plane(args) {
+    return tools.addPlane(requireArgs(args, 'add_plane'));
+  },
+
+  // ---- jobs ------------------------------------------------------------------------------
 
   async run_md(args) {
     const input = args ?? {};
@@ -790,13 +964,10 @@ export const COMMAND_HANDLERS = Object.freeze({
       if (value !== undefined && !(isFiniteNumber(value) && value > 0)) throw commandError('INVALID_ARGS', `run_md.${name} must be a positive number`);
     }
     if (input.pressureGPa !== undefined && !isFiniteNumber(input.pressureGPa)) throw commandError('INVALID_ARGS', 'run_md.pressureGPa must be a number');
+    const waitS = waitSeconds(input, 'run_md');
+    const atomistic = await calculatorPrecheck();
     const structure = getActiveStructure();
-    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    assertNoCalculatorJob();
-    const atomistic = await import('../ui/BackendPanel/AtomisticPanels.js');
     const { recommendedTimestepFs } = await import('../atomistic/MD.js');
-    // Refused here, not inside the job, so a structure too big fails this call.
-    atomistic.assertStructureFitsPotential(general.atomisticPotential || 'nep');
     const job = startJob('md', async (job) => {
       job.progress = { text: 'getting the potential ready' };
       const { runner, potential } = await atomistic.ensureActiveCalculator((text) => { job.progress = { text }; });
@@ -817,12 +988,12 @@ export const COMMAND_HANDLERS = Object.freeze({
       });
       return {
         potential,
-        trajectory: { id: getContainerId(result.container), name: String(result.container.fileName), frames: result.frames },
+        trajectory: trajectoryOf(result.container, result.frames),
         finalStep: result.finalStep,
         stopped: result.stopped,
       };
     });
-    return jobView(job);
+    return started(job, waitS);
   },
 
   async run_relax(args) {
@@ -840,6 +1011,7 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (typeof params.relaxCell !== 'boolean') throw commandError('INVALID_ARGS', 'run_relax.relaxCell must be boolean');
     if (!isFiniteNumber(params.targetPressure)) throw commandError('INVALID_ARGS', 'run_relax.pressureGPa must be a number');
     if (!(isFiniteNumber(params.stressTol) && params.stressTol > 0)) throw commandError('INVALID_ARGS', 'run_relax.pressureTolGPa must be a positive number');
+    const waitS = waitSeconds(input, 'run_relax');
     const atomistic = await calculatorPrecheck();
     const pressureHint = namedPressureGPa(getContainerForStructure(getActiveStructure())?.fileName);
     const job = startJob('relax', async (job) => {
@@ -849,7 +1021,7 @@ export const COMMAND_HANDLERS = Object.freeze({
         runner,
         potential,
         shouldStop: () => job.cancelled,
-        onProgress: ({ step, maxSteps, maxForce }) => { job.progress = { step, maxSteps, maxForce: round(maxForce) }; },
+        onProgress: ({ step, maxSteps, maxForce }) => { job.progress = { step, maxSteps, fmax: round(maxForce) }; },
       });
       return {
         targetPressureGPa: params.targetPressure,
@@ -858,21 +1030,22 @@ export const COMMAND_HANDLERS = Object.freeze({
           ? { pressureHint: `The structure's name mentions ${pressureHint} GPa; this run used ${params.targetPressure} GPa (pressureGPa sets it).` }
           : {}),
         potential,
-        trajectory: { id: getContainerId(result.container), name: String(result.container.fileName), frames: result.frames },
+        trajectory: trajectoryOf(result.container, result.frames),
         steps: result.steps,
         converged: result.converged,
         stopped: result.stopped,
-        maxForce: round(result.maxForce),
-        energyEv: round(result.energyEv),
-        energyPerAtomEv: round(result.energyPerAtomEv),
+        fmax: round(result.maxForce),
+        energy: round(result.energyEv),
+        energyPerAtom: round(result.energyPerAtomEv),
         pressureGPa: result.pressureGPa === null ? null : round(result.pressureGPa),
       };
     });
-    return jobView(job);
+    return started(job, waitS);
   },
 
-  async compute_energy(args) {
-    requireOptionalArgs(args, 'compute_energy');
+  async run_energy(args) {
+    requireOptionalArgs(args, 'run_energy');
+    const waitS = waitSeconds(args ?? {}, 'run_energy');
     const atomistic = await calculatorPrecheck();
     const job = startJob('energy', async (job) => {
       job.progress = { text: 'getting the potential ready' };
@@ -880,13 +1053,13 @@ export const COMMAND_HANDLERS = Object.freeze({
       const { out, maxForce, pressureGPa } = await atomistic.computeCurrentEFS(runner);
       return {
         potential,
-        energyEv: round(Number(out.total_energy)),
-        energyPerAtomEv: round(Number(out.energy_per_atom)),
-        maxForce: round(maxForce),
+        energy: round(Number(out.total_energy)),
+        energyPerAtom: round(Number(out.energy_per_atom)),
+        fmax: round(maxForce),
         pressureGPa: pressureGPa === null ? null : round(pressureGPa),
       };
     });
-    return jobView(job);
+    return started(job, waitS);
   },
 
   async run_eos(args) {
@@ -903,6 +1076,7 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (!byVolume && !(isFiniteNumber(pMinGPa) && isFiniteNumber(pMaxGPa) && pMinGPa < pMaxGPa)) {
       throw commandError('INVALID_ARGS', 'run_eos needs pMinGPa < pMaxGPa, or volumeRangePct');
     }
+    const waitS = waitSeconds(input, 'run_eos');
     await calculatorPrecheck();
     const job = startJob('eos', async (job) => {
       const { computeEOS } = await import('../ui/EOSPanel.js');
@@ -919,22 +1093,23 @@ export const COMMAND_HANDLERS = Object.freeze({
       return {
         scan: { mode: byVolume ? 'volume' : 'pressure', points: scan.volumes.length, stopped: scan.stopped,
           unconverged: scan.converged.filter((c) => !c).length,
-          volumesA3: scan.volumes.map(round), energiesEv: scan.energies.map(round), pressuresGPa: scan.pressures.map(round) },
+          volumes: scan.volumes.map(round), energies: scan.energies.map(round), pressuresGPa: scan.pressures.map(round) },
         fit: eosFitSummary(fit),
       };
     });
-    return jobView(job);
+    return started(job, waitS);
   },
 
-  async order_structure(args) {
+  async run_ordering(args) {
     const input = args ?? {};
-    requireOptionalArgs(args, 'order_structure');
+    requireOptionalArgs(args, 'run_ordering');
     const count = input.samples ?? 5;
-    if (!Number.isInteger(count) || count < 1 || count > 30) throw commandError('INVALID_ARGS', 'order_structure.samples must be 1 to 30');
+    if (!Number.isInteger(count) || count < 1 || count > 30) throw commandError('INVALID_ARGS', 'run_ordering.samples must be 1 to 30');
     const multiplier = input.multiplier ?? 1;
-    if (!Number.isInteger(multiplier) || multiplier < 1) throw commandError('INVALID_ARGS', 'order_structure.multiplier must be a positive integer');
+    if (!Number.isInteger(multiplier) || multiplier < 1) throw commandError('INVALID_ARGS', 'run_ordering.multiplier must be a positive integer');
     const withEnergies = input.energies ?? true;
-    if (typeof withEnergies !== 'boolean') throw commandError('INVALID_ARGS', 'order_structure.energies must be boolean');
+    if (typeof withEnergies !== 'boolean') throw commandError('INVALID_ARGS', 'run_ordering.energies must be boolean');
+    const waitS = waitSeconds(input, 'run_ordering');
     const structure = getActiveStructure();
     if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
     assertNoCalculatorJob();
@@ -956,23 +1131,19 @@ export const COMMAND_HANDLERS = Object.freeze({
       const container = createTrajectoryFromFrames(panel.orderSampleFrames(samples), 'ordered_structures');
       return {
         potential,
-        trajectory: { id: getContainerId(container), name: String(container.fileName), frames: samples.length },
+        trajectory: trajectoryOf(container, samples.length),
         atomsPerSample: samples[0].built.atoms.length,
         // Frame i of the trajectory is samples[i]; lowest energy first when computed.
-        samples: samples.map((s, frame) => ({ frame, seed: s.seed, energyPerAtomEv: s.energyPerAtom === null ? null : round(s.energyPerAtom) })),
+        samples: samples.map((s, frame) => ({ frame, seed: s.seed, energyPerAtom: s.energyPerAtom === null ? null : round(s.energyPerAtom) })),
       };
     });
-    return jobView(job);
-  },
-
-  job_status(args) {
-    return jobView(getJob(requireArgs(args, 'job_status').jobId));
+    return started(job, waitS);
   },
 
   wait_job(args) {
     const input = requireArgs(args, 'wait_job');
     const timeoutS = input.timeoutS ?? 20;
-    // The controller times a command out at 30 s; a wait must end before that.
+    // A wait ends well inside the controller's command timeout; 0 is a status check.
     if (!isFiniteNumber(timeoutS) || timeoutS < 0 || timeoutS > 25) throw commandError('INVALID_ARGS', 'wait_job.timeoutS must be 0 to 25');
     return waitJob(input.jobId, timeoutS);
   },
@@ -980,6 +1151,8 @@ export const COMMAND_HANDLERS = Object.freeze({
   cancel_job(args) {
     return cancelJob(requireArgs(args, 'cancel_job').jobId);
   },
+
+  // ---- files: load, save_image (Python adds path/text and the managed upload) ---------
 
   async load(args, { deps, emit }) {
     const input = requireArgs(args, 'load');
@@ -1005,149 +1178,16 @@ export const COMMAND_HANDLERS = Object.freeze({
     const container = result?.container || null;
     if (!container) throw commandError('LOAD_FAILED', 'The structure loader returned no structure');
     emit('structure_loaded', snapshotForContainer(container, getActiveStructure()));
-    return { id: getContainerId(container), ...snapshotForContainer(container, getActiveStructure()) };
-  },
-
-  select(args, { deps }) {
-    const input = requireArgs(args, 'select');
-    const container = getContainerById(input.id);
-    if (!container) throw commandError('STRUCTURE_NOT_FOUND', 'Unknown structure id');
-    const frame = input.frame === undefined ? 0 : input.frame;
-    if (!Number.isInteger(frame) || frame < 0 || frame >= container.structures.length) {
-      throw commandError('FRAME_OUT_OF_RANGE', 'Structure frame is out of range');
-    }
-    const rowIndex = getContainers().indexOf(container);
-    if (!deps.selectStructure(rowIndex, frame)) throw commandError('SELECT_FAILED', 'Structure selection failed');
-    return true;
-  },
-
-  update_fractional_positions(args, { deps }) {
-    const input = requireArgs(args, 'update_fractional_positions');
-    const structure = getActiveStructure();
-    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    if (!Array.isArray(input.positions) || input.positions.length !== structure.atoms.length) {
-      throw commandError('INVALID_POSITIONS', 'positions must contain exactly one point per atom');
-    }
-    const positions = input.positions.map((point) => {
-      if (!Array.isArray(point) || point.length !== 3 || point.some((value) => !isFiniteNumber(value))) {
-        throw commandError('INVALID_POSITIONS', 'Every position must be exactly three finite numbers');
-      }
-      return [...point];
-    });
-    if (input.commit !== undefined && typeof input.commit !== 'boolean') {
-      throw commandError('INVALID_ARGS', 'commit must be boolean');
-    }
-    for (let i = 0; i < positions.length; i++) structure.atoms[i].position = positions[i];
-    let fastPathApplied = false;
-    let fallbackReason;
-    try {
-      fastPathApplied = deps.applyFrameFast(structure) === true;
-      if (!fastPathApplied) fallbackReason = 'FAST_PATH_UNAVAILABLE';
-    } catch {
-      fallbackReason = 'FAST_PATH_FAILED';
-    }
-    let rebuilt = false;
-    if (!fastPathApplied || input.commit === true) {
-      try {
-        if (deps.commitPositions() === false) throw new Error('Full position commit was not applied');
-      } catch (error) {
-        throw commandError('POSITION_SYNC_FAILED', 'Position synchronization failed', {
-          fallbackReason: fallbackReason || 'COMMIT_REQUESTED',
-          cause: safeError(error, 'POSITION_SYNC_FAILED'),
-        });
-      }
-      rebuilt = true;
-    }
-    if (rebuilt) uncommitted.delete(structure);
-    else uncommitted.add(structure);
-    return { atomCount: positions.length, fastPathApplied, rebuilt, ...(fallbackReason ? { fallbackReason } : {}) };
-  },
-
-  async update_lattice(args, { deps }) {
-    const input = requireArgs(args, 'update_lattice');
-    if (!getActiveStructure()) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    if (!Array.isArray(input.lattice) || input.lattice.length !== 3
-      || input.lattice.some((row) => !Array.isArray(row) || row.length !== 3 || row.some((value) => !isFiniteNumber(value)))) {
-      throw commandError('INVALID_LATTICE', 'lattice must be exactly three rows of three finite numbers');
-    }
-    const lattice = input.lattice.map((row) => [...row]);
-    const determinant = lattice[0][0] * (lattice[1][1] * lattice[2][2] - lattice[1][2] * lattice[2][1])
-      - lattice[0][1] * (lattice[1][0] * lattice[2][2] - lattice[1][2] * lattice[2][0])
-      + lattice[0][2] * (lattice[1][0] * lattice[2][1] - lattice[1][1] * lattice[2][0]);
-    if (Math.abs(determinant) < 1e-12) {
-      throw commandError('INVALID_LATTICE', 'lattice must be nonsingular');
-    }
-    if (typeof deps.updateLattice !== 'function') {
-      throw commandError('COMMAND_UNAVAILABLE', 'Lattice update is unavailable');
-    }
-    try {
-      if (await deps.updateLattice(lattice) !== true) throw new Error('Lattice update was not applied');
-    } catch (error) {
-      throw commandError('LATTICE_SYNC_FAILED', 'Lattice synchronization failed', {
-        cause: safeError(error, 'LATTICE_SYNC_FAILED'),
-      });
-    }
-    return true;
-  },
-
-  commit_positions(args, { deps }) {
-    requireOptionalArgs(args, 'commit_positions');
-    const structure = getActiveStructure();
-    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    deps.commitPositions();
-    uncommitted.delete(structure);
-    return true;
-  },
-
-  recenter_camera(args, { deps }) {
-    requireOptionalArgs(args, 'recenter_camera');
-    deps.recenterCamera();
-    return true;
-  },
-
-  rotate_camera(args, { deps }) {
-    const input = requireArgs(args, 'rotate_camera');
-    if (!isFiniteNumber(input.angleDegrees)) {
-      throw commandError('INVALID_ARGS', 'rotate_camera.angleDegrees must be a finite number');
-    }
-    if (!['x', 'y', 'z'].includes(input.axis)) {
-      throw commandError('INVALID_ARGS', 'rotate_camera.axis must be x, y, or z');
-    }
-    if (typeof deps.rotateCamera !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'Camera rotation is unavailable');
-    deps.rotateCamera(input.angleDegrees, input.axis);
-    return true;
-  },
-
-  set_view(args, { deps }) {
-    const input = requireArgs(args, 'set_view');
-    const structure = getActiveStructure();
-    if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    if (input.cartesian !== undefined && typeof input.cartesian !== 'boolean') {
-      throw commandError('INVALID_ARGS', 'set_view.cartesian must be boolean');
-    }
-    if (input.zoom !== undefined && !(isFiniteNumber(input.zoom) && input.zoom > 0)) {
-      throw commandError('INVALID_ARGS', 'set_view.zoom must be a positive number');
-    }
-    const cartesian = input.cartesian === true;
-    const direction = viewDirection(input.direction, structure.lattice, { cartesian });
-    const up = input.up === undefined ? undefined
-      : screenUp(viewDirection(input.up, structure.lattice, { cartesian, name: 'set_view.up' }), direction);
-    if (typeof deps.setViewDirection !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'View direction is unavailable');
-    deps.setViewDirection(direction, { up, zoom: input.zoom });
-    return { direction, ...(up ? { up } : {}) };
-  },
-
-  set_render_pipeline(args, { deps }) {
-    const input = requireArgs(args, 'set_render_pipeline');
-    if (typeof input.pipelineId !== 'string' || !PIPELINE_IDS.has(input.pipelineId)) {
-      throw commandError('INVALID_PIPELINE', 'Unknown rendering pipeline');
-    }
-    if (typeof deps.setRenderPipeline !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'Pipeline selection is unavailable');
-    const activeId = deps.setRenderPipeline(input.pipelineId);
-    if (typeof activeId !== 'string' || !PIPELINE_IDS.has(activeId)) {
-      throw commandError('PIPELINE_FAILED', 'Pipeline selection returned an invalid active id');
-    }
-    return activeId;
+    const active = getActiveStructure();
+    // The Cell & Supercell window restores a supercell it remembers for this structure: say so.
+    const sc = active?.supercell;
+    const restored = sc && ((sc.nx || 1) > 1 || (sc.ny || 1) > 1 || (sc.nz || 1) > 1)
+      ? { supercell: [sc.nx || 1, sc.ny || 1, sc.nz || 1] } : null;
+    return {
+      ...rowEnvelope(container),
+      formula: active ? composition(active.atoms).formula : null,
+      ...(restored ? { restored } : {}),
+    };
   },
 
   async save_image(args, { deps, origin }) {
@@ -1156,7 +1196,7 @@ export const COMMAND_HANDLERS = Object.freeze({
       && Number.isInteger(value) && value >= min && value <= max;
     for (const key of ['width', 'height']) {
       if (input[key] !== undefined && !integerInRange(input[key], 1, 16384)) {
-        throw commandError('INVALID_ARGS', 'save_image dimensions must be integers from 1 through 16384');
+        throw commandError('INVALID_ARGS', `save_image.${key} must be an integer from 1 through 16384`);
       }
     }
     if (input.maxSide !== undefined && !integerInRange(input.maxSide, 16, 16384)) {

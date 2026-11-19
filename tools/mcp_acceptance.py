@@ -223,20 +223,27 @@ class Session:
                 return view["result"]
 
     async def toggle(self, query: str, on: bool) -> None:
-        ref = (await self.call("search_controls", {"query": f"{query} {'on' if on else 'off'}", "limit": 1}))[0]["ref"]
+        ref = (await self.call("search_controls", {"query": f"{query} {'on' if on else 'off'}", "limit": 1}))["controls"][0]["ref"]
         state = await self.call("set_control", {"ref": ref, "value": on})
         check(state.get("on") is on, f"{query} did not switch {on}: {state}")
 
-    async def state(self, atoms=False):
-        return await self.call("get_state", {"atoms": True} if atoms else {})
+    async def state(self, include=None):
+        return await self.call("get_state", {} if include is None else {"include": include})
+
+    async def atoms(self) -> list[dict]:
+        """Every atom of the active structure, {element, position}, through find."""
+        found = await self.call("find", {"what": "atoms", "limit": 5000})
+        check(not found.get("truncated"), "more than 5000 atoms")
+        return [{"element": el, "position": pos} for _, el, pos in found["items"]]
 
     async def load_cell(self, text: str, name: str, atoms: int):
         """Load a structure as its base cell. The Cell & Supercell window remembers a supercell per
         structure (state/cellPrefs.js) and restores it when the same structure loads again, as an
         earlier workflow's may be; this goes back to the 1x1x1 cell then."""
         loaded = await self.call("load", {"text": text, "name": name})
+        check(loaded.get("structure") and loaded.get("revision"), f"load result: {loaded}")
         if (await self.state())["structure"]["atomCount"] != atoms:
-            await self.call("build_supercell", {"n": [1, 1, 1]})
+            await self.call("set_supercell", {"n": [1, 1, 1]})
         check((await self.state())["structure"]["atomCount"] == atoms, f"{name} did not load as its base cell")
         return loaded
 
@@ -245,19 +252,25 @@ class Session:
 
 async def w1_vacancy_relax(s: Session):
     await s.load_cell(STO, "SrTiO3.vasp", 5)
-    await s.call("build_supercell", {"n": [3, 3, 3]})
+    grown = await s.call("set_supercell", {"n": [3, 3, 3]})
+    check(grown["atomCount"] == 135 and grown["revision"], f"set_supercell: {grown}")
     oxygens = await s.call("find", {"what": "atoms", "where": {"element": "O"}, "limit": 1})
-    removed = await s.call("remove_atoms", {"atoms": [oxygens["items"][0][0]]})
-    check(removed["atomCount"] == 134, f"vacancy cell has {removed['atomCount']} atoms")
-    before = (await s.state(atoms=True))["structure"]
+    removed = await s.call("remove_atoms", {"atoms": [oxygens["items"][0][0]], "expectedRevision": grown["revision"]})
+    check(removed["atomCount"] == 134 and removed["revision"] != grown["revision"], f"vacancy cell: {removed}")
+    before = {"lattice": (await s.state())["structure"]["lattice"], "atoms": await s.atoms()}
     relax = await s.job("run_relax", {"maxSteps": 40, "fmax": 0.05})
     check(relax["steps"] > 0 and relax["trajectory"]["frames"] >= 2, f"relax: {relax}")
     active = s.last_job["active"]
-    check(active["structure"] == relax["trajectory"]["id"] and active["frame"] == relax["trajectory"]["frames"] - 1,
+    check(active["structure"] == relax["trajectory"]["structure"] and active["frame"] == relax["trajectory"]["frames"] - 1,
           f"after the relax the relaxed (last) frame should be on show: {active} vs {relax['trajectory']}")
-    await s.call("select", {"id": relax["trajectory"]["id"], "frame": relax["trajectory"]["frames"] - 1})
-    after = (await s.state(atoms=True))["structure"]
-    check(after["atomCount"] == 134, "relaxed structure lost atoms")
+    shown = await s.call("select_structure", {"structure": relax["trajectory"]["structure"], "frame": relax["trajectory"]["frames"] - 1})
+    check(shown["activeFrame"] == relax["trajectory"]["frames"] - 1 and shown["atomCount"] == 134, f"select_structure: {shown}")
+    after = {"atoms": await s.atoms()}
+    # The unrelaxed first frame, written without selecting it.
+    first = await s.call("export_structure", {"format": "cif", "filename": "w1_start",
+                                              "structure": relax["trajectory"]["structure"], "frame": 0})
+    check(Path(first["path"]).is_file() and first["atomCount"] == 134, f"frame 0 export: {first}")
+    check((await s.state())["structure"]["frame"] == relax["trajectory"]["frames"] - 1, "exporting frame 0 changed the frame on show")
     path = (await s.call("export_structure", {"format": "cif", "filename": "w1_relaxed"}))["path"]
     check(Path(path).is_file(), "relaxed CIF not written")
     lattice = before["lattice"]["vectors"]
@@ -278,17 +291,18 @@ async def w2_figure(s: Session):
     await s.call("set_view", {"direction": [1, 1, 0], "up": "c"})
     octa = await s.call("find", {"what": "polyhedra", "where": {"center": "Ti", "cn": 6}})
     check(octa["count"] >= 1, f"no TiO6 octahedra: {octa}")
-    await s.call("apply", {"selection": octa["selection"], "action": "color", "value": "#1f4fff"})
+    painted = await s.call("apply", {"selection": octa["selection"], "action": "color", "color": "#1f4fff"})
+    check(painted["kind"] == "polyhedra", f"a drawn polyhedra selection colours the polyhedra: {painted}")
     blue = await s.image("w2_preview.png", width=400, height=300)
     hits, total = count_colour(blue, lambda r, g, b, a: b > 150 and b > r + 60 and b > g + 40)
     check(hits > total * 0.01, f"octahedra not blue ({hits}/{total} blue pixels)")
-    await s.call("set_render_pipeline", {"pipelineId": "raytrace"})
+    await s.call("set_renderer", {"renderer": "raytrace"})
     try:
         saved = await s.call("save_image", {"width": 3000, "height": 2000, "transparent": True,
                                             "filename": "fig2", "returnImage": False})
     finally:
         # Display settings belong to the window, not the structure: put back what this changed.
-        await s.call("set_render_pipeline", {"pipelineId": "forward"})
+        await s.call("set_renderer", {"renderer": "forward"})
         await s.call("apply", {"selection": strontium["selection"], "action": "show"})
         await s.toggle("polyhedra", False)
         await s.toggle("unit cell", True)
@@ -305,12 +319,12 @@ async def w3_charge_density(s: Session):
     path = s.out / "CHGCAR"
     path.write_text(chgcar())
     await s.call("load", {"path": str(path)})
-    info = await s.call("get_field_info")
+    info = (await s.state(["field"]))["field"]
     iso = await s.call("set_isosurface", {"value": 0.05})
     check(abs(iso["isoValue"] - 0.05) < 1e-9 and not iso["clamped"], f"iso: {iso}")
-    atoms = (await s.state(atoms=True))["structure"]["atoms"]
-    ti = next(i for i, a in enumerate(atoms) if a["element"] == "Ti")
-    slice_ = await s.call("add_field_slice", {"hkl": [0, 0, 1], "throughAtom": ti})
+    ti = (await s.call("find", {"what": "atoms", "where": {"element": "Ti"}, "fields": "indices"}))["atoms"][0]
+    slice_ = await s.call("add_plane", {"hkl": [0, 0, 1], "throughAtom": ti, "show": "field"})
+    check(slice_["show"] == "field" and slice_["field"], f"add_plane field: {slice_}")
     check(abs(slice_["d"] - 1.9525) < 1e-3, f"slice: {slice_}")
     image = await s.image("w3_chgcar.png", width=400, height=300)
     check(distinct_colours(image) > 20, "charge-density picture looks blank")
@@ -321,9 +335,9 @@ async def w3_charge_density(s: Session):
 
 async def w4_diffusion(s: Session):
     await s.load_cell(LI2O, "Li2O.vasp", 12)
-    await s.call("build_supercell", {"n": [2, 2, 2]})
+    await s.call("set_supercell", {"n": [2, 2, 2]})
     md = await s.job("run_md", {"steps": 300, "temperatureK": 600, "saveStride": 4})
-    exported = await s.call("export_trajectory", {"filename": "w4_li2o"})
+    exported = await s.call("export_structure", {"format": "extxyz", "filename": "w4_li2o"})
     frames = parse_extxyz(Path(exported["path"]).read_text())
     check(len(frames) == exported["frames"] and len(frames) >= 50, f"{len(frames)} frames")
     lattice, first = frames[0]
@@ -359,7 +373,8 @@ async def w5_symmetry(s: Session):
     tight = await s.call("get_symmetry", {"tolerance": 0.01})
     loose = await s.call("get_symmetry", {"tolerance": 0.1})
     check(tight["number"] == 99 and loose["number"] == 221, f"{tight['number']} / {loose['number']}")
-    sym = await s.call("symmetrize", {"tolerance": 0.1, "cell": "conventional"})
+    sym = await s.call("build_symmetrized", {"tolerance": 0.1, "cell": "conventional"})
+    check(sym["structure"] and sym["activeFrame"] == 0 and sym["revision"], f"build_symmetrized row: {sym}")
     check(sym["number"] == 221, f"symmetrized to {sym}")
     strict = await s.call("get_symmetry", {"tolerance": 0.001})
     check(strict["number"] == 221, f"symmetrized cell reads {strict['number']} at 0.001")
@@ -370,10 +385,10 @@ async def w5_symmetry(s: Session):
 
 async def w6_ordering(s: Session):
     await s.call("load", {"text": FENI_CIF, "name": "FeNi.cif"})
-    order = await s.job("order_structure", {"samples": 5, "multiplier": 2, "energies": True})
-    energies = [x["energyPerAtomEv"] for x in order["samples"]]
+    order = await s.job("run_ordering", {"samples": 5, "multiplier": 2, "energies": True})
+    energies = [x["energyPerAtom"] for x in order["samples"]]
     check(len(energies) == 5 and energies == sorted(energies), f"energies {energies}")
-    await s.call("select", {"id": order["trajectory"]["id"], "frame": order["samples"][0]["frame"]})
+    await s.call("select_structure", {"structure": order["trajectory"]["structure"], "frame": order["samples"][0]["frame"]})
     state = (await s.state())["structure"]
     check(set(state["composition"]) == {"Fe", "Ni"}, f"lowest sample is {state['formula']}")
     await s.image("w6_lowest.png", width=400, height=300)
@@ -386,33 +401,37 @@ async def w7_eos(s: Session):
     eos = await s.job("run_eos", {"points": 7, "volumeRangePct": 5})
     fit = eos["fit"]["energyVolume"]
     check(60 < fit["B0GPa"] < 300, f"B0 {fit['B0GPa']}")
-    check(40 < fit["V0A3"] < 52, f"V0 {fit['V0A3']}")
-    return f"V0 {fit['V0A3']:.2f} A^3/4 atoms, B0 {fit['B0GPa']:.0f} GPa"
+    check(40 < fit["V0"] < 52, f"V0 {fit['V0']}")
+    # A single-point energy in one call: run_energy waits for itself with waitS.
+    energy = await s.call("run_energy", {"waitS": 25})
+    check(energy["status"] == "done" and energy["result"]["energy"] < 0 and "fmax" in energy["result"], f"run_energy: {energy}")
+    return f"V0 {fit['V0']:.2f} A^3/4 atoms, B0 {fit['B0GPa']:.0f} GPa"
 
 
 async def w8_phonons(s: Session):
     await s.call("load", {"path": str(DATA / "band_cscl.yaml")})
-    await s.call("get_phonon_state")
-    mode = await s.call("set_phonon_mode", {"qpoint": "Gamma", "band": "lowest_optical", "play": False})
-    check(mode["frequencyTHz"] > 1, f"mode {mode}")
-    frames = await s.call("phonon_frames", {"count": 10, "amplitude": 0.4})
-    check(frames["frames"] == 10, f"{frames}")
+    phonons = (await s.state(["phonons"]))["phonons"]
+    check(phonons["loaded"] and phonons["nbands"] > 3, f"phonons: {phonons}")
+    mode = await s.call("set_phonon", {"qpoint": "Gamma", "band": "lowest_optical", "animate": "pause"})
+    check(mode["mode"]["frequencyTHz"] > 1 and not mode["playing"], f"mode {mode}")
+    frames = await s.call("build_phonon_frames", {"count": 10, "amplitude": 0.4})
+    check(frames["frames"] == 10 and frames["activeFrame"] == 0, f"{frames}")
     images = []
     for k in range(10):
-        await s.call("select", {"id": frames["id"], "frame": k})
+        await s.call("select_structure", {"structure": frames["structure"], "frame": k})
         images.append(await s.image(f"w8_frame{k}.png" if k in (0, 5) else None, width=320, height=240))
     check(len(set(images)) >= 3, "phonon frames look identical")
-    return f"Gamma optical {mode['frequencyTHz']:.3f} THz, 10 frames, {len(set(images))} distinct"
+    return f"Gamma optical {mode['mode']['frequencyTHz']:.3f} THz, 10 frames, {len(set(images))} distinct"
 
 
 async def w9_slab(s: Session):
     await s.load_cell(CU, "Cu.vasp", 4)
     slab = await s.call("build_slab", {"hkl": [1, 1, 1], "layers": 4, "vacuum": 15})
-    check(abs((slab["c"] - slab["thicknessA"]) - 15) < 0.1, f"slab {slab}")
+    check(abs((slab["c"] - slab["thickness"]) - 15) < 0.1 and slab["structure"] and slab["revision"], f"slab {slab}")
     await s.call("set_view", {"direction": "x", "up": "z"})
     image = await s.image("w9_slab.png", width=400, height=300)
     check(distinct_colours(image) > 5, "slab picture looks blank")
-    return f"{slab['atomCount']} atoms, {slab['thicknessA']:.3f} A thick, c {slab['c']:.3f} A"
+    return f"{slab['atomCount']} atoms, {slab['thickness']:.3f} A thick, c {slab['c']:.3f} A"
 
 
 async def w10_screening(s: Session):
@@ -427,10 +446,12 @@ async def w10_screening(s: Session):
         volume = lat["a"] * lat["b"] * lat["c"]  # all cubic here
         sym = await s.call("get_symmetry", {"tolerance": 0.01})
         check(sym["number"] == expected, f"{name}: {sym['number']} != {expected}")
-        rows.append((volume / structure["atomCount"], structure["formula"], sym["symbol"], loaded["id"]))
+        rows.append((volume / structure["atomCount"], structure["formula"], sym["symbol"], loaded["structure"]))
     rows.sort()
+    listed = {row["id"] for row in (await s.state(["structures"]))["structures"]}
+    check({r[3] for r in rows} <= listed, "get_state structures does not list every loaded row")
     for _, formula, _, ident in rows[:3]:
-        await s.call("select", {"id": ident})
+        await s.call("select_structure", {"structure": ident})
         await s.image(f"w10_{formula}.png", width=320, height=240)
     return f"20 loaded, densest: {', '.join(r[1] for r in rows[:3])}"
 
@@ -438,9 +459,12 @@ async def w10_screening(s: Session):
 async def collaboration(s: Session):
     await s.load_cell(STO, "SrTiO3.vasp", 5)
     # The "user" turns and zooms the view.
-    await s.call("rotate_camera", {"angleDegrees": 35, "axis": "y"})
+    turned = await s.call("set_view", {"rotate": {"axis": "y", "degrees": 35}})
     cam = (await s.state())["camera"]
-    await s.call("set_view", {"direction": cam["direction"], "up": cam["up"], "zoom": 1.7, "cartesian": True})
+    check(turned == cam, f"set_view returns the camera as get_state reports it: {turned} vs {cam}")
+    # zoom alone keeps the direction and up the camera has.
+    zoomed = await s.call("set_view", {"zoom": 1.7})
+    check(zoomed["direction"] == cam["direction"] and zoomed["up"] == cam["up"] and zoomed["zoom"] == 1.7, f"zoom only: {zoomed}")
     before = (await s.state())["camera"]
     full = await s.image()  # no size: the window's own size and shape
     half = await s.image(width=png_size(full)[0] // 2)
@@ -448,10 +472,10 @@ async def collaboration(s: Session):
     check(before == after, f"save_image moved the camera: {before} -> {after}")
     (w, h), (w2, h2) = png_size(full), png_size(half)
     check(abs(w / h - w2 / h2) < 0.01, f"aspect {w}x{h} vs {w2}x{h2}")
-    await s.call("apply", {"atoms": [0], "action": "color", "value": "#ff00ff"})
+    await s.call("apply", {"atoms": [0], "action": "color", "color": "#ff00ff"})
     pink, _ = count_colour(await s.image(width=320, height=240), lambda r, g, b, a: r > 200 and b > 200 and g < 90)
     check(pink > 20, "the coloured atom does not show")
-    await s.call("build_supercell", {"n": [2, 2, 2]})
+    await s.call("set_supercell", {"n": [2, 2, 2]})
     grown = (await s.state())["camera"]
     turn = math.degrees(math.acos(max(-1, min(1, sum(a * b for a, b in zip(before["direction"], grown["direction"]))))))
     check(turn < 0.5, f"supercell turned the view by {turn:.2f} deg")
@@ -462,8 +486,8 @@ async def edits(s: Session):
     """The user's test session: in-place element changes, a user edit between calls, selection algebra."""
     await s.load_cell(STO, "SrTiO3.vasp", 5)
     # CrysViz remembers per-atom colours per file; an earlier workflow coloured this one.
-    await s.call("apply", {"action": "reset_color", "all": True})
-    check((await s.state())["structure"]["colors"]["custom"] == [], "reset_color all left custom colours")
+    await s.call("apply", {"action": "reset_color", "selection": "all"})
+    check((await s.state(["colors"]))["colors"]["custom"] == [], "reset_color all left custom colours")
     # Neighbours of Ti (index 1) straight from find, no export round trip.
     ti = await s.call("find", {"what": "bonds", "where": {"atoms": [1], "elements": ["Ti", "O"]}})
     check(ti["count"] == 6 and all(item[0] == 1 and abs(item[3] - 1.9525) < 1e-3 for item in ti["items"]),
@@ -475,21 +499,26 @@ async def edits(s: Session):
     r0 = (await s.state())["structure"]["revision"]
     oxygens = await s.call("find", {"what": "atoms", "where": {"element": "O"}, "fields": "indices"})
     check(oxygens["atoms"] == [2, 3, 4] and "items" not in oxygens, f"indices output: {oxygens}")
-    await s.call("apply", {"atoms": [2], "action": "color", "value": "#ff00ff", "expectedRevision": r0})
+    await s.call("apply", {"atoms": [2], "action": "color", "color": "#ff00ff", "expectedRevision": r0})
     check((await s.state())["structure"]["revision"] == r0, "a colour changed the revision")
     # O -> F in place: same indices and count, the custom colour kept, the other at F's default.
     changed = await s.call("set_element", {"atoms": [2, 3], "element": "F", "expectedRevision": r0})
-    st = await s.call("get_state", {"atoms": True})
-    elements = [a["element"] for a in st["structure"]["atoms"]]
+    st = await s.state(["colors"])
+    elements = [a["element"] for a in await s.atoms()]
     check(elements == ["Sr", "Ti", "F", "F", "O"], f"set_element order: {elements}")
     check(changed["revision"] == st["structure"]["revision"] != r0, "set_element did not report the new revision")
-    colors = st["structure"]["colors"]
+    colors = st["colors"]
     check(colors["custom"] == [{"color": "#ff00ff", "count": 1, "atoms": [2]}] and "F" in colors["elements"],
           f"colours after set_element: {colors}")
     # The same atoms at the same indices: the old selection is still valid after an element change.
     await s.call("apply", {"selection": oxygens["selection"], "action": "highlight"})
     r1 = st["structure"]["revision"]
-    await s.call("build_supercell", {"n": [2, 1, 1]})  # what the user might do by hand
+    # A move keeps indices, the revision and the selection.
+    moved = await s.call("move_atoms", {"selection": oxygens["selection"], "by": [0, 0, 0.01], "expectedRevision": r1})
+    check(moved["moved"] == 3 and moved["revision"] == r1 and moved["committed"], f"move_atoms: {moved}")
+    back = await s.call("move_atoms", {"atoms": [2, 3, 4], "by": [0, 0, -0.039], "cartesian": True})
+    check(back["revision"] == r1, f"move_atoms cartesian: {back}")
+    await s.call("set_supercell", {"n": [2, 1, 1]})  # what the user might do by hand
     refused = await s.error("remove_atoms", {"atoms": [0], "expectedRevision": r1})
     check("STRUCTURE_CHANGED" in refused and "10 atoms" in refused and '"atomCount": 10' in refused, refused)
     # (Once seen under heavy load: the old selection accepted after the supercell. If it recurs,
@@ -524,7 +553,9 @@ async def edits(s: Session):
     check({el: g["count"] for el, g in grouped["groups"].items()} == {"Sr": 2, "Ti": 2, "F": 4, "O": 2}, f"groupBy: {grouped}")
     # reset_color: back to the element colour.
     await s.call("apply", {"selection": fluorine["selection"], "action": "reset_color"})
-    check((await s.state())["structure"]["colors"]["custom"] == [], "reset_color left custom colours")
+    check((await s.state(["colors"]))["colors"]["custom"] == [], "reset_color left custom colours")
+    both = await s.error("apply", {"atoms": [0], "selection": fluorine["selection"], "action": "highlight"})
+    check("not both" in both, f"atoms and selection together: {both}")
     # A supercell too big to build inside the command timeout is refused, not left to close the window.
     big = "STO2\n1.0\n7.81 0 0\n0 7.81 0\n0 0 7.81\nSr Ti O\n8 8 24\nDirect\n" + "".join(
         f"{(x + i) / 2} {(y + j) / 2} {(z + k) / 2}\n"
@@ -534,7 +565,7 @@ async def edits(s: Session):
         f"{(x + i) / 2} {(y + j) / 2} {(z + k) / 2}\n"
         for x, y, z in [(0.5, 0.5, 0), (0.5, 0, 0.5), (0, 0.5, 0.5)] for i in (0, 1) for j in (0, 1) for k in (0, 1))
     await s.load_cell(big, "STO_222.vasp", 40)
-    too_big = await s.error("build_supercell", {"n": [20, 20, 20]})
+    too_big = await s.error("set_supercell", {"n": [20, 20, 20]})
     check("TOO_LARGE" in too_big and "320000" in too_big, too_big)
     check((await s.state())["structure"]["atomCount"] == 40, "a refused supercell changed the structure")
     # run_relax says which pressure it used, and what the name hints.

@@ -49,23 +49,28 @@ class _FakeViewer:
         if name == "set_view" and args.get("direction") == "q":
             raise BrowserCommandError("INVALID_ARGS", "set_view.direction must be a, b, c, x, y, z or three finite numbers")
         if name == "get_state":
-            return {"renderPipeline": _FakeViewer.pipeline}
-        return {"direction": [0, 0, 5]} if name == "set_view" else True
+            return {"structure": None, "renderer": _FakeViewer.pipeline}
+        return {"direction": [0, 0, 5]} if name == "set_view" else {"ok": True}
 
     def load(self, source, *, periodic=None, interactive=True):
         assert interactive is False, "MCP loads must never wait on a dialog"
         self.calls.append(("load", source))
-        return LoadResult(StructureInfo("s1", getattr(source, "name", "x"), 1, True, 0))
+        details = {"structure": "s1", "name": getattr(source, "name", "x"), "frames": 1, "activeFrame": 0,
+                   "atomCount": 2, "revision": "r1", "formula": "Si2"}
+        return LoadResult(StructureInfo("s1", details["name"], 1, True, 0), details)
 
-    def export_trajectory(self, path, *, frames="all"):
-        self.calls.append(("export_trajectory", frames))
-        Path(path).write_text("1\nLattice=\"1 0 0 0 1 0 0 0 1\" Properties=species:S:1:pos:R:3\nH 0 0 0\n")
-        return {"frames": 1, "atoms": 1, "name": "md"}
-
-    def export_structure(self, path, *, format):
-        self.calls.append(("export_structure", format))
+    def export_structure(self, path, *, format, frames=None, structure=None, frame=None):
+        self.calls.append(("export_structure", {"format": format, "frames": frames, "structure": structure, "frame": frame}))
+        if format == "extxyz":
+            Path(path).write_text("1\nLattice=\"1 0 0 0 1 0 0 0 1\" Properties=species:S:1:pos:R:3\nH 0 0 0\n")
+            return {"format": format, "structure": "s1", "name": "md", "frames": 1, "atomCount": 1, "sameOrder": True,
+                    "attachment": "text"}
         Path(path).write_text("POSCAR text")
-        return {"rows": 3, "order": [2, 0, 1] if format == "poscar" else None, "warning": None}
+        result = {"format": format, "structure": "s1", "name": "x", "frames": 1, "atomCount": 3,
+                  "sameOrder": format != "poscar", "attachment": "text"}
+        if format == "poscar":
+            result["order"] = [2, 0, 1]
+        return result
 
     def save_image(self, path, **options):
         self.calls.append(("save_image", options))
@@ -84,17 +89,18 @@ class ToolLayerTests(unittest.TestCase):
         self.scratch.cleanup()
 
     def test_every_registry_command_is_a_tool(self):
-        names = {command["name"] for command in command_spec()["commands"]}
+        names = {command["name"] for command in command_spec()["commands"] if command.get("mcp") is not False}
         self.assertEqual(set(self.tools.tools), names)
-        self.assertEqual(self.tools.tools["list_structures"]["tier"], "read")
+        self.assertNotIn("update_fractional_positions", self.tools.tools, "Python-only commands stay off MCP")
+        self.assertEqual(self.tools.tools["get_state"]["tier"], "read")
 
     def test_viewer_opens_lazily_and_reopens_after_close(self):
         self.assertEqual(_FakeViewer.instances, [])
-        self.tools.call("recenter_camera", {})
-        self.tools.call("recenter_camera", {})
+        self.tools.call("set_view", {"recenter": True})
+        self.tools.call("set_view", {"recenter": True})
         self.assertEqual(len(_FakeViewer.instances), 1)
         _FakeViewer.instances[0].closed = True
-        self.tools.call("recenter_camera", {})
+        self.tools.call("set_view", {"recenter": True})
         self.assertEqual(len(_FakeViewer.instances), 2)
 
     def test_generic_command_passes_arguments_and_returns_json(self):
@@ -109,7 +115,8 @@ class ToolLayerTests(unittest.TestCase):
     def test_load_takes_path_or_text(self):
         cif = Path(self.scratch.name) / "si.cif"
         cif.write_text("data_si\n")
-        self.assertIn('"id": "s1"', self.tools.call("load", {"path": str(cif)})[0]["text"])
+        loaded = json.loads(self.tools.call("load", {"path": str(cif)})[0]["text"])
+        self.assertEqual((loaded["structure"], loaded["atomCount"], loaded["revision"]), ("s1", 2, "r1"))
         self.tools.call("load", {"text": "Si\n1.0\n", "name": "si.vasp"})
         with self.assertRaisesRegex(ToolError, "exactly one"):
             self.tools.call("load", {})
@@ -148,13 +155,16 @@ class ToolLayerTests(unittest.TestCase):
         options = _FakeViewer.instances[0].calls[-1][1]
         self.assertEqual((options["width"], options["height"], options["max_side"]), (3000, 2000, None))
 
-    def test_export_trajectory_writes_extxyz_into_export_folder(self):
-        out = json.loads(self.tools.call("export_trajectory", {"filename": "md-run"})[0]["text"])
+    def test_export_structure_extxyz_writes_frames_into_export_folder(self):
+        out = json.loads(self.tools.call("export_structure", {"format": "extxyz", "filename": "md-run", "frames": "all",
+                                                              "structure": "s1"})[0]["text"])
         self.assertEqual(Path(out["path"]), (self.export / "md-run.extxyz").resolve())
         self.assertTrue(Path(out["path"]).read_text().startswith("1\n"))
-        self.assertEqual(out["frames"], 1)
+        self.assertEqual((out["frames"], out["atomCount"], out["sameOrder"]), (1, 1, True))
+        self.assertNotIn("attachment", out)
+        self.assertEqual(_FakeViewer.instances[0].calls[-1][1], {"format": "extxyz", "frames": "all", "structure": "s1", "frame": None})
         with self.assertRaises(ToolError):
-            self.tools.call("export_trajectory", {"filename": "../x"})
+            self.tools.call("export_structure", {"format": "extxyz", "filename": "../x"})
 
     def test_export_structure_writes_into_export_folder_with_order_file(self):
         out = json.loads(self.tools.call("export_structure", {"format": "poscar", "filename": "graphite"})[0]["text"])
@@ -173,8 +183,8 @@ class ToolLayerTests(unittest.TestCase):
 
     def test_expected_revision_listed_on_index_addressed_tools_only(self):
         guarded = {c["name"] for c in command_spec()["commands"] if c.get("guard")}
-        self.assertEqual(guarded, {"add_atoms", "remove_atoms", "set_element", "apply", "update_lattice",
-                                   "update_fractional_positions", "build_supercell"})
+        self.assertEqual(guarded, {"add_atoms", "remove_atoms", "set_element", "move_atoms", "apply", "set_lattice",
+                                   "update_fractional_positions", "set_supercell"})
         for name, tool in self.tools.tools.items():
             listed = "expectedRevision" in tool["schema"].get("properties", {})
             self.assertEqual(listed, name in guarded, name)
@@ -200,8 +210,8 @@ class ToolLayerTests(unittest.TestCase):
         with self.assertRaisesRegex(ToolError, r"^INVALID_ARGS: set_control needs: ref \(string\); "
                                                r"value \(boolean \| number \| string\)$"):
             self.tools.call("set_control", {"ref": "x"})
-        with self.assertRaisesRegex(ToolError, r"set_view needs: direction \(a \| b \| c \| x \| y \| z \| array\)"):
-            self.tools.call("set_view", None)
+        with self.assertRaisesRegex(ToolError, r"^INVALID_ARGS: select_structure needs: structure \(string\); optional: frame$"):
+            self.tools.call("select_structure", None)
         self.assertEqual(_FakeViewer.instances, [], "a missing argument never reaches the viewer")
 
     def test_unknown_arguments_are_refused_not_ignored(self):
@@ -252,7 +262,8 @@ class McpProtocolTests(unittest.IsolatedAsyncioTestCase):
                 listed = await client.list_tools()
                 by_name = {tool.name: tool for tool in listed.tools}
                 self.assertIn("set_view", by_name)
-                self.assertTrue(by_name["list_structures"].annotations.read_only_hint)
+                self.assertTrue(by_name["get_state"].annotations.read_only_hint)
+                self.assertNotIn("commit_positions", by_name)
                 self.assertFalse(by_name["set_view"].annotations.read_only_hint)
                 image = await client.call_tool("save_image", {})
                 self.assertFalse(image.is_error)

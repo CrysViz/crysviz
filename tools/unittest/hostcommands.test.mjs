@@ -23,6 +23,26 @@ test('every command has a known tier, a description and an object args schema', 
   }
 });
 
+test('conventions: one target schema, one verb per kind, get_state sections in step', async () => {
+  const { STATE_SECTIONS } = await import('../../docs/host/commands.js');
+  const byName = Object.fromEntries(spec.commands.map((c) => [c.name, c]));
+  // Every atom-addressed command takes the same atoms / selection pair.
+  const targeted = ['apply', 'remove_atoms', 'set_element', 'move_atoms'];
+  for (const name of targeted) {
+    assert.deepEqual(byName[name].args.properties.atoms, byName.apply.args.properties.atoms, `${name}.atoms`);
+    assert.deepEqual(byName[name].args.properties.selection, byName.apply.args.properties.selection, `${name}.selection`);
+    assert.ok(byName[name].guard, `${name} takes expectedRevision`);
+  }
+  assert.deepEqual(byName.get_state.args.properties.include.items.enum, [...STATE_SECTIONS]);
+  // Verbs: run_* are jobs (they all take waitS), build_* make rows, nothing else uses those prefixes.
+  for (const c of spec.commands) {
+    if (c.name.startsWith('run_')) assert.ok(c.args.properties.waitS, `${c.name} takes waitS`);
+    if (c.args.properties.waitS) assert.ok(c.name.startsWith('run_'), `${c.name} has waitS but is not run_*`);
+  }
+  // Python-only commands are marked, and nothing else is.
+  assert.deepEqual(spec.commands.filter((c) => c.mcp === false).map((c) => c.name).sort(), ['commit_positions', 'update_fractional_positions']);
+});
+
 const LATTICE = [[2, 0, 0], [1, 3, 0], [0, 0, 5]];
 
 test('set_view directions: world axes, lattice vectors and [uvw]', () => {
@@ -62,7 +82,7 @@ test('set_view up is made perpendicular to the direction; cartesian arrays pass 
   assert.deepEqual(viewDirection('c', LATTICE, { cartesian: true }), [0, 0, 5]);
 });
 
-test('get_polyhedra merges periodic images and puts a cage at its corners\' centroid', async () => {
+test('find polyhedra merges periodic images and puts a cage at its corners\' centroid', async () => {
   const { polyhedraSummary } = await import('../../docs/host/commands.js');
   const atom = (element, position) => ({ position, getRepresentativeElement: () => element });
   const structure = {
@@ -83,7 +103,7 @@ test('get_polyhedra merges periodic images and puts a cage at its corners\' cent
   assert.deepEqual(cage.cornerAtoms, [1, 2, 3]);
 });
 
-test('get_voids finds the empty perovskite A site of ReO3-type WO3 with its 12 O', async () => {
+test('find voids finds the empty perovskite A site of ReO3-type WO3 with its 12 O', async () => {
   const { voidSites } = await import('../../docs/host/commands.js');
   const atom = (element, position) => ({ position, getRepresentativeElement: () => element });
   const structure = {
@@ -167,15 +187,18 @@ test('save_image default size: the view as seen, one side given keeps its aspect
   assert.deepEqual(fitImageSize({ viewWidth: 1200, viewHeight: 600, height: 300 }), { width: 600, height: 300 });
 });
 
-test('apply checks atom indices and selection ownership', async () => {
-  const { applyTargets } = await import('../../docs/host/query.js');
+test('one target rule: atoms or selection, never both or neither; indices checked', async () => {
+  const { resolveTargets } = await import('../../docs/host/query.js');
   const structure = { atoms: [{}, {}, {}] };
-  assert.deepEqual(applyTargets(structure, { atoms: [2, 0, 2] }), [2, 0]);
-  const code = (fn) => { try { fn(); } catch (error) { return error.code; } return null; };
-  assert.equal(code(() => applyTargets(structure, { atoms: [3] })), 'INVALID_ARGS');
-  assert.equal(code(() => applyTargets(structure, { atoms: [1.5] })), 'INVALID_ARGS');
-  assert.equal(code(() => applyTargets(structure, { selection: 's999' })), 'SELECTION_NOT_FOUND');
-  assert.equal(code(() => applyTargets(structure, {})), 'INVALID_ARGS');
+  assert.deepEqual(await resolveTargets(structure, { atoms: [2, 0, 2] }, 'apply'), [2, 0]);
+  assert.deepEqual(await resolveTargets(structure, { selection: 'all' }, 'apply'), [0, 1, 2]);
+  const code = async (args) => { try { await resolveTargets(structure, args, 'remove_atoms'); } catch (error) { return error.code + ':' + error.message; } return null; };
+  assert.match(await code({ atoms: [3] }), /^INVALID_ARGS:remove_atoms\.atoms: index 3/);
+  assert.match(await code({ atoms: [1.5] }), /^INVALID_ARGS/);
+  assert.match(await code({ selection: 's999' }), /^SELECTION_NOT_FOUND/);
+  assert.match(await code({}), /^INVALID_ARGS:remove_atoms needs atoms .* not neither/);
+  assert.match(await code({ atoms: [0], selection: 'all' }), /not both/);
+  assert.match(await code({ selection: 7 }), /^INVALID_ARGS/);
 });
 
 test('run_eos reports the EOS window fit as named numbers', async () => {
@@ -184,7 +207,7 @@ test('run_eos reports the EOS window fit as named numbers', async () => {
     evResult: { params: [-10.8, 40.9, 97.6, 4.2], fitStats: { rms: 1e-4 } },
     pvResult: { params: [40.8, 98.1, 4.1], fitStats: { rms: 0.02 }, failed: 'not-converged' },
   });
-  assert.deepEqual(fit.energyVolume, { E0Ev: -10.8, V0A3: 40.9, B0GPa: 97.6, B0Prime: 4.2, rms: 0.0001 });
+  assert.deepEqual(fit.energyVolume, { E0: -10.8, V0: 40.9, B0GPa: 97.6, B0Prime: 4.2, rms: 0.0001 });
   assert.equal(fit.pressureVolume.failed, 'not-converged');
   assert.equal(eosFitSummary({ evResult: null, pvResult: { params: [1, 2, 3], fitStats: { rms: 0 } } }).energyVolume, null);
 });

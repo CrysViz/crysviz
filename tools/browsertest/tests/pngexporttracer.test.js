@@ -69,7 +69,7 @@ const H = require('../harness');
         await new Promise((resolve) => requestAnimationFrame(resolve));
       }
       const controllerAttempt = await window.crysvizHost.dispatch({
-        command: 'set_render_pipeline', args: { pipelineId: 'forward' },
+        command: 'set_renderer', args: { renderer: 'forward' },
       });
       select.value = 'forward';
       select.dispatchEvent(new Event('change', { bubbles: true }));
