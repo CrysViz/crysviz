@@ -122,7 +122,7 @@ One set of rules for every tool, so a model that learns one knows them all:
 | `get_state` | The active structure (formula, lattice, frame, `revision`) and renderer; `include` adds `structures` (every loaded row), `camera`, `selection`, `jobs` (the default three), `colors`, `phonons`, `field`. |
 | `find` | `atoms`, `bonds` (full periodic graph with image offsets; `where.atoms` gives neighbour lists), `polyhedra` (centred and cages, built on demand) or `voids` (interstitial sites with their first shell); filters, selection algebra (`in`, `notIn`), compact output (`fields`, `groupBy`). Returns a selection id (not for voids). |
 | `get_bonding` | CrysViz's bond rule: `{min, max, shown}` per element pair, and the exact rule as text. |
-| `get_symmetry` | Space group (number, symbol, Hall, Pearson) and Wyckoff letters at a tolerance (Moyo). |
+| `get_symmetry` | Space group (number, symbol, Hall, Pearson) and the number of atoms per Wyckoff letter at a tolerance (Moyo); `listAtoms: true` gives the indices. |
 | `search_controls`, `get_control`, `set_control`, `click_control` | Any window, action or labelled control by what it does ("bonds off", "detect cages"); read, set or press it as a user would. |
 | `read_window` | A window's visible status and result text, when no command returns the result. |
 
@@ -157,16 +157,25 @@ One set of rules for every tool, so a model that learns one knows them all:
 A `run_*` tool starts a job and returns `{jobId, kind, status, progress,
 elapsedS}` at once, or with its `result` if it ends within `waitS` (0 to 25 s;
 a quick `run_energy` with `waitS: 25` is one call). Poll with `wait_job`
-(`timeoutS` 0 to 25; 0 just reports), stop with `cancel_job`. A finished job
+(`waitS` 0 to 25, the same name the `run_*` tools use; 0 just reports), stop with `cancel_job`. A finished job
 says which structure and frame are on show (`active`). One calculation runs
 at a time. The potential is the Atomistic window's (NEP89 by default).
+
+**Keeping the symmetry.** `run_relax`, `run_md` and `run_eos` take
+`symmetry: true` (or `{tolerance}` in Å): the structure is locked to its space
+group first, as the Symmetry window's Enable Wyckoff Editor does (a lock that
+is already on is kept), and the relaxer and MD then keep it. The result's
+`symmetry` gives the locked group and whether it still holds at the end
+(`kept`). A structure whose symmetry cannot be found is refused
+(`applied: false`). The lock tolerates a structure that is only close to
+symmetric: each site is idealised onto its exact position.
 
 | Tool | What it does |
 |---|---|
 | `run_md` | NVT or NPT MD: steps, temperatureK, timestepFs, saveStride; a new trajectory row. |
-| `run_relax` | Positions (and cell with `relaxCell`) to `fmax`; a new trajectory row whose last frame is shown. Says which `targetPressureGPa` it used and hints at a pressure in the file name. |
+| `run_relax` | Positions (and cell with `relaxCell`) to `fmax`; a new trajectory row whose last frame is shown. Says which `targetPressureGPa` it used and hints at a pressure in the file name. Not converged? Call it again: it continues from the relaxed last frame, with `maxSteps` more steps. |
 | `run_energy` | Energy, energy per atom, `fmax`, pressure of the active structure. |
-| `run_eos` | Volume (`volumeRangePct`) or pressure scan, then the EOS fit: E0, V0, B0GPa, B0Prime. The fit loads SciPy (Pyodide) from the network. |
+| `run_eos` | Volume (`volumeRangePct`) or pressure scan, then the EOS fit: E0, V0, B0GPa, B0Prime. The result starts with `fitReliable` and `warnings`: points not converged, the minimum not bracketed, no zero pressure in the scan (the start structure is not relaxed), V0 outside the scanned volumes, or an unphysical B0 or B0'. When it is false the numbers are not a result. Relax first. The fit loads SciPy (Pyodide) from the network. |
 | `run_ordering` | Ordered approximants of a disordered structure, with energies, best first. |
 
 ### Files

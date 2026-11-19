@@ -175,7 +175,7 @@ it with `cancel_job`:
 
 ```python
 job = v.run_md(steps=5000, temperature_k=600, wait=False)
-v.wait_job(job_id=job["jobId"], timeout_s=10)     # waits up to 10 s, reports progress
+v.wait_job(job_id=job["jobId"], wait_s=10)        # waits up to 10 s, reports progress
 v.cancel_job(job_id=job["jobId"])                 # an MD run keeps the frames it saved
 ```
 
@@ -230,6 +230,15 @@ fit = eos["fit"]["energyVolume"]
 print(fit["V0"], fit["B0GPa"])                      # Å³ per cell, GPa
 ```
 The fit loads SciPy through Pyodide, so `run_eos` needs a network connection.
+Check `eos["fitReliable"]` before using the numbers: it is false, with
+`eos["warnings"]` saying why, when points did not converge, the scan does not
+bracket the minimum or reach zero pressure, or V0 or B0 make no sense.
+
+To keep the space group during a calculation, pass `symmetry=True` (or
+`symmetry={"tolerance": 0.1}`) to `run_relax`, `run_md` or `run_eos`: the
+structure is locked as by the Symmetry window's Wyckoff editor first, and
+`result["symmetry"]["kept"]` says whether the group held. An unconverged
+`run_relax` continues where it stopped when called again.
 
 **4. MD, then the mean-squared displacement with numpy**
 ```python
