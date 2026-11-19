@@ -571,6 +571,9 @@ export class RayTracingPipeline extends ForwardPipeline {
    *  it just isn't consumed in bursts. PathTracingPipeline inherits this. */
   beginPacedRender() {
     this._pacedExternally = true;
+    // Before the first render() there are no targets yet (_init creates them):
+    // an export can start right after the pipeline is switched on.
+    if (!this._displayTarget) return;
     // The export presents the newest accumulation sum directly (mid-round
     // tile seams are acceptable progress feedback; the final captured frame
     // lands exactly at a round boundary), so the full-size display snapshot
@@ -590,6 +593,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     // stale/black until the next completed round refreshes it, so re-present
     // paths right after the export must not read it before a snapshot lands
     // (the export's finally resizes/resets the pipeline, which handles that).
+    if (!this._displayTarget || !this._accumTarget) return; // never rendered (see beginPacedRender)
     if (this._displayTarget.width !== this._accumTarget.width
         || this._displayTarget.height !== this._accumTarget.height) {
       this._displayTarget.setSize(this._accumTarget.width, this._accumTarget.height);

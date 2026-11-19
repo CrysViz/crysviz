@@ -273,6 +273,24 @@ const H = require('../harness');
   // Close the overlay cleanly (not busy now → Cancel closes it).
   await page.evaluate(() => document.querySelector('.cv-crop-cancel')?.click());
 
+  // An export can start right after the tracer is switched on, before its first
+  // render() has created its targets (seen in the desktop window via the host's
+  // save_image). Pacing then must not throw: endPacedRender runs in the export's
+  // finally, and a throw there turned the export into an error.
+  const unrendered = await page.evaluate(async () => {
+    const { RayTracingPipeline } = await import('./render/pipeline/RayTracingPipeline.js');
+    const p = new RayTracingPipeline();
+    try {
+      p.beginPacedRender();
+      p.endPacedRender();
+      return { ok: true, paced: p._pacedExternally };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  });
+  H.check('a never-rendered tracer can begin and end paced rendering',
+    unrendered.ok && unrendered.paced === false, JSON.stringify(unrendered));
+
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);
 })().catch(H.crash);
