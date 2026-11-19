@@ -16,46 +16,19 @@ Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lind
 
 
 ## Key Features
-
-No backend is needed. CrysViz runs entirely in the browser, on desktops, tablets and phones.
-
-**Files**
-- VASP (POSCAR/CONTCAR, OUTCAR, CHGCAR, ELFCAR, WAVECAR; INCAR `MAGMOM` as spins), Quantum ESPRESSO input and output, CIF and mCIF (with symmetry and standard uncertainties), XYZ and extended XYZ, ASE `.traj`, Gaussian cube, CASTEP `.cell`/`.geom`/`.md`/`.ts`, SHELX/AIRSS `.res`, FHI-aims `geometry.in`/`aims.out`, and phonopy files. File types are recognised from their contents.
-- Export to CIF (P1 or symmetrised), POSCAR, CASTEP `.cell`, FHI-aims `geometry.in` and Quantum ESPRESSO cards, and save images (raster or ray-traced).
-
-**Viewing and rendering**
-- Raster rendering with good transparency, plus a ray tracer and a path tracer for figures.
-- Coordination polyhedra, including cages (B12, clathrates, C60), with per-polyhedron and per-category colours.
-- Crystal (hkl) planes: cut through the structure, look along a plane normal, show a field on a plane.
-- Volumetric fields: isosurfaces of charge densities, ELF and wavefunctions (CHGCAR, ELFCAR, cube, WAVECAR), loaded in the background.
-- Force and spin arrows, also during trajectories.
-- Focus regions to make one atom, molecule or defect stand out; molecules and rings that cross the cell boundary drawn whole.
-- Your own colours for any atom, element colours, radii and bond lengths; settings are remembered per structure.
-
-**Building and editing**
-- Add, remove and modify atoms and the lattice, also in symmetry-constrained (Wyckoff) mode.
-- Supercells, lattice transformations and vacuum layers.
-- Ordered approximants of structures with disordered sites.
-
-**Analysis**
-- Distances and angles; the Selection Inspector shows the selected atoms with every bond length and angle, and compares them with a second structure.
-- Bond-length, force and coordination histograms.
-- Symmetry (powered by Moyo WASM): space group, Wyckoff sites, the asymmetric unit, standardised primitive and conventional cells.
-- Lattice analysis, lattice parameters across a trajectory, structure overlay and comparison, energy landscapes and equation-of-state fits.
-
-**Simulations on your device**
-- Relaxations and molecular dynamics (NVT and NPT, with optional annealing) with machine-learned potentials running in the browser: NEP (NEP89 by default) and PET-MAD.
-- Energies, forces and stress; equation-of-state scans.
-- Optionally an ASE server backend, for any ASE calculator (e.g. MACE, VASP, Quantum ESPRESSO).
-- Phonons from phonopy: band structure and DOS, and the modes animated on the atoms.
-
-**Trajectories, sharing and more**
-- Trajectory player with plots, for relaxations and MD from OUTCAR, Quantum ESPRESSO, CASTEP, FHI-aims, ASE and XYZ; large trajectories are read frame by frame.
-- Share links and QR codes, and `.crysviz` session files.
-- Search everything (Ctrl/⌘+F) finds any window, button or setting.
-- Install as an app (Chrome or Edge on desktop) and open structure files from the file manager.
-- Widget mode to embed a viewer in another web page (see below).
-- A Python API and an MCP server for Claude and other AI assistants (see below).
+- No backend required: runs entirely in the browser, and no data leaves your machine. Works in nearly every browser and on nearly every device, including phones and tablets.
+- Reads VASP, Quantum ESPRESSO, CIF, XYZ, CASTEP, FHI-aims, phonopy and more; exports CIF, POSCAR and other formats, and images (raster or ray-traced).
+- Measure distances and angles; custom bond lengths, colours and radii for any atom.
+- Coordination polyhedra, charge densities and other volumetric fields as isosurfaces.
+- Forces and spins, also along relaxation and MD trajectories, with a trajectory player.
+- Symmetry analysis and structure refinement (powered by Moyo WASM).
+- Build and edit structures: atoms, supercells, lattice transformations, vacuum and slabs.
+- Relaxations and molecular dynamics directly on your device with machine-learned potentials (NEP, PET-MAD), for up to several hundred atoms.
+- Optional calculation backend for any ASE-compatible calculator (e.g. MACE, VASP, QE).
+- Phonons from phonopy: band structure, DOS and animated modes.
+- Share a structure with a link or QR code, and find any feature with Search everything (Ctrl/⌘+F).
+- Python API and an MCP server, so you or an AI assistant such as Claude can drive CrysViz (see below).
+- and many more...
 
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
