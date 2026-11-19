@@ -823,7 +823,7 @@ function buildSourcePanel() {
     <div class="atomistic-panel">
       <div class="atomistic-source-panel">
         <div class="atomistic-source-row">
-          <div class="atomistic-source-label">Choose potential</div>
+          <div class="atomistic-source-label" data-role="potential-label">Choose potential</div>
           <div class="backend-potential-toggle" data-role="potential-toggle">
             <button type="button" class="active" data-potential="nep">NEP</button>
             <button type="button" data-potential="mlip">PET-MAD</button>
@@ -917,6 +917,7 @@ function getShellBindings() {
     toggle: selector?.querySelector('[data-role="potential-toggle"]'),
     sourceStateEl,
     potentialNoticeHost: selector?.querySelector('[data-role="potential-notice-host"]'),
+    potentialLabel: selector?.querySelector('[data-role="potential-label"]'),
     aseConnectorsEl: selector?.querySelector('[data-role="ase-connectors"]'),
     aseUrlInput: selector?.querySelector('[data-role="ase-url"]'),
     aseModelRow: selector?.querySelector('[data-role="ase-model-row"]'),
@@ -2006,7 +2007,9 @@ function bindPotentialToggle() {
   shell.mlipModelSelect?.addEventListener('change', notifyPotentialChange);
   shell.mlipFileInput?.addEventListener('change', notifyPotentialChange);
   if (shell.potentialNoticeHost) {
-    const notice = mountPotentialNotice(shell.potentialNoticeHost, { showPotential: false, pressures: atomisticPressures });
+    // The collapsed ⚠ sits after "Choose potential", not on a row of its own.
+    const notice = mountPotentialNotice(shell.potentialNoticeHost, { showPotential: false, pressures: atomisticPressures,
+      inline: shell.potentialLabel });
     // The relax / NPT target pressures live in the action body, rebuilt on
     // every Relax/MD switch: listen on its persistent container.
     const calc = document.getElementById('BackendCalcPanel');

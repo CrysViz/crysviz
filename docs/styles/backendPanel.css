@@ -324,7 +324,18 @@ font-size: var(--fs-base);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-4);
+  gap: var(--sp-2);
+}
+
+/* The label (with the potentials' collapsed ⚠ after it) wraps before the
+   switch does: "PET-MAD" stays one word. */
+.atomistic-source-row .backend-potential-toggle {
+  flex: 0 0 auto;
+}
+
+.atomistic-source-row .backend-potential-toggle button {
+  padding-inline: var(--sp-3);
+  white-space: nowrap;
 }
 
 .atomistic-source-label {
@@ -816,6 +827,12 @@ font-size: var(--fs-base);
   line-height: var(--lh-normal);
 }
 
+/* The Atomistic window's notice with its caveat folded away (the ⚠ sits on
+   the label row) and no pressure alarm: nothing to show. */
+.potential-notice:empty {
+  display: none;
+}
+
 .potential-notice-line {
   color: var(--fg-2);
 }
@@ -860,8 +877,9 @@ font-size: var(--fs-base);
   border-color: rgb(var(--warn-rgb) / 0.9);
 }
 
-/* The collapsed caveat: a small orange ⚠ that expands it again. On its own
-   line in the Atomistic window, at the end of "Runs with …" elsewhere. */
+/* The collapsed caveat: a small orange ⚠ that expands it again. After
+   "Choose potential" in the Atomistic window, at the end of "Runs with …"
+   elsewhere. */
 .potential-notice-expand {
   align-self: flex-start;
   margin-left: var(--sp-1);

@@ -260,8 +260,11 @@ const runState = (page, role) => page.evaluate((role) => {
     document.body.appendChild(host);
     const { mountPotentialNotice } = await import('./atomistic/potentialNotice.js');
     const other = mountPotentialNotice(host, { pressures: () => [{ label: 'target pressure', gpa: 12 }] }).element;
-    const expand = n?.querySelector('[data-role="potential-notice-expand"]');
+    // The Atomistic window's ⚠ sits after "Choose potential", on the picker's row.
+    const expand = document.querySelector('#BackendPotentialSelector [data-role="potential-notice-expand"]');
     const out = {
+      triangleOnLabelRow: !!expand?.closest('.atomistic-source-row'),
+      oneTriangle: document.querySelectorAll('#BackendPotentialSelector [data-role="potential-notice-expand"]').length <= 1,
       caveat: !!n?.querySelector('[data-role="potential-notice-caveat"]'),
       collapseButton: !!n?.querySelector('[data-role="potential-notice-collapse"]'),
       triangle: expand ? { text: expand.textContent, expanded: expand.getAttribute('aria-expanded'),
@@ -284,6 +287,8 @@ const runState = (page, role) => page.evaluate((role) => {
     !n.caveat && !n.otherCaveat && n.triangle?.text === '⚠' && n.triangle.expanded === 'false'
       && /^rgb\(255, 207, 79/.test(n.triangle.color) && /check the results that matter/i.test(n.triangle.title)
       && n.otherTriangleInLine && pref === true, JSON.stringify({ n, pref }));
+  H.check('the Atomistic window\'s ⚠ sits after "Choose potential", not on a row of its own',
+    n.triangleOnLabelRow && n.oneTriangle, JSON.stringify(n));
   H.check('NEP\'s high-pressure warning still shows in full', /PET.MAD models are recommended/.test(n.otherAlert), n.otherAlert);
   const settingsChecked = await page.evaluate(async () => {
     const pm = await import('./ui/panels/PanelManager.js');
