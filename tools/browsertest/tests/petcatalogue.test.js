@@ -240,7 +240,7 @@ const CATALOGUE = {
     !forgotten.groups.some((g) => g.label === 'Test fine-tunes') && forgotten.value === 'pet-mad-xs.gguf'
       && forgotten.groups.some((g) => g.label === 'Links'), JSON.stringify(forgotten));
 
-  const relevant = errors.filter((e) => !/ERR_TUNNEL_CONNECTION_FAILED|ERR_NAME_NOT_RESOLVED|ERR_FAILED|Failed to load resource|Plotly|PET model catalogue not refreshed/.test(e));
+  const relevant = errors.filter((e) => !/ERR_TUNNEL_CONNECTION_FAILED|ERR_NAME_NOT_RESOLVED|ERR_FAILED|Failed to load resource|Plotly|PET model catalogue not refreshed|Cross-Origin Request Blocked.*blocked\.example\.com/.test(e));
   H.check('no unexpected console/page errors', relevant.length === 0, relevant[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

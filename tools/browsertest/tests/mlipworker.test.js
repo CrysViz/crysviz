@@ -17,6 +17,9 @@ const MODEL = process.env.MLIPBENCH_MODEL
 
 (async () => {
   const { browser, page, errors } = await H.launchApp();
+  // Without a local model the weights would come from Hugging Face; refuse that
+  // host so the no-weights check holds on a machine that has network access too.
+  if (!MODEL) await page.context().route('https://huggingface.co/**', (route) => route.abort('failed'));
   await H.loadDefaultStructure(page);
 
   const boot = await page.evaluate(async () => {
