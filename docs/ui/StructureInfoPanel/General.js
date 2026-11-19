@@ -67,6 +67,17 @@ function resetAllColorStyling(structure) {
   });
 }
 
+/** Reset Colors for one structure (this frame): every colour customization
+ *  back to element defaults, stored overrides dropped. The button and the
+ *  host's apply reset_color with all: true. */
+export function resetColors(structure) {
+  resetAllColorStyling(structure);
+  saveAtomColors(structure); // drops the stored overrides too
+  saveArrowOverrides(structure);
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  refreshForceSpinArrows();
+}
+
 /** Re-render force/spin arrows (if shown) and any currently-open Structure
  *  Info Spin/Force row editor after a bulk edit to structure.forces/spins —
  *  shared by the Reset Colors and Reset Styling buttons below. */
@@ -642,13 +653,7 @@ resetAllColorsBtn.className = 'reset-btn si-action-btn';
 resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
 wirePressHoldPopup(resetAllColorsBtn, {
   holdLabel: 'Reset Trajectory',
-  onPress: () => {
-    resetAllColorStyling(fileBrowser.selectedStructure);
-    saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
-    saveArrowOverrides(fileBrowser.selectedStructure);
-    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
-    refreshForceSpinArrows();
-  },
+  onPress: () => resetColors(fileBrowser.selectedStructure),
   onConfirm: () => {
     resetAllColorStyling(fileBrowser.selectedStructure);
     // Re-run the very same (pure-data) reset on every other frame of this

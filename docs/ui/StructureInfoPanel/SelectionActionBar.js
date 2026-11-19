@@ -293,6 +293,48 @@ function applyBulkRadiusScale(selected, value) {
 }
 
 // Reset color + alpha + size of every selected atom to element defaults — the
+/**
+ * Reset these source atoms to their element defaults in the model and on
+ * every drawn copy: the colour, and unless colorOnly also the opacity and
+ * size. The bar's Reset and the host's apply reset_color.
+ */
+function resetSourceAtoms(structure, indices, { colorOnly = false } = {}) {
+  const speciesTargets = [];
+  indices.forEach((idx) => {
+    const atom = structure.atoms[idx];
+    if (!atom) return;
+    clearAtomImageStylesForAtom(structure, idx, colorOnly ? 'color' : undefined); // per-copy overrides
+    if (atom.userColor !== undefined) delete atom.userColor;
+    if (atom.forceColor !== undefined) delete atom.forceColor;
+    atom.species?.forEach((s) => { s.color = null; });
+    atom.color = structure.getDefaultElementColor(structure.elements[idx]);
+    if (!colorOnly) {
+      atom.resetToElementOpacity?.();
+      atom.resetRadiusScale?.();
+    }
+    atom.species?.forEach((_, speciesIndex) => speciesTargets.push({ atomIndex: idx, speciesIndex }));
+    structure.atomImages[idx]?.forEach((imgIndex) => {
+      syncBondHalvesToImageColor(structure, imgIndex, safeColor(atom.getColor()));
+      updateSingleAtomColor(idx, imgIndex, structure.elements[idx]);
+      if (!colorOnly) {
+        updateSingleAtomOpacity(imgIndex, atom.getOpacity?.() ?? 1);
+        updateSingleAtomDiameter(imgIndex, structure.elements[idx], atom.getRadiusScale?.() ?? 1);
+      }
+    });
+  });
+  saveAtomColors(structure); // drops the cleared overrides from storage too
+  if (!colorOnly) saveAtomRadiusScales(structure);
+  if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, null);
+}
+
+/** Back to the element colour for these source atoms (the host's apply reset_color). */
+export function resetSourceAtomColors(indices) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  resetSourceAtoms(structure, indices, { colorOnly: true });
+  repaintAfterColorEdit();
+}
+
 // bulk counterpart of a row's own Reset, scoped to the three things this bar
 // controls (positions, spins, immunity are never touched).
 function resetBulkStyle(selected) {
@@ -300,28 +342,7 @@ function resetBulkStyle(selected) {
   if (!structure) return;
 
   if (atomLinked()) {
-    const speciesTargets = [];
-    selectedSourceIndices(selected).forEach((idx) => {
-      const atom = structure.atoms[idx];
-      if (!atom) return;
-      clearAtomImageStylesForAtom(structure, idx); // all per-copy overrides
-      if (atom.userColor !== undefined) delete atom.userColor;
-      if (atom.forceColor !== undefined) delete atom.forceColor;
-      atom.species?.forEach((s) => { s.color = null; });
-      atom.color = structure.getDefaultElementColor(structure.elements[idx]);
-      atom.resetToElementOpacity?.();
-      atom.resetRadiusScale?.();
-      atom.species?.forEach((_, speciesIndex) => speciesTargets.push({ atomIndex: idx, speciesIndex }));
-      structure.atomImages[idx]?.forEach((imgIndex) => {
-        syncBondHalvesToImageColor(structure, imgIndex, safeColor(atom.getColor()));
-        updateSingleAtomColor(idx, imgIndex, structure.elements[idx]);
-        updateSingleAtomOpacity(imgIndex, atom.getOpacity?.() ?? 1);
-        updateSingleAtomDiameter(imgIndex, structure.elements[idx], atom.getRadiusScale?.() ?? 1);
-      });
-    });
-    saveAtomColors(structure); // drops the cleared overrides from storage too
-    saveAtomRadiusScales(structure);
-    if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, null);
+    resetSourceAtoms(structure, selectedSourceIndices(selected));
   } else {
     // Drop only the selected copies' per-image overrides and repaint them from
     // the (unchanged) source atom's model values.

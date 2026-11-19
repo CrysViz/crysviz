@@ -73,6 +73,84 @@ export function commitAddedAtoms(structure, atoms) {
   updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: "open" });
 }
 
+/**
+ * Apply one round of atom-table edits (applyStructureEdits) and show them:
+ * the Modify Structure editor's live apply and the host's set_element.
+ * `afterApply(change)` runs after the arrays change, `afterRender(change)`
+ * after the re-render and before "crysviz:atoms-changed" is announced.
+ * @param {any} structure
+ * @param {{atoms: Array<any>, lattice?: number[][]}} edits
+ * @param {{afterApply?: (change: any) => void, afterRender?: (change: any) => void}} [hooks]
+ */
+export function commitStructureEdits(structure, edits, { afterApply, afterRender } = {}) {
+  // An add or remove renumbers atom indices, so a kept selection would point
+  // at the wrong (or a now-missing) atom. Drop it BEFORE the arrays change,
+  // while the selection's indices still match the live mesh - clearing it
+  // afterwards would index past the shrunk array inside updateAtoms. A pure
+  // coordinate/colour edit leaves the set intact and keeps the selection.
+  const tableUuids = new Set(edits.atoms.map((a) => a.uuid));
+  const setChanges = tableUuids.size !== structure.atoms.length
+    || structure.atoms.some((a) => !tableUuids.has(a.uuid));
+  if (setChanges) clearSelectedAtoms();
+
+  const uniqueBefore = structure.uniqueElements.join(',');
+  const change = applyStructureEdits(structure, edits);
+  afterApply?.(change);
+
+  // Bond controls only need rebuilding when the element set actually changed.
+  if (structure.uniqueElements.join(',') !== uniqueBefore) createBondLengthControls();
+
+  // Re-render only what this edit can have touched. Atoms always (an
+  // occupancy edit re-slices the wedges) and the composition always (the
+  // formula); bonds, polyhedra, measurements and the cell only when the
+  // geometry, the representative elements or the colours actually changed —
+  // a pure occupancy edit on a large structure was paying for all of them.
+  const geometry = Boolean(change.added || change.removed || change.reordered
+    || change.positionsChanged || change.latticeChanged);
+  const appearance = change.elementsChanged || change.colorsChanged;
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: geometry || appearance,
+    reRenderLattice: geometry,
+    reRenderOther: geometry,
+    reRenderPolyhedra: geometry || appearance,
+    reRenderComposition: 'open',
+  });
+  afterRender?.(change);
+  // An element/count/occupancy edit changes the composition — announce it the
+  // same way a coordinate edit does (applyAtomCoordinates), so panels that
+  // aren't part of the composition rebuild (e.g. Order Structure's size
+  // options) can react instead of showing stale numbers.
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+  return change;
+}
+
+/**
+ * Change these atoms' element in place: same index, position and uuid, as an
+ * element edit in the structure editor does. A custom colour is kept; an atom
+ * still at its element's default colour takes the new element's default.
+ * Ordered sites only. `rows` is structureToTableAtoms(structure) (the editor's
+ * own rows); exact positions and occupancies replace its rounded ones.
+ * @param {any} structure
+ * @param {number[]} indices
+ * @param {string} element
+ * @param {Array<any>} rows
+ */
+export function setAtomElements(structure, indices, element, rows) {
+  const targets = new Set(indices.map((i) => structure.atoms[i].uuid));
+  const byUuid = new Map(structure.atoms.map((atom) => [atom.uuid, atom]));
+  const edited = rows.map((row) => {
+    const base = typeof row.uuid === 'string' ? row.uuid.split('#')[0] : row.uuid;
+    const atom = byUuid.get(base);
+    const k = row.uuid === base ? 0 : Number(String(row.uuid).split('#')[1]);
+    const exact = { ...row, x: atom.position[0], y: atom.position[1], z: atom.position[2],
+      occupancy: atom.species?.[k]?.occupancy ?? row.occupancy };
+    if (!targets.has(base)) return exact;
+    return { ...exact, element, ...(row.autoColor ? { color: undefined } : {}) };
+  });
+  return commitStructureEdits(structure, { atoms: edited });
+}
+
 // Remove the atoms with these uuids from `structure` (no re-render; see
 // commitRemovedAtoms). Returns how many were removed: 0 when none of them is a
 // real atom right now — e.g. already removed, or merged into a sibling site by
