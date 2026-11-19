@@ -9,11 +9,11 @@ import { prepareSymmetricCif } from './CifSymmetryExport.js';
 import { showCifExportModal } from './CifExportModal.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 
-/** The selected structure plus a keep-mask that drops vacancy markers, or a
- *  thrown error when nothing is loaded / only vacancies remain. Shared by the
- *  structure-file exporters (CASTEP .cell, FHI-aims geometry.in, both CIFs). */
-export function selectedForExport() {
-  const structure = fileBrowser.selectedStructure;
+/** The selected structure (or the one given) plus a keep-mask that drops
+ *  vacancy markers, or a thrown error when nothing is loaded / only vacancies
+ *  remain. Shared by the structure-file exporters (CASTEP .cell, FHI-aims
+ *  geometry.in, both CIFs). */
+export function selectedForExport(structure = fileBrowser.selectedStructure) {
   if (!structure || !structure.atoms?.length || !structure.elements?.length || !structure.lattice?.length) {
     throw new Error('No structure loaded.');
   }
@@ -113,8 +113,8 @@ export function cifSiteRows(species, position, counters, extra = {}) {
   });
 }
 
-export function cifBlockName() {
-  return (currentBaseName() || 'structure').replace(/\s+/g, '_') || 'structure';
+export function cifBlockName(baseName = currentBaseName()) {
+  return (baseName || 'structure').replace(/\s+/g, '_') || 'structure';
 }
 
 /**
@@ -130,11 +130,12 @@ export function cifToFile() {
 /**
  * cifToFile's text plus `order`: the CrysViz atom index of each `_atom_site`
  * row (a mixed site has a row per species, all naming the same atom). For
- * callers that map results on the file back to the app's atoms.
+ * callers that map results on the file back to the app's atoms. `structure`
+ * and `name` default to the selected structure and its file name.
  * @returns {{ text: string, order: number[] }}
  */
-export function cifExport() {
-  const { structure, keep } = selectedForExport();
+export function cifExport(structure = fileBrowser.selectedStructure, name = currentBaseName()) {
+  const { keep } = selectedForExport(structure);
   const counters = {};
   const sites = [];
   const order = [];
@@ -145,7 +146,7 @@ export function cifExport() {
     for (let r = 0; r < rows.length; r++) order.push(i);
   });
   const text = buildCifText({
-    name: cifBlockName(),
+    name: cifBlockName(name),
     created: new Date().toISOString(),
     cell: latticeParameters(structure.lattice),
     spaceGroup: { hm: 'P 1', number: 1 },
@@ -172,10 +173,10 @@ export function poscartoFile() {
 /**
  * poscartoFile's text plus `order`: the CrysViz atom index of each position
  * line. POSCAR groups atoms by element, so file atom k is atom order[k].
+ * `structure` defaults to the selected one.
  * @returns {{ text: string, order: number[] }}
  */
-export function poscarExport() {
-  const structure = fileBrowser.selectedStructure;
+export function poscarExport(structure = fileBrowser.selectedStructure) {
   if (!structure || !structure.atoms?.length || !structure.elements?.length || !structure.lattice?.length) {
     throw new Error('No structure loaded.');
   }
@@ -297,8 +298,7 @@ export function qeInputBlock() {
  *
  * @returns {boolean}
  */
-export function poscarLosesOccupancy() {
-  const structure = fileBrowser.selectedStructure;
+export function poscarLosesOccupancy(structure = fileBrowser.selectedStructure) {
   if (!structure?.atoms?.length) return false;
   return structure.atoms.some((atom) =>
     atom.isDisordered?.() && (atom.getTotalOccupancy?.() ?? 1) > 0);

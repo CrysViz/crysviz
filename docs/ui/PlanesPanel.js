@@ -1557,13 +1557,15 @@ function fieldColormapRange(field) {
 
 /**
  * Add a plane to `structure` and select it: the Crystal Planes "Add" button
- * and the host's add_field_slice. With `field`, the plane shows that field as
- * a colour map, as choosing it in the plane's Field list does.
- * @param {any} structure @param {PlaneParams} params @param {{field?: any}} [options]
+ * and the host's add_plane. With `field`, the plane shows that field as a
+ * colour map, as choosing it in the plane's Field list does; `cutMode` hides
+ * the atoms on one side, as the plane's Cut choice does.
+ * @param {any} structure @param {PlaneParams} params @param {{field?: any, cutMode?: string}} [options]
  */
-export function addPlaneToStructure(structure, params, { field = null } = {}) {
+export function addPlaneToStructure(structure, params, { field = null, cutMode = CutModes.NONE } = {}) {
   ensureStructurePlaneState(structure);
   const plane = createDefaultPlane(params, planeLabelForParams(params));
+  plane.cutMode = cutMode;
   if (field) {
     plane.visualization = PLANE_VIS_FIELD;
     plane.field = field;

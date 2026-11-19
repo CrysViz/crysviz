@@ -621,8 +621,9 @@ export async function initializeCore(browserHostController, { structureFirst = f
     updateLattice: updateHostLattice,
     recenterCamera,
     rotateCamera: (angle, axis) => { applyRotationFromUI(angle, axis); requestRender(); },
+    // direction null keeps the current aim (and pan): set_view with only up or zoom.
     setViewDirection: (direction, /** @type {{up?: number[], zoom?: number}} */ { up, zoom } = {}) => {
-      setViewDirection(direction);
+      if (direction) setViewDirection(direction);
       // TrackballControls.update() re-aims the camera with camera.up, so an
       // explicit (already perpendicular) up only needs setting before it.
       if (up) { app.camera.up.set(...up); app.controls.update(); }
