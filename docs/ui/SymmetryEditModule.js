@@ -285,6 +285,35 @@ function assembleWyckoffSymmetryState(structure, {
   hallNumber = null,
 }) {
   const positions = structure.atoms.map((atom) => [...atom.position]);
+  // A lock is built at a tolerance (Å): the structure need only be that close to
+  // symmetric. Atoms are matched to the operations within it, in Å, and each
+  // site's representative is idealised onto its site before its freedom is read.
+  // Matched at a fixed 1e-4 (fractional) instead, a slightly distorted cell got
+  // the wrong site freedom and identity mappings that put a whole orbit on one
+  // point, and the relaxer and MD then pulled it apart.
+  const lattice = structure.lattice;
+  const angstrom = (d) => Math.hypot(
+    d[0] * lattice[0][0] + d[1] * lattice[1][0] + d[2] * lattice[2][0],
+    d[0] * lattice[0][1] + d[1] * lattice[1][1] + d[2] * lattice[2][1],
+    d[0] * lattice[0][2] + d[1] * lattice[1][2] + d[2] * lattice[2][2],
+  );
+  const reach = Math.max(Number(tolerance) || 0, 1e-6);
+  const idealise = (x) => {
+    // The mean of x's images under its own site group: the nearest point the site allows.
+    const deltas = operations.map((op) => fracDelta(applyOperation(x, op), x)).filter((d) => angstrom(d) <= reach);
+    if (!deltas.length) return [...x];
+    const mean = deltas.reduce((acc, d) => add(acc, d), [0, 0, 0]).map((v) => v / deltas.length);
+    return wrapFrac(add(x, mean));
+  };
+  const closestOperation = (from, target) => {
+    let best = 0;
+    let bestDistance = Infinity;
+    operations.forEach((op, i) => {
+      const distance = angstrom(fracDelta(applyOperation(from, op), target));
+      if (distance < bestDistance - 1e-12) { best = i; bestDistance = distance; }
+    });
+    return bestDistance <= Math.max(reach, matchTolerance) ? best : findMatchingOperation(from, target, operations, matchTolerance);
+  };
 
   const grouped = new Map();
   orbitIds.forEach((orbitId, atomIndex) => {
@@ -294,11 +323,11 @@ function assembleWyckoffSymmetryState(structure, {
 
   const orbitGroups = Array.from(grouped.entries()).map(([orbitId, atomIndices]) => {
     const representativeIndex = atomIndices[0];
-    const representativePosition = positions[representativeIndex];
-    const freedom = computeOrbitFreedom(representativePosition, operations);
+    const anchor = idealise(positions[representativeIndex]);
+    const freedom = computeOrbitFreedom(anchor, operations);
     const mappings = atomIndices.map((atomIndex) => ({
       atomIndex,
-      operationIndex: findMatchingOperation(representativePosition, positions[atomIndex], operations, matchTolerance),
+      operationIndex: closestOperation(anchor, positions[atomIndex]),
     }));
     return {
       orbitId,
@@ -309,6 +338,9 @@ function assembleWyckoffSymmetryState(structure, {
       siteSymmetry: siteSymbols[representativeIndex] ?? '',
       multiplicity: atomIndices.length,
       ...freedom,
+      // A point on the representative's site (the idealised representative): the
+      // symmetrizers project onto the site through it, not through where the atom is.
+      anchor,
       mappings,
     };
   });
@@ -605,7 +637,8 @@ export function getWyckoffOrbitGroups(structure = fileBrowser.selectedStructure)
 }
 
 function projectRepresentativePosition(orbit, targetRepresentative, structure = fileBrowser.selectedStructure) {
-  const currentRepresentative = structure.atoms[orbit.representativeIndex].position;
+  // Through the site's own point (locks saved before anchors existed: the atom).
+  const currentRepresentative = orbit.anchor ?? structure.atoms[orbit.representativeIndex].position;
   const delta = fracDelta(wrapFrac(targetRepresentative), currentRepresentative);
   const projectedDelta = projectDeltaToBasis(delta, orbit.basis);
   return wrapFrac(add(currentRepresentative, projectedDelta));
@@ -1080,7 +1113,7 @@ export function symmetrizeFractionalPositions(fracPositions, structure = fileBro
   const out = fracPositions.map((position) => wrapFrac(position));
   structure.symmetry.orbitGroups.forEach((orbit) => {
     const representative = orbit.isFixed
-      ? [...structure.atoms[orbit.representativeIndex].position]
+      ? [...(orbit.anchor ?? structure.atoms[orbit.representativeIndex].position)]
       : projectRepresentativePosition(orbit, out[orbit.representativeIndex], structure);
 
     orbit.mappings.forEach(({ atomIndex, operationIndex }) => {
