@@ -1,7 +1,7 @@
 // Empty space in a periodic cell: the centres of its voids, as local maxima of
 // the distance to the nearest atom on a grid. Step 1 of the cage search
 // (PolyhedraModule.js findCages; mirrored in periodic_wasm_src polyhedra.rs),
-// and on its own the host's get_voids (interstitial sites). Plain arrays, no
+// and on its own the host's find {what: "voids"} (interstitial sites). Plain arrays, no
 // three.js, so it runs in Node for the unit tests.
 
 export const CAGE_GRID_STEP = 0.4;          // Å, spacing of the void-search grid
