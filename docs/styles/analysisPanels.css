@@ -1754,7 +1754,8 @@
    [label] [min entry] [==dual-range slider==] [max entry]. The overlapping
    range inputs + inset-corrected fill reuse the histogram range-slider
    technique (.blh-range-slider); PBND_THUMB in LatticeSupercellPanel.js must
-   match the 12px thumb below. */
+   match the 12px thumb below. The Planes window's colormap range uses this
+   slider too (its fill inset in PlanesPanel.js updateDualSliderFill). */
 .pbnd-axes {
   display: flex;
   flex-direction: column;
@@ -2130,11 +2131,14 @@
    The planes table and the parameter/field sections start with the hidden
    attribute (closed state) and PlanesPanel.js toggles it. */
 
+/* Log Scale and Auto Range on one row (the row is a .planes-field-control,
+   a column otherwise). */
 #planesBarControlsRow {
   display: flex;
+  flex-direction: row;
   align-items: center;
-  gap: var(--sp-4);
-  margin: var(--sp-1) 0;
+  justify-content: space-between;
+  gap: var(--sp-3);
 }
 
 .planes-log-scale-label {

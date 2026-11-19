@@ -306,7 +306,7 @@ body.panel-hidden #axesLegend {
   mask: url("../data/icons/folder-icon.svg") center / contain no-repeat;
 }
 
-/* Auto Range buttons (Forces/Spins/Atoms/Bonds/Planes panels): same look as
+/* Auto Range buttons (Forces/Spins/Atoms/Bonds panels): same look as
    the file-action-btn (Open etc.) buttons, but sized to sit inline next to
    a Log Scale checkbox instead of stretching to fill the row. */
 .cv-auto-range-btn {
