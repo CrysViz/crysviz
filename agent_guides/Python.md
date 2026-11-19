@@ -20,6 +20,9 @@ uv pip install --python .venv/bin/python crysviz
 pip install 'crysviz[qt]'          # or crysviz[gtk]
 ```
 
+Until the next release, the commands described here are only in a checkout:
+`pip install -e '.[qt]'` (or `uv pip install --python .venv/bin/python -e .`) from the repository.
+
 The window is a pywebview window. If it doesn't open, check that pywebview
 works on its own; see [examples/README.md](../examples/README.md).
 

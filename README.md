@@ -10,24 +10,52 @@ Run it in your browser at [crysviz.org](https://crysviz.org).
 <img width="600" alt="Screenshot_crysviz" src="https://raw.githubusercontent.com/CrysViz/crysviz/deploy/docs/data/CrysViz_screenshot.png" />
 
 
-CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/OUTCAR/CIF snippet, drop a local file (POSCAR, OUTCAR, CIF or QE input/output), or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). Your crystal structures will NOT leave your device!
+CrysViz is a standalone visualisation and analysis tool built on top of Three.js. Paste a POSCAR/CIF snippet, drop a local file, or paste an OPTIMADE structure URL or an Alexandria ID. Everything runs on your device: your crystal structures do NOT leave it.
 
 Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
 
 
 ## Key Features
-- No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser. 
-- Visualise Input and output from VASP, Quantum Espresso, and CIF files.
-- Measure distances and angles.
-- Use custom bond lengths with the optional ability to display atoms outside the unit cell that are bonded neighbours.
-- Customizable color schemes can be choosen for any individual atoms 
-- Forces and spin visualisation. Dynamically for relaxaton or MD trajectories
-- Trajectory player. Load VASP OUTCARs and Quantum Espresso vc-relax output files directly and visualise the trajectories. Long MD trajecetories might be beyond your browsers memory limits.
-- Symmetry anlysis and structure refinement (powered by Moyo WASM)
-- Relxations and molecular dynamics simulations directly on your device with NEP potentials with upt to several hundred atoms. 
-- Possibility to activate a calculation backend. This allows structural relaxations with any ASE compatible calculater, e.g., MACE, UPET, VASP, QE; trajectory is added and can be played using the trajectory player.
-- Bond length histogram (angles and coordiantion numbers are comming soon).
-- and many more...
+
+No backend is needed. CrysViz runs entirely in the browser, on desktops, tablets and phones.
+
+**Files**
+- VASP (POSCAR/CONTCAR, OUTCAR, CHGCAR, ELFCAR, WAVECAR; INCAR `MAGMOM` as spins), Quantum ESPRESSO input and output, CIF and mCIF (with symmetry and standard uncertainties), XYZ and extended XYZ, ASE `.traj`, Gaussian cube, CASTEP `.cell`/`.geom`/`.md`/`.ts`, SHELX/AIRSS `.res`, FHI-aims `geometry.in`/`aims.out`, and phonopy files. File types are recognised from their contents.
+- Export to CIF (P1 or symmetrised), POSCAR, CASTEP `.cell`, FHI-aims `geometry.in` and Quantum ESPRESSO cards, and save images (raster or ray-traced).
+
+**Viewing and rendering**
+- Raster rendering with good transparency, plus a ray tracer and a path tracer for figures.
+- Coordination polyhedra, including cages (B12, clathrates, C60), with per-polyhedron and per-category colours.
+- Crystal (hkl) planes: cut through the structure, look along a plane normal, show a field on a plane.
+- Volumetric fields: isosurfaces of charge densities, ELF and wavefunctions (CHGCAR, ELFCAR, cube, WAVECAR), loaded in the background.
+- Force and spin arrows, also during trajectories.
+- Focus regions to make one atom, molecule or defect stand out; molecules and rings that cross the cell boundary drawn whole.
+- Your own colours for any atom, element colours, radii and bond lengths; settings are remembered per structure.
+
+**Building and editing**
+- Add, remove and modify atoms and the lattice, also in symmetry-constrained (Wyckoff) mode.
+- Supercells, lattice transformations and vacuum layers.
+- Ordered approximants of structures with disordered sites.
+
+**Analysis**
+- Distances and angles; the Selection Inspector shows the selected atoms with every bond length and angle, and compares them with a second structure.
+- Bond-length, force and coordination histograms.
+- Symmetry (powered by Moyo WASM): space group, Wyckoff sites, the asymmetric unit, standardised primitive and conventional cells.
+- Lattice analysis, lattice parameters across a trajectory, structure overlay and comparison, energy landscapes and equation-of-state fits.
+
+**Simulations on your device**
+- Relaxations and molecular dynamics (NVT and NPT, with optional annealing) with machine-learned potentials running in the browser: NEP (NEP89 by default) and PET-MAD.
+- Energies, forces and stress; equation-of-state scans.
+- Optionally an ASE server backend, for any ASE calculator (e.g. MACE, VASP, Quantum ESPRESSO).
+- Phonons from phonopy: band structure and DOS, and the modes animated on the atoms.
+
+**Trajectories, sharing and more**
+- Trajectory player with plots, for relaxations and MD from OUTCAR, Quantum ESPRESSO, CASTEP, FHI-aims, ASE and XYZ; large trajectories are read frame by frame.
+- Share links and QR codes, and `.crysviz` session files.
+- Search everything (Ctrl/⌘+F) finds any window, button or setting.
+- Install as an app (Chrome or Edge on desktop) and open structure files from the file manager.
+- Widget mode to embed a viewer in another web page (see below).
+- A Python API and an MCP server for Claude and other AI assistants (see below).
 
 
 This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
@@ -42,81 +70,129 @@ This program is free software: you can redistribute it and/or modify it under th
 - **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
 
 
-### Local in-browser installation and use
+## Installation and use
 
-If you do not want to use CrysViz over the Internet, you can run it via a webserver on your own computer:
+### In your browser
 
-* Clone the CrysViz repository from GitHub
+Open [crysviz.org](https://crysviz.org). Nothing to install.
 
-* Start the local server:
+### Locally, in your browser
 
-   ```bash
-   make serve
-   ```
-* Visit the URL shown.
+To run CrysViz without the Internet, serve it from your own computer:
 
-
-### Run CrysViz as a stand-alone application
-
-The stand-alone application uses pywebview, which requires a native GUI backend.
-This sometimes works automatically via CrysViz dependency handling,
-but if not, follow the [installation instructions for pywebview](https://pywebview.flowrl.com/guide/installation.html)).
-
-We suggest that you set up pywebview and CrysViz in a venv.
-For pywebview to access its required system packages, you may need to create it as, e.g.:
 ```bash
-python3 -m venv --system-site-packages .venv
-source .venv/bin/activate
-python -m pip install pywebview
+git clone https://github.com/CrysViz/crysviz.git
+cd crysviz
+make serve
 ```
-And then test that the pywebview backend works:
+
+Then open the URL shown.
+
+### Stand-alone application
+
+The `crysviz` Python package opens CrysViz in its own window (pywebview). It
+needs a native GUI backend, which the `qt` or `gtk` extra installs:
+
+```bash
+pip install 'crysviz[qt]'        # or 'crysviz[gtk]'
+crysviz structure.cif            # open files in a window
+crysviz --browser structure.cif  # or in your system browser, no GUI backend needed
+```
+
+On Linux you can reuse the system's Qt instead of downloading it. Create the
+venv with access to the system packages, for example with uv:
+
+```bash
+uv venv --system-site-packages .venv
+uv pip install --python .venv/bin/python crysviz
+.venv/bin/crysviz
+```
+
+If the window does not open, check that pywebview works on its own (see
+[examples/README.md](examples/README.md) and the
+[pywebview installation guide](https://pywebview.flowrl.com/guide/installation.html)).
+
+The Python API and the MCP server below are newer than the latest release.
+Until the next release, install them from a checkout:
+
+```bash
+git clone https://github.com/CrysViz/crysviz.git && cd crysviz
+pip install -e '.[qt,mcp]'       # or with uv: uv pip install --python .venv/bin/python -e '.[mcp]'
+```
+
+
+## Python API
+
+Drive a CrysViz window from a Python REPL, IPython or Jupyter. Every command is
+a method, and the window stays yours: rotate, select and edit by hand between
+commands, and Python is told what you changed.
+
 ```python
-import webview
-webview.create_window('Hello world', 'https://pywebview.flowrl.com/')
-webview.start()
-```
-Now you can install CrysViz into the venv as:
-```bash
-python -m pip install -e .
-```
-(Good alternatives are via `pipx install` or `uv tool install` if you have these tools available.)
-
-And then run the standalone application with:
-```
-crysviz
+>>> from crysviz import show
+>>> v = show(["SrTiO3.cif"])               # the window opens; the prompt returns at once
+>>> v.set_supercell(n=[2, 2, 2])
+>>> octahedra = v.find(what="polyhedra", where={"cn": 6})
+>>> v.apply(selection=octahedra["selection"], action="color", color="#3366ff")
+>>> v.set_view(direction="c")              # look along c
+>>> v.save_image("view.png")               # shown inline in Jupyter
+>>> v.run_relax(fmax=0.02)                 # waits until the relaxation ends
 ```
 
-### Python API
+`dir(v)` lists every command and `help(v.find)` shows its arguments.
 
-Drive a CrysViz window from a Python REPL, IPython or Jupyter: every command is a method, and the window stays yours to rotate and edit by hand (Python is told what you changed).
+Working together with the window:
 
 ```python
-from crysviz import show
-
-v = show(["SrTiO3.cif"])                 # the window opens; the prompt returns at once
-v.set_supercell(n=[2, 2, 2])
-oxygens = v.find(what="atoms", where={"element": "O"})
-v.apply(selection=oxygens["selection"], action="color", color="#3366ff")
-v.set_view(direction="c")
-v.save_image("view.png")                  # shown inline in Jupyter
-v.run_relax(fmax=0.02)                    # blocks until the relaxation ends
-v.take_user_changes()                     # what you changed by hand meanwhile
+>>> v.on("user_changed", print)            # your edits in the window, as you make them
+>>> v.take_user_changes()                  # or collect them when you want them
 ```
 
-`help(v.find)` lists a command's arguments and `dir(v)` lists every command. The full guide (install with uv or pip, working together with the window, calculations, exports, recipes) is [agent_guides/Python.md](agent_guides/Python.md); runnable scripts are in [examples](examples/).
+In a script, end with `v.wait()` to keep the window open until you close it; a
+REPL or notebook keeps it open anyway. The full guide, with calculations,
+exports and recipes, is [agent_guides/Python.md](agent_guides/Python.md).
+Runnable scripts are in [examples](examples/).
 
-### Claude and other AI assistants (MCP)
 
-`crysviz-mcp` is a local MCP server (35 tools) that lets Claude or another MCP client work in a CrysViz window on your computer, together with you: load and edit structures, find atoms, bonds, polyhedra and voids, set the view, run MD, relaxations, EOS and ordering, read symmetry, phonons and fields, export files and get pictures back. Changes you make by hand are reported to Claude on its next call. Install with pip or uv:
+## Claude and other AI assistants (MCP)
+
+`crysviz-mcp` is a local MCP server. It lets Claude, or another MCP client,
+work in a CrysViz window on your computer together with you: load and edit
+structures, find atoms, bonds, polyhedra and voids, set the view, run MD,
+relaxations and EOS scans, read symmetry, phonons and fields, export files and
+get pictures back.
+
+Install it (from a checkout until the next release, see above), then add it to
+your client.
+
+Claude Code:
 
 ```bash
-pip install 'crysviz[mcp,qt]'
-# or with uv, reusing the system Qt:
-#   uv venv --system-site-packages .venv && uv pip install --python .venv/bin/python 'crysviz[mcp]'
 claude mcp add crysviz -- crysviz-mcp
 ```
 
-Then ask, for example, "load ~/NaCl.cif and show me the view along c". See [agent_guides/MCP.md](agent_guides/MCP.md) for the tools and options.
+Claude Desktop (config file `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "crysviz": { "command": "/path/to/venv/bin/crysviz-mcp", "args": ["--gui", "qt"] }
+  }
+}
+```
+
+The window opens on the first request. Then ask, for example:
+
+- "Load ~/NaCl.cif and show me the view along c."
+- "Make a 3x3x3 supercell, remove one O, relax it and tell me how far the neighbours moved."
+- "Find all TiO6 octahedra and colour them blue."
+- "Run 2 ps of MD at 600 K and export the trajectory."
+
+The window is shared. Claude leaves your camera, zoom and display settings
+alone unless you ask, and it is told about the changes you make by hand. Only
+local clients are supported for now (Claude Code, Claude Desktop); claude.ai in
+the browser is not supported yet. The tools and options are in
+[agent_guides/MCP.md](agent_guides/MCP.md), and [examples/mcp_quickstart.md](examples/mcp_quickstart.md)
+walks through a first session.
 
 ## Widget mode / embedding
 

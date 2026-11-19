@@ -16,6 +16,19 @@ uv venv --system-site-packages .venv && uv pip install --python .venv/bin/python
 claude mcp add crysviz -- crysviz-mcp  # Claude Code (or the venv's .venv/bin/crysviz-mcp)
 ```
 
+The `mcp` extra is newer than the latest release: until the next release,
+install from a checkout (`pip install -e '.[mcp,qt]'`).
+
+Claude Desktop reads its servers from `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "crysviz": { "command": "/path/to/venv/bin/crysviz-mcp", "args": ["--gui", "qt"] }
+  }
+}
+```
+
 Options: `--export-dir DIR` (default `./crysviz-exports`, or
 `$CRYSVIZ_EXPORT_DIR`), `--gui qt|gtk|cef`, `--debug`.
 
