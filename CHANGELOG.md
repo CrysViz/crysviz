@@ -13,6 +13,7 @@
 - The app's Download and Save buttons in a window crysviz-mcp opens save into its export folder (and are reported to the model); `crysviz.Viewer(download_dir=...)` does the same for scripts and raises `file_saved`, while a plain Viewer window keeps its Save dialog
 - Wyckoff editor: locking a structure that is only close to symmetric (within the tolerance) now idealises each site onto its exact position. Before, the site freedom and atom mappings were read off the distorted positions, so a whole orbit could collapse onto one point and a symmetry-constrained relaxation failed (NaN stress)
 - README brought up to date (features, installation, Python API, MCP), and the examples rewritten for the current API with new ones for user-edit events, relax + EOS jobs and an MCP quickstart
+- **Cut Slab (h k l)** in the Cell & Supercell window: a surface slab along (h k l), N layers thick with vacuum along the normal, as a new row. It is the same cutter as the MCP `build_slab`, and the feature search's *make slab*, *surface slab* and *surface* now lead to it (Add Vacuum keeps the vacuum phrases)
 - Refined camera controls with shortcuts (desktop)
 - Setting view along/opposite plane normal
 - Added resolution control to plane colormaps

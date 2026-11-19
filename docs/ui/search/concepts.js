@@ -129,8 +129,11 @@ export const CONCEPTS = [
     'order disordered structure', 'partial occupancies', 'site disorder', 'occupancy', 'random alloy', 'solid solution',
   ] },
   { to: { control: 'applyVacuum' }, phrases: [
-    'add vacuum', 'vacuum layer', 'vacuum gap', 'make slab', 'surface slab', 'slab model', 'surface',
-    'molecule in a box', 'vacuum padding',
+    'add vacuum', 'vacuum layer', 'vacuum gap', 'molecule in a box', 'vacuum padding',
+  ] },
+  { to: { control: 'cutSlabBtn' }, phrases: [
+    'make slab', 'surface slab', 'slab model', 'surface', 'cut slab', 'cleave', 'cleave surface',
+    'miller plane surface', 'surface termination', 'build slab',
   ] },
   { to: { control: 'resetVacuum' }, phrases: ['remove vacuum', 'undo vacuum'] },
   { to: { control: 'osBuildBtn' }, phrases: ['random configurations', 'sample orderings', 'enumerate configurations', 'special quasirandom structure'] },

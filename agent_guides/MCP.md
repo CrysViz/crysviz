@@ -159,7 +159,7 @@ One set of rules for every tool, so a model that learns one knows them all:
 ### New rows
 | Tool | What it does |
 |---|---|
-| `build_slab` | `hkl`, `layers`, `vacuum` (Å, along the surface normal). |
+| `build_slab` | `hkl`, `layers`, `vacuum` (Å, along the surface normal), as the Cell & Supercell window's Cut Slab (h k l); both refuse the same inputs with the same message. |
 | `build_symmetrized` | The standardised (conventional or primitive) cell at a tolerance. |
 | `build_phonon_frames` | The chosen phonon mode as N displaced frames, a trajectory. |
 

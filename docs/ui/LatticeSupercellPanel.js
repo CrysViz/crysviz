@@ -11,6 +11,7 @@ import { createBondLengthControls } from './BondLengthPanel.js';
 import { applyVacuumToStructure, resetVacuumForStructure } from './addToStructureModule/AddVacuumModule.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 import { createNewStructureFromAtoms, createTrajectoryFromFrames } from './addToStructureModule/CommitAtoms.js';
+import { cutSlab, SLAB_DEFAULTS } from './addToStructureModule/CutSlab.js';
 import { buildOrderedStructure, planOrdering, listMultiplierOptions } from '../atomistic/order_structure.js';
 import { mountPotentialNotice, potentialLabel, potentialSource } from '../atomistic/potentialNotice.js';
 import { Atom, Structure } from '../model/index.js';
@@ -535,6 +536,83 @@ function addVacuumSection(container) {
   });
 }
 
+// The Cut Slab fields, kept across rebuilds: a cut selects its new row, which
+// rebuilds this window, and the next cut usually changes one field only.
+const slabFields = {
+  slabH: '1', slabK: '1', slabL: '1',
+  slabLayers: String(SLAB_DEFAULTS.layers), slabVacuum: String(SLAB_DEFAULTS.vacuum),
+};
+// The section's current container: the cut's own rebuild replaces the one the
+// click started in before the result is reported (same reason as orderContainer).
+let slabContainer = null;
+
+// A typed field as a number; an empty or unparsable one is NaN, not 0, so
+// cutSlab refuses it rather than cutting along a zero index.
+function slabNumber(id) {
+  const raw = slabContainer?.querySelector(`#${id}`)?.value?.trim() ?? '';
+  return raw === '' ? NaN : Number(raw);
+}
+
+/** "Cut Slab (h k l)" section: the crystal cut along (h k l) into a new row,
+ *  through cutSlab, the host's build_slab path. Beside Vacuum because "make a
+ *  slab" is what users reach Add Vacuum for. */
+function addSlabSection(container) {
+  slabContainer = container;
+  // h/k/l share the vacuum section's three-field row; layers and vacuum the
+  // Order Structure section's label + compact field row.
+  container.innerHTML = `
+    <p class="lsc-hint-text">
+      Cuts the crystal along the (h k l) plane into a new file: the layers are repeats of the stacking period, and the vacuum is one gap along the surface normal. The original is left untouched.
+    </p>
+    <div class="lsc-vacuum-axes-row">
+      ${['h', 'k', 'l'].map((index) => `
+        <div class="lsc-vacuum-axis">
+          <label for="slab${index.toUpperCase()}">${index}</label>
+          <input type="number" id="slab${index.toUpperCase()}" aria-label="Miller index ${index}" step="1"
+            class="coord-input lsc-compact-input lsc-vacuum-input">
+        </div>`).join('')}
+    </div>
+    <div class="lsc-sample-row">
+      <label for="slabLayers" class="lsc-field-label">Layers</label>
+      <input type="number" id="slabLayers" min="1" max="50" step="1"
+        title="Repeats of the stacking period along the surface normal."
+        class="lsc-compact-input lsc-sample-count-input">
+      <label for="slabVacuum" class="lsc-field-label">Vacuum (Å)</label>
+      <input type="number" id="slabVacuum" min="0" max="200" step="0.5"
+        title="The gap between the slab and its periodic image along the normal."
+        class="lsc-compact-input lsc-sample-count-input">
+    </div>
+    <div class="lsc-btn-center-row">
+      <button id="cutSlabBtn" class="btn-mini highlight lsc-apply-vacuum-btn">Cut Slab</button>
+    </div>
+    <div id="slabStatus" class="lsc-status-text" role="status"></div>
+  `;
+
+  for (const [id, value] of Object.entries(slabFields)) {
+    const input = /** @type {HTMLInputElement} */ (container.querySelector(`#${id}`));
+    input.value = value;
+    input.addEventListener('input', () => { slabFields[id] = input.value; });
+  }
+
+  container.querySelector('#cutSlabBtn').addEventListener('click', () => {
+    const status = container.querySelector('#slabStatus');
+    const hkl = [slabNumber('slabH'), slabNumber('slabK'), slabNumber('slabL')];
+    let result;
+    try {
+      result = cutSlab(fileBrowser.selectedStructure, { hkl, layers: slabNumber('slabLayers'), vacuum: slabNumber('slabVacuum') });
+    } catch (error) {
+      status.textContent = error.message || String(error);
+      return;
+    }
+    // The new row's rebuild gave the section a fresh container: report there.
+    const live = slabContainer?.querySelector('#slabStatus');
+    if (live) {
+      live.textContent = `Cut (${hkl.join(' ')}): ${result.slab.positions.length} atoms, `
+        + `${result.slab.thickness.toFixed(2)} Å thick, as the new row ${result.container?.fileName ?? ''}.`;
+    }
+  });
+}
+
 // VESTA-style "boundary" controls: per-axis fractional min/max defining the
 // display region. Every periodic image of every atom whose wrapped fractional
 // coordinate lands inside the region is drawn (render/LatticeModule.js). The
@@ -881,6 +959,18 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   vacuumPanel.appendChild(vacuumContent);
   addVacuumSection(vacuumContent);
 
+  // --- Cut Slab section ---
+  const slabPanel = document.createElement("div");
+  slabPanel.id = "slabPanel";
+  slabPanel.className = "panel-section";
+
+  const slabContent = document.createElement("div");
+  slabContent.id = "slabContent";
+
+  slabPanel.appendChild(makeSectionHeadline("Cut Slab (h k l)"));
+  slabPanel.appendChild(slabContent);
+  addSlabSection(slabContent);
+
   // --- Order Structure section ---
   const orderPanel = document.createElement("div");
   orderPanel.id = "orderStructurePanel";
@@ -1023,6 +1113,7 @@ transformResetBtn.onclick = () => {
   group.appendChild(supercellPanel);
   group.appendChild(boundaryPanel);
   group.appendChild(vacuumPanel);
+  group.appendChild(slabPanel);
   group.appendChild(orderPanel);
   group.appendChild(transformPanel);
   targetPanel.appendChild(group);
@@ -1031,6 +1122,7 @@ transformResetBtn.onclick = () => {
 
 export function removeLatticeAndSupercellPanel() {
   liveSupercellInputs = null;
+  slabContainer = null;
   const panel = document.getElementById('latticeAndSupercellGroup');
   if (panel) {
     panel.remove();

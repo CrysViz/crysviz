@@ -3,9 +3,8 @@
 // windows use; the UI modules are imported on first use so this module stays
 // importable in Node for the unit tests.
 
-import { getActiveStructure, getContainerForStructure } from '../state/structures.js';
+import { getActiveStructure } from '../state/structures.js';
 import { commandError, rowEnvelope } from './commands.js';
-import { buildSlab } from '../model/slab.js';
 
 const round = (x, digits = 6) => Math.round(x * 10 ** digits) / 10 ** digits;
 const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
@@ -21,8 +20,6 @@ function requirePeriodic(structure) {
     throw commandError('NO_LATTICE', 'This needs a periodic structure');
   }
 }
-
-const elementOf = (structure, i) => structure.atoms[i]?.getRepresentativeElement?.() ?? structure.elements[i];
 
 // ---- symmetry ----------------------------------------------------------------
 
@@ -306,34 +303,12 @@ export async function addPlane(args) {
 
 // ---- slabs -----------------------------------------------------------------------
 
+// The Cell & Supercell window's Cut Slab path: it validates, cuts and adds the row.
 export async function buildSlabCommand(args) {
-  const structure = activeStructure();
-  requirePeriodic(structure);
-  const { hkl, layers = 4, vacuum = 15 } = args ?? {};
-  if (!Array.isArray(hkl) || hkl.length !== 3 || !hkl.every(Number.isInteger) || hkl.every((x) => x === 0)) {
-    throw commandError('INVALID_ARGS', 'hkl must be three integers, not all zero');
-  }
-  if (!Number.isInteger(layers) || layers < 1 || layers > 50) throw commandError('INVALID_ARGS', 'layers must be 1 to 50');
-  if (!isFiniteNumber(vacuum) || vacuum < 0 || vacuum > 200) throw commandError('INVALID_ARGS', 'vacuum must be 0 to 200 Å');
-  if (structure.atoms.some((atom) => atom.isDisordered?.())) {
-    throw commandError('DISORDERED', 'Slabs need an ordered structure (use run_ordering first)');
-  }
-  let slab;
-  try {
-    slab = buildSlab({
-      lattice: structure.lattice, positions: structure.atoms.map((a) => a.position),
-      elements: structure.atoms.map((_, i) => elementOf(structure, i)),
-    }, { hkl, layers, vacuum });
-  } catch (error) {
-    throw commandError('SLAB_FAILED', error.message);
-  }
-  if (slab.positions.length > 20000) throw commandError('TOO_LARGE', `The slab would have ${slab.positions.length} atoms`);
-  const name = `slab_${hkl.join('')}_${String(getContainerForStructure(structure)?.fileName ?? 'structure')}`;
-  const { createNewStructureFromAtoms } = await import('../ui/addToStructureModule/CommitAtoms.js');
-  createNewStructureFromAtoms(slab.positions.map((p, i) => ({ element: slab.elements[i], x: p[0], y: p[1], z: p[2] })),
-    { lattice: slab.lattice, fileName: name });
+  const { cutSlab } = await import('../ui/addToStructureModule/CutSlab.js');
+  const { container, slab, layers, vacuum } = cutSlab(getActiveStructure(), args ?? {});
   return {
-    ...rowEnvelope(getContainerForStructure(getActiveStructure())), layers,
+    ...rowEnvelope(container), layers,
     thickness: round(slab.thickness, 4), vacuum, c: round(slab.lattice[2][2], 4),
     note: 'c is along the surface normal; the slab sits centred with the vacuum as one gap along c.',
   };

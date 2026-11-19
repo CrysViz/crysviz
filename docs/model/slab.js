@@ -4,7 +4,8 @@
 // c3 with (h k l)·c3 = 1 found by the extended Euclid algorithm, the crystal
 // re-expressed in that basis, repeated along c3, then c3 replaced by a vector
 // perpendicular to the surface so the vacuum is a true gap along the normal.
-// Plain arrays, no app state: the host's build_slab registers the result.
+// Plain arrays, no app state: ui/addToStructureModule/CutSlab.js registers the
+// result, for the Cell & Supercell window and the host's build_slab alike.
 
 const cross = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
 const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
