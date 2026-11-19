@@ -44,7 +44,14 @@ const PAGE_HELPERS = `(() => {
   await page.evaluate(PAGE_HELPERS);
   const dispatchLoad = (args, click) => page.evaluate(async ({ args, click }) => {
     const { shown, res } = await window.__probe(() => window.crysvizHost.dispatch({ command: 'load', args }), click);
-    return { shown, ok: res.ok, code: res.error?.code, message: res.error?.message, periodic: res.ok ? await window.__activeField() : undefined };
+    // A cancelled dialog is the user saying no, not a failed call: a result with applied: false.
+    const refused = res.ok && res.result?.applied === false;
+    return {
+      shown, ok: res.ok && !refused, refused,
+      code: res.error?.code ?? (refused ? res.result.code : undefined),
+      message: res.error?.message ?? (refused ? res.result.reason : undefined),
+      periodic: res.ok && !refused ? await window.__activeField() : undefined,
+    };
   }, { args, click });
 
   // --- DW-6.1 data form: literal booleans skip the dialog
@@ -63,8 +70,8 @@ const PAGE_HELPERS = `(() => {
 
   // --- cancelled host load: clear error, not the generic "no structure"
   const cancel = await dispatchLoad({ name: 'e.cube', data: SUSPECT }, 'Cancel');
-  H.check('cancelled load reports LOAD_CANCELLED',
-    cancel.shown && cancel.ok === false && cancel.code === 'LOAD_CANCELLED' && !/no structure/.test(cancel.message), JSON.stringify(cancel));
+  H.check('cancelled load reports LOAD_CANCELLED (a refusal, applied: false)',
+    cancel.shown && cancel.refused === true && cancel.code === 'LOAD_CANCELLED' && !/no structure/.test(cancel.message), JSON.stringify(cancel));
 
   // --- DW-6.3 URL form
   const BASE = await page.evaluate(() => location.origin + location.pathname);

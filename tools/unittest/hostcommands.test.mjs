@@ -311,3 +311,80 @@ test('find bonds where.atoms: each centre with its neighbours, images as seen fr
   const both = FINDERS.bonds(s, { atoms: [1] }, lengths, {}).items;
   assert.deepEqual(both.map(([c, n, image]) => [c, n, image.join(',')]).sort(), [[1, 0, '0,0,0'], [1, 0, '1,0,0']]);
 });
+
+test('every error code the app can raise is classified as an outcome or an error', async () => {
+  const { ERROR_KINDS } = await import('../../docs/host/commands.js');
+  const { readdirSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const root = new URL('../../docs/', import.meta.url).pathname;
+  const codes = new Set();
+  const walk = (dir) => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      if (statSync(path).isDirectory()) { if (!['external', 'compiled'].includes(name)) walk(path); continue; }
+      if (!name.endsWith('.js')) continue;
+      const text = readFileSync(path, 'utf8');
+      for (const m of text.matchAll(/(?:commandError\(|code(?::| =) )'([A-Z][A-Z_]{3,})'/g)) codes.add(m[1]);
+    }
+  };
+  walk(root);
+  const missing = [...codes].filter((code) => !Object.hasOwn(ERROR_KINDS, code));
+  assert.deepEqual(missing, []);
+  for (const kind of Object.values(ERROR_KINDS)) assert.ok(kind === 'outcome' || kind === 'error');
+});
+
+test('sinceLastCall: element changes, atoms, selection, camera, renderer; nothing when nothing changed', async () => {
+  const { diffSnapshots } = await import('../../docs/host/userChanges.js');
+  const base = {
+    structure: 'structure-2', name: 'LaB.cif', frame: 0, revision: 'r1', content: 'c1', formula: 'La1B4',
+    atomCount: 5, elements: ['La', 'B', 'B', 'B', 'B'], selection: [], renderer: 'forward',
+    camera: { direction: [0, 0, 1], up: [0, 1, 0], zoom: 1 }, jobs: '', jobRunning: false, animating: false,
+  };
+  assert.equal(diffSnapshots(base, { ...base }), null);
+  assert.equal(diffSnapshots(null, base), null);
+  // camera jitter within tolerance is no change
+  assert.equal(diffSnapshots(base, { ...base, camera: { direction: [0, 0.001, 1], up: [0, 1, 0], zoom: 1.001 } }), null);
+  const swapped = diffSnapshots(base, { ...base, revision: 'r2', formula: 'La1B2C2', elements: ['La', 'C', 'B', 'C', 'B'],
+    selection: [1, 3], renderer: 'raytrace', camera: { direction: [1, 0, 0], up: [0, 0, 1], zoom: 2 } });
+  assert.deepEqual(swapped.structure.elementChanges, { count: 2, atoms: [1, 3], pairs: { 'B->C': 2 } });
+  assert.deepEqual(swapped.selection, { count: 2, atoms: [1, 3] });
+  assert.deepEqual(swapped.renderer, { from: 'forward', to: 'raytrace' });
+  assert.deepEqual(swapped.camera.direction, [1, 0, 0]);
+  assert.match(swapped.note, /2 atoms changed element \(B->C x2\)/);
+  const added = diffSnapshots(base, { ...base, revision: 'r3', atomCount: 6, formula: 'La1B5', elements: [...base.elements, 'B'] });
+  assert.equal(added.structure.atomCountFrom, 5);
+  assert.match(added.note, /indices may have shifted/);
+  const switched = diffSnapshots(base, { ...base, structure: 'structure-3', name: 'Si.cif' });
+  assert.equal(switched.structure.to, 'Si.cif');
+  // a job's own changes are not the user's: structure left out while one runs or has just ended
+  assert.equal(diffSnapshots({ ...base, jobRunning: true }, { ...base, structure: 'structure-4', name: 'md', jobRunning: false, jobs: 'run_md-1:done' }), null);
+  // a playing phonon animation moves atoms every frame: not reported
+  assert.equal(diffSnapshots({ ...base, animating: true }, { ...base, content: 'c9', animating: true }), null);
+  assert.deepEqual(diffSnapshots(base, { ...base, content: 'c9' }).structure, { moved: true, revision: 'r1' });
+});
+
+test('expectedRevision refuses only when the addressed atoms are no longer the same atoms', async () => {
+  const { checkExpectedRevision } = await import('../../docs/host/commands.js');
+  const { fileBrowser } = await import('../../docs/state/store.js');
+  const { atomIds, structureRevision } = await import('../../docs/model/structureRevision.js');
+  const atom = (uuid, element) => ({ uuid, position: [0, 0, 0], species: [{ element, occupancy: 1 }] });
+  const s = { lattice: [[3, 0, 0], [0, 3, 0], [0, 0, 3]], atoms: [atom('a', 'La'), atom('b', 'B'), atom('c', 'B'), atom('d', 'B')] };
+  fileBrowser.selectedStructure = s;
+  const seen = new Map([[structureRevision(s), atomIds(s)]]);
+  const r0 = structureRevision(s);
+  const idsAt = (r) => seen.get(r);
+  const code = (fn) => { try { fn(); } catch (error) { return error.code; } return null; };
+  // the user changes another atom's species: an edit of atoms 1 and 2 still applies
+  s.atoms[3] = { ...s.atoms[3], species: [{ element: 'C', occupancy: 1 }] };
+  assert.notEqual(structureRevision(s), r0);
+  assert.equal(code(() => checkExpectedRevision(r0, [1, 2], idsAt)), null);
+  assert.equal(code(() => checkExpectedRevision(r0, [1, 2], idsAt, true)), 'STRUCTURE_CHANGED');
+  // nothing addressed by index: applies
+  assert.equal(code(() => checkExpectedRevision(r0, [], idsAt)), null);
+  // the user inserts an atom before them: indices 1 and 2 now point at other atoms
+  s.atoms.splice(0, 0, atom('z', 'H'));
+  assert.equal(code(() => checkExpectedRevision(r0, [1, 2], idsAt)), 'STRUCTURE_CHANGED');
+  // a revision this host never reported cannot be compared
+  assert.equal(code(() => checkExpectedRevision('r-unknown', [0], idsAt)), 'STRUCTURE_CHANGED');
+  fileBrowser.selectedStructure = null;
+});

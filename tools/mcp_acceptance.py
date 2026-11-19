@@ -197,6 +197,15 @@ class Session:
             raise Failed(f"{name}({json.dumps(args)[:120]}) -> {text[:300]}")
         return json.loads(text) if text[:1] in "[{" else text
 
+    async def refused(self, name, args=None) -> dict:
+        """A call the situation refused: an ordinary result (no failed tool), applied: false."""
+        r = await self.raw(name, args)
+        text = next((c.text for c in r.content if c.type == "text"), "")
+        check(not r.is_error, f"{name} refusal came back as a tool error: {text[:300]}")
+        value = json.loads(text)
+        check(value.get("applied") is False and value.get("reason") and value.get("code"), f"{name} not refused: {value}")
+        return value
+
     async def error(self, name, args=None) -> str:
         r = await self.raw(name, args)
         check(r.is_error, f"{name} should have failed")
@@ -480,7 +489,8 @@ async def collaboration(s: Session):
     # The "user" turns and zooms the view.
     turned = await s.call("set_view", {"rotate": {"axis": "y", "degrees": 35}})
     cam = (await s.state())["camera"]
-    check(turned == cam, f"set_view returns the camera as get_state reports it: {turned} vs {cam}")
+    check(turned.pop("applied", None) is True and turned == cam,
+          f"set_view returns applied plus the camera as get_state reports it: {turned} vs {cam}")
     # zoom alone keeps the direction and up the camera has.
     zoomed = await s.call("set_view", {"zoom": 1.7})
     check(zoomed["direction"] == cam["direction"] and zoomed["up"] == cam["up"] and zoomed["zoom"] == 1.7, f"zoom only: {zoomed}")
@@ -538,13 +548,13 @@ async def edits(s: Session):
     back = await s.call("move_atoms", {"atoms": [2, 3, 4], "by": [0, 0, -0.039], "cartesian": True})
     check(back["revision"] == r1, f"move_atoms cartesian: {back}")
     await s.call("set_supercell", {"n": [2, 1, 1]})  # what the user might do by hand
-    refused = await s.error("remove_atoms", {"atoms": [0], "expectedRevision": r1})
-    check("STRUCTURE_CHANGED" in refused and "10 atoms" in refused and '"atomCount": 10' in refused, refused)
+    refused = await s.refused("remove_atoms", {"atoms": [0], "expectedRevision": r1, "exactRevision": True})
+    check(refused["code"] == "STRUCTURE_CHANGED" and refused["atomCount"] == 10, f"exact guard after a supercell: {refused}")
     # (Once seen under heavy load: the old selection accepted after the supercell. If it recurs,
     # this says whether the supercell had silently reverted.)
     check((await s.state())["structure"]["atomCount"] == 10, "the 2x1x1 supercell did not stay built")
-    stale = await s.error("apply", {"selection": oxygens["selection"], "action": "highlight"})
-    check("SELECTION_STALE" in stale, f"a supercell must make old selections stale: {stale}")
+    stale = await s.refused("apply", {"selection": oxygens["selection"], "action": "highlight"})
+    check(stale["code"] == "SELECTION_STALE", f"a supercell must make old selections stale: {stale}")
     # A filter on the wrong kind, or a misplaced one, is refused, never ignored.
     wrong = await s.error("find", {"what": "bonds", "where": {"element": "O"}})
     check("not element" in wrong and "elements" in wrong, wrong)
@@ -584,8 +594,8 @@ async def edits(s: Session):
         f"{(x + i) / 2} {(y + j) / 2} {(z + k) / 2}\n"
         for x, y, z in [(0.5, 0.5, 0), (0.5, 0, 0.5), (0, 0.5, 0.5)] for i in (0, 1) for j in (0, 1) for k in (0, 1))
     await s.load_cell(big, "STO_222.vasp", 40)
-    too_big = await s.error("set_supercell", {"n": [20, 20, 20]})
-    check("TOO_LARGE" in too_big and "320000" in too_big, too_big)
+    too_big = await s.refused("set_supercell", {"n": [20, 20, 20]})
+    check(too_big["code"] == "TOO_LARGE" and "320000" in too_big["reason"], f"{too_big}")
     check((await s.state())["structure"]["atomCount"] == 40, "a refused supercell changed the structure")
     # run_relax says which pressure it used, and what the name hints.
     await s.load_cell(STO, "SrTiO3_10GPa.vasp", 5)
@@ -595,13 +605,44 @@ async def edits(s: Session):
     return "set_element in place, revision guard after a supercell, in/notIn/frac/near, reset_color, relax echo"
 
 
+async def outcomes(s: Session):
+    """Refusals are results, not failed tools; the revision guard looks only at the addressed atoms.
+
+    A user's hand edit cannot be made through MCP (anything sent here is the model's own call), so a
+    second edit stands in for "someone else changed the structure": the guard compares atom identity,
+    whoever made the change. The browser test hostfacade makes real page-side edits for sinceLastCall.
+    """
+    await s.load_cell(STO, "STO_outcomes.vasp", 5)
+    r0 = (await s.state())["structure"]["revision"]
+    # Another atom changes species: an edit of atom 2 at the old revision still applies.
+    await s.call("set_element", {"atoms": [4], "element": "F"})
+    applied = await s.call("set_element", {"atoms": [2], "element": "Cl", "expectedRevision": r0})
+    check(applied.get("applied") is True and "sinceLastCall" not in applied, f"guard by identity: {applied}")
+    # Nothing changed by hand since the model's own last call: no sinceLastCall anywhere.
+    check("sinceLastCall" not in await s.state(), "sinceLastCall after the model's own edit")
+    r1 = applied["revision"]
+    # An atom is removed in front of index 2: atom 2 is now another atom, so the edit is refused (not an error).
+    await s.call("remove_atoms", {"atoms": [0]})
+    moved = await s.refused("set_element", {"atoms": [2], "element": "Br", "expectedRevision": r1})
+    check(moved["code"] == "STRUCTURE_CHANGED" and 2 in moved.get("movedAtoms", []), f"guard after a shift: {moved}")
+    check([a["element"] for a in await s.atoms()] == ["Ti", "Cl", "O", "F"], "a refused set_element changed atoms")
+    # Atoms that would collide: refused with the pairs, not an error; force adds them.
+    close = await s.refused("add_atoms", {"atoms": [{"element": "H", "position": [0.5, 0.5, 0.52]}]})
+    check(close["code"] == "ATOMS_TOO_CLOSE" and close.get("tooClose"), f"collision: {close}")
+    forced = await s.call("add_atoms", {"atoms": [{"element": "H", "position": [0.5, 0.5, 0.52]}], "force": True})
+    check(forced.get("applied") is True and forced["atomCount"] == 5, f"force: {forced}")
+    # A wrong call is still an error.
+    check("INVALID_ELEMENT" in await s.error("set_element", {"atoms": [0], "element": "Xx"}), "invalid element")
+    return "identity guard applies past other edits, refuses after a shift; ATOMS_TOO_CLOSE as applied:false"
+
+
 WORKFLOWS = [
     ("1", "vacancy + relax", w1_vacancy_relax), ("2", "publication figure", w2_figure),
     ("3", "charge density", w3_charge_density), ("4", "diffusion (MD + MSD)", w4_diffusion),
     ("5", "symmetry", w5_symmetry), ("6", "ordering approximants", w6_ordering),
     ("7", "EOS", w7_eos), ("8", "phonon frames", w8_phonons), ("9", "slab", w9_slab),
     ("10", "screening 20 CIFs", w10_screening), ("collab", "shared window", collaboration),
-    ("edits", "edits between calls", edits),
+    ("edits", "edits between calls", edits), ("outcomes", "refusals vs errors", outcomes),
 ]
 
 

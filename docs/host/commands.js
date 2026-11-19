@@ -11,7 +11,7 @@ import {
   getContainers,
 } from '../state/structures.js';
 import { app, general } from '../state/store.js';
-import { structureRevision } from '../model/structureRevision.js';
+import { atomIds, structureRevision } from '../model/structureRevision.js';
 import { cancelJob, jobView, listJobs, runningJob, startJob, waitJob } from './jobs.js';
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
@@ -240,17 +240,74 @@ export function composition(atoms) {
 export { structureRevision, structureContent, atomIdentity } from '../model/structureRevision.js';
 
 
-/** expectedRevision guard (host dispatch, every command): refuse when the active structure changed. */
-export function checkExpectedRevision(expected) {
+/**
+ * The expectedRevision guard (host dispatch, every command). A call that
+ * addresses atoms by index runs as long as those indices still point at the
+ * same atoms as at `expected`, even if the user changed other atoms meanwhile
+ * (sinceLastCall reports that); `exact` demands the whole revision unchanged.
+ * @param {string} expected a revision the caller saw (get_state, find, a result)
+ * @param {number[]} indices the atom indices the call addresses (may be empty)
+ * @param {(revision: string) => string[] | undefined} idsAt atom ids at a revision this host reported
+ * @param {boolean} [exact]
+ */
+export function checkExpectedRevision(expected, indices, idsAt, exact = false) {
   const structure = getActiveStructure();
   const current = structure ? structureRevision(structure) : null;
-  if (expected !== current) {
+  if (expected === current) return;
+  const atomCount = structure?.atoms.length ?? 0;
+  const refuse = (why, extra = {}) => {
     throw commandError('STRUCTURE_CHANGED',
-      `The structure changed since revision ${expected} (now ${current}, ${structure?.atoms.length ?? 0} atoms); `
-      + 'call get_state again before acting on atom indices',
-      { revision: current, atomCount: structure?.atoms.length ?? 0 });
-  }
+      `The structure changed since revision ${expected} (now ${current}, ${atomCount} atoms): ${why}. `
+      + 'Call get_state or find again before acting on atom indices.',
+      { revision: current, atomCount, ...extra });
+  };
+  if (exact) refuse('exactRevision asks for no change at all');
+  if (!indices.length) return;
+  const before = idsAt(expected);
+  if (!before || !structure) refuse('that revision is not known here, so the atoms cannot be compared');
+  const now = atomIds(structure);
+  const moved = indices.filter((i) => i >= before.length || i >= now.length || before[i] !== now[i]);
+  if (moved.length) refuse(`atom indices ${moved.slice(0, 20).join(', ')} now point at other atoms`, { movedAtoms: moved.slice(0, 50) });
 }
+
+/** Atom indices a command addresses directly (args.atoms as a list of indices). */
+export function addressedIndices(args) {
+  const atoms = args?.atoms;
+  return Array.isArray(atoms) && atoms.every((i) => Number.isInteger(i)) ? atoms : [];
+}
+
+/**
+ * Every error code a command can end with, classified. An `outcome` is the
+ * world saying no to a well-formed call (the structure changed under it, a job
+ * is running, atoms would collide): the host returns it as an ordinary result,
+ * {applied: false, reason, code, ...details}, so a client does not report a
+ * failed tool. An `error` is a call that was wrong, or a real failure. Codes
+ * not listed are errors; tools/unittest/hostcommands.test.mjs keeps every code
+ * the host can raise listed.
+ */
+export const ERROR_KINDS = Object.freeze({
+  // outcomes: the call was fine, the situation refused it
+  STRUCTURE_CHANGED: 'outcome', SELECTION_STALE: 'outcome', ATOMS_TOO_CLOSE: 'outcome', JOB_BUSY: 'outcome',
+  NOTHING_TO_ORDER: 'outcome', CONTROL_DISABLED: 'outcome', CONTROL_UNAVAILABLE: 'outcome',
+  NO_ACTIVE_STRUCTURE: 'outcome', NO_LATTICE: 'outcome', DISORDERED: 'outcome', NO_PHONONS: 'outcome',
+  NO_EIGENVECTORS: 'outcome', NO_FIELD: 'outcome', TOO_LARGE: 'outcome', LOAD_CANCELLED: 'outcome',
+  NO_MODE: 'outcome', PNG_CAPTURE_IN_PROGRESS: 'outcome', POTENTIAL_TOO_MANY_ATOMS: 'outcome',
+  // errors: a wrong call
+  INVALID_ARGS: 'error', INVALID_ELEMENT: 'error', INVALID_REQUEST: 'error', UNKNOWN_COMMAND: 'error',
+  NOT_A_CONTROL: 'error', NOT_SETTABLE: 'error', CONTROL_NOT_FOUND: 'error', SELECTION_NOT_FOUND: 'error',
+  STRUCTURE_NOT_FOUND: 'error', QPOINT_NOT_FOUND: 'error', FIELD_NOT_FOUND: 'error', FRAME_OUT_OF_RANGE: 'error',
+  JOB_NOT_FOUND: 'error', INVALID_OUTPUT_URL: 'error', INVALID_INPUT_URL: 'error', INVALID_PIPELINE: 'error',
+  // errors: a real failure
+  COMMAND_FAILED: 'error', COMMAND_UNAVAILABLE: 'error', SYMMETRY_FAILED: 'error', SLAB_FAILED: 'error',
+  SELECT_FAILED: 'error', POSITION_SYNC_FAILED: 'error', PIPELINE_FAILED: 'error', LOAD_FAILED: 'error',
+  LATTICE_SYNC_FAILED: 'error', CONTROL_FAILED: 'error', CAPTURE_FAILED: 'error', HOST_COMMAND_FAILED: 'error',
+  VIEWER_CLOSED: 'error', NOT_READY: 'error', JOB_FAILED: 'error',
+  // errors of the launch path (bootstrap, manifest), never a command's
+  INVALID_MANIFEST: 'error', MANIFEST_FETCH_FAILED: 'error', MANIFEST_COMPLETE_FAILED: 'error',
+  INPUT_FETCH_FAILED: 'error', OUTPUT_UPLOAD_FAILED: 'error', BOOTSTRAP_FAILED: 'error',
+  DEFAULT_LOAD_UNAVAILABLE: 'error', SHARED_STATE_FAILED: 'error', HASH_LOAD_FAILED: 'error',
+  OPTIMADE_CORS_OR_NETWORK: 'error',
+});
 
 /** A pressure in a structure's name ("... 112 GPa ..."), or null: a hint only, never acted on. */
 export function namedPressureGPa(name) {
@@ -452,7 +509,7 @@ export function voidSites(structure, minRadius, limit = Infinity) {
   return { total: kept.length, sites };
 }
 
-function cameraState() {
+export function cameraState() {
   const camera = app.camera;
   const target = app.controls?.target;
   if (!camera || !target) return null;

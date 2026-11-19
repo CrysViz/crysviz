@@ -49,6 +49,11 @@ function shapeInto(h, structure) {
   }
 }
 
+/** Each atom's identity, in order: what an atom index points at. @param {any} structure */
+export function atomIds(structure) {
+  return structure.atoms.map(atomId);
+}
+
 /** @param {any} structure */
 export function atomIdentity(structure) {
   const h = hasher();

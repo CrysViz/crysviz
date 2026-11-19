@@ -6,8 +6,11 @@ import {
 } from '../state/structures.js';
 import { LOAD_HASH_RE } from '../io/SessionReceiver.js';
 import { structureContent } from '../model/structureRevision.js';
+import { diffSnapshots, takeSnapshot } from './userChanges.js';
 import {
   COMMAND_HANDLERS,
+  ERROR_KINDS,
+  addressedIndices,
   checkExpectedRevision,
   commandError,
   errorRecord,
@@ -86,6 +89,17 @@ export function createBrowserHost(initialDeps = {}) {
   let bridgeCapability;
   let bridgeReceiver = null;
   let ready = false;
+  /** The window as the last command left it (userChanges.js), null before the first. */
+  let lastSnapshot = null;
+  /** Atom ids per revision this host has seen, newest last: the expectedRevision guard compares them. */
+  const revisionIds = new Map();
+  const REMEMBERED_REVISIONS = 64;
+  function remember(snapshot) {
+    if (!snapshot.revision || !snapshot.ids) return;
+    revisionIds.delete(snapshot.revision);
+    revisionIds.set(snapshot.revision, snapshot.ids);
+    if (revisionIds.size > REMEMBERED_REVISIONS) revisionIds.delete(revisionIds.keys().next().value);
+  }
   let closed = false;
 
   function configure(next = {}) {
@@ -153,6 +167,10 @@ export function createBrowserHost(initialDeps = {}) {
       emit('error', error);
       return { ok: false, error };
     }
+    // What the user changed by hand since the previous command goes back with this one.
+    const now = await takeSnapshot(deps);
+    remember(now);
+    const sinceLastCall = diffSnapshots(lastSnapshot, now);
     // A command that changed the structure without saying so (crysviz:atoms-changed) is
     // announced here, so open windows that mirror it, such as the structure editor, follow.
     const before = getActiveStructure();
@@ -163,16 +181,28 @@ export function createBrowserHost(initialDeps = {}) {
     try {
       const ctx = { deps, emit, origin: window.location.origin };
       let args = request.args;
-      // Any command may carry expectedRevision (get_state's structure.revision):
-      // it runs only if the structure is still the one the caller looked at.
+      // Any command may carry expectedRevision (a structure.revision the caller saw):
+      // it runs as long as the atoms it addresses by index are still the same atoms.
       if (args && typeof args === 'object' && !Array.isArray(args) && 'expectedRevision' in args) {
-        const { expectedRevision, ...rest } = args;
-        checkExpectedRevision(expectedRevision);
+        const { expectedRevision, exactRevision, ...rest } = args;
+        checkExpectedRevision(expectedRevision, addressedIndices(rest), (revision) => revisionIds.get(revision),
+          exactRevision === true);
         args = rest;
       }
-      return { ok: true, result: await COMMAND_HANDLERS[request.command](args, ctx) };
+      const result = await COMMAND_HANDLERS[request.command](args, ctx);
+      const plain = result && typeof result === 'object' && !Array.isArray(result);
+      return { ok: true, result: sinceLastCall && plain ? { ...result, sinceLastCall } : result };
     } catch (error) {
       const normalized = errorFromThrown(error);
+      // The world saying no (the structure changed, a job is running, atoms would
+      // collide) is an ordinary result, so the client does not report a failed tool.
+      if (ERROR_KINDS[normalized.code] === 'outcome') {
+        return { ok: true, result: {
+          applied: false, reason: normalized.message, code: normalized.code,
+          ...(normalized.details || {}), ...(sinceLastCall ? { sinceLastCall } : {}),
+        } };
+      }
+      if (sinceLastCall) normalized.details = { ...(normalized.details || {}), sinceLastCall };
       emit('error', normalized);
       return { ok: false, error: normalized };
     } finally {
@@ -185,6 +215,9 @@ export function createBrowserHost(initialDeps = {}) {
       // has no such event, so it asks once itself, or a change it made (a
       // colour, a highlight) would show only on the user's next click.
       deps.requestRender?.();
+      // The window as this command left it: the next command compares against it.
+      lastSnapshot = await takeSnapshot(deps);
+      remember(lastSnapshot);
     }
   }
 

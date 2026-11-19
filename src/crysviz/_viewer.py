@@ -41,6 +41,13 @@ def command_spec() -> dict[str, Any]:
 
 
 @lru_cache(maxsize=None)
+def _changes_state(command: str) -> bool:
+    """Whether a command is a write (its result reports ``applied``), from its registry tier."""
+    entry = next((c for c in command_spec()["commands"] if c["name"] == command), None)
+    return entry is not None and entry.get("tier") != "read"
+
+
+@lru_cache(maxsize=None)
 def _argument_names(command: str) -> dict[str, str]:
     """A command's argument names keyed by their letters alone, so ``temperature_k`` finds ``temperatureK``."""
     entry = next((c for c in command_spec()["commands"] if c["name"] == command), None)
@@ -78,6 +85,12 @@ class BrowserCommandError(ViewerError):
     def __init__(self, code: str, message: str, details: object = None):
         super().__init__(f"{code}: {message}")
         self.code, self.message, self.details = code, message, details
+
+
+class CommandRefused(BrowserCommandError):
+    """The command was valid but the situation refused it (the structure changed under it, a job is
+    running, atoms would collide): nothing was changed. :meth:`Viewer.call` returns these as a result,
+    ``{"applied": False, "reason": ..., "code": ...}``; the typed methods raise this exception."""
 
 
 class ViewerReentrancyError(ViewerError):
@@ -185,6 +198,8 @@ class Viewer:
         self._ready = threading.Event()
         self._close_error: ViewerError | None = None
         self._callback_thread: int | None = None
+        # sinceLastCall notes (what the user changed by hand between commands), for take_user_changes.
+        self._user_changes: list[dict[str, object]] = []
 
     def __enter__(self) -> "Viewer":
         return self.start()
@@ -459,7 +474,8 @@ class Viewer:
                     self._callback_thread = None
 
     def _command(self, command: str, args: object = None, attachments: dict[str, object] | None = None,
-                 timeout: float | None = None, *, include_attachments: bool = False) -> object:
+                 timeout: float | None = None, *, include_attachments: bool = False,
+                 outcomes: bool = False) -> object:
         if not self._started:
             self.start()
         if self._closed.is_set():
@@ -491,6 +507,11 @@ class Viewer:
                 for item in received.values():
                     item.close()
                 raise ViewerProtocolError("browser response has an invalid schema")
+            note = (response.get("result") if response.get("ok") is True
+                    else (response.get("error") or {}).get("details"))
+            if isinstance(note, dict) and isinstance(note.get("sinceLastCall"), dict):
+                with self._lock:
+                    self._user_changes.append(note["sinceLastCall"])
             if response.get("ok") is not True:
                 for item in received.values():
                     item.close()
@@ -498,6 +519,14 @@ class Viewer:
                 if not isinstance(error, dict) or not isinstance(error.get("code"), str) or not isinstance(error.get("message"), str):
                     raise ViewerProtocolError("browser response has an invalid error")
                 raise BrowserCommandError(error["code"], error["message"], error.get("details"))
+            result = response.get("result")
+            if isinstance(result, dict) and result.get("applied") is False and not outcomes:
+                # A refusal ({applied: false, reason, code}): call() hands it back as a result,
+                # the typed methods raise, so code that expected the change notices.
+                for item in received.values():
+                    item.close()
+                details = {k: v for k, v in result.items() if k not in {"applied", "reason", "code"}}
+                raise CommandRefused(str(result.get("code")), str(result.get("reason")), details or None)
             if received and not include_attachments:
                 for item in received.values():
                     item.close()
@@ -531,6 +560,11 @@ class Viewer:
     def call(self, command: str, **args: object) -> Any:
         """Run any browser command by name (see crysviz.web/host/commands.json) and return its result.
 
+        A write that the situation refused (the structure changed under it, a job is running,
+        atoms would collide) is not an exception here: it returns ``{"applied": False, "reason":
+        ..., "code": ..., ...}`` and changes nothing; a successful write has ``"applied": True``.
+        A wrong call (bad arguments, an unknown control) raises :class:`BrowserCommandError`.
+
         Arguments may be given in snake_case or as the command names them:
         ``viewer.call("run_md", temperature_k=600, steps=200)`` sends ``temperatureK``.
         Nested objects (``where``, ``rotate``) are passed as they are. Commands that
@@ -541,7 +575,13 @@ class Viewer:
             raise ValueError("command must be a nonempty string")
         if command in _FILE_COMMANDS:
             raise ValueError(f"use Viewer.{_FILE_COMMANDS[command]}() for {command!r}")
-        return self._command(command, {_argument_name(command, key): value for key, value in args.items()})
+        result = self._command(command, {_argument_name(command, key): value for key, value in args.items()},
+                               outcomes=True)
+        # A write says whether it changed anything: applied: false (with reason and code) when the
+        # situation refused it, applied: true otherwise.
+        if isinstance(result, dict) and "applied" not in result and _changes_state(command):
+            result = {"applied": True, **result}
+        return result
 
     def run_job(self, command: str, *, timeout: float | None = None, **args: object) -> dict[str, Any]:
         """Start a ``run_*`` job (``run_md``, ``run_relax``, ``run_energy``, ``run_eos``,
@@ -557,6 +597,9 @@ class Viewer:
         if timeout is not None and not (isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0):
             raise ValueError("timeout must be a positive number of seconds")
         view = self.call(command, **args)
+        if isinstance(view, dict) and view.get("applied") is False:  # e.g. JOB_BUSY: nothing started
+            details = {k: v for k, v in view.items() if k not in {"applied", "reason", "code"}}
+            raise CommandRefused(str(view.get("code")), str(view.get("reason")), details or None)
         deadline = None if timeout is None else time.monotonic() + float(timeout)
         while isinstance(view, dict) and view.get("status") == "running":
             wait = _JOB_POLL_S
@@ -572,6 +615,16 @@ class Viewer:
             raise BrowserCommandError(str(error.get("code", "JOB_FAILED")), str(error.get("message", f"{command} failed")),
                                       error.get("details"))
         return view
+
+    def take_user_changes(self) -> list[dict[str, object]]:
+        """What the user changed by hand in the window since earlier commands, and clear it.
+
+        Every command's result (or error details) also carries this as ``sinceLastCall``; the
+        typed methods (:meth:`load`, :meth:`save_image`, ...) return their own values, so read it here.
+        """
+        with self._lock:
+            changes, self._user_changes = self._user_changes, []
+        return changes
 
     def list_structures(self) -> list[StructureInfo]:
         value = self._command("get_state", {"include": ["structures"]})

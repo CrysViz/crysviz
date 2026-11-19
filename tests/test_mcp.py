@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from crysviz import BrowserCommandError, LoadResult, StructureInfo
+from crysviz import BrowserCommandError, CommandRefused, LoadResult, StructureInfo
 from crysviz._mcp import CrysVizTools, ToolError, command_spec
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
@@ -59,8 +59,15 @@ class _FakeViewer:
                    "atomCount": 2, "revision": "r1", "formula": "Si2"}
         return LoadResult(StructureInfo("s1", details["name"], 1, True, 0), details)
 
+    def take_user_changes(self):
+        changes, self.user_changes = getattr(self, "user_changes", []), []
+        return changes
+
     def export_structure(self, path, *, format, frames=None, structure=None, frame=None):
         self.calls.append(("export_structure", {"format": format, "frames": frames, "structure": structure, "frame": frame}))
+        if self.fail_next is not None:
+            error, self.fail_next = self.fail_next, None
+            raise error
         if format == "extxyz":
             Path(path).write_text("1\nLattice=\"1 0 0 0 1 0 0 0 1\" Properties=species:S:1:pos:R:3\nH 0 0 0\n")
             return {"format": format, "structure": "s1", "name": "md", "frames": 1, "atomCount": 1, "sameOrder": True,
@@ -230,9 +237,37 @@ class ToolLayerTests(unittest.TestCase):
     def test_browser_error_details_reach_the_model(self):
         content = self.tools.call("get_state", {})  # starts the fake viewer
         self.assertTrue(content)
-        _FakeViewer.instances[0].fail_next = BrowserCommandError("STRUCTURE_CHANGED", "changed", {"revision": "r1", "atomCount": 9})
-        with self.assertRaisesRegex(ToolError, r'STRUCTURE_CHANGED: changed \{"revision": "r1", "atomCount": 9\}'):
+        _FakeViewer.instances[0].fail_next = BrowserCommandError("INVALID_ARGS", "bad", {"field": "where", "atomCount": 9})
+        with self.assertRaisesRegex(ToolError, r'INVALID_ARGS: bad \{"field": "where", "atomCount": 9\}'):
             self.tools.call("get_state", {})
+
+    def test_a_refusal_is_a_result_not_a_failed_tool(self):
+        self.tools.call("get_state", {})
+        viewer = _FakeViewer.instances[0]
+        viewer.fail_next = CommandRefused("NO_ACTIVE_STRUCTURE", "No active structure", {"atomCount": 0})
+        content = self.tools.call("export_structure", {"format": "cif"})
+        self.assertEqual(json.loads(content[0]["text"]),
+                         {"applied": False, "reason": "No active structure", "code": "NO_ACTIVE_STRUCTURE", "atomCount": 0})
+
+    def test_user_changes_reach_the_hand_written_tools(self):
+        self.tools.call("get_state", {})
+        viewer = _FakeViewer.instances[0]
+        viewer.user_changes = [{"note": "Changed in the window since your last call (not by you): the camera moved."}]
+        content = self.tools.call("export_structure", {"format": "cif"})
+        self.assertEqual(json.loads(content[0]["text"])["sinceLastCall"]["note"][:7], "Changed")
+        self.assertEqual(viewer.user_changes, [], "the note is taken once")
+
+    def test_viewer_call_marks_writes_applied_and_returns_refusals(self):
+        from crysviz import Viewer
+        viewer = Viewer()
+        replies = iter([{"revision": "r2", "atomCount": 3},
+                        {"applied": False, "reason": "atoms moved", "code": "STRUCTURE_CHANGED"},
+                        {"structure": None}])
+        viewer._command = lambda command, args=None, **options: next(replies)  # type: ignore[method-assign]
+        self.assertEqual(viewer.call("set_element", atoms=[0], element="C"), {"applied": True, "revision": "r2", "atomCount": 3})
+        self.assertEqual(viewer.call("set_element", atoms=[0], element="C")["applied"], False)
+        self.assertNotIn("applied", viewer.call("get_state"), "reads do not say applied")
+        self.assertTrue(issubclass(CommandRefused, BrowserCommandError), "existing except clauses still catch it")
 
     def test_mcp_commands_get_a_long_timeout(self):
         from crysviz import _mcp

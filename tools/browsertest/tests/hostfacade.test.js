@@ -330,6 +330,8 @@ async function waitForHostFailure(page) {
       observe();
     });
     pipeline.render = originalPipelineRender;
+    // Compared now: a later step that edits atoms rebuilds the polyhedra (a new group) again.
+    const polyhedraFrameObserved = postCompletionFrameObserved && paintedPolyhedraGroup === groups.polyhedraGroup;
     const polyhedraBuildAfter = general.polyhedraBuildCounter || 0;
     const updatedStructure = getActiveStructure();
     const latticeMeshPosition = groups.latticeGroup?.children[0]?.position.toArray() || null;
@@ -429,6 +431,28 @@ async function waitForHostFailure(page) {
     })();
     const badView = await host.dispatch({ command: 'set_view', args: { direction: 'q' } });
     const state = await host.dispatch({ command: 'get_state', args: {} });
+    // The user edits by hand between two commands (here page-side, as the window's own
+    // editor and selection would): the next command, whichever it is, reports it as
+    // sinceLastCall, and the one after has nothing new to say.
+    const quiet = await host.dispatch({ command: 'get_state', args: { include: [] } });
+    const userStructure = (await import('./state/structures.js')).getActiveStructure();
+    const { setAtomElements } = await import('./ui/addToStructureModule/CommitAtoms.js');
+    const { structureToTableAtoms } = await import('./ui/addToStructureModule/StructureEditorPanel.js');
+    const highlightModule = await import('./ui/SelectAndHighlightModule.js');
+    const firstElement = userStructure.atoms[0].getRepresentativeElement();
+    const swapTo = firstElement === 'O' ? 'S' : 'O';
+    setAtomElements(userStructure, [0], swapTo, structureToTableAtoms(userStructure));
+    highlightModule.selectAtomsByInstances(userStructure.atomImages?.[0] ?? [0], {});
+    const noticed = await host.dispatch({ command: 'find', args: { what: 'atoms', limit: 1 } });
+    const afterNotice = await host.dispatch({ command: 'get_state', args: { include: [] } });
+    const userChanges = {
+      quiet: !quiet.result?.sinceLastCall, swapTo, firstElement,
+      noticed: noticed.result?.sinceLastCall ?? null, after: afterNotice.result?.sinceLastCall ?? null,
+    };
+    // Put it back for the rest of the test (the revert itself is seen by the next command).
+    setAtomElements(userStructure, [0], firstElement, structureToTableAtoms(userStructure));
+    highlightModule.selectAtomsByInstances([], {});
+    await host.dispatch({ command: 'get_state', args: { include: [] } });
     const releaseNoteShown = !!document.getElementById('releaseNote') && !document.getElementById('releaseNote').hidden;
     // A host command has no DOM event to trigger the on-demand redraw: the
     // host asks for one itself, or a colour change shows only on the next click.
@@ -482,7 +506,7 @@ async function waitForHostFailure(page) {
       expectedCartesian,
       polyhedraBuildBefore,
       polyhedraBuildAfter,
-      polyhedraFrameObserved: postCompletionFrameObserved && paintedPolyhedraGroup === groups.polyhedraGroup,
+      polyhedraFrameObserved,
       updatedLattice,
       updatedState,
       throwingLattice,
@@ -493,7 +517,7 @@ async function waitForHostFailure(page) {
       asyncRejection,
       fallback,
       rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
-      viewedC, viewC, badView, state, redrawn, releaseNoteShown,
+      viewedC, viewC, badView, state, redrawn, releaseNoteShown, userChanges,
       raytrace, raytraceState, unknownPipeline, raster, saved, invalidOutput,
       injected: window.__hostInjected === 1,
       injectedNodes: document.querySelectorAll('img[src="x"], img[onerror]').length,
@@ -583,6 +607,15 @@ async function waitForHostFailure(page) {
         Math.abs(value - protocol.viewedC.result.direction[i] / Math.hypot(...protocol.viewedC.result.direction)) < 1e-5),
     protocol.state.result?.camera);
   H.check('a host-launched window shows no release note', !protocol.releaseNoteShown);
+  {
+    const u = protocol.userChanges;
+    const pair = `${u.firstElement}->${u.swapTo}`;
+    H.check('sinceLastCall: nothing to report when the user did nothing', u.quiet, u);
+    H.check('sinceLastCall: the next command reports the user\'s element change and selection',
+      u.noticed?.structure?.elementChanges?.atoms?.includes(0) && u.noticed.structure.elementChanges.pairs?.[pair] === 1
+        && u.noticed?.selection?.count >= 1 && /changed element/.test(u.noticed?.note || ''), u.noticed);
+    H.check('sinceLastCall: reported once, not again on the following command', u.after === null, u.after);
+  }
   H.check('a host command redraws without any user event', protocol.redrawn.colored && protocol.redrawn.after > protocol.redrawn.before, protocol.redrawn);
   H.check('set_view rejects an unknown direction',
     !protocol.badView.ok && protocol.badView.error.code === 'INVALID_ARGS');
