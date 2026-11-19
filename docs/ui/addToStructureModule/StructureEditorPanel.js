@@ -29,6 +29,7 @@
 
 import { createAtomTableEditor } from './AtomTableInput.js';
 import { createLatticeInputPanel } from './LatticeInputPanel.js';
+import { structureContent, structureRevision } from '../../model/structureRevision.js';
 import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
 import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
 import { createLatticeConstraintController } from './WyckoffLatticeConstraints.js';
@@ -308,7 +309,7 @@ function buildFreeformModifyEditor(body, structure) {
   body.appendChild(latticeHost);
   const latticePanel = createLatticeInputPanel(latticeHost, {
     initial: structure.lattice.map((row) => [...row]),
-    onChange: () => scheduleApply(),
+    onChange: () => { if (!reloading) scheduleApply(); },
   });
 
   const resetLatticeRow = document.createElement('div');
@@ -355,7 +356,7 @@ function buildFreeformModifyEditor(body, structure) {
     initialAtoms,
     deletable: true,
     onRowActivate,
-    onChange: () => scheduleApply(),
+    onChange: () => { if (!reloading) scheduleApply(); },
     // Only an original (baseline) atom going away is a "removal" worth listing
     // and restoring; deleting an atom you just added just drops it. The
     // baseline holds base (unsuffixed) atom uuids, but a disordered site's
@@ -376,7 +377,39 @@ function buildFreeformModifyEditor(body, structure) {
   // it fires echo the table's own values back, and syncing every row from the
   // structure on each of them was a large part of an edit's cost.
   let applyingEdit = false;
+
+  // What the table shows. The structure can change under it from elsewhere:
+  // the host (add_atoms, remove_atoms, set_element, a supercell), the Add Atom
+  // window. Committing then would write the stale table back over that change
+  // (deleting atoms the table never had), so the table is reloaded first.
+  // A reload never commits by itself: the table rounds positions (round4).
+  let syncedShape = structureRevision(structure);
+  let syncedContent = structureContent(structure);
+  let reloading = false;
+  function markSynced() {
+    syncedShape = structureRevision(structure);
+    syncedContent = structureContent(structure);
+  }
+  function reloadFromStructure() {
+    initialAtoms = structureToTableAtoms(structure);
+    reloading = true;
+    try {
+      editor.reload(initialAtoms);
+      latticePanel.setLattice(structure.lattice);
+    } finally {
+      reloading = false;
+    }
+    renderSummary();
+    markSynced();
+  }
+
   function liveApply() {
+    // Changed since the table last matched it (a change that fired no event):
+    // show it and drop this edit rather than undo that change.
+    if (structureContent(structure) !== syncedContent) {
+      reloadFromStructure();
+      return;
+    }
     const atoms = editor.getAtoms();
     const lattice = latticePanel.getLattice();
     // The structure's own change events would echo the table back into itself.
@@ -396,6 +429,7 @@ function buildFreeformModifyEditor(body, structure) {
       });
     } finally {
       applyingEdit = false;
+      markSynced();
     }
   }
 
@@ -511,6 +545,12 @@ function buildFreeformModifyEditor(body, structure) {
   // values into the matching (untouched) table rows.
   function syncFromStructure() {
     if (applyingEdit) return;
+    // Atoms added, removed or re-elemented, or a new cell: the rows no longer
+    // match one to one, so rebuild the table.
+    if (structureRevision(structure) !== syncedShape) {
+      reloadFromStructure();
+      return;
+    }
     /** @type {Array<[string, any]>} */
     const entries = [];
     structure.atoms.forEach((atom) => {
@@ -531,6 +571,7 @@ function buildFreeformModifyEditor(body, structure) {
       });
     });
     editor.syncRows(entries);
+    markSynced();
   }
   document.addEventListener('crysviz:atoms-changed', syncFromStructure);
   document.addEventListener('crysviz:colors-changed', syncFromStructure);

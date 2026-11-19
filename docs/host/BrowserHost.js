@@ -5,6 +5,7 @@ import {
   onActiveStructureChange,
 } from '../state/structures.js';
 import { LOAD_HASH_RE } from '../io/SessionReceiver.js';
+import { structureContent } from '../model/structureRevision.js';
 import {
   COMMAND_HANDLERS,
   checkExpectedRevision,
@@ -152,6 +153,13 @@ export function createBrowserHost(initialDeps = {}) {
       emit('error', error);
       return { ok: false, error };
     }
+    // A command that changed the structure without saying so (crysviz:atoms-changed) is
+    // announced here, so open windows that mirror it, such as the structure editor, follow.
+    const before = getActiveStructure();
+    const beforeContent = before ? structureContent(before) : null;
+    let announced = false;
+    const heard = () => { announced = true; };
+    document.addEventListener('crysviz:atoms-changed', heard);
     try {
       const ctx = { deps, emit, origin: window.location.origin };
       let args = request.args;
@@ -168,6 +176,10 @@ export function createBrowserHost(initialDeps = {}) {
       emit('error', normalized);
       return { ok: false, error: normalized };
     } finally {
+      document.removeEventListener('crysviz:atoms-changed', heard);
+      if (!announced && before && getActiveStructure() === before && structureContent(before) !== beforeContent) {
+        document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+      }
       // The app redraws on demand, asked by a catch-all on the user's DOM
       // events (render/AnimateModule.js wireRenderOnDemand). A host command
       // has no such event, so it asks once itself, or a change it made (a
