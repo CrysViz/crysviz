@@ -7,6 +7,7 @@ import json
 import math
 import os
 import queue
+import re
 import secrets
 import shutil
 import subprocess
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from ._payload import Payload
-from ._protocol import ProtocolError, recv_frame, send_frame
+from ._protocol import VIEWER_EVENTS, ProtocolError, recv_frame, send_frame
 from ._sources import prepare_sources
 
 DEFAULT_STARTUP_TIMEOUT = 20.0
@@ -57,6 +58,64 @@ def _argument_names(command: str) -> dict[str, str]:
 
 def _argument_name(command: str, key: str) -> str:
     return _argument_names(command).get(key.replace("_", "").lower(), key)
+
+
+def _snake(name: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+@lru_cache(maxsize=1)
+def _method_commands() -> dict[str, dict[str, Any]]:
+    """Registry commands offered as Viewer methods: all but those with their own file methods."""
+    return {c["name"]: c for c in command_spec()["commands"] if c["name"] not in _FILE_COMMANDS}
+
+
+def _schema_type(schema: dict[str, Any]) -> str:
+    if "enum" in schema:
+        return " | ".join(repr(value) for value in schema["enum"])
+    if "anyOf" in schema:
+        return " or ".join(_schema_type(option) for option in schema["anyOf"])
+    kind = schema.get("type", "any")
+    return "/".join(kind) if isinstance(kind, list) else str(kind)
+
+
+def _command_doc(command: dict[str, Any]) -> str:
+    """A method docstring from a registry entry: what it does and its keyword arguments."""
+    args = command["args"]
+    required = set(args.get("required", ()))
+    lines = [command["description"], ""]
+    properties = args.get("properties", {})
+    if properties:
+        lines.append("Keyword arguments (snake_case, or as the command names them):")
+        for key, schema in properties.items():
+            flag = ", required" if key in required else ""
+            text = schema.get("description", "")
+            lines.append(f"    {_snake(key)} ({_schema_type(schema)}{flag}){': ' + text if text else ''}")
+    if command["name"].startswith("run_"):
+        lines += ["", "Blocks until the job ends and returns its final status (see Viewer.run_job);",
+                  "wait=False returns the job at once ({jobId, ...}) for wait_job / cancel_job."]
+    lines += ["", "Returns a dict. A write the situation refused returns applied=False with a reason."]
+    return "\n".join(lines)
+
+
+def _command_method(viewer: "Viewer", command: dict[str, Any]) -> Callable[..., Any]:
+    name = command["name"]
+    if name.startswith("run_"):
+        def method(*, wait: bool = True, timeout: float | None = None, **args: object) -> Any:
+            return viewer.run_job(name, timeout=timeout, **args) if wait else viewer.call(name, **args)
+    else:
+        def method(**args: object) -> Any:
+            return viewer.call(name, **args)
+    method.__name__ = method.__qualname__ = name
+    method.__doc__ = _command_doc(command)
+    return method
+
+
+class SavedImage(Path):
+    """The path :meth:`Viewer.save_image` wrote; Jupyter and IPython show it as the picture."""
+
+    def _repr_png_(self) -> bytes:
+        return self.read_bytes()
 
 
 class ViewerError(RuntimeError):
@@ -198,17 +257,47 @@ class Viewer:
         self._ready = threading.Event()
         self._close_error: ViewerError | None = None
         self._callback_thread: int | None = None
-        # sinceLastCall notes (what the user changed by hand between commands), for take_user_changes.
+        # What the user changed by hand: sinceLastCall notes and user_changed events, for take_user_changes.
         self._user_changes: list[dict[str, object]] = []
+        # The active structure's name as the last event said, for repr (no round trip to the window).
+        self._active_name: str | None = None
 
     def __enter__(self) -> "Viewer":
         return self.start()
+
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        """Every browser command as a method: ``v.find(what="atoms")``, ``v.set_view(direction="c")``,
+        ``v.run_relax(fmax=0.02)``. ``help(v.find)`` lists its arguments; the typed methods above
+        (load, save_image, export_structure, ...) take precedence."""
+        if name.startswith("_"):
+            raise AttributeError(name)
+        command = _method_commands().get(name)
+        if command is None:
+            raise AttributeError(f"Viewer has no method or browser command {name!r}")
+        return _command_method(self, command)
+
+    def __dir__(self) -> list[str]:
+        return sorted({*super().__dir__(), *_method_commands()})
+
+    def __repr__(self) -> str:
+        if not self._started:
+            state = "not started"
+        elif self._closed.is_set():
+            state = "closed"
+        else:
+            state = "open" + (f", showing {self._active_name}" if self._active_name else "")
+        return f"<crysviz.Viewer {state}>"
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         self.close()
 
     def on(self, event: str, callback: Callable[[ViewerEvent], object]) -> "Viewer":
-        if event not in {"ready", "structure_loaded", "active_structure_changed", "error", "closed"}:
+        """Call ``callback(ViewerEvent)`` on every ``event``: ready, structure_loaded,
+        active_structure_changed, error, closed, or user_changed (the user edited, selected,
+        turned the camera or switched the renderer by hand; ``event.data`` is the same note as a
+        result's ``sinceLastCall``). Callbacks run on a background thread, one at a time; they may
+        call viewer commands but not :meth:`wait`."""
+        if event not in VIEWER_EVENTS:
             raise ValueError("unknown viewer event")
         if not callable(callback):
             raise TypeError("event callback must be callable")
@@ -424,11 +513,18 @@ class Viewer:
         if not isinstance(payload, dict) or set(payload) != {"event", "data"} or not isinstance(payload["event"], str):
             raise ViewerProtocolError("event has an invalid schema")
         event = ViewerEvent(payload["event"], payload["data"])
-        if event.name not in {"ready", "structure_loaded", "active_structure_changed", "error", "closed"}:
+        if event.name not in VIEWER_EVENTS:
             raise ViewerProtocolError("event has an unknown name")
         if event.name in {"ready", "closed"}:
             with self._lock:
                 self._replay[event.name] = event
+        if event.name == "user_changed" and isinstance(event.data, dict):
+            # The same notes a command's sinceLastCall carries; the browser reports each change once.
+            with self._lock:
+                self._user_changes.append(event.data)
+        if event.name in {"structure_loaded", "active_structure_changed"} and isinstance(event.data, dict):
+            with self._lock:
+                self._active_name = event.data.get("name", self._active_name)
         if event.name == "ready":
             self._ready.set()
         elif event.name == "error" and not self._ready.is_set() and isinstance(event.data, dict):
@@ -616,12 +712,17 @@ class Viewer:
                                       error.get("details"))
         return view
 
-    def take_user_changes(self) -> list[dict[str, object]]:
-        """What the user changed by hand in the window since earlier commands, and clear it.
+    def take_user_changes(self, *, check: bool = True) -> list[dict[str, object]]:
+        """What the user changed by hand in the window (structure, selection, camera, renderer)
+        since it was last reported, oldest first, and clear the list.
 
-        Every command's result (or error details) also carries this as ``sinceLastCall``; the
-        typed methods (:meth:`load`, :meth:`save_image`, ...) return their own values, so read it here.
+        The window is checked first, so an edit you just made is included. The same notes also
+        arrive as ``sinceLastCall`` in :meth:`call` results and as ``user_changed`` events
+        (:meth:`on`); each change is reported once, by whichever comes first, and every one of
+        them is also kept here until taken. ``check=False`` skips the check (no round trip).
         """
+        if check and self._started and not self._closed.is_set():
+            self._command("get_state", {"include": []})  # its sinceLastCall lands in the list
         with self._lock:
             changes, self._user_changes = self._user_changes, []
         return changes
@@ -825,7 +926,7 @@ class Viewer:
         finally:
             for attachment in received.values():
                 attachment.close()
-        return target
+        return SavedImage(target)
 
     def export_structure(self, path: str | os.PathLike[str], *, format: str, frames: str | Sequence[int] | None = None,
                          structure: str | None = None, frame: int | None = None) -> dict[str, Any]:

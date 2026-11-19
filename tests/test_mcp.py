@@ -59,7 +59,7 @@ class _FakeViewer:
                    "atomCount": 2, "revision": "r1", "formula": "Si2"}
         return LoadResult(StructureInfo("s1", details["name"], 1, True, 0), details)
 
-    def take_user_changes(self):
+    def take_user_changes(self, *, check=True):
         changes, self.user_changes = getattr(self, "user_changes", []), []
         return changes
 

@@ -89,6 +89,10 @@ class _Host:
             if command == "get_state":
                 result = {"structure": None, "renderer": "forward",
                           "structures": [{"id": "structure-1", "name": "a.cif", "frames": 2, "active": True, "activeFrame": 0}]}
+                if getattr(self, "since", None):
+                    result["sinceLastCall"], self.since = self.since, None
+            elif command == "find":
+                result = {"selection": "s1", "count": 1, "atoms": [0]}
             elif command == "load":
                 result = {"structure": "structure-2", "name": payload["args"]["name"], "frames": 1, "activeFrame": 0,
                           "atomCount": 2, "revision": "r1", "formula": "Si2"}
@@ -392,6 +396,64 @@ class ViewerControllerTests(unittest.TestCase):
                 viewer.set_view()
         finally:
             viewer.close()
+
+    def test_every_command_is_a_method_with_its_arguments_documented(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            self.assertIn("find", dir(viewer))
+            self.assertIn("run_relax", dir(viewer))
+            self.assertNotIn("export_structure", [n for n in dir(viewer) if n not in vars(Viewer)])
+            self.assertIn("where", viewer.find.__doc__)
+            self.assertIn("temperature_k", viewer.run_md.__doc__)
+            found = viewer.find(what="atoms", where={"element": "O"})
+            self.assertEqual(found["selection"], "s1")
+            self.assertEqual(host.commands[-1][:2], ("find", {"what": "atoms", "where": {"element": "O"}}))
+            # run_* blocks until the job ends; wait=False returns the job.
+            self.assertEqual(viewer.run_md(temperature_k=600)["status"], "done")
+            host.waits = 0
+            self.assertEqual(viewer.run_md(steps=5, wait=False)["status"], "running")
+            self.assertEqual(host.commands[-1][:2], ("run_md", {"steps": 5}))
+            # Typed methods win over the generated ones; unknown names stay AttributeErrors.
+            self.assertEqual(viewer.set_view.__func__, Viewer.set_view)
+            with self.assertRaisesRegex(AttributeError, "no method or browser command"):
+                viewer.no_such_command()
+            self.assertIn("open", repr(viewer))
+        finally:
+            viewer.close()
+        self.assertIn("closed", repr(viewer))
+        self.assertIn("not started", repr(Viewer()))
+
+    def test_user_changes_come_from_events_and_from_a_fresh_check(self):
+        client, server = _pair()
+        host = _Host(server)
+        seen = []
+        viewer = Viewer().on("user_changed", seen.append)
+        viewer = self.start_fake(viewer, host)
+        try:
+            send_frame(host.connection, "event", {"event": "user_changed", "data": {"note": "pushed"}})
+            for _ in range(200):
+                if seen:
+                    break
+                threading.Event().wait(0.01)
+            self.assertEqual([event.data for event in seen], [{"note": "pushed"}])
+            # take_user_changes asks the window first: an edit not yet reported comes back too.
+            host.since = {"note": "checked"}
+            self.assertEqual(viewer.take_user_changes(), [{"note": "pushed"}, {"note": "checked"}])
+            self.assertEqual(host.commands[-1][:2], ("get_state", {"include": []}))
+            self.assertEqual(viewer.take_user_changes(), [])
+        finally:
+            viewer.close()
+
+    def test_saved_image_shows_itself_in_jupyter(self):
+        from crysviz._viewer import SavedImage
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / "x.png"
+            path.write_bytes(b"\x89PNG\r\n\x1a\nabc")
+            image = SavedImage(path)
+            self.assertEqual(image, path)
+            self.assertEqual(image._repr_png_(), path.read_bytes())
 
     def test_update_lattice_validates_and_forwards_copied_float_matrix(self):
         client, server = _pair()

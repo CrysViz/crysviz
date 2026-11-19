@@ -453,6 +453,22 @@ async function waitForHostFailure(page) {
     setAtomElements(userStructure, [0], firstElement, structureToTableAtoms(userStructure));
     highlightModule.selectAtomsByInstances([], {});
     await host.dispatch({ command: 'get_state', args: { include: [] } });
+    // Pushed: with no command in between, a hand edit goes out a moment later as a
+    // user_changed event, and the next command does not report it again. An edit a
+    // host command makes sends no user_changed.
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 900));
+    const eventsBefore = window.__hostEvents.length;
+    const userChangedSince = () => window.__hostEvents.slice(eventsBefore).filter((e) => e.event === 'user_changed');
+    setAtomElements(userStructure, [0], swapTo, structureToTableAtoms(userStructure));
+    await settle();
+    const pushed = userChangedSince().map((e) => e.data);
+    const afterPush = await host.dispatch({ command: 'get_state', args: { include: [] } });
+    const hostEdit = await host.dispatch({ command: 'set_element', args: { atoms: [0], element: firstElement } });
+    await settle();
+    const pushedChanges = {
+      pushed, repeated: afterPush.result?.sinceLastCall ?? null,
+      hostEditApplied: hostEdit.ok && hostEdit.result?.applied !== false, eventsAfterHostEdit: userChangedSince().length,
+    };
     const releaseNoteShown = !!document.getElementById('releaseNote') && !document.getElementById('releaseNote').hidden;
     // A host command has no DOM event to trigger the on-demand redraw: the
     // host asks for one itself, or a colour change shows only on the next click.
@@ -517,7 +533,7 @@ async function waitForHostFailure(page) {
       asyncRejection,
       fallback,
       rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
-      viewedC, viewC, badView, state, redrawn, releaseNoteShown, userChanges,
+      viewedC, viewC, badView, state, redrawn, releaseNoteShown, userChanges, pushedChanges,
       raytrace, raytraceState, unknownPipeline, raster, saved, invalidOutput,
       injected: window.__hostInjected === 1,
       injectedNodes: document.querySelectorAll('img[src="x"], img[onerror]').length,
@@ -615,6 +631,11 @@ async function waitForHostFailure(page) {
       u.noticed?.structure?.elementChanges?.atoms?.includes(0) && u.noticed.structure.elementChanges.pairs?.[pair] === 1
         && u.noticed?.selection?.count >= 1 && /changed element/.test(u.noticed?.note || ''), u.noticed);
     H.check('sinceLastCall: reported once, not again on the following command', u.after === null, u.after);
+    const p = protocol.pushedChanges;
+    H.check('user_changed: a hand edit is pushed as an event without any command',
+      p.pushed.length === 1 && p.pushed[0]?.structure?.elementChanges?.pairs?.[pair] === 1, p);
+    H.check('user_changed: a pushed change is not reported again by the next command', p.repeated === null, p.repeated);
+    H.check('user_changed: a host command\'s own edit sends no event', p.hostEditApplied === true && p.eventsAfterHostEdit === 1, JSON.stringify(p));
   }
   H.check('a host command redraws without any user event', protocol.redrawn.colored && protocol.redrawn.after > protocol.redrawn.before, protocol.redrawn);
   H.check('set_view rejects an unknown direction',

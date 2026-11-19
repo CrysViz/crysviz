@@ -216,11 +216,8 @@ class CrysVizTools:
             elif name == "export_structure":
                 items = [_text(self._export_structure(args))]
             else:
-                # Viewer.call returns a refusal ({applied: false, reason, code}) as a result, and the
-                # browser already put sinceLastCall in it: clear the log so it does not repeat.
-                result = self.viewer().call(name, **args)
-                self._take_user_changes()
-                return [_text(result)]
+                # Viewer.call returns a refusal ({applied: false, reason, code}) as a result.
+                items = [_text(self.viewer().call(name, **args))]
             return self._with_user_changes(items)
         except CommandRefused as refusal:
             # The situation said no (not a wrong call): an ordinary result, so the client does not
@@ -237,12 +234,14 @@ class CrysVizTools:
             raise ToolError(f"{error}{cause}") from error
 
     def _take_user_changes(self) -> list[dict[str, Any]]:
+        # No fresh check: every command already brought back its own note.
         take = getattr(self._viewer, "take_user_changes", None)
-        return take() if callable(take) else []
+        return take(check=False) if callable(take) else []
 
     def _with_user_changes(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Give the hand-written tools' results the sinceLastCall note the browser attached to their
-        commands (the typed Viewer methods return their own values, so it is read back here)."""
+        """Put everything the user changed by hand since the last tool result into this one as
+        sinceLastCall: the note the browser attached to this command, and any user_changed events
+        the window pushed in between (the Viewer keeps both in one list until taken)."""
         changes = self._take_user_changes()
         if not changes:
             return items
@@ -250,9 +249,9 @@ class CrysVizTools:
         for item in items:
             if item["type"] == "text":
                 value = json.loads(item["text"])
-                if isinstance(value, dict) and "sinceLastCall" not in value:
+                if isinstance(value, dict):
                     item["text"] = json.dumps({**value, "sinceLastCall": note})
-                return items
+                    return items
         return [*items, _text({"sinceLastCall": note})]
 
     def _load(self, args: dict[str, Any]) -> dict[str, Any]:

@@ -30,7 +30,11 @@ const EVENT_NAMES = new Set([
   'active_structure_changed',
   'error',
   'closed',
+  // The user's hand edits as they happen, in host-launched windows (watchUserChanges).
+  'user_changed',
 ]);
+/** Quiet time after the user's last interaction before the window is compared (ms). */
+const USER_CHECK_DELAY_MS = 250;
 
 function deepFreeze(value, seen = new WeakSet()) {
   if (!value || typeof value !== 'object' || seen.has(value)) return value;
@@ -64,6 +68,7 @@ function normalizeEvent(event, data = undefined) {
     else if (event === 'active_structure_changed') record.data = {
       id: String(data.id), frame: Number(data.frame),
     };
+    else if (event === 'user_changed') record.data = JSON.parse(JSON.stringify(data));
   }
   return deepFreeze(record);
 }
@@ -101,6 +106,9 @@ export function createBrowserHost(initialDeps = {}) {
     if (revisionIds.size > REMEMBERED_REVISIONS) revisionIds.delete(revisionIds.keys().next().value);
   }
   let closed = false;
+  /** Commands running now, and how many have started: the user-change watcher stays out of their way. */
+  let inFlight = 0;
+  let commandsStarted = 0;
 
   function configure(next = {}) {
     for (const [name, value] of Object.entries(next)) {
@@ -167,7 +175,10 @@ export function createBrowserHost(initialDeps = {}) {
       emit('error', error);
       return { ok: false, error };
     }
-    // What the user changed by hand since the previous command goes back with this one.
+    inFlight += 1;
+    commandsStarted += 1;
+    // What the user changed by hand since the previous command (or since the
+    // watcher last reported) goes back with this one.
     const now = await takeSnapshot(deps);
     remember(now);
     const sinceLastCall = diffSnapshots(lastSnapshot, now);
@@ -218,7 +229,52 @@ export function createBrowserHost(initialDeps = {}) {
       // The window as this command left it: the next command compares against it.
       lastSnapshot = await takeSnapshot(deps);
       remember(lastSnapshot);
+      inFlight -= 1;
     }
+  }
+
+  // The user's hand edits as they happen. A moment after any user interaction
+  // (or an atoms-changed from a window), the window is compared with the last
+  // baseline using the same snapshot and diff a command attaches as
+  // sinceLastCall, and a difference goes out as a user_changed event. Either
+  // way the baseline moves on, so a change is reported once: by this event, or
+  // by the next command's sinceLastCall if no check ran in between. Nothing is
+  // compared while a command runs, and what a command does is its own result.
+  let watchTimer = 0;
+  let watching = false;
+  function scheduleUserCheck() {
+    clearTimeout(watchTimer);
+    watchTimer = setTimeout(checkUserChanges, USER_CHECK_DELAY_MS);
+  }
+  async function checkUserChanges() {
+    watchTimer = 0;
+    if (closed || !ready || !lastSnapshot) return;
+    if (inFlight) { scheduleUserCheck(); return; }
+    const started = commandsStarted;
+    const now = await takeSnapshot(deps);
+    // A command ran meanwhile: its own snapshot is the newer baseline.
+    if (inFlight || commandsStarted !== started) { scheduleUserCheck(); return; }
+    const changes = diffSnapshots(lastSnapshot, now);
+    lastSnapshot = now;
+    remember(now);
+    if (changes) emit('user_changed', changes);
+  }
+  /** Start watching (host-launched windows and subscribers only: a plain browser visit pays nothing). */
+  function watchUserChanges() {
+    if (watching) return;
+    watching = true;
+    // The same user events that ask for a redraw (render/AnimateModule.js), plus the wheel (zoom).
+    for (const type of ['pointerup', 'change', 'keyup', 'wheel']) {
+      document.addEventListener(type, scheduleUserCheck, { capture: true, passive: true });
+    }
+    document.addEventListener('crysviz:atoms-changed', scheduleUserCheck);
+    onActiveStructureChange(scheduleUserCheck);
+    takeBaseline();
+  }
+  /** The baseline the first check compares against, once ready, if no command has set one yet. */
+  function takeBaseline() {
+    if (!watching || !ready || lastSnapshot) return;
+    takeSnapshot(deps).then((snapshot) => { if (!lastSnapshot) { lastSnapshot = snapshot; remember(snapshot); } });
   }
 
   async function dispatch(request) {
@@ -279,6 +335,7 @@ export function createBrowserHost(initialDeps = {}) {
         }
       }
       subscribers.add(callback);
+      watchUserChanges();
       return () => subscribers.delete(callback);
     },
   });
@@ -298,6 +355,7 @@ export function createBrowserHost(initialDeps = {}) {
     if (closed || ready) return;
     ready = true;
     emit('ready', { protocolVersion: PROTOCOL_VERSION });
+    takeBaseline();
   }
 
   function emitLoaded(container) {
@@ -328,6 +386,8 @@ export function createBrowserHost(initialDeps = {}) {
     setBridgeCapability(value) {
       bridgeCapability = typeof value === 'string' ? value : undefined;
       captureBridgeReceiver();
+      // A host-launched window (Python): its hand edits go out as user_changed.
+      if (bridgeCapability) watchUserChanges();
     },
     observeSelection: onActiveStructureChange((structure) => {
       const snapshot = activeSnapshot();

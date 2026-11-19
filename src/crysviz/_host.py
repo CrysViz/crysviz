@@ -11,7 +11,7 @@ import threading
 from multiprocessing.connection import Listener
 from urllib.parse import urlsplit
 
-from ._protocol import Attachment, ProtocolError, recv_frame, send_frame
+from ._protocol import VIEWER_EVENTS, Attachment, ProtocolError, recv_frame, send_frame
 from ._server import CrysVizServer
 from ._sources import PreparedSource
 from ._windowing import create_native_window
@@ -114,7 +114,7 @@ class HostRuntime:
             return None
         if not isinstance(record, dict) or set(record) - {"event", "data"} or not isinstance(record.get("event"), str):
             return None
-        if record["event"] not in {"ready", "structure_loaded", "active_structure_changed", "error", "closed"}:
+        if record["event"] not in VIEWER_EVENTS:
             return None
         self.send("event", {"event": record["event"], "data": record.get("data")})
         if record["event"] == "closed":
