@@ -601,8 +601,9 @@ export function _parse_atom_type_oxidation(block) {
  * @returns {any[]}
  */
 export function _parse_atoms(block, resolution = true) {
-  const syms = block.get("atom_site_type_symbol");
   const lbs = block.get("atom_site_label");
+  // _atom_site_type_symbol is optional in CIF; without it the element is the label's ("Si1" -> Si).
+  const syms = block.get("atom_site_type_symbol") ?? lbs;
   const xs = block.get("atom_site_fract_x");
   const ys = block.get("atom_site_fract_y");
   const zs = block.get("atom_site_fract_z");
