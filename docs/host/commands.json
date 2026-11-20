@@ -563,7 +563,7 @@
     {
       "name": "run_md",
       "tier": "write",
-      "description": "Start molecular dynamics on the active structure with the selected potential (default NEP89, 89 elements; PET-MAD if chosen in the Atomistic window), as the MD window's start does: velocity Verlet with a Bussi thermostat (NVT), or with a barostat (NPT). The frames go to a new trajectory row, selected when the run ends. A job: it returns {jobId, kind, status, progress, elapsedS} at once (or with its result if it ends within waitS); follow it with wait_job. One calculation at a time. The result names the trajectory {structure, name, frames}. symmetry: true keeps the space group during the run.",
+      "description": "Start molecular dynamics on the active structure with the Atomistic window's potential (default NEP89, 89 elements) or the one potential picks, as the MD window's start does: velocity Verlet with a Bussi thermostat (NVT), or with a barostat (NPT). The frames go to a new trajectory row, selected when the run ends. A job: it returns {jobId, kind, status, progress, elapsedS} at once (or with its result if it ends within waitS); follow it with wait_job. One calculation at a time. The result names the trajectory {structure, name, frames}. symmetry: true keeps the space group during the run.",
       "args": {
         "type": "object",
         "properties": {
@@ -585,6 +585,11 @@
               { "type": "object", "properties": { "tolerance": { "type": "number", "exclusiveMinimum": 0 } }, "additionalProperties": false }
             ]
           },
+          "potential": {
+            "type": "string",
+            "enum": ["nep", "pet-mad", "ase"],
+            "description": "The potential, picked as in the Atomistic window's Choose potential (the window shows the switch, and it stays picked): nep (NEP89), pet-mad (PET-MAD, the model chosen in the window), ase (the connected ASE server's model; refused with POTENTIAL_UNAVAILABLE when no server is connected). Default: the window's current choice (NEP unless the user changed it). The result's potential names the one used."
+          },
           "waitS": {
             "type": "number",
             "minimum": 0,
@@ -598,7 +603,7 @@
     {
       "name": "run_relax",
       "tier": "write",
-      "description": "Start relaxing the active structure with the Atomistic window's potential (default NEP89), as the Relax button does: atoms (and the cell, unless relaxCell is false) move until every force is below fmax (eV/Å) and the pressure is within pressureTolGPa of pressureGPa. A job, as run_md. The result: targetPressureGPa and relaxCell it used (and a pressureHint when the structure's name mentions a different pressure: a hint only), the new trajectory {structure, name, frames} (its last frame is the relaxed structure and is shown; the source row is unchanged), steps, converged, stopped, fmax, energy and energyPerAtom (eV), pressureGPa. To compare before and after, export_structure both (structure, frame) and diff them in a script. To continue an unconverged relaxation, call run_relax again: it starts from the structure on show, the relaxed last frame, with maxSteps more steps.",
+      "description": "Start relaxing the active structure with the Atomistic window's potential (default NEP89) or the one potential picks, as the Relax button does: atoms (and the cell, unless relaxCell is false) move until every force is below fmax (eV/Å) and the pressure is within pressureTolGPa of pressureGPa. A job, as run_md. The result: targetPressureGPa and relaxCell it used (and a pressureHint when the structure's name mentions a different pressure: a hint only), the new trajectory {structure, name, frames} (its last frame is the relaxed structure and is shown; the source row is unchanged), steps, converged, stopped, fmax, energy and energyPerAtom (eV), pressureGPa. To compare before and after, export_structure both (structure, frame) and diff them in a script. To continue an unconverged relaxation, call run_relax again: it starts from the structure on show, the relaxed last frame, with maxSteps more steps.",
       "args": {
         "type": "object",
         "properties": {
@@ -614,6 +619,11 @@
               { "type": "object", "properties": { "tolerance": { "type": "number", "exclusiveMinimum": 0 } }, "additionalProperties": false }
             ]
           },
+          "potential": {
+            "type": "string",
+            "enum": ["nep", "pet-mad", "ase"],
+            "description": "The potential, picked as in the Atomistic window's Choose potential (the window shows the switch, and it stays picked): nep (NEP89), pet-mad (PET-MAD, the model chosen in the window), ase (the connected ASE server's model; refused with POTENTIAL_UNAVAILABLE when no server is connected). Default: the window's current choice (NEP unless the user changed it). The result's potential names the one used."
+          },
           "waitS": {
             "type": "number",
             "minimum": 0,
@@ -627,10 +637,15 @@
     {
       "name": "run_energy",
       "tier": "write",
-      "description": "Single-point energy, forces and pressure of the active structure with the Atomistic window's potential, as the window's EFS button does (forces show as arrows if Forces are on). A job, as run_md (it may first load the potential; waitS 25 usually returns the result in one call). Result: energy, energyPerAtom (eV), fmax (eV/Å), pressureGPa.",
+      "description": "Single-point energy, forces and pressure of the active structure with the Atomistic window's potential (or the one potential picks), as the window's EFS button does (forces show as arrows if Forces are on). A job, as run_md (it may first load the potential; waitS 25 usually returns the result in one call). Result: potential, energy, energyPerAtom (eV), fmax (eV/Å), pressureGPa.",
       "args": {
         "type": "object",
         "properties": {
+          "potential": {
+            "type": "string",
+            "enum": ["nep", "pet-mad", "ase"],
+            "description": "The potential, picked as in the Atomistic window's Choose potential (the window shows the switch, and it stays picked): nep (NEP89), pet-mad (PET-MAD, the model chosen in the window), ase (the connected ASE server's model; refused with POTENTIAL_UNAVAILABLE when no server is connected). Default: the window's current choice (NEP unless the user changed it). The result's potential names the one used."
+          },
           "waitS": {
             "type": "number",
             "minimum": 0,
@@ -644,7 +659,7 @@
     {
       "name": "run_eos",
       "tier": "write",
-      "description": "Equation of state of the active structure with the Atomistic window's potential, fitted (3rd-order Birch–Murnaghan) and shown in the EOS Fitting window. Scan by volume (volumeRangePct: cell volumes over ±that %, cell fixed, atoms relaxed) or by pressure (pMinGPa..pMaxGPa, cell relaxed to each, the window's own mode). Relax first: the volume scan centres on the current cell. A job, as run_md. The result has every point (volumes Å³ per cell, energies eV, pressuresGPa) and the fit: E0 (eV), V0 (Å³ per cell), B0GPa, B0Prime from the E–V and P–V fits. The fit needs SciPy via Pyodide, fetched from the network on first use. The result starts with fitReliable and warnings: when fitReliable is false (points not converged, the minimum not bracketed, no zero pressure in the scan, V0 outside the scanned volumes, B0 or B0' unphysical), the fit numbers are not a result; tell the user why instead of reporting them.",
+      "description": "Equation of state of the active structure with the Atomistic window's potential (or the one potential picks), fitted (3rd-order Birch–Murnaghan) and shown in the EOS Fitting window. Scan by volume (volumeRangePct: cell volumes over ±that %, cell fixed, atoms relaxed) or by pressure (pMinGPa..pMaxGPa, cell relaxed to each, the window's own mode). Relax first: the volume scan centres on the current cell. A job, as run_md. The result has every point (volumes Å³ per cell, energies eV, pressuresGPa) and the fit: E0 (eV), V0 (Å³ per cell), B0GPa, B0Prime from the E–V and P–V fits. The fit needs SciPy via Pyodide, fetched from the network on first use. The result starts with fitReliable and warnings: when fitReliable is false (points not converged, the minimum not bracketed, no zero pressure in the scan, V0 outside the scanned volumes, B0 or B0' unphysical), the fit numbers are not a result; tell the user why instead of reporting them.",
       "args": {
         "type": "object",
         "properties": {
@@ -666,6 +681,11 @@
               { "type": "object", "properties": { "tolerance": { "type": "number", "exclusiveMinimum": 0 } }, "additionalProperties": false }
             ]
           },
+          "potential": {
+            "type": "string",
+            "enum": ["nep", "pet-mad", "ase"],
+            "description": "The potential, picked as in the Atomistic window's Choose potential (the window shows the switch, and it stays picked): nep (NEP89), pet-mad (PET-MAD, the model chosen in the window), ase (the connected ASE server's model; refused with POTENTIAL_UNAVAILABLE when no server is connected). Default: the window's current choice (NEP unless the user changed it). The result's potential names the one used."
+          },
           "waitS": {
             "type": "number",
             "minimum": 0,
@@ -679,13 +699,18 @@
     {
       "name": "run_ordering",
       "tier": "write",
-      "description": "Ordered approximants of a disordered structure (fractionally occupied sites), as the Order Structure section of Cell & Supercell does: `samples` random decorations in a cell `multiplier` times larger, each scored with a single-point energy (unless energies is false), kept as one new trajectory row sorted lowest energy first. A job, as run_md. The result lists each frame's seed and energyPerAtom (eV); frame 0 is the lowest (select_structure {structure, frame: 0}).",
+      "description": "Ordered approximants of a disordered structure (fractionally occupied sites), as the Order Structure section of Cell & Supercell does: `samples` random decorations in a cell `multiplier` times larger, each scored with a single-point energy with the Atomistic window's potential or the one potential picks (unless energies is false), kept as one new trajectory row sorted lowest energy first. A job, as run_md. The result lists each frame's seed and energyPerAtom (eV); frame 0 is the lowest (select_structure {structure, frame: 0}).",
       "args": {
         "type": "object",
         "properties": {
           "samples": { "type": "integer", "minimum": 1, "maximum": 30, "description": "Default 5." },
           "multiplier": { "type": "integer", "minimum": 1, "description": "Cell size factor, as the window's Size choice. Default 1." },
           "energies": { "type": "boolean", "description": "Score each sample. Default true." },
+          "potential": {
+            "type": "string",
+            "enum": ["nep", "pet-mad", "ase"],
+            "description": "The potential, picked as in the Atomistic window's Choose potential (the window shows the switch, and it stays picked): nep (NEP89), pet-mad (PET-MAD, the model chosen in the window), ase (the connected ASE server's model; refused with POTENTIAL_UNAVAILABLE when no server is connected). Default: the window's current choice (NEP unless the user changed it). The result's potential names the one used."
+          },
           "waitS": {
             "type": "number",
             "minimum": 0,

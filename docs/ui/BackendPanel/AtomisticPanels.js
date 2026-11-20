@@ -1959,20 +1959,35 @@ function renderActiveBody() {
   }
 }
 
-// Wire the persistent potential picker ONCE. Selecting a potential updates the
-// shared state and re-renders the active action's body in place — it never
+/**
+ * Choose the potential ('nep' | 'mlip' | 'ase'), as a click on "Choose
+ * potential" does: the shared state, the picker's own widgets, the active
+ * action's body (re-rendered in place) and the other windows' notices follow.
+ * The picker and the host's run_* potential argument.
+ * @param {'nep'|'mlip'|'ase'} potential
+ */
+export function selectPotential(potential) {
+  const shell = getShellBindings();
+  general.atomisticPotential = potential;
+  updatePotentialUI(shell);
+  if (shell.resultEl) shell.resultEl.textContent = '';
+  renderActiveBody();
+  notifyPotentialChange();
+}
+
+/** Whether the ASE server is connected with a model (ensureASEReady has run). */
+export function aseConnected() {
+  return Boolean(aseRunner?.connected && aseRunner.modelInfo);
+}
+
+// Wire the persistent potential picker ONCE. Selecting a potential never
 // rebuilds (or resets) the selector itself.
 function bindPotentialToggle() {
   const shell = getShellBindings();
 
   shell.toggle?.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-potential]');
-    if (!button) return;
-    general.atomisticPotential = button.dataset.potential;
-    updatePotentialUI(shell);
-    if (shell.resultEl) shell.resultEl.textContent = '';
-    renderActiveBody();
-    notifyPotentialChange();
+    if (button) selectPotential(button.dataset.potential);
   });
 
   if (shell.aseUrlInput) shell.aseUrlInput.value = aseServerUrl(null);

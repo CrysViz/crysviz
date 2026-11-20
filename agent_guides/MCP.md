@@ -176,7 +176,16 @@ says which structure and frame are on show (`active`). One calculation runs
 at a time. A run the user starts from the Atomistic window (Relax, MD) or the
 EOS window is a job in the same list: `get_state` lists it, `wait_job`
 follows it, `cancel_job` stops it, and the window's Stop button stops a run
-Claude started. The potential is the Atomistic window's (NEP89 by default).
+Claude started.
+
+**The potential.** A calculation runs with the potential picked in the
+Atomistic window (NEP89 by default). `potential` (`"nep"`, `"pet-mad"`,
+`"ase"`) on `run_relax`, `run_md`, `run_energy`, `run_eos` and
+`run_ordering` picks one as a click on the window's Choose potential does:
+the window shows the switch and it stays picked. The model behind PET-MAD or
+ASE is the window's. `"ase"` without a connected ASE server is refused
+(`applied: false`, `POTENTIAL_UNAVAILABLE`). Results name the potential used
+with the same names.
 
 **Keeping the symmetry.** `run_relax`, `run_md` and `run_eos` take
 `symmetry: true` (or `{tolerance}` in Å): the structure is locked to its space

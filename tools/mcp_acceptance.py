@@ -463,9 +463,10 @@ async def w7_eos(s: Session):
     fit = eos["fit"]["energyVolume"]
     check(60 < fit["B0GPa"] < 300, f"B0 {fit['B0GPa']}")
     check(40 < fit["V0"] < 52, f"V0 {fit['V0']}")
-    # A single-point energy in one call: run_energy waits for itself with waitS.
-    energy = await s.call("run_energy", {"waitS": 25})
-    check(energy["status"] == "done" and energy["result"]["energy"] < 0 and "fmax" in energy["result"], f"run_energy: {energy}")
+    # A single-point energy in one call: run_energy waits for itself with waitS; potential picks NEP.
+    energy = await s.call("run_energy", {"waitS": 25, "potential": "nep"})
+    check(energy["status"] == "done" and energy["result"]["energy"] < 0 and "fmax" in energy["result"]
+          and energy["result"]["potential"] == "nep", f"run_energy: {energy}")
     return f"V0 {fit['V0']:.2f} A^3/4 atoms, B0 {fit['B0GPa']:.0f} GPa"
 
 

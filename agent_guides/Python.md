@@ -171,8 +171,11 @@ missing a required argument. `CommandRefused` is a subclass of it, so one
 ## Calculations
 
 `run_md`, `run_relax`, `run_energy`, `run_eos` and `run_ordering` use the
-potential chosen in the Atomistic window (NEP89 by default, 89 elements). Only
-one runs at a time. A run started from the Atomistic window (Relax, MD) or the
+potential chosen in the Atomistic window (NEP89 by default, 89 elements), or
+the one `potential=` picks (`"nep"`, `"pet-mad"`, `"ase"`), as a click on
+the window's Choose potential does (it stays picked; the PET-MAD or ASE model
+is the window's). `"ase"` without a connected ASE server raises
+`CommandRefused`. Only one runs at a time. A run started from the Atomistic window (Relax, MD) or the
 EOS window is a job too: `get_state` lists it and `cancel_job` stops it, and
 the window's Stop button stops a run your script started.
 

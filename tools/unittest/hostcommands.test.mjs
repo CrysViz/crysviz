@@ -419,3 +419,23 @@ test('run_eos flags a fit that is not a result', async () => {
   assert.ok(eosReliability({ ...good, energies: [-4.05, -4.02, -4.0, -3.98, -3.95] }, { V0: 44, B0GPa: 1, B0Prime: 4 })
     .warnings.some((w) => w.includes('not bracketed')));
 });
+
+test('the calculation tools take one potential argument: nep, pet-mad or ase; anything else is INVALID_ARGS', async () => {
+  const { publicPotential } = await import('../../docs/host/commands.js');
+  const byName = Object.fromEntries(spec.commands.map((c) => [c.name, c]));
+  const computing = ['run_relax', 'run_md', 'run_energy', 'run_eos', 'run_ordering'];
+  for (const name of computing) {
+    assert.deepEqual(byName[name].args.properties.potential, byName.run_relax.args.properties.potential, `${name}.potential`);
+  }
+  assert.deepEqual(byName.run_relax.args.properties.potential.enum, ['nep', 'pet-mad', 'ase']);
+  for (const name of computing) {
+    await assert.rejects(COMMAND_HANDLERS[name]({ potential: 'mace' }),
+      (e) => e.code === 'INVALID_ARGS' && e.message.startsWith(`${name}.potential must be one of nep, pet-mad, ase`), name);
+  }
+  await assert.rejects(COMMAND_HANDLERS.run_ordering({ potential: 'nep', energies: false }),
+    (e) => e.code === 'INVALID_ARGS' && /energies/.test(e.message));
+  // A valid value gets past the argument checks (to the missing structure here).
+  await assert.rejects(COMMAND_HANDLERS.run_energy({ potential: 'pet-mad' }), (e) => e.code === 'NO_ACTIVE_STRUCTURE');
+  // Results name the potential as the argument does.
+  assert.deepEqual(['nep', 'mlip', 'ase'].map(publicPotential), ['nep', 'pet-mad', 'ase']);
+});

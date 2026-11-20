@@ -338,7 +338,7 @@ export async function ingestComputedScan(scan, { potential = general.atomisticPo
  * and fit it in this window, as a loaded file would be: the Compute button
  * and the host's run_eos job both call this. Scan options as runEOSScan's
  * (by pressure, or by volume with volumeRangePct). Resolves to
- * { scan, fit, label }; fit is null with fewer than 3 points.
+ * { scan, fit, label, potential }; fit is null with fewer than 3 points.
  * @param {any} options
  * @param {{ onProgress?: (text: string) => void, shouldStop?: () => boolean }} [hooks]
  */
@@ -350,11 +350,11 @@ export async function computeEOS(options, { onProgress = (_text) => {}, shouldSt
   // The model as it is now: the label is read again for the result line.
   const label = potentialLabel(potential);
   const scan = await runEOSScan(runner, base, { ...options, onProgress, shouldStop });
-  if (scan.volumes.length < 3) return { scan, fit: null, label };
+  if (scan.volumes.length < 3) return { scan, fit: null, label, potential };
   // The window's body exists while it is folded, but its content is built on first open.
   if (!getPanel('eos')?.built) openPanel('eos');
   const fit = await ingestComputedScan(scan, { potential, label });
-  return { scan, fit, label };
+  return { scan, fit, label, potential };
 }
 
 function runComputeFromPotential(container) {
@@ -387,7 +387,7 @@ function runComputeFromPotential(container) {
         console.error(error);
         throw error;
       }
-      const { scan, fit } = computed;
+      const { scan, fit, potential } = computed;
       if (scan.volumes.length < 3) {
         setComputeStatus(container, `Stopped — only ${scan.volumes.length} point(s) computed, need 3 to fit.`);
       } else {
@@ -397,7 +397,7 @@ function runComputeFromPotential(container) {
           ? `Stopped — fitted the ${scan.volumes.length} completed points${convergedNote}.`
           : `Computed ${scan.volumes.length} points${convergedNote}.`);
       }
-      return eosJobResult(scan, fit, false);
+      return eosJobResult(scan, fit, false, potential);
     });
   } catch (error) {
     setComputeStatus(container, `Error: ${error.message || String(error)}`);

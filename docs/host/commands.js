@@ -291,7 +291,7 @@ export const ERROR_KINDS = Object.freeze({
   NOTHING_TO_ORDER: 'outcome', CONTROL_DISABLED: 'outcome', CONTROL_UNAVAILABLE: 'outcome',
   NO_ACTIVE_STRUCTURE: 'outcome', NO_LATTICE: 'outcome', DISORDERED: 'outcome', NO_PHONONS: 'outcome',
   NO_EIGENVECTORS: 'outcome', NO_FIELD: 'outcome', TOO_LARGE: 'outcome', LOAD_CANCELLED: 'outcome',
-  NO_MODE: 'outcome', PNG_CAPTURE_IN_PROGRESS: 'outcome', POTENTIAL_TOO_MANY_ATOMS: 'outcome',
+  NO_MODE: 'outcome', PNG_CAPTURE_IN_PROGRESS: 'outcome', POTENTIAL_TOO_MANY_ATOMS: 'outcome', POTENTIAL_UNAVAILABLE: 'outcome',
   SYMMETRY_UNAVAILABLE: 'outcome', NOTHING_TO_REVERT: 'outcome',
   // errors: a wrong call
   INVALID_ARGS: 'error', INVALID_ELEMENT: 'error', INVALID_REQUEST: 'error', UNKNOWN_COMMAND: 'error',
@@ -692,7 +692,7 @@ export function relaxJobResult(params, potential, result) {
   return {
     targetPressureGPa: params.targetPressure,
     relaxCell: params.relaxCell ?? true,
-    potential,
+    potential: publicPotential(potential),
     trajectory: trajectoryOf(result.container, result.frames),
     steps: result.steps,
     converged: result.converged,
@@ -707,7 +707,7 @@ export function relaxJobResult(params, potential, result) {
 /** A runMD result as a job reports it. */
 export function mdJobResult(potential, result) {
   return {
-    potential,
+    potential: publicPotential(potential),
     trajectory: trajectoryOf(result.container, result.frames),
     finalStep: result.finalStep,
     stopped: result.stopped,
@@ -715,7 +715,7 @@ export function mdJobResult(potential, result) {
 }
 
 /** A computeEOS scan and fit as a job reports it; no fit is a failed job. */
-export function eosJobResult(scan, fit, byVolume) {
+export function eosJobResult(scan, fit, byVolume, potential) {
   if (!fit) throw commandError(scan.volumes.length < 3 ? 'TOO_FEW_POINTS' : 'FIT_FAILED',
     scan.volumes.length < 3 ? `Only ${scan.volumes.length} point(s) computed; 3 are needed to fit`
       : 'The EOS fit could not run (it needs SciPy via Pyodide from the network); see the EOS window');
@@ -727,6 +727,7 @@ export function eosJobResult(scan, fit, byVolume) {
       unconverged: scan.converged.filter((c) => !c).length,
       volumes: scan.volumes.map(round), energies: scan.energies.map(round), pressuresGPa: scan.pressures.map(round) },
     fit: summary,
+    potential: publicPotential(potential),
   };
 }
 
@@ -734,14 +735,48 @@ export function eosJobResult(scan, fit, byVolume) {
 export const STATE_SECTIONS = Object.freeze(['structures', 'camera', 'selection', 'jobs', 'colors', 'phonons', 'field', 'windows']);
 const DEFAULT_STATE_SECTIONS = ['camera', 'selection', 'jobs'];
 
-/** Checks every calculator command makes before starting its job; resolves to the Atomistic module. */
-async function calculatorPrecheck() {
+/** The calculation tools' potential names, and the Atomistic window's for each. */
+const POTENTIALS = Object.freeze({ nep: 'nep', 'pet-mad': 'mlip', ase: 'ase' });
+
+/** The public name of one of the Atomistic window's potentials ('mlip' is pet-mad). */
+export function publicPotential(potential) {
+  return Object.keys(POTENTIALS).find((name) => POTENTIALS[name] === potential) ?? potential ?? null;
+}
+
+/** A run_*'s potential argument as the Atomistic window names it, or null (keep the window's choice). */
+function potentialRequest(input, name) {
+  if (input.potential === undefined) return null;
+  if (!Object.hasOwn(POTENTIALS, input.potential)) {
+    throw commandError('INVALID_ARGS', `${name}.potential must be one of ${Object.keys(POTENTIALS).join(', ')}`);
+  }
+  return POTENTIALS[input.potential];
+}
+
+/** Refuse a requested potential that cannot run: ASE without a connected server. */
+function assertPotentialAvailable(atomistic, potential) {
+  if (potential === 'ase' && !atomistic.aseConnected()) {
+    throw commandError('POTENTIAL_UNAVAILABLE',
+      'The ASE server is not connected: start python backend/server.py and press Connect in the Atomistic window');
+  }
+}
+
+/**
+ * Checks every calculator command makes before starting its job, then the
+ * symmetry lock (symmetryRequest; null: none) and the requested potential
+ * (null: the window's), picked as a click on the Atomistic window's "Choose
+ * potential" does. Everything that can refuse comes first, so a refused call
+ * changes nothing. Resolves to the Atomistic module and the job's symmetry.
+ */
+async function calculatorPrecheck(potential, symmetryAsked = null) {
   if (!getActiveStructure()) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
   assertNoJob();
   const atomistic = await import('../ui/BackendPanel/AtomisticPanels.js');
   // Refused here, not inside the job, so a structure too big fails this call.
-  atomistic.assertStructureFitsPotential(general.atomisticPotential || 'nep');
-  return atomistic;
+  atomistic.assertStructureFitsPotential(potential ?? (general.atomisticPotential || 'nep'));
+  assertPotentialAvailable(atomistic, potential);
+  const symmetry = await lockSymmetry(symmetryAsked);
+  if (potential) atomistic.selectPotential(potential);
+  return { atomistic, symmetry };
 }
 
 /**
@@ -1183,10 +1218,9 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (input.pressureGPa !== undefined && !isFiniteNumber(input.pressureGPa)) throw commandError('INVALID_ARGS', 'run_md.pressureGPa must be a number');
     const waitS = waitSeconds(input, 'run_md');
     const symmetryAsked = symmetryRequest(input, 'run_md');
-    const atomistic = await calculatorPrecheck();
+    const { atomistic, symmetry } = await calculatorPrecheck(potentialRequest(input, 'run_md'), symmetryAsked);
     const structure = getActiveStructure();
     const { recommendedTimestepFs } = await import('../atomistic/MD.js');
-    const symmetry = await lockSymmetry(symmetryAsked);
     const job = startJob('md', async (job) => {
       job.progress = { text: 'getting the potential ready' };
       const { runner, potential } = await atomistic.ensureActiveCalculator((text) => { job.progress = { text }; });
@@ -1227,8 +1261,7 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (!(isFiniteNumber(params.stressTol) && params.stressTol > 0)) throw commandError('INVALID_ARGS', 'run_relax.pressureTolGPa must be a positive number');
     const waitS = waitSeconds(input, 'run_relax');
     const symmetryAsked = symmetryRequest(input, 'run_relax');
-    const atomistic = await calculatorPrecheck();
-    const symmetry = await lockSymmetry(symmetryAsked);
+    const { atomistic, symmetry } = await calculatorPrecheck(potentialRequest(input, 'run_relax'), symmetryAsked);
     const pressureHint = namedPressureGPa(getContainerForStructure(getActiveStructure())?.fileName);
     const job = startJob('relax', async (job) => {
       job.progress = { text: 'getting the potential ready' };
@@ -1253,13 +1286,13 @@ export const COMMAND_HANDLERS = Object.freeze({
   async run_energy(args) {
     requireOptionalArgs(args, 'run_energy');
     const waitS = waitSeconds(args ?? {}, 'run_energy');
-    const atomistic = await calculatorPrecheck();
+    const { atomistic } = await calculatorPrecheck(potentialRequest(args ?? {}, 'run_energy'));
     const job = startJob('energy', async (job) => {
       job.progress = { text: 'getting the potential ready' };
       const { runner, potential } = await atomistic.ensureActiveCalculator((text) => { job.progress = { text }; });
       const { out, maxForce, pressureGPa } = await atomistic.computeCurrentEFS(runner);
       return {
-        potential,
+        potential: publicPotential(potential),
         energy: round(Number(out.total_energy)),
         energyPerAtom: round(Number(out.energy_per_atom)),
         fmax: round(maxForce),
@@ -1285,19 +1318,18 @@ export const COMMAND_HANDLERS = Object.freeze({
     }
     const waitS = waitSeconds(input, 'run_eos');
     const symmetryAsked = symmetryRequest(input, 'run_eos');
-    await calculatorPrecheck();
     // Every scan point relaxes the atoms through the relaxer, which keeps a locked structure's group.
-    const symmetry = await lockSymmetry(symmetryAsked);
+    const { symmetry } = await calculatorPrecheck(potentialRequest(input, 'run_eos'), symmetryAsked);
     const job = startJob('eos', async (job) => {
       const { computeEOS } = await import('../ui/EOSPanel.js');
-      const { scan, fit } = await computeEOS({
+      const { scan, fit, potential } = await computeEOS({
         nPoints, pMinGPa, pMaxGPa, fmaxTol: input.fmax ?? 0.01, maxSteps: input.maxSteps ?? 200,
         ...(byVolume ? { volumeRangePct: input.volumeRangePct } : {}),
       }, {
         onProgress: (text) => { job.progress = { text }; },
         shouldStop: () => job.cancelled,
       });
-      return { ...eosJobResult(scan, fit, byVolume), ...(symmetry ? { symmetry } : {}) };
+      return { ...eosJobResult(scan, fit, byVolume, potential), ...(symmetry ? { symmetry } : {}) };
     });
     return started(job, waitS);
   },
@@ -1312,6 +1344,8 @@ export const COMMAND_HANDLERS = Object.freeze({
     const withEnergies = input.energies ?? true;
     if (typeof withEnergies !== 'boolean') throw commandError('INVALID_ARGS', 'run_ordering.energies must be boolean');
     const waitS = waitSeconds(input, 'run_ordering');
+    const requested = potentialRequest(input, 'run_ordering');
+    if (requested && !withEnergies) throw commandError('INVALID_ARGS', 'run_ordering.potential needs energies: true');
     const structure = getActiveStructure();
     if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
     assertNoJob();
@@ -1319,6 +1353,11 @@ export const COMMAND_HANDLERS = Object.freeze({
     // "Nothing to order" fails this call (zero samples is only the check); building the
     // samples can take long for a big multiplier, so that happens in the job.
     panel.buildOrderSamples(structure, 0, multiplier);
+    if (requested) {
+      const atomistic = await import('../ui/BackendPanel/AtomisticPanels.js');
+      assertPotentialAvailable(atomistic, requested);
+      atomistic.selectPotential(requested);
+    }
     const job = startJob('order', async (job) => {
       job.progress = { text: `building ${count} ordered samples` };
       const samples = panel.buildOrderSamples(structure, count, multiplier);
@@ -1332,7 +1371,7 @@ export const COMMAND_HANDLERS = Object.freeze({
       const { createTrajectoryFromFrames } = await import('../ui/addToStructureModule/CommitAtoms.js');
       const container = createTrajectoryFromFrames(panel.orderSampleFrames(samples), 'ordered_structures');
       return {
-        potential,
+        potential: publicPotential(potential),
         trajectory: trajectoryOf(container, samples.length),
         atomsPerSample: samples[0].built.atoms.length,
         // Frame i of the trajectory is samples[i]; lowest energy first when computed.
