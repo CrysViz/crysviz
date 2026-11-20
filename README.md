@@ -96,34 +96,41 @@ pip install -e '.[qt,mcp]'       # or with uv: uv pip install --python .venv/bin
 
 ## Python API
 
-Drive a CrysViz window from a Python REPL, IPython or Jupyter. Every command is
-a method, and the window stays yours: rotate, select and edit by hand between
-commands, and Python is told what you changed.
+If you have the standalone application installed, you can also use the Python API for visualization and remote-control from Python. For example:
 
 ```python
->>> from crysviz import show
->>> v = show(["SrTiO3.cif"])               # the window opens; the prompt returns at once
->>> v.set_supercell(n=[2, 2, 2])
->>> octahedra = v.find(what="polyhedra", where={"cn": 6})
->>> v.apply(selection=octahedra["selection"], action="color", color="#3366ff")
->>> v.set_view(direction="c")              # look along c
->>> v.save_image("view.png")               # or view.svg; shown inline in Jupyter
->>> v.run_relax(fmax=0.02)                 # waits until the relaxation ends
+from crysviz import Payload, Viewer, show
+
+SI_CIF = """data_Si
+_cell_length_a 5.43
+_cell_length_b 5.43
+_cell_length_c 5.43
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Si1 Si 0.1 0.1 0.1
+"""
+
+payload = Payload("silicon.cif", SI_CIF)
+with Viewer([payload]) as viewer:
+    structures = viewer.list_structures()
+    viewer.select(structures[0].id, frame=0)
+    viewer.update_lattice([[5.7, 0.0, 0.0], [0.2, 5.4, 0.0], [0.0, 0.0, 5.2]])
+    viewer.update_fractional_positions([[0.0, 0.0, 0.0]], commit=False)
+    viewer.commit_positions()
+    viewer.recenter_camera()
+
+# Equivalent concise construction; returns once the window is ready.
+viewer = show(["structure.cif"])
 ```
 
-`dir(v)` lists every command and `help(v.find)` shows its arguments.
-
-Working together with the window:
-
-```python
->>> v.on("user_changed", print)            # your edits in the window, as you make them
->>> v.take_user_changes()                  # or collect them when you want them
-```
-
-In a script, end with `v.wait()` to keep the window open until you close it; a
-REPL or notebook keeps it open anyway. The full guide, with calculations,
-exports and recipes, is [agent_guides/Python.md](agent_guides/Python.md).
-Runnable scripts are in [examples](examples/).
+For more, see [examples](examples/) and the guide [agent_guides/Python.md](agent_guides/Python.md).
 
 
 ## Claude and other AI assistants (MCP)

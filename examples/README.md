@@ -56,6 +56,7 @@ until you close the window. In a REPL, IPython or Jupyter you do not need
 
 | Script | What it shows |
 |---|---|
+| [`first_steps.py`](first_steps.py) | A first tour of SrTiO3: a 2x2x2 supercell, the TiO6 octahedra in blue, the view along c, a picture and a relaxation. Saves `srtio3_view.png`. |
 | [`polyhedra_colours.py`](polyhedra_colours.py) | The WO6 octahedra of a ReO3-type WO3 supercell in blue: display toggles by name, `find`, `apply`. Saves `octahedra.png`. |
 | [`rings_networkx.py`](rings_networkx.py) | Export plus your own script: finds the six-membered rings of a graphene sheet with networkx using CrysViz's own bond cutoffs, colours one red. Saves `ring.png`. Needs `networkx`. |
 | [`slab_picture.py`](slab_picture.py) | A four-layer Cu(111) slab with 15 Å of vacuum, viewed edge-on. Saves `cu111_slab.png`. |
@@ -64,7 +65,7 @@ until you close the window. In a REPL, IPython or Jupyter you do not need
 | [`raytrace_snapshot.py`](raytrace_snapshot.py) | Switches to the ray tracer and saves `crysviz-raytrace.png`. |
 | [`rotate_camera.py`](rotate_camera.py) | A short orbit with `set_view(rotate=...)`. |
 | [`update_lattice_and_positions.py`](update_lattice_and_positions.py) | Deforms a two-atom silicon cell (`set_lattice`) and moves an atom (`move_atoms`). |
-| [`mcp_quickstart.md`](mcp_quickstart.md) | Not a script: connecting Claude Code or Claude Desktop to CrysViz through MCP. |
+| [`mcp_quickstart.md`](mcp_quickstart.md) | Not a script: a first session with CrysViz through MCP. |
 
 ## Notes on the API
 
