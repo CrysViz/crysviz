@@ -145,8 +145,8 @@ One set of rules for every tool, so a model that learns one knows them all:
 | `select_structure` | Show a loaded row and frame. |
 | `add_atoms`, `remove_atoms` | As the Add Atom window: fractional positions, a 0.5 Å collision check (`force` to override). `remove_atoms` returns what it removed, so `add_atoms` can undo it. |
 | `set_element` | Change atoms to another element in place (indices, positions and selections kept). |
-| `move_atoms` | `to` (one position per atom) or `by` (one shift), fractional or `cartesian`. |
-| `set_lattice` | New lattice vectors; fractional positions kept. |
+| `move_atoms` | `to` (one position per atom) or `by` (one shift), fractional or `cartesian`. Committed as a coordinate edit in the Modify Structure window (bonds rebuilt, an open window's table follows). |
+| `set_lattice` | New lattice vectors; fractional positions kept. Committed as a lattice edit in the Modify Structure window. |
 | `set_supercell` | `n: [nx, ny, nz]` in place, as the Cell & Supercell window; `[1, 1, 1]` goes back. |
 | `revert_structure` | Back to the structure as it was created (a file as read, which also undoes a supercell), discarding every edit, as the Modify Structure window's Revert Changes. |
 

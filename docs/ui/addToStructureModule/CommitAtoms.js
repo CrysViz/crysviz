@@ -75,7 +75,8 @@ export function commitAddedAtoms(structure, atoms) {
 
 /**
  * Apply one round of atom-table edits (applyStructureEdits) and show them:
- * the Modify Structure editor's live apply and the host's set_element.
+ * the Modify Structure editor's live apply and the host's set_element,
+ * move_atoms and set_lattice.
  * `afterApply(change)` runs after the arrays change, `afterRender(change)`
  * after the re-render and before "crysviz:atoms-changed" is announced.
  * @param {any} structure
@@ -126,11 +127,31 @@ export function commitStructureEdits(structure, edits, { afterApply, afterRender
 }
 
 /**
+ * The editor's own rows (structureToTableAtoms(structure)) with each site's
+ * exact position, or `positions[i]` for atom i when given, and its exact
+ * occupancies in place of the table's rounded ones: what a host edit commits.
+ * @param {any} structure
+ * @param {Array<any>} rows
+ * @param {number[][]} [positions] fractional, one per atom
+ */
+function exactRows(structure, rows, positions) {
+  const indexOf = new Map(structure.atoms.map((atom, i) => [atom.uuid, i]));
+  return rows.map((row) => {
+    const base = typeof row.uuid === 'string' ? row.uuid.split('#')[0] : row.uuid;
+    const i = indexOf.get(base);
+    const atom = structure.atoms[i];
+    const k = row.uuid === base ? 0 : Number(String(row.uuid).split('#')[1]);
+    const [x, y, z] = positions?.[i] ?? atom.position;
+    return { ...row, x, y, z, occupancy: atom.species?.[k]?.occupancy ?? row.occupancy };
+  });
+}
+
+/**
  * Change these atoms' element in place: same index, position and uuid, as an
  * element edit in the structure editor does. A custom colour is kept; an atom
  * still at its element's default colour takes the new element's default.
  * Ordered sites only. `rows` is structureToTableAtoms(structure) (the editor's
- * own rows); exact positions and occupancies replace its rounded ones.
+ * own rows).
  * @param {any} structure
  * @param {number[]} indices
  * @param {string} element
@@ -138,17 +159,24 @@ export function commitStructureEdits(structure, edits, { afterApply, afterRender
  */
 export function setAtomElements(structure, indices, element, rows) {
   const targets = new Set(indices.map((i) => structure.atoms[i].uuid));
-  const byUuid = new Map(structure.atoms.map((atom) => [atom.uuid, atom]));
-  const edited = rows.map((row) => {
-    const base = typeof row.uuid === 'string' ? row.uuid.split('#')[0] : row.uuid;
-    const atom = byUuid.get(base);
-    const k = row.uuid === base ? 0 : Number(String(row.uuid).split('#')[1]);
-    const exact = { ...row, x: atom.position[0], y: atom.position[1], z: atom.position[2],
-      occupancy: atom.species?.[k]?.occupancy ?? row.occupancy };
-    if (!targets.has(base)) return exact;
-    return { ...exact, element, ...(row.autoColor ? { color: undefined } : {}) };
+  const edited = exactRows(structure, rows).map((row) => {
+    if (!targets.has(String(row.uuid).split('#')[0])) return row;
+    return { ...row, element, ...(row.autoColor ? { color: undefined } : {}) };
   });
   return commitStructureEdits(structure, { atoms: edited });
+}
+
+/**
+ * Move atoms and/or set the cell, as a coordinate or lattice edit in the
+ * structure editor does: the host's move_atoms and set_lattice. `positions`
+ * (fractional, one per atom) replaces every atom's position; a `lattice`
+ * keeps the fractional positions. `rows` is structureToTableAtoms(structure).
+ * @param {any} structure
+ * @param {Array<any>} rows
+ * @param {{positions?: number[][], lattice?: number[][]}} edit
+ */
+export function setAtomGeometry(structure, rows, { positions, lattice }) {
+  return commitStructureEdits(structure, { atoms: exactRows(structure, rows, positions), lattice });
 }
 
 // Remove the atoms with these uuids from `structure` (no re-render; see

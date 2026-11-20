@@ -554,10 +554,26 @@ function structureEnvelope(structure = getActiveStructure()) {
 }
 
 /**
+ * New positions (fractional, one per atom) or a new cell, committed as the
+ * Modify Structure window commits an edit (setAtomGeometry): bonds and
+ * polyhedra rebuilt, an open window's table updated. A failure is `code`.
+ */
+async function commitGeometry(structure, edit, code) {
+  const { structureToTableAtoms } = await import('../ui/addToStructureModule/StructureEditorPanel.js');
+  const { setAtomGeometry } = await import('../ui/addToStructureModule/CommitAtoms.js');
+  try {
+    setAtomGeometry(structure, structureToTableAtoms(structure), edit);
+  } catch (error) {
+    throw commandError(code, 'The edit could not be applied', { cause: safeError(error, code) });
+  }
+  uncommitted.delete(structure);
+}
+
+/**
  * Write fractional positions to every atom and redraw: the fast in-place path
  * (as MD streams frames), then the full rebuild (bonds, polyhedra) when the
- * fast path is unavailable or commit asks for it. Shared by move_atoms and
- * update_fractional_positions.
+ * fast path is unavailable or commit asks for it. Python's
+ * update_fractional_positions, which streams many frames.
  */
 function applyPositions(structure, positions, commit, deps) {
   for (let i = 0; i < positions.length; i++) structure.atoms[i].position = positions[i];
@@ -925,7 +941,7 @@ export const COMMAND_HANDLERS = Object.freeze({
     return { changed: indices.length, element, ...structureEnvelope(structure) };
   },
 
-  async move_atoms(args, { deps }) {
+  async move_atoms(args) {
     const input = requireArgs(args, 'move_atoms');
     const structure = getActiveStructure();
     if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
@@ -949,11 +965,12 @@ export const COMMAND_HANDLERS = Object.freeze({
       const shift = fractional(input.by);
       for (const i of targets) positions[i] = positions[i].map((x, k) => x + shift[k]);
     }
-    const { rebuilt } = applyPositions(structure, positions, input.commit ?? true, deps);
-    return { moved: targets.length, committed: rebuilt, ...structureEnvelope(structure) };
+    await commitGeometry(structure, { positions }, 'POSITION_SYNC_FAILED');
+    // Always rebuilt now (commit is kept for old callers): committed stays true.
+    return { moved: targets.length, committed: true, ...structureEnvelope(structure) };
   },
 
-  async set_lattice(args, { deps }) {
+  async set_lattice(args) {
     const input = requireArgs(args, 'set_lattice');
     const structure = getActiveStructure();
     if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
@@ -967,18 +984,8 @@ export const COMMAND_HANDLERS = Object.freeze({
     if (Math.abs(determinant) < 1e-12) {
       throw commandError('INVALID_ARGS', 'set_lattice.lattice must be nonsingular');
     }
-    if (typeof deps.updateLattice !== 'function') {
-      throw commandError('COMMAND_UNAVAILABLE', 'Lattice update is unavailable');
-    }
-    try {
-      if (await deps.updateLattice(lattice) !== true) throw new Error('Lattice update was not applied');
-    } catch (error) {
-      throw commandError('LATTICE_SYNC_FAILED', 'Lattice synchronization failed', {
-        cause: safeError(error, 'LATTICE_SYNC_FAILED'),
-      });
-    }
-    const now = getActiveStructure();
-    return { lattice: latticeParameters(now.lattice), ...structureEnvelope(now) };
+    await commitGeometry(structure, { lattice }, 'LATTICE_SYNC_FAILED');
+    return { lattice: latticeParameters(structure.lattice), ...structureEnvelope(structure) };
   },
 
   async set_supercell(args) {

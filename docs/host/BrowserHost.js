@@ -86,7 +86,7 @@ function removeQueryParameter(name) {
  * intentionally private to the bootstrap coordinator; only the frozen facade
  * is put on window.
  */
-/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, updateLattice?: Function, recenterCamera?: Function, rotateCamera?: Function, setViewDirection?: Function, setRenderPipeline?: Function, getRenderPipeline?: Function, requestRender?: Function, captureSceneToPng?: Function, captureSceneToSvg?: Function}} [initialDeps] */
+/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, recenterCamera?: Function, rotateCamera?: Function, setViewDirection?: Function, setRenderPipeline?: Function, getRenderPipeline?: Function, requestRender?: Function, captureSceneToPng?: Function, captureSceneToSvg?: Function}} [initialDeps] */
 export function createBrowserHost(initialDeps = {}) {
   const initialOrigin = window.location.origin;
   const subscribers = new Set();

@@ -282,7 +282,7 @@
       "name": "move_atoms",
       "tier": "write",
       "guard": true,
-      "description": "Move atoms of the active structure: to (one position per atom, in the order of atoms or the selection) or by (one shift for all). Fractional unless cartesian is true (then Å). Bonds and polyhedra are rebuilt unless commit is false (a fast redraw for many small steps). Moves never renumber atoms. Returns {moved, committed, atomCount, revision}.",
+      "description": "Move atoms of the active structure: to (one position per atom, in the order of atoms or the selection) or by (one shift for all). Fractional unless cartesian is true (then Å). Committed as a coordinate edit in the Modify Structure window: bonds and polyhedra are rebuilt and an open window shows the new positions. Moves never renumber atoms. Returns {moved, committed (always true), atomCount, revision}.",
       "args": {
         "type": "object",
         "properties": {
@@ -305,7 +305,7 @@
           },
           "by": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "One shift for every atom." },
           "cartesian": { "type": "boolean", "description": "to/by in Å instead of fractional. Default false." },
-          "commit": { "type": "boolean", "description": "Rebuild bonds and polyhedra. Default true." }
+          "commit": { "type": "boolean", "description": "No effect, kept for older callers: every move is committed." }
         },
         "additionalProperties": false
       }
@@ -314,7 +314,7 @@
       "name": "set_lattice",
       "tier": "write",
       "guard": true,
-      "description": "Replace the lattice vectors of the active structure (rows a, b, c in Å); atoms keep their fractional positions. Returns the new cell parameters with atomCount and revision.",
+      "description": "Replace the lattice vectors of the active structure (rows a, b, c in Å); atoms keep their fractional positions. Committed as a lattice edit in the Modify Structure window. Returns the new cell parameters with atomCount and revision.",
       "args": {
         "type": "object",
         "properties": {

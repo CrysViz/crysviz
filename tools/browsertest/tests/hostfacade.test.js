@@ -357,57 +357,10 @@ async function waitForHostFailure(page) {
       },
     };
     const { createBrowserHost } = await import('./host/BrowserHost.js');
-    const throwingController = createBrowserHost({
-      updateLattice: () => {
-        const unsafe = { secret: 'not-json-safe' };
-        unsafe.self = unsafe;
-        throw Object.assign(new Error('injected lattice callback failure'), { details: unsafe });
-      },
-    });
-    const throwingLattice = await throwingController.dispatchInternal({ command: 'set_lattice', args: {
-      lattice: newLattice,
-    } });
     const fallbackController = createBrowserHost({
       applyFrameFast: () => { throw new Error('injected fast path failure'); },
       commitPositions: () => true,
     });
-    const unavailableLattice = await fallbackController.dispatchInternal({ command: 'set_lattice', args: {
-      lattice: newLattice,
-    } });
-    let releaseAsyncLattice;
-    const asyncLatticeGate = new Promise((resolve) => { releaseAsyncLattice = resolve; });
-    const asyncController = createBrowserHost({
-      updateLattice: async () => {
-        await asyncLatticeGate;
-        return true;
-      },
-    });
-    const pendingAsyncLattice = asyncController.dispatchInternal({ command: 'set_lattice', args: {
-      lattice: newLattice,
-    } });
-    const asyncLatticePendingState = await Promise.race([
-      pendingAsyncLattice.then(() => 'settled'),
-      new Promise((resolve) => setTimeout(() => resolve('pending'), 10)),
-    ]);
-    releaseAsyncLattice();
-    const asyncLattice = await pendingAsyncLattice;
-    let releaseAsyncRejection;
-    const asyncRejectionGate = new Promise((resolve) => { releaseAsyncRejection = resolve; });
-    const asyncRejectingController = createBrowserHost({
-      updateLattice: async () => {
-        await asyncRejectionGate;
-        throw new Error('async lattice callback failure');
-      },
-    });
-    const pendingAsyncRejection = asyncRejectingController.dispatchInternal({ command: 'set_lattice', args: {
-      lattice: newLattice,
-    } });
-    const asyncRejectionPendingState = await Promise.race([
-      pendingAsyncRejection.then(() => 'settled'),
-      new Promise((resolve) => setTimeout(() => resolve('pending'), 10)),
-    ]);
-    releaseAsyncRejection();
-    const asyncRejection = await pendingAsyncRejection;
     const fallback = await fallbackController.dispatchInternal({ command: 'update_fractional_positions', args: {
       positions: [[0.15, 0.25, 0.35]],
     } });
@@ -580,12 +533,6 @@ async function waitForHostFailure(page) {
       polyhedraFrameObserved,
       updatedLattice,
       updatedState,
-      throwingLattice,
-      unavailableLattice,
-      asyncLatticePendingState,
-      asyncLattice,
-      asyncRejectionPendingState,
-      asyncRejection,
       fallback,
       rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
       viewedC, viewC, badView, state, redrawn, releaseNoteShown, userChanges, pushedChanges,
@@ -644,24 +591,6 @@ async function waitForHostFailure(page) {
       updatedState: protocol.updatedState,
       cameraBeforeLattice: protocol.cameraBeforeLattice,
     }));
-  H.check('lattice callback failure is normalized and JSON-safe',
-    !protocol.throwingLattice.ok
-      && protocol.throwingLattice.error.code === 'LATTICE_SYNC_FAILED'
-      && protocol.throwingLattice.error.details?.cause?.message === 'injected lattice callback failure'
-      && protocol.throwingLattice.error.details?.cause?.details?.self === '[Circular]'
-      && !Object.prototype.hasOwnProperty.call(protocol.throwingLattice.error.details?.cause || {}, 'stack')
-      && (() => { try { JSON.stringify(protocol.throwingLattice); return true; } catch { return false; } })(),
-    JSON.stringify(protocol.throwingLattice));
-  H.check('lattice update reports unavailable callback',
-    !protocol.unavailableLattice.ok
-      && protocol.unavailableLattice.error.code === 'COMMAND_UNAVAILABLE');
-  H.check('lattice update awaits async callback completion and rejection',
-    protocol.asyncLatticePendingState === 'pending'
-      && protocol.asyncLattice.ok && typeof protocol.asyncLattice.result.revision === 'string'
-      && protocol.asyncRejectionPendingState === 'pending'
-      && !protocol.asyncRejection.ok
-      && protocol.asyncRejection.error.code === 'LATTICE_SYNC_FAILED'
-      && protocol.asyncRejection.error.details?.cause?.message === 'async lattice callback failure');
   H.check('thrown fast path falls back to a full synchronization',
     protocol.fallback.ok && protocol.fallback.result.fastPathApplied === false
       && protocol.fallback.result.rebuilt === true
