@@ -10,15 +10,16 @@ import { updateVisualization } from '../core/crystal-viewer.js';
 import { updateForces, updateSpins } from '../render/index.js';
 import {
   clearHighlightAtom, applyAtomHighlightIndices,
-  clearAllHighlights, clearBondSelection, selectBondFromInstance,
-  clearPolyhedronSelection, selectPolyhedronFromMesh,
-  clearSelectedAtoms, updateAtomSelectionFrom3DHit,
-  addAtomsToSelectionByInstances,
+  clearAllHighlights, clearBondSelection,
+  clearPolyhedronSelection, updateAtomSelectionFrom3DHit,
+  addAtomsToSelectionByInstances, selectBondsDirectFromInstance, selectPolyhedraDirect,
 } from './SelectAndHighlightModule.js';
 import {
   clearMeasureGraphics, addDistanceMeasurement, addAngleMeasurement, drawMeasureGraphics,
 } from '../render/MeasurementModule.js';
 import { flashGhost, HIDE_FLASH_COLOR } from '../render/GhostAtomsModule.js';
+import { pickScene } from '../render/pickVisible.js';
+import { isFocusPickActive, setFocusPick, focusOnPoint } from '../render/FocusPlaneModule.js';
 
 const HIDE_FLASH_MS = 150;
 
@@ -97,8 +98,11 @@ export function setupSceneInteraction() {
     raycaster.setFromCamera(mouse, app.camera);
 
     const atomsMesh = groups.atomsMesh;
-    const atomHit = atomsMesh ? raycaster.intersectObject(atomsMesh)[0] : undefined;
-    if (!atomHit) return;
+    // The nearest VISIBLE atom (render/pickVisible.js): an atom at alpha 0 or
+    // behind an opaque polyhedron face cannot be hidden by a click on it.
+    const picked = atomsMesh ? pickScene(raycaster, { bonds: false }) : null;
+    if (picked?.kind !== 'atom') return;
+    const atomHit = picked.hit;
 
     const instanceId = atomHit.instanceId;
     const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
@@ -134,7 +138,31 @@ export function setupSceneInteraction() {
     setTimeout(() => commitHideRestore([], [srcIdx]), HIDE_FLASH_MS);
   }
 
+  // Pick focus (Visual window, next to Focus distance): the click puts the
+  // tracers' focal plane through the atom (or bond) under the cursor and
+  // ends the mode; empty space just ends it.
+  function handleFocusPickClick(event) {
+    const ndc = pointerNDC(event);
+    event.preventDefault();
+    stopUnlessTouchTap(event);
+    setFocusPick(false);
+    if (!ndc) return;
+    mouse.set(ndc.x, ndc.y);
+    raycaster.setFromCamera(mouse, app.camera);
+    const picked = pickScene(raycaster, { polyhedra: false });
+    if (!picked) return;
+    const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
+    const point = picked.kind === 'atom' && wrapped?.cart?.[picked.hit.instanceId]
+      ? new THREE.Vector3(...wrapped.cart[picked.hit.instanceId])
+      : picked.hit.point;
+    if (point) focusOnPoint(point);
+  }
+
   function onClickPick(event){
+    if (isFocusPickActive()) {
+      handleFocusPickClick(event);
+      return;
+    }
     if (mode.measureMode === 'hide') {
       handleHideModeClick(event);
       return;
@@ -162,8 +190,10 @@ export function setupSceneInteraction() {
     const targetMesh = groups.atomsMesh;
     if (!targetMesh) return;
 
-    const hits = raycaster.intersectObject(targetMesh);
-    if (!hits.length) {
+    // The nearest VISIBLE atom (render/pickVisible.js); an opaque polyhedron
+    // face in front of it counts as empty space, bonds never hide an atom.
+    const picked = pickScene(raycaster, { bonds: false });
+    if (picked?.kind !== 'atom') {
       // Clicked on empty space - reset selection
       measurements.selectedAtoms.forEach(a => clearHighlightAtom());
       measurements.selectedAtoms = [];
@@ -171,7 +201,7 @@ export function setupSceneInteraction() {
       return;
     }
 
-    const rawHit = hits[0];
+    const rawHit = picked.hit;
     const instanceId = rawHit.instanceId;
 
     const wrapped = fileBrowser.selectedStructure?.periodic?.visibleWrapped;
@@ -249,39 +279,16 @@ export function setupSceneInteraction() {
   // Raycast for atoms
   raycaster.setFromCamera(mouse, app.camera);
 
-  // Raycast against InstancedMesh objects. Both meshes can be absent: atoms
-  // before the first structure loads, bonds whenever "Show Bonds" is off
+  // What the user can see under the cursor (render/pickVisible.js): atoms
+  // and bonds by distance, invisible (alpha ~0, cut away) instances skipped,
+  // an opaque polyhedron face occluding what is behind it, a see-through
+  // face only a fallback. Both instanced meshes can be absent: atoms before
+  // the first structure loads, bonds whenever "Show Bonds" is off
   // (disposeBondsMesh nulls groups.bondsMesh rather than hiding the mesh).
-  const atomHits = groups.atomsMesh ? raycaster.intersectObject(groups.atomsMesh) : [];
-  const bondHits = groups.bondsMesh ? raycaster.intersectObject(groups.bondsMesh) : [];
-  // Polyhedron faces, lowest pick priority (an atom/bond hit wins). Non-recursive
-  // so the edge lines / outline proxies never participate; the visible filter is
-  // required because THREE.Raycaster does NOT skip invisible meshes (hidden
-  // categories must not be pickable).
-  const polyHits = groups.polyhedraGroup
-    ? raycaster.intersectObjects(groups.polyhedraGroup.children, false).filter((h) => h.object.visible)
-    : [];
+  const picked = pickScene(raycaster);
+  const hit = picked?.hit ?? null;
 
-  let hit = null;
-
-  // Pick the hit object. If both an atom and a bond are under the cursor, the
-  // bond wins because it is assigned last (it overwrites the atom hit here).
-  // Note: this compares first-hit-per-mesh, not true nearest object across the
-  // two meshes, so the chosen hit isn't necessarily the closest to the camera.
-  if (atomHits.length > 0) {
-    hit = atomHits[0];
-  }
-  if (bondHits.length > 0) {
-    hit = bondHits[0];
-  }
-
-
-
-  // Raycast for bonds
-  //const bondHits = raycaster.intersectObjects(groups.bondsGroup.children, true);
-
-  if (atomHits.length > 0) {
-    hit = atomHits[0];
+  if (picked?.kind === 'atom') {
     clearBondSelection();
     clearPolyhedronSelection();
     // Any modifier (Shift add / Ctrl-Cmd toggle) is building a multi-atom
@@ -298,23 +305,26 @@ export function setupSceneInteraction() {
       revealPanel: !additive,
     });
 
-  } else if (bondHits.length > 0) {
-    clearSelectedAtoms({
-      sourceEvent: event,
-      reason: 'bond-select',
-    });
-    clearPolyhedronSelection();
+  } else if (picked?.kind === 'bond') {
     // Orange 3D highlight + open/expand/scroll to the bond's row in the
-    // Structure window's Bonds tab (double-click same bond deselects).
-    selectBondFromInstance(hit.instanceId, { scrollToSelection: true });
-  } else if (polyHits.length > 0) {
-    clearSelectedAtoms({
-      sourceEvent: event,
-      reason: 'polyhedron-select',
+    // Structure window's Bonds tab (double-click same bond deselects);
+    // Shift adds a bond to the picked set, Ctrl/⌘ toggles one — the set is
+    // the selection then (selection bar: Bonds tab, bulk edits, Save).
+    selectBondsDirectFromInstance(hit.instanceId, {
+      mode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
+      scrollToSelection: true,
     });
+  } else if (picked?.kind === 'polyhedron') {
     // Emissive glow + open/expand/scroll to the polyhedron's row in the
-    // Structure window's Poly tab (double-click same polyhedron deselects).
-    selectPolyhedronFromMesh(polyHits[0].object, { scrollToSelection: true });
+    // Structure window's Poly tab (double-click same polyhedron deselects);
+    // Shift / Ctrl/⌘ build a set of polyhedra, as for bonds.
+    const key = hit.object?.userData?.key;
+    if (key) {
+      selectPolyhedraDirect([key], {
+        mode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
+        scrollToSelection: true,
+      });
+    }
   }
   else  {
      clearAllHighlights({

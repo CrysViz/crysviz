@@ -112,7 +112,7 @@ import { serializeCifErrors, restoreCifErrors } from '../model/cifErrors.js';
 import { siteSpeciesRecord, restoreSiteSpecies } from '../model/siteSpecies.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
-import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
+import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE, dofApertureToSlider, DOF_DEPTH_RANGE } from './ControlsWiring.js';
 import { revealFeaturePanels, refreshPanelAvailability, openPanel } from './panels/PanelManager.js';
 import { fracToCart, cartToFractional, normalizeFractional } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
@@ -553,6 +553,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       bondVisibility: { ...general.bondVisibility },
       atomVisibility: { ...general.atomVisibility },
       focusRegions: nonEmptyDeepCopy(structure.focusRegions),
+      selectionGroups: nonEmptyDeepCopy(structure.selectionGroups), // saved selections (StructureInfoPanel/SelectionGroups.js)
       bondCutImmunity: { ...general.bondCutImmunity },
       // Force / spin arrow display (issue #53). Only the values ForceModule/
       // SpinModule read to draw the arrows are persisted — not panel widget
@@ -586,6 +587,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       renderStyle: general.renderStyle,
       renderPipeline: general.renderPipeline,
       depthPeelLayers: general.depthPeelLayers,
+      depthPeelMotionLayers: general.depthPeelMotionLayers,
       rtResolutionScale: general.rtResolutionScale,
       rtTiledRender: general.rtTiledRender,
       rtRasterPreview: general.rtRasterPreview,
@@ -596,6 +598,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       ptLightSoftness: general.ptLightSoftness,
       rtDofAperture: general.rtDofAperture,
       rtDofFocus: general.rtDofFocus,
+      rtDofDepth: general.rtDofDepth,
       rtGroundPlane: general.rtGroundPlane,
       rtGroundPattern: general.rtGroundPattern,
       rtGroundColor1: general.rtGroundColor1,
@@ -970,6 +973,10 @@ function applyStyleSettings(style) {
     general.depthPeelLayers = style.depthPeelLayers;
     setSelect('depthPeelLayersSlider', style.depthPeelLayers);
   }
+  if (style.depthPeelMotionLayers != null) {
+    general.depthPeelMotionLayers = style.depthPeelMotionLayers;
+    setSelect('depthPeelMotionLayersSlider', style.depthPeelMotionLayers);
+  }
   if (style.rtResolutionScale != null) {
     general.rtResolutionScale = style.rtResolutionScale;
     setSelect('rtResolutionScale', style.rtResolutionScale);
@@ -1013,13 +1020,19 @@ function applyStyleSettings(style) {
     general.ptLightSoftness = style.ptLightSoftness;
     setSelect('ptLightSoftness', style.ptLightSoftness);
   }
+  // DoF aperture (quadratic in the lens radius) and focus depth are mapped
+  // sliders: the ELEMENT holds a [0,1] position (see ColorPanel makeTracerSliderRow).
   if (style.rtDofAperture != null) {
     general.rtDofAperture = style.rtDofAperture;
-    setSelect('rtDofAperture', style.rtDofAperture);
+    setSelect('rtDofAperture', dofApertureToSlider(style.rtDofAperture));
   }
   if (style.rtDofFocus != null) {
     general.rtDofFocus = style.rtDofFocus;
     setSelect('rtDofFocus', style.rtDofFocus);
+  }
+  if (style.rtDofDepth != null) {
+    general.rtDofDepth = style.rtDofDepth;
+    setSelect('rtDofDepth', sizeValueToSlider(style.rtDofDepth, DOF_DEPTH_RANGE));
   }
   if (style.rtGroundPlane != null) {
     general.rtGroundPlane = style.rtGroundPlane;
@@ -1731,6 +1744,17 @@ function applySharedStateHeld(state, fileName) {
 
   if (Array.isArray(state.display?.focusRegions)) {
     structure.focusRegions = JSON.parse(JSON.stringify(state.display.focusRegions));
+  }
+  if (Array.isArray(state.display?.selectionGroups)) {
+    structure.selectionGroups = state.display.selectionGroups
+      .filter((g) => g && typeof g === 'object' && Array.isArray(g.atoms))
+      .map((g) => ({
+        name: String(g.name ?? 'Selection').slice(0, 60),
+        tab: ['atoms', 'bonds', 'polyhedra'].includes(g.tab) ? g.tab : 'atoms',
+        atoms: g.atoms.filter((a) => Array.isArray(a) && Number.isInteger(a[0]) && Number.isInteger(a[1])).map((a) => [a[0], a[1]]),
+        bonds: Array.isArray(g.bonds) ? g.bonds.filter((k) => typeof k === 'string') : [],
+        polyhedra: Array.isArray(g.polyhedra) ? g.polyhedra.filter((k) => typeof k === 'string') : [],
+      }));
   }
 
   // Single-frame: buildPOSCAR() groups atoms by element, so restore the saved

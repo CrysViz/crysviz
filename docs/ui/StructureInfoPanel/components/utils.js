@@ -161,10 +161,6 @@ export function getElementOpacityValues(element) {
   ));
 }
 
-export function setSwatchOpacity(swatch, opacity) {
-  swatch.style.opacity = `${clampOpacity(opacity)}`;
-}
-
 export function areAllAtomsCutPlaneImmune(atomIndices) {
   return atomIndices.length > 0 && atomIndices.every((atomIndex) => !!fileBrowser.selectedStructure.atoms[atomIndex].cutPlaneImmune);
 }

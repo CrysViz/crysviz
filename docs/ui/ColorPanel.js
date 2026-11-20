@@ -13,7 +13,8 @@ import { updateGroundPlane } from '../render/index.js'
 import { GROUND_DIRECTIONS } from '../render/groundDirection.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js'
 import { maybeShowRaytraceWarning } from './RaytraceWarningModal.js'
-import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js'
+import { sizeSliderToValue, sizeValueToSlider, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE, dofSliderToAperture, dofApertureToSlider } from './ControlsWiring.js'
+import { showFocusPlaneMarker, focusPlaneDistance, setFocusPick, isFocusPickActive, FOCUS_PICK_CHANGED } from '../render/FocusPlaneModule.js'
 import { saveBondStyles } from './SizePrefs.js'
 import { createColorBar } from './ColorBarWidget.js'
 import { registerColorBarSource } from './ColorBarRegistry.js'
@@ -321,6 +322,7 @@ export function addColorPanel(target = "colorContainer") {
     const isRaster = RASTER_PIPELINES.includes(general.renderPipeline);
     const isTracer = general.renderPipeline === "raytrace" || general.renderPipeline === "pathtrace";
     depthPeelBlock.hidden = general.renderPipeline !== "depthpeel";
+    depthPeelMotionBlock.hidden = general.renderPipeline !== "depthpeel";
     rtControlsBlock.hidden = !isTracer;
     // The denoiser lives in the shared tracer "Advanced" section (visible for
     // both tracers), but is a path-tracing-only control, so its row is toggled
@@ -443,6 +445,24 @@ export function addColorPanel(target = "colorContainer") {
   depthPeelBlock.appendChild(depthPeelLabel);
   depthPeelBlock.appendChild(depthPeelSlider);
   content.appendChild(depthPeelBlock);
+  // Fewer peel passes while the camera moves (DepthPeelPipeline): rotating a
+  // large structure stays fluid, the full count returns when it rests.
+  const depthPeelMotionBlock = createElement("div", { class: "control-row" });
+  depthPeelMotionBlock.hidden = general.renderPipeline !== "depthpeel";
+  const depthPeelMotionLabel = createElement("label", { for: "depthPeelMotionLayersSlider" }, {},
+    `Peel layers while moving: ${general.depthPeelMotionLayers}`);
+  const depthPeelMotionSlider = createElement("input", {
+    type: "range", id: "depthPeelMotionLayersSlider", min: "1", max: "15", step: "1",
+    value: String(general.depthPeelMotionLayers),
+  });
+  depthPeelMotionSlider.addEventListener("input", () => {
+    general.depthPeelMotionLayers = parseInt(depthPeelMotionSlider.value, 10);
+    depthPeelMotionLabel.textContent = `Peel layers while moving: ${general.depthPeelMotionLayers}`;
+    requestRender();
+  });
+  depthPeelMotionBlock.appendChild(depthPeelMotionLabel);
+  depthPeelMotionBlock.appendChild(depthPeelMotionSlider);
+  content.appendChild(depthPeelMotionBlock);
 
   // Ray/path-tracing controls: internal render resolution (quality/perf knob)
   // and extra mirror reflectivity, shared by the raytrace + pathtrace
@@ -568,20 +588,29 @@ export function addColorPanel(target = "colorContainer") {
   // size-sliders' quadratic mapping (fine control near the minimum, large
   // reach at the top); every writer of the ELEMENT value must then write the
   // inverse-mapped position (reset button below, ShareModule restore).
+  // `quadRange` may also be a custom { toValue(pos), toPos(value) } pair
+  // (the aperture: quadratic in the lens radius).
   const makeTracerSliderRow = (id, labelFor, min, max, step, value, fmt, onSet, quadRange) => {
+    const toPos = quadRange?.toPos ?? ((v) => sizeValueToSlider(v, quadRange));
+    const toValue = quadRange?.toValue ?? ((p) => sizeSliderToValue(p, quadRange));
     const rowEl = createElement("div", { class: "control-row" });
-    const labelEl = createElement("label", { for: id }, {}, fmt(value));
+    // The label's text is a node of its own, so a row may append a control
+    // to the label (the Focus distance row's Pick button) that an update of
+    // the text does not wipe.
+    const labelEl = createElement("label", { for: id });
+    const labelText = document.createTextNode(fmt(value));
+    labelEl.appendChild(labelText);
     const sliderEl = createElement("input", quadRange
       ? { type: "range", id, min: "0", max: "1", step: "any",
-          value: String(sizeValueToSlider(value, quadRange)) }
+          value: String(toPos(value)) }
       : { type: "range", id, min: String(min), max: String(max), step: String(step),
           value: String(value) });
     sliderEl.addEventListener("input", () => {
       const v = quadRange
-        ? sizeSliderToValue(parseFloat(sliderEl.value), quadRange)
+        ? toValue(parseFloat(sliderEl.value))
         : parseFloat(sliderEl.value);
       onSet(v);
-      labelEl.textContent = fmt(v);
+      labelText.nodeValue = fmt(v);
       app.pipeline?.resetAccumulation?.();
       requestRender();
     });
@@ -611,14 +640,37 @@ export function addColorPanel(target = "colorContainer") {
     0, 2, 0.05, general.rtSaturation ?? 1,
     (v) => `Saturation: ${v.toFixed(2)}`,
     (v) => { general.rtSaturation = v; }));
+  // Depth of field (render/pipeline/raytrace/dofChunk.js): two knobs, the
+  // aperture and the focus distance (the sharp slab general.rtDofDepth is a
+  // hidden config-only setting). The aperture is
+  // stored as the lens radius squared (the shader's uApertureSize); its slider
+  // is quadratic in the radius (fine at the small end); every DoF drag shows the
+  // focus peaking (render/FocusPlaneModule.js) in the raster preview.
+  const focusDistanceLabel = (v) => {
+    const cam = app.camera;
+    const d = cam && app.controls?.target ? ` (${focusPlaneDistance(cam).toFixed(1)} Å)` : '';
+    return `Focus distance: ×${v.toFixed(2)}${d}`;
+  };
   rtControlsBlock.appendChild(makeTracerSliderRow('rtDofAperture', 'rtDofAperture',
-    0, 2, 0.02, general.rtDofAperture ?? 0,
-    (v) => `DoF aperture: ${v.toFixed(2)}`,
-    (v) => { general.rtDofAperture = v; }));
-  rtControlsBlock.appendChild(makeTracerSliderRow('rtDofFocus', 'rtDofFocus',
-    0.2, 3, 0.05, general.rtDofFocus ?? 1,
-    (v) => `Focus distance: ×${v.toFixed(2)}`,
-    (v) => { general.rtDofFocus = v; }));
+    0, 4, 0.01, general.rtDofAperture ?? 0,
+    (v) => `DoF aperture: ${Math.sqrt(Math.max(0, v)).toFixed(2)} Å`,
+    (v) => { general.rtDofAperture = v; showFocusPlaneMarker(); },
+    { toValue: dofSliderToAperture, toPos: dofApertureToSlider }));
+  const focusRow = makeTracerSliderRow('rtDofFocus', 'rtDofFocus',
+    0.2, 3, 0.01, general.rtDofFocus ?? 1,
+    focusDistanceLabel,
+    (v) => { general.rtDofFocus = v; showFocusPlaneMarker(); });
+  // Pick focus: arm, then one click on an atom in the 3D view puts the focal
+  // plane through it (render/FocusPlaneModule.js focusOnPoint).
+  const focusPickBtn = createElement("button", { type: "button", id: "rtDofFocusPick", class: "btn-mini rt-focus-pick" }, {}, "Pick");
+  focusPickBtn.title = "Pick focus: click an atom in the 3D view to put the focal plane through it (Esc cancels)";
+  focusPickBtn.addEventListener("click", (e) => { e.preventDefault(); setFocusPick(!isFocusPickActive()); });
+  document.addEventListener(FOCUS_PICK_CHANGED, () => {
+    focusPickBtn.classList.toggle("active", isFocusPickActive());
+    focusPickBtn.textContent = isFocusPickActive() ? "Click an atom…" : "Pick";
+  });
+  focusRow.querySelector("label")?.appendChild(focusPickBtn);
+  rtControlsBlock.appendChild(focusRow);
 
   // Ground plane block — ALWAYS VISIBLE (all pipelines): the raster pipelines
   // and tracer preview frames draw a raster ground disc (render/GroundPlaneModule)
@@ -933,6 +985,7 @@ export function addColorPanel(target = "colorContainer") {
     if (general.celOutlineMode !== D.celOutlineMode) fire('celOutlineModeMenu', D.celOutlineMode, 'change');
     if (general.celOutlineColorMode !== D.celOutlineColorMode) fire('celOutlineColorMenu', D.celOutlineColorMode, 'change');
     fire('depthPeelLayersSlider', D.depthPeelLayers, 'input');
+    fire('depthPeelMotionLayersSlider', D.depthPeelMotionLayers, 'input');
     fire('celOutlineWidth', Math.sqrt(D.celOutlineWidth / CEL_OUTLINE_MAX), 'input'); // quadratic slider
     fire('celHullWidth', D.celHullWidth, 'input');
     fire('celHullPolyWidth', D.celHullPolyWidth, 'input');
@@ -948,8 +1001,9 @@ export function addColorPanel(target = "colorContainer") {
     fire('rtLightIntensity', D.rtLightIntensity, 'input');
     fire('rtAmbient', D.rtAmbient, 'input');
     fire('rtSaturation', D.rtSaturation, 'input');
-    fire('rtDofAperture', D.rtDofAperture, 'input');
+    fire('rtDofAperture', dofApertureToSlider(D.rtDofAperture), 'input'); // quadratic-in-radius slider
     fire('rtDofFocus', D.rtDofFocus, 'input');
+    general.rtDofDepth = D.rtDofDepth; // hidden (config-only) sharp slab
     fireCheck('rtGroundToggle', D.rtGroundPlane);
     fire('rtGroundPattern', D.rtGroundPattern, 'change');
     fire('rtGroundDirection', D.rtGroundDirection ?? 'down', 'change');

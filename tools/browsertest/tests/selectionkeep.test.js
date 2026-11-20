@@ -35,7 +35,8 @@ const H = require('../harness');
       const y = rect.top + (1 - p.y) / 2 * rect.height;
       ray.setFromCamera(new THREE.Vector2(p.x, p.y), app.camera);
       if (ray.intersectObject(mesh)[0]?.instanceId !== i) continue; // hidden behind another atom
-      if (x < rect.left + 380 || x > rect.right - 40 || y < rect.top + 40 || y > rect.bottom - 40) continue;
+      // the Structure window opens at the right and grows with the selection bar: keep clear of it
+      if (x < rect.left + 380 || x > rect.right - 360 || y < rect.top + 40 || y > rect.bottom - 40) continue;
       if (hits.some((q) => Math.hypot(q.x - x, q.y - y) < 40)) continue;
       hits.push({ i, src: src[i], x, y });
     }

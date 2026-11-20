@@ -103,13 +103,13 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   alphaLabel.className = 'si-row-label';
   const alphaSlider = document.createElement('input');
   alphaSlider.type = 'range';
-  alphaSlider.min = '0.05';
+  alphaSlider.min = '0';
   alphaSlider.max = '1';
   alphaSlider.step = '0.01';
   alphaSlider.value = String(currentOpacity);
   const alphaValue = document.createElement('input');
   alphaValue.type = 'number';
-  alphaValue.min = '0.05';
+  alphaValue.min = '0';
   alphaValue.max = '1';
   alphaValue.step = '0.01';
   alphaValue.value = currentOpacity.toFixed(2);

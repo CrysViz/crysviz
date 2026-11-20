@@ -24,12 +24,15 @@
 // key-light direction at
 // uLightPosition with radius uLightRadius (the "Light softness" slider).
 
-import { DATA_TEX_WIDTH } from '../raytrace/sceneFragment.js';
+import { DATA_TEX_WIDTH } from '../raytrace/SceneEncoder.js';
 import { fieldChunk } from '../raytrace/fieldChunk.js';
 import { planeChunk } from '../raytrace/planeChunk.js';
 import { gridChunk } from '../raytrace/gridChunk.js';
 import { convexChunk } from '../raytrace/convexChunk.js';
 import { coneChunk } from '../raytrace/coneChunk.js';
+import * as THREE from '../../../external/three/three.module.js';
+import '../../../external/three-pathtracing/PathTracingCommon.js'; // registers THREE.ShaderChunk['pathtracing_*']
+import { DOF_DECLARATIONS, dofFunctions, patchMainChunkDof } from '../raytrace/dofChunk.js';
 
 export function makePtSceneFragment(pieChunk = '', preMainChunk = '') {
 return /* glsl */`
@@ -38,7 +41,7 @@ precision highp int;
 precision highp sampler2D;
 
 #include <pathtracing_uniforms_and_defines>
-
+${DOF_DECLARATIONS}
 uniform sampler2D uAtomsDataTexture;
 uniform sampler2D uCylindersDataTexture;
 uniform sampler2D uPolyDataTexture;
@@ -597,6 +600,7 @@ float SceneIntersect()
 // See-through layers blended exactly per camera path (deeper ones pass at
 // random), and the classic 8 steps per segment — paths without see-through
 // surfaces trace exactly as before.
+${dofFunctions('SceneIntersect()')}
 #define PT_MAX_PASS_LAYERS 4
 #define PT_SEGMENT_BOUNCES 8
 
@@ -737,10 +741,15 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 		// coin-flip noise.
 		if (hitType != REFR && hitAlpha < 0.999)
 		{
+			// The pass-through is free (segBounces is given back): a light
+			// ray crossing a few see-through atoms used to spend its segment
+			// budget on them and was dropped, a full shadow for nearly
+			// invisible objects. The outer loop bound still caps the work.
 			if (sampleLight == TRUE && !uLegacyNoise)
 			{
 				mask *= 1.0 - hitAlpha;
 				rayOrigin = x + (rayDirection * uEPS_intersect);
+				segBounces--;
 				continue;
 			}
 			// On the camera segment (before any diffuse bounce or reflection
@@ -764,6 +773,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 			else if (ptRand() >= hitAlpha)
 			{
 				rayOrigin = x + (rayDirection * uEPS_intersect);
+				segBounces--; // a pass-through is free (see above)
 				continue;
 			}
 		}
@@ -1038,7 +1048,7 @@ void SetupScene(void)
 	lightSphere = Sphere(uLightRadius, uLightPosition, uLightColor * 12.0, vec3(0), LIGHT);
 }
 
-${preMainChunk}#include <pathtracing_main>
+${preMainChunk}${patchMainChunkDof(THREE.ShaderChunk['pathtracing_main'])}
 `;
 }
 

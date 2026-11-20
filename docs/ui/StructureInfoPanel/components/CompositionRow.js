@@ -3,7 +3,7 @@ import { colorHexToCss, createPieDot, getAtomColor } from '../../../utils/ColorM
 import { getAtomImageColor } from '../../../render/AtomsFracUpdateModule.js';
 import { getElementDefaultColor } from '../../../defaults/color_texture_defaults.js';
 import { updateVisualization } from '../../../core/crystal-viewer.js';
-import { getElementAtomIndices, getElementOpacityValues, setSwatchOpacity, createMiniToggleSwitch, updateAtomCoordinatesLive } from './utils.js';
+import { getElementAtomIndices, createMiniToggleSwitch, updateAtomCoordinatesLive } from './utils.js';
 import { createTinyImmunityToggle } from './Immunity.js';
 import { createIndividualAtomRow } from './IndividualAtomRow.js';
 import { createElementColorEditor } from './ColorEditor.js';
@@ -152,7 +152,6 @@ export function createCompositionRow(el, count, total, options = {}) {
         }
         return [css(getAtomColor(index))];
       });
-    const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
     // Remove the old dot(s) if present — a single element, or a wrapper of
     // several for a mixed group (see below).
@@ -234,15 +233,14 @@ export function createCompositionRow(el, count, total, options = {}) {
         wrapper.appendChild(miniDot);
       });
 
-      setSwatchOpacity(wrapper, currentOpacity);
       body.insertBefore(wrapper, body.firstChild);
       return;
     }
 
-    // Create new dot with current colors
+    // Create new dot with current colors (the colour only: a species at a
+    // low alpha keeps a readable dot, its alpha is on the editor's slider)
     const dot = createPieDot(atomColors, 20);
     dot.classList.add('dot', 'comp-single-dot');
-    setSwatchOpacity(dot, currentOpacity);
     // Keep DOM order checkbox -> dot -> name -> caret across repaints.
     body.insertBefore(dot, body.firstChild);
 
@@ -505,16 +503,15 @@ export function createWyckoffCompositionRow(el, entries, total) {
     const atomColors = wyckoffAtomIndices
       .filter((index) => index < atomCount)
       .map(index => safeColor(getAtomColor(index)));
-    const currentOpacity = getElementOpacityValues(el)[0] ?? 1;
 
     // Remove old dot if it exists
     const oldDot = left.querySelector('.dot');
     if (oldDot) left.removeChild(oldDot);
 
-    // Create new dot with current colors
+    // Create new dot with current colors (the colour only: a species at a
+    // low alpha keeps a readable dot, its alpha is on the editor's slider)
     const dot = createPieDot(atomColors, 20);
     dot.classList.add('dot', 'comp-single-dot');
-    setSwatchOpacity(dot, currentOpacity);
     left.insertBefore(dot, left.firstChild);
 
     //  ADD CLICK HANDLER TO OPEN COLOR EDITOR
