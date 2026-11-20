@@ -111,8 +111,10 @@ const H = require('../harness');
     }
   });
   H.check('UI pipeline switch is refused while tracer capture owns the pipeline',
-    !pipelineRace.during.controllerAttempt.ok
-      && pipelineRace.during.controllerAttempt.error.code === 'PNG_CAPTURE_IN_PROGRESS'
+    // A refusal is a result (applied: false), not an error: see BrowserHost's outcome handling.
+    pipelineRace.during.controllerAttempt.ok
+      && pipelineRace.during.controllerAttempt.result.applied === false
+      && pipelineRace.during.controllerAttempt.result.code === 'PNG_CAPTURE_IN_PROGRESS'
       && pipelineRace.during.pipelineUnchanged
       && pipelineRace.during.generalPipeline === 'raytrace'
       && pipelineRace.during.selected === 'raytrace', JSON.stringify(pipelineRace.during));
