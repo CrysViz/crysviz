@@ -1059,6 +1059,7 @@ export function addColorPanel(target = "colorContainer") {
     general.atomColorScale = settings.scale;
     general.colorBarSize = settings.size;
     general.atomLegendText = settings.legend;
+    general.atomLegendOffset = settings.legendOffset;
     general.atomColorBarFloating = atomsColorBar.isFloating();
     if (general.atomColorBarFloating) {
       general.atomColorBarFloatPos = atomsColorBar.getAnchor();
@@ -1275,6 +1276,8 @@ export function addColorPanel(target = "colorContainer") {
             fallbackMin: general.ForceMin,
             fallbackMax: general.ForceMax,
             legend: general.atomLegendText ?? "Atom Force (eV/Å)",
+            legendOffset: general.atomLegendOffset,
+            onLegendOffsetChange: (offset) => { general.atomLegendOffset = offset; },
             scale: general.atomColorScale,
             orientation: general.atomColorBarOrientation,
             flipSide: general.atomColorBarFlipSide,
@@ -1352,6 +1355,7 @@ export function addColorPanel(target = "colorContainer") {
     general.bondColorScale = settings.scale;
     general.colorBarSize = settings.size;
     general.bondLegendText = settings.legend;
+    general.bondLegendOffset = settings.legendOffset;
     general.bondColorBarFloating = bondsColorBar.isFloating();
     if (general.bondColorBarFloating) {
       general.bondColorBarFloatPos = bondsColorBar.getAnchor();
@@ -1499,6 +1503,8 @@ export function addColorPanel(target = "colorContainer") {
             fallbackMin: general.BondMin,
             fallbackMax: general.BondMax,
             legend: general.bondLegendText ?? "Bond Length (Å)",
+            legendOffset: general.bondLegendOffset,
+            onLegendOffsetChange: (offset) => { general.bondLegendOffset = offset; },
             scale: general.bondColorScale,
             orientation: general.bondColorBarOrientation,
             flipSide: general.bondColorBarFlipSide,

@@ -152,13 +152,13 @@ export async function renderGroupedHistogram(plotId, {
     });
   }
 
-  // A compact card's bottom margin holds the tick labels (~20 px with their
-  // tick marks), an 8 px gap and the axis title (~16 px) outright: in a 110 px
+  // A compact card's bottom margin holds the tick labels (~30 px with their
+  // tick marks and label padding), a gap and the axis title (~18 px) outright: in a 110 px
   // card automargin does not grow it, and the title ended up on the ticks.
   const margin = isExpanded
     ? { t: 20, r: 20, b: 70, l: 60 }
     : compact
-      ? { t: 4, r: 4, b: 46, l: 44 }
+      ? { t: 4, r: 4, b: 52, l: 44 }
       : { t: 10, r: 10, b: 55, l: 45 };
   const binCount = groups[0]?.y.length ?? 0;
   const maxCount = bins

@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <vector>
+#include <new>
 #include <emscripten/bind.h>
 
 /////////////////////////////////////
@@ -448,43 +449,106 @@ inline float linear_interp(float x1, float x2, float factor) {
 
 
 
+/*
+ * Memory accounting for one MarchingCubes instance.
+ *
+ * The module is built with MAXIMUM_MEMORY=4GB (wasm32 cannot address more),
+ * and every instance preallocates its output for the worst case it is sized
+ * for, so a fine grid -- e.g. a 300x300x324 CHGCAR -- asks for more than the
+ * whole address space before a single triangle exists. Per grid point:
+ *
+ *   field           1 float
+ *   vnormal_cache   3 floats (one normal per grid point)
+ *   vertex_list     VERTICES_PER_POINT * 3 floats
+ *   vnormal_list    VERTICES_PER_POINT * 3 floats
+ *
+ * = 4 + 12 + 60 + 60 = 136 bytes. marchingCubesBytes() exposes the same sum to
+ * JS (model/marchingCubesMemory.js), which decides from it whether the field
+ * has to be resampled onto a coarser grid before it is handed over. Computed in
+ * double, not size_t: size_t is 32 bits here and the product is exactly the
+ * number that overflows.
+ */
+static const unsigned int VERTICES_PER_POINT = 5;
+static const unsigned int FLOATS_PER_POINT = 1 + 3 + 2 * VERTICES_PER_POINT * 3;
+
+double marchingCubesBytes(unsigned int resx, unsigned int resy, unsigned int resz) {
+	return (double)resx * (double)resy * (double)resz * (double)FLOATS_PER_POINT * (double)sizeof(float);
+}
+
+/* Source coordinate for target index j when n_dst points span the same extent
+ * as n_src points (endpoints included, as the mesh's [0,1] grid fractions do).
+ * Returns the lower source index and the weight of the upper one. */
+static inline void resample_coord(unsigned int j, unsigned int n_src, unsigned int n_dst,
+		unsigned int& i0, float& t) {
+	if (n_src < 2 || n_dst < 2) { i0 = 0; t = 0.0f; return; }
+	const double s = (double)j * (double)(n_src - 1) / (double)(n_dst - 1);
+	unsigned int lo = (unsigned int)s;
+	if (lo > n_src - 2) lo = n_src - 2; // keep lo+1 in range; the last point gets t = 1
+	i0 = lo;
+	t = (float)(s - (double)lo);
+}
+
 class MarchingCubes {
 public:
 	unsigned int x_step, y_step, z_step;
 	unsigned int nx, ny, nz;
 	size_t field_size;
 	size_t vertex_count;
+	size_t vertex_capacity; // vertices vertex_list/vnormal_list can hold
+	bool truncated = false;  // last update_vertices() ran out of vertex_capacity
+	bool allocated = false;  // every buffer this instance needs was obtained
 	float dx, dy, dz;
 
 	bool owns_field = true; // track ownership of field data for proper cleanup in destructor
-	float* field;
-	float* vertex_list;
-	float* vnormal_list;
-	float* vnormal_cache;
+	float* field = nullptr;
+	float* vertex_list = nullptr;
+	float* vnormal_list = nullptr;
+	float* vnormal_cache = nullptr;
 
 	MarchingCubes(unsigned int resx, unsigned int resy, unsigned int resz, uintptr_t field_data, uintptr_t cache_data)
-			: MarchingCubes(resx, resy, resz) {
-		this->field = reinterpret_cast<float*>(field_data); // use provided field data (assumed to be pre-allocated and filled, and not owned by this class, so no free in destructor)
-		this->vnormal_cache = reinterpret_cast<float*>(cache_data); // use provided cache data (assumed to be pre-allocated and filled, and not owned by this class, so no free in destructor)
-		owns_field = false; // since we're using external data, we don't own it
+			: nx(resx), ny(resy), nz(resz) {
+		// field and cache are provided by the caller (pre-allocated and filled,
+		// not owned by this class, so not freed in the destructor)
+		owns_field = false;
+		init(reinterpret_cast<float*>(field_data), reinterpret_cast<float*>(cache_data));
 	}
 	MarchingCubes(unsigned int resx, unsigned int resy, unsigned int resz)
-			: nx(resx), ny(resy), nz(resz), x_step(1), y_step(resx), z_step(resy * resx), vertex_count(0) {
-		x_step = 1;
-		y_step = resx;
-		z_step = resy * resx;
-		dx = 1.0 / (float)(resx-1);
-		dy = 1.0 / (float)(resy-1);
-		dz = 1.0 / (float)(resz-1);
-		field_size = resx * resy * resz;
-		size_t vertex_size = field_size * 5; // max 3D vertex positions
-		size_t normals_size = vertex_size * 3; // max 3D vertex normals
-		this->field = new float[field_size];
-		this->vertex_list = new float[normals_size];
-		this->vnormal_list = new float[normals_size];
-		this->vnormal_cache = new float[normals_size](); // cache initialized to 0
+			: nx(resx), ny(resy), nz(resz) {
+		init(nullptr, nullptr);
 	}
-	
+
+	/* Allocation never aborts: with ALLOW_MEMORY_GROWTH malloc returns null
+	 * once the heap cannot grow, and new(nothrow) passes that through. A
+	 * failed instance reports isAllocated() == false and does nothing, so JS
+	 * can delete it and retry on a coarser grid instead of losing the module. */
+	void init(float* ext_field, float* ext_cache) {
+		x_step = 1;
+		y_step = nx;
+		z_step = ny * nx;
+		vertex_count = 0;
+		dx = 1.0 / (float)(nx-1);
+		dy = 1.0 / (float)(ny-1);
+		dz = 1.0 / (float)(nz-1);
+		field_size = 0;
+		vertex_capacity = 0;
+
+		// Refuse anything wasm32 cannot address before multiplying in size_t.
+		if (marchingCubesBytes(nx, ny, nz) >= 4294967296.0) return;
+
+		field_size = (size_t)nx * ny * nz;
+		const size_t list_size = field_size * VERTICES_PER_POINT * 3; // floats per list
+		if (owns_field) {
+			field = new (std::nothrow) float[field_size];
+			vnormal_cache = new (std::nothrow) float[field_size * 3](); // cache initialized to 0
+		} else {
+			field = ext_field;
+			vnormal_cache = ext_cache;
+		}
+		vertex_list = new (std::nothrow) float[list_size];
+		vnormal_list = new (std::nothrow) float[list_size];
+		allocated = field && vnormal_cache && vertex_list && vnormal_list;
+		if (allocated) vertex_capacity = field_size * VERTICES_PER_POINT;
+	}
 
 	~MarchingCubes() {
 		if (owns_field) {
@@ -493,6 +557,63 @@ public:
 		}
 		delete[] vertex_list;
 		delete[] vnormal_list;
+	}
+
+	bool is_allocated() { return allocated; }
+	bool is_truncated() { return truncated; }
+
+	/*
+	 * Fill this instance's field by trilinear interpolation of a larger source
+	 * grid that is NOT in this module's memory as a whole -- only `slab_nz`
+	 * consecutive z-planes of it (starting at source plane `slab_z0`) are, at
+	 * `slab_ptr`, x fastest. JS walks the source in slabs that overlap by one
+	 * plane; each call writes every target z-plane whose two source planes both
+	 * lie in the slab, so after the last slab every plane has been written
+	 * (planes on an overlap are written twice, with identical values).
+	 *
+	 * Target point (i,j,k) samples source coordinate i*(src_nx-1)/(nx-1), etc.:
+	 * both grids span the same [0,1] grid fractions, so the mesh lands where
+	 * the full-resolution one would, through the same gridToWorld() matrix.
+	 */
+	void resample_slab(uintptr_t slab_ptr,
+			unsigned int src_nx, unsigned int src_ny, unsigned int src_nz,
+			unsigned int slab_z0, unsigned int slab_nz) {
+		if (!allocated || slab_ptr == 0 || slab_nz == 0) return;
+		const float* slab = reinterpret_cast<const float*>(slab_ptr);
+		const size_t src_plane = (size_t)src_nx * src_ny;
+		const unsigned int slab_last = slab_z0 + slab_nz - 1;
+
+		vector<unsigned int> xi(nx), yi(ny);
+		vector<float> xt(nx), yt(ny);
+		for (unsigned int i = 0; i < nx; i++) resample_coord(i, src_nx, nx, xi[i], xt[i]);
+		for (unsigned int j = 0; j < ny; j++) resample_coord(j, src_ny, ny, yi[j], yt[j]);
+		const unsigned int x_hi = src_nx > 1 ? 1 : 0;
+		const size_t y_hi = src_ny > 1 ? src_nx : 0;
+
+		for (unsigned int k = 0; k < nz; k++) {
+			unsigned int z0; float tz;
+			resample_coord(k, src_nz, nz, z0, tz);
+			const unsigned int z1 = src_nz > 1 ? z0 + 1 : z0;
+			if (z0 < slab_z0 || z1 > slab_last) continue;
+			const float* p0 = slab + (size_t)(z0 - slab_z0) * src_plane;
+			const float* p1 = slab + (size_t)(z1 - slab_z0) * src_plane;
+			float* out = field + (size_t)k * z_step;
+			for (unsigned int j = 0; j < ny; j++) {
+				const size_t row = (size_t)yi[j] * src_nx;
+				const float ty = yt[j];
+				for (unsigned int i = 0; i < nx; i++) {
+					const size_t a = row + xi[i];
+					const float tx = xt[i];
+					const float c00 = p0[a] + (p0[a + x_hi] - p0[a]) * tx;
+					const float c10 = p0[a + y_hi] + (p0[a + y_hi + x_hi] - p0[a + y_hi]) * tx;
+					const float c01 = p1[a] + (p1[a + x_hi] - p1[a]) * tx;
+					const float c11 = p1[a + y_hi] + (p1[a + y_hi + x_hi] - p1[a + y_hi]) * tx;
+					const float c0 = c00 + (c10 - c00) * ty;
+					const float c1 = c01 + (c11 - c01) * ty;
+					out[(size_t)j * y_step + i] = c0 + (c1 - c0) * tz;
+				}
+			}
+		}
 	}
 
 	uintptr_t get_field() {
@@ -507,8 +628,9 @@ public:
 	uintptr_t get_vnormal_cache() {
 		return reinterpret_cast<uintptr_t>(vnormal_cache);
 	}
-	float get_vertex_count() {
-		return vertex_count;
+	// unsigned, not float: a float stops counting exactly at 2^24 vertices
+	unsigned int get_vertex_count() {
+		return (unsigned int)vertex_count;
 	}
 
 	/*
@@ -670,11 +792,12 @@ public:
 		int z_ind, y_ind, x_ind;
 		size_t vertex_index = (size_t)(-1);
 		this->vertex_count = 0;
+		this->truncated = false;
 		unsigned char cube_index;
 		unsigned short edge_flags;
 		size_t cube_points[8];
 
-		if (nx < 2 || ny < 2 || nz < 2) {
+		if (!allocated || nx < 2 || ny < 2 || nz < 2) {
 			return;
 		}
 
@@ -737,6 +860,15 @@ public:
 						}
 					}
 
+					// A cube emits up to 15 vertices but the lists hold
+					// VERTICES_PER_POINT per grid point; a pathological field
+					// can fill them. Stop there rather than write past the end.
+					int emit = 0;
+					while (triTable[cube_index][emit] != 255) emit++;
+					if (vertex_count + emit > vertex_capacity) {
+						truncated = true;
+						return;
+					}
 					for (int i = 0; triTable[cube_index][i] != 255; i++) {
 						const int edge = triTable[cube_index][i];
 						this->vertex_list[3*vertex_count] 		= vertices_on_edge[edge*3];
@@ -760,6 +892,7 @@ EMSCRIPTEN_BINDINGS(marching_cubes_module) {
 	emscripten::function("freeArray", &freeArray);
 	emscripten::function("buildTriangleDistancePermutation", &buildTriangleDistancePermutation);
 	emscripten::function("reorderArrayByPermutation", &reorderArrayByPermutation);
+	emscripten::function("marchingCubesBytes", &marchingCubesBytes);
 	emscripten::class_<MarchingCubes>("MarchingCubes")
 		.constructor<unsigned int, unsigned int, unsigned int>()
 		.constructor<unsigned int, unsigned int, unsigned int, uintptr_t, uintptr_t>()
@@ -769,5 +902,8 @@ EMSCRIPTEN_BINDINGS(marching_cubes_module) {
 		.function("getVNormalCache", &MarchingCubes::get_vnormal_cache)
 		.function("getVertexCount", &MarchingCubes::get_vertex_count)
 		.function("defaultIsoValue", &MarchingCubes::default_isovalue)
-		.function("updateVertices", &MarchingCubes::update_vertices);
+		.function("updateVertices", &MarchingCubes::update_vertices)
+		.function("isAllocated", &MarchingCubes::is_allocated)
+		.function("isTruncated", &MarchingCubes::is_truncated)
+		.function("resampleSlab", &MarchingCubes::resample_slab);
 }

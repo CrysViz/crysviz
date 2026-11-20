@@ -17,7 +17,7 @@ const H = require('../harness');
 
 const KEY = 'crysviz.structurePrefs.v1';
 const FIELDS = [
-  'colors', 'focusRegions', 'fieldIso', 'fieldMaterial', 'planes', 'spinStyle', 'forceStyle',
+  'colors', 'focusRegions', 'fieldIso', 'fieldMaterial', 'fieldSelected', 'planes', 'spinStyle', 'forceStyle',
   'atomSize', 'bondRadius', 'atomRadiusScales', 'bondCategoryStyles', 'bondUserStyles', 'bondLengths',
   'supercell', 'periodicBounds',
 ].sort();
@@ -190,7 +190,7 @@ async function loadOutcar(page) {
     const { registeredStructurePrefFields } = await import('./state/structurePrefs.js');
     return registeredStructurePrefFields();
   });
-  H.check('registered structurePrefs fields are exactly the known 15 (extend this test for a new one)',
+  H.check('registered structurePrefs fields are exactly the known 16 (extend this test for a new one)',
     JSON.stringify([...registered].sort()) === JSON.stringify(FIELDS), JSON.stringify([...registered].sort()));
 
   // ---- baseline on the default structure ------------------------------------
@@ -290,6 +290,13 @@ async function loadOutcar(page) {
     const hex = document.querySelectorAll('#FieldPosColorPicker .cv-colorpicker-input-field')[1];
     hex.value = '#123456';
     hex.dispatchEvent(new Event('change'));
+  });
+  // Picking the field in the field list (its radio's own handler). ATTACH
+  // swapped the container under the open window, so rebuild it first.
+  await page.evaluate(async () => {
+    const { rebuildPanel } = await import('./ui/panels/PanelManager.js');
+    rebuildPanel('field');
+    document.querySelector('#fieldCatalogMount .fc-leaf-radio').dispatchEvent(new Event('change'));
   });
   await H.setSlider(page, 'FieldOpacitySlider', 0.33);
 
