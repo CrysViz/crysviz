@@ -85,6 +85,9 @@ export const phononState = {
   arrowBar: { orientation: 'horizontal', flipSide: false, size: null, legend: null, floating: false, floatPos: null, locked: false },
   playing: false,
   phase: 0,
+  /** true while the atoms sit on their sites (after Stop): phase 0 is the
+   *  displacement's peak, so coming back to the row must not re-apply it */
+  atRest: true,
   /** @type {StructureContainer|null} the file-browser row holding the supercell */
   container: null,
   /** @type {any} the row's phonon record the live state mirrors (see RECORD_FIELDS) */
@@ -607,6 +610,7 @@ function displacedFrac(phase, uBuf = phononState.uBuf) {
 function applyPhase(phase) {
   const { pattern, structure, supercell } = phononState;
   if (!pattern || !structure || !supercell || !isDisplayed()) return;
+  phononState.atRest = false;
   const positions = displacedFrac(phase);
   // Replace, never mutate: the as-loaded snapshot aliases the initial arrays.
   structure.atoms.forEach((atom, j) => { atom.position = positions[j]; });
@@ -679,16 +683,21 @@ export function stopAnimation({ silent = false } = {}) {
   if (rafId) cancelAnimationFrame(rafId);
   rafId = 0;
   phononState.phase = 0;
-  if (phononState.structure && phononState.supercell && isDisplayed()) {
-    phononState.structure.atoms.forEach((atom, j) => { atom.position = [...phononState.supercell.frac[j]]; });
-    if (!applyFrameFast(phononState.structure)) {
-      updateVisualization({ atomsUpdate: true, bondsUpdate: true, reRenderAtoms: true, reRenderBonds: true, reRenderLattice: false, reRenderOther: false, reRenderComposition: false, reRenderPolyhedra: general.showPolyhedra || general.completePolyhedra });
-    }
-    refreshMeasurements();
-    refreshArrows();
-    requestRender();
-  }
+  showAtRest();
   if (!silent && wasPlaying) emit('playing');
+}
+
+/** Put the atoms back on their equilibrium sites (Stop, and a stopped row shown again). */
+function showAtRest() {
+  phononState.atRest = true;
+  if (!phononState.structure || !phononState.supercell || !isDisplayed()) return;
+  phononState.structure.atoms.forEach((atom, j) => { atom.position = [...phononState.supercell.frac[j]]; });
+  if (!applyFrameFast(phononState.structure)) {
+    updateVisualization({ atomsUpdate: true, bondsUpdate: true, reRenderAtoms: true, reRenderBonds: true, reRenderLattice: false, reRenderOther: false, reRenderComposition: false, reRenderPolyhedra: general.showPolyhedra || general.completePolyhedra });
+  }
+  refreshMeasurements();
+  refreshArrows();
+  requestRender();
 }
 
 export function setAmplitude(a) {
@@ -848,7 +857,10 @@ onActiveStructureChange(() => {
   const record = activePhononRecord();
   if (record && record !== phononState.record) activateRecord(record);
   if (isDisplayed()) {
-    if (phononState.pattern) applyPhase(phononState.phase);
+    if (phononState.pattern) {
+      if (phononState.atRest) showAtRest();
+      else applyPhase(phononState.phase);
+    }
   } else {
     removePhononArrows();
   }

@@ -618,16 +618,22 @@ async function loadAnsweringUnitDialog(page, text, name, pick = 1) {
     await host('select_structure', { structure: phononRow });
     const built = await host('build_phonon_frames', { count: 6 });
     await host('select_structure', { structure: phononRow });
+    // The animation was stopped before this section: back on the row, the atoms sit on their sites.
+    const S = await import('./phonon/phononSession.js');
+    const rest = S.phononState.supercell.frac;
+    const restDev = Math.max(...S.phononState.structure.atoms.map((atom, j) =>
+      Math.max(...atom.position.map((x, k) => Math.abs(x - rest[j][k])))));
     const rows1 = structureShip.container.length;
     count.value = '1';
     /** @type {HTMLElement} */ (document.getElementById('phFramesBtn')).click();
     const refusal = document.getElementById('phFramesStatus').textContent;
     count.value = '10';
-    return { ui, built, refusal, rowsAfterRefusal: structureShip.container.length - rows1 };
+    return { ui, built, refusal, restDev, rowsAfterRefusal: structureShip.container.length - rows1 };
   });
   H.check('Make trajectory adds one 6-frame row of the 8-atom supercell', traj.ui.rows === 1 && traj.ui.frames === 6 && traj.ui.atoms === 8, JSON.stringify(traj.ui));
   H.check('build_phonon_frames makes the same row', traj.built.ok && traj.built.result.frames === traj.ui.frames
     && traj.built.result.atomCount === traj.ui.atoms && traj.built.result.name === traj.ui.name, JSON.stringify(traj.built));
+  H.check('a stopped mode stays at rest when its row is shown again', traj.restDev < 1e-9, `restDev=${traj.restDev}`);
   H.check('a bad frame count is refused inline, with no row', /2 to 200/.test(traj.refusal) && traj.rowsAfterRefusal === 0, JSON.stringify(traj));
 
   // ---- 4b. focus regions fade the displacement arrows ----------------------
