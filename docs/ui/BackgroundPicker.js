@@ -413,7 +413,7 @@ export function createBackgroundControl() {
  *  only applies it, so nothing reads the visibility back off the element. */
 export function setBackgroundDotVisible(visible) {
   const dot = document.getElementById('backgroundDot');
-  if (dot) dot.style.display = visible ? '' : 'none';
+  if (dot) dot.hidden = !visible;
 }
 
 /** A small round swatch button that opens the same background color picker,

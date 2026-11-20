@@ -30,7 +30,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
 
   const editor = document.createElement('div');
   editor.className = 'element-color-editor';
-  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  editor.hidden = true; // read back via .hidden in General.js's UI-state capture
 
   const picker = createColorPicker(currentAtomColors[0], (hex) => {
     const structure = fileBrowser.selectedStructure;
@@ -310,7 +310,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
       // Close BEFORE the panel re-renders: the re-render rebuilds this row and
       // reopens the editors that were open, so hiding this (old) editor
       // afterwards left the new one open.
-      editor.style.display = 'none';
+      editor.hidden = true;
       updateVisualization({
         bondsUpdate: false,
         reRenderAtoms: false,

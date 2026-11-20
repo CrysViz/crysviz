@@ -931,3 +931,86 @@ CSS `0.85em` labels and the reset button because they scale with their
 variable-size panel parent; and the About-panel `rem`/`0.92em` hierarchy for
 relative help/content typography. Canvas 56px polyhedron labels, 64px charge
 badges, and 92px atom-symbol textures remain deliberate display art.
+
+## Fixed state colours — the allowlist retired
+
+`tools/ci/css_guard_allow.txt` carried eleven colour rows whose reason was
+"must not follow the theme". That reason never needed a literal in a
+component stylesheet: a colour that must stay put needs a token that no
+palette overrides, which is how `--locked-grad-1/2` already worked. The
+literals moved into one block at the end of `themes/default/theme.css`'s
+`:root` ("Fixed state colours"), with their exact values, so nothing changes
+on screen. A palette must not override them; if one should follow the theme
+after all, it needs a themed role, not an override of this name.
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--md-stream-ok-rgb` | `76 175 80` | MD-stream "connected" dot (1.0) and glow (0.533, the old `#4caf5088`) | `analysisPanels.css` `.md-stream-dot--connected` |
+| `--md-stream-error-rgb` | `244 67 54` | MD-stream "error" dot and glow, same alphas | `analysisPanels.css` `.md-stream-dot--error` |
+| `--pc-row-selected-bg` | `rgba(80, 160, 255, 0.18)` | selected polyhedra-comparison row | `analysisPanels.css` `.pc-row.is-selected` |
+| `--cutplane-selected-rgb` | `17 128 57` | selected cut-plane row fill (0.16) and border (0.45) | `analysisPanels.css` `.cutplane-plane-row.is-selected` |
+| `--cutplane-selected-fg` | `#e9fff1` | that row's select-button text | `analysisPanels.css` `.cutplane-plane-row.is-selected .cutplane-select-btn` |
+| `--range-fill` | `rgba(34, 197, 94, 0.9)` | selected span of a dual-range slider | `bondLengthHistogram.css` `.blh-range-fill`; `analysisPanels.css` `.pbnd-slider .pbnd-fill` |
+| `--bond-range-track` | `rgba(6, 140, 50, 0.8)` | bond-length range track — equal to `.theme-standard`'s `--accent-color` by coincidence, and kept apart because the Symmetry backend recolours that accent | `bondLengthHistogram.css` `.bond-range-slider .range-track` |
+| `--copied-rgb` | `46 204 113` | "copied to clipboard" flash: fill (0.25) and text (1.0) | `EOSPanel.css` `.eos-copy-value.eos-copied` |
+| `--select-drag-bg` | `rgb(255 140 0 / 0.14)` | Shift+drag SELECT marquee, amber so it never looks like hide-drag's red | `styles.css` `.cv-drag-select-rect.select-mode` |
+| `--measure-remove-bg` / `-fg` / `-border` / `-shadow` | `#ffffff` / `#2a2a2a` / `rgba(0, 0, 0, 0.25)` / `rgba(0, 0, 0, 0.5)` | the measurement remove "×", an opaque light button over the viewport | `styles.css` `.measure-label-remove` |
+| `--measure-remove-hover-fg` / `-hover-border` | `#ffffff` / `rgba(255, 255, 255, 0.6)` | its hover state over `--danger-fill` | `styles.css` `.measure-label-remove:hover` |
+
+**Not merged, on purpose.** Several of these equal or nearly equal a themed
+token — `--measure-remove-hover-fg` is `--fg-1`'s default value,
+`--measure-remove-shadow` is `--overlay`'s, `--measure-remove-hover-border`
+is `--fg-2`'s, `--pc-row-selected-bg` sits near `--row-selected-bg`
+(`rgba(100, 150, 255, 0.12)`). Every one of those themed tokens is overridden
+by the light palettes, so folding a fixed colour into it would make it follow
+the theme, which is the opposite of what each site asked for.
+
+**Removed rather than tokenised.** The `.custom-color-picker` block in
+`styles.css` (`.sb-picker` and its `::after` `#fff`/`#000` gradient stops,
+`.hue-slider`, `.color-preview` with its `red` placeholders) styled a picker
+that no longer exists: no JS or HTML has used those classes since the
+canvas-drawn `ui/ColorPickerModule.js` replaced it. The
+`formControls.css:%23c8c8c8` row documented a chevron that already comes from
+`var(--select-chevron)` and never fired.
+
+## Chrome colours that were set inline from JS
+
+The inline-style refactor moved the chrome colours that `docs/ui`, `docs/io`
+and `docs/render` set through `element.style` into classes, and
+`css_guard.sh` now fails on a colour literal assigned from JS (see its
+invariant 4). Where the literal equalled an existing token, the class uses
+that token (`--fg-3` for the composition dots' hairline, `--wash-2`/`--line-3`
+for the tiny toggle, `--overlay-80`/`--chrome-2-5` for the file-load card,
+`rgb(var(--danger-rgb))` for Custom User Settings overrides, `--fg-85` for its
+default rows, `rgb(var(--warn-rgb) / .2)` for the selected row,
+`--locked-grad-1/2` for the Wyckoff button, `--best-row-rgb` for the Modify
+table's merged sites, `--label-ink` for the distance prompt). The rest got a
+token each, with the old value. Unlike the fixed block above, these sit in
+`:root` as ordinary chrome: a palette may override them.
+
+| token | value | role | call sites |
+|---|---|---|---|
+| `--swatch-border` | `#666` | ring round a pie-dot colour swatch | `styles.css` `canvas.cv-pie-dot` (utils/ColorModule.js createPieDot) |
+| `--toggle-dot-on` | `rgba(255, 255, 255, 0.96)` | the tiny on/off dot when on | `sceneWidgets.css` `input[type="checkbox"].cv-tiny-toggle:checked` |
+| `--on-overlay` | `#ffffff` | text on an `--overlay-*` scrim, which stays dark in every palette (so not `--fg-1`, which the light palettes darken) | `styles.css` `.cv-file-progress` |
+| `--progress-fill` | `#4caf50` | file-load progress fill | `styles.css` `.cv-file-progress-fill` |
+| `--cus-tile-border` | `rgba(255, 255, 255, 0.55)` | untouched tile in the Custom User Settings element grids | `sceneWidgets.css` `.cv-cus-color-tile` |
+| `--tile-inverted-bg` / `-fg` | `#ffffff` / `#000000` | an overridden radius tile, inverted (orange is already a category colour there) | `sceneWidgets.css` `.cv-cus-radius-tile.is-overridden` |
+| `--row-highlight-bar` | `#ffb347` | left bar of the selected Structure-window row | `structureInfoPanel.css` `.individual-*-row.is-highlighted` |
+| `--tile-absent` | `#444` | bond-pair picker: an element the structure lacks | `analysisPanels.css` `.pt-tile:disabled` |
+| `--locked-btn-fg` | `#f5fbff` | text on the `--locked-grad` gradient of the Symmetry window's Wyckoff button | `symmetryPanel.css` `.sym-card .calcButton.sym-wyckoff-on` |
+
+Added to the fixed block, because they float over the viewport like the
+remove button: `--measure-preview-bg` (`rgba(255, 255, 255, 0.8)`, the
+distance prompt), `--angle-preview-rgb` (`255 102 0`, the angle prompt at
+0.85, the default angle-arc orange) and `--angle-preview-fg` (`#ffffff`).
+
+**Merge candidates, not merged.** `--locked-btn-fg` (`#f5fbff`) is one of the
+literals Wave 2.6 folded into `--info-tint` (`#e7f5ff`) for the segmented
+control's locked button; using `--info-tint` here would match that button
+exactly, at a small shift. `--cus-tile-border` (0.55) sits between `--fg-2`
+(0.6) and `--fg-50`/`--line-3` (0.5). `--tile-absent` (`#444`) is the literal
+Wave 2.5 folded into `--chrome-4` (`#4a4a4c`). `--progress-fill` equals
+`--md-stream-ok-rgb` and the retired `--switch-on`; `--on-overlay`,
+`--tile-inverted-bg`, `--angle-preview-fg` and `--measure-remove-hover-fg`
+are the same white in four roles.

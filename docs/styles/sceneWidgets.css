@@ -422,6 +422,13 @@
   outline: none;
 }
 
+/* Legend text (set, or being edited); the empty placeholder's opacity and
+   italic are .cv-colorbar-legend-empty's (toggle_styles.css). */
+.cv-colorbar-legend:not(.cv-colorbar-legend-empty) {
+  opacity: 0.85;
+  font-style: normal;
+}
+
 /* On a floating bar the legend can be dragged on its own
    (ui/ColorBarWidget.js); while being edited it stays a text field. */
 .cv-colorbar-floating .cv-colorbar-legend:not(.cv-colorbar-legend-editing) {
@@ -534,6 +541,13 @@
   font-size: var(--fs-xs);
   line-height: 1.1;
   padding: 0;
+  border: 2px solid var(--cus-tile-border);
+}
+
+/* An overridden colour / picked bond element. A category border, where a
+   grid has one, is inline (data) and only set on unselected tiles. */
+.cv-cus-color-tile.is-selected {
+  border-color: rgb(var(--danger-rgb));
 }
 
 .cv-cus-inline-input {
@@ -563,6 +577,7 @@
 }
 
 .cv-cus-json-row {
+  color: var(--fg-85);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -573,6 +588,10 @@
 
 .cv-cus-json-row:hover {
   background: var(--wash-1-5);
+}
+
+.cv-cus-json-row.is-overridden {
+  color: rgb(var(--danger-rgb));
 }
 
 .cv-cus-hint {
@@ -601,7 +620,24 @@
   justify-content: center;
   border-width: 2px;
   border-style: solid;
+  background: transparent;
+  color: var(--fg-1);
   transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+}
+
+/* Border: the element's category colour, inline (--tile-glow is the same
+   colour). An overridden radius inverts the tile instead: orange is
+   already a category colour here, so it cannot also mean "override". */
+.cv-cus-radius-tile:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 12px var(--tile-glow);
+  z-index: 2;
+}
+
+.cv-cus-radius-tile.is-overridden {
+  background: var(--tile-inverted-bg);
+  border-color: var(--tile-inverted-bg);
+  color: var(--tile-inverted-fg);
 }
 
 .cv-cus-radius-tile-symbol {
@@ -842,10 +878,8 @@
 
 /* --- Tiny toggle (ui/StructureInfoPanel/components/Immunity.js) ---
    The small round on/off dot used in tab category headers and per-pair cut-
-   plane immunity toggles. updateVisual() flips background/border-color/
-   box-shadow together as one state (not just recolours a fixed shape), so
-   that stays in JS; only the fixed geometry and the border's width/style
-   are constant enough to live here. */
+   plane immunity toggles: a hollow ring when off, a filled white dot with a
+   faint halo when on (:checked). */
 .cv-tiny-toggle-wrap {
   display: inline-flex;
   align-items: center;
@@ -873,6 +907,15 @@ input[type="checkbox"].cv-tiny-toggle {
   border-radius: 50%;
   border-style: solid;
   border-width: 1px;
+  background: var(--wash-2);
+  border-color: var(--line-3);
+  box-shadow: inset 0 0 0 1px rgb(var(--shadow-rgb) / 0.18);
+}
+
+input[type="checkbox"].cv-tiny-toggle:checked {
+  background: var(--toggle-dot-on);
+  border-color: var(--toggle-dot-on);
+  box-shadow: 0 0 0 2px var(--wash-2);
 }
 
 /* --- Histogram row (ui/PolyhedraPanel.js, ui/BondPanel.js) — one button per
@@ -918,10 +961,32 @@ input[type="checkbox"].cv-tiny-toggle {
   padding: var(--sp-3-5);
 }
 
-/* --- Custom RGB/HSV color picker (ui/ColorPickerModule.js) — the RGB/HEX
-   input rows below the SV/hue canvases. Canvas pixel geometry (WIDTH/
-   HEIGHT/HUE_WIDTH) and the wrapper sized around it stay in JS — they're
-   the picker's own layout constants, not page chrome. */
+/* --- Custom RGB/HSV color picker (ui/ColorPickerModule.js) — the SV/hue
+   canvases and the RGB/HEX input rows below them. Canvas pixel geometry
+   (WIDTH/HEIGHT/HUE_WIDTH) and the wrapper's width sized around it stay in
+   JS — they're the picker's own layout constants, not page chrome. The
+   font is the page's (--font-ui, inherited). */
+.cv-colorpicker {
+  display: inline-flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+.cv-colorpicker-canvases {
+  display: flex;
+}
+
+.cv-colorpicker-sv {
+  cursor: crosshair;
+  user-select: none;
+}
+
+.cv-colorpicker-hue {
+  cursor: ns-resize;
+  margin-left: var(--sp-1);
+  user-select: none;
+}
+
 .cv-colorpicker-inputs-wrap {
   display: flex;
   flex-direction: column;

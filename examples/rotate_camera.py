@@ -1,9 +1,13 @@
-"""Open CrysViz and smoothly orbit a small silicon cell."""
+"""Open CrysViz and smoothly orbit a small silicon cell.
 
+Run it as a script (the window closes when the orbit ends) or with --keep-open
+to look around afterwards.
+"""
+
+import sys
 import time
 
 from crysviz import Payload, Viewer
-
 
 POSCAR = """Si cell
 1.0
@@ -17,13 +21,15 @@ Direct
 """
 
 
-def main() -> None:
-    with Viewer([Payload("orbit.POSCAR", POSCAR)], command_timeout=10) as viewer:
+def main(keep_open: bool = False) -> None:
+    with Viewer([Payload("orbit.POSCAR", POSCAR)]) as v:
         for _ in range(72):
-            viewer.rotate_camera(5, axis="y")
+            v.set_view(rotate={"axis": "y", "degrees": 5})   # orbit 5 degrees about the world y axis
             time.sleep(0.04)
-    print("Orbit complete; the CrysViz window has closed.")
+        print("Orbit complete.")
+        if keep_open:
+            v.wait()
 
 
 if __name__ == "__main__":
-    main()
+    main(keep_open="--keep-open" in sys.argv)

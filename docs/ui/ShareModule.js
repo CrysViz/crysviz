@@ -1085,7 +1085,7 @@ function applyStyleSettings(style) {
     setSelect('celOutlineColorMenu', style.celOutlineColorMode);
     const customBlock = /** @type {any} */ (document.getElementById('celOutlineCustomColorBlock'));
     if (customBlock) {
-      customBlock.style.display = style.celOutlineColorMode === 'custom' ? 'block' : 'none';
+      customBlock.hidden = style.celOutlineColorMode !== 'custom';
       // Sync the inline picker's swatch/inputs to the restored custom color.
       if (style.celOutlineColor) customBlock.setHex?.(style.celOutlineColor);
     }
@@ -1931,7 +1931,7 @@ export function createShareButton() {
   // so a failure surfaces in the console rather than as an unhandled rejection.
   shareBtn.onclick = () => { shareStructure().catch(e => console.error('Share failed:', e)); };
 
-  // The Share button joins the Upload / Paste Text / Download action row in
+  // The Share button joins the Open / Paste Text / Download action row in
   // the Files window (#uploadSection exists from startup, so this works even
   // before the panel windows are built).
   const container =

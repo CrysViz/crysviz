@@ -90,12 +90,12 @@ export async function initWidgetMode(opts) {
   // Axes gizmo: always on, with the a/b/c letters integrated onto the arrows
   // instead of the separate #axesLegend box (see docs/styles/widgetMode.css
   // for the lower-left pin). A restored payload's showAxes=false (ShareModule)
-  // would otherwise leave #axesGizmo's inline display from an earlier
-  // ControlsWiring toggle at 'none', which the widget CSS can't out-specificity
-  // since it never sets `display` for the gizmo — so clear it explicitly.
+  // would otherwise leave #axesGizmo hidden from an earlier ControlsWiring
+  // toggle, and the widget CSS never sets `display` for the gizmo — so show
+  // it explicitly.
   general.showAxes = true;
   const gizmoDiv = document.getElementById('axesGizmo');
-  if (gizmoDiv) gizmoDiv.style.display = '';
+  if (gizmoDiv) gizmoDiv.hidden = false;
   setGizmoLabelsOnArrows(true);
   // Bigger a/b/c letters on the small embed compass — the arrows keep their
   // geometry, only the label sprites grow (see general.gizmoLabelSizeFactor).

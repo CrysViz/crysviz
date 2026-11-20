@@ -484,6 +484,7 @@
   --locked-badge-bg: rgba(32, 77, 160, 0.35);
   --locked-grad-1: #1c5fb8;
   --locked-grad-2: #2493ff;
+  --locked-btn-fg: #f5fbff;  /* text on that gradient: the Symmetry window's Wyckoff button */
 
   /* ---- The About modal ----------------------------------------------------
      A surface of its own (green-tinted, unlike every other panel), so it needs
@@ -530,6 +531,60 @@
   /* ---- Active tool -------------------------------------------------------- */
   --tool-active: #ff6b35;
   --tool-active-rgb: 255 107 53;    /* same hue, for the active-tool glow */
+
+  /* ==========================================================================
+     Fixed state colours — the same in every palette
+     --------------------------------------------------------------------------
+     These used to be literals in docs/styles/, each with a css_guard allowlist
+     row saying it must not follow the theme. A fixed colour does not need a
+     literal for that: it needs a token no palette overrides, the way
+     --locked-grad-1/2 already work. Do NOT override these in a palette; if
+     one of them should follow the theme, give it a themed role instead.
+     ========================================================================== */
+  --md-stream-ok-rgb: 76 175 80;      /* MD-stream "connected" dot + glow */
+  --md-stream-error-rgb: 244 67 54;   /* MD-stream "error" dot + glow */
+  --pc-row-selected-bg: rgba(80, 160, 255, 0.18); /* selected polyhedra-comparison row */
+  --cutplane-selected-rgb: 17 128 57; /* selected cut-plane row fill + border */
+  --cutplane-selected-fg: #e9fff1;    /* that row's select-button text */
+  --range-fill: rgba(34, 197, 94, 0.9); /* selected span of a dual-range slider */
+  /* The bond-length range track. Same value as .theme-standard's
+     --accent-color by coincidence: the Symmetry backend recolours that
+     accent, and this track must not follow it. */
+  --bond-range-track: rgba(6, 140, 50, 0.8);
+  --copied-rgb: 46 204 113;           /* "copied to clipboard" flash */
+  --select-drag-bg: rgb(255 140 0 / 0.14); /* Shift+drag SELECT marquee (amber) */
+  /* The measurement remove "×": floats over the 3D viewport, never a panel,
+     so it stays an opaque light button whatever the panel palette. */
+  --measure-remove-bg: #ffffff;
+  --measure-remove-fg: #2a2a2a;
+  --measure-remove-border: rgba(0, 0, 0, 0.25);
+  --measure-remove-shadow: rgba(0, 0, 0, 0.5);
+  --measure-remove-hover-fg: #ffffff;
+  --measure-remove-hover-border: rgba(255, 255, 255, 0.6);
+  /* The measure tools' picking previews, also over the viewport: the
+     distance prompt's light label (ink: --label-ink) and the angle prompt
+     in the angle arc's orange (render/MeasurementModule.js). */
+  --measure-preview-bg: rgba(255, 255, 255, 0.8);
+  --angle-preview-rgb: 255 102 0;
+  --angle-preview-fg: #ffffff;
+
+  /* ==========================================================================
+     Chrome colours that used to be set inline from JS
+     --------------------------------------------------------------------------
+     Values are the old inline literals, so the default palette is unchanged.
+     Unlike the fixed block above, these are ordinary chrome: a palette may
+     override them. Where an inline literal equalled an existing token, the
+     rule uses that token instead and nothing is listed here.
+     ========================================================================== */
+  --swatch-border: #666;                    /* ring round a pie-dot colour swatch */
+  --toggle-dot-on: rgba(255, 255, 255, 0.96); /* tiny on/off dot, filled (on) */
+  --on-overlay: #ffffff;                    /* text on an --overlay-* scrim, which stays dark in every palette */
+  --progress-fill: #4caf50;                 /* file-load progress bar fill */
+  --cus-tile-border: rgba(255, 255, 255, 0.55); /* untouched tile in the Custom User Settings element grids */
+  --tile-inverted-bg: #ffffff;              /* an overridden radius tile, inverted: fill + border */
+  --tile-inverted-fg: #000000;              /* ... and its text */
+  --row-highlight-bar: #ffb347;             /* left bar of the selected Structure-window row */
+  --tile-absent: #444;                      /* bond-pair picker: an element the structure lacks */
 }
 
 /* ---- Accent palette (changes with the active backend mode) ----------------

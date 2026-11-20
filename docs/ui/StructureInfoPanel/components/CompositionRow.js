@@ -198,10 +198,7 @@ export function createCompositionRow(el, count, total, options = {}) {
         const repHex = elementColors[0] ?? safeColor(getElementDefaultColor(groupEl));
 
         const miniDot = createPieDot(elementColors.length ? elementColors : [repHex], 18);
-        miniDot.className = 'comp-mixed-dot';
-        // createPieDot() always sets its own inline border — override it
-        // explicitly (a class rule can't beat an inline style).
-        miniDot.style.border = '1px solid rgba(255,255,255,0.4)';
+        miniDot.classList.add('comp-mixed-dot');
         miniDot.title = `Customize ${groupEl}'s colour across this group`;
         miniDot.addEventListener('click', (e) => {
           e.stopPropagation();
@@ -243,10 +240,7 @@ export function createCompositionRow(el, count, total, options = {}) {
     // Create new dot with current colors (the colour only: a species at a
     // low alpha keeps a readable dot, its alpha is on the editor's slider)
     const dot = createPieDot(atomColors, 20);
-    dot.className = 'dot comp-single-dot';
-    // createPieDot() always sets its own inline border — override it
-    // explicitly (a class rule can't beat an inline style).
-    dot.style.border = '1px solid rgba(255,255,255,0.4)';
+    dot.classList.add('dot', 'comp-single-dot');
     // Keep DOM order checkbox -> dot -> name -> caret across repaints.
     body.insertBefore(dot, body.firstChild);
 
@@ -254,15 +248,14 @@ export function createCompositionRow(el, count, total, options = {}) {
     dot.title = `Customize color for all ${el} atoms`;
     dot.onclick = (e) => {
       e.stopPropagation();
-      editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
-      if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
-      spinForceEditor.style.display = 'none';
+      editor.hidden = !editor.hidden;
+      spinForceEditor.hidden = true;
       // Mirrors the row's own click handler closing the color editor when
       // expanding/collapsing — the dot closes the individual-atom list the
       // same way, so the two never clutter the row at once.
-      if (atomsContainer.style.display !== 'none') {
-        atomsContainer.style.display = 'none';
-        expandIcon.style.transform = 'rotate(0deg)';
+      if (!atomsContainer.hidden) {
+        atomsContainer.hidden = true;
+        expandIcon.classList.remove('is-expanded');
       }
     };
   }
@@ -354,7 +347,7 @@ export function createCompositionRow(el, count, total, options = {}) {
 
   const atomsContainer = document.createElement('div');
   atomsContainer.className = 'individual-atoms';
-  atomsContainer.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  atomsContainer.hidden = true; // read back via .hidden in General.js's UI-state capture
 
   // The individual atom rows are expensive to build (one DOM subtree per atom)
   // and stay hidden until the row is expanded. Eagerly building thousands of
@@ -433,23 +426,23 @@ export function createCompositionRow(el, count, total, options = {}) {
   const spinForceEditor = createSpinForceCategoryEditor(groupElements);
   spinForceButton.addEventListener('click', (e) => {
     e.stopPropagation();
-    spinForceEditor.style.display = spinForceEditor.style.display === 'none' ? 'block' : 'none';
-    if (spinForceEditor.style.display !== 'none') {
-      editor.style.display = 'none';
-      atomsContainer.style.display = 'none';
-      expandIcon.style.transform = 'rotate(0deg)';
+    spinForceEditor.hidden = !spinForceEditor.hidden;
+    if (!spinForceEditor.hidden) {
+      editor.hidden = true;
+      atomsContainer.hidden = true;
+      expandIcon.classList.remove('is-expanded');
     }
   });
 
   row.addEventListener('click', (e) => {
     e.stopPropagation();
-    const isExpanded = atomsContainer.style.display !== 'none';
+    const isExpanded = !atomsContainer.hidden;
     if (!isExpanded) populateAtomRows(); // build rows lazily on first expand
-    atomsContainer.style.display = isExpanded ? 'none' : 'block';
-    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+    atomsContainer.hidden = isExpanded;
+    expandIcon.classList.toggle('is-expanded', !isExpanded);
     updatePieDotForRow(); // Update pie dot when expanded/collapsed
-    editor.style.display = 'none'; // expanding/collapsing closes the category color editor
-    spinForceEditor.style.display = 'none';
+    editor.hidden = true; // expanding/collapsing closes the category color editor
+    spinForceEditor.hidden = true;
   });
 
   container.appendChild(row);
@@ -518,25 +511,21 @@ export function createWyckoffCompositionRow(el, entries, total) {
     // Create new dot with current colors (the colour only: a species at a
     // low alpha keeps a readable dot, its alpha is on the editor's slider)
     const dot = createPieDot(atomColors, 20);
-    dot.className = 'dot comp-single-dot';
-    // createPieDot() always sets its own inline border — override it
-    // explicitly (a class rule can't beat an inline style).
-    dot.style.border = '1px solid rgba(255,255,255,0.4)';
+    dot.classList.add('dot', 'comp-single-dot');
     left.insertBefore(dot, left.firstChild);
 
     //  ADD CLICK HANDLER TO OPEN COLOR EDITOR
     dot.title = `Customize color for all ${el} atoms`;
     dot.onclick = (e) => {
       e.stopPropagation();
-      editor.style.display = (editor.style.display === 'none') ? 'flex' : 'none';
-      if (editor.style.display === 'flex') editor.style.flexDirection = 'column';
-      spinForceEditor.style.display = 'none';
+      editor.hidden = !editor.hidden;
+      spinForceEditor.hidden = true;
       // Mirrors the row's own click handler closing the color editor when
       // expanding/collapsing — the dot closes the individual-atom list the
       // same way, so the two never clutter the row at once.
-      if (atomsContainer.style.display !== 'none') {
-        atomsContainer.style.display = 'none';
-        expandIcon.style.transform = 'rotate(0deg)';
+      if (!atomsContainer.hidden) {
+        atomsContainer.hidden = true;
+        expandIcon.classList.remove('is-expanded');
       }
     };
   }
@@ -607,7 +596,7 @@ export function createWyckoffCompositionRow(el, entries, total) {
 
   const atomsContainer = document.createElement('div');
   atomsContainer.className = 'individual-atoms';
-  atomsContainer.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  atomsContainer.hidden = true; // read back via .hidden in General.js's UI-state capture
 
   // Create individual atom rows for each Wyckoff site
   entries.forEach((entry, index) => {
@@ -642,18 +631,18 @@ export function createWyckoffCompositionRow(el, entries, total) {
   const spinForceEditor = createSpinForceCategoryEditor([el]);
   spinForceButton.addEventListener('click', (e) => {
     e.stopPropagation();
-    spinForceEditor.style.display = spinForceEditor.style.display === 'none' ? 'block' : 'none';
-    if (spinForceEditor.style.display !== 'none') editor.style.display = 'none';
+    spinForceEditor.hidden = !spinForceEditor.hidden;
+    if (!spinForceEditor.hidden) editor.hidden = true;
   });
 
   row.addEventListener('click', (e) => {
     e.stopPropagation();
-    const isExpanded = atomsContainer.style.display !== 'none';
-    atomsContainer.style.display = isExpanded ? 'none' : 'block';
-    expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
+    const isExpanded = !atomsContainer.hidden;
+    atomsContainer.hidden = isExpanded;
+    expandIcon.classList.toggle('is-expanded', !isExpanded);
     updatePieDotForRow();
-    editor.style.display = 'none'; // expanding/collapsing closes the category color editor
-    spinForceEditor.style.display = 'none';
+    editor.hidden = true; // expanding/collapsing closes the category color editor
+    spinForceEditor.hidden = true;
   });
 
   container.appendChild(row);

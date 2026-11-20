@@ -113,8 +113,8 @@ const SMALL = [0, 1].map((t) => ['2', 'Lattice="5.43 0 0 0 5.43 0 0 0 5.43" Prop
     out.during = {
       deferred: general.showPeriodic === was,
       busy: document.body.classList.contains('cv-busy'),
-      bar: bar?.style.opacity,
-      sweep: fill?.style.animation || '',
+      bar: (bar?.classList.contains('is-shown') ? '1' : '0'),
+      sweep: (fill ? getComputedStyle(fill).animationName : ''),
     };
     const t0 = performance.now();
     while (document.body.classList.contains('cv-busy') && performance.now() - t0 < 60000) await new Promise((r) => setTimeout(r, 50));
@@ -122,7 +122,7 @@ const SMALL = [0, 1].map((t) => ['2', 'Lattice="5.43 0 0 0 5.43 0 0 0 5.43" Prop
       flipped: general.showPeriodic === !was,
       countBefore,
       count: groups.atomsMesh.count,
-      bar: bar?.style.opacity,
+      bar: (bar?.classList.contains('is-shown') ? '1' : '0'),
       busy: document.body.classList.contains('cv-busy'),
     };
 
@@ -133,11 +133,11 @@ const SMALL = [0, 1].map((t) => ['2', 'Lattice="5.43 0 0 0 5.43 0 0 0 5.43" Prop
     const build0 = general.bondsBuildCounter;
     size.value = String(Math.min(1, Number(size.value) + 0.05));
     size.dispatchEvent(new Event('input'));
-    out.sizeEdit = { bar: bar?.style.opacity, sweep: fill?.style.animation || '' };
+    out.sizeEdit = { bar: (bar?.classList.contains('is-shown') ? '1' : '0'), sweep: (fill ? getComputedStyle(fill).animationName : '') };
     const t1 = performance.now();
     while (general.bondsBuildCounter === build0 && performance.now() - t1 < 60000) await new Promise((r) => setTimeout(r, 50));
     out.sizeEdit.rebuilt = general.bondsBuildCounter !== build0;
-    out.sizeEdit.barAfter = bar?.style.opacity;
+    out.sizeEdit.barAfter = (bar?.classList.contains('is-shown') ? '1' : '0');
     return out;
   });
   const all = (list, f) => list.every(f);

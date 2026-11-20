@@ -153,7 +153,7 @@ const H = require('../harness');
       document.querySelector(`#atomPanel .individual-atom-row[data-image-index="${img1}"]`));
     /** @type {HTMLElement} */ (row.querySelector('span')).click();
     const highlightedRows = [...document.querySelectorAll('#atomPanel .individual-atom-row')]
-      .filter((r) => /** @type {HTMLElement} */ (r).style.borderLeft.includes('rgb(255, 179, 71)'));
+      .filter((r) => getComputedStyle(/** @type {HTMLElement} */ (r)).borderLeftColor === 'rgb(255, 179, 71)');
     return {
       selectedInstance: atomSelection.selectedAtoms[0]?.instanceId,
       expected: img1,
@@ -170,7 +170,7 @@ const H = require('../harness');
     const { updateAtomSelectionFrom3DHit } = await import('./ui/SelectAndHighlightModule.js');
     updateAtomSelectionFrom3DHit({ instanceId: img0, object: groups.atomsMesh }, { scrollToSelection: false });
     const highlighted = [...document.querySelectorAll('#atomPanel .individual-atom-row')]
-      .find((r) => /** @type {HTMLElement} */ (r).style.borderLeft.includes('rgb(255, 179, 71)'));
+      .find((r) => getComputedStyle(/** @type {HTMLElement} */ (r)).borderLeftColor === 'rgb(255, 179, 71)');
     return { highlightedImage: Number(/** @type {HTMLElement} */ (highlighted)?.dataset.imageIndex), expected: img0 };
   }, { img0: colored.img0 });
   H.check('3D pick highlights the row of the exact copy that was hit',

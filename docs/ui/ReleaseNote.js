@@ -11,6 +11,7 @@
 import { getPanelPref, setPanelPref } from './panels/PanelManager.js';
 import { openFeatureSearch, isFeatureSearchOpen } from './FeatureSearch.js';
 import { searchShortcutLabel } from './FeatureStoreModal.js';
+import { wasLaunchedByHost } from '../host/BrowserHost.js';
 
 const NOTE_ID = '2026-10-28-search';
 const GAP = 12; // px between the search field and the card
@@ -98,7 +99,10 @@ export function closeReleaseNote() {
 /** Show the note with the windows (the next frame), unless dismissed. Full
  *  app only. */
 export function initReleaseNote() {
-  if (isReleaseNoteDismissed()) return;
+  // A window the Python host launched (crysviz.show, crysviz-mcp, the CLI) is
+  // served from a new loopback port each time, so its saved preferences start
+  // empty and "Don't show this again" could never stick: no notes there.
+  if (isReleaseNoteDismissed() || wasLaunchedByHost()) return;
   requestAnimationFrame(() => {
     if (!isReleaseNoteDismissed() && !isFeatureSearchOpen()) showReleaseNote();
   });

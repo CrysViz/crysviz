@@ -137,9 +137,9 @@ export function createPieDot(colors, size = 200) {
   canvas.width = size * dpr;
   canvas.height = size * dpr;
   updatePieDot(canvas, colors);
-  canvas.style.borderRadius = "50%";
-  canvas.style.border = "1px solid #666";
-  canvas.style.display = "inline-block";
+  // Round, bordered, inline-block: canvas.cv-pie-dot (styles.css). Callers
+  // ADD their own classes (classList.add), never replace className.
+  canvas.className = "cv-pie-dot";
   /** @type {any} */ (canvas)._colors = colors;
   return canvas;
 }

@@ -7,6 +7,7 @@ import json
 import math
 import os
 import queue
+import re
 import secrets
 import shutil
 import subprocess
@@ -14,18 +15,138 @@ import sys
 import tempfile
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import lru_cache
+from importlib.resources import files
 from multiprocessing.connection import Client
 from numbers import Real
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from ._payload import Payload
-from ._protocol import ProtocolError, recv_frame, send_frame
+from ._protocol import VIEWER_EVENTS, ProtocolError, recv_frame, send_frame
 from ._sources import prepare_sources
 
 DEFAULT_STARTUP_TIMEOUT = 20.0
 DEFAULT_COMMAND_TIMEOUT = 30.0
+# Longest single wait_job call: well inside the command timeout.
+_JOB_POLL_S = 20.0
+# Commands that move files have their own methods.
+_FILE_COMMANDS = {"load": "load", "save_image": "save_image", "export_structure": "export_structure", "close": "close"}
+
+
+@lru_cache(maxsize=1)
+def command_spec() -> dict[str, Any]:
+    """The browser command registry's description (``crysviz.web/host/commands.json``)."""
+    return json.loads(files("crysviz.web").joinpath("host/commands.json").read_text(encoding="utf-8"))
+
+
+@lru_cache(maxsize=None)
+def _changes_state(command: str) -> bool:
+    """Whether a command is a write (its result reports ``applied``), from its registry tier."""
+    entry = next((c for c in command_spec()["commands"] if c["name"] == command), None)
+    return entry is not None and entry.get("tier") != "read"
+
+
+def _camera_only(note: dict[str, object]) -> bool:
+    return "camera" in note and set(note) <= {"camera", "note"}
+
+
+def _add_user_change(changes: list[dict[str, object]], note: dict[str, object]) -> None:
+    """Collect one user-change note. A camera move that follows another camera move replaces
+    it: a rotation in several steps is one change (where the camera ended), not a list."""
+    if changes and _camera_only(changes[-1]) and _camera_only(note):
+        changes[-1] = note
+    else:
+        changes.append(note)
+
+
+@lru_cache(maxsize=None)
+def _argument_names(command: str) -> dict[str, str]:
+    """A command's argument names keyed by their letters alone, so ``temperature_k`` finds ``temperatureK``."""
+    entry = next((c for c in command_spec()["commands"] if c["name"] == command), None)
+    names = list(entry["args"].get("properties", {})) if entry else []
+    return {name.replace("_", "").lower(): name for name in [*names, "expectedRevision"]}
+
+
+def _argument_name(command: str, key: str) -> str:
+    return _argument_names(command).get(key.replace("_", "").lower(), key)
+
+
+def _snake(name: str) -> str:
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", name).lower()
+
+
+@lru_cache(maxsize=1)
+def _method_commands() -> dict[str, dict[str, Any]]:
+    """Registry commands offered as Viewer methods: all but those with their own file methods."""
+    return {c["name"]: c for c in command_spec()["commands"] if c["name"] not in _FILE_COMMANDS}
+
+
+def _schema_type(schema: dict[str, Any]) -> str:
+    if "enum" in schema:
+        return " | ".join(repr(value) for value in schema["enum"])
+    if "anyOf" in schema:
+        return " or ".join(_schema_type(option) for option in schema["anyOf"])
+    kind = schema.get("type", "any")
+    return "/".join(kind) if isinstance(kind, list) else str(kind)
+
+
+def _command_doc(command: dict[str, Any]) -> str:
+    """A method docstring from a registry entry: what it does and its keyword arguments."""
+    args = command["args"]
+    required = set(args.get("required", ()))
+    lines = [command["description"], ""]
+    properties = args.get("properties", {})
+    if properties:
+        lines.append("Keyword arguments (snake_case, or as the command names them):")
+        for key, schema in properties.items():
+            flag = ", required" if key in required else ""
+            text = schema.get("description", "")
+            lines.append(f"    {_snake(key)} ({_schema_type(schema)}{flag}){': ' + text if text else ''}")
+    if command["name"].startswith("run_"):
+        lines += ["", "Blocks until the job ends and returns its final status (see Viewer.run_job);",
+                  "wait=False returns the job at once ({jobId, ...}) for wait_job / cancel_job."]
+    lines += ["", "Returns a dict. A write the situation refused returns applied=False with a reason."]
+    return "\n".join(lines)
+
+
+def _command_method(viewer: "Viewer", command: dict[str, Any]) -> Callable[..., Any]:
+    name = command["name"]
+    if name.startswith("run_"):
+        def method(*, wait: bool = True, timeout: float | None = None, **args: object) -> Any:
+            return viewer.run_job(name, timeout=timeout, **args) if wait else viewer.call(name, **args)
+    else:
+        def method(**args: object) -> Any:
+            return viewer.call(name, **args)
+    method.__name__ = method.__qualname__ = name
+    method.__doc__ = _command_doc(command)
+    return method
+
+
+class SavedImage(Path):
+    """The path :meth:`Viewer.save_image` wrote; Jupyter and IPython show it as the picture."""
+
+    def _repr_png_(self) -> bytes | None:
+        return self.read_bytes() if self.suffix.lower() != ".svg" else None
+
+    def _repr_svg_(self) -> str | None:
+        return self.read_text(encoding="utf-8") if self.suffix.lower() == ".svg" else None
+
+
+# Events the Viewer raises itself, besides those the window sends (VIEWER_EVENTS).
+_LOCAL_EVENTS = frozenset({"file_saved"})
+_UNSAFE_NAME_RE = re.compile(r"[^\w.() +-]")
+
+
+def _download_path(folder: Path, name: str) -> Path:
+    """A free path in ``folder`` for a downloaded file named ``name`` (never a path, never hidden)."""
+    clean = _UNSAFE_NAME_RE.sub("_", Path(name.replace("\\", "/")).name).lstrip(".") or "download"
+    stem, suffix = Path(clean).stem or "download", Path(clean).suffix
+    candidate, n = folder / clean, 1
+    while candidate.exists():
+        candidate, n = folder / f"{stem}-{n}{suffix}", n + 1
+    return candidate
 
 
 class ViewerError(RuntimeError):
@@ -56,6 +177,12 @@ class BrowserCommandError(ViewerError):
         self.code, self.message, self.details = code, message, details
 
 
+class CommandRefused(BrowserCommandError):
+    """The command was valid but the situation refused it (the structure changed under it, a job is
+    running, atoms would collide): nothing was changed. :meth:`Viewer.call` returns these as a result,
+    ``{"applied": False, "reason": ..., "code": ...}``; the typed methods raise this exception."""
+
+
 class ViewerReentrancyError(ViewerError):
     """``wait`` cannot run from an event callback, where it would deadlock."""
 
@@ -72,6 +199,9 @@ class StructureInfo:
 @dataclass(frozen=True, slots=True)
 class LoadResult:
     structure: StructureInfo
+    # The browser's whole result: structure (row id), frames, activeFrame, atomCount, revision,
+    # formula, and restored ({supercell}) when the Cell & Supercell window restored one.
+    details: dict[str, Any] = field(default_factory=dict, compare=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,10 +219,11 @@ class ViewerEvent:
 
 
 def _structure(value: object) -> StructureInfo:
+    """A row: a command's result (``structure`` is the row id) or a get_state structures entry (``id``)."""
     if not isinstance(value, dict):
         raise ViewerProtocolError("browser returned an invalid structure result")
     try:
-        ident, name, frames = value["id"], value["name"], value["frames"]
+        ident, name, frames = value["structure"] if "structure" in value else value["id"], value["name"], value["frames"]
     except KeyError as error:
         raise ViewerProtocolError("browser structure result is incomplete") from error
     if not isinstance(ident, str) or not isinstance(name, str) or isinstance(frames, bool) or not isinstance(frames, int):
@@ -100,7 +231,8 @@ def _structure(value: object) -> StructureInfo:
     active_frame = value.get("activeFrame")
     if active_frame is not None and (isinstance(active_frame, bool) or not isinstance(active_frame, int)):
         raise ViewerProtocolError("browser structure active frame is invalid")
-    return StructureInfo(ident, name, frames, value.get("active") is True, active_frame)
+    active = value["active"] is True if "active" in value else active_frame is not None
+    return StructureInfo(ident, name, frames, active, active_frame)
 
 
 def _terminate_process(process: subprocess.Popen[str]) -> None:
@@ -130,7 +262,8 @@ class Viewer:
     """
 
     def __init__(self, sources: Sequence[object] = (), *, startup_timeout: float = DEFAULT_STARTUP_TIMEOUT,
-                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, gui: str | None = None, debug: bool = False):
+                 command_timeout: float = DEFAULT_COMMAND_TIMEOUT, gui: str | None = None, debug: bool = False,
+                 download_dir: str | os.PathLike[str] | None = None):
         if startup_timeout <= 0 or command_timeout <= 0:
             raise ValueError("timeouts must be positive")
         if gui not in {None, "gtk", "qt", "cef"}:
@@ -156,15 +289,52 @@ class Viewer:
         self._ready = threading.Event()
         self._close_error: ViewerError | None = None
         self._callback_thread: int | None = None
+        # What the user changed by hand: sinceLastCall notes and user_changed events, for take_user_changes.
+        self._user_changes: list[dict[str, object]] = []
+        # The active structure's name as the last event said, for repr (no round trip to the window).
+        self._active_name: str | None = None
+        # With download_dir, the app's downloads (a Save or Download button) are written there, in
+        # order; without it the window downloads them itself (its own Save dialog).
+        self._download_dir = None if download_dir is None else Path(download_dir).expanduser()
+        self._saved_files: list[str] = []
 
     def __enter__(self) -> "Viewer":
         return self.start()
+
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        """Every browser command as a method: ``v.find(what="atoms")``, ``v.set_view(direction="c")``,
+        ``v.run_relax(fmax=0.02)``. ``help(v.find)`` lists its arguments; the typed methods above
+        (load, save_image, export_structure, ...) take precedence."""
+        if name.startswith("_"):
+            raise AttributeError(name)
+        command = _method_commands().get(name)
+        if command is None:
+            raise AttributeError(f"Viewer has no method or browser command {name!r}")
+        return _command_method(self, command)
+
+    def __dir__(self) -> list[str]:
+        return sorted({*super().__dir__(), *_method_commands()})
+
+    def __repr__(self) -> str:
+        if not self._started:
+            state = "not started"
+        elif self._closed.is_set():
+            state = "closed"
+        else:
+            state = "open" + (f", showing {self._active_name}" if self._active_name else "")
+        return f"<crysviz.Viewer {state}>"
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         self.close()
 
     def on(self, event: str, callback: Callable[[ViewerEvent], object]) -> "Viewer":
-        if event not in {"ready", "structure_loaded", "active_structure_changed", "error", "closed"}:
+        """Call ``callback(ViewerEvent)`` on every ``event``: ready, structure_loaded,
+        active_structure_changed, error, closed, or user_changed (the user edited, selected,
+        turned the camera or switched the renderer by hand; ``event.data`` is the same note as a
+        result's ``sinceLastCall``), or file_saved (the app downloaded a file, e.g. its Save or
+        Download button; ``event.data`` has ``path``). Callbacks run on a background thread, one at a
+        time; they may call viewer commands but not :meth:`wait`."""
+        if event not in VIEWER_EVENTS and event not in _LOCAL_EVENTS:
             raise ValueError("unknown viewer event")
         if not callable(callback):
             raise TypeError("event callback must be callable")
@@ -239,6 +409,8 @@ class Viewer:
         bootstrap = json.dumps({
             "version": 1, "auth": base64.b64encode(secret).decode("ascii"),
             "gui": self._gui, "debug": self._debug,
+            # The window hands the app's downloads to Python only when there is a folder for them.
+            "downloads": self._download_dir is not None,
         }) + "\n"
         process: subprocess.Popen[str] | None = None
         connection: Any | None = None
@@ -298,7 +470,6 @@ class Viewer:
                         attachment_name = f"source-{index}"
                         descriptors.append({
                             "attachment": attachment_name, "name": source.name, "format": source.format,
-                            "binary": source.binary,
                         })
                         attachments[attachment_name] = source.open()
                     with self._send_lock:
@@ -349,6 +520,8 @@ class Viewer:
                         for attachment in attachments.values():
                             attachment.close()
                         raise ViewerProtocolError("response arrived for an unknown request")
+                elif message_type == "download":
+                    self._accept_download(payload, attachments)
                 elif message_type == "event":
                     for attachment in attachments.values():
                         attachment.close()
@@ -377,15 +550,53 @@ class Viewer:
                     message = f"host exited unexpectedly:\n{stderr}"
             self._fail(ViewerProtocolError(message or "host connection closed unexpectedly"))
 
+    def _accept_download(self, payload: object, attachments: dict[str, Any]) -> None:
+        """Save a file the app downloaded (its Save or Download path) in the download folder."""
+        try:
+            if (not isinstance(payload, dict) or not isinstance(payload.get("name"), str)
+                    or set(attachments) != {"file"}):
+                raise ViewerProtocolError("download has an invalid schema")
+            folder = self._download_dir
+            if folder is None:
+                raise ViewerProtocolError("a download arrived although downloads are not captured")
+            folder.mkdir(parents=True, exist_ok=True)
+            target = _download_path(folder, payload["name"])
+            stream = attachments["file"].stream
+            stream.seek(0)
+            with open(target, "xb") as output:
+                shutil.copyfileobj(stream, output, length=1024 * 1024)
+        finally:
+            for attachment in attachments.values():
+                attachment.close()
+        with self._lock:
+            by_command = bool(self._pending)
+            self._saved_files.append(str(target))
+            if not by_command:
+                # Saved from the window by hand: the next result's sinceLastCall says so too.
+                _add_user_change(self._user_changes, {"files": [str(target)],
+                                                      "note": f"the user saved {target.name} from the window"})
+            callbacks = tuple(self._subscribers.get("file_saved", ()))
+        event = ViewerEvent("file_saved", {"path": str(target), "name": target.name,
+                                           "size": target.stat().st_size, "byCommand": by_command})
+        for callback in callbacks:
+            self._enqueue_event((event, callback))
+
     def _accept_event(self, payload: object) -> None:
         if not isinstance(payload, dict) or set(payload) != {"event", "data"} or not isinstance(payload["event"], str):
             raise ViewerProtocolError("event has an invalid schema")
         event = ViewerEvent(payload["event"], payload["data"])
-        if event.name not in {"ready", "structure_loaded", "active_structure_changed", "error", "closed"}:
+        if event.name not in VIEWER_EVENTS:
             raise ViewerProtocolError("event has an unknown name")
         if event.name in {"ready", "closed"}:
             with self._lock:
                 self._replay[event.name] = event
+        if event.name == "user_changed" and isinstance(event.data, dict):
+            # The same notes a command's sinceLastCall carries; the browser reports each change once.
+            with self._lock:
+                _add_user_change(self._user_changes, event.data)
+        if event.name in {"structure_loaded", "active_structure_changed"} and isinstance(event.data, dict):
+            with self._lock:
+                self._active_name = event.data.get("name", self._active_name)
         if event.name == "ready":
             self._ready.set()
         elif event.name == "error" and not self._ready.is_set() and isinstance(event.data, dict):
@@ -431,7 +642,8 @@ class Viewer:
                     self._callback_thread = None
 
     def _command(self, command: str, args: object = None, attachments: dict[str, object] | None = None,
-                 timeout: float | None = None, *, include_attachments: bool = False) -> object:
+                 timeout: float | None = None, *, include_attachments: bool = False,
+                 outcomes: bool = False) -> object:
         if not self._started:
             self.start()
         if self._closed.is_set():
@@ -440,6 +652,7 @@ class Viewer:
         pending: queue.Queue[object] = queue.Queue(maxsize=1)
         with self._lock:
             self._pending[request_id] = pending
+            files_before = len(self._saved_files)
         try:
             with self._send_lock:
                 if self._connection is None:
@@ -463,6 +676,11 @@ class Viewer:
                 for item in received.values():
                     item.close()
                 raise ViewerProtocolError("browser response has an invalid schema")
+            note = (response.get("result") if response.get("ok") is True
+                    else (response.get("error") or {}).get("details"))
+            if isinstance(note, dict) and isinstance(note.get("sinceLastCall"), dict):
+                with self._lock:
+                    _add_user_change(self._user_changes, note["sinceLastCall"])
             if response.get("ok") is not True:
                 for item in received.values():
                     item.close()
@@ -470,39 +688,143 @@ class Viewer:
                 if not isinstance(error, dict) or not isinstance(error.get("code"), str) or not isinstance(error.get("message"), str):
                     raise ViewerProtocolError("browser response has an invalid error")
                 raise BrowserCommandError(error["code"], error["message"], error.get("details"))
+            result = response.get("result")
+            if isinstance(result, dict) and result.get("applied") is False and not outcomes:
+                # A refusal ({applied: false, reason, code}): call() hands it back as a result,
+                # the typed methods raise, so code that expected the change notices.
+                for item in received.values():
+                    item.close()
+                details = {k: v for k, v in result.items() if k not in {"applied", "reason", "code"}}
+                raise CommandRefused(str(result.get("code")), str(result.get("reason")), details or None)
             if received and not include_attachments:
                 for item in received.values():
                     item.close()
                 raise ViewerProtocolError("browser response has unexpected attachments")
+            result = response.get("result")
+            # Files the command made the app download (a Save or Download button clicked through
+            # click_control) arrive before its response: name them in the result.
+            with self._lock:
+                saved = self._saved_files[files_before:]
+            if saved and isinstance(result, dict):
+                result = {**result, "savedFiles": saved}
             if include_attachments:
-                return response.get("result"), received
-            return response.get("result")
+                return result, received
+            return result
         finally:
             with self._lock:
                 self._pending.pop(request_id, None)
 
-    def load(self, source: object, *, periodic: bool | None = None) -> LoadResult:
+    def load(self, source: object, *, periodic: bool | None = None, interactive: bool = True) -> LoadResult:
+        """Load a structure. ``interactive=False`` skips load-time questions (CIF symmetry)."""
         if periodic is not None and not isinstance(periodic, bool):
             raise TypeError("periodic must be True, False or None")
+        if not isinstance(interactive, bool):
+            raise TypeError("interactive must be boolean")
         sources = prepare_sources([source])
         prepared = sources[0]
         try:
-            payload: dict[str, object] = {"name": prepared.name, "format": prepared.format, "binary": prepared.binary}
+            payload: dict[str, object] = {"name": prepared.name, "format": prepared.format}
             if periodic is not None:
                 payload["periodic"] = periodic
+            if not interactive:
+                payload["interactive"] = False
             result = self._command("load", payload, {"data": prepared.open()})
-            return LoadResult(_structure(result))
+            return LoadResult(_structure(result), dict(result) if isinstance(result, dict) else {})
         finally:
             prepared.close()
 
+    def call(self, command: str, **args: object) -> Any:
+        """Run any browser command by name (see crysviz.web/host/commands.json) and return its result.
+
+        A write that the situation refused (the structure changed under it, a job is running,
+        atoms would collide) is not an exception here: it returns ``{"applied": False, "reason":
+        ..., "code": ..., ...}`` and changes nothing; a successful write has ``"applied": True``.
+        A wrong call (bad arguments, an unknown control) raises :class:`BrowserCommandError`.
+
+        Arguments may be given in snake_case or as the command names them:
+        ``viewer.call("run_md", temperature_k=600, steps=200)`` sends ``temperatureK``.
+        Nested objects (``where``, ``rotate``) are passed as they are. Commands that
+        move files have their own methods: :meth:`load`, :meth:`save_image`,
+        :meth:`export_structure`. For a ``run_*`` job, :meth:`run_job` waits for it.
+        """
+        if not isinstance(command, str) or not command:
+            raise ValueError("command must be a nonempty string")
+        if command in _FILE_COMMANDS:
+            raise ValueError(f"use Viewer.{_FILE_COMMANDS[command]}() for {command!r}")
+        result = self._command(command, {_argument_name(command, key): value for key, value in args.items()},
+                               outcomes=True)
+        # A write says whether it changed anything: applied: false (with reason and code) when the
+        # situation refused it, applied: true otherwise.
+        if isinstance(result, dict) and "applied" not in result and _changes_state(command):
+            result = {"applied": True, **result}
+        return result
+
+    def run_job(self, command: str, *, timeout: float | None = None, **args: object) -> dict[str, Any]:
+        """Start a ``run_*`` job (``run_md``, ``run_relax``, ``run_energy``, ``run_eos``,
+        ``run_ordering``) and wait until it ends; return its final status.
+
+        The status has ``status`` (done, failed, cancelled), ``result`` and ``active`` (the
+        structure and frame on show afterwards). A failed job raises
+        :class:`BrowserCommandError`. After ``timeout`` seconds a ``TimeoutError`` is raised
+        and the job keeps running (``call("cancel_job", job_id=...)`` stops it).
+        """
+        if not isinstance(command, str) or not command.startswith("run_"):
+            raise ValueError("run_job runs run_* commands")
+        if timeout is not None and not (isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0):
+            raise ValueError("timeout must be a positive number of seconds")
+        view = self.call(command, **args)
+        if isinstance(view, dict) and view.get("applied") is False:  # e.g. JOB_BUSY: nothing started
+            details = {k: v for k, v in view.items() if k not in {"applied", "reason", "code"}}
+            raise CommandRefused(str(view.get("code")), str(view.get("reason")), details or None)
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        while isinstance(view, dict) and view.get("status") == "running":
+            wait = _JOB_POLL_S
+            if deadline is not None:
+                wait = min(wait, deadline - time.monotonic())
+                if wait <= 0:
+                    raise TimeoutError(f"job {view.get('jobId')} is still running after {timeout} s")
+            view = self._command("wait_job", {"jobId": view["jobId"], "waitS": wait})
+        if not isinstance(view, dict) or "status" not in view:
+            raise ViewerProtocolError(f"browser {command} returned no job")
+        if view["status"] == "failed":
+            error = view.get("error") if isinstance(view.get("error"), dict) else {}
+            raise BrowserCommandError(str(error.get("code", "JOB_FAILED")), str(error.get("message", f"{command} failed")),
+                                      error.get("details"))
+        return view
+
+    def take_user_changes(self, *, check: bool = True) -> list[dict[str, object]]:
+        """What the user changed by hand in the window (structure, selection, camera, renderer)
+        since it was last reported, oldest first, and clear the list.
+
+        The window is checked first, so an edit you just made is included. The same notes also
+        arrive as ``sinceLastCall`` in :meth:`call` results and as ``user_changed`` events
+        (:meth:`on`); each change is reported once, by whichever comes first, and every one of
+        them is also kept here until taken. ``check=False`` skips the check (no round trip).
+        """
+        if check and self._started and not self._closed.is_set():
+            self._command("get_state", {"include": []})  # its sinceLastCall lands in the list
+        with self._lock:
+            changes, self._user_changes = self._user_changes, []
+        return changes
+
     def list_structures(self) -> list[StructureInfo]:
-        value = self._command("list_structures")
-        if not isinstance(value, list):
-            raise ViewerProtocolError("browser list_structures result is invalid")
-        return [_structure(item) for item in value]
+        value = self._command("get_state", {"include": ["structures"]})
+        if not isinstance(value, dict) or not isinstance(value.get("structures"), list):
+            raise ViewerProtocolError("browser structure list is invalid")
+        return [_structure(item) for item in value["structures"]]
+
+    def get_state(self, *, include: Sequence[str] | None = None) -> dict[str, Any]:
+        """What the viewer shows now: the active structure and renderer, plus the ``include``
+        sections (default camera, selection, jobs; also structures, colors, phonons, field)."""
+        if include is not None and (isinstance(include, (str, bytes)) or not isinstance(include, Sequence)):
+            raise TypeError("include must be a sequence of section names")
+        value = self._command("get_state", None if include is None else {"include": list(include)})
+        if not isinstance(value, dict):
+            raise ViewerProtocolError("browser get_state result is invalid")
+        return value
 
     def select(self, structure_id: str, *, frame: int = 0) -> None:
-        self._command("select", {"id": structure_id, "frame": frame})
+        self._command("select_structure", {"structure": structure_id, "frame": frame})
 
     def update_fractional_positions(self, positions: Sequence[Sequence[float]], *, commit: bool = False) -> PositionUpdateResult:
         if isinstance(positions, (str, bytes)) or not isinstance(positions, Sequence):
@@ -553,13 +875,13 @@ class Viewer:
         )
         if abs(determinant) < 1e-12:
             raise ValueError("lattice must be nonsingular")
-        self._command("update_lattice", {"lattice": copied})
+        self._command("set_lattice", {"lattice": copied})
 
     def commit_positions(self) -> None:
         self._command("commit_positions")
 
     def recenter_camera(self) -> None:
-        self._command("recenter_camera")
+        self._command("set_view", {"recenter": True})
 
     def rotate_camera(self, angle_degrees: float, *, axis: str = "y") -> None:
         if isinstance(angle_degrees, bool) or not isinstance(angle_degrees, (int, float)):
@@ -572,27 +894,88 @@ class Viewer:
             raise ValueError("angle_degrees must be finite")
         if axis not in {"x", "y", "z"}:
             raise ValueError("axis must be x, y, or z")
-        self._command("rotate_camera", {"angleDegrees": angle, "axis": axis})
+        self._command("set_view", {"rotate": {"axis": axis, "degrees": angle}})
+
+    def set_view(self, direction: str | Sequence[float] | None = None, *, up: str | Sequence[float] | None = None,
+                 zoom: float | None = None, cartesian: bool = False, rotate: dict[str, object] | None = None,
+                 recenter: bool = False) -> dict[str, Any]:
+        """Look along ``"a"``/``"b"``/``"c"``, ``"x"``/``"y"``/``"z"`` or a lattice direction [u, v, w]
+        (Cartesian with ``cartesian=True``), with ``up`` on screen and ``zoom``; orbit with
+        ``rotate={"axis": "y", "degrees": 30}``; bring the structure back to the middle with
+        ``recenter=True``. Give only what should change. Returns the camera as :meth:`get_state`
+        reports it."""
+        def vector(value: object, name: str) -> object:
+            if isinstance(value, str):
+                if value not in {"a", "b", "c", "x", "y", "z"}:
+                    raise ValueError(f"{name} must be a, b, c, x, y, z or three finite numbers")
+                return value
+            if isinstance(value, bytes) or not isinstance(value, Sequence) or len(value) != 3 or any(
+                    isinstance(v, bool) or not isinstance(v, Real) or not math.isfinite(v) for v in value):
+                raise ValueError(f"{name} must be a, b, c, x, y, z or three finite numbers")
+            return [float(v) for v in value]
+
+        if not isinstance(cartesian, bool):
+            raise TypeError("cartesian must be boolean")
+        if zoom is not None and (isinstance(zoom, bool) or not isinstance(zoom, Real) or not math.isfinite(zoom) or zoom <= 0):
+            raise ValueError("zoom must be a positive number")
+        args: dict[str, object] = {}
+        if direction is not None:
+            args["direction"] = vector(direction, "direction")
+        if up is not None:
+            args["up"] = vector(up, "up")
+        if zoom is not None:
+            args["zoom"] = float(zoom)
+        if rotate is not None:
+            if not isinstance(rotate, dict):
+                raise TypeError('rotate must be a dict such as {"axis": "y", "degrees": 30}')
+            args["rotate"] = rotate
+        if not isinstance(recenter, bool):
+            raise TypeError("recenter must be boolean")
+        if recenter:
+            args["recenter"] = True
+        if not args:
+            raise ValueError("give direction, up, zoom, rotate or recenter")
+        if cartesian:
+            args["cartesian"] = True
+        result = self._command("set_view", args)
+        if not isinstance(result, dict) or not isinstance(result.get("direction"), list):
+            raise ViewerProtocolError("browser set_view result is invalid")
+        return result
 
     def set_render_pipeline(self, pipeline_id: str) -> str:
         valid = {"depthpeel", "wboit", "forward", "raytrace", "pathtrace", "split-atoms", "sorted-atoms"}
         if not isinstance(pipeline_id, str) or pipeline_id not in valid:
             raise ValueError("unknown rendering pipeline")
-        result = self._command("set_render_pipeline", {"pipelineId": pipeline_id})
-        if not isinstance(result, str) or result not in valid:
+        result = self._command("set_renderer", {"renderer": pipeline_id})
+        if not isinstance(result, dict) or result.get("renderer") not in valid:
             raise ViewerProtocolError("browser returned an invalid active pipeline")
-        return result
+        return result["renderer"]
 
-    def save_image(self, path: str | os.PathLike[str], *, width: int = 800, height: int = 600,
+    def save_image(self, path: str | os.PathLike[str], *, width: int | None = None, height: int | None = None,
                    margin: int = 0, transparent: bool = False, structure_only: bool = False,
-                   timeout: float | None = None) -> Path:
-        if isinstance(width, bool) or not isinstance(width, int) or not 1 <= width <= 16384:
-            raise ValueError("width must be an integer from 1 through 16384")
-        if isinstance(height, bool) or not isinstance(height, int) or not 1 <= height <= 16384:
-            raise ValueError("height must be an integer from 1 through 16384")
+                   timeout: float | None = None, max_side: int | None = None,
+                   format: str | None = None, vector: bool = False) -> Path:
+        """Render the current view to a PNG or SVG at ``path``.
+
+        Without ``width``/``height`` the image is the view as the user sees it (its size and
+        aspect); with one of them, the other follows the view's aspect. ``max_side`` scales such a
+        default size down to fit. ``format`` is ``"png"`` or ``"svg"``; left out, a path ending in
+        ``.svg`` makes an SVG. An SVG is the Download Image window's: the structure as an embedded
+        image with editable labels and axes, or with ``vector=True`` as vector shapes.
+        """
+        format = format or ("svg" if Path(path).suffix.lower() == ".svg" else "png")
+        if format not in {"png", "svg"}:
+            raise ValueError("format must be png or svg")
+        if not isinstance(vector, bool) or (vector and format != "svg"):
+            raise ValueError("vector is a boolean for SVG images")
+        for label, value in (("width", width), ("height", height)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 16384):
+                raise ValueError(f"{label} must be an integer from 1 through 16384")
+        if max_side is not None and (isinstance(max_side, bool) or not isinstance(max_side, int) or not 16 <= max_side <= 16384):
+            raise ValueError("max_side must be an integer from 16 through 16384")
         if isinstance(margin, bool) or not isinstance(margin, int) or not 0 <= margin <= 4096:
             raise ValueError("margin must be an integer from 0 through 4096")
-        if margin * 2 >= width or margin * 2 >= height:
+        if (width is not None and margin * 2 >= width) or (height is not None and margin * 2 >= height):
             raise ValueError("margin must be smaller than half of each dimension")
         if not isinstance(transparent, bool):
             raise TypeError("transparent must be boolean")
@@ -607,21 +990,28 @@ class Viewer:
             if not valid_timeout:
                 raise ValueError("timeout must be a positive finite number")
         target = Path(path)
-        result, received = self._command(
-            "save_image", {"width": width, "height": height, "margin": margin,
-                           "transparent": transparent, "structureOnly": structure_only},
-            timeout=timeout, include_attachments=True,
-        )
+        args: dict[str, object] = {"margin": margin, "transparent": transparent, "structureOnly": structure_only}
+        for key, value in (("width", width), ("height", height), ("maxSide", max_side)):
+            if value is not None:
+                args[key] = value
+        if format == "svg":
+            args["format"] = "svg"
+            if vector:
+                args["vector"] = True
+        content_type = "image/svg+xml" if format == "svg" else "image/png"
+        result, received = self._command("save_image", args, timeout=timeout, include_attachments=True)
         try:
-            if not isinstance(result, dict) or result.get("contentType") != "image/png" \
+            if not isinstance(result, dict) or result.get("contentType") != content_type \
                     or result.get("attachment") != "image" or set(received) != {"image"}:
-                raise ViewerProtocolError("browser PNG response is missing its image attachment")
+                raise ViewerProtocolError(f"browser {format.upper()} response is missing its image attachment")
             attachment = received["image"]
             if not isinstance(result.get("size"), int) or result["size"] != attachment.size:
-                raise ViewerProtocolError("browser PNG response has an invalid image size")
+                raise ViewerProtocolError(f"browser {format.upper()} response has an invalid image size")
             attachment.stream.seek(0)
-            if attachment.stream.read(8) != b"\x89PNG\r\n\x1a\n":
-                raise ViewerProtocolError("browser PNG response has an invalid signature")
+            head = attachment.stream.read(256)
+            if (format == "png" and not head.startswith(b"\x89PNG\r\n\x1a\n")) or \
+                    (format == "svg" and b"<svg" not in head and not head.lstrip(b"\xef\xbb\xbf \t\r\n").startswith(b"<?xml")):
+                raise ViewerProtocolError(f"browser {format.upper()} response has an invalid signature")
             attachment.stream.seek(0)
             temp_path: Path | None = None
             try:
@@ -642,7 +1032,43 @@ class Viewer:
         finally:
             for attachment in received.values():
                 attachment.close()
-        return target
+        return SavedImage(target)
+
+    def export_structure(self, path: str | os.PathLike[str], *, format: str, frames: str | Sequence[int] | None = None,
+                         structure: str | None = None, frame: int | None = None) -> dict[str, Any]:
+        """Write a structure file at ``path``: ``"cif"`` or ``"poscar"`` (one frame, as the Save
+        window does) or ``"extxyz"`` (``frames``: ``"all"``, the default, or frame indices).
+        ``structure`` and ``frame`` pick a row and frame other than the one on show.
+
+        Returns the browser's result: ``atomCount`` (atoms in the file), ``frames``,
+        ``sameOrder`` and, when a POSCAR reorders atoms, ``order`` (file atom ``k`` is CrysViz
+        atom ``order[k]``), plus ``warning`` when POSCAR drops partial occupancy.
+        """
+        if format not in {"cif", "poscar", "extxyz"}:
+            raise ValueError("format must be cif, poscar or extxyz")
+        args: dict[str, object] = {"format": format}
+        if frames is not None:
+            if frames != "all" and (isinstance(frames, (str, bytes)) or not isinstance(frames, Sequence)):
+                raise ValueError('frames must be "all" or a sequence of frame indices')
+            args["frames"] = frames if frames == "all" else list(frames)
+        if structure is not None:
+            args["structure"] = structure
+        if frame is not None:
+            args["frame"] = frame
+        return self._write_text_output("export_structure", args, path)
+
+    def _write_text_output(self, command: str, args: dict[str, object], path: str | os.PathLike[str]) -> dict[str, Any]:
+        """Run a text-export command and write its text to ``path``; return the browser's result."""
+        result, received = self._command(command, args, include_attachments=True)
+        try:
+            # The text arrives as an attachment (the host's managed upload), so size is not capped by IPC.
+            if not isinstance(result, dict) or result.get("attachment") != "text" or set(received) != {"text"}:
+                raise ViewerProtocolError(f"browser {command} response is missing its text attachment")
+            Path(path).write_bytes(received["text"].read())
+        finally:
+            for attachment in received.values():
+                attachment.close()
+        return result
 
     def wait(self, timeout: float | None = None) -> None:
         if self._callback_thread == threading.get_ident():

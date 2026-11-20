@@ -154,10 +154,11 @@ export function addOverlayPanel(container) {
   // this very panel and recurse.
   const overlayError = document.createElement("div");
   overlayError.id = "overlayErrorField";
-  overlayError.className = "cv-overlay-error cv-force-hidden";
+  overlayError.className = "cv-overlay-error";
+  overlayError.hidden = true; // setErrorText (FileBrowswerPanel.js) toggles it too
   if (general.overlayModeOn && fileBrowser.overlayEntries.length === 0) {
     overlayError.textContent = 'Check one or more structures below to overlay them.';
-    overlayError.classList.remove("cv-force-hidden");
+    overlayError.hidden = false;
   }
   container.appendChild(overlayError);
 

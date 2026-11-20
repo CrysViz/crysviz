@@ -6,84 +6,15 @@ import { updateVisualization } from '../core/crystal-viewer.js';
 import { createSupercell, supercellAtomCount } from './SuperCellModule.js';
 import { setLoadStep, finishLoadProgress, nextPaint } from './BootProgress.js';
 import { schedulePeriodicBoundsSave, saveSupercellPref, pinCellPrefsKey } from '../state/cellPrefs.js';
-import { resetView, recenterCamera } from './WindowAndSceneControls.js';
-import { fracToCart, cartToFrac } from '../render/index.js';
+import { recenterView, recenterCamera } from './WindowAndSceneControls.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
+import { applyVacuumToStructure, resetVacuumForStructure } from './addToStructureModule/AddVacuumModule.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 import { createNewStructureFromAtoms, createTrajectoryFromFrames } from './addToStructureModule/CommitAtoms.js';
+import { cutSlab, SLAB_DEFAULTS } from './addToStructureModule/CutSlab.js';
 import { buildOrderedStructure, planOrdering, listMultiplierOptions } from '../atomistic/order_structure.js';
 import { mountPotentialNotice, potentialLabel, potentialSource } from '../atomistic/potentialNotice.js';
 import { Atom, Structure } from '../model/index.js';
-
-// Grow the current structure's cell by the requested vacuum (Å) along each
-// lattice vector, keeping the atoms' Cartesian positions fixed - a standard
-// slab-with-vacuum construction (vacuum is added on one side only; atoms do
-// not recenter, so their fractional coordinates compress toward the origin
-// side of whichever vector(s) grew).
-//
-// _vacuumApplied is an in-memory (not saved/exported) bookkeeping field on
-// the structure - the running total added per axis, plus the lattice as it
-// was before any vacuum was ever applied to this structure - so the panel
-// can show a running counter and Reset can undo the whole thing in one step
-// (restoring baseLattice; atoms' Cartesian positions never changed, so their
-// fractional coordinates just get recomputed against it).
-function applyVacuumToStructure(vacX, vacY, vacZ) {
-  const s = fileBrowser.selectedStructure;
-  if (!s) {
-    console.warn('Add vacuum: no structure selected.');
-    return;
-  }
-  if (!vacX && !vacY && !vacZ) return;
-
-  if (!s._vacuumApplied) {
-    s._vacuumApplied = { x: 0, y: 0, z: 0, baseLattice: s.lattice.map(row => row.slice()) };
-  }
-  s._vacuumApplied.x += vacX;
-  s._vacuumApplied.y += vacY;
-  s._vacuumApplied.z += vacZ;
-
-  const lattice = s.lattice;
-  const vac = [vacX, vacY, vacZ];
-
-  // Cartesian positions to preserve.
-  const carts = fracToCart(s.atoms.map(a => a.position), lattice);
-
-  // Scale each lattice vector's length by its added vacuum.
-  const newLattice = lattice.map((row, i) => {
-    const len = Math.hypot(row[0], row[1], row[2]);
-    const k = (len > 0 && vac[i]) ? (len + vac[i]) / len : 1;
-    return [row[0] * k, row[1] * k, row[2] * k];
-  });
-
-  s.atoms.forEach((atom, idx) => {
-    atom.position = cartToFrac(carts[idx], newLattice);
-  });
-
-  s.lattice = newLattice;
-  s.periodic = { wrapped: null, hash: null }; // force periodic-wrap recompute
-
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
-  // Vacuum is added on one side only (see the comment above), so the cell's
-  // Cartesian center genuinely shifts — recenter on it, but keep whatever
-  // direction/distance the camera was already at rather than snapping to a
-  // canonical view the way resetView() would.
-  recenterCamera();
-}
-
-// Undoes every vacuum addition made so far on this structure in one step.
-function resetVacuumForStructure(s) {
-  if (!s || !s._vacuumApplied) return;
-  const carts = fracToCart(s.atoms.map(a => a.position), s.lattice);
-  s.lattice = s._vacuumApplied.baseLattice.map(row => row.slice());
-  s.atoms.forEach((atom, idx) => {
-    atom.position = cartToFrac(carts[idx], s.lattice);
-  });
-  s.periodic = { wrapped: null, hash: null };
-  delete s._vacuumApplied;
-
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
-  recenterCamera();
-}
 
 /** eV/atom, formatted for the sample list (sign-free — rank and Δ carry the
  *  comparison, this is just the value). */
@@ -258,6 +189,77 @@ function resetOrderSession() {
   renderOrderList();
 }
 
+const NOTHING_TO_ORDER = 'This structure has no fractionally occupied sites — there is nothing to order.';
+
+/**
+ * `count` random ordered decorations of the disordered `structure` (seeds
+ * 1..count) in a cell `multiplier` times larger. Shared by the window's Build
+ * button and the host's order_structure job.
+ * @returns {Array<{seed: number, built: any, energyPerAtom: number|null}>}
+ */
+export function buildOrderSamples(structure, count, multiplier = 1) {
+  if (!structureHasFractionalOccupancy(structure)) throw Object.assign(new Error(NOTHING_TO_ORDER), { code: 'NOTHING_TO_ORDER' });
+  const samples = [];
+  for (let i = 0; i < count; i += 1) {
+    const seed = i + 1;
+    samples.push({ seed, built: buildOrderedStructure(structure, { method: 'random', seed, multiplier }), energyPerAtom: null });
+  }
+  return samples;
+}
+
+/**
+ * Single-point energy per atom of every sample with the Atomistic window's
+ * potential, then sorted lowest first (in place). Shared by Compare Energy
+ * and the host's order_structure job.
+ * @returns {Promise<{potential: string, label: string}>}
+ */
+export async function scoreOrderSamples(samples, { onProgress = (_text) => {}, shouldStop = () => false } = {}) {
+  const { ensureCalculatorRunner } = await import('./BackendPanel/AtomisticPanels.js');
+  const { buildNEPStructure } = await import('../atomistic/relaxer.js');
+  const { runner, potential } = await ensureCalculatorRunner(onProgress);
+  for (let i = 0; i < samples.length; i += 1) {
+    if (shouldStop()) throw new Error('Stopped before every energy was computed');
+    const sample = samples[i];
+    onProgress(`Computing energy ${i + 1} / ${samples.length} (seed ${sample.seed})…`);
+    const nepStruct = buildNEPStructure(runner, sample.built);
+    // Sequential, not Promise.all: the wasm/gguf runner is a single
+    // instance, not safely reentrant across concurrent compute() calls.
+    const out = await runner.compute(nepStruct);
+    sample.energyPerAtom = Number.isFinite(out.energy_per_atom)
+      ? Number(out.energy_per_atom)
+      : Number(out.total_energy) / sample.built.atoms.length;
+  }
+  samples.sort((a, b) => a.energyPerAtom - b.energyPerAtom);
+  return { potential, label: potentialLabel(potential) };
+}
+
+/** The samples as trajectory frames, in their order, each with its total
+ *  energy when computed (Keep All, and the host's order_structure job). */
+export function orderSampleFrames(samples) {
+  return samples.map((s) => {
+    const elements = s.built.elements;
+    const frame = new Structure({
+      elements,
+      uniqueElements: [...new Set(elements)],
+      lattice: s.built.lattice.map((row) => [...row]),
+      atoms: s.built.atoms.map((atom, i) => new Atom({
+        position: [...atom.position],
+        element: elements[i],
+        uuid: atom.uuid,
+      })),
+      periodic: { hash: 'None', wrapped: null },
+    });
+    // Per-frame total energy (like an MD/relax trajectory) if this sample
+    // was compared — the Trajectory panel picks it up automatically via
+    // its own "Compute step stats" action.
+    if (Number.isFinite(s.energyPerAtom)) {
+      frame.energy = s.energyPerAtom * s.built.atoms.length;
+      frame.dataSource = potentialSource();
+    }
+    return frame;
+  });
+}
+
 /**
  * "Order Structure" section content — builds an ordered (one definite species
  * per site) approximation of a disordered structure, needed before MD/
@@ -357,7 +359,7 @@ function addOrderStructureSection(container) {
     const structure = fileBrowser.selectedStructure;
     if (!structure) return;
     if (!structureHasFractionalOccupancy(structure)) {
-      alert('This structure has no fractionally occupied sites — there is nothing to order.');
+      setOrderStatus(NOTHING_TO_ORDER);
       return;
     }
     // The structure's disorder can have changed since this section last
@@ -372,12 +374,7 @@ function addOrderStructureSection(container) {
     resetOrderSession(); // clear out any leftover row/state from a previous build
     setOrderStatus(`Building ${sampleCount} sample${sampleCount === 1 ? '' : 's'}…`);
     try {
-      const built = [];
-      for (let i = 0; i < sampleCount; i += 1) {
-        const seed = i + 1;
-        const b = buildOrderedStructure(structure, { method: 'random', seed, multiplier });
-        built.push({ seed, built: b, energyPerAtom: null });
-      }
+      const built = buildOrderSamples(structure, sampleCount, multiplier);
       // Keep the disordered source so refreshOrderSizeOptions reports ITS cell
       // sizes, not the ordered preview's, once a preview becomes the selection.
       orderSession = { builtSamples: built, energiesComputed: false, previewStructure: null, previewRow: null, shownSeed: null, sourceStructure: structure };
@@ -394,7 +391,7 @@ function addOrderStructureSection(container) {
     const structure = fileBrowser.selectedStructure;
     if (!structure) return;
     if (!structureHasFractionalOccupancy(structure)) {
-      alert('This structure has no fractionally occupied sites — there is nothing to order.');
+      setOrderStatus(NOTHING_TO_ORDER);
       return;
     }
     const result = buildOrderedStructure(structure, { method: 'majority', seed: 1 });
@@ -422,23 +419,8 @@ function addOrderStructureSection(container) {
     if (orderBusy || !orderSession?.builtSamples?.length) return;
     setOrderBusy(true);
     try {
-      const { ensureCalculatorRunner } = await import('./BackendPanel/AtomisticPanels.js');
-      const { buildNEPStructure } = await import('../atomistic/relaxer.js');
-      const { runner, potential } = await ensureCalculatorRunner((msg) => { setOrderStatus(msg); });
-      const usedLabel = potentialLabel(potential);
       const samples = orderSession.builtSamples;
-      for (let i = 0; i < samples.length; i += 1) {
-        const sample = samples[i];
-        setOrderStatus(`Computing energy ${i + 1} / ${samples.length} (seed ${sample.seed})…`);
-        const nepStruct = buildNEPStructure(runner, sample.built);
-        // Sequential, not Promise.all: the wasm/gguf runner is a single
-        // instance, not safely reentrant across concurrent compute() calls.
-        const out = await runner.compute(nepStruct);
-        sample.energyPerAtom = Number.isFinite(out.energy_per_atom)
-          ? Number(out.energy_per_atom)
-          : Number(out.total_energy) / sample.built.atoms.length;
-      }
-      samples.sort((a, b) => a.energyPerAtom - b.energyPerAtom);
+      const { label: usedLabel } = await scoreOrderSamples(samples, { onProgress: setOrderStatus });
       orderSession.energiesComputed = true;
       renderOrderList();
       showOrderCandidate(samples[0]); // land on the best one now that ranking is known
@@ -465,28 +447,7 @@ function addOrderStructureSection(container) {
     setOrderBusy(true);
     try {
       const samples = orderSession.builtSamples;
-      const frames = samples.map((s) => {
-        const elements = s.built.elements;
-        const frame = new Structure({
-          elements,
-          uniqueElements: [...new Set(elements)],
-          lattice: s.built.lattice.map((row) => [...row]),
-          atoms: s.built.atoms.map((atom, i) => new Atom({
-            position: [...atom.position],
-            element: elements[i],
-            uuid: atom.uuid,
-          })),
-          periodic: { hash: 'None', wrapped: null },
-        });
-        // Per-frame total energy (like an MD/relax trajectory) if this sample
-        // was compared — the Trajectory panel picks it up automatically via
-        // its own "Compute step stats" action.
-        if (Number.isFinite(s.energyPerAtom)) {
-          frame.energy = s.energyPerAtom * s.built.atoms.length;
-          frame.dataSource = potentialSource();
-        }
-        return frame;
-      });
+      const frames = orderSampleFrames(samples);
       const hadEnergy = Number.isFinite(samples[0].energyPerAtom);
       const count = frames.length;
       // The in-progress preview row (if any) duplicates one of these frames,
@@ -508,7 +469,7 @@ function addOrderStructureSection(container) {
 }
 
 /** "Add Vacuum" section content — grows the cell along X/Y/Z (Å), independent
- *  of the Supercell/Transformation sections above/below it. Lives here (Cell &
+ *  of the Supercell/Transformation sections above it. Lives here (Cell &
  *  Supercell) rather than the add-atoms popup: it modifies the cell, not the
  *  atom list, so it fits this panel's job much better. */
 function addVacuumSection(container) {
@@ -553,9 +514,7 @@ function addVacuumSection(container) {
     } else {
       statusText.textContent = 'No vacuum applied yet.';
     }
-    resetBtn.disabled = !applied;
-    resetBtn.style.opacity = applied ? '1' : '0.4';
-    resetBtn.style.cursor = applied ? 'pointer' : 'default';
+    resetBtn.disabled = !applied; // greyed by .lsc-reset-vacuum-btn:disabled
   }
   refreshVacuumStatus();
 
@@ -563,13 +522,92 @@ function addVacuumSection(container) {
     const vacX = parseFloat(container.querySelector('#vacX').value) || 0;
     const vacY = parseFloat(container.querySelector('#vacY').value) || 0;
     const vacZ = parseFloat(container.querySelector('#vacZ').value) || 0;
-    applyVacuumToStructure(vacX, vacY, vacZ);
+    // Vacuum goes on one side, so the cell's centre moves: recentre on it,
+    // keeping the camera's direction and distance.
+    if (applyVacuumToStructure(vacX, vacY, vacZ)) recenterCamera();
     refreshVacuumStatus();
   });
 
   resetBtn.addEventListener('click', () => {
-    resetVacuumForStructure(fileBrowser.selectedStructure);
+    if (resetVacuumForStructure(fileBrowser.selectedStructure)) recenterCamera();
     refreshVacuumStatus();
+  });
+}
+
+// The Cut Slab fields, kept across rebuilds: a cut selects its new row, which
+// rebuilds this window, and the next cut usually changes one field only.
+const slabFields = {
+  slabH: '1', slabK: '1', slabL: '1',
+  slabLayers: String(SLAB_DEFAULTS.layers), slabVacuum: String(SLAB_DEFAULTS.vacuum),
+};
+// The section's current container: the cut's own rebuild replaces the one the
+// click started in before the result is reported (same reason as orderContainer).
+let slabContainer = null;
+
+// A typed field as a number; an empty or unparsable one is NaN, not 0, so
+// cutSlab refuses it rather than cutting along a zero index.
+function slabNumber(id) {
+  const raw = slabContainer?.querySelector(`#${id}`)?.value?.trim() ?? '';
+  return raw === '' ? NaN : Number(raw);
+}
+
+/** "Cut Slab (h k l)" section: the crystal cut along (h k l) into a new row,
+ *  through cutSlab, the host's build_slab path. Beside Vacuum because "make a
+ *  slab" is what users reach Add Vacuum for. */
+function addSlabSection(container) {
+  slabContainer = container;
+  // h/k/l share the vacuum section's three-field row; layers and vacuum the
+  // Order Structure section's label + compact field row.
+  container.innerHTML = `
+    <p class="lsc-hint-text">
+      Cuts the crystal along the (h k l) plane into a new file: the layers are repeats of the stacking period, and the vacuum is one gap along the surface normal. The original is left untouched.
+    </p>
+    <div class="lsc-vacuum-axes-row">
+      ${['h', 'k', 'l'].map((index) => `
+        <div class="lsc-vacuum-axis">
+          <label for="slab${index.toUpperCase()}">${index}</label>
+          <input type="number" id="slab${index.toUpperCase()}" aria-label="Miller index ${index}" step="1"
+            class="coord-input lsc-compact-input lsc-vacuum-input">
+        </div>`).join('')}
+    </div>
+    <div class="lsc-sample-row">
+      <label for="slabLayers" class="lsc-field-label">Layers</label>
+      <input type="number" id="slabLayers" min="1" max="50" step="1"
+        title="Repeats of the stacking period along the surface normal."
+        class="lsc-compact-input lsc-sample-count-input">
+      <label for="slabVacuum" class="lsc-field-label">Vacuum (Å)</label>
+      <input type="number" id="slabVacuum" min="0" max="200" step="0.5"
+        title="The gap between the slab and its periodic image along the normal."
+        class="lsc-compact-input lsc-sample-count-input">
+    </div>
+    <div class="lsc-btn-center-row">
+      <button id="cutSlabBtn" class="btn-mini highlight lsc-apply-vacuum-btn">Cut Slab</button>
+    </div>
+    <div id="slabStatus" class="lsc-status-text" role="status"></div>
+  `;
+
+  for (const [id, value] of Object.entries(slabFields)) {
+    const input = /** @type {HTMLInputElement} */ (container.querySelector(`#${id}`));
+    input.value = value;
+    input.addEventListener('input', () => { slabFields[id] = input.value; });
+  }
+
+  container.querySelector('#cutSlabBtn').addEventListener('click', () => {
+    const status = container.querySelector('#slabStatus');
+    const hkl = [slabNumber('slabH'), slabNumber('slabK'), slabNumber('slabL')];
+    let result;
+    try {
+      result = cutSlab(fileBrowser.selectedStructure, { hkl, layers: slabNumber('slabLayers'), vacuum: slabNumber('slabVacuum') });
+    } catch (error) {
+      status.textContent = error.message || String(error);
+      return;
+    }
+    // The new row's rebuild gave the section a fresh container: report there.
+    const live = slabContainer?.querySelector('#slabStatus');
+    if (live) {
+      live.textContent = `Cut (${hkl.join(' ')}): ${result.slab.positions.length} atoms, `
+        + `${result.slab.thickness.toFixed(2)} Å thick, as the new row ${result.container?.fileName ?? ''}.`;
+    }
   });
 }
 
@@ -820,7 +858,8 @@ export async function applySupercell(nx, ny, nz) {
       reRenderBonds: true,
       reRenderLattice: true,
     });
-    resetView();
+    // The cell changed size: keep the user's viewing direction, refit the zoom.
+    recenterView({ fit: true });
   } finally {
     if (large) finishLoadProgress();
   }
@@ -917,6 +956,18 @@ export function addLatticeAndSupercellPanel(target = "cvPanelBody-cell") {
   vacuumPanel.appendChild(makeSectionHeadline("Vacuum"));
   vacuumPanel.appendChild(vacuumContent);
   addVacuumSection(vacuumContent);
+
+  // --- Cut Slab section ---
+  const slabPanel = document.createElement("div");
+  slabPanel.id = "slabPanel";
+  slabPanel.className = "panel-section";
+
+  const slabContent = document.createElement("div");
+  slabContent.id = "slabContent";
+
+  slabPanel.appendChild(makeSectionHeadline("Cut Slab (h k l)"));
+  slabPanel.appendChild(slabContent);
+  addSlabSection(slabContent);
 
   // --- Order Structure section ---
   const orderPanel = document.createElement("div");
@@ -1051,23 +1102,27 @@ transformResetBtn.onclick = () => {
       reRenderLattice: true,
       reRenderOther: false,
     });
-    resetView();
+    recenterView({ fit: true }); // keep the viewing direction, refit the zoom
     console.log("Transformation reset to original.");
   }
 };
 
   // --- Build Structure ---
+  // The transformation follows the active cell boundary: both reshape the
+  // cell itself, before the sections that build on it.
   group.appendChild(supercellPanel);
   group.appendChild(boundaryPanel);
-  group.appendChild(vacuumPanel);
-  group.appendChild(orderPanel);
   group.appendChild(transformPanel);
+  group.appendChild(vacuumPanel);
+  group.appendChild(slabPanel);
+  group.appendChild(orderPanel);
   targetPanel.appendChild(group);
 
 }
 
 export function removeLatticeAndSupercellPanel() {
   liveSupercellInputs = null;
+  slabContainer = null;
   const panel = document.getElementById('latticeAndSupercellGroup');
   if (panel) {
     panel.remove();

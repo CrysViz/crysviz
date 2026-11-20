@@ -24,7 +24,6 @@ function ensureBar() {
   barEl.setAttribute('aria-label', 'Loading file');
   barEl.setAttribute('aria-valuemin', '0');
   barEl.setAttribute('aria-valuemax', '100');
-  barEl.style.opacity = '0';
   fillEl = document.createElement('div');
   fillEl.className = 'tracer-progress-fill';
   barEl.appendChild(fillEl);
@@ -51,17 +50,17 @@ export function showLoadProgress(fraction) {
   positionBar();
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   const f = Math.min(1, Math.max(0, Number(fraction) || 0));
-  if (bar.style.opacity === '0') {
+  if (!bar.classList.contains('is-shown')) {
     // A new load: jump to the start instead of sliding back from the full
     // width the previous load left behind.
-    fillEl.style.transition = 'none';
+    fillEl.classList.add('is-jump');
     fillEl.style.width = `${(f * 100).toFixed(1)}%`;
     void fillEl.offsetWidth;
-    fillEl.style.transition = '';
+    fillEl.classList.remove('is-jump');
   }
   fillEl.style.width = `${(f * 100).toFixed(1)}%`;
   bar.setAttribute('aria-valuenow', String(Math.round(f * 100)));
-  bar.style.opacity = '1';
+  bar.classList.add('is-shown');
 }
 
 /** Let the full strip be seen briefly, then fade it out. */
@@ -69,6 +68,6 @@ export function hideLoadProgress() {
   if (!barEl || hideTimer) return;
   hideTimer = setTimeout(() => {
     hideTimer = null;
-    if (barEl) barEl.style.opacity = '0';
+    if (barEl) barEl.classList.remove('is-shown');
   }, 250);
 }

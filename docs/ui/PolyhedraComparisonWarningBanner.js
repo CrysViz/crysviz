@@ -29,5 +29,5 @@ export function updatePolyhedraComparisonWarning() {
   const el = ensureBanner();
   if (!el) return;
   const polyhedraOn = !!(general.showPolyhedra || general.completePolyhedra);
-  el.style.display = (polyhedraOn && fileBrowser.overlayEntries.length > 0) ? 'block' : 'none';
+  el.classList.toggle('is-shown', polyhedraOn && fileBrowser.overlayEntries.length > 0);
 }

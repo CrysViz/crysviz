@@ -556,7 +556,7 @@ export function gizmoOutputRect(width, height, crop, viewRect) {
   const gizmoDiv = document.getElementById('axesGizmo');
   if (!app.gizmoRenderer || !app.gizmoScene || !app.gizmoCamera || !gizmoDiv) return null;
   if (!general.showAxes) return null;
-  if (gizmoDiv.style.display === 'none') return null;
+  if (gizmoDiv.hidden) return null;
   return cropToOutputRect(viewFraction(gizmoDiv.getBoundingClientRect(), viewRect),
     crop, width, height);
 }
@@ -566,7 +566,7 @@ export function gizmoOutputRect(width, height, crop, viewRect) {
 export function axesLegendOutputRect(width, height, crop, viewRect) {
   if (general.gizmoLabelsOnArrows) return null;
   const legendDiv = document.getElementById('axesLegend');
-  if (!legendDiv || legendDiv.style.display === 'none') return null;
+  if (!legendDiv || legendDiv.hidden) return null;
   return cropToOutputRect(viewFraction(legendDiv.getBoundingClientRect(), viewRect),
     crop, width, height);
 }

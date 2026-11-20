@@ -31,16 +31,14 @@ export function createTabSwitcher(container, tabs) {
     button.textContent = tab.label;
     button.dataset.tab = tab.id;
     if (tab.disabled) {
-      button.disabled = true;
-      button.style.opacity = '0.4';
-      button.style.cursor = 'not-allowed';
+      button.disabled = true; // greyed by backendPanel.css
     }
     switchRow.appendChild(button);
     buttons.set(tab.id, button);
 
     const body = document.createElement('div');
     body.className = 'tab-content';
-    body.style.display = 'none';
+    body.hidden = true;
     bodyWrap.appendChild(body);
     bodies.set(tab.id, body);
 
@@ -54,11 +52,11 @@ export function createTabSwitcher(container, tabs) {
     if (!tab || tab.disabled) return;
 
     buttons.forEach(b => b.classList.remove('active'));
-    bodies.forEach(b => b.style.display = 'none');
+    bodies.forEach(b => { b.hidden = true; });
 
     buttons.get(tabId).classList.add('active');
     const body = bodies.get(tabId);
-    body.style.display = 'block';
+    body.hidden = false;
 
     if (!rendered.has(tabId)) {
       rendered.add(tabId);

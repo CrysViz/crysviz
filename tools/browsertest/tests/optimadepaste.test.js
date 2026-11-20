@@ -88,6 +88,22 @@ const optimadePayload = {
   H.check('Alexandria ID is canonicalized in request', requested[1]?.endsWith('/agm000999956'), requested[1]);
   H.check('Alexandria ID loads through normal parser', fromId?.name === 'agm000999956.poscar' && fromId.atomCount === 2, JSON.stringify(fromId));
 
+  // The response itself, pasted (pretty-printed, as a browser shows it): a
+  // list-valued `data` as a search returns it, read by the OPTIMADE reader.
+  const listPayload = { ...optimadePayload, data: [optimadePayload.data] };
+  const fromJson = await paste(JSON.stringify(listPayload, null, 2), 4);
+  H.check('pasted OPTIMADE JSON loads without a request',
+    requested.length === 2 && fromJson?.atomCount === 2 && fromJson.elements.every(x => x === 'Si')
+      && fromJson.positions[1].every(x => Math.abs(x - 0.5) < 1e-10),
+    JSON.stringify(fromJson));
+  const sniffed = await page.evaluate(async (text) => {
+    const F = await import('./io/formats.js');
+    return [F.detectFormat({ fileName: 'download.json', head: F.headOf(text) }).id,
+      F.detectFormat({ fileName: 'session.json', head: F.headOf('{"format": "crysviz", "data": {"type": "structures"}}') }).id];
+  }, JSON.stringify(listPayload));
+  H.check('OPTIMADE JSON is sniffed by content, a session is not taken for it',
+    sniffed[0] === 'optimade' && sniffed[1] !== 'optimade', JSON.stringify(sniffed));
+
   await page.evaluate(() => {
     const nativeFetch = window.fetch.bind(window);
     window.fetch = (input, init) => String(input).includes('blocked.example')

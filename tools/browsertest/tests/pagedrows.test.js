@@ -80,7 +80,7 @@ function trajectory(n, frames) {
     const t = performance.now();
     sel.updateAtomSelectionFrom3DHit({ instanceId: inst, object: groups.atomsMesh }, { scrollToSelection: false, revealPanel: true });
     out.pickMs = Math.round(performance.now() - t);
-    out.pick = { rows: rowIndices().length, first: rowIndices()[0], range: range(), open: list().style.display !== 'none',
+    out.pick = { rows: rowIndices().length, first: rowIndices()[0], range: range(), open: list().hidden !== true,
       highlighted: highlightHover.currentlyHighlightedRow?.dataset.atomIndex, connected: highlightHover.currentlyHighlightedRow?.isConnected };
     list().querySelector('.row-pager-next').click();
     out.next = { first: rowIndices()[0], range: range() };
@@ -91,7 +91,7 @@ function trajectory(n, frames) {
     sel.updateAtomSelectionFrom3DHit({ instanceId: s.atomImages[200][0], object: groups.atomsMesh }, { scrollToSelection: false, revealPanel: true });
     sel.updateAtomSelectionFrom3DHit({ instanceId: inst, object: groups.atomsMesh }, { scrollToSelection: false, revealPanel: true });
     updateVisualization({ bondsUpdate: false, reRenderAtoms: false, reRenderBonds: false, reRenderLattice: false, reRenderOther: false, reRenderComposition: 'open' });
-    out.rebuilt = { rows: rowIndices().length, first: rowIndices()[0], open: list().style.display !== 'none' };
+    out.rebuilt = { rows: rowIndices().length, first: rowIndices()[0], open: list().hidden !== true };
 
     // 3. Bond pick.
     const half = groups.bondsMesh.count - 7;

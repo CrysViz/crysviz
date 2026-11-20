@@ -1,7 +1,7 @@
-# File Upload 
+# Opening files
 
 
-The most important information is that CrysViz is mainly a static html page using the resources from your computer. Nothing leaves your computer unless you connect a compute server yourself (ASE in the Atomistic window). This means that the structures you upload are stored in the temporary browser storage on **your computer**. Reloading the website will remove the data. Clearing browser history will make sure no data is left.
+The most important information is that CrysViz is mainly a static html page using the resources from your computer. Nothing leaves your computer unless you connect a compute server yourself (ASE in the Atomistic window). This means that the structures you open are stored in the temporary browser storage on **your computer**. Reloading the website will remove the data. Clearing browser history will make sure no data is left.
 
 Currently it is possible to view the following file types: 
 

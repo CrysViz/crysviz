@@ -318,6 +318,64 @@ margin: var(--sp-5) 0px 5px 0px;
   padding: 3px 5px;
 }
 
+/* Rows and blocks that only apply to some pipelines/modes are folded with
+   the hidden attribute (ui/ColorPanel.js); this beats .control-row's grid. */
+.control-row[hidden] {
+  display: none;
+}
+
+/* A checkbox, colour input or colour swatch as a row's control: its own
+   size at the start of the control column, not stretched across it. */
+.control-row > input.control-row-check {
+  justify-self: start;
+  width: auto;
+}
+
+.control-row > input.control-row-color {
+  justify-self: start;
+  width: 48px;
+  height: 24px;
+  padding: 0;
+}
+
+.control-row > .control-row-swatch {
+  width: 28px;
+  height: 20px;
+  border-radius: var(--radius-4);
+  padding: 0;
+  border: 1px solid var(--line-3);
+  cursor: pointer;
+  flex: none;
+}
+
+/* Visual window blocks under a control: the outline colour swatch and its
+   picker, and the atoms/bonds colour bars and solid-colour picker. */
+.control-sub-block {
+  margin-top: var(--sp-2);
+}
+
+.control-bar-block {
+  margin-top: var(--sp-3);
+}
+
+.control-reset-row {
+  margin: var(--sp-3) 0 var(--sp-1);
+}
+
+/* The atoms/bonds colour-bar "Log Scale" switches: the Force window's
+   .cv-force-check, in primary text (the Visual window's own text is
+   dimmer). */
+.cv-force-check.control-log-check {
+  color: var(--fg-1);
+}
+
+/* By id, to keep the compact size under responsive.css's touch-size
+   .btn-mini rule too, as the inline style it replaces did. */
+#resetRenderingBtn {
+  padding: 3px var(--sp-3-5);
+  font-size: 0.85em;
+}
+
 /* Two adopted rows sharing one line (Scene: show-toggle + width slider). */
 .control-row-pair {
   display: flex;
@@ -337,6 +395,32 @@ margin: var(--sp-5) 0px 5px 0px;
 .control-row-pair > label:last-child input[type="range"] {
   width: 100%;
   min-width: 0;
+}
+
+/* A first row that takes the free width (Visual: the background-picker
+   toggle beside its swatch). */
+.control-row-pair > label.control-row-grow {
+  flex: 1;
+}
+
+/* Settings window: label, a slider taking the free width, and its value
+   (GPU memory, trajectory memory, font scale), then the reset buttons. */
+.toggle_container.cv-pref-slider-row {
+  gap: var(--sp-3);
+}
+
+.cv-pref-slider-row > input[type="range"] {
+  flex: 1;
+}
+
+.cv-pref-slider-value {
+  min-width: 58px;
+  text-align: right;
+}
+
+.cv-pref-btn-row {
+  display: flex;
+  gap: var(--sp-3);
 }
 
 /* Visual ▸ cel outline settings: the "Outline arrows" switch sits between two
@@ -399,6 +483,7 @@ margin: var(--sp-5) 0px 5px 0px;
    every bar that simply has no legend right now. */
 .cv-colorbar-legend-empty {
   opacity: 0;
+  font-style: italic;
   transition: opacity 0.15s ease;
 }
 

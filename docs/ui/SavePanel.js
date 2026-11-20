@@ -1,5 +1,8 @@
 import { fileBrowser } from '../state/store.js';
+import { getContainerForStructure } from '../state/structures.js';
+import { writeExtXYZ } from '../io/WriteExtXYZ.js';
 import { captureState } from './ShareModule.js';
+import { sendToDownloadSink } from '../host/downloadSink.js';
 import { isVacancy } from '../render/VacancyMarkerModule.js';
 import { latticeParameters } from '../math/index.js';
 import { elementData } from './PeriodicTablePickerCore.js';
@@ -9,11 +12,11 @@ import { prepareSymmetricCif } from './CifSymmetryExport.js';
 import { showCifExportModal } from './CifExportModal.js';
 import { structureHasFractionalOccupancy } from './DisorderWarningBanner.js';
 
-/** The selected structure plus a keep-mask that drops vacancy markers, or a
- *  thrown error when nothing is loaded / only vacancies remain. Shared by the
- *  structure-file exporters (CASTEP .cell, FHI-aims geometry.in, both CIFs). */
-export function selectedForExport() {
-  const structure = fileBrowser.selectedStructure;
+/** The selected structure (or the one given) plus a keep-mask that drops
+ *  vacancy markers, or a thrown error when nothing is loaded / only vacancies
+ *  remain. Shared by the structure-file exporters (CASTEP .cell, FHI-aims
+ *  geometry.in, both CIFs). */
+export function selectedForExport(structure = fileBrowser.selectedStructure) {
   if (!structure || !structure.atoms?.length || !structure.elements?.length || !structure.lattice?.length) {
     throw new Error('No structure loaded.');
   }
@@ -113,8 +116,8 @@ export function cifSiteRows(species, position, counters, extra = {}) {
   });
 }
 
-export function cifBlockName() {
-  return (currentBaseName() || 'structure').replace(/\s+/g, '_') || 'structure';
+export function cifBlockName(baseName = currentBaseName()) {
+  return (baseName || 'structure').replace(/\s+/g, '_') || 'structure';
 }
 
 /**
@@ -124,21 +127,36 @@ export function cifBlockName() {
  * survives the export (unlike POSCAR/.cell).
  */
 export function cifToFile() {
-  const { structure, keep } = selectedForExport();
+  return cifExport().text;
+}
+
+/**
+ * cifToFile's text plus `order`: the CrysViz atom index of each `_atom_site`
+ * row (a mixed site has a row per species, all naming the same atom). For
+ * callers that map results on the file back to the app's atoms. `structure`
+ * and `name` default to the selected structure and its file name.
+ * @returns {{ text: string, order: number[] }}
+ */
+export function cifExport(structure = fileBrowser.selectedStructure, name = currentBaseName()) {
+  const { keep } = selectedForExport(structure);
   const counters = {};
   const sites = [];
+  const order = [];
   structure.atoms.forEach((atom, i) => {
     if (!keep[i]) return;
-    sites.push(...cifSiteRows(siteSpecies(structure, atom, i), atom.position, counters));
+    const rows = cifSiteRows(siteSpecies(structure, atom, i), atom.position, counters);
+    sites.push(...rows);
+    for (let r = 0; r < rows.length; r++) order.push(i);
   });
-  return buildCifText({
-    name: cifBlockName(),
+  const text = buildCifText({
+    name: cifBlockName(name),
     created: new Date().toISOString(),
     cell: latticeParameters(structure.lattice),
     spaceGroup: { hm: 'P 1', number: 1 },
     symopsXyz: ['x, y, z'],
     sites,
   });
+  return { text, order };
 }
 
 /**
@@ -152,7 +170,16 @@ export async function cifSymmetricToFile(tolerance) {
 }
 
 export function poscartoFile() {
-  const structure = fileBrowser.selectedStructure;
+  return poscarExport().text;
+}
+
+/**
+ * poscartoFile's text plus `order`: the CrysViz atom index of each position
+ * line. POSCAR groups atoms by element, so file atom k is atom order[k].
+ * `structure` defaults to the selected one.
+ * @returns {{ text: string, order: number[] }}
+ */
+export function poscarExport(structure = fileBrowser.selectedStructure) {
   if (!structure || !structure.atoms?.length || !structure.elements?.length || !structure.lattice?.length) {
     throw new Error('No structure loaded.');
   }
@@ -193,15 +220,17 @@ export function poscartoFile() {
 
   // positions grouped by element (Direct / fractional)
   const posLines = [];
+  const order = [];
   for (const el of uniqueElements) {
     structure.atoms.forEach((atom, i) => {
       if (keep[i] && structure.elements[i] === el) {
         posLines.push(atom.position.map(hpCol).join(''));
+        order.push(i);
       }
     });
   }
 
-  return [
+  const text = [
     comment,
     '   1.0',
     ...latticeLines,
@@ -210,6 +239,7 @@ export function poscartoFile() {
     'Direct',
     ...posLines,
   ].join('\n');
+  return { text, order };
 }
 
 
@@ -271,8 +301,7 @@ export function qeInputBlock() {
  *
  * @returns {boolean}
  */
-function poscarLosesOccupancy() {
-  const structure = fileBrowser.selectedStructure;
+export function poscarLosesOccupancy(structure = fileBrowser.selectedStructure) {
   if (!structure?.atoms?.length) return false;
   return structure.atoms.some((atom) =>
     atom.isDisordered?.() && (atom.getTotalOccupancy?.() ?? 1) > 0);
@@ -286,8 +315,13 @@ export function currentBaseName() {
   return String(rawName || 'structure').replace(/\.[^.]+$/, '');
 }
 
-/** Trigger a browser download of a Blob under the given file name. */
+/** Trigger a browser download of a Blob under the given file name. In a window
+ *  the Python host launched, the host may save it instead (host/downloadSink.js). */
 export function downloadBlob(fileName, blob) {
+  if (!sendToDownloadSink(fileName, blob, browserDownload)) browserDownload(fileName, blob);
+}
+
+function browserDownload(fileName, blob) {
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);
   link.href = url;
@@ -300,6 +334,37 @@ export function downloadBlob(fileName, blob) {
   // revocation can abort the download; ten minutes bounds memory use while
   // covering any realistic dialog time.
   setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+}
+
+/** Frame `i` of a row: the live structure when it is the frame on show,
+ *  otherwise the frame read detached (never selected). */
+export async function rowFrame(container, active, i) {
+  const shownFrame = container && active ? container.structures.indexOf(active) : -1;
+  if (i === shownFrame) return active;
+  return container ? await (container.frameAtDetached?.(i) ?? container.structures[i]) : active;
+}
+
+/**
+ * Frames `indices` of a row as extended XYZ (Lattice, species, Cartesian Å,
+ * energy and MD step; atom order kept): the Download menu's Extended XYZ and
+ * the host's export_structure extxyz.
+ * @returns {Promise<{text: string, frames: number, atomCount: number}>}
+ */
+export async function extxyzExport(container, active, indices) {
+  const steps = container?.plotSeries?.step;
+  const frames = [];
+  for (const i of indices) {
+    const frame = await rowFrame(container, active, i);
+    if (!frame) continue;
+    frames.push({
+      lattice: frame.periodic === false ? null : frame.lattice,
+      positions: frame.atoms.map((a) => a.position),
+      elements: frame.atoms.map((a, k) => a.getRepresentativeElement?.() ?? frame.elements[k]),
+      energy: frame.energy,
+      step: Number.isInteger(steps?.[i]) ? steps[i] : undefined,
+    });
+  }
+  return { text: writeExtXYZ(frames), frames: frames.length, atomCount: frames[0]?.positions.length ?? 0 };
 }
 
 export function downloadTextFile(fileName, content) {
@@ -357,6 +422,22 @@ export function addSavePanel() {
       }
     });
   }
+
+  // Extended XYZ: every frame of the row on show, for ASE, pymatgen or OVITO
+  // (one atom per line, so a disordered site is its majority species).
+  document.getElementById('saveExtxyzButton')?.addEventListener('click', async () => {
+    try {
+      // Not selectedForExport: a molecule without a cell is a valid extxyz frame.
+      const active = fileBrowser.selectedStructure;
+      if (!active?.atoms?.length) throw new Error('No structure loaded.');
+      const container = getContainerForStructure(active);
+      const count = container ? (container.frameCount ?? container.structures.length) : 1;
+      const { text } = await extxyzExport(container, active, [...Array(count).keys()]);
+      downloadTextFile(currentBaseName() + '.extxyz', text);
+    } catch (e) {
+      alert(e.message);
+    }
+  });
 
   // CIF with symmetry: a dialog, not a direct download — the symmetry found
   // depends on a tolerance the user has to see (and can change) before the

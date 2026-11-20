@@ -100,12 +100,15 @@ async function offerCifErrorsOnly(structure, fileName) {
  *
  * @param {any} structure the loaded (and currently selected) structure
  * @param {string} fileName for the dialog copy
+ * @param {{ interactive?: boolean }} [options] interactive:false (a host
+ *   command such as MCP's load, with nobody to answer) loads plain, no dialog
  */
-export async function offerCifSymmetryChoice(structure, fileName = '') {
+export async function offerCifSymmetryChoice(structure, fileName = '', { interactive = true } = {}) {
   const errorsOffered = !!structure?.cifErrors?.pending;
   // Widget mode is an embed with no app chrome: a blocking dialog there would
-  // hang the host page's load. It gets the plain structure, as before.
-  if (document.body.classList.contains('widget-mode')) {
+  // hang the host page's load. It gets the plain structure, as before; so does
+  // a non-interactive host load.
+  if (!interactive || document.body.classList.contains('widget-mode')) {
     if (errorsOffered) discardCifErrors(structure);
     return;
   }

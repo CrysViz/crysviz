@@ -6,6 +6,9 @@
 //     after the current step and keeps the trajectory so far. While it runs a
 //     sweeping bar shows the step and max force, and the window's title bar
 //     says "Relax step N".
+//  2b. One list of running calculations (host/jobs.js): the window's Stop
+//     stops a run the host started, and the host sees (get_state jobs) and
+//     cancels (cancel_job) a run started from the window; one at a time.
 //  3. MD shows its progress under its buttons (step of total, filling) and in
 //     the title bar ("MD 37%"), also while the window is collapsed.
 //  4. The potentials' accuracy warning collapses to a small orange ⚠ (its
@@ -186,6 +189,48 @@ const runState = (page, role) => page.evaluate((role) => {
   const relaxDone = await runState(page, 'relax-progress');
   H.check('...and its bar and title status go away', !relaxDone.shown && relaxDone.title === null, JSON.stringify(relaxDone));
 
+  // ---- 2b. one list of running calculations ---------------------------------------------
+  const hostRun = await page.evaluate(async () => {
+    const host = (command, args) => window.crysvizHost.dispatch({ command, args });
+    const job = (await host('run_relax', { fmax: 0.0000001, maxSteps: 100000, waitS: 0 })).result;
+    for (let i = 0; i < 300 && (await host('wait_job', { jobId: job.jobId, waitS: 0 })).result.progress?.step == null; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const buttons = {
+      relaxDisabled: document.getElementById('relaxBtn').disabled,
+      stopDisabled: document.getElementById('relaxStopBtn').disabled,
+    };
+    document.getElementById('relaxStopBtn').click();
+    const ended = (await host('wait_job', { jobId: job.jobId, waitS: 25 })).result;
+    return { buttons, status: ended.status, stopped: ended.result?.stopped,
+      stopAfter: document.getElementById('relaxStopBtn').disabled, relaxAfter: document.getElementById('relaxBtn').disabled };
+  });
+  H.check('a host run_relax locks Relax and turns Stop on; the window\'s Stop stops it',
+    hostRun.buttons.relaxDisabled && !hostRun.buttons.stopDisabled && hostRun.status === 'cancelled' && hostRun.stopped === true
+      && hostRun.stopAfter && !hostRun.relaxAfter, JSON.stringify(hostRun));
+  const windowRun = await page.evaluate(async () => {
+    const host = (command, args) => window.crysvizHost.dispatch({ command, args });
+    document.getElementById('relaxBtn').click();
+    const jobs = (await host('get_state', { include: ['jobs'] })).result.jobs;
+    const running = jobs.find((j) => j.status === 'running');
+    const busy = (await host('run_energy', {})).result;
+    for (let i = 0; i < 300 && (await host('wait_job', { jobId: running.jobId, waitS: 0 })).result.progress?.step == null; i++) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    const progress = (await host('wait_job', { jobId: running.jobId, waitS: 0 })).result.progress;
+    await host('cancel_job', { jobId: running.jobId });
+    const ended = (await host('wait_job', { jobId: running.jobId, waitS: 25 })).result;
+    await new Promise((r) => setTimeout(r, 100));
+    return { running, busy, progress, status: ended.status, result: ended.result,
+      text: document.querySelector('#BackendPotentialSelector [data-role="source-state"]')?.textContent || '' };
+  });
+  H.check('a relaxation started from the window is a job get_state lists, and the host refuses a second calculation',
+    windowRun.running?.kind === 'relax' && windowRun.busy?.applied === false && windowRun.busy.code === 'JOB_BUSY'
+      && Number.isFinite(windowRun.progress?.step), JSON.stringify(windowRun));
+  H.check('cancel_job stops a relaxation started from the window, which reports it as a run_relax does',
+    windowRun.status === 'cancelled' && windowRun.result?.stopped === true && /^relax_/.test(windowRun.result?.trajectory?.name || '')
+      && /Stopped after \d+ steps, before converging\./.test(windowRun.text), JSON.stringify(windowRun));
+
   // ---- 3. MD progress --------------------------------------------------------------------
   await page.evaluate(() => {
     document.querySelector('#BackendModeSwitch button[data-mode="md"]').click();
@@ -260,8 +305,11 @@ const runState = (page, role) => page.evaluate((role) => {
     document.body.appendChild(host);
     const { mountPotentialNotice } = await import('./atomistic/potentialNotice.js');
     const other = mountPotentialNotice(host, { pressures: () => [{ label: 'target pressure', gpa: 12 }] }).element;
-    const expand = n?.querySelector('[data-role="potential-notice-expand"]');
+    // The Atomistic window's ⚠ sits after "Choose potential", on the picker's row.
+    const expand = document.querySelector('#BackendPotentialSelector [data-role="potential-notice-expand"]');
     const out = {
+      triangleOnLabelRow: !!expand?.closest('.atomistic-source-row'),
+      oneTriangle: document.querySelectorAll('#BackendPotentialSelector [data-role="potential-notice-expand"]').length <= 1,
       caveat: !!n?.querySelector('[data-role="potential-notice-caveat"]'),
       collapseButton: !!n?.querySelector('[data-role="potential-notice-collapse"]'),
       triangle: expand ? { text: expand.textContent, expanded: expand.getAttribute('aria-expanded'),
@@ -284,6 +332,8 @@ const runState = (page, role) => page.evaluate((role) => {
     !n.caveat && !n.otherCaveat && n.triangle?.text === '⚠' && n.triangle.expanded === 'false'
       && /^rgb\(255, 207, 79/.test(n.triangle.color) && /check the results that matter/i.test(n.triangle.title)
       && n.otherTriangleInLine && pref === true, JSON.stringify({ n, pref }));
+  H.check('the Atomistic window\'s ⚠ sits after "Choose potential", not on a row of its own',
+    n.triangleOnLabelRow && n.oneTriangle, JSON.stringify(n));
   H.check('NEP\'s high-pressure warning still shows in full', /PET.MAD models are recommended/.test(n.otherAlert), n.otherAlert);
   const settingsChecked = await page.evaluate(async () => {
     const pm = await import('./ui/panels/PanelManager.js');

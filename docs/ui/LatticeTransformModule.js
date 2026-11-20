@@ -1,6 +1,6 @@
 // LatticeTransformModule.js
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { resetView } from './WindowAndSceneControls.js';
+import { recenterView } from './WindowAndSceneControls.js';
 import {fileBrowser} from '../state/store.js'
 
 export function applyLatticeTransformation(matrix) {
@@ -44,6 +44,7 @@ export function applyLatticeTransformation(matrix) {
     reRenderLattice: true,
     reRenderOther: false,
   });
-  resetView();
+  // The cell changed: keep the user's viewing direction, refit the zoom.
+  recenterView({ fit: true });
   console.log("Transformation applied.", {shift, newL});
 }

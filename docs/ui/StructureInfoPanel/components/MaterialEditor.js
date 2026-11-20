@@ -210,8 +210,8 @@ export function createMaterialEditor(getMaterial, setMaterial, { types, getDefau
   block.appendChild(reflectRow);
 
   const syncPropVisibility = () => {
-    glossRow.style.display = state.type === 'standard' ? 'flex' : 'none';
-    coatTintRow.style.display = (state.type === 'standard' || state.type === 'metal') ? 'flex' : 'none';
+    glossRow.hidden = state.type !== 'standard';
+    coatTintRow.hidden = !(state.type === 'standard' || state.type === 'metal');
     // an untouched Tint slider tracks the type's default (0.6 std / 1 metal)
     if (state.tint == null) {
       const slider = coatTintRow.querySelector('input');
@@ -219,13 +219,13 @@ export function createMaterialEditor(getMaterial, setMaterial, { types, getDefau
       if (slider) slider.value = String(defaultTint());
       if (span) span.textContent = defaultTint().toFixed(2);
     }
-    roughRow.style.display = state.type === 'metal' ? 'flex' : 'none';
-    frostRow.style.display = state.type === 'glass' ? 'flex' : 'none';
-    iorRow.style.display = state.type === 'glass' ? 'flex' : 'none';
-    tintRow.style.display = state.type === 'glass' ? 'flex' : 'none';
-    intensityRow.style.display = state.type === 'emissive' ? 'flex' : 'none';
-    scatterRow.style.display = state.type === 'translucent' ? 'flex' : 'none';
-    reflectRow.style.display = (state.type === 'standard' || state.type === 'metal') ? 'flex' : 'none';
+    roughRow.hidden = state.type !== 'metal';
+    frostRow.hidden = state.type !== 'glass';
+    iorRow.hidden = state.type !== 'glass';
+    tintRow.hidden = state.type !== 'glass';
+    intensityRow.hidden = state.type !== 'emissive';
+    scatterRow.hidden = state.type !== 'translucent';
+    reflectRow.hidden = !(state.type === 'standard' || state.type === 'metal');
     // an untouched Reflect slider tracks the type's default (global / mirror)
     if (state.reflectivity == null) {
       const slider = reflectRow.querySelector('input');

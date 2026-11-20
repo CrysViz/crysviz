@@ -272,6 +272,25 @@ body.panel-hidden #viewArea.split-dock-bottom .split-handle {
   background: var(--wash-2);
 }
 
+/* The Export, Expand and light/dark icons are SVG masks in the text colour,
+   not emoji: a web view without an emoji font (the Python app's Qt window)
+   shows those as empty boxes. */
+.split-item-action-btn[data-split-action="export"]::before,
+.split-item-action-btn[data-split-action="expand"]::before,
+.split-item-action-btn[data-split-action="theme"]::before {
+  content: "";
+  display: inline-block;
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: -0.25em;
+  background-color: currentColor;
+  -webkit-mask: var(--split-action-icon) center / contain no-repeat;
+  mask: var(--split-action-icon) center / contain no-repeat;
+}
+.split-item-action-btn[data-split-action="export"]::before { --split-action-icon: url("../data/icons/download-icon.svg"); }
+.split-item-action-btn[data-split-action="expand"]::before { --split-action-icon: url("../data/icons/expand-icon.svg"); }
+.split-item-action-btn[data-split-action="theme"]::before { --split-action-icon: url("../data/icons/theme-half-icon.svg"); }
+
 /* A column of .split-item cards inside a window body (the EOS window's two
    plots, the analysis histogram windows). Fills the side dock's height;
    elsewhere the items' min-height makes the window body scroll instead. */

@@ -27,7 +27,7 @@ import { setupControlsWiring, sizeSliderToValue, ATOM_SIZE_RANGE, BOND_RADIUS_RA
 import { setupSceneInteraction } from '../ui/SceneInteraction.js';
 import { setupMeasurementToolbar } from '../ui/MeasurementToolbar.js';
 import { pauseRendering, resumeRendering,animation_update,requestRender,runPeriodicWrapped,
-  applyRotationFromUI, captureSceneToPng } from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
+  applyRotationFromUI, captureSceneToPng, captureSceneToSvg, getActivePipeline } from '../render/index.js'; // animate function is not really an animation, but the function that runs the frames.
 import { setActivePipelineFromController, reapplyAtomForceColors } from '../ui/ColorPanel.js';
 import {createShareButton,loadSharedStructure,loadCrysvizFile} from '../ui/ShareModule.js';
 import {loadFromFilePath} from '../io/index.js';
@@ -73,7 +73,7 @@ let fullAppHooks = {};
 // Panel files should contain all the functions related to a specific panels
 //
 // // .........................................................................................................
-import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType, recenterCamera
+import {setupScene, setupCameraButtons,resizeRenderer, switchCameraType, recenterCamera, setViewDirection
 } from '../ui/WindowAndSceneControls.js'
 import {initGizmoDrag} from '../ui/GizmoDrag.js'
 import {renderComposition} from '../ui/StructureInfoPanel/General.js';
@@ -368,30 +368,6 @@ function commitHostPositions() {
   return true;
 }
 
-async function updateHostLattice(lattice) {
-  const structure = getActiveStructure();
-  if (!structure) return false;
-  structure.lattice = lattice.map((row) => [...row]);
-  structure.periodic = { hash: null, wrapped: null };
-  const frac = structure.atoms.map((atom) => atom.position);
-  runPeriodicWrapped(structure.periodic, frac, [...structure.elements], structure.lattice);
-  updateVisualization({
-    atomsUpdate: true,
-    bondsUpdate: true,
-    reRenderAtoms: true,
-    reRenderBonds: true,
-    reRenderLattice: true,
-    reRenderOther: true,
-    reRenderComposition: false,
-    reRenderPolyhedra: false,
-  });
-  if (general.showPolyhedra || general.completePolyhedra) {
-    await updatePolyhedra();
-    requestRender();
-  }
-  return true;
-}
-
 export async function loadStructure(content, fileName = '', isDefault = false, format = '', options = {}) {
   try {
 
@@ -454,7 +430,8 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         // in the full app (via fullApp's hook) — widget mode loads .crysviz, not
         // phonopy, so the phonon module is never pulled into the embed.
         if (!fullAppHooks.loadPhonopyFile) throw new Error('Phonopy loading is unavailable in this mode');
-        structureContainer = await fullAppHooks.loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id);
+        structureContainer = await fullAppHooks.loadPhonopyFile(/** @type {string} */ (payload), fileName, descriptor.id,
+          { interactive: options?.interactive !== false });
         break;
 
       case 'incar': {
@@ -503,7 +480,8 @@ export async function loadStructure(content, fileName = '', isDefault = false, f
         // no space group here but may still give errors (standard
         // uncertainties), which the same hook offers to read.
         if ((descriptor.id === 'cif' || descriptor.id === 'mcif') && !isDefault) {
-          await fullAppHooks.offerCifSymmetryChoice?.(fileBrowser.selectedStructure, fileName);
+          await fullAppHooks.offerCifSymmetryChoice?.(fileBrowser.selectedStructure, fileName,
+            { interactive: options?.interactive !== false });
         }
         break;
     }
@@ -616,11 +594,22 @@ export async function initializeCore(browserHostController, { structureFirst = f
     selectStructure,
     applyFrameFast,
     commitPositions: commitHostPositions,
-    updateLattice: updateHostLattice,
     recenterCamera,
     rotateCamera: (angle, axis) => { applyRotationFromUI(angle, axis); requestRender(); },
+    // direction null keeps the current aim (and pan): set_view with only up or zoom.
+    setViewDirection: (direction, /** @type {{up?: number[], zoom?: number}} */ { up, zoom } = {}) => {
+      if (direction) setViewDirection(direction);
+      // TrackballControls.update() re-aims the camera with camera.up, so an
+      // explicit (already perpendicular) up only needs setting before it.
+      if (up) { app.camera.up.set(...up); app.controls.update(); }
+      if (zoom) { app.camera.zoom = zoom; app.camera.updateProjectionMatrix(); }
+      requestRender();
+    },
     setRenderPipeline: setActivePipelineFromController,
+    getRenderPipeline: () => getActivePipeline()?.id ?? null,
+    requestRender,
     captureSceneToPng,
+    captureSceneToSvg,
   });
   await initApp();
   setupMobileMenu();

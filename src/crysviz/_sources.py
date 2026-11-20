@@ -24,7 +24,6 @@ class PreparedSource:
 
     name: str
     format: str | None
-    binary: bool
     stream: BinaryIO | None = None
     path: Path | None = None
     spool: BinaryIO | None = None
@@ -42,12 +41,12 @@ class PreparedSource:
             stream.close()
 
 
-def _suffix_format(name: str) -> tuple[str | None, bool]:
+def _suffix_format(name: str) -> str | None:
     suffix = Path(name).suffix.lower()
     if not suffix:
-        return None, False
+        return None
     format_name = suffix[1:]
-    return (format_name if format_name in _USEFUL_FORMATS else None), format_name == "traj"
+    return format_name if format_name in _USEFUL_FORMATS else None
 
 
 def _path_source(source: str | os.PathLike[str]) -> PreparedSource:
@@ -82,14 +81,12 @@ def _path_source(source: str | os.PathLike[str]) -> PreparedSource:
         if descriptor >= 0:
             os.close(descriptor)
         raise
-    format_name, binary = _suffix_format(name)
-    return PreparedSource(name=name, format=format_name, binary=binary, stream=stream, path=resolved)
+    return PreparedSource(name=name, format=_suffix_format(name), stream=stream, path=resolved)
 
 
 def _payload_source(payload: Payload) -> PreparedSource:
-    # Bytes are only a transport representation.  The browser needs an
-    # ArrayBuffer for trajectory parsing; text structure formats still use
-    # fetch().text(), even when their in-memory input arrived as bytes.
+    # Bytes are only a transport representation: the browser fetches every
+    # input as a Blob and reads it as its detected format needs.
     spool = tempfile.SpooledTemporaryFile(max_size=SPOOL_THRESHOLD, mode="w+b")
     try:
         data = payload.data.encode("utf-8") if isinstance(payload.data, str) else payload.data
@@ -98,14 +95,9 @@ def _payload_source(payload: Payload) -> PreparedSource:
     except BaseException:
         spool.close()
         raise
-    format_name = payload.format
-    if format_name is None:
-        format_name, _ = _suffix_format(payload.name)
-    binary = format_name is not None and format_name.lower() == "traj"
     return PreparedSource(
         name=payload.name,
-        format=format_name,
-        binary=binary,
+        format=payload.format if payload.format is not None else _suffix_format(payload.name),
         stream=spool,
         spool=spool,
     )

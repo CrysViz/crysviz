@@ -217,7 +217,7 @@ const markerState = (page) => page.evaluate(async () =>
   const armed = await page.evaluate(async () => {
     const { isFocusPickActive } = await import('./render/FocusPlaneModule.js');
     const { app } = await import('./state/store.js');
-    return { active: isFocusPickActive(), cursor: app.renderer.domElement.style.cursor, label: document.getElementById('rtDofFocusPick')?.textContent };
+    return { active: isFocusPickActive(), cursor: getComputedStyle(app.renderer.domElement).cursor, label: document.getElementById('rtDofFocusPick')?.textContent };
   });
   H.check('Pick arms the mode (crosshair, button says what to do)', armed.active && armed.cursor === 'crosshair' && /Click an atom/.test(armed.label ?? ''), JSON.stringify(armed));
   await page.mouse.click(pickTarget.x, pickTarget.y);
@@ -225,11 +225,11 @@ const markerState = (page) => page.evaluate(async () =>
   const pickedFocus = await page.evaluate(async () => {
     const { isFocusPickActive, focusPlaneMarkerState } = await import('./render/FocusPlaneModule.js');
     const { general, app } = await import('./state/store.js');
-    return { active: isFocusPickActive(), focus: general.rtDofFocus, slider: document.getElementById('rtDofFocus')?.value, cursor: app.renderer.domElement.style.cursor, peaking: focusPlaneMarkerState().visible };
+    return { active: isFocusPickActive(), focus: general.rtDofFocus, slider: document.getElementById('rtDofFocus')?.value, cursor: getComputedStyle(app.renderer.domElement).cursor, peaking: focusPlaneMarkerState().visible };
   });
   H.check('the click puts the focal plane through the atom (slider follows), ends the mode and shows the peaking',
     !pickedFocus.active && Math.abs(pickedFocus.focus - pickTarget.expected) < 0.011 && Math.abs(parseFloat(pickedFocus.slider) - pickTarget.expected) < 0.011
-      && pickedFocus.cursor === '' && pickedFocus.peaking,
+      && pickedFocus.cursor !== 'crosshair' && pickedFocus.peaking,
     JSON.stringify({ pickedFocus, expected: pickTarget.expected }));
   await page.evaluate(async () => { (await import('./state/store.js')).general.rtDofFocus = 1; });
 

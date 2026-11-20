@@ -32,7 +32,6 @@ import { parseChargeInput } from '../../render/ChargeBadgeModule.js';
 // groupSiteRows() below reads `row.style.background` back to decide whether
 // a clustered secondary row should keep it, and a class-only implementation
 // would make that read-back see nothing. See groupSiteRows' own comment.
-const ROW_BG_ACTIVE = 'rgba(255, 191, 0, 0.18)';
 
 // Rows with an element string set, in DOM order - the same order/filter
 // getAtoms() uses, so a candidate index from getAtoms() always maps to
@@ -271,7 +270,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
   function paintRows() {
     tbody.querySelectorAll('tr').forEach((row) => {
       const isActive = !!activeUuid && row.dataset.uuid === activeUuid;
-      /** @type {HTMLElement} */ (row).style.background = isActive ? ROW_BG_ACTIVE : '';
+      row.classList.toggle('is-row-active', isActive); // addStructure.css
       const btn = /** @type {HTMLElement} */ (row.querySelector('.atom-row-highlight'));
       btn?.classList.toggle('is-active', isActive);
     });
@@ -338,10 +337,8 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
       const mixed = cluster.rows.length > 1;
       cluster.rows.forEach((row, i) => {
         const secondary = mixed && i > 0;
-        row.style.borderTop = mixed && i === 0 ? '2px solid rgba(255,193,7,0.35)' : '';
-        row.style.background = secondary
-          ? 'rgba(255,193,7,0.06)'
-          : (row.style.background || '');
+        row.classList.toggle('is-site-first', mixed && i === 0);
+        row.classList.toggle('is-site-merged', secondary);
         for (const cls of ['.atom-x', '.atom-y', '.atom-z']) {
           const input = /** @type {HTMLInputElement} */ (row.querySelector(cls));
           if (!input) continue;
@@ -369,8 +366,7 @@ O 1.5 1.5 1.5 0.4 #00FF00"></textarea>
     }
 
     for (const row of untouchedRows) {
-      row.style.borderTop = '';
-      row.style.background = '';
+      row.classList.remove('is-site-first', 'is-site-merged', 'is-row-active');
       for (const cls of ['.atom-x', '.atom-y', '.atom-z']) {
         const input = /** @type {HTMLInputElement} */ (row.querySelector(cls));
         if (!input) continue;

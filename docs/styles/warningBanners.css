@@ -8,10 +8,9 @@
    into and their text — factored into one shell plus per-banner position
    modifiers rather than five parallel rule sets.
 
-   Visibility (el.style.display, toggled by each banner's own reactive
-   update function) stays JS-owned: nothing reads it back today, but it's
-   the same block/none convention the rest of the app uses for this kind of
-   flag, so there's no reason to introduce a class toggle here instead. */
+   Visibility: hidden by default; each banner's own reactive update function
+   toggles .is-shown. (The Scanline and Disco banners, easter eggs, still set
+   display inline, which wins over both rules.) */
 
 .cv-warning-banner {
   position: absolute;
@@ -32,6 +31,10 @@
   white-space: nowrap;
   pointer-events: none;
   display: none;
+}
+
+.cv-warning-banner.is-shown {
+  display: block;
 }
 
 /* Vertical stacking slots. Each banner's own class name (its only DOM

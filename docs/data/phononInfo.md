@@ -7,7 +7,7 @@ potential-energy surface along the mode can be mapped with the built-in interato
 
 ## Files
 
-Drop the files on the 3D view or the Files window (or use Upload) — the format is recognised from the
+Drop the files on the 3D view or the Files window (or use Open) — the format is recognised from the
 content, not the name:
 
 - `band.yaml`, `mesh.yaml`, `qpoints.yaml` — frequencies and eigenvectors. Run phonopy with

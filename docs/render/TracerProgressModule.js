@@ -29,12 +29,7 @@ function ensureBar() {
   if (!document.body) return null;
   barEl = document.createElement('div');
   barEl.id = 'tracerProgress';
-  barEl.className = 'tracer-progress-bar';
-  // Explicit inline default alongside the CSS class's own `opacity: 0`:
-  // updateTracerProgress() reads bar.style.opacity back (line below) as the
-  // source of truth for "already visible" — the CSS class alone would leave
-  // it as '' instead of '0' before the first inline set.
-  barEl.style.opacity = '0';
+  barEl.className = 'tracer-progress-bar'; // .is-shown fades it in (analysisPanels.css)
   fillEl = document.createElement('div');
   fillEl.id = 'tracerProgressFill';
   fillEl.className = 'tracer-progress-fill';
@@ -50,11 +45,8 @@ function clearCompiling() {
   if (!compiling) return;
   compiling = false;
   if (fillEl) {
-    fillEl.style.animation = '';
-    fillEl.style.position = '';
-    fillEl.style.left = '';
+    fillEl.classList.remove('is-compiling');
     fillEl.style.width = '0%';
-    fillEl.style.transition = 'width 0.15s linear';
   }
 }
 
@@ -83,11 +75,9 @@ export function showTracerCompiling() {
   if (compiling) return; // already animating — don't restart it each frame
   compiling = true;
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-  bar.style.opacity = '1';
-  fillEl.style.transition = 'none';
-  fillEl.style.position = 'relative';
-  fillEl.style.width = '40%';
-  fillEl.style.animation = 'tracerCompileSlide 1.1s ease-in-out infinite';
+  bar.classList.add('is-shown');
+  fillEl.style.width = ''; // the marquee segment's width is the class's
+  fillEl.classList.add('is-compiling');
 }
 
 /** Per-frame progress update from the tracer pipelines. */
@@ -106,12 +96,12 @@ export function updateTracerProgress(samples, target) {
   fillEl.style.width = `${(Math.sqrt(fraction) * 100).toFixed(1)}%`;
   if (fraction < 1) {
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-    bar.style.opacity = '1';
-  } else if (bar.style.opacity !== '0' && !hideTimer) {
+    bar.classList.add('is-shown');
+  } else if (bar.classList.contains('is-shown') && !hideTimer) {
     // converged: let the full bar be seen briefly, then fade out
     hideTimer = setTimeout(() => {
       hideTimer = null;
-      if (barEl) barEl.style.opacity = '0';
+      if (barEl) barEl.classList.remove('is-shown');
     }, 350);
   }
 }
@@ -121,7 +111,7 @@ export function hideTracerProgress() {
   if (busy) return;
   clearCompiling(); // also cancel any in-flight compiling marquee
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-  if (barEl) barEl.style.opacity = '0';
+  if (barEl) barEl.classList.remove('is-shown');
 }
 
 /** Indeterminate "busy" mode for a long synchronous rebuild (a display toggle
@@ -138,11 +128,9 @@ export function showBusyProgress() {
   clearCompiling();
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
   positionBar();
-  bar.style.opacity = '1';
-  fillEl.style.transition = 'none';
-  fillEl.style.width = '40%';
-  fillEl.style.willChange = 'transform';
-  fillEl.style.animation = 'tracerBusySlide 1.1s ease-in-out infinite';
+  bar.classList.add('is-shown');
+  fillEl.style.width = ''; // the sweep segment's width is the class's
+  fillEl.classList.add('is-busy');
 }
 
 /** End of showBusyProgress() (the last of nested calls hides the strip). */
@@ -151,10 +139,8 @@ export function hideBusyProgress() {
   busy -= 1;
   if (busy) return;
   if (fillEl) {
-    fillEl.style.animation = '';
-    fillEl.style.willChange = '';
+    fillEl.classList.remove('is-busy');
     fillEl.style.width = '0%';
-    fillEl.style.transition = 'width 0.15s linear';
   }
-  if (barEl) barEl.style.opacity = '0';
+  if (barEl) barEl.classList.remove('is-shown');
 }

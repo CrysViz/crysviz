@@ -98,11 +98,12 @@ export function openDoublePeriodicTable(callback) {
         const isSelected = selectedElements.includes(symbol);
         const tileClass = `element-button pt-tile${isSelected ? ' is-selected' : ''}`;
 
+        // An element absent from the structure is a disabled tile, greyed
+        // by .pt-tile:disabled (analysisPanels.css).
+        const tileColors = isPresent ? `border-color: ${color}; color: ${color}; ` : '';
         rowHTML += `
           <button class="${tileClass}"
-            style="border-color: ${isPresent ? color : '#444'};
-                   color: ${isPresent ? color : '#444'};
-                   --tile-glow: ${color};"
+            style="${tileColors}--tile-glow: ${color};"
             data-symbol="${symbol}"
             ${!isPresent ? 'disabled' : ''}>
             ${symbol}
@@ -172,9 +173,10 @@ export function openDoublePeriodicTable(callback) {
         const btnSymbol = btn.getAttribute('data-symbol');
         const btnColor = getElementColor(btnSymbol);
         const isBtnSelected = selectedElements.includes(btnSymbol);
-        const isBtnPresent = presentElements.has(btnSymbol);
-        btn.style.borderColor = isBtnPresent ? btnColor : '#444';
-        btn.style.color = isBtnPresent ? btnColor : '#444';
+        if (presentElements.has(btnSymbol)) {
+          btn.style.borderColor = btnColor;
+          btn.style.color = btnColor;
+        }
         btn.classList.toggle('is-selected', isBtnSelected);
       });
     });

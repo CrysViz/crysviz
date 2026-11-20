@@ -62,7 +62,7 @@ const H = require('../harness');
       images: Object.fromEntries(atomSelection.selectedAtoms.map((a) => [a.sourceIndex, s.atomImages[a.sourceIndex]])),
       boxOpen: document.getElementById('composition').classList.contains('open'),
       openAtomLists: [...document.querySelectorAll('#atomPanel .individual-atoms')]
-        .filter((e) => /** @type {HTMLElement} */ (e).style.display === 'block').length,
+        .filter((e) => /** @type {HTMLElement} */ (e).hidden === false).length,
       barShown: !!bar && bar.offsetHeight > 0,
     };
   });
@@ -119,7 +119,7 @@ const H = require('../harness');
       === JSON.stringify(s.sel.map(([, i]) => i).sort((a, b) => a - b)),
     JSON.stringify({ sel: s.sel, glowing: s.glowing }));
   const rowsMarked = await page.evaluate(() => [...document.querySelectorAll('#atomPanel .individual-atom-row')]
-    .filter((r) => /** @type {HTMLElement} */ (r).style.borderLeft !== '')
+    .filter((r) => /** @type {HTMLElement} */ (r).classList.contains('is-highlighted'))
     .map((r) => Number(/** @type {HTMLElement} */ (r).dataset.imageIndex)));
   H.check('the rebuilt per-copy rows mark the selected copies',
     JSON.stringify(rowsMarked.sort((a, b) => a - b)) === JSON.stringify(s.sel.map(([, i]) => i).sort((a, b) => a - b)),
@@ -202,7 +202,7 @@ const H = require('../harness');
     const glowing = groups.polyhedraGroup.children
       .filter((m) => m.userData?.type === 'polyhedron' && m.material?.emissiveIntensity === 1 && m.material.emissive.getHex() === 0xff8c00);
     const row = [...document.querySelectorAll('#infoPolyControls .individual-polyhedron-row')]
-      .find((r) => /** @type {HTMLElement} */ (r).style.borderLeft !== '');
+      .find((r) => /** @type {HTMLElement} */ (r).classList.contains('is-highlighted'));
     return { linked: general.linkPeriodicCopies, key: cur?.key ?? null, groupKey: cur?.groupKey ?? null,
       glowing: glowing.length, rowGroup: /** @type {HTMLElement} */ (row)?.dataset.polyGroupKey ?? null };
   });

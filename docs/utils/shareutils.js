@@ -80,7 +80,7 @@ function getExpandedElements() {
   const expanded = [];
   const atomContainers = document.querySelectorAll('.individual-atoms');
   atomContainers.forEach((container, index) => {
-    if (container.style.display !== 'none') {
+    if (!container.hidden) {
       // Find the element from the parent container's data attribute (positional
       // span selectors broke when the header gained the visibility checkbox).
       const elementName = /** @type {HTMLElement} */ (container.parentElement)?.dataset?.element;

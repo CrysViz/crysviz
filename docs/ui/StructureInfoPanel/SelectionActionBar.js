@@ -201,31 +201,55 @@ function buildCoordinateViewer(selected) {
 // its non-perImage (source-atom) path, the unlinked branch its perImage
 // (one on-screen copy) path.
 
+/**
+ * Recolour source atoms (structure.atoms indices) and every on-screen copy of
+ * them, their bond halves and disordered-site wedges, and keep the colours for
+ * the next session. The selection bar's linked colour edit and the host's
+ * apply command share it.
+ * @param {number[]} indices
+ * @param {string} hex '#rrggbb'
+ */
+export function colorSourceAtoms(indices, hex) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  const speciesTargets = [];
+  indices.forEach((idx) => {
+    const atom = structure.atoms[idx];
+    if (!atom) return;
+    // A disordered site's wedges read species[i].color, never atom.userColor —
+    // recolour every species so a bulk edit actually paints the sphere, the
+    // same split the per-row species swatches make.
+    if (atom.isDisordered?.()) {
+      atom.species.forEach((_, speciesIndex) => speciesTargets.push({ atomIndex: idx, speciesIndex }));
+    }
+    atom.userColor = hex;
+    setAtomColor(atom, hex);
+    clearAtomImageStylesForAtom(structure, idx, 'color'); // newest edit wins over per-copy colors
+    structure.atomImages[idx]?.forEach((imgIndex) => {
+      syncBondHalvesToImageColor(structure, imgIndex, hex);
+      updateSingleAtomColor(idx, imgIndex, structure.elements[idx], hex, hex);
+    });
+  });
+  scheduleAtomColorSave(structure); // keep the overrides for the next session
+  if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, hex); // broadcasts crysviz:colors-changed
+  repaintAfterColorEdit();
+}
+
+/** Push recoloured instances to the GPU and tell the colour-dependent views. */
+function repaintAfterColorEdit() {
+  if (groups.atomsMesh?.instanceColor) groups.atomsMesh.instanceColor.needsUpdate = true;
+  if (groups.bondsMesh?.instanceColor) groups.bondsMesh.instanceColor.needsUpdate = true;
+  updatePolyhedraColors();
+  if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
+  document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
+}
+
 function applyBulkColor(selected, hex) {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return;
 
   if (atomLinked()) {
-    const speciesTargets = [];
-    selectedSourceIndices(selected).forEach((idx) => {
-      const atom = structure.atoms[idx];
-      if (!atom) return;
-      // A disordered site's wedges read species[i].color, never atom.userColor —
-      // recolour every species so a bulk edit actually paints the sphere, the
-      // same split the per-row species swatches make.
-      if (atom.isDisordered?.()) {
-        atom.species.forEach((_, speciesIndex) => speciesTargets.push({ atomIndex: idx, speciesIndex }));
-      }
-      atom.userColor = hex;
-      setAtomColor(atom, hex);
-      clearAtomImageStylesForAtom(structure, idx, 'color'); // newest edit wins over per-copy colors
-      structure.atomImages[idx]?.forEach((imgIndex) => {
-        syncBondHalvesToImageColor(structure, imgIndex, hex);
-        updateSingleAtomColor(idx, imgIndex, structure.elements[idx], hex, hex);
-      });
-    });
-    scheduleAtomColorSave(structure); // keep the overrides for the next session
-    if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, hex); // broadcasts crysviz:colors-changed
+    colorSourceAtoms(selectedSourceIndices(selected), hex);
   } else {
     // Only the selected on-screen copies — persist per-image and paint those
     // instances, never the shared source atom or its other images.
@@ -234,13 +258,8 @@ function applyBulkColor(selected, hex) {
       updateSingleAtomImageColor(atom.instanceId, hex);
       syncBondHalvesToImageColor(structure, atom.instanceId, hex);
     });
+    repaintAfterColorEdit();
   }
-
-  if (groups.atomsMesh?.instanceColor) groups.atomsMesh.instanceColor.needsUpdate = true;
-  if (groups.bondsMesh?.instanceColor) groups.bondsMesh.instanceColor.needsUpdate = true;
-  updatePolyhedraColors();
-  if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
-  document.dispatchEvent(new CustomEvent('crysviz:colors-changed'));
 }
 
 function applyBulkOpacity(selected, value) {
@@ -288,6 +307,48 @@ function applyBulkRadiusScale(selected, value) {
 }
 
 // Reset color + alpha + size of every selected atom to element defaults — the
+/**
+ * Reset these source atoms to their element defaults in the model and on
+ * every drawn copy: the colour, and unless colorOnly also the opacity and
+ * size. The bar's Reset and the host's apply reset_color.
+ */
+function resetSourceAtoms(structure, indices, { colorOnly = false } = {}) {
+  const speciesTargets = [];
+  indices.forEach((idx) => {
+    const atom = structure.atoms[idx];
+    if (!atom) return;
+    clearAtomImageStylesForAtom(structure, idx, colorOnly ? 'color' : undefined); // per-copy overrides
+    if (atom.userColor !== undefined) delete atom.userColor;
+    if (atom.forceColor !== undefined) delete atom.forceColor;
+    atom.species?.forEach((s) => { s.color = null; });
+    atom.color = structure.getDefaultElementColor(structure.elements[idx]);
+    if (!colorOnly) {
+      atom.resetToElementOpacity?.();
+      atom.resetRadiusScale?.();
+    }
+    atom.species?.forEach((_, speciesIndex) => speciesTargets.push({ atomIndex: idx, speciesIndex }));
+    structure.atomImages[idx]?.forEach((imgIndex) => {
+      syncBondHalvesToImageColor(structure, imgIndex, safeColor(atom.getColor()));
+      updateSingleAtomColor(idx, imgIndex, structure.elements[idx]);
+      if (!colorOnly) {
+        updateSingleAtomOpacity(imgIndex, atom.getOpacity?.() ?? 1);
+        updateSingleAtomDiameter(imgIndex, structure.elements[idx], atom.getRadiusScale?.() ?? 1);
+      }
+    });
+  });
+  saveAtomColors(structure); // drops the cleared overrides from storage too
+  if (!colorOnly) saveAtomRadiusScales(structure);
+  if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, null);
+}
+
+/** Back to the element colour for these source atoms (the host's apply reset_color). */
+export function resetSourceAtomColors(indices) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  resetSourceAtoms(structure, indices, { colorOnly: true });
+  repaintAfterColorEdit();
+}
+
 // bulk counterpart of a row's own Reset, scoped to the three things this bar
 // controls (positions, spins, immunity are never touched).
 function resetBulkStyle(selected) {
@@ -295,28 +356,7 @@ function resetBulkStyle(selected) {
   if (!structure) return;
 
   if (atomLinked()) {
-    const speciesTargets = [];
-    selectedSourceIndices(selected).forEach((idx) => {
-      const atom = structure.atoms[idx];
-      if (!atom) return;
-      clearAtomImageStylesForAtom(structure, idx); // all per-copy overrides
-      if (atom.userColor !== undefined) delete atom.userColor;
-      if (atom.forceColor !== undefined) delete atom.forceColor;
-      atom.species?.forEach((s) => { s.color = null; });
-      atom.color = structure.getDefaultElementColor(structure.elements[idx]);
-      atom.resetToElementOpacity?.();
-      atom.resetRadiusScale?.();
-      atom.species?.forEach((_, speciesIndex) => speciesTargets.push({ atomIndex: idx, speciesIndex }));
-      structure.atomImages[idx]?.forEach((imgIndex) => {
-        syncBondHalvesToImageColor(structure, imgIndex, safeColor(atom.getColor()));
-        updateSingleAtomColor(idx, imgIndex, structure.elements[idx]);
-        updateSingleAtomOpacity(imgIndex, atom.getOpacity?.() ?? 1);
-        updateSingleAtomDiameter(imgIndex, structure.elements[idx], atom.getRadiusScale?.() ?? 1);
-      });
-    });
-    saveAtomColors(structure); // drops the cleared overrides from storage too
-    saveAtomRadiusScales(structure);
-    if (speciesTargets.length) setSpeciesColorBulk(speciesTargets, null);
+    resetSourceAtoms(structure, selectedSourceIndices(selected));
   } else {
     // Drop only the selected copies' per-image overrides and repaint them from
     // the (unchanged) source atom's model values.
@@ -486,8 +526,7 @@ function buildColorRow({ colors, hex, onPick, onReset, swatchTitle, resetTitle }
   swatch.title = swatchTitle;
   swatch.dataset.hex = hex;
   const dot = createPieDot(colors(), 22);
-  dot.className = 'si-selbar-dot';
-  dot.style.border = 'none'; // createPieDot sets an inline border; the button already draws one
+  dot.classList.add('si-selbar-dot'); // .cv-pie-dot.si-selbar-dot drops the border: the button draws one
   swatch.appendChild(dot);
   const refreshDot = () => updatePieDot(dot, colors());
   let highlightSuppressed = false;
@@ -764,11 +803,11 @@ function refreshSelectionActionBar() {
   const direct = getDirectSelection().kind; // bonds / polyhedra picked in the 3D view
   container.innerHTML = '';
   if (!selected.length && !direct && !listSelectionGroups().length) {
-    container.style.display = 'none';
+    container.hidden = true;
     nameEditor = null;
     return;
   }
-  container.style.display = 'block';
+  container.hidden = false;
   if (!selected.length && !direct) {
     // Nothing selected: only the saved selections, to bring one back.
     const only = buildGroupsRow(false);
@@ -857,8 +896,7 @@ function refreshSelectionActionBar() {
   swatch.title = 'Apply a color to every selected atom';
   swatch.dataset.hex = currentHex;
   const dot = createPieDot(selectionColors(selected), 22);
-  dot.className = 'si-selbar-dot';
-  dot.style.border = 'none'; // createPieDot sets an inline border; the button already draws one
+  dot.classList.add('si-selbar-dot'); // borderless: the button already draws one
   swatch.appendChild(dot);
   const refreshDot = () => updatePieDot(dot, selectionColors(selected));
 

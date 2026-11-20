@@ -1,9 +1,13 @@
-"""Select ray tracing, rotate the view, and save a PNG."""
+"""Switch to the ray tracer, turn the view a little and save a PNG.
 
+Writes crysviz-raytrace.png in the current directory. A ray-traced image takes
+a few seconds; the call waits for it.
+"""
+
+import sys
 from pathlib import Path
 
 from crysviz import Payload, Viewer
-
 
 POSCAR = """Si cell
 1.0
@@ -17,14 +21,15 @@ Direct
 """
 
 
-def main() -> None:
-    output = Path.cwd() / "crysviz-raytrace.png"
-    with Viewer([Payload("snapshot.POSCAR", POSCAR)], command_timeout=180) as viewer:
-        viewer.set_render_pipeline("raytrace")
-        viewer.rotate_camera(18, axis="y")
-        written = viewer.save_image(output, width=640, height=480, timeout=180)
-    print(f"Saved {written.resolve()}; the CrysViz window has closed.")
+def main(keep_open: bool = False) -> None:
+    with Viewer([Payload("snapshot.POSCAR", POSCAR)]) as v:
+        v.set_renderer(renderer="raytrace")
+        v.set_view(rotate={"axis": "y", "degrees": 18})
+        image = v.save_image(Path.cwd() / "crysviz-raytrace.png", width=640, height=480)
+        print(f"Saved {image}")
+        if keep_open:
+            v.wait()
 
 
 if __name__ == "__main__":
-    main()
+    main(keep_open="--keep-open" in sys.argv)
