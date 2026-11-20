@@ -19,7 +19,7 @@ const KEY = 'crysviz.structurePrefs.v1';
 const FIELDS = [
   'colors', 'focusRegions', 'fieldIso', 'fieldMaterial', 'fieldSelected', 'planes', 'spinStyle', 'forceStyle',
   'atomSize', 'bondRadius', 'atomRadiusScales', 'bondCategoryStyles', 'bondUserStyles', 'bondLengths',
-  'supercell', 'periodicBounds',
+  'supercell', 'periodicBounds', 'selectionGroups',
 ].sort();
 
 // Same fixture as arrowprefs.test.js: two ionic steps, Fe + O, spins + forces.
@@ -105,6 +105,7 @@ const DSTATE = async () => {
     colors: (s?.atoms ?? []).filter((a) => a.userColor != null).length,
     focusRegions: getFocusRegions(s).length,
     planes: (s?.planes ?? []).length,
+    savedSelections: (s?.selectionGroups ?? []).length,
     atomSize: general.atomSize,
     bondRadius: general.bondRadius,
     radiusScales: (s?.atoms ?? []).filter((a) => Math.abs(a.getRadiusScale() - 1) > 1e-9).length,
@@ -190,7 +191,7 @@ async function loadOutcar(page) {
     const { registeredStructurePrefFields } = await import('./state/structurePrefs.js');
     return registeredStructurePrefFields();
   });
-  H.check('registered structurePrefs fields are exactly the known 16 (extend this test for a new one)',
+  H.check('registered structurePrefs fields are exactly the known 17 (extend this test for a new one)',
     JSON.stringify([...registered].sort()) === JSON.stringify(FIELDS), JSON.stringify([...registered].sort()));
 
   // ---- baseline on the default structure ------------------------------------
@@ -198,7 +199,7 @@ async function loadOutcar(page) {
   await page.evaluate(ATTACH);
   await page.waitForTimeout(500);
   const base = await page.evaluate(DSTATE);
-  H.check('baseline default structure', base.atoms > 0 && base.iso === 0.5 && base.planes === 0
+  H.check('baseline default structure', base.atoms > 0 && base.iso === 0.5 && base.planes === 0 && base.savedSelections === 0
     && base.colors === 0 && base.cn !== 'null', JSON.stringify(base));
 
   // ---- b. set every field through the UI ------------------------------------
@@ -306,6 +307,16 @@ async function loadOutcar(page) {
   await H.setSelect(page, 'planesFieldSelect', 'TestBlob');
   await H.setSelect(page, 'planesColormapSelect', 'viridis');
   await page.waitForTimeout(700);
+  // A saved selection (the selection bar's Save, selectiongroups.test.js).
+  await page.evaluate(async () => {
+    const { selectAtomsByInstances } = await import('./ui/SelectAndHighlightModule.js');
+    selectAtomsByInstances([0], { reason: 'test' });
+  });
+  await page.waitForTimeout(200);
+  await H.clickById(page, 'selectionGroupSave');
+  await page.waitForTimeout(200);
+  await page.evaluate(() => /** @type {HTMLElement} */ (document.getElementById('selectionGroupNameOk')).click());
+  await page.waitForTimeout(300);
   const editedDefault = await page.evaluate(DSTATE);
 
   // Arrows on a second structure (the OUTCAR trajectory).
