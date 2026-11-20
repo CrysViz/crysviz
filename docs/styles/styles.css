@@ -2804,6 +2804,11 @@ canvas.cv-pie-dot {
   height: 100% !important;
   display: block;
 }
+/* Pick focus armed (render/FocusPlaneModule.js setFocusPick): the next click
+   on the 3D view sets the focal plane. */
+#view canvas.cv-focus-pick {
+  cursor: crosshair;
+}
 
 
 #axesGizmo {

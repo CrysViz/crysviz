@@ -526,8 +526,7 @@ function buildColorRow({ colors, hex, onPick, onReset, swatchTitle, resetTitle }
   swatch.title = swatchTitle;
   swatch.dataset.hex = hex;
   const dot = createPieDot(colors(), 22);
-  dot.className = 'si-selbar-dot';
-  dot.style.border = 'none'; // createPieDot sets an inline border; the button already draws one
+  dot.classList.add('si-selbar-dot'); // .cv-pie-dot.si-selbar-dot drops the border: the button draws one
   swatch.appendChild(dot);
   const refreshDot = () => updatePieDot(dot, colors());
   let highlightSuppressed = false;

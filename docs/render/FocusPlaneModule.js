@@ -281,7 +281,7 @@ export function setFocusPick(on) {
   if (next === focusPickActive) return;
   focusPickActive = next;
   const canvas = app.renderer?.domElement;
-  if (canvas) canvas.style.cursor = next ? 'crosshair' : '';
+  canvas?.classList.toggle('cv-focus-pick', next); // crosshair cursor (styles.css)
   if (next) document.addEventListener('keydown', onFocusPickKey);
   else document.removeEventListener('keydown', onFocusPickKey);
   document.dispatchEvent(new CustomEvent(FOCUS_PICK_CHANGED, { detail: { active: next } }));
