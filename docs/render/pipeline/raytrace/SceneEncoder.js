@@ -24,7 +24,11 @@ import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
 import { CUT_PLANE_TOLERANCE } from '../../cutPlaneTolerance.js';
 import { getCutPlaneMaskSign, Plane, gridToWorld, blockCellRange } from '../../../model/index.js';
 import { wedgeDataForAtom, MAX_WEDGES } from '../../WedgeAtoms.js';
-import { DATA_TEX_WIDTH } from './sceneFragment.js';
+
+// Width of the scene data textures (both tracers' DATA_W). Kept here, not in
+// the shader modules: GroundPlaneModule and others load this file with every
+// page, and the shader modules pull in the tracer chunk libraries.
+export const DATA_TEX_WIDTH = 1024;
 
 // Texture/perf sanity cap on unique face planes per polyhedron. No longer the
 // vendored intersector limit: the shaders now stream planes straight from the

@@ -24,7 +24,7 @@
 // key-light direction at
 // uLightPosition with radius uLightRadius (the "Light softness" slider).
 
-import { DATA_TEX_WIDTH } from '../raytrace/sceneFragment.js';
+import { DATA_TEX_WIDTH } from '../raytrace/SceneEncoder.js';
 import { fieldChunk } from '../raytrace/fieldChunk.js';
 import { planeChunk } from '../raytrace/planeChunk.js';
 import { gridChunk } from '../raytrace/gridChunk.js';

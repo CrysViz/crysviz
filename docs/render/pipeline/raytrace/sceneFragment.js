@@ -48,8 +48,8 @@ import { coneChunk } from './coneChunk.js';
 import * as THREE from '../../../external/three/three.module.js';
 import '../../../external/three-raytracing/RayTracingCommon.js'; // registers THREE.ShaderChunk['raytracing_*']
 import { DOF_DECLARATIONS, dofFunctions, patchMainChunkDof } from './dofChunk.js';
+import { DATA_TEX_WIDTH } from './SceneEncoder.js';
 
-export const DATA_TEX_WIDTH = 1024;
 
 export function makeSceneFragment(pieChunk = '') {
 return /* glsl */`
