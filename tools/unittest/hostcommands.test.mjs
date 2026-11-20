@@ -140,6 +140,8 @@ test('jobs: done, failed and cancelled runs; wait_job returns at the end or the 
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   const slow = startJob('t', async (job) => { await gate; return { stopped: job.cancelled }; });
+  // One calculation at a time, whoever starts it (a host run_* or a window's button).
+  assert.throws(() => startJob('u', async () => ({})), (e) => e.code === 'JOB_BUSY' && e.message.includes(slow.id));
   const t0 = Date.now();
   assert.equal((await waitJob(slow.id, 0.05)).status, 'running');
   assert.ok(Date.now() - t0 < 1000);

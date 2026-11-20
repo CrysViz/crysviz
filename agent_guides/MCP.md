@@ -173,7 +173,10 @@ elapsedS}` at once, or with its `result` if it ends within `waitS` (0 to 25 s;
 a quick `run_energy` with `waitS: 25` is one call). Poll with `wait_job`
 (`waitS` 0 to 25, the same name the `run_*` tools use; 0 just reports), stop with `cancel_job`. A finished job
 says which structure and frame are on show (`active`). One calculation runs
-at a time. The potential is the Atomistic window's (NEP89 by default).
+at a time. A run the user starts from the Atomistic window (Relax, MD) or the
+EOS window is a job in the same list: `get_state` lists it, `wait_job`
+follows it, `cancel_job` stops it, and the window's Stop button stops a run
+Claude started. The potential is the Atomistic window's (NEP89 by default).
 
 **Keeping the symmetry.** `run_relax`, `run_md` and `run_eos` take
 `symmetry: true` (or `{tolerance}` in Å): the structure is locked to its space

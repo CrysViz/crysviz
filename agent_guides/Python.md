@@ -172,7 +172,9 @@ missing a required argument. `CommandRefused` is a subclass of it, so one
 
 `run_md`, `run_relax`, `run_energy`, `run_eos` and `run_ordering` use the
 potential chosen in the Atomistic window (NEP89 by default, 89 elements). Only
-one runs at a time.
+one runs at a time. A run started from the Atomistic window (Relax, MD) or the
+EOS window is a job too: `get_state` lists it and `cancel_job` stops it, and
+the window's Stop button stops a run your script started.
 
 As methods they **block until the job ends** and return its final status:
 

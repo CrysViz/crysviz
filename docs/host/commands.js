@@ -12,7 +12,7 @@ import {
 } from '../state/structures.js';
 import { app, general } from '../state/store.js';
 import { atomIds, structureRevision } from '../model/structureRevision.js';
-import { cancelJob, jobView, listJobs, runningJob, startJob, waitJob } from './jobs.js';
+import { assertNoJob, cancelJob, jobView, listJobs, startJob, waitJob } from './jobs.js';
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
 import { clickControl, getControl, listWindows, readWindow, searchControls, setControl } from './controls.js';
@@ -674,20 +674,70 @@ function trajectoryOf(container, frames) {
   return { structure: getContainerId(container), name: String(container.fileName), frames };
 }
 
+// What a job reports while it runs and once it ends, the same for a host
+// run_* and for a run started from its window (Relax, MD, EOS).
+
+/** @param {{step: number, maxSteps: number, maxForce: number}} p a runRelax onProgress */
+export function relaxProgress({ step, maxSteps, maxForce }) {
+  return { step, maxSteps, fmax: round(maxForce) };
+}
+
+/** @param {{step: number, steps: number, temperatureK: number, text: string}} p a runMD onProgress */
+export function mdProgress({ step, steps, temperatureK, text }) {
+  return { step, steps, temperatureK: round(temperatureK), text };
+}
+
+/** A runRelax result as a job reports it (params as runRelax takes them). */
+export function relaxJobResult(params, potential, result) {
+  return {
+    targetPressureGPa: params.targetPressure,
+    relaxCell: params.relaxCell ?? true,
+    potential,
+    trajectory: trajectoryOf(result.container, result.frames),
+    steps: result.steps,
+    converged: result.converged,
+    stopped: result.stopped,
+    fmax: round(result.maxForce),
+    energy: round(result.energyEv),
+    energyPerAtom: round(result.energyPerAtomEv),
+    pressureGPa: result.pressureGPa === null ? null : round(result.pressureGPa),
+  };
+}
+
+/** A runMD result as a job reports it. */
+export function mdJobResult(potential, result) {
+  return {
+    potential,
+    trajectory: trajectoryOf(result.container, result.frames),
+    finalStep: result.finalStep,
+    stopped: result.stopped,
+  };
+}
+
+/** A computeEOS scan and fit as a job reports it; no fit is a failed job. */
+export function eosJobResult(scan, fit, byVolume) {
+  if (!fit) throw commandError(scan.volumes.length < 3 ? 'TOO_FEW_POINTS' : 'FIT_FAILED',
+    scan.volumes.length < 3 ? `Only ${scan.volumes.length} point(s) computed; 3 are needed to fit`
+      : 'The EOS fit could not run (it needs SciPy via Pyodide from the network); see the EOS window');
+  const summary = eosFitSummary(fit);
+  return {
+    // Read first: false means the fit numbers are not a result (warnings say why).
+    ...eosReliability(scan, summary.energyVolume),
+    scan: { mode: byVolume ? 'volume' : 'pressure', points: scan.volumes.length, stopped: scan.stopped,
+      unconverged: scan.converged.filter((c) => !c).length,
+      volumes: scan.volumes.map(round), energies: scan.energies.map(round), pressuresGPa: scan.pressures.map(round) },
+    fit: summary,
+  };
+}
+
 /** get_state's sections: the active structure and renderer always, these on request. */
 export const STATE_SECTIONS = Object.freeze(['structures', 'camera', 'selection', 'jobs', 'colors', 'phonons', 'field', 'windows']);
 const DEFAULT_STATE_SECTIONS = ['camera', 'selection', 'jobs'];
 
-/** One calculator job at a time: they share the potential and the selected structure. */
-function assertNoCalculatorJob() {
-  const busy = runningJob();
-  if (busy) throw commandError('JOB_BUSY', `Job ${busy.id} is still running; wait for it or cancel_job`);
-}
-
 /** Checks every calculator command makes before starting its job; resolves to the Atomistic module. */
 async function calculatorPrecheck() {
   if (!getActiveStructure()) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-  assertNoCalculatorJob();
+  assertNoJob();
   const atomistic = await import('../ui/BackendPanel/AtomisticPanels.js');
   // Refused here, not inside the job, so a structure too big fails this call.
   atomistic.assertStructureFitsPotential(general.atomisticPotential || 'nep');
@@ -1153,15 +1203,9 @@ export const COMMAND_HANDLERS = Object.freeze({
         runner,
         potential,
         shouldStop: () => job.cancelled,
-        onProgress: ({ step, temperatureK: t, text }) => { job.progress = { step, steps, temperatureK: round(t), text }; },
+        onProgress: (p) => { job.progress = mdProgress(p); },
       });
-      return {
-        potential,
-        trajectory: trajectoryOf(result.container, result.frames),
-        finalStep: result.finalStep,
-        stopped: result.stopped,
-        ...(symmetry ? { symmetry: await symmetryKept(symmetry) } : {}),
-      };
+      return { ...mdJobResult(potential, result), ...(symmetry ? { symmetry: await symmetryKept(symmetry) } : {}) };
     });
     return started(job, waitS);
   },
@@ -1193,23 +1237,13 @@ export const COMMAND_HANDLERS = Object.freeze({
         runner,
         potential,
         shouldStop: () => job.cancelled,
-        onProgress: ({ step, maxSteps, maxForce }) => { job.progress = { step, maxSteps, fmax: round(maxForce) }; },
+        onProgress: (p) => { job.progress = relaxProgress(p); },
       });
       return {
-        targetPressureGPa: params.targetPressure,
-        relaxCell: params.relaxCell,
+        ...relaxJobResult(params, potential, result),
         ...(pressureHint !== null && pressureHint !== params.targetPressure
           ? { pressureHint: `The structure's name mentions ${pressureHint} GPa; this run used ${params.targetPressure} GPa (pressureGPa sets it).` }
           : {}),
-        potential,
-        trajectory: trajectoryOf(result.container, result.frames),
-        steps: result.steps,
-        converged: result.converged,
-        stopped: result.stopped,
-        fmax: round(result.maxForce),
-        energy: round(result.energyEv),
-        energyPerAtom: round(result.energyPerAtomEv),
-        pressureGPa: result.pressureGPa === null ? null : round(result.pressureGPa),
         ...(symmetry ? { symmetry: await symmetryKept(symmetry) } : {}),
       };
     });
@@ -1263,19 +1297,7 @@ export const COMMAND_HANDLERS = Object.freeze({
         onProgress: (text) => { job.progress = { text }; },
         shouldStop: () => job.cancelled,
       });
-      if (!fit) throw commandError(scan.volumes.length < 3 ? 'TOO_FEW_POINTS' : 'FIT_FAILED',
-        scan.volumes.length < 3 ? `Only ${scan.volumes.length} point(s) computed; 3 are needed to fit`
-          : 'The EOS fit could not run (it needs SciPy via Pyodide from the network); see the EOS window');
-      const summary = eosFitSummary(fit);
-      return {
-        // Read first: false means the fit numbers are not a result (warnings say why).
-        ...eosReliability(scan, summary.energyVolume),
-        scan: { mode: byVolume ? 'volume' : 'pressure', points: scan.volumes.length, stopped: scan.stopped,
-          unconverged: scan.converged.filter((c) => !c).length,
-          volumes: scan.volumes.map(round), energies: scan.energies.map(round), pressuresGPa: scan.pressures.map(round) },
-        fit: summary,
-        ...(symmetry ? { symmetry } : {}),
-      };
+      return { ...eosJobResult(scan, fit, byVolume), ...(symmetry ? { symmetry } : {}) };
     });
     return started(job, waitS);
   },
@@ -1292,7 +1314,7 @@ export const COMMAND_HANDLERS = Object.freeze({
     const waitS = waitSeconds(input, 'run_ordering');
     const structure = getActiveStructure();
     if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-    assertNoCalculatorJob();
+    assertNoJob();
     const panel = await import('../ui/LatticeSupercellPanel.js');
     // "Nothing to order" fails this call (zero samples is only the check); building the
     // samples can take long for a big multiplier, so that happens in the job.
