@@ -9,7 +9,6 @@ export {
   clampOpacity,
   getElementAtomIndices,
   getElementOpacityValues,
-  setSwatchOpacity,
   areAllAtomsCutPlaneImmune,
   setCutPlaneImmunityForAtoms,
   updateAtomCoordinates

@@ -123,8 +123,6 @@ export class WavefunctionSource {
      * @type {((info: {freed: number, bytes: number}) => void) | null}
      */
     this.onEvicted = null;
-    /** @type {Map<string, Promise<Field>>} grids being transformed right now */
-    this._inFlight = new Map();
 
     // Accumulates across one synchronous eviction sweep so a single insert that
     // drops several entries produces one notification rather than one per entry.
@@ -377,21 +375,7 @@ export class WavefunctionSource {
    * @param {number} [spinor] SpinorComponent; defaults to psi_up on a spinor file
    * @returns {Promise<Field>}
    */
-  getField(spin, kpt, band, quantity = WaveQuantity.DENSITY, spinor = undefined) {
-    // One transform per grid even when several callers ask at once (the field
-    // list restoring the selected band while a restored plane asks for the
-    // same one): later callers share the first one's promise.
-    const key = WavefunctionSource.fieldKey(spin, kpt, band, quantity, this.resolveSpinor(spinor));
-    const pending = this._inFlight.get(key);
-    if (pending) return pending;
-    const promise = this._realiseField(spin, kpt, band, quantity, spinor)
-      .finally(() => this._inFlight.delete(key));
-    this._inFlight.set(key, promise);
-    return promise;
-  }
-
-  /** getField's work, without the in-flight sharing. */
-  async _realiseField(spin, kpt, band, quantity, spinor) {
+  async getField(spin, kpt, band, quantity = WaveQuantity.DENSITY, spinor = undefined) {
     this._assertIndices(spin, kpt, band);
     await this.init();
 

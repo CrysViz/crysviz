@@ -372,6 +372,7 @@ let measurePaused = false;
  */
 export function repaintSelectionGlow() {
   if (glowSuppressed || measurePaused || !groups.atomsMesh || !atomSelection.selectedAtoms.length) return;
+  if (selectionViewTab !== 'atoms') { paintSelectionView(); return; }
   paintAtomHighlight(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
 }
 
@@ -381,6 +382,7 @@ export function pauseSelectionGlowForMeasure() {
   measurePaused = true;
   clearHighlightAtom();
   clearHighlightBond();
+  clearViewPolyhedraGlow();
 }
 
 /** The measure tool was turned off: the selection glows again (unless a
@@ -395,6 +397,7 @@ export function suppressSelectionHighlightFor3D() {
   glowSuppressed = true;
   clearHighlightAtom();
   clearHighlightBond();
+  clearViewPolyhedraGlow();
 }
 
 /** Undo suppressSelectionHighlightFor3D(): reapplies the 3D glow for the
@@ -402,7 +405,9 @@ export function suppressSelectionHighlightFor3D() {
 export function restoreSelectionHighlight() {
   glowSuppressed = false;
   if (measurePaused) return; // back when the measure tool is turned off
-  if (atomSelection.selectedAtoms.length) {
+  if (atomSelection.selectedAtoms.length && selectionViewTab !== 'atoms') {
+    paintSelectionView();
+  } else if (atomSelection.selectedAtoms.length) {
     applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
   } else if (highlightHover.currentlyHighlightedBond) {
     highlightBondIn3D(highlightHover.currentlyHighlightedBond.instanceIds);
@@ -454,6 +459,7 @@ export function clearBondSelection() {
   clearHighlightBond();
   clearUIHighlight();
   highlightHover.currentlyHighlightedBond = null;
+  if (directSelection.kind === 'bonds') resetDirectSelection();
 }
 
 /** Locate (and if needed lazily build + expand) the Bonds-tab row for a bond
@@ -530,6 +536,7 @@ function selectBondByIndex(bondIndex, options = {}) {
   clearUIHighlight();
 
   highlightBondIn3D(instanceIds); // clears prior 3D atom+bond highlights first
+  directSelection = { kind: 'bonds', bonds: memberIndexes.slice(), polyKeys: [] };
   highlightHover.currentlyHighlightedBond = {
     bondIndex, // the clicked/representative member
     key: bondKey(bond.indices),
@@ -611,6 +618,7 @@ export function clearPolyhedronSelection() {
   clearUIHighlight();
   highlightHover.currentlyHighlightedPolyhedron = null;
   if (sel) dispatchPolyhedronSelectionEvent(null);
+  if (directSelection.kind === 'polyhedra' && !directApplying) resetDirectSelection();
 }
 
 /** Locate (and if needed lazily build + expand) the Poly-tab row for a
@@ -671,6 +679,7 @@ function selectPolyhedronByKey(key, catKey, options = {}) {
   clearSelectedAtoms({ reason: 'polyhedron-select' });
   clearBondSelection();
   clearPolyhedronSelection(); // restores any previous polyhedron glow
+  if (!directApplying) directSelection = { kind: 'polyhedra', bonds: [], polyKeys: linking ? meshes.map((m) => m.userData.key) : [key] };
 
   for (const mesh of meshes) {
     mesh.material.emissive.set(0xFF8C00);
@@ -722,6 +731,363 @@ export function highlightPolyhedronByKey(key, catKey = null) {
   if (alreadySelected) return;
   const resolvedCat = catKey ?? findPolyhedronMesh(key)?.userData?.catKey;
   selectPolyhedronByKey(key, resolvedCat, {});
+}
+
+// =============================================
+// SELECTION VIEWS — the selection bar's Atoms | Bonds | Polyhedra tabs
+// =============================================
+// The atom selection stays THE selection; the view says which set derived
+// from it glows in the 3D view and which the bar's bulk controls edit:
+//   atoms      the selected atoms (the usual glow)
+//   bonds      the bonds whose two ends are selected copies — with "Link
+//              periodic copies" every copy of a selected atom counts, so the
+//              copies of those bonds glow too
+//   polyhedra  the polyhedra centred on a selected atom, and the cages whose
+//              corners are all selected
+// A saved selection group (ui/StructureInfoPanel/SelectionGroups.js) can bring
+// its own bond / polyhedron sets (viewExplicit); they hold until the atom
+// selection changes, then the sets derive from the atoms again. Switching the
+// view never changes the atom selection, so Atoms brings the atom glow back.
+let selectionViewTab = 'atoms';
+let viewBondIndexes = [];   // structure.bonds indexes glowing in the bonds view
+let viewPolyMeshes = [];    // polyhedron meshes glowing in the polyhedra view
+let viewExplicit = null;    // { bonds: number[], polyhedra: mesh[] } from a restored group
+
+export const SELECTION_VIEW_CHANGED = 'crysviz:selection-view-changed';
+
+/** The active view: 'atoms' | 'bonds' | 'polyhedra' (a bond or polyhedron
+ *  set picked in the 3D view counts as its own kind). */
+export function getSelectionView() {
+  return directSelection.kind ?? selectionViewTab;
+}
+
+/** The three sets of the selection: atoms (instance ids), bonds
+ *  (structure.bonds indexes) and polyhedra (meshes) — the active kind's own
+ *  set and the two derived from it. */
+export function getSelectionViewSets() {
+  if (directSelection.kind) {
+    const atoms = directAtomInstances();
+    const selected = atoms.map((instanceId) => buildSelectionAtomFromHit({ instanceId, object: groups.atomsMesh })).filter(Boolean);
+    return {
+      atoms,
+      bonds: directSelection.kind === 'bonds' ? directSelection.bonds.slice() : bondsAmongSelection(selected),
+      polyhedra: directSelection.kind === 'polyhedra' ? directPolyMeshes() : polyhedraAmongSelection(selected),
+    };
+  }
+  return {
+    atoms: atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)),
+    bonds: selectionViewTab === 'bonds' ? viewBondIndexes.slice() : (viewExplicit?.bonds ?? bondsAmongSelection()),
+    polyhedra: selectionViewTab === 'polyhedra' ? viewPolyMeshes.slice() : (viewExplicit?.polyhedra ?? polyhedraAmongSelection()),
+  };
+}
+
+/** Indexes into structure.bonds of the bonds between the selected atoms
+ *  (both ends selected copies; every copy with "Link periodic copies"). */
+export function bondsAmongSelection(selected = atomSelection.selectedAtoms) {
+  const structure = fileBrowser.selectedStructure;
+  const bonds = structure?.bonds ?? [];
+  if (!selected.length || !bonds.length) return [];
+  const instances = new Set(selected.flatMap((atom) => instancesForSelectedAtom(atom)));
+  const out = [];
+  bonds.forEach((b, i) => {
+    const idx = b.indices;
+    if (idx && instances.has(idx[0]) && instances.has(idx[1]) && b.instanceIds?.length) out.push(i);
+  });
+  return out;
+}
+
+/** The drawn polyhedron meshes centred on a selected atom, plus the cages
+ *  whose corners are all selected. */
+export function polyhedraAmongSelection(selected = atomSelection.selectedAtoms) {
+  const structure = fileBrowser.selectedStructure;
+  const meshes = groups.polyhedraGroup?.children ?? [];
+  if (!selected.length || !meshes.length) return [];
+  const sources = new Set(selected.map((atom) => atom.sourceIndex));
+  const out = [];
+  for (const mesh of meshes) {
+    const ud = mesh.userData;
+    if (ud?.type !== 'polyhedron' || !mesh.visible || !mesh.material?.emissive) continue;
+    if (Number.isInteger(ud.centerSrcIndex) && sources.has(ud.centerSrcIndex)) { out.push(mesh); continue; }
+    const poly = structure?.polyhedra?.polyhedra?.[ud.polyIndex];
+    const corners = poly?.vertexSrcList;
+    if (corners?.length && corners.every((src) => sources.has(src))) out.push(mesh);
+  }
+  return out;
+}
+
+function clearViewPolyhedraGlow() {
+  for (const mesh of viewPolyMeshes) {
+    if (mesh?.material?.emissive) {
+      mesh.material.emissive.set(0x000000);
+      mesh.material.emissiveIntensity = 1;
+    }
+  }
+  viewPolyMeshes = [];
+  highlightHover.currentlyHighlightedPolyMeshes = [];
+}
+
+/** Glow the active view's set (the atoms' own glow is off in the other two). */
+function paintSelectionView() {
+  if (selectionViewTab === 'atoms' || glowSuppressed || measurePaused) return;
+  clearHighlightAtom();
+  clearHighlightBond();
+  clearViewPolyhedraGlow();
+  const structure = fileBrowser.selectedStructure;
+  if (selectionViewTab === 'bonds') {
+    viewBondIndexes = (viewExplicit?.bonds ?? bondsAmongSelection()).filter((i) => structure?.bonds?.[i]);
+    const ids = viewBondIndexes.flatMap((i) => structure.bonds[i].instanceIds ?? []);
+    if (ids.length && groups.bondsMesh) highlightBondIn3D(ids);
+  } else {
+    viewPolyMeshes = (viewExplicit?.polyhedra ?? polyhedraAmongSelection()).filter((m) => m?.material?.emissive);
+    for (const mesh of viewPolyMeshes) {
+      mesh.material.emissive.set(0xFF8C00);
+      mesh.material.emissiveIntensity = 1.0;
+    }
+    // the tracers / raster ghost overlay read the meshes from here
+    highlightHover.currentlyHighlightedPolyMeshes = viewPolyMeshes.slice();
+  }
+}
+
+function resetSelectionView() {
+  if (selectionViewTab !== 'atoms') clearHighlightBond();
+  clearViewPolyhedraGlow();
+  viewBondIndexes = [];
+  viewExplicit = null;
+  if (selectionViewTab !== 'atoms') {
+    selectionViewTab = 'atoms';
+    document.dispatchEvent(new CustomEvent(SELECTION_VIEW_CHANGED, { detail: { tab: 'atoms' } }));
+  }
+}
+
+/**
+ * Switch the selection's view. `explicit` (a restored group's own sets:
+ * { bonds: structure.bonds indexes, polyhedra: meshes }) replaces the derived
+ * sets until the atom selection changes.
+ * @param {'atoms'|'bonds'|'polyhedra'} tab
+ */
+export function setSelectionView(tab, { explicit = null } = {}) {
+  if (!['atoms', 'bonds', 'polyhedra'].includes(tab)) return;
+  if (directSelection.kind) {
+    // A picked bond/polyhedron set: the tab converts it to the derived set
+    // of that kind (Atoms: the end / corner atoms become the atom selection).
+    if (tab === directSelection.kind) return;
+    const sets = getSelectionViewSets();
+    if (tab === 'atoms') selectAtomsByInstances(sets.atoms, { reason: 'selection-tab' });
+    else if (tab === 'bonds') selectBondsDirect(sets.bonds, { mode: 'replace', keepEmpty: true });
+    else selectPolyhedraDirect(sets.polyhedra.map((m) => m.userData?.key).filter(Boolean), { mode: 'replace', keepEmpty: true });
+    return;
+  }
+  const changed = tab !== selectionViewTab;
+  selectionViewTab = tab;
+  if (explicit) viewExplicit = explicit;
+  clearHighlightBond();
+  clearViewPolyhedraGlow();
+  viewBondIndexes = [];
+  if (tab === 'atoms') {
+    if (!glowSuppressed && !measurePaused && atomSelection.selectedAtoms.length) {
+      applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
+    }
+  } else {
+    paintSelectionView();
+  }
+  if (changed) document.dispatchEvent(new CustomEvent(SELECTION_VIEW_CHANGED, { detail: { tab } }));
+}
+
+/** Re-glow the active view after a bond/polyhedra rebuild (instance ids and
+ *  meshes are new). */
+export function repaintSelectionView() {
+  if (directSelection.kind) { paintDirectSelection(); return; }
+  if (selectionViewTab !== 'atoms' && atomSelection.selectedAtoms.length) paintSelectionView();
+}
+
+// =============================================
+// DIRECT BOND / POLYHEDRON SELECTIONS — picked in the 3D view
+// =============================================
+// A double-click on a bond or a polyhedron selects it (as before: one, with
+// its row); Shift+double-click adds another of the same kind, Ctrl/⌘ toggles
+// one. The set is the selection then — no atoms are selected — and the
+// selection bar shows it under its own tab with bulk edits and Save. With
+// "Link periodic copies" a pick means the whole group of copies. The other
+// tabs convert it: Atoms selects the bonds' ends / the polyhedra's centres
+// and corners, Bonds / Polyhedra the sets derived from those atoms.
+let directSelection = { kind: /** @type {null|'bonds'|'polyhedra'} */ (null), bonds: /** @type {number[]} */ ([]), polyKeys: /** @type {string[]} */ ([]) };
+let directApplying = false; // guards the clear hooks while a direct set is (re)applied
+
+/** The picked bond/polyhedron set: kind null when the selection is atoms. */
+export function getDirectSelection() {
+  return { kind: directSelection.kind, bonds: directSelection.bonds.slice(), polyKeys: directSelection.polyKeys.slice() };
+}
+
+function resetDirectSelection() {
+  if (!directSelection.kind) return;
+  const kind = directSelection.kind;
+  directSelection = { kind: null, bonds: [], polyKeys: [] };
+  if (kind === 'bonds') clearHighlightBond();
+  else clearViewPolyhedraGlow();
+  document.dispatchEvent(new CustomEvent(SELECTION_VIEW_CHANGED, { detail: { tab: selectionViewTab } }));
+}
+
+function bondMembers(structure, bondIndex) {
+  const bond = structure?.bonds?.[bondIndex];
+  if (!bond) return [];
+  if (general.linkPeriodicCopies === false) return [bondIndex];
+  const key = bondGroupKey(structure, bond);
+  return structure.bonds.reduce((acc, b, i) => { if (bondGroupKey(structure, b) === key) acc.push(i); return acc; }, []);
+}
+
+function polyMemberKeys(key) {
+  if (general.linkPeriodicCopies === false) return findPolyhedronMesh(key) ? [key] : [];
+  return findPolyhedronGroupMeshes(polyhedronGroupKey(key)).map((m) => m.userData.key);
+}
+
+function directPolyMeshes() {
+  return directSelection.polyKeys.map((k) => findPolyhedronMesh(k)).filter((m) => m?.material?.emissive);
+}
+
+/** Atom instances of the picked set: the bonds' two ends, or each
+ *  polyhedron's centre and corners (their copies, when linked). */
+function directAtomInstances() {
+  const structure = fileBrowser.selectedStructure;
+  const out = new Set();
+  if (directSelection.kind === 'bonds') {
+    for (const i of directSelection.bonds) {
+      const idx = structure?.bonds?.[i]?.indices;
+      if (idx) { out.add(idx[0]); out.add(idx[1]); }
+    }
+  } else if (directSelection.kind === 'polyhedra') {
+    const linked = general.linkPeriodicCopies !== false;
+    const addSource = (src) => {
+      const images = structure?.atomImages?.[src];
+      if (!images?.length) return;
+      if (linked) images.forEach((i) => out.add(i)); else out.add(images[0]);
+    };
+    for (const mesh of directPolyMeshes()) {
+      const ud = mesh.userData;
+      if (Number.isInteger(ud.centerSrcIndex)) addSource(ud.centerSrcIndex);
+      for (const src of structure?.polyhedra?.polyhedra?.[ud.polyIndex]?.vertexSrcList ?? []) addSource(src);
+    }
+  }
+  return [...out].filter((i) => Number.isInteger(i));
+}
+
+/** Union / difference of member groups for the three pick modes. */
+function combineDirect(current, members, mode) {
+  if (mode === 'add') return [...new Set([...current, ...members])];
+  if (mode === 'toggle') {
+    const allIn = members.length && members.every((m) => current.includes(m));
+    return allIn ? current.filter((m) => !members.includes(m)) : [...new Set([...current, ...members])];
+  }
+  // replace: picking exactly the current set again deselects it
+  const same = current.length === members.length && members.every((m) => current.includes(m));
+  return same ? [] : members;
+}
+
+function paintDirectSelection() {
+  if (glowSuppressed || measurePaused) return;
+  const structure = fileBrowser.selectedStructure;
+  if (directSelection.kind === 'bonds') {
+    const ids = directSelection.bonds.flatMap((i) => structure?.bonds?.[i]?.instanceIds ?? []);
+    if (ids.length && groups.bondsMesh) highlightBondIn3D(ids);
+  } else if (directSelection.kind === 'polyhedra') {
+    clearViewPolyhedraGlow();
+    viewPolyMeshes = directPolyMeshes();
+    for (const mesh of viewPolyMeshes) {
+      mesh.material.emissive.set(0xFF8C00);
+      mesh.material.emissiveIntensity = 1.0;
+    }
+    highlightHover.currentlyHighlightedPolyMeshes = viewPolyMeshes.slice();
+  }
+}
+
+/**
+ * Select bonds picked in the 3D view (structure.bonds indexes; each stands
+ * for its group of copies when linked).
+ * @param {number[]} bondIndexes
+ * @param {{mode?: 'replace'|'add'|'toggle', scrollToSelection?: boolean, keepEmpty?: boolean}} [options]
+ */
+export function selectBondsDirect(bondIndexes, { mode = 'replace', scrollToSelection = false, keepEmpty = false } = {}) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure?.bonds) return;
+  const members = [...new Set((bondIndexes ?? []).flatMap((i) => bondMembers(structure, i)))]
+    .filter((i) => structure.bonds[i]?.instanceIds?.length);
+  const current = directSelection.kind === 'bonds' ? directSelection.bonds : [];
+  const next = combineDirect(current, members, mode);
+  if (!next.length && !keepEmpty && !current.length) return;
+  directApplying = true;
+  clearSelectedAtoms({ reason: 'bond-select' });
+  clearPolyhedronSelection();
+  clearViewPolyhedraGlow();
+  clearHighlightBond();
+  clearUIHighlight();
+  highlightHover.currentlyHighlightedBond = null;
+  directApplying = false;
+  if (!next.length) { resetDirectSelection(); directSelection = { kind: null, bonds: [], polyKeys: [] }; document.dispatchEvent(new CustomEvent(SELECTION_VIEW_CHANGED, { detail: { tab: 'atoms' } })); return; }
+  directSelection = { kind: 'bonds', bonds: next, polyKeys: [] };
+  // Exactly one bond (its copies): the classic single selection, with its row
+  // in the Bonds tab, so the panel and the inspectors follow as before.
+  const oneGroup = next.length === bondMembers(structure, next[0]).length && next.every((i) => bondMembers(structure, next[0]).includes(i));
+  if (oneGroup) {
+    const bond = structure.bonds[next[0]];
+    const linking = general.linkPeriodicCopies !== false;
+    const instanceIds = next.flatMap((i) => structure.bonds[i].instanceIds ?? []);
+    highlightBondIn3D(instanceIds);
+    highlightHover.currentlyHighlightedBond = {
+      bondIndex: next[0], key: bondKey(bond.indices), pair: bondPairKeyOf(bond), instanceIds,
+      groupKey: linking ? bondGroupKey(structure, bond) : null, bondIndexes: linking ? next.slice() : null,
+    };
+    collapseAllAtomExpansions();
+    const row = findBondRow(highlightHover.currentlyHighlightedBond.pair, highlightHover.currentlyHighlightedBond.key,
+      highlightHover.currentlyHighlightedBond.groupKey);
+    if (row) {
+      highlightAtomRow(row);
+      if (scrollToSelection) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  } else {
+    paintDirectSelection();
+  }
+  document.dispatchEvent(new CustomEvent(SELECTION_VIEW_CHANGED, { detail: { tab: 'bonds' } }));
+}
+
+/** 3D pick: the bond owning a bond-half instance, with the pick's modifiers.
+ *  @param {number} instanceId
+ *  @param {{mode?: 'replace'|'add'|'toggle', scrollToSelection?: boolean}} [options] */
+export function selectBondsDirectFromInstance(instanceId, { mode = 'replace', scrollToSelection = true } = {}) {
+  const mapping = fileBrowser.selectedStructure?.bondObjectMapping?.[instanceId];
+  if (!mapping) return;
+  selectBondsDirect([mapping[0]], { mode, scrollToSelection });
+}
+
+/**
+ * Select polyhedra picked in the 3D view (stable keys; each stands for its
+ * group of copies when linked).
+ * @param {string[]} keys
+ * @param {{mode?: 'replace'|'add'|'toggle', scrollToSelection?: boolean, keepEmpty?: boolean}} [options]
+ */
+export function selectPolyhedraDirect(keys, { mode = 'replace', scrollToSelection = false, keepEmpty = false } = {}) {
+  const members = [...new Set((keys ?? []).flatMap((k) => polyMemberKeys(k)))];
+  const current = directSelection.kind === 'polyhedra' ? directSelection.polyKeys : [];
+  const next = combineDirect(current, members, mode);
+  if (!next.length && !keepEmpty && !current.length) return;
+  directApplying = true;
+  clearSelectedAtoms({ reason: 'polyhedron-select' });
+  clearBondSelection();
+  clearPolyhedronSelection();
+  clearViewPolyhedraGlow();
+  directApplying = false;
+  if (!next.length) { directSelection = { kind: null, bonds: [], polyKeys: [] }; document.dispatchEvent(new CustomEvent(SELECTION_VIEW_CHANGED, { detail: { tab: 'atoms' } })); return; }
+  directSelection = { kind: 'polyhedra', bonds: [], polyKeys: next };
+  const oneGroup = next.length === polyMemberKeys(next[0]).length && next.every((k) => polyMemberKeys(next[0]).includes(k));
+  if (oneGroup) {
+    // the classic single selection: its row, the Polyhedron Inspector's event
+    const mesh = findPolyhedronMesh(next[0]);
+    directApplying = true;
+    selectPolyhedronByKey(next[0], mesh?.userData?.catKey, { openPanel: true, scrollToSelection });
+    directApplying = false;
+    if (!highlightHover.currentlyHighlightedPolyhedron) directSelection = { kind: null, bonds: [], polyKeys: [] };
+  } else {
+    paintDirectSelection();
+  }
+  document.dispatchEvent(new CustomEvent(SELECTION_VIEW_CHANGED, { detail: { tab: directSelection.kind ?? 'atoms' } }));
 }
 
 // ---- multi-polyhedron highlight (a histogram bin → many polyhedra at once) ----
@@ -925,8 +1291,14 @@ function instancesForSelectedAtom(atom) {
 }
 
 function syncSelectedAtomHighlights(options = {}) {
+  // The selection changed: a restored group's own bond/polyhedron sets no
+  // longer apply (the view derives them from the atoms again).
+  viewExplicit = null;
   // Measuring: the rows follow the selection, the 3D glow waits (measurePaused).
-  if (!measurePaused) applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
+  if (!measurePaused) {
+    if (selectionViewTab === 'atoms') applyAtomHighlightIndices(atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)));
+    else paintSelectionView();
+  }
   syncSelectedAtomRows(options);
 }
 
@@ -975,6 +1347,7 @@ function closeSpinForceEditorDom(atomIndex) {
 
 function commitSelection(nextSelection, eventInfo, options = {}) {
   glowSuppressed = false; // the glow is applied again just below
+  resetDirectSelection(); // an atom selection replaces a picked bond/polyhedron set
   atomSelection.selectedAtoms = reindexSelection(nextSelection);
   // An open Spin/Force editor belongs to whichever atom it was opened for —
   // if the selection just moved to a different atom (or away entirely),
@@ -996,6 +1369,7 @@ export function clearSelectedAtoms(options = {}) {
   atomSelection.selectedAtoms = [];
   clearUIHighlight();
   clearHighlightAtom();
+  resetSelectionView();
   // Safety net: a full deselect should never leave a stale arrow-highlight
   // override (or its open editor) pointed at an atom that's no longer
   // selected (normally IndividualAtomRow.js's setActiveEditor already clears
@@ -1366,6 +1740,7 @@ export function clearAllHighlights(options = {}) {
   highlightHover.currentlyHighlightedBond = null;
   clearPolyhedronSelection(); // also restores the emissive before nulling
   clear3DHighlights();
+  resetDirectSelection();
 }
 
 window.clearAtomHighlight = clearAllHighlights;

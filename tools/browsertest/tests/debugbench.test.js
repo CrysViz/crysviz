@@ -41,8 +41,8 @@ const HAVE_XS = fs.existsSync(path.join(__dirname, '..', '..', '..', 'docs', 'be
       settings: { showBonds: general.showBonds, atomsColor: general.atomsColor, potential: general.atomisticPotential },
     };
   });
-  H.check('Debug window has Monitor, Benchmark and Tracer tabs, Monitor first and shown',
-    before.tabs.join('|') === 'Monitor|Benchmark|Tracer' && before.monitorVisible, JSON.stringify(before.tabs));
+  H.check('Debug window has Monitor and Benchmark tabs, Monitor first and shown',
+    before.tabs.join('|') === 'Monitor|Benchmark' && before.monitorVisible, JSON.stringify(before.tabs));
   H.check('switching to Benchmark hides Monitor and builds the form',
     before.monitorHiddenAfter && before.benchBuilt, JSON.stringify(before));
   // The WebGPU rows are settled by an async adapter probe (shader-f16).

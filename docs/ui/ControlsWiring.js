@@ -27,6 +27,27 @@ export const BOND_RADIUS_RANGE = { min: 0.005, max: 1.0 };
 // analytic disc share these), same quadratic mapping:
 export const GROUND_OFFSET_RANGE = { min: 0, max: 50 }; // structure->plane distance (A)
 export const GROUND_SIZE_RANGE = { min: 0.5, max: 30 }; // disc radius in structure radii
+// Depth of field: the stored aperture is the lens radius SQUARED (the
+// tracers' uApertureSize). The slider is quadratic in the RADIUS (radius =
+// DOF_APERTURE_MAX_RADIUS · pos², stored = radius²): the blur a tenth of an
+// ångström of lens radius gives is already strong at the usual distances, so
+// most of the slider's travel is spent below half an ångström.
+// DOF_DEPTH_RANGE is the hidden sharp slab's range (share restore).
+export const DOF_APERTURE_MAX_RADIUS = 2; // Å, at the slider's top
+export const DOF_DEPTH_RANGE = { min: 0, max: 60 };
+
+/** Slider position [0,1] -> stored aperture (radius²). */
+export function dofSliderToAperture(pos) {
+  const p = Math.min(1, Math.max(0, pos));
+  const radius = DOF_APERTURE_MAX_RADIUS * p * p;
+  return radius * radius;
+}
+
+/** Stored aperture (radius²) -> slider position [0,1] (inverse). */
+export function dofApertureToSlider(value) {
+  const radius = Math.sqrt(Math.max(0, value));
+  return Math.sqrt(Math.min(1, radius / DOF_APERTURE_MAX_RADIUS));
+}
 
 /** Slider position [0,1] -> value (quadratic). */
 export function sizeSliderToValue(pos, range) {

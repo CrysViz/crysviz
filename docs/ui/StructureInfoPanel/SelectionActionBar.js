@@ -28,13 +28,27 @@ import { openSwatchColorPicker } from '../SwatchColorPicker.js';
 import {
   getSelectedAtoms, subscribeToAtomSelection, clearSelectedAtoms,
   suppressSelectionHighlightFor3D, restoreSelectionHighlight,
+  getSelectionView, setSelectionView, getSelectionViewSets, repaintSelectionView,
+  getDirectSelection, clearAllHighlights, SELECTION_VIEW_CHANGED,
 } from '../SelectAndHighlightModule.js';
+import {
+  updateSingleBondColor, updateSingleBondOpacity, applyBondRadius, bondKey, notifyColorsChanged,
+} from '../../render/index.js';
+import { scheduleBondStyleSave } from '../SizePrefs.js';
+import {
+  listSelectionGroups, saveSelectionGroup, restoreSelectionGroup, renameSelectionGroup,
+  deleteSelectionGroup, updateSelectionGroup, nextSelectionGroupName, SELECTION_GROUPS_CHANGED,
+} from './SelectionGroups.js';
 import { isPanelActive } from '../panels/PanelManager.js';
 import { collapseAllAtomExpansions } from '../WindowAndSceneControls.js';
 import { clampOpacity, clampRadiusScale } from './components/utils.js';
 
 const BAR_ID = 'selectionActionBar';
 let coordinatesExpanded = false;
+// Saved selections row: the chosen group (index into listSelectionGroups())
+// and the inline name editor ('save' | 'rename' | null) survive refreshes.
+let chosenGroup = -1;
+let nameEditor = null;
 
 // Fired after a bulk alpha/size (or reset) edit so any open individual-atom
 // rows re-read their alpha/size controls from the model — the counterpart of
@@ -365,17 +379,415 @@ function buildLabeledSlider(labelText, min, max, step, value, onInput) {
 
 // Rebuild the bar's contents from the current selection. Empty selection -> the
 // container collapses (display:none) so it takes no room when unused.
+// ---- the Bonds / Polyhedra views: bulk edits of the derived sets ----------
+// (SelectAndHighlightModule setSelectionView: the bonds between the selected
+// atoms, the polyhedra centred on them). Each edit writes the per-bond /
+// per-polyhedron persistent style records the row editors use, so it survives
+// rebuilds and travels with the structure.
+
+function viewBonds() {
+  const structure = fileBrowser.selectedStructure;
+  return getSelectionViewSets().bonds.map((i) => structure?.bonds?.[i]).filter(Boolean);
+}
+
+function viewPolyhedra() {
+  return getSelectionViewSets().polyhedra;
+}
+
+function bondStyleEntry(structure, b) {
+  return structure.bondUserStyles[bondKey(b.indices)] ??= { elements: [...b.elements] };
+}
+
+function applyBulkBondColor(bonds, hex) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  for (const b of bonds) {
+    bondStyleEntry(structure, b).color = hex;
+    b.color = [hex, hex];
+    b.userColor = [hex, hex];
+    if (b.instanceIds && groups.bondsMesh) {
+      updateSingleBondColor(b.instanceIds[0], hex, true);
+      updateSingleBondColor(b.instanceIds[1], hex, true);
+    }
+  }
+  if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+  scheduleBondStyleSave(structure);
+  notifyColorsChanged();
+}
+
+function applyBulkBondOpacity(bonds, value) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  for (const b of bonds) {
+    bondStyleEntry(structure, b).alpha = value;
+    b.alpha = value;
+    if (b.instanceIds) {
+      updateSingleBondOpacity(b.instanceIds[0], value);
+      updateSingleBondOpacity(b.instanceIds[1], value);
+    }
+  }
+  scheduleBondStyleSave(structure);
+}
+
+function applyBulkBondRadiusScale(bonds, value) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  for (const b of bonds) {
+    bondStyleEntry(structure, b).radiusScale = value;
+    applyBondRadius(b, general.bondRadius * value);
+  }
+  scheduleBondStyleSave(structure);
+}
+
+function resetBulkBondStyle(bonds) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  for (const b of bonds) delete structure.bondUserStyles[bondKey(b.indices)];
+  scheduleBondStyleSave(structure);
+  scheduleBondRebuild(); // rebuilt from the pair defaults
+}
+
+function polyKeys(meshes) {
+  return meshes.map((m) => m.userData?.key).filter(Boolean);
+}
+
+function applyBulkPolyStyle(meshes, patch) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  structure.polyhedraUserStyles ??= {};
+  for (const k of polyKeys(meshes)) Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
+  updatePolyhedraColors();
+}
+
+function resetBulkPolyStyle(meshes) {
+  const structure = fileBrowser.selectedStructure;
+  if (!structure?.polyhedraUserStyles) return;
+  for (const k of polyKeys(meshes)) {
+    const st = structure.polyhedraUserStyles[k];
+    if (!st) continue;
+    delete st.color; delete st.alpha;
+    if (!Object.keys(st).length) delete structure.polyhedraUserStyles[k];
+  }
+  updatePolyhedraColors();
+}
+
+/** Colour swatch + Reset row shared by the three views: the swatch opens the
+ *  bulk colour picker with the 3D glow off (so live changes show), Reset
+ *  clears the bulk style. */
+function buildColorRow({ colors, hex, onPick, onReset, swatchTitle, resetTitle }) {
+  const colorRow = document.createElement('div');
+  colorRow.className = 'si-selbar-color-row';
+  const colorLabel = document.createElement('span');
+  colorLabel.textContent = 'Color';
+  colorLabel.className = 'si-row-label';
+  const swatch = document.createElement('button');
+  swatch.type = 'button';
+  swatch.className = 'si-selbar-swatch';
+  swatch.title = swatchTitle;
+  swatch.dataset.hex = hex;
+  const dot = createPieDot(colors(), 22);
+  dot.className = 'si-selbar-dot';
+  dot.style.border = 'none'; // createPieDot sets an inline border; the button already draws one
+  swatch.appendChild(dot);
+  const refreshDot = () => updatePieDot(dot, colors());
+  let highlightSuppressed = false;
+  swatch.onclick = () => {
+    if (!highlightSuppressed) { suppressSelectionHighlightFor3D(); highlightSuppressed = true; }
+    openSwatchColorPicker(swatch, swatch.dataset.hex, (picked) => {
+      onPick(picked);
+      swatch.dataset.hex = picked;
+      refreshDot();
+    }, {
+      onReset: () => {
+        onReset();
+        swatch.dataset.hex = colors()[0] ?? hex;
+        refreshDot();
+      },
+      onClose: () => {
+        if (highlightSuppressed) { restoreSelectionHighlight(); highlightSuppressed = false; }
+      },
+    });
+  };
+  const resetBtn = document.createElement('button');
+  resetBtn.className = 'btn-mini si-selbar-reset';
+  resetBtn.textContent = 'Reset';
+  resetBtn.title = resetTitle;
+  resetBtn.onclick = () => {
+    onReset();
+    restoreSelectionHighlight();
+    refreshSelectionActionBar();
+  };
+  colorRow.appendChild(colorLabel);
+  colorRow.appendChild(swatch);
+  colorRow.appendChild(resetBtn);
+  return colorRow;
+}
+
+function buildViewHeader(container, text) {
+  const header = document.createElement('div');
+  header.className = 'si-selbar-header';
+  const summary = document.createElement('span');
+  summary.className = 'si-selbar-summary';
+  summary.textContent = text;
+  const clearBtn = document.createElement('button');
+  clearBtn.className = 'btn-mini si-selbar-clear';
+  clearBtn.textContent = 'Clear';
+  clearBtn.title = 'Deselect all';
+  clearBtn.onclick = () => clearAllHighlights({ reason: 'selection-bar-clear' });
+  const actions = document.createElement('div');
+  actions.className = 'si-selbar-header-actions';
+  if (!listSelectionGroups().length && !nameEditor) actions.appendChild(buildSaveButton());
+  actions.appendChild(clearBtn);
+  header.appendChild(summary);
+  header.appendChild(actions);
+  container.appendChild(header);
+}
+
+function buildBondsView(container) {
+  const structure = fileBrowser.selectedStructure;
+  const bonds = viewBonds();
+  const n = bonds.length;
+  const picked = getDirectSelection().kind === 'bonds';
+  buildViewHeader(container, picked ? `${n} bond${n === 1 ? '' : 's'} selected`
+    : (n ? `${n} bond${n === 1 ? '' : 's'} between the selected atoms` : 'No bonds between the selected atoms'));
+  if (!n) return;
+  const colors = () => {
+    const seen = [];
+    for (const b of bonds) {
+      const c = safeColor(structure?.bondUserStyles?.[bondKey(b.indices)]?.color ?? b.color?.[0] ?? b.defaultColor?.[0]);
+      if (!seen.includes(c)) seen.push(c);
+    }
+    return seen;
+  };
+  const firstStyle = structure?.bondUserStyles?.[bondKey(bonds[0].indices)];
+  container.appendChild(buildColorRow({
+    colors, hex: colors()[0] ?? '#808080',
+    onPick: (hex) => applyBulkBondColor(bonds, hex),
+    onReset: () => resetBulkBondStyle(bonds),
+    swatchTitle: 'Apply a color to every bond between the selected atoms',
+    resetTitle: 'Reset color, alpha and size of these bonds to their pair defaults',
+  }));
+  container.appendChild(buildLabeledSlider('Alpha', 0, 1, 0.01, clampOpacity(firstStyle?.alpha ?? bonds[0].alpha ?? 1), (raw) => {
+    const v = clampOpacity(raw);
+    applyBulkBondOpacity(bonds, v);
+    return v;
+  }));
+  container.appendChild(buildLabeledSlider('Size', 0.2, 3, 0.05, clampRadiusScale(firstStyle?.radiusScale ?? 1), (raw) => {
+    const v = clampRadiusScale(raw);
+    applyBulkBondRadiusScale(bonds, v);
+    return v;
+  }));
+}
+
+function buildPolyhedraView(container) {
+  const structure = fileBrowser.selectedStructure;
+  const meshes = viewPolyhedra();
+  const n = meshes.length;
+  const picked = getDirectSelection().kind === 'polyhedra';
+  buildViewHeader(container, picked ? `${n} polyhedr${n === 1 ? 'on' : 'a'} selected`
+    : (n ? `${n} polyhedr${n === 1 ? 'on' : 'a'} of the selected atoms` : 'No polyhedra of the selected atoms'));
+  if (!n) return;
+  const colors = () => {
+    const seen = [];
+    for (const m of meshes) {
+      const c = safeColor(structure?.polyhedraUserStyles?.[m.userData?.key]?.color ?? `#${m.material.color.getHexString()}`);
+      if (!seen.includes(c)) seen.push(c);
+    }
+    return seen;
+  };
+  const firstAlpha = structure?.polyhedraUserStyles?.[meshes[0].userData?.key]?.alpha ?? meshes[0].userData?.baseOpacity ?? meshes[0].material.opacity;
+  container.appendChild(buildColorRow({
+    colors, hex: colors()[0] ?? '#808080',
+    onPick: (hex) => applyBulkPolyStyle(meshes, { color: hex }),
+    onReset: () => resetBulkPolyStyle(meshes),
+    swatchTitle: 'Apply a face color to every polyhedron of the selected atoms',
+    resetTitle: 'Reset color and alpha of these polyhedra to their category style',
+  }));
+  container.appendChild(buildLabeledSlider('Alpha', 0, 1, 0.01, clampOpacity(firstAlpha), (raw) => {
+    const v = clampOpacity(raw);
+    applyBulkPolyStyle(meshes, { alpha: v });
+    return v;
+  }));
+}
+
+/** Atoms | Bonds | Polyhedra — which set of the selection glows and is edited. */
+function buildViewTabs() {
+  const tabs = document.createElement('div');
+  tabs.className = 'segmented-control si-selbar-tabs';
+  tabs.id = 'selectionViewTabs';
+  const sets = getSelectionViewSets();
+  const active = getSelectionView();
+  const direct = getDirectSelection().kind;
+  const defs = [
+    ['atoms', `Atoms (${direct ? sets.atoms.length : getSelectedAtoms().length})`,
+      direct ? 'Select the atoms of the picked bonds / polyhedra instead' : 'The selected atoms'],
+    ['bonds', `Bonds (${sets.bonds.length})`,
+      direct === 'bonds' ? 'The picked bonds (Shift+double-click adds one, Ctrl/⌘ toggles)'
+        : 'The bonds between the selected atoms: they glow and the controls edit them'],
+    ['polyhedra', `Polyhedra (${sets.polyhedra.length})`,
+      direct === 'polyhedra' ? 'The picked polyhedra (Shift+double-click adds one, Ctrl/⌘ toggles)'
+        : 'The polyhedra centred on the selected atoms (and cages whose corners are all selected)'],
+  ];
+  for (const [tab, label, title] of defs) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = label;
+    btn.title = title;
+    btn.dataset.view = tab;
+    if (tab === active) btn.classList.add('active');
+    btn.onclick = () => setSelectionView(/** @type {any} */ (tab));
+    tabs.appendChild(btn);
+  }
+  return tabs;
+}
+
+/** Saved selections (SelectionGroups.js): a dropdown of the structure's
+ *  groups — choosing one selects it again — with Save / Add / Rename /
+ *  Delete and an inline name editor. Shown even with nothing selected, so a
+ *  group can be brought back. */
+/** The header's Save button (the groups row's one when the row is not shown:
+ *  no saved selection yet keeps the bar as short as before). */
+function buildSaveButton() {
+  const b = document.createElement('button');
+  b.className = 'btn-mini si-selbar-save';
+  b.id = 'selectionGroupSave';
+  b.textContent = 'Save';
+  b.title = 'Save the current selection (its atoms, with the bonds or polyhedra of the active tab) under a name';
+  b.onclick = () => { nameEditor = 'save'; refreshSelectionActionBar(); };
+  return b;
+}
+
+function buildGroupsRow(hasSelection) {
+  const list = listSelectionGroups();
+  if (chosenGroup >= list.length) chosenGroup = -1;
+  if (!list.length && !nameEditor) return null; // Save sits in the header until a group exists
+  const block = document.createElement('div');
+  block.className = 'si-selbar-groups-block';
+  const title = document.createElement('div');
+  title.className = 'si-selbar-groups-title';
+  title.textContent = 'Saved selections';
+  block.appendChild(title);
+  const row = document.createElement('div');
+  row.className = 'si-selbar-groups';
+  row.id = 'selectionGroupsRow';
+  block.appendChild(row);
+
+  if (nameEditor) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'selectionGroupName';
+    input.maxLength = 60;
+    input.value = nameEditor === 'rename' ? (list[chosenGroup]?.name ?? '') : nextSelectionGroupName();
+    input.placeholder = 'Name';
+    const commit = () => {
+      if (nameEditor === 'rename') renameSelectionGroup(chosenGroup, input.value);
+      else { saveSelectionGroup(input.value); chosenGroup = listSelectionGroups().length - 1; }
+      nameEditor = null;
+      refreshSelectionActionBar();
+    };
+    const cancel = () => { nameEditor = null; refreshSelectionActionBar(); };
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    };
+    const ok = document.createElement('button');
+    ok.className = 'btn-mini';
+    ok.id = 'selectionGroupNameOk';
+    ok.textContent = 'OK';
+    ok.onclick = commit;
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn-mini';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = cancel;
+    row.append(input, ok, cancelBtn);
+    setTimeout(() => { input.focus(); input.select(); }, 0);
+    return block;
+  }
+
+  const select = document.createElement('select');
+  select.id = 'selectionGroupsSelect';
+  select.title = 'Saved selections of this structure: choose one to select it again';
+  const placeholder = document.createElement('option');
+  placeholder.value = '-1';
+  placeholder.textContent = list.length ? 'Saved selections…' : 'No saved selections';
+  select.appendChild(placeholder);
+  list.forEach((g, i) => {
+    const opt = document.createElement('option');
+    opt.value = String(i);
+    const n = g.atoms?.length ?? 0;
+    opt.textContent = `${g.name} (${n} atom${n === 1 ? '' : 's'})`;
+    select.appendChild(opt);
+  });
+  select.value = String(chosenGroup);
+  select.disabled = !list.length;
+  select.onchange = () => {
+    chosenGroup = parseInt(select.value, 10);
+    if (chosenGroup >= 0) restoreSelectionGroup(chosenGroup);
+    refreshSelectionActionBar();
+  };
+  row.appendChild(select);
+
+  const mk = (id, text, title, onclick, enabled = true) => {
+    const b = document.createElement('button');
+    b.className = 'btn-mini';
+    b.id = id;
+    b.textContent = text;
+    b.title = title;
+    b.disabled = !enabled;
+    b.onclick = onclick;
+    row.appendChild(b);
+    return b;
+  };
+  // Show selects the chosen group again (the dropdown only fires on a new
+  // choice: after Clear, the same entry needs a button).
+  mk('selectionGroupShow', 'Show', 'Select the chosen saved selection',
+    () => { restoreSelectionGroup(chosenGroup); }, chosenGroup >= 0);
+  const save = buildSaveButton();
+  save.disabled = !hasSelection;
+  row.appendChild(save);
+  mk('selectionGroupUpdate', 'Update', 'Replace the chosen saved selection with the current selection',
+    () => { updateSelectionGroup(chosenGroup); refreshSelectionActionBar(); }, hasSelection && chosenGroup >= 0);
+  mk('selectionGroupAdd', 'Add', 'Add the chosen saved selection\'s atoms to the current selection',
+    () => { restoreSelectionGroup(chosenGroup, { add: true }); }, chosenGroup >= 0);
+  mk('selectionGroupRename', 'Rename', 'Rename the chosen saved selection',
+    () => { nameEditor = 'rename'; refreshSelectionActionBar(); }, chosenGroup >= 0);
+  mk('selectionGroupDelete', 'Delete', 'Delete the chosen saved selection',
+    () => { deleteSelectionGroup(chosenGroup); chosenGroup = -1; refreshSelectionActionBar(); }, chosenGroup >= 0);
+  return block;
+}
+
 function refreshSelectionActionBar() {
   const container = document.getElementById(BAR_ID);
   if (!container) return;
 
   const selected = getSelectedAtoms();
+  const direct = getDirectSelection().kind; // bonds / polyhedra picked in the 3D view
   container.innerHTML = '';
-  if (!selected.length) {
+  if (!selected.length && !direct && !listSelectionGroups().length) {
     container.style.display = 'none';
+    nameEditor = null;
     return;
   }
   container.style.display = 'block';
+  if (!selected.length && !direct) {
+    // Nothing selected: only the saved selections, to bring one back.
+    const only = buildGroupsRow(false);
+    if (only) container.appendChild(only);
+    return;
+  }
+
+  container.appendChild(buildViewTabs());
+  const view = getSelectionView();
+  if (view === 'bonds') {
+    buildBondsView(container);
+    { const groupsRow = buildGroupsRow(true); if (groupsRow) container.appendChild(groupsRow); }
+    return;
+  }
+  if (view === 'polyhedra') {
+    buildPolyhedraView(container);
+    { const groupsRow = buildGroupsRow(true); if (groupsRow) container.appendChild(groupsRow); }
+    return;
+  }
 
   const structure = fileBrowser.selectedStructure;
   const first = selected[0];
@@ -422,7 +834,9 @@ function refreshSelectionActionBar() {
   };
   const headerActions = document.createElement('div');
   headerActions.className = 'si-selbar-header-actions';
-  headerActions.append(inspectBtn, coordinatesBtn, clearBtn);
+  headerActions.append(inspectBtn, coordinatesBtn);
+  if (!listSelectionGroups().length && !nameEditor) headerActions.appendChild(buildSaveButton());
+  headerActions.appendChild(clearBtn);
   header.appendChild(summary);
   header.appendChild(headerActions);
   container.appendChild(header);
@@ -488,7 +902,7 @@ function refreshSelectionActionBar() {
   container.appendChild(colorRow);
 
   // Alpha + Size, applied live to the whole selection.
-  container.appendChild(buildLabeledSlider('Alpha', 0.05, 1, 0.01, currentAlpha, (raw) => {
+  container.appendChild(buildLabeledSlider('Alpha', 0, 1, 0.01, currentAlpha, (raw) => {
     const v = clampOpacity(raw);
     applyBulkOpacity(selected, v);
     return v;
@@ -498,6 +912,7 @@ function refreshSelectionActionBar() {
     applyBulkRadiusScale(selected, v);
     return v;
   }));
+  { const groupsRow = buildGroupsRow(true); if (groupsRow) container.appendChild(groupsRow); }
 }
 
 let subscribed = false;
@@ -544,7 +959,12 @@ export function renderSelectionActionBarInto(parent) {
 
   if (!subscribed) {
     subscribeToAtomSelection(onSelectionChanged);
+    document.addEventListener(SELECTION_VIEW_CHANGED, () => refreshSelectionActionBar());
+    document.addEventListener(SELECTION_GROUPS_CHANGED, () => refreshSelectionActionBar());
     subscribed = true;
   }
+  // The panel was rebuilt (a structure change or a bond/polyhedra rebuild):
+  // the Bonds / Polyhedra view glows new instance ids and meshes.
+  repaintSelectionView();
   refreshSelectionActionBar();
 }

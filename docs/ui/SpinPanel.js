@@ -43,7 +43,6 @@ function captureSpinColorBarState() {
   general.colorBarSize = settings.size;
   general.spinColorScale = settings.scale;
   general.spinLegendText = settings.legend;
-  general.spinLegendOffset = settings.legendOffset;
   general.spinColorBarFloating = spinColorBarInstance.isFloating();
   if (general.spinColorBarFloating) {
     // The anchor (offset from #view's edges), not raw left/top: a file
@@ -832,8 +831,6 @@ function refreshColorBarVisibility() {
       fallbackMin: minValue,
       fallbackMax: maxValue,
       legend: general.spinLegendText ?? "Spin (μB)",
-      legendOffset: general.spinLegendOffset,
-      onLegendOffsetChange: (offset) => { general.spinLegendOffset = offset; },
       scale: general.spinColorScale,
       orientation: general.spinColorBarOrientation,
       flipSide: general.spinColorBarFlipSide,

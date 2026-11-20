@@ -614,9 +614,6 @@ export function drawAxesLegend(painter, rect) {
 // default (non-flipped) layout.
 function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, inputFont, pxScale = 1) {
   const { colormap, min, max, minText, maxText, scale, legend, flipSide } = settings;
-  // Where the user dragged the legend text (ColorBarWidget.js), screen px.
-  const legendDx = (Number(settings.legendOffset?.x) || 0) * pxScale;
-  const legendDy = (Number(settings.legendOffset?.y) || 0) * pxScale;
   const horizontal = w >= h;
   // The live bar shows Min/Max as the exact text in those input fields, not
   // formatTick(min)/formatTick(max) — the same rounding its OWN inner ticks
@@ -702,7 +699,7 @@ function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, input
       // Rich-text draw (bold/italic/sup/sub via utils/LegendRichText.js), not
       // drawText's plain single run — matches whatever formatting the live
       // widget's legend (click-to-edit, ColorBarWidget.js) is showing.
-      painter.richText(legend, x + w / 2 + legendDx, legendY + legendDy,
+      painter.richText(legend, x + w / 2, legendY,
         { fontPx: legendFont, align: 'center', baseline: tickBaseline, fill: inkColor });
     }
   } else {
@@ -716,8 +713,8 @@ function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, input
       const verticalLegendOffset = tickSpanV() + legendGap + legendHalfHeight();
       painter.richText(
         legend,
-        (flipSide ? tickX - verticalLegendOffset : tickX + verticalLegendOffset) + legendDx,
-        y + h / 2 + legendDy,
+        flipSide ? tickX - verticalLegendOffset : tickX + verticalLegendOffset,
+        y + h / 2,
         { fontPx: legendFont, align: 'center', baseline: 'middle', fill: inkColor, rotateDeg: -90 },
       );
     }

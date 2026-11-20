@@ -336,14 +336,13 @@ const close = (a, b, eps) => Math.abs(a - b) <= eps;
     const g = document.querySelector('#siLegend .cv-colorbar-grip');
     const r = g?.getBoundingClientRect();
     const v = document.getElementById('siViewport').getBoundingClientRect();
-    return g && { text: g.textContent, x: r.left + r.width / 2, y: r.top + r.height / 2, vr: v.right, vb: v.bottom, iw: innerWidth, ih: innerHeight };
+    return g && { text: g.textContent, x: r.left + r.width / 2, y: r.top + r.height / 2, vr: v.right, vb: v.bottom };
   });
   H.check('the legend has the colour bars\' ⦀ grip', grip?.text === '⦀', JSON.stringify(grip));
   await page.mouse.move(grip.x, grip.y);
   await page.mouse.down();
   await page.mouse.move(grip.x + 200, grip.y + 200, { steps: 5 });
-  // Past the view's corner, but inside the browser window (the pointer is lost outside it).
-  await page.mouse.move(Math.min(grip.vr + 50, grip.iw - 2), Math.min(grip.vb + 50, grip.ih - 2), { steps: 5 });
+  await page.mouse.move(grip.vr + 50, grip.vb + 50, { steps: 5 });
   await page.mouse.up();
   await page.waitForTimeout(200);
   const dragged = await legendBox();
@@ -383,7 +382,7 @@ const close = (a, b, eps) => Math.abs(a - b) <= eps;
   const grip2 = await page.evaluate(() => { const r = document.querySelector('#siLegend .cv-colorbar-grip').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
   await page.mouse.move(grip2.x, grip2.y);
   await page.mouse.down();
-  await page.mouse.move(Math.min(grip.vr + 50, grip.iw - 2), Math.min(grip.vb + 50, grip.ih - 2), { steps: 8 });
+  await page.mouse.move(grip.vr + 50, grip.vb + 50, { steps: 8 });
   await page.mouse.up();
   await page.waitForTimeout(200);
 

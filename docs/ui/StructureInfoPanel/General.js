@@ -529,6 +529,7 @@ export function renderComposition(panelState="closed") {
     id: 'linkPeriodicCopiesToggle',
     label: 'Link colors of periodic copies',
     checked: general.linkPeriodicCopies !== false,
+    small: true, // the same compact switch as the element rows below
     onChange: (checked) => {
       // The selection is kept: once the lists are rebuilt it is selected
       // again under the new setting (its rows are new nodes, and a linked

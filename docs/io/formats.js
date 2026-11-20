@@ -430,9 +430,7 @@ export const FORMATS = [
   {
     id: 'chgcar',
     label: 'VASP CHGCAR',
-    // Parsed from the FileSource's Blob in a pool worker (io/chgcarParse.js),
-    // so a large grid is never read into a string on the main thread.
-    kind: SourceKind.RANDOM_ACCESS,
+    kind: SourceKind.TEXT,
     handledBy: HandledBy.VIEWER,
     matchesName: (lower) => lower.includes('chgcar'),
     // Same layout as ELFCAR; the name decides between them, CHGCAR by default.
@@ -441,9 +439,7 @@ export const FORMATS = [
   {
     id: 'elfcar',
     label: 'VASP ELFCAR',
-    // Parsed from the FileSource's Blob in a pool worker (io/chgcarParse.js),
-    // so a large grid is never read into a string on the main thread.
-    kind: SourceKind.RANDOM_ACCESS,
+    kind: SourceKind.TEXT,
     handledBy: HandledBy.VIEWER,
     matchesName: (lower) => lower.includes('elfcar'),
     sniff: sniffVaspVolumetric,

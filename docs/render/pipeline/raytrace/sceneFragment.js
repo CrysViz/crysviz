@@ -45,6 +45,9 @@ import { planeChunk } from './planeChunk.js';
 import { gridChunk } from './gridChunk.js';
 import { convexChunk } from './convexChunk.js';
 import { coneChunk } from './coneChunk.js';
+import * as THREE from '../../../external/three/three.module.js';
+import '../../../external/three-raytracing/RayTracingCommon.js'; // registers THREE.ShaderChunk['raytracing_*']
+import { DOF_DECLARATIONS, dofFunctions, patchMainChunkDof } from './dofChunk.js';
 
 export const DATA_TEX_WIDTH = 1024;
 
@@ -55,7 +58,7 @@ precision highp int;
 precision highp sampler2D;
 
 #include <raytracing_uniforms_and_defines>
-
+${DOF_DECLARATIONS}
 uniform sampler2D uAtomsDataTexture;
 uniform sampler2D uCylindersDataTexture;
 uniform sampler2D uPolyDataTexture;
@@ -458,6 +461,7 @@ vec3 getSkyColor(vec3 rayDir)
 // path up to the first see-through layer, then each continuation) keeps the
 // classic budget of 6 steps, so paths without see-through surfaces trace
 // exactly as before; the loop leaves room for the continuations.
+${dofFunctions('SceneIntersect(FALSE)')}
 #define MAX_PASS_LAYERS 4
 #define SEGMENT_BOUNCES 6
 
@@ -540,12 +544,18 @@ vec3 RayTrace()
 		// visibly grainy. Now both are exact; the converged image is the same.
 		if (intersectionMaterialType != MAT_TRANSP && intersectionAlpha < 0.999)
 		{
-			// A shadow ray: (1 - alpha) of the light gets through.
+			// A shadow ray: (1 - alpha) of the light gets through. The
+			// pass-through is free (segBounces is given back): a shadow ray
+			// crossing a few see-through atoms used to spend its segment
+			// budget on them and was dropped, which painted a full shadow
+			// for objects that were nearly invisible. The outer loop bound
+			// still caps the work per sample.
 			if (isShadowRay == TRUE && !uLegacyNoise)
 			{
 				diffuseContribution *= 1.0 - intersectionAlpha;
 				specularContribution *= 1.0 - intersectionAlpha;
 				rayOrigin = rayOrigin + ((t + uEPS_intersect) * rayDirection);
+				segBounces--;
 				continue;
 			}
 			// A camera (or reflected/refracted) ray: shade this surface below
@@ -566,6 +576,7 @@ vec3 RayTrace()
 			else if (rand() >= intersectionAlpha)
 			{
 				rayOrigin = rayOrigin + ((t + uEPS_intersect) * rayDirection);
+				segBounces--; // a pass-through is free (see above)
 				continue;
 			}
 		}
@@ -749,7 +760,7 @@ void SetupScene(void)
 	// scene data lives in the data textures; nothing to set up per-pixel
 }
 
-#include <raytracing_main>
+${patchMainChunkDof(THREE.ShaderChunk['raytracing_main'])}
 `;
 }
 

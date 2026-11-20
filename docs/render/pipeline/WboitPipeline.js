@@ -18,6 +18,8 @@ import { app } from '../../state/store.js';
 import { WboitPass } from '../../external/three-wboit/WboitPass.js';
 import { WboitUtils } from '../../external/three-wboit/WboitUtils.js';
 import { prepareCelOutlinePass, renderCelOutlinePass } from '../CelOutlinePass.js';
+import { renderRasterHighlightOverlay } from '../HighlightOverlay.js';
+import { renderFocusPeaking } from '../FocusPlaneModule.js';
 import { StagedTransparencyPipeline } from './StagedTransparencyPipeline.js';
 
 export class WboitPipeline extends StagedTransparencyPipeline {
@@ -47,6 +49,8 @@ export class WboitPipeline extends StagedTransparencyPipeline {
     prepareCelOutlinePass(renderer, scene, camera);
     this._pass.render(renderer);
     renderCelOutlinePass(renderer, scene, camera);
+    renderRasterHighlightOverlay(renderer, camera); // see-through selection ghosts
+    renderFocusPeaking(renderer, scene, camera); // DoF focus peaking while a DoF slider is dragged
   }
 
   setSize(_width, _height) {

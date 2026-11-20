@@ -1,5 +1,5 @@
 import { app, fileBrowser, general } from '../state/store.js';
-import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, MIN_COLORMAP_RESOLUTION, MAX_COLORMAP_RESOLUTION, sanitizeColormapResolution, getPlaneDefinitionNormalAndD, getPlaneDRangeInCell, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
+import { Plane, CutModes, DEFAULT_COLORMAP_RESOLUTION, getPlaneDefinitionNormalAndD, getPlaneDRangeInCell, normalizePlaneCutMode, CartesianParamsToMillerInds, fitPlaneToPoints, PLANE_VIS_NONE, PLANE_VIS_FIELD } from '../model/Plane.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { updateAtomCutPlaneState } from '../render/AtomsFracUpdateModule.js';
 import { activePeriodicBounds } from '../render/LatticeModule.js';
@@ -9,7 +9,6 @@ import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
 import { computeAutoRange, roundToSigFigs, logScaleFloor } from '../utils/index.js';
 import { saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
-import { setViewDirection } from './WindowAndSceneControls.js';
 
 export const planesData = {
   activeInputMode: 'hkl', // 'hkl' or 'uvwd'
@@ -34,6 +33,12 @@ let atomSelectionUnsubscribe = null;
 // scale instead of a stale previous plane's.
 const PLANE_COLORBAR_FLOATING_ID = 'planeColorBarFloating';
 let planesColorBarInstance = null;
+// Which plane object planesColorBarInstance is currently showing — needed at
+// teardown time (refreshPlaneColorBar) because selectedPlaneIndex may have
+// already moved on to a different plane by then (e.g. the user just picked a
+// new plane), so the freshly-computed `plane` there is the NEW plane, not
+// the one whose legend text is actually being read off the outgoing bar.
+let planesColorBarOwnerPlane = null;
 
 registerColorBarSource('plane', 'Field', () => planesColorBarInstance);
 
@@ -72,14 +77,9 @@ function serializePlanes(structure) {
     };
     const fieldLabel = p.field?.label || p.fieldLabel;
     if (fieldLabel) out.fieldLabel = fieldLabel;
-    const wave = p.field ? waveBandOf(p.field) : (p.fieldWave ?? null);
-    if (wave) out.fieldWave = wave;
-    const resolution = planeResolutionSetting(p);
-    if (resolution) out.colormapResolution = resolution;
     // The color bar writes its default legend (the field's name) back onto
     // the plane; only a user-edited legend is worth storing.
     if (p.legendText != null && p.legendText !== fieldLabel) out.legendText = p.legendText;
-    if (p.legendOffset) out.legendOffset = { x: p.legendOffset.x, y: p.legendOffset.y };
     return out;
   });
 }
@@ -93,65 +93,6 @@ function persistPlanes({ debounce = false } = {}) {
   if (!structure) return;
   if (debounce) scheduleStructurePrefSave(structure, PLANES_PREF_FIELD, () => serializePlanes(structure));
   else saveStructurePref(structure, PLANES_PREF_FIELD, serializePlanes(structure));
-}
-
-/**
- * A plane's user-set colormap resolution as `{ u, v }` (each a clamped integer
- * or null = derived from the plane's aspect ratio), or null when neither axis
- * is set — the plane then uses DEFAULT_COLORMAP_RESOLUTION.
- */
-function planeResolutionSetting(plane) {
-  const raw = plane?.colormapResolution;
-  if (!raw || typeof raw !== 'object') return null;
-  const u = sanitizeColormapResolution(raw.u);
-  const v = sanitizeColormapResolution(raw.v);
-  return (u === null && v === null) ? null : { u, v };
-}
-
-/**
- * Which WAVECAR band (and quantity) a field is, as plain JSON, or null for a
- * field that is not a band. Stored with a plane so the band can be expanded
- * again after a reload: a band is not in memory until someone loads it, so
- * waiting for its label to show up would leave the plane without a field.
- */
-function waveBandOf(field) {
-  const w = field?.wavefunction;
-  if (!w) return null;
-  const out = { spin: w.spin, kpt: w.kpt, band: w.band, quantity: w.quantity };
-  if (Number.isFinite(w.spinor) && w.spinor >= 0) out.spinor = w.spinor;
-  return out;
-}
-
-/** Planes whose stored band is being expanded right now. */
-const planeBandLoads = new WeakSet();
-
-/**
- * Expand the stored band of a pending plane from the selected structure's
- * WAVECAR, then bind the plane to it. Never saves.
- */
-function loadPlaneBand(structure, plane) {
-  const wf = fieldBrowser.catalog?.wavefunction;
-  const w = plane.fieldWave;
-  if (!wf || !w || planeBandLoads.has(plane)) return;
-  const valid = (n, max) => Number.isInteger(n) && n >= 1 && n <= max;
-  if (!valid(w.spin, wf.nspin) || !valid(w.kpt, wf.nkpts) || !valid(w.band, wf.nbands)) return;
-  planeBandLoads.add(plane);
-  wf.getField(w.spin, w.kpt, w.band, w.quantity, w.spinor).then((field) => {
-    planeBandLoads.delete(plane);
-    if (!field || plane.field || plane.visualization !== PLANE_VIS_FIELD) return;
-    if (!structure.planes?.includes(plane)) return;
-    plane.field = field;
-    replacePlaneMesh(structure, plane);
-    if (structure === getSelectedStructure()) {
-      renderPlanesTable();
-      if (hasSelectedPlane()) updateFieldSelectionDropdown();
-    }
-    // The band is now loaded: let the field list and the other planes see it.
-    fieldBrowser.catalog?.notify?.();
-  }).catch((error) => {
-    planeBandLoads.delete(plane);
-    console.warn('Planes: could not load the band a plane shows', error);
-  });
 }
 
 /** The loaded field a plane's `fieldLabel` names, or null. */
@@ -190,25 +131,20 @@ export function resolvePendingPlaneFields() {
   structure.planes.forEach(plane => {
     if (plane.field || plane.visualization !== PLANE_VIS_FIELD) return;
     const field = findFieldByLabel(plane.fieldLabel);
-    if (!field) {
-      if (plane.fieldWave) loadPlaneBand(structure, plane);
-      return;
-    }
+    if (!field) return;
     plane.field = field;
     replacePlaneMesh(structure, plane);
     resolved++;
   });
-  if (resolved) renderPlanesTable();
+  if (resolved) {
+    renderPlanesTable();
+    if (hasSelectedPlane()) updateFieldSelectionDropdown();
+  }
   return resolved;
 }
 
 if (typeof document !== 'undefined') {
-  document.addEventListener('crysviz:fields-changed', () => {
-    resolvePendingPlaneFields();
-    // The field list changed (a band was loaded, a file attached): the
-    // selected plane's Field dropdown lists what is loaded now.
-    if (hasSelectedPlane()) updateFieldSelectionDropdown();
-  });
+  document.addEventListener('crysviz:fields-changed', () => resolvePendingPlaneFields());
 }
 
 /**
@@ -230,7 +166,6 @@ function restorePlanes(container, value, structure) {
     const copy = JSON.parse(JSON.stringify(stored));
     const plane = { ...createDefaultPlane(copy.params, copy.label ?? planeLabelForParams(copy.params)), ...copy, field: null };
     plane.cutMode = normalizePlaneCutMode(plane.cutMode);
-    plane.colormapResolution = planeResolutionSetting(plane);
     if (plane.visualization === PLANE_VIS_FIELD) plane.field = findFieldByLabel(plane.fieldLabel);
     structure.planes.push(plane);
     existing.add(keyOf(plane.params));
@@ -299,15 +234,12 @@ function replacePlaneMesh(structure, planeDef) {
     // Trimmed to the periodic display boundary (the Cell & Supercell panel's
     // "Active Cell Boundary"), like the atoms and the field, not just the cell.
     bounds: activePeriodicBounds(),
-    // The field colormap is written as vertex colours, so the vertex grid
-    // density IS the colormap's sampling resolution. Per plane, user-set
-    // from the Field & Colormap section; unset axes follow the aspect ratio.
-    resolution: planeResolutionSetting(planeDef) ?? DEFAULT_COLORMAP_RESOLUTION,
-    // A Field plane whose field is not back yet (restored before its file,
-    // or a band still loading) is drawn plain: in Field mode with nothing to
-    // sample it would have no vertex colours at all and render black.
-    mode: (planeDef.visualization === PLANE_VIS_FIELD && !planeDef.field)
-      ? PLANE_VIS_NONE : (planeDef.visualization || PLANE_VIS_NONE),
+    // Mesh tessellation density is no longer a user-exposed setting (it
+    // never actually controlled color smoothness — the LUT sampling was
+    // always a fixed 256 steps regardless — just the geometry's own vertex
+    // density), so this is now always the same default everyone gets.
+    resolution: DEFAULT_COLORMAP_RESOLUTION,
+    mode: planeDef.visualization || 'None',
     field: planeDef.field || null,
     colormap: planeDef.colormap || 'heatmap',
     colormapMin: planeDef.colormapMin,
@@ -318,52 +250,6 @@ function replacePlaneMesh(structure, planeDef) {
   planeMesh.visible = Boolean(planesData.showPlanes && planeDef.enabled);
   app.scene.add(planeMesh);
   getStructureMeshMap(structure).set(planeDef, planeMesh);
-  // A parameter edit can change the aspect ratio, and with it the derived
-  // (unset) resolution axis shown in the boxes.
-  if (structure === getSelectedStructure() && structure.planes?.[selectedPlaneIndex] === planeDef) {
-    syncPlaneResolutionInputs();
-  }
-}
-
-/**
- * Show the selected plane's colormap resolution in the u/v boxes: the
- * segment counts its mesh actually uses, so an axis the user never set shows
- * the aspect-derived value rather than a blank.
- */
-function syncPlaneResolutionInputs() {
-  const inputU = document.getElementById('planesResolutionU');
-  const inputV = document.getElementById('planesResolutionV');
-  if (!inputU || !inputV) return;
-  const structure = getSelectedStructure();
-  const plane = hasSelectedPlane() ? structure.planes[selectedPlaneIndex] : null;
-  const mesh = plane ? getStructureMeshMap(structure).get(plane) : null;
-  const setting = planeResolutionSetting(plane);
-  inputU.value = `${setting?.u ?? mesh?.resolutionU ?? ''}`;
-  inputV.value = `${setting?.v ?? mesh?.resolutionV ?? ''}`;
-}
-
-/**
- * Apply the u/v resolution boxes to the selected plane. Both boxes are stored
- * together so the pair sticks even if a later d/normal edit changes the
- * plane's aspect ratio; an emptied box returns that axis to the derived value.
- * @returns {boolean} whether the plane's setting changed
- */
-function applyPlaneResolutionInputs() {
-  const structure = getSelectedStructure();
-  if (!hasSelectedPlane()) return false;
-  const plane = structure.planes[selectedPlaneIndex];
-  const inputU = document.getElementById('planesResolutionU');
-  const inputV = document.getElementById('planesResolutionV');
-  if (!inputU || !inputV) return false;
-
-  const next = planeResolutionSetting({
-    colormapResolution: { u: inputU.value.trim(), v: inputV.value.trim() },
-  });
-  const changed = JSON.stringify(next) !== JSON.stringify(planeResolutionSetting(plane));
-  plane.colormapResolution = next;
-  if (changed) replacePlaneMesh(structure, plane);
-  else syncPlaneResolutionInputs(); // normalise a clamped/rounded entry
-  return changed;
 }
 
 function clearRenderedPlanesForStructure(structure) {
@@ -671,7 +557,7 @@ function updateFieldControlsAvailability(enabled) {
   const fieldSection = document.getElementById('planesFieldSection');
   const fieldCard = fieldSection?.querySelector('.planes-field-colormap-container');
   const fieldControls = document.querySelectorAll(
-    '#planesFieldSelect, #planesColormapSelect, #planesResolutionU, #planesResolutionV, #planesColormapRangeMin, #planesColormapRangeMax, #planesLogScaleCheckbox, #planesAutoRangeBtn'
+    '#planesFieldSelect, #planesColormapSelect, #planesColormapRangeMin, #planesColormapRangeMax, #planesLogScaleCheckbox, #planesAutoRangeBtn'
   );
   const hasFields = fieldBrowser.availableFields && fieldBrowser.availableFields.length > 0;
   const controlsEnabled = Boolean(enabled && hasFields);
@@ -922,17 +808,16 @@ function refreshPlaneColorBar() {
     general.planeColorBarOrientation = settings.orientation;
     general.planeColorBarFlipSide = settings.flipSide;
     general.colorBarSize = settings.size;
-    // The plane's legend text and offset are not captured here: the bar's
-    // onLegendChange/onLegendOffsetChange already wrote any user edit onto
-    // the plane, and copying the displayed legend back would turn the OLD
-    // field's default name into a "custom" legend right after the field
-    // select cleared it for the new field.
+    if (planesColorBarOwnerPlane) {
+      planesColorBarOwnerPlane.legendText = settings.legend;
+    }
     general.planeColorBarFloating = planesColorBarInstance.isFloating();
     if (general.planeColorBarFloating) {
       general.planeColorBarFloatPos = planesColorBarInstance.getAnchor();
     }
     planesColorBarInstance.remove();
     planesColorBarInstance = null;
+    planesColorBarOwnerPlane = null;
   }
   container.innerHTML = '';
 
@@ -956,7 +841,6 @@ function refreshPlaneColorBar() {
     fallbackMin: minValue,
     fallbackMax: maxValue,
     legend: plane.legendText ?? (plane.field.label || plane.fieldLabel || 'Field'),
-    legendOffset: plane.legendOffset ?? null,
     scale: plane.colormapScale || 'linear',
     orientation: general.planeColorBarOrientation,
     flipSide: general.planeColorBarFlipSide,
@@ -984,11 +868,8 @@ function refreshPlaneColorBar() {
       plane.legendText = legendText;
       if (getSelectedStructure()?.planes?.includes(plane)) persistPlanes();
     },
-    onLegendOffsetChange: (offset) => {
-      plane.legendOffset = offset;
-      if (getSelectedStructure()?.planes?.includes(plane)) persistPlanes();
-    },
   });
+  planesColorBarOwnerPlane = plane;
 
   if (general.planeColorBarFloating && general.planeColorBarFloatPos) {
     planesColorBarInstance.floatAtAnchor(general.planeColorBarFloatPos);
@@ -1117,16 +998,6 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
             </span>
             <span class="toggle_text">Show Plane</span>
           </label>
-          <!-- Camera aligned with the selected plane's normal. Same convention
-               as the View window's a/b/c buttons: "along" puts the normal
-               pointing at the viewer, "opposite" turns the view round. -->
-          <div class="planes-view-row">
-            <span class="planes-view-label">View:</span>
-            <button type="button" id="planeViewAlongBtn" class="file-action-btn planes-view-btn" disabled
-                    title="Align the camera with the plane normal (the normal points towards you)">Along normal</button>
-            <button type="button" id="planeViewOppositeBtn" class="file-action-btn planes-view-btn" disabled
-                    title="Align the camera opposite to the plane normal (the normal points away from you)">Opposite normal</button>
-          </div>
         </div>
 
         <div class="planes-input-section">
@@ -1237,24 +1108,6 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
           </div>
           </div>
 
-          <!-- Colormap sampling density along the plane's two in-plane axes
-               (vertex grid the field is sampled on), per plane. -->
-          <div class="planes-field-control planes-field-resolution-control">
-            <label title="Colormap samples along the plane's two in-plane axes. Clear a box to use the default.">Resolution:</label>
-            <div class="planes-labeled-input">
-              <span class="planes-input-label">u</span>
-              <input type="number" id="planesResolutionU" class="planes-num-input"
-                     min="${MIN_COLORMAP_RESOLUTION}" max="${MAX_COLORMAP_RESOLUTION}" step="1" disabled
-                     title="Colormap samples along the plane's first in-plane axis (${MIN_COLORMAP_RESOLUTION}–${MAX_COLORMAP_RESOLUTION})">
-            </div>
-            <div class="planes-labeled-input">
-              <span class="planes-input-label">v</span>
-              <input type="number" id="planesResolutionV" class="planes-num-input"
-                     min="${MIN_COLORMAP_RESOLUTION}" max="${MAX_COLORMAP_RESOLUTION}" step="1" disabled
-                     title="Colormap samples along the plane's second in-plane axis (${MIN_COLORMAP_RESOLUTION}–${MAX_COLORMAP_RESOLUTION})">
-            </div>
-          </div>
-
           <div class="planes-field-control planes-field-range-control">
             <label>Range:</label>
             <div class="planes-range-container">
@@ -1316,9 +1169,6 @@ function setupPlanesEvents(container) {
       }
     }
   });
-
-  container.querySelector('#planeViewAlongBtn').addEventListener('click', () => viewAlongSelectedPlaneNormal(1));
-  container.querySelector('#planeViewOppositeBtn').addEventListener('click', () => viewAlongSelectedPlaneNormal(-1));
 
   const radioUVWD = container.querySelector('#radioUVWD');
   const radioHKL  = container.querySelector('#radioHKL');
@@ -1397,7 +1247,6 @@ function setupPlanesEvents(container) {
       const selectedFieldLabel = e.target.value;
       
       plane.fieldLabel = selectedFieldLabel;
-      plane.fieldWave = null; // derived from the bound field when saved
       // A previously-customized legend almost always describes the OLD
       // field ("Charge Density"); leaving it in place after switching to a
       // different field would silently mislabel the new one. Clearing it
@@ -1443,20 +1292,6 @@ function setupPlanesEvents(container) {
       persistPlanes();
     });
   }
-
-  // Colormap resolution: committed on change (blur / Enter / spinner), not
-  // per keystroke — every commit rebuilds and resamples the plane mesh.
-  container.querySelectorAll('#planesResolutionU, #planesResolutionV').forEach(input => {
-    input.addEventListener('change', () => {
-      if (applyPlaneResolutionInputs()) persistPlanes();
-    });
-    input.addEventListener('keydown', event => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        event.target.blur();
-      }
-    });
-  });
 
   const rangeMin = container.querySelector('#planesColormapRangeMin');
   const rangeMax = container.querySelector('#planesColormapRangeMax');
@@ -1510,31 +1345,6 @@ function setupPlanesEvents(container) {
       persistPlanes();
     });
   }
-}
-
-/**
- * Align the camera with the selected plane's Cartesian normal: `sign` 1 views
- * along it (the normal points at the viewer, like the View window's a/b/c
- * buttons), -1 opposite to it. Re-aims only — target, distance and zoom stay.
- * @param {1|-1} sign
- * @returns {boolean} whether the camera moved
- */
-export function viewAlongSelectedPlaneNormal(sign = 1) {
-  const structure = getSelectedStructure();
-  if (!hasSelectedPlane() || !Array.isArray(structure.lattice)) return false;
-  const { normal } = getPlaneDefinitionNormalAndD(structure.planes[selectedPlaneIndex], structure.lattice);
-  if (!Array.isArray(normal) || normal.length !== 3) return false;
-  const length = Math.hypot(...normal);
-  if (!(length > 1e-12)) return false;
-  // Snap float noise to exact zeros: setViewDirection picks the camera's up
-  // vector by testing for exactly-axial directions, and a (0, 1e-17, 1)
-  // normal would otherwise miss that test.
-  const dir = normal.map((v) => {
-    const unit = (sign * v) / length;
-    return Math.abs(unit) < 1e-9 ? 0 : unit;
-  });
-  setViewDirection(dir);
-  return true;
 }
 
 function addPlaneFromCurrentInputs() {
@@ -1727,7 +1537,6 @@ function loadSelectedPlaneParameters() {
   if (document.getElementById('planesColormapSelect')) {
     document.getElementById('planesColormapSelect').value = plane.colormap || 'jet';
   }
-  syncPlaneResolutionInputs();
   const logScaleCheckbox = document.getElementById('planesLogScaleCheckbox');
   if (logScaleCheckbox) logScaleCheckbox.checked = plane.colormapScale === 'log';
   if (document.getElementById('planesColormapRangeMin')) {
@@ -1778,7 +1587,7 @@ function updateSelectedPlaneFromInputs() {
  */
 function enablePlaneControls(enabled) {
   const inputs = document.querySelectorAll(
-    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode, #planeViewAlongBtn, #planeViewOppositeBtn'
+    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode'
   );
   inputs.forEach(inp => {
     inp.disabled = !enabled;
@@ -1792,7 +1601,7 @@ function enablePlaneControls(enabled) {
  */
 function disablePlaneControls() {
   const inputs = document.querySelectorAll(
-    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode, #planeViewAlongBtn, #planeViewOppositeBtn'
+    '#planeH, #planeK, #planeL, #planeU, #planeV, #planeW, #planeD, #planeDSlider, #planeDSliderMin, #planeDSliderMax, #radioHKL, #radioUVWD, #showPlanesToggle, #planeCutMode'
   );
   inputs.forEach(inp => {
     inp.disabled = true;

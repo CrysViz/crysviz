@@ -40,7 +40,6 @@ function captureColorBarState() {
   general.forceColorBarFlipSide = settings.flipSide;
   general.colorBarSize = settings.size;
   general.forceLegendText = settings.legend;
-  general.forceLegendOffset = settings.legendOffset;
   general.forceColorBarFloating = colorBarInstance.isFloating();
   if (general.forceColorBarFloating) {
     // The anchor (offset from #view's edges), not raw left/top: a file
@@ -342,8 +341,6 @@ export function addForcePanel(target = "cvPanelBody-forces") {
         fallbackMin: minValue,
         fallbackMax: maxValue,
         legend: general.forceLegendText ?? "Force (eV/Å)",
-        legendOffset: general.forceLegendOffset,
-        onLegendOffsetChange: (offset) => { general.forceLegendOffset = offset; },
         scale: general.forceColorScale,
         orientation: general.forceColorBarOrientation,
         flipSide: general.forceColorBarFlipSide,

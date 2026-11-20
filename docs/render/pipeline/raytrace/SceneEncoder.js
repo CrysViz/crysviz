@@ -192,6 +192,13 @@ function makeAtlasTexture(data, width, height) {
  *  encoder's atom scan and GroundPlaneModule's duplicated bounds loop filter
  *  atoms identically (the subtle shared logic; the AABB loop itself is kept
  *  duplicated with lockstep comments). */
+/** Objects below this alpha are invisible and are not encoded: a fully
+ *  transparent atom, bond, polyhedron or arrow must cast no shadow, reflect
+ *  nothing and cost nothing (a see-through surface still costs a pass-through
+ *  per ray). Atoms keep their place in the structure's extent (ground
+ *  placement) either way. The polyhedra edges use the same floor. */
+export const INVISIBLE_ALPHA = 0.005;
+
 export function activeAtomCutPlanes() {
   const planes = general.atomCutPlanes;
   if (!Array.isArray(planes) || planes.length === 0) return [];
@@ -853,6 +860,7 @@ export class SceneEncoder {
         const o = i * 16;
         const radius = matrices[o]; // uniform scale; 0 = hidden instance
         if (!(radius > 0)) continue;
+        const alpha = (opacities ? opacities[i] : 1) * baseOpacity;
         if (cutPlanes.length && !(immune && immune[i] >= 0.5)) {
           const cx = matrices[o + 12], cy = matrices[o + 13], cz = matrices[o + 14];
           let cut = false;
@@ -874,10 +882,15 @@ export class SceneEncoder {
         if (data[d + 1] + radius > maxY) maxY = data[d + 1] + radius;
         if (data[d + 2] - radius < minZ) minZ = data[d + 2] - radius;
         if (data[d + 2] + radius > maxZ) maxZ = data[d + 2] + radius;
+        // An invisible (alpha ~0) atom still counts for the structure's extent
+        // (ground placement, scene bound: it is still there, just not shown)
+        // but is not traced: no shadow, no reflection, no cost. The slot it
+        // started writing is reused by the next atom (n is not advanced).
+        if (alpha < INVISIBLE_ALPHA) continue;
         data[d + 4] = colors[i * 3];
         data[d + 5] = colors[i * 3 + 1];
         data[d + 6] = colors[i * 3 + 2];
-        data[d + 7] = (opacities ? opacities[i] : 1) * baseOpacity;
+        data[d + 7] = alpha;
         // per-copy override > per-atom override > per-species material >
         // element-materials-map preset (Structure.getDefaultElementMaterial)
         // (per-copy = "Link periodic copies" off, stored in atomImageStyles)
@@ -1081,8 +1094,10 @@ export class SceneEncoder {
       const baseOpacity = bonds.material.opacity ?? 1;
       for (let i = 0; i < bonds.count; i++) {
         const o = i * 16;
-        // zero-scaled halves are culled bonds
+        // zero-scaled halves are culled bonds; invisible halves are skipped too
         if (matrices[o] === 0 && matrices[o + 5] === 0) continue;
+        const bondAlpha = (opacities ? opacities[i] : 1) * baseOpacity;
+        if (bondAlpha < INVISIBLE_ALPHA) continue;
         _m.fromArray(matrices, o);
         // raster bond halves use a height-1 cylinder (local y in [-0.5, 0.5]);
         // the ray-traced unit cylinder spans y in [-1, 1] — pre-scale by 0.5
@@ -1105,7 +1120,7 @@ export class SceneEncoder {
           }
         }
         writeCylinder(_mInv, cylinderGeom(_m), colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2],
-          (opacities ? opacities[i] : 1) * baseOpacity, materialTexel(material));
+          bondAlpha, materialTexel(material));
       }
     }
     for (const edge of edges) {
@@ -1182,7 +1197,7 @@ export class SceneEncoder {
       const segments = edgeLines?.userData?.segments;
       if (!edgeLines?.visible || !segments) continue;
       const alpha = edgeLines.material?.opacity ?? 1;
-      if (alpha <= 0.01) continue;
+      if (alpha < INVISIBLE_ALPHA) continue;
       _color.copy(edgeLines.material.color);
       for (let s = 0; s + 5 < segments.length; s += 6) {
         const dx = segments[s + 3] - segments[s];
@@ -1282,11 +1297,14 @@ export class SceneEncoder {
         const style = arrowStyle(fileBrowser.selectedStructure, kind,
           srcByInstance.get(i), fallbackColor, arrowMap?.get(i));
         const shaftFocusAlpha = shaft.geometry?.attributes?.instanceOpacity?.getX(i * 2) ?? 1;
-        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
-          r: style.color[0], g: style.color[1], b: style.color[2],
-          a: (shaft.material?.opacity ?? 1) * shaftFocusAlpha,
-          matTexel: materialTexel(style.material),
-          shape: { rTop: 1 } });
+        const shaftAlpha = (shaft.material?.opacity ?? 1) * shaftFocusAlpha;
+        if (shaftAlpha >= INVISIBLE_ALPHA) {
+          result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
+            r: style.color[0], g: style.color[1], b: style.color[2],
+            a: shaftAlpha,
+            matTexel: materialTexel(style.material),
+            shape: { rTop: 1 } });
+        }
 
         tip.getMatrixAt(i, _m);
         _m2.multiplyMatrices(tip.matrixWorld, _m);
@@ -1300,11 +1318,14 @@ export class SceneEncoder {
           srcByInstance.get(i), tipFallback, arrowMap?.get(i));
         const tipColor = tipStyle.color ?? tipFallback;
         const tipFocusAlpha = tip.geometry?.attributes?.instanceOpacity?.getX(i) ?? 1;
-        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
-          r: tipColor[0], g: tipColor[1], b: tipColor[2],
-          a: (tip.material?.opacity ?? 1) * tipFocusAlpha,
-          matTexel: materialTexel(tipStyle.material),
-          shape: { rTop: 0 } });
+        const tipAlpha = (tip.material?.opacity ?? 1) * tipFocusAlpha;
+        if (tipAlpha >= INVISIBLE_ALPHA) {
+          result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
+            r: tipColor[0], g: tipColor[1], b: tipColor[2],
+            a: tipAlpha,
+            matTexel: materialTexel(tipStyle.material),
+            shape: { rTop: 0 } });
+        }
       }
     };
     addMeshArrows(groups.forcesShaftMesh, groups.forcesTipMesh, 'forces');
@@ -1316,7 +1337,8 @@ export class SceneEncoder {
   _encodePolyhedra() {
     const group = groups.polyhedraGroup;
     const meshes = (group?.children ?? []).filter(
-      (m) => m.userData?.type === 'polyhedron' && m.visible && this._polyPlanes(m));
+      (m) => m.userData?.type === 'polyhedron' && m.visible
+        && (m.material?.opacity ?? 1) >= INVISIBLE_ALPHA && this._polyPlanes(m));
     const entries = meshes.map((mesh) => ({ kind: 'poly', mesh,
       planes: mesh.userData.rtPlanes, aabb: mesh.userData.rtAabb }));
     // layout: 4 header texels per convex body up front, then the plane texels
