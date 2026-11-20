@@ -47,12 +47,16 @@ between Claude's calls, and Claude sees it through `get_state`.
   `marquee`, `focus-region`, `row-click` or `host` selected a group at once. `apply clear` clears only the highlight
   unless asked to clear the selection, and `apply select` says what selection
   of yours it replaced.
+- A click on bonds or polyhedra (rather than atoms) replaces the atom
+  selection. `get_state` reports it as `selection.pick`: bonds as source-atom
+  pairs, polyhedra by their centre atom. Your saved selections (Save in the
+  selection bar) are listed in `selection.saved` with their atoms.
 - Every command redraws the window itself; no click is needed to see a change.
 - **Claude hears about your changes on its next call, whatever it is.** Every
   result carries `sinceLastCall` when something changed in the window that no
   call of Claude's did: elements changed (per atom, e.g. `B->C x8`), atoms
   added or removed, atoms moved, the active structure or frame, your
-  selection, the camera, the renderer. It comes with a one-line `note` and is
+  selection (and bond or polyhedron picks, saved selections), the camera, the renderer. It comes with a one-line `note` and is
   reported once. Changes made while a calculation job runs are left out (the
   job reports its own result), and so are a playing phonon animation's moves.
   Example after you swapped two B for C and selected them:

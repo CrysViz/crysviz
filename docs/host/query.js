@@ -389,6 +389,48 @@ export async function userSelection() {
     .filter((i) => Number.isInteger(i) && i >= 0).sort((a, b) => a - b);
 }
 
+/** Bonds or polyhedron centres listed in a pick; beyond this only the count. */
+const MAX_PICK = 500;
+
+/**
+ * The user's bond or polyhedron pick, or null. A pick (a click on a bond or a
+ * polyhedron in the window) replaces the atom selection, so userSelection()
+ * is then empty: bonds come as source-atom pairs, polyhedra by centre atom
+ * (null for a cage).
+ */
+export async function userPick() {
+  const structure = getActiveStructure();
+  if (!structure) return null;
+  const { getDirectSelection, getSelectionViewSets } = await import('../ui/SelectAndHighlightModule.js');
+  const { kind } = getDirectSelection();
+  if (!kind) return null;
+  const sets = getSelectionViewSets();
+  if (kind === 'bonds') {
+    const pairs = new Map();
+    for (const i of sets.bonds) {
+      const pair = structure.bonds?.[i]?.srcIndices;
+      if (pair) pairs.set([...pair].sort((a, b) => a - b).join(','), [...pair].sort((a, b) => a - b));
+    }
+    const bonds = [...pairs.values()];
+    return { kind, count: bonds.length, bonds: bonds.slice(0, MAX_PICK), ...(bonds.length > MAX_PICK ? { truncated: true } : {}) };
+  }
+  const centres = [...new Set(sets.polyhedra.map((mesh) => mesh.userData?.centerSrcIndex ?? null))];
+  return { kind, count: sets.polyhedra.length, centres: centres.slice(0, MAX_PICK), ...(centres.length > MAX_PICK ? { truncated: true } : {}) };
+}
+
+/** The user's saved selections of the active structure: name, source atoms, bond and polyhedron counts. */
+export async function savedUserSelections() {
+  const structure = getActiveStructure();
+  if (!structure?.selectionGroups?.length) return [];
+  const { listSelectionGroups } = await import('../ui/StructureInfoPanel/SelectionGroups.js');
+  return listSelectionGroups(structure).map((group) => ({
+    name: group.name,
+    atoms: [...new Set(group.atoms.map(([source]) => source))].sort((a, b) => a - b),
+    bonds: group.bonds.length,
+    polyhedra: group.polyhedra.length,
+  }));
+}
+
 /** apply: act on atoms through the UI's own paths. */
 export async function apply(args) {
   if (!args || typeof args !== 'object') throw commandError('INVALID_ARGS', 'apply requires an object');
@@ -421,8 +463,9 @@ export async function apply(args) {
       return { action, what };
     }
     const had = (await userSelection()).length;
+    const pick = await userPick();
     selectAtomsByInstances([]);
-    return { action, what, clearedUserSelection: had };
+    return { action, what, clearedUserSelection: had, ...(pick ? { clearedUserPick: { kind: pick.kind, count: pick.count } } : {}) };
   }
   if (args.what !== undefined) throw commandError('INVALID_ARGS', 'apply.what goes with action clear');
   // A drawn polyhedra selection's color colours the polyhedra themselves; for
@@ -444,10 +487,15 @@ export async function apply(args) {
   } else if (action === 'select') {
     // Selecting replaces what the user had selected: say so, with what it was.
     const before = await userSelection();
+    const pick = await userPick();
     const instances = atoms.flatMap((i) => structure.atomImages?.[i] ?? [i]);
     (await highlight()).selectAtomsByInstances(instances, { reason: 'host' });
     const lost = before.filter((i) => !atoms.includes(i));
-    if (lost.length) return { action, kind: 'atoms', count: atoms.length, replacedUserSelection: before.slice(0, 500) };
+    const replaced = {
+      ...(lost.length ? { replacedUserSelection: before.slice(0, 500) } : {}),
+      ...(pick ? { replacedUserPick: { kind: pick.kind, count: pick.count } } : {}),
+    };
+    if (lost.length || pick) return { action, kind: 'atoms', count: atoms.length, ...replaced };
   } else if (action === 'color') {
     (await import('../ui/StructureInfoPanel/SelectionActionBar.js')).colorSourceAtoms(atoms, hex);
   } else if (action === 'reset_color') {

@@ -22,8 +22,15 @@ export async function takeSnapshot(deps) {
   const structure = getActiveStructure();
   const container = structure ? getContainerForStructure(structure) : null;
   let selection = [];
+  let pick = null;
+  let saved = '';
   if (structure) {
-    try { selection = await (await import('./query.js')).userSelection(); } catch { /* no selection module yet */ }
+    try {
+      const query = await import('./query.js');
+      selection = await query.userSelection();
+      pick = await query.userPick();
+      saved = (await query.savedUserSelections()).map((s) => s.name).join('\n');
+    } catch { /* no selection module yet */ }
   }
   const camera = cameraState();
   const jobs = listJobs();
@@ -43,6 +50,8 @@ export async function takeSnapshot(deps) {
     // Atom identity per index, for the expectedRevision guard (BrowserHost).
     ids: structure && structure.atoms.length <= MAX_TRACKED_ATOMS ? atomIds(structure) : null,
     selection,
+    pick,
+    saved,
     camera: camera ? { direction: camera.direction, up: camera.up, zoom: camera.zoom } : null,
     renderer: typeof deps?.getRenderPipeline === 'function' ? deps.getRenderPipeline() : null,
     jobs: jobs.map((job) => `${job.jobId}:${job.status}`).join(','),
@@ -122,6 +131,19 @@ export function diffSnapshots(prev, next) {
     out.selection = { count: next.selection.length, atoms: listed(next.selection),
       ...(next.selection.length > MAX_LISTED ? { truncated: true } : {}) };
     notes.push(`the user's selection is now ${next.selection.length} atom${next.selection.length === 1 ? '' : 's'}`);
+  }
+  if (JSON.stringify(prev.pick ?? null) !== JSON.stringify(next.pick ?? null)) {
+    out.selection = { ...(out.selection ?? { count: next.selection.length, atoms: listed(next.selection) }), pick: next.pick };
+    if (next.pick) {
+      const one = next.pick.count === 1;
+      const what = next.pick.kind === 'bonds' ? (one ? 'bond' : 'bonds') : (one ? 'polyhedron' : 'polyhedra');
+      notes.push(`the user picked ${next.pick.count} ${what} (selection.pick)`);
+    }
+  }
+  if ((prev.saved ?? '') !== (next.saved ?? '')) {
+    const names = next.saved ? next.saved.split('\n') : [];
+    out.savedSelections = names;
+    notes.push(names.length ? `the user's saved selections are now ${names.join(', ')}` : 'the user has no saved selections now');
   }
   if (cameraMoved(prev.camera, next.camera)) {
     out.camera = next.camera;

@@ -16,7 +16,7 @@ import { assertNoJob, cancelJob, jobView, listJobs, startJob, waitJob } from './
 import { cartToFractional, fracToCartPoint } from '../math/index.js';
 import { findVoidCentres } from '../render/voidSearch.js';
 import { clickControl, getControl, listWindows, readWindow, searchControls, setControl } from './controls.js';
-import { apply, exportStructure, find, getBonding, resolveTargets, selectionOrigin, userSelection } from './query.js';
+import { apply, exportStructure, find, getBonding, resolveTargets, savedUserSelections, selectionOrigin, userPick, userSelection } from './query.js';
 import * as tools from './structureTools.js';
 
 export const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
@@ -864,8 +864,14 @@ export const COMMAND_HANDLERS = Object.freeze({
       // origin: how the selection last changed. by "pick" is a click on one atom (atom),
       // others (marquee, focus-region, row-click, host, ...) select a group at once.
       const origin = selected.length ? await selectionOrigin() : null;
+      // pick: bonds or polyhedra the user clicked (that replaces the atom selection);
+      // saved: the user's named saved selections of this structure.
+      const pick = structure ? await userPick() : null;
+      const saved = structure ? await savedUserSelections() : [];
       state.selection = { count: selected.length, atoms: selected.slice(0, MAX_STATE_ATOMS),
-        ...(selected.length > MAX_STATE_ATOMS ? { truncated: true } : {}), ...(origin ? { origin } : {}) };
+        ...(selected.length > MAX_STATE_ATOMS ? { truncated: true } : {}), ...(origin ? { origin } : {}),
+        ...(pick ? { pick } : {}),
+        ...(saved.length ? { saved: saved.map((s) => ({ ...s, atoms: s.atoms.slice(0, MAX_STATE_ATOMS) })) } : {}) };
     }
     if (want.has('jobs')) state.jobs = listJobs();
     if (want.has('colors')) state.colors = structure ? colorSummary(structure) : null;
