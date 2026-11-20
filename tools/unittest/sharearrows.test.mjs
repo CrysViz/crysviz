@@ -86,7 +86,7 @@ test('bad arrow blocks are refused', () => {
 test('colour-bar settings go through the short keys; the defaults write nothing', () => {
   const { state } = load('nacl.json');
   const s = clone(state);
-  assert.equal(LATEST_BASELINE_ID, 5);
+  assert.ok(LATEST_BASELINE_ID >= 5);
   for (const [k, v] of Object.entries(BASELINES[5].display)) if (/ColorBar|LegendText|colorBarSize|Color(Min|Max|Scale|Map)$/.test(k)) s.display[k] = v;
   assert.equal(encodeCompact(s).o, undefined, 'baseline values are not written');
   Object.assign(s.display, {
@@ -127,4 +127,22 @@ test('a link never carries planes or the Planes bar, not even through X', () => 
   const d = expandCompact(JSON.parse(JSON.stringify(obj))).display;
   assert.equal(d.planes, undefined);
   assert.equal(d.planeColorBarOrientation, undefined);
+});
+
+test('baseline 6: Focus depth goes through its short key and an older link leaves it alone', () => {
+  const { state } = load('nacl.json');
+  const s = clone(state);
+  s.style.rtDofDepth = 12.5;
+  const obj = encodeCompact(s);
+  assert.equal(obj.b, 6);
+  assert.equal(obj.o.dd, 12.5);
+  const d = expandCompact(JSON.parse(JSON.stringify(obj))).style;
+  assert.equal(d.rtDofDepth, 12.5);
+  assert.equal(d.rtDofAperture, 0, 'others from the baseline');
+  const old = clone(state);
+  delete old.style.rtDofDepth;
+  const oldObj = encodeCompact(old, { baselineId: 5 });
+  assert.equal(oldObj.o?.dd, undefined);
+  assert.equal(expandCompact(JSON.parse(JSON.stringify(oldObj))).style.rtDofDepth, undefined,
+    'absent: the recipient keeps its own');
 });

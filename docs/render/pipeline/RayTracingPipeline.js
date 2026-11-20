@@ -94,8 +94,10 @@
 // planes/field), and RASTER-VISIBLE look edits (background color, ground-disc
 // settings — continuous picker drags the raster preview CAN mirror; without
 // this a background drag restarts the trace at 1 sample per tick). Tracer-only
-// material/look edits (lights, reflectivity, DoF, saturation …) stay
-// live-traced since the raster preview can't show them. After the scene has
+// material/look edits (lights, reflectivity, saturation …) stay
+// live-traced since the raster preview can't show them; the depth-of-field
+// knobs hold the preview so the focus peaking (render/FocusPlaneModule.js)
+// can be seen. After the scene has
 // been at rest for
 // general.rtPreviewRestDelay seconds (a rearming timer wakes the loop with no
 // user input) the tracer resumes and accumulates. Preview frames are gated on
@@ -104,7 +106,7 @@
 // while enabled (intended). The preview<->traced visual "pop" is the contract.
 
 import * as THREE from '../../external/three/three.module.js';
-import { app, general, mode, groups, highlightHover, fileBrowser } from '../../state/store.js';
+import { app, general, mode, fileBrowser } from '../../state/store.js';
 import '../../external/three-raytracing/RayTracingCommon.js'; // registers THREE.ShaderChunk['raytracing_*']
 import { CommonRayTracing_Vertex } from '../../external/three-raytracing/CommonRayTracing_Vertex.js';
 import { ScreenCopy_Fragment } from '../../external/three-raytracing/ScreenCopy_Fragment.js';
@@ -118,6 +120,8 @@ import { makeSceneFragment } from './raytrace/sceneFragment.js';
 import { SceneEncoder } from './raytrace/SceneEncoder.js';
 import { occupancyChunk } from './raytrace/occupancyChunk.js';
 import { groundNormal, cleanGroundDirection } from '../groundDirection.js';
+import { focusPlaneDistance } from '../FocusPlaneModule.js';
+import { HighlightOverlay } from '../HighlightOverlay.js';
 
 const RESIZE_BOOST_SAMPLES = 16; // inner samples after a size change (PNG export)
 
@@ -281,15 +285,7 @@ export class RayTracingPipeline extends ForwardPipeline {
   _restTimer = null;         // rearming timer that wakes render() when the rest window elapses
   _lastRasterLook = undefined; // raster-visible look snapshot (background + ground) — a change holds the preview like camera motion
 
-  // ---- post-present highlight overlay (lazily built in _ensureHighlightOverlay)
-  _hlScene = null;
-  _hlAtomsMesh = null;
-  _hlBondsMesh = null;
-  _hlPolyMat = null;
-  _hlPolyGhosts = null;
-  _hlMat = null;
-  _hlScaleAtom = null;
-  _hlScaleBond = null;
+  _hlOverlay = null;         // render/HighlightOverlay.js, built on first use
 
   constructor() {
     super();
@@ -375,6 +371,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       uVLen: { value: 1 },
       uApertureSize: { value: 0 },
       uFocusDistance: { value: 100 },
+      uFocusDepth: { value: 0 }, // sharp slab half-depth (raytrace/dofChunk.js)
       uPreviousSampleCount: { value: 1 },
       uSceneIsDynamic: { value: false },
       uCameraIsMoving: { value: false },
@@ -771,7 +768,7 @@ export class RayTracingPipeline extends ForwardPipeline {
     showTracerCompiling();
     if (this._previewPipeline) {
       const { renderer, scene, camera } = ctx;
-      this._previewPipeline.render({ renderer, scene, camera });
+      this._previewPipeline.render({ renderer, scene, camera, interactive: true });
       this._previewActive = true; // a preview frame was drawn (test-inspectable)
     }
   }
@@ -877,13 +874,17 @@ export class RayTracingPipeline extends ForwardPipeline {
       // Look edits the raster preview CAN mirror (background color + ground
       // disc) are continuous picker drags: hold the preview like camera
       // motion instead of restarting the trace at 1 sample per drag tick.
-      // Tracer-only look knobs (lights, reflectivity, DoF, saturation …)
+      // The depth-of-field knobs count too: while they are dragged the
+      // preview shows the focus peaking (render/FocusPlaneModule.js: rims
+      // on what will be sharp), which the traced image cannot.
+      // Tracer-only look knobs (lights, reflectivity, saturation …)
       // deliberately stay out — they are live-traced (the lookKey reset below).
       const rasterLook = `${scene.background?.isColor ? scene.background.getHex() : -1}`
         + `|${general.rtGroundPlane === true}|${general.rtGroundPattern ?? ''}`
         + `|${general.rtGroundColor1 ?? ''}|${general.rtGroundColor2 ?? ''}`
         + `|${general.rtGroundScale ?? 1}|${general.rtGroundOffset ?? 0.75}`
-        + `|${general.rtGroundSize ?? 2.5}`;
+        + `|${general.rtGroundSize ?? 2.5}`
+        + `|${general.rtDofAperture ?? 0}|${general.rtDofFocus ?? 1}|${general.rtDofDepth ?? 0}`;
       const rasterLookChanged = this._lastRasterLook !== undefined
         && rasterLook !== this._lastRasterLook;
       this._lastRasterLook = rasterLook;
@@ -902,7 +903,7 @@ export class RayTracingPipeline extends ForwardPipeline {
         this._previewActive = true;
         hideTracerProgress();
         this._armRestTimer(restMs - sinceInteraction + 30);
-        this._previewPipeline.render({ renderer, scene, camera });
+        this._previewPipeline.render({ renderer, scene, camera, interactive: true });
         return; // skip sizing/encode/accumulate/present — no motion-low-res coexists
       }
     }
@@ -1110,11 +1111,13 @@ export class RayTracingPipeline extends ForwardPipeline {
       : general.rtGroundPattern === 'grid' ? 2 : 0;
     u.uGroundScale.value = Math.max(0.25, general.rtGroundScale ?? 2);
     u.uGroundReflect.value = general.rtGroundReflect ?? 0;
-    // Depth of field: aperture in world units; focus follows the orbit target
-    // scaled by the "Focus distance" factor (1 = focus exactly on the target).
+    // Depth of field (raytrace/dofChunk.js): the lens radius is
+    // sqrt(rtDofAperture) in world units; the focal plane follows the orbit
+    // target scaled by the "Focus distance" factor (1 = the target's depth),
+    // and "Focus depth" keeps a slab of ± that many Å around it sharp.
     u.uApertureSize.value = general.rtDofAperture ?? 0;
-    u.uFocusDistance.value = camera.position.distanceTo(
-      app.controls?.target ?? this._rtScene.position) * (general.rtDofFocus ?? 1);
+    u.uFocusDistance.value = focusPlaneDistance(camera);
+    u.uFocusDepth.value = Math.max(0, general.rtDofDepth ?? 0);
     this._updateSceneUniforms(u);
 
     // Any "look" change (background color, lighting knobs, DoF, ground …)
@@ -1125,7 +1128,7 @@ export class RayTracingPipeline extends ForwardPipeline {
       + `|${u.uReflectivity.value}|${u.uLightSoftness.value}|${u.uAmbientStrength.value}`
       + `|${general.rtSaturation ?? 1}|${general.rtBackgroundMatch !== false}`
       + `|${general.rtToneMapLegacy === true}`
-      + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}`
+      + `|${u.uGroundEnabled.value}|${u.uApertureSize.value}|${(general.rtDofFocus ?? 1)}|${u.uFocusDepth.value}`
       + `|${u.uGroundPattern.value}|${u.uGroundColor1.value.getHex()}`
       + `|${u.uGroundColor2.value.getHex()}|${u.uGroundScale.value}|${u.uGroundReflect.value}`
       + `|${general.rtGroundOffset ?? 0.75}|${general.rtGroundSize ?? 2.5}|${groundDirection}`
@@ -1297,135 +1300,14 @@ export class RayTracingPipeline extends ForwardPipeline {
   }
 
   // ---- post-present highlight overlay -------------------------------------
-  // Lazily-built tiny scene of orange ghosts (atoms as scaled-up spheres, bonds
-  // as fattened cylinders, polyhedra as ghost copies) drawn AFTER the output
-  // pass with depthTest off, so a highlight glows through the traced image. The
-  // tracer encoder deliberately ignores the highlight recolor (Item 2a) so it
-  // never restarts the accumulation; this overlay is how the selection is shown
-  // in traced frames. Reads the highlight instance ids recorded on the
-  // highlightHover store singleton (no ui-layer import).
-  _ensureHighlightOverlay() {
-    if (this._hlScene) return;
-    this._hlScene = new THREE.Scene();
-    const HL = 0xFF8C00;
-    const sphere = new THREE.SphereGeometry(1, 16, 12);
-    const atomMat = new THREE.MeshBasicMaterial({
-      color: HL, transparent: true, opacity: 0.4, depthTest: false, depthWrite: false });
-    this._hlAtomsMesh = new THREE.InstancedMesh(sphere, atomMat, 8);
-    this._hlAtomsMesh.frustumCulled = false;
-    this._hlAtomsMesh.count = 0;
-    this._hlScene.add(this._hlAtomsMesh);
-    // Unit cylinder matching the bonds mesh instance-matrix convention
-    // (CylinderGeometry height 1, radius 1: local y in [-0.5, 0.5]).
-    const cyl = new THREE.CylinderGeometry(1, 1, 1, 12, 1);
-    const bondMat = new THREE.MeshBasicMaterial({
-      color: HL, transparent: true, opacity: 0.4, depthTest: false, depthWrite: false });
-    this._hlBondsMesh = new THREE.InstancedMesh(cyl, bondMat, 8);
-    this._hlBondsMesh.frustumCulled = false;
-    this._hlBondsMesh.count = 0;
-    this._hlScene.add(this._hlBondsMesh);
-    this._hlPolyMat = new THREE.MeshBasicMaterial({
-      color: HL, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false });
-    this._hlPolyGhosts = []; // reused Mesh pool (share the highlighted geometry)
-    this._hlMat = new THREE.Matrix4();
-    this._hlScaleAtom = new THREE.Matrix4().makeScale(1.12, 1.12, 1.12); // rim
-    this._hlScaleBond = new THREE.Matrix4().makeScale(1.3, 1, 1.3);      // fatten radius only
-  }
-
-  /** InstancedMesh capacity grow (its capacity is fixed at construction). */
-  _growInstanced(mesh, needed) {
-    if (needed <= mesh.instanceMatrix.count) return mesh;
-    const cap = Math.max(needed, mesh.instanceMatrix.count * 2);
-    const grown = new THREE.InstancedMesh(mesh.geometry, mesh.material, cap);
-    grown.frustumCulled = false;
-    grown.count = 0;
-    this._hlScene.remove(mesh);
-    this._hlScene.add(grown);
-    mesh.dispose();
-    return grown;
-  }
-
-  /** Meshes of the currently-highlighted polyhedron (all periodic copies when
-   *  linked). Matched by stable key or group key on the mesh userData — no
-   *  ui-layer import needed. */
-  _highlightedPolyMeshes() {
-    const sel = highlightHover.currentlyHighlightedPolyhedron;
-    const group = groups.polyhedraGroup;
-    if (!sel || !group) return [];
-    return group.children.filter((m) => m.userData?.type === 'polyhedron' && m.visible
-      && (sel.groupKey ? m.userData.groupKey === sel.groupKey : m.userData.key === sel.key));
-  }
-
+  // Orange ghosts (render/HighlightOverlay.js) drawn AFTER the output pass with
+  // depthTest off, so a highlight glows through the traced image. The tracer
+  // encoder deliberately ignores the highlight recolor (Item 2a) so it never
+  // restarts the accumulation; this overlay is how the selection is shown in
+  // traced frames.
   _renderHighlightOverlay(renderer, camera) {
-    const atomIds = highlightHover.currentlyHighlightedAtomInstances ?? [];
-    const bondIds = highlightHover.currentlyHighlightedBond?.instanceIds
-      ?? highlightHover.currentlyHighlightedBondInstances ?? [];
-    const polyMeshes = this._highlightedPolyMeshes();
-    if (!atomIds.length && !bondIds.length && !polyMeshes.length) {
-      if (this._hlScene) { // nothing selected: make sure any stale ghosts are hidden
-        this._hlAtomsMesh.count = 0;
-        this._hlBondsMesh.count = 0;
-        for (const g of this._hlPolyGhosts) g.visible = false;
-      }
-      return;
-    }
-    this._ensureHighlightOverlay();
-
-    // atoms: copy each highlighted instance matrix, scaled up slightly
-    const atomsMesh = groups.atomsMesh;
-    if (atomsMesh && atomIds.length) {
-      this._hlAtomsMesh = this._growInstanced(this._hlAtomsMesh, atomIds.length);
-      let n = 0;
-      for (const id of atomIds) {
-        if (id < 0 || id >= atomsMesh.count) continue;
-        atomsMesh.getMatrixAt(id, this._hlMat);
-        if (this._hlMat.elements[0] === 0) continue; // hidden (zero-scaled) instance
-        this._hlMat.multiply(this._hlScaleAtom);
-        this._hlAtomsMesh.setMatrixAt(n++, this._hlMat);
-      }
-      this._hlAtomsMesh.count = n;
-      this._hlAtomsMesh.instanceMatrix.needsUpdate = true;
-    } else {
-      this._hlAtomsMesh.count = 0;
-    }
-
-    // bonds: copy each highlighted half's instance matrix, fatten the radius
-    const bondsMesh = groups.bondsMesh;
-    if (bondsMesh && bondIds.length) {
-      this._hlBondsMesh = this._growInstanced(this._hlBondsMesh, bondIds.length);
-      let n = 0;
-      for (const id of bondIds) {
-        if (id < 0 || id >= bondsMesh.count) continue;
-        bondsMesh.getMatrixAt(id, this._hlMat);
-        if (this._hlMat.elements[0] === 0 && this._hlMat.elements[5] === 0) continue; // culled
-        this._hlMat.multiply(this._hlScaleBond);
-        this._hlBondsMesh.setMatrixAt(n++, this._hlMat);
-      }
-      this._hlBondsMesh.count = n;
-      this._hlBondsMesh.instanceMatrix.needsUpdate = true;
-    } else {
-      this._hlBondsMesh.count = 0;
-    }
-
-    // polyhedra: ghost copies sharing the highlighted meshes' geometry
-    for (const g of this._hlPolyGhosts) g.visible = false;
-    polyMeshes.forEach((pm, i) => {
-      let ghost = this._hlPolyGhosts[i];
-      if (!ghost) {
-        ghost = new THREE.Mesh(pm.geometry, this._hlPolyMat);
-        ghost.frustumCulled = false;
-        ghost.matrixAutoUpdate = false;
-        this._hlScene.add(ghost);
-        this._hlPolyGhosts[i] = ghost;
-      }
-      ghost.geometry = pm.geometry;
-      pm.updateWorldMatrix(true, false);
-      ghost.matrix.copy(pm.matrixWorld);
-      ghost.visible = true;
-    });
-
-    // Draw over the presented frame (render target already null, autoClear off).
-    renderer.render(this._hlScene, camera);
+    if (!this._hlOverlay) this._hlOverlay = new HighlightOverlay();
+    this._hlOverlay.render(renderer, camera);
   }
 
   setSize(_width, _height) {
@@ -1454,17 +1336,8 @@ export class RayTracingPipeline extends ForwardPipeline {
     this._teardownPreview();
     hideTracerProgress();
     // Highlight overlay resources (may exist even before the first traced frame).
-    if (this._hlScene) {
-      this._hlAtomsMesh.geometry.dispose();
-      this._hlAtomsMesh.material.dispose();
-      this._hlAtomsMesh.dispose();
-      this._hlBondsMesh.geometry.dispose();
-      this._hlBondsMesh.material.dispose();
-      this._hlBondsMesh.dispose();
-      this._hlPolyMat.dispose();
-      this._hlScene = null;
-      this._hlPolyGhosts = null;
-    }
+    this._hlOverlay?.dispose();
+    this._hlOverlay = null;
     if (!this._initialized) return;
     this._accumTarget.dispose();
     this._previousTarget.dispose();

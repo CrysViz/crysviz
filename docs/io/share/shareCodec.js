@@ -41,10 +41,11 @@ const STORE_KEYS = /** @type {ReadonlyArray<readonly [string, string, string]>} 
   ['colors', 'forceCategoryStyles', 'fc'],
   ['colors', 'fieldMaterial', 'fm'],
   ['display', 'focusRegions', 'fr'],
+  ['display', 'selectionGroups', 'sg'],
 ]);
 /** Stores whose keys are atom indices; dropped when a referenced database
  *  entry changed underneath a link (indices may no longer line up). */
-const ATOM_INDEXED_STORES = new Set(['ai', 'bu', 'pu', 'au']);
+const ATOM_INDEXED_STORES = new Set(['ai', 'bu', 'pu', 'au', 'sg']);
 
 const PATH_TO_SHORT = new Map(SETTING_KEYS.map(([p, s]) => [p, s]));
 const SHORT_TO_PATH = new Map(SETTING_KEYS.map(([p, s]) => [s, p]));

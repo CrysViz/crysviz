@@ -23,6 +23,8 @@
 
 import { app } from '../../state/store.js';
 import { prepareCelOutlinePass, renderCelOutlinePass } from '../CelOutlinePass.js';
+import { renderRasterHighlightOverlay } from '../HighlightOverlay.js';
+import { renderFocusPeaking } from '../FocusPlaneModule.js';
 
 export class ForwardPipeline {
   static id = 'forward';
@@ -43,6 +45,8 @@ export class ForwardPipeline {
     prepareCelOutlinePass(renderer, scene, camera);
     renderer.render(scene, camera);
     renderCelOutlinePass(renderer, scene, camera);
+    renderRasterHighlightOverlay(renderer, camera); // see-through selection ghosts
+    renderFocusPeaking(renderer, scene, camera); // DoF focus peaking while a DoF slider is dragged
   }
 
   /** No offscreen targets in the forward path. */

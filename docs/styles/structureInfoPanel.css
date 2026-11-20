@@ -1165,12 +1165,15 @@
 }
 .si-selbar-header {
   display: flex;
+  flex-wrap: wrap; /* the buttons move to a line of their own when the summary leaves no room */
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  gap: var(--sp-1) var(--sp-2);
   margin-bottom: var(--sp-2);
 }
 .si-selbar-summary {
+  flex: 1 1 auto;
+  white-space: nowrap;
   font-size: var(--fs-sm);
   color: var(--fg-1);
   font-weight: 600;
@@ -1182,6 +1185,7 @@
 .si-selection-bar .si-selbar-clear,
 .si-selection-bar .si-selbar-reset,
 .si-selection-bar .si-selbar-coordinates-toggle,
+.si-selection-bar .si-selbar-save,
 .si-selection-bar .si-selbar-copy {
   flex: none;
   padding: 1px var(--sp-2);
@@ -1193,6 +1197,11 @@
   display: flex;
   align-items: center;
   gap: var(--sp-1);
+}
+.si-selbar-header-actions {
+  flex: 0 0 auto;
+  margin-left: auto; /* right-aligned, in one line, also when wrapped under the summary */
+  white-space: nowrap;
 }
 .si-selbar-coordinates {
   display: grid;
@@ -1255,4 +1264,49 @@
 .comp-legend-widget.cv-colorbar-locked .comp-legend-sub:focus {
   box-shadow: none;
   cursor: default;
+}
+
+/* Selection bar: the Atoms | Bonds | Polyhedra view tabs and the saved
+   selections row (ui/StructureInfoPanel/SelectionActionBar.js,
+   SelectionGroups.js). The tabs reuse .segmented-control (controlPanel.css). */
+.si-selbar-tabs {
+  margin-bottom: var(--sp-2);
+}
+.si-selbar-tabs button {
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
+}
+.si-selbar-groups-block {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--line-1);
+}
+.si-selbar-groups-title {
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--fg-1);
+}
+.si-selbar-groups {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+}
+.si-selbar-groups select,
+.si-selbar-groups input[type="text"] {
+  flex: 1 1 8em;
+  min-width: 6em;
+  font-size: var(--fs-xs);
+}
+.si-selection-bar .si-selbar-groups button {
+  flex: none;
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.si-selbar-empty {
+  font-size: var(--fs-xs);
+  color: var(--fg-2);
 }

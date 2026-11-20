@@ -46,7 +46,10 @@ export const highlightHover ={
    // ray/path tracers can draw them as a post-present overlay and clear them
    // without a full mesh rebuild (which would restart the accumulation).
    currentlyHighlightedAtomInstances:[],
-   currentlyHighlightedBondInstances:[]
+   currentlyHighlightedBondInstances:[],
+   // Polyhedron meshes glowing for the selection bar's Polyhedra view
+   // (SelectAndHighlightModule setSelectionView); the ghost overlays read them.
+   currentlyHighlightedPolyMeshes:[]
 };
 
 export const atomSelection = {
@@ -153,6 +156,7 @@ export const RENDERING_DEFAULTS = {
   renderPipeline: 'depthpeel', // active rendering pipeline id; depthpeel self-optimizes to a plain forward pass when the scene has no transparency (DepthPeelPass fast path)
   showAllRenderPipelines: false, // HIDDEN (config-only, no GUI): list superseded/debug pipelines in the rendering dropdown
   depthPeelLayers: 15, // peel passes for the 'depthpeel' pipeline (1-50; more = deeper transparency, slower)
+  depthPeelMotionLayers: 4, // 'depthpeel': peel passes while the camera moves (1-15); the full count returns when it rests
   rtResolutionScale: 0.95, // raytrace/pathtrace pipelines: internal resolution as a fraction of the canvas
   rtTiledRender: true, // raytrace/pathtrace: render each sample in scissored tiles (one/frame) to keep the shared GPU responsive; untiled half-res while the camera moves
   rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)
@@ -162,8 +166,9 @@ export const RENDERING_DEFAULTS = {
   rtPreviewRestDelay: 0.5, // HIDDEN (config-only, no GUI): raytrace/pathtrace seconds of no interaction before the tracer resumes (raster-preview rest delay)
   ptDenoise: true, // 'pathtrace' pipeline: edge-aware denoiser on the screen output
   ptLightSoftness: 0.3, // both tracers: light softness (0 = hard shadows, 1 = very soft; PT area-light radius / RT shadow-ray cone)
-  rtDofAperture: 0, // both tracers: depth-of-field aperture in world units (0 = off)
-  rtDofFocus: 1, // both tracers: focus distance as a factor of the camera->target distance
+  rtDofAperture: 0, // both tracers: depth-of-field lens radius SQUARED in world units (0 = off; the slider is linear in the radius)
+  rtDofFocus: 1, // both tracers: focal-plane distance as a factor of the camera->target distance
+  rtDofDepth: 0, // HIDDEN (config-only, no GUI): both tracers: half-depth (Å) of a slab around the focal plane that stays sharp (0 = thin lens)
   // Ground plane (all pipelines): the tracers draw an analytic disc; the raster
   // pipelines + preview frames draw a visually-matched raster disc mesh via
   // render/GroundPlaneModule.js. Keys keep their rt* names for persistence

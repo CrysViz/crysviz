@@ -1005,3 +1005,17 @@ font-size: var(--fs-xl);
   justify-content: space-between;
   align-items: center;
 }
+
+/* Pick focus (Visual window, Focus distance row): the small button after the
+   label; .active while the next 3D click sets the focus. */
+.rt-focus-pick {
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  vertical-align: middle;
+}
+.rt-focus-pick.active {
+  background: var(--accent-color);
+  color: var(--fg-1);
+}

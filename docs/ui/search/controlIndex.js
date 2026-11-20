@@ -202,6 +202,7 @@ export const CONTROL_INDEX = [
   {"panel":"visual","label":"Icon-only toolbars","section":"Scene","kind":"toggle","id":"forceCompactIconsToggle"},
   {"panel":"visual","label":"Rendering pipeline","section":"Rendering","kind":"select","id":"renderPipelineMenu"},
   {"panel":"visual","label":"Peel layers","section":"Rendering","kind":"slider","id":"depthPeelLayersSlider"},
+  {"panel":"visual","label":"Peel layers while moving","section":"Rendering","kind":"slider","id":"depthPeelMotionLayersSlider"},
   {"panel":"visual","label":"Render Style","section":"Rendering","kind":"select","id":"renderStyleMenu"},
   {"panel":"visual","label":"Atom detail","section":"Rendering","kind":"select","id":"atomDetailMenu"},
   {"panel":"visual","label":"Ground plane","section":"Rendering","kind":"toggle","id":"rtGroundToggle"},
