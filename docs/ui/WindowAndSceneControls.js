@@ -11,6 +11,7 @@ import { loadCrysVizFonts } from '../utils/index.js';
 import { configureGizmoCameraProjection, GIZMO_FOV, GIZMO_ORTHO_HALF_HEIGHT } from './GizmoLayout.js';
 import { getPanelPref } from './panels/PanelManager.js';
 import { syncSceneTone } from './SceneTone.js';
+import { wireButtonLongPress, wirePopoverDismiss, openPopoverUnder } from './ButtonPopover.js';
 
 const cameraPanRight = new THREE.Vector3();
 const cameraPanUp = new THREE.Vector3();
@@ -96,13 +97,13 @@ export function setupCameraButtons() {
   document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
-  setupResetLongPress(document.getElementById('resetView'));
 
   // Reset | divider | Lock, wrapped so the trio travels as one unit when the
   // panel wraps or goes to the mobile grid. The lock stands apart from the
   // view actions on purpose: it is a standing mode (one shared camera across
   // structures, or one per structure), and a hairline before it says so.
   const resetBtn = document.getElementById('resetView');
+  wireButtonLongPress(resetBtn, () => showResetMenu(resetBtn));
   const stack = document.createElement('div');
   stack.className = 'camera-reset-stack';
   const divider = document.createElement('div');
@@ -826,7 +827,6 @@ export function recenterView({ fit = false } = {}) {
 // also fits the zoom to the structure; Cancel, Escape or a click elsewhere
 // close it.
 
-const RESET_LONG_PRESS_MS = 550;
 let resetMenu = null;
 
 function hideResetMenu() {
@@ -856,55 +856,15 @@ function buildResetMenu() {
   on('cameraRecenterBtn', () => recenterView());
   on('cameraRecenterFitBtn', () => recenterView({ fit: true }));
   on('cameraResetMenuCancel', () => {});
-  document.addEventListener('pointerdown', (e) => {
-    if (!el.hidden && !el.contains(/** @type {Node} */ (e.target))) hideResetMenu();
-  }, true);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !el.hidden) hideResetMenu();
-  });
+  wirePopoverDismiss(el);
   resetMenu = el;
   return el;
 }
 
-/** Open the menu under the button (above it if there is no room below),
- *  inside the window. */
 function showResetMenu(btn) {
   const el = buildResetMenu();
-  el.hidden = false;
-  const r = btn.getBoundingClientRect();
-  const w = el.offsetWidth;
-  const h = el.offsetHeight;
-  const below = r.bottom + 6;
-  el.style.top = `${below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below}px`;
-  el.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
-  el.style.right = 'auto';
+  openPopoverUnder(el, btn);
   /** @type {HTMLElement|null} */ (el.querySelector('#cameraRecenterBtn'))?.focus({ preventScroll: true });
-}
-
-function setupResetLongPress(btn) {
-  if (!btn || btn.dataset.longPressWired) return;
-  btn.dataset.longPressWired = '1';
-  let timer = 0;
-  let fired = false;
-  const cancel = () => { clearTimeout(timer); timer = 0; };
-  btn.addEventListener('pointerdown', (e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    fired = false;
-    cancel();
-    timer = window.setTimeout(() => { fired = true; showResetMenu(btn); }, RESET_LONG_PRESS_MS);
-  });
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach((type) => btn.addEventListener(type, cancel));
-  // A touch long-press would otherwise open the browser's own menu, which
-  // steals the pointerup this relies on.
-  btn.addEventListener('contextmenu', (e) => e.preventDefault());
-  // The click that ends a long press must not also reset the view (capture:
-  // before the button's own onclick).
-  btn.addEventListener('click', (e) => {
-    if (!fired) return;
-    fired = false;
-    e.preventDefault();
-    e.stopImmediatePropagation();
-  }, true);
 }
 
 /**
