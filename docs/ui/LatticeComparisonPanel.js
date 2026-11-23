@@ -157,7 +157,6 @@ function buildComparisonBlock(container) {
   collapsible.appendChild(toggleBtn);
 
   const content = document.createElement("div");
-  content.style.display = "block";
   content.className = "lcmp-content";
   collapsible.appendChild(content);
 
@@ -178,13 +177,8 @@ function buildComparisonBlock(container) {
   table.appendChild(document.createElement("tbody"));
 
   toggleBtn.addEventListener("click", () => {
-    if (content.style.display === "none") {
-      content.style.display = "block";
-      toggleBtn.textContent = "Hide details ▲";
-    } else {
-      content.style.display = "none";
-      toggleBtn.textContent = "Show details ▼";
-    }
+    content.hidden = !content.hidden;
+    toggleBtn.textContent = content.hidden ? "Show details ▼" : "Hide details ▲";
   });
 
   container.appendChild(block);

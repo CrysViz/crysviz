@@ -29,7 +29,7 @@ const H = require('../harness');
       glow: selected.length
         ? groups.atomsMesh.geometry.attributes.instanceEmissiveIntensity.getX(selected[0].instanceId)
         : 0,
-      rowHighlighted: row.style.borderLeft.includes('rgb(255, 179, 71)'),
+      rowHighlighted: getComputedStyle(row).borderLeftColor === 'rgb(255, 179, 71)',
     };
   });
   H.check('clicking an atom row selects that atom (state + orange 3D glow + amber row)',
@@ -41,7 +41,7 @@ const H = require('../harness');
     const { atomSelection } = await import('./state/store.js');
     const row = /** @type {HTMLElement} */ (document.querySelector('#atomPanel .individual-atom-row'));
     /** @type {HTMLElement} */ (row.querySelector('span')).click();
-    return { count: atomSelection.selectedAtoms.length, rowHighlighted: row.style.borderLeft !== '' };
+    return { count: atomSelection.selectedAtoms.length, rowHighlighted: row.classList.contains('is-highlighted') };
   });
   H.check('clicking the selected row again deselects it',
     desel.count === 0 && !desel.rowHighlighted, JSON.stringify(desel));
@@ -99,7 +99,7 @@ const H = require('../harness');
     const before = atomSelection.selectedAtoms.map((a) => a.sourceIndex).join(',');
     const row = document.querySelector('#atomPanel .individual-atom-row');
     /** @type {HTMLElement} */ (row.querySelector('button[data-editor-button="color"]')).click();
-    const editorOpen = /** @type {HTMLElement} */ (row.querySelector('.atom-color-editor')).style.display !== 'none';
+    const editorOpen = /** @type {HTMLElement} */ (row.querySelector('.atom-color-editor')).hidden !== true;
     const after = atomSelection.selectedAtoms.map((a) => a.sourceIndex).join(',');
     return { editorOpen, selectionUnchanged: before === after };
   });

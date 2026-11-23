@@ -36,7 +36,7 @@ const TRAJ = [
     await wait(400);
     // The card is built with the panel (Plotly loads into it lazily); make the
     // host visible so the card takes part in layout regardless of plot data.
-    document.getElementById('trajPlotHost').style.display = 'block';
+    document.getElementById('trajPlotHost').hidden = false;
 
     const trappingAncestors = (el) => {
       const out = [];

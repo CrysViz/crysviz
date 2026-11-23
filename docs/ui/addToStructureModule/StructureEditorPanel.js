@@ -29,6 +29,7 @@
 
 import { createAtomTableEditor } from './AtomTableInput.js';
 import { createLatticeInputPanel } from './LatticeInputPanel.js';
+import { structureContent, structureRevision } from '../../model/structureRevision.js';
 import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
 import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
 import { createLatticeConstraintController } from './WyckoffLatticeConstraints.js';
@@ -51,8 +52,9 @@ import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
 import { createColorSwatch } from '../SwatchColorPicker.js';
 import {
   colorToHex,
-  applyStructureEdits,
+  commitStructureEdits,
   revertStructureToOriginal,
+  commitRevertToOriginal,
   resetLatticeToOriginal,
 } from './CommitAtoms.js';
 import { fracToCartPoint } from '../../math/index.js';
@@ -308,7 +310,7 @@ function buildFreeformModifyEditor(body, structure) {
   body.appendChild(latticeHost);
   const latticePanel = createLatticeInputPanel(latticeHost, {
     initial: structure.lattice.map((row) => [...row]),
-    onChange: () => scheduleApply(),
+    onChange: () => { if (!reloading) scheduleApply(); },
   });
 
   const resetLatticeRow = document.createElement('div');
@@ -355,7 +357,7 @@ function buildFreeformModifyEditor(body, structure) {
     initialAtoms,
     deletable: true,
     onRowActivate,
-    onChange: () => scheduleApply(),
+    onChange: () => { if (!reloading) scheduleApply(); },
     // Only an original (baseline) atom going away is a "removal" worth listing
     // and restoring; deleting an atom you just added just drops it. The
     // baseline holds base (unsuffixed) atom uuids, but a disordered site's
@@ -372,63 +374,63 @@ function buildFreeformModifyEditor(body, structure) {
     pendingFrame = requestAnimationFrame(() => { pendingFrame = null; liveApply(); });
   }
 
-  let lastUnique = structure.uniqueElements.join(',');
   // Set while liveApply re-renders: the colors-changed / atoms-changed events
   // it fires echo the table's own values back, and syncing every row from the
   // structure on each of them was a large part of an edit's cost.
   let applyingEdit = false;
+
+  // What the table shows. The structure can change under it from elsewhere:
+  // the host (add_atoms, remove_atoms, set_element, a supercell), the Add Atom
+  // window. Committing then would write the stale table back over that change
+  // (deleting atoms the table never had), so the table is reloaded first.
+  // A reload never commits by itself: the table rounds positions (round4).
+  let syncedShape = structureRevision(structure);
+  let syncedContent = structureContent(structure);
+  let reloading = false;
+  function markSynced() {
+    syncedShape = structureRevision(structure);
+    syncedContent = structureContent(structure);
+  }
+  function reloadFromStructure() {
+    initialAtoms = structureToTableAtoms(structure);
+    reloading = true;
+    try {
+      editor.reload(initialAtoms);
+      latticePanel.setLattice(structure.lattice);
+    } finally {
+      reloading = false;
+    }
+    renderSummary();
+    markSynced();
+  }
+
   function liveApply() {
+    // Changed since the table last matched it (a change that fired no event):
+    // show it and drop this edit rather than undo that change.
+    if (structureContent(structure) !== syncedContent) {
+      reloadFromStructure();
+      return;
+    }
     const atoms = editor.getAtoms();
     const lattice = latticePanel.getLattice();
-
-    // An add or remove renumbers atom indices, so a kept selection would point
-    // at the wrong (or a now-missing) atom. Drop it BEFORE the arrays change,
-    // while the selection's indices still match the live mesh - clearing it
-    // afterwards would index past the shrunk array inside updateAtoms. A pure
-    // coordinate/colour edit leaves the set intact and keeps the selection.
-    const tableUuids = new Set(atoms.map((a) => a.uuid));
-    const setChanges = tableUuids.size !== structure.atoms.length
-      || structure.atoms.some((a) => !tableUuids.has(a.uuid));
-    if (setChanges) clearSelectedAtoms();
-
-    const change = applyStructureEdits(structure, { atoms, lattice });
-
-    // A restored / re-added atom is back in the structure - it is no longer a
-    // pending removal.
-    const present = new Set(structure.atoms.map((a) => a.uuid));
-    for (const uuid of [...mod.removed.keys()]) if (present.has(uuid)) mod.removed.delete(uuid);
-
-    // Bond controls only need rebuilding when the element set actually changed.
-    const uniqueNow = structure.uniqueElements.join(',');
-    if (uniqueNow !== lastUnique) { createBondLengthControls(); lastUnique = uniqueNow; }
-
-    // Re-render only what this edit can have touched. Atoms always (an
-    // occupancy edit re-slices the wedges) and the composition always (the
-    // formula); bonds, polyhedra, measurements and the cell only when the
-    // geometry, the representative elements or the colours actually changed —
-    // a pure occupancy edit on a large structure was paying for all of them.
-    const geometry = Boolean(change.added || change.removed || change.reordered
-      || change.positionsChanged || change.latticeChanged);
-    const appearance = change.elementsChanged || change.colorsChanged;
+    // The structure's own change events would echo the table back into itself.
     applyingEdit = true;
     try {
-      updateVisualization({
-        reRenderAtoms: true,
-        reRenderBonds: geometry || appearance,
-        reRenderLattice: geometry,
-        reRenderOther: geometry,
-        reRenderPolyhedra: geometry || appearance,
-        reRenderComposition: 'open',
+      commitStructureEdits(structure, { atoms, lattice }, {
+        afterApply: () => {
+          // A restored / re-added atom is back in the structure - it is no
+          // longer a pending removal.
+          const present = new Set(structure.atoms.map((a) => a.uuid));
+          for (const uuid of [...mod.removed.keys()]) if (present.has(uuid)) mod.removed.delete(uuid);
+        },
+        afterRender: () => {
+          renderSummary();
+          runCollisionWarning(atoms, lattice);
+        },
       });
-      renderSummary();
-      runCollisionWarning(atoms, lattice);
-      // An element/count/occupancy edit here changes the composition — announce it
-      // the same way a coordinate edit does (applyAtomCoordinates), so panels that
-      // aren't part of the composition rebuild (e.g. Order Structure's size
-      // options) can react instead of showing stale numbers.
-      document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
     } finally {
       applyingEdit = false;
+      markSynced();
     }
   }
 
@@ -522,19 +524,11 @@ function buildFreeformModifyEditor(body, structure) {
   revertBtn.addEventListener('click', () => {
     // Reverting throws away every live edit, so make the user confirm.
     if (!window.confirm('Revert all changes? This restores the structure exactly as it was loaded and discards every edit (moved, added and removed atoms, and the lattice).')) return;
-    // Clear the selection first, while it still matches the live mesh - the
-    // revert rebuilds structure.atoms and updateVisualization only re-sizes the
-    // mesh afterwards, so clearing in between would index the old, larger mesh.
-    clearSelectedAtoms();
-    revertStructureToOriginal(structure);
-    delete structure._modify;
+    commitRevertToOriginal(structure);               // the shared revert (also the host's)
     initialAtoms = structureToTableAtoms(structure); // fresh uuids
     mod = ensureModifyState(structure);              // recapture baseline
     editor.reload(initialAtoms);
     latticePanel.setLattice(structure.lattice);
-    createBondLengthControls();
-    lastUnique = structure.uniqueElements.join(',');
-    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true, reRenderOther: true, reRenderComposition: 'open' });
     renderSummary();
     warningHost.innerHTML = '';
     editor.clearConflicts();
@@ -545,6 +539,12 @@ function buildFreeformModifyEditor(body, structure) {
   // values into the matching (untouched) table rows.
   function syncFromStructure() {
     if (applyingEdit) return;
+    // Atoms added, removed or re-elemented, or a new cell: the rows no longer
+    // match one to one, so rebuild the table.
+    if (structureRevision(structure) !== syncedShape) {
+      reloadFromStructure();
+      return;
+    }
     /** @type {Array<[string, any]>} */
     const entries = [];
     structure.atoms.forEach((atom) => {
@@ -565,6 +565,7 @@ function buildFreeformModifyEditor(body, structure) {
       });
     });
     editor.syncRows(entries);
+    markSynced();
   }
   document.addEventListener('crysviz:atoms-changed', syncFromStructure);
   document.addEventListener('crysviz:colors-changed', syncFromStructure);

@@ -819,14 +819,16 @@ function updateDualSliderFill() {
 
   const sliderMin = Number(rangeMin.min) || 0;
   const sliderMax = Number(rangeMin.max) || 100;
-  const span = Math.max(sliderMax - sliderMin, 1);
+  const span = sliderMax > sliderMin ? sliderMax - sliderMin : 1;
   const minValue = Number(rangeMin.value);
   const maxValue = Number(rangeMax.value);
-  const start = ((minValue - sliderMin) / span) * 100;
-  const end = ((maxValue - sliderMin) / span) * 100;
+  const start = (minValue - sliderMin) / span;
+  const end = (maxValue - sliderMin) / span;
 
-  fill.style.left = `${Math.min(start, end)}%`;
-  fill.style.width = `${Math.max(end - start, 0)}%`;
+  // Thumb centres run from half a thumb in to half a thumb short of the
+  // ends (the 12px .pbnd-slider thumb, as in the Cell window).
+  fill.style.left = `calc(6px + (100% - 12px) * ${Math.min(start, end)})`;
+  fill.style.width = `calc((100% - 12px) * ${Math.max(end - start, 0)})`;
 }
 
 function updateRangeDisplayAndPlane(changedInput = null) {
@@ -936,12 +938,8 @@ function refreshPlaneColorBar() {
   }
   container.innerHTML = '';
 
-  if (!hasField) {
-    container.style.display = 'none';
-    return;
-  }
-
-  container.style.display = 'block';
+  container.hidden = !hasField;
+  if (!hasField) return;
 
   // Same rounding as the fieldSelect handler's plane.colormapMin/Max
   // assignment — this fallback only fires when those are somehow still
@@ -1070,15 +1068,15 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
   bindPanelStateToSelectedStructure();
   ensureAtomSelectionSubscription();
   container.innerHTML = `
-    <div class="control-group">
+    <div class="planes-panel">
       <div class="planes-header">
-        <button id="addPlaneBtn" class="file-action-btn planes-top-btn">Add Plane</button>
+        <button type="button" id="addPlaneBtn" class="btn-mini highlight">Add Plane</button>
       </div>
 
       <!-- Planes table in container -->
       <div class="planes-table-wrapper">
         <p id="noPlanesMsg" class="planes-empty-msg">No planes added yet.</p>
-        <table id="planesTable" class="planes-table">
+        <table id="planesTable" class="planes-table" hidden>
           <thead>
             <tr>
               <th class="planes-th planes-th-narrow"></th>
@@ -1093,23 +1091,19 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
         </table>
       </div>
 
-      <!-- Atom-derived plane buttons (centered) -->
+      <!-- Atom-derived plane buttons -->
       <div class="planes-center-row">
-        <button id="createFromAtomsBtn" class="file-action-btn planes-calc-btn" disabled
-                title="Add a new plane fitted to the selected atoms">
-          Create from<br>selection
-        </button>
-        <button id="calcFromAtomsBtn" class="file-action-btn planes-calc-btn" disabled
-                title="Fit the plane selected in the table to the selected atoms">
-          Calculate from<br>selection
-        </button>
+        <button type="button" id="createFromAtomsBtn" class="btn-mini" disabled
+                title="Add a new plane fitted to the selected atoms">Create from selection</button>
+        <button type="button" id="calcFromAtomsBtn" class="btn-mini" disabled
+                title="Fit the plane selected in the table to the selected atoms">Calculate from selection</button>
       </div>
 
       <!-- Plane parameter controls (hidden until plane selected) -->
-      <div class="planes-params-section" id="planesParamsSection">
+      <div class="planes-params-section" id="planesParamsSection" hidden>
         <h4 class="planes-section-title">Plane Parameters</h4>
 
-        <div class="control-group">
+        <div class="planes-show-group">
           <label class="toggle_row toggle_container">
             <span class="toggle_switch">
               <input type="checkbox" id="showPlanesToggle" ${planesData.showPlanes ? 'checked' : ''}>
@@ -1122,9 +1116,9 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
                pointing at the viewer, "opposite" turns the view round. -->
           <div class="planes-view-row">
             <span class="planes-view-label">View:</span>
-            <button type="button" id="planeViewAlongBtn" class="file-action-btn planes-view-btn" disabled
+            <button type="button" id="planeViewAlongBtn" class="btn-mini" disabled
                     title="Align the camera with the plane normal (the normal points towards you)">Along normal</button>
-            <button type="button" id="planeViewOppositeBtn" class="file-action-btn planes-view-btn" disabled
+            <button type="button" id="planeViewOppositeBtn" class="btn-mini" disabled
                     title="Align the camera opposite to the plane normal (the normal points away from you)">Opposite normal</button>
           </div>
         </div>
@@ -1137,33 +1131,31 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
               <input type="radio" name="planeInputMode" id="radioUVWD" value="uvwd">
               <span>Cartesian parameters</span>
             </label>
-            <div class="planes-row-inputs planes-uvwd-layout" id="uvwdInputs">
-              <div class="planes-uvw-cluster">
+            <div class="planes-row-inputs" id="uvwdInputs">
+              <div class="planes-coord-row">
                 <div class="planes-labeled-input">
                   <span class="planes-input-label">x</span>
-                  <input type="number" id="planeU" class="planes-num-input" value="0" step="0.1" disabled>
+                  <input type="number" id="planeU" class="planes-num-input coord-input" value="0" step="any" disabled>
                 </div>
                 <div class="planes-labeled-input">
                   <span class="planes-input-label">y</span>
-                  <input type="number" id="planeV" class="planes-num-input" value="0" step="0.1" disabled>
+                  <input type="number" id="planeV" class="planes-num-input coord-input" value="0" step="any" disabled>
                 </div>
                 <div class="planes-labeled-input">
                   <span class="planes-input-label">z</span>
-                  <input type="number" id="planeW" class="planes-num-input" value="1" step="0.1" disabled>
+                  <input type="number" id="planeW" class="planes-num-input coord-input" value="1" step="any" disabled>
                 </div>
-              </div>
-              <div class="planes-d-cluster">
                 <div class="planes-labeled-input">
                   <span class="planes-input-label">d</span>
-                  <input type="number" id="planeD" class="planes-num-input" value="0" step="0.1" disabled>
+                  <input type="number" id="planeD" class="planes-num-input coord-input" value="0" step="any" disabled>
                 </div>
-                <div class="planes-d-slider-row">
-                  <input type="range" id="planeDSlider" class="planes-d-slider" min="-10" max="10" step="0.01" value="0" disabled>
-                </div>
-                <div class="planes-d-slider-bounds">
-                  <input type="number" id="planeDSliderMin" class="planes-num-input planes-d-bound-input" value="-10" step="0.1" disabled title="Slider min">
-                  <input type="number" id="planeDSliderMax" class="planes-num-input planes-d-bound-input" value="10" step="0.1" disabled title="Slider max">
-                </div>
+              </div>
+              <!-- d slider between its own adjustable ends; the slider is the
+                   Structure Info position slider (.coord-axis-slider). -->
+              <div class="planes-d-slider-row">
+                <input type="number" id="planeDSliderMin" class="planes-num-input coord-input planes-d-bound-input" value="-10" step="any" disabled title="Slider min">
+                <input type="range" id="planeDSlider" class="coord-axis-slider" min="-10" max="10" step="0.01" value="0" disabled>
+                <input type="number" id="planeDSliderMax" class="planes-num-input coord-input planes-d-bound-input" value="10" step="any" disabled title="Slider max">
               </div>
             </div>
           </div>
@@ -1174,7 +1166,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
               <input type="radio" name="planeInputMode" id="radioHKL" value="hkl" checked>
               <span>Miller indices</span>
             </label>
-            <div class="planes-row-inputs" id="hklInputs">
+            <div class="planes-row-inputs planes-coord-row" id="hklInputs">
               <div class="planes-labeled-input">
                 <span class="planes-input-label">h</span>
                 <input type="number" id="planeH" class="planes-num-input" value="1" step="1" disabled>
@@ -1210,7 +1202,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
       </div>
 
       <!-- Field + colormap grouped -->
-      <div class="planes-field-section" id="planesFieldSection">
+      <div class="planes-field-section" id="planesFieldSection" hidden>
         <h4 class="planes-section-title">Field &amp; Colormap</h4>
         <div class="planes-field-colormap-container">
 
@@ -1258,9 +1250,10 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
           <div class="planes-field-control planes-field-range-control">
             <label>Range:</label>
             <div class="planes-range-container">
-              <div class="planes-dual-slider">
-                <div class="planes-dual-slider-track"></div>
-                <div class="planes-dual-slider-fill" id="planesDualSliderFill"></div>
+              <!-- The Cell window's dual-range slider (.pbnd-slider). -->
+              <div class="pbnd-slider">
+                <div class="pbnd-bg"></div>
+                <div class="pbnd-fill" id="planesDualSliderFill"></div>
                 <input type="range" id="planesColormapRangeMin" class="planes-slider planes-slider-min" value="0" min="0" max="100" step="1" disabled>
                 <input type="range" id="planesColormapRangeMax" class="planes-slider planes-slider-max" value="100" min="0" max="100" step="1" disabled>
               </div>
@@ -1278,7 +1271,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
               <input type="checkbox" id="planesLogScaleCheckbox" disabled>
               Log Scale
             </label>
-            <button type="button" id="planesAutoRangeBtn" class="file-action-btn cv-auto-range-btn" disabled>Auto Range</button>
+            <button type="button" id="planesAutoRangeBtn" class="btn-mini" disabled>Auto Range</button>
           </div>
 
           <!-- Floating/dockable legend — same shared ColorBarWidget.js
@@ -1287,7 +1280,7 @@ export function addPlanesPanel(target = "cvPanelBody-planes") {
                slider above stays as an additional inline range control,
                synced to this bar's own Min/Max in both directions. -->
           <div class="planes-field-control">
-            <div id="planesColorBarContainer"></div>
+            <div id="planesColorBarContainer" hidden></div>
           </div>
 
         </div>
@@ -1352,7 +1345,7 @@ function setupPlanesEvents(container) {
   });
 
   container.querySelector('#addPlaneBtn').addEventListener('click', () => {
-    if (addPlaneFromCurrentInputs()) persistPlanes();
+    addPlaneFromCurrentInputs();
   });
   container.querySelector('#createFromAtomsBtn').addEventListener('click', () => {
     if (createPlaneFromSelectedAtoms()) persistPlanes();
@@ -1412,8 +1405,9 @@ function setupPlanesEvents(container) {
         // as something like 0.009999999776482582 — round it to a clean 4
         // digits before it ever reaches the Min/Max boxes, rather than
         // showing that noise until the user hits Auto Range.
-        plane.colormapMin = Number.isFinite(selectedField?.minValue) ? roundToSigFigs(selectedField.minValue, 4) : selectedField?.minValue;
-        plane.colormapMax = Number.isFinite(selectedField?.maxValue) ? roundToSigFigs(selectedField.maxValue, 4) : selectedField?.maxValue;
+        const range = fieldColormapRange(selectedField);
+        plane.colormapMin = range.min;
+        plane.colormapMax = range.max;
         configurePlaneRangeInputs(selectedField, plane);
       }
       else {
@@ -1463,8 +1457,10 @@ function setupPlanesEvents(container) {
 
   if (rangeMin && rangeMax) {
     const bringThumbToFront = activeInput => {
-      rangeMin.style.zIndex = activeInput === rangeMin ? '3' : '2';
-      rangeMax.style.zIndex = activeInput === rangeMax ? '3' : '2';
+      for (const input of [rangeMin, rangeMax]) {
+        input.classList.toggle('is-front', activeInput === input);
+        input.classList.toggle('is-back', activeInput !== input);
+      }
     };
 
     rangeMin.addEventListener('input', () => {
@@ -1544,9 +1540,37 @@ function addPlaneFromCurrentInputs() {
     return false;
   }
 
-  ensureStructurePlaneState(structure);
-  addPlane(structure, createDefaultPlane());
+  addPlaneToStructure(structure, { type: 'hkl', h: 1, k: 1, l: 1 });
   return true;
+}
+
+/** A field's data range rounded to 4 significant digits, for a plane's colour map. */
+function fieldColormapRange(field) {
+  const round = (v) => (Number.isFinite(v) ? roundToSigFigs(v, 4) : v);
+  return { min: round(field?.minValue), max: round(field?.maxValue) };
+}
+
+/**
+ * Add a plane to `structure` and select it: the Crystal Planes "Add" button
+ * and the host's add_plane. With `field`, the plane shows that field as a
+ * colour map, as choosing it in the plane's Field list does; `cutMode` hides
+ * the atoms on one side, as the plane's Cut choice does.
+ * @param {any} structure @param {PlaneParams} params @param {{field?: any, cutMode?: string}} [options]
+ */
+export function addPlaneToStructure(structure, params, { field = null, cutMode = CutModes.NONE } = {}) {
+  ensureStructurePlaneState(structure);
+  const plane = createDefaultPlane(params, planeLabelForParams(params));
+  plane.cutMode = cutMode;
+  if (field) {
+    plane.visualization = PLANE_VIS_FIELD;
+    plane.field = field;
+    const range = fieldColormapRange(field);
+    plane.colormapMin = range.min;
+    plane.colormapMax = range.max;
+  }
+  addPlane(structure, plane);
+  if (structure === getSelectedStructure()) persistPlanes();
+  return plane;
 }
 
 /**
@@ -1687,6 +1711,8 @@ function calculatePlaneFromSelectedAtoms() {
  * Load parameters from the selected plane into the input fields.
  */
 function loadSelectedPlaneParameters() {
+  // Called after any plane change; the window's inputs exist only while it is built.
+  if (!document.getElementById('radioHKL')) return;
   const structure = getSelectedStructure();
   if (!structure || selectedPlaneIndex === null || selectedPlaneIndex < 0) {
     return;
@@ -1697,8 +1723,8 @@ function loadSelectedPlaneParameters() {
 
   const paramsSection = document.getElementById('planesParamsSection');
   const fieldSection = document.getElementById('planesFieldSection');
-  if (paramsSection) paramsSection.style.display = 'block';
-  if (fieldSection) fieldSection.style.display = 'block';
+  if (paramsSection) paramsSection.hidden = false;
+  if (fieldSection) fieldSection.hidden = false;
 
   // Enable/disable controls
   enablePlaneControls(true);
@@ -1801,8 +1827,8 @@ function disablePlaneControls() {
 
   const paramsSection = document.getElementById('planesParamsSection');
   const fieldSection = document.getElementById('planesFieldSection');
-  if (paramsSection) paramsSection.style.display = 'none';
-  if (fieldSection) fieldSection.style.display = 'none';
+  if (paramsSection) paramsSection.hidden = true;
+  if (fieldSection) fieldSection.hidden = true;
   refreshPlaneColorBar();
 }
 
@@ -1977,8 +2003,8 @@ function renderPlanesTable() {
   const lattice = structure?.lattice;
 
   const empty = planes.length === 0;
-  if (noMsg) noMsg.style.display = empty ? 'block' : 'none';
-  if (table) table.style.display = empty ? 'none' : 'table';
+  if (noMsg) noMsg.hidden = !empty;
+  if (table) table.hidden = empty;
   if (empty) {
     selectedPlaneIndex = null;
     disablePlaneControls();
@@ -2014,7 +2040,7 @@ function renderPlanesTable() {
       <td class="planes-td planes-td-field" title="${escapeHtml(rawField)}">${escapeHtml(fieldDisplay)}</td>
       <td class="planes-td planes-td-cut">${cutMode}</td>
       <td class="planes-td planes-td-del planes-td-del-sticky">
-        <button class="plane-delete-btn" data-idx="${idx}" title="Remove">&times;</button>
+        <button type="button" class="btn-mini plane-delete-btn" data-idx="${idx}" title="Remove">&times;</button>
       </td>
     `;
 

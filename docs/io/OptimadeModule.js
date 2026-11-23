@@ -127,12 +127,28 @@ async function requestOptimade(url) {
   } catch (_) {
     throw new Error('OPTIMADE: response is not valid JSON');
   }
+  return structureResourceOf(payload);
+}
+
+/** The structures resource of an OPTIMADE response (its first, if a list). */
+function structureResourceOf(payload) {
   if (Array.isArray(payload?.errors) && payload.errors.length) {
     throw new Error(`OPTIMADE: ${payload.errors[0]?.detail || payload.errors[0]?.title || 'provider error'}`);
   }
   const data = Array.isArray(payload?.data) ? payload.data[0] : payload?.data;
   if (!data) throw new Error('OPTIMADE: no matching structure was found');
   return data;
+}
+
+/** POSCAR text from an OPTIMADE response saved or pasted as JSON. */
+export function optimadeJSONToPOSCAR(text) {
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch (_) {
+    throw new Error('OPTIMADE: the text is not valid JSON');
+  }
+  return optimadeStructureToPOSCAR(structureResourceOf(payload));
 }
 
 export async function fetchOptimadeStructure(url) {

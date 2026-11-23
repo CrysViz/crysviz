@@ -119,14 +119,15 @@ export function setupControlsWiring() {
   };
 
   // Show / hide the a,b,c cell-vector gizmo (#axesGizmo) and its legend
-  // (#axesLegend) together. Uses inline display so it overrides any theme CSS.
+  // (#axesLegend) together, with the hidden attribute (neither has a display
+  // rule of its own; widget mode hides the legend with !important).
   const applyAxesVisibility = (visible) => {
     const gizmo = document.getElementById('axesGizmo');
     const legend = document.getElementById('axesLegend');
-    if (gizmo) gizmo.style.display = visible ? '' : 'none';
+    if (gizmo) gizmo.hidden = !visible;
     // The legend box stays hidden when labels are integrated onto the arrows
     // instead (general.gizmoLabelsOnArrows, see ui/GizmoDrag.js), even while axes are shown.
-    if (legend) legend.style.display = (visible && !general.gizmoLabelsOnArrows) ? '' : 'none';
+    if (legend) legend.hidden = !(visible && !general.gizmoLabelsOnArrows);
   };
   const showAxesToggle = document.getElementById('showAxes');
   if (showAxesToggle) {

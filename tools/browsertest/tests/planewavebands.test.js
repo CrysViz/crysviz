@@ -99,7 +99,7 @@ const STATE = async () => {
     bound: plane?.field?.label ?? null,
     meshMode: mesh?.mode ?? null,
     meshColors: Boolean(mesh?.geometry?.attributes?.color),
-    barShown: Boolean(bar && bar.style.display !== 'none' && bar.childElementCount),
+    barShown: Boolean(bar && !bar.hidden && bar.childElementCount),
     loads: window.__waveLoads ?? [],
   };
 };

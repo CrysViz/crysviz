@@ -294,17 +294,13 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // empty, toggle_styles.css), not inline, since it needs a :hover rule —
   // invisible normally, faintly readable on hover, rather than a permanent
   // "Click to add legend" sitting on every bar with no legend right now.
+  // Set text reads at 0.85, upright; the placeholder is italic.
   function refreshLegendContent() {
-    legendLabel.style.display = "block";
     if (currentLegendRaw) {
       legendLabel.classList.remove("cv-colorbar-legend-empty");
-      legendLabel.style.opacity = "0.85";
-      legendLabel.style.fontStyle = "normal";
       applyLegendHtml(legendLabel, currentLegendRaw);
     } else {
       legendLabel.classList.add("cv-colorbar-legend-empty");
-      legendLabel.style.opacity = "";
-      legendLabel.style.fontStyle = "italic";
       legendLabel.textContent = LEGEND_PLACEHOLDER;
     }
   }
@@ -313,11 +309,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   function beginLegendEdit() {
     if (legendEditing) return;
     legendEditing = true;
-    legendLabel.style.display = "block";
     legendLabel.classList.remove("cv-colorbar-legend-empty");
     legendLabel.classList.add("cv-colorbar-legend-editing");
-    legendLabel.style.opacity = "0.85";
-    legendLabel.style.fontStyle = "normal";
     legendLabel.contentEditable = "true";
     legendLabel.textContent = currentLegendRaw;
     legendLabel.focus();
@@ -1059,16 +1052,16 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     menuVertical.disabled = !floating;
     menuVertical.title = floating ? '' : 'Drag the bar into the scene to use a vertical layout';
     menuFlip.classList.toggle('cv-colorbar-menu-item-active', flipSide);
-    menuLogScale.style.display = onScaleChange ? '' : 'none';
+    menuLogScale.hidden = !onScaleChange;
     menuLogScale.classList.toggle('cv-colorbar-menu-item-active', currentScale === 'log');
     const scaleLocked = isScaleLocked();
     menuLogScale.disabled = scaleLocked;
     menuLogScale.title = scaleLocked ? '"log length" requires Log Scale — turn it off first to change this' : '';
-    menuAutoRange.style.display = onAutoRange ? '' : 'none';
-    menuResetSize.style.display = floating ? '' : 'none';
-    menuResetLegend.style.display = floating && legendOffset ? '' : 'none';
-    menuDock.style.display = floating ? '' : 'none';
-    menuLock.style.display = floating ? '' : 'none';
+    menuAutoRange.hidden = !onAutoRange;
+    menuResetSize.hidden = !floating;
+    menuResetLegend.hidden = !(floating && legendOffset);
+    menuDock.hidden = !floating;
+    menuLock.hidden = !floating;
     menuLock.textContent = isLocked() ? 'Unlock' : 'Lock';
     menuLock.classList.toggle('cv-colorbar-menu-item-active', isLocked());
   }

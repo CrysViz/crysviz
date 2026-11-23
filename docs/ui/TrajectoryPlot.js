@@ -186,7 +186,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   computeBtn.type = 'button';
   computeBtn.className = 'trajPlotComputeBtn';
   computeBtn.textContent = 'Compute step stats';
-  computeBtn.style.display = 'none';
+  computeBtn.hidden = true;
   if (options.showComputeStats !== false) toolbar.appendChild(computeBtn);
   // Export + expand, same icons/styling as the analysis histograms'
   // .split-item-action-btn corner buttons — reused directly (sideDock.css)
@@ -195,7 +195,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   exportBtn.type = 'button';
   exportBtn.className = 'split-item-action-btn';
   exportBtn.title = 'Export PNG';
-  exportBtn.textContent = '📥';
+  exportBtn.dataset.splitAction = 'export'; // its icon (sideDock.css)
   exportBtn.onclick = () => {
     exportHistogramPNG(plotId).catch((error) => console.error('Trajectory plot export failed:', error));
   };
@@ -204,7 +204,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
   expandBtn.type = 'button';
   expandBtn.className = 'split-item-action-btn';
   expandBtn.title = 'Expand';
-  expandBtn.textContent = '⛶';
+  expandBtn.dataset.splitAction = 'expand';
   expandBtn.onclick = () => {
     expandSplitItem(root);
     isExpanded = true;
@@ -1018,7 +1018,7 @@ export function createTrajectoryPlot(hostEl, options = {}) {
     },
 
     setComputeStatsAvailable(available) {
-      computeBtn.style.display = available ? '' : 'none';
+      computeBtn.hidden = !available;
     },
 
     getEl() { return root; },

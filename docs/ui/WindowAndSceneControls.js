@@ -332,10 +332,7 @@ export function initLabelRenderer() {
   const h = view.clientHeight || window.innerHeight;
   app.labelRenderer = new CSS2DRenderer();
   app.labelRenderer.setSize(w, h);
-  app.labelRenderer.domElement.style.position = 'absolute';
-  app.labelRenderer.domElement.style.top = '0';
-  app.labelRenderer.domElement.style.left = '0';
-  app.labelRenderer.domElement.style.pointerEvents = 'none';
+  app.labelRenderer.domElement.classList.add('cv-label-layer'); // styles.css
   view.appendChild(app.labelRenderer.domElement);
 }
 
@@ -478,12 +475,12 @@ export function initAxesGizmo(){
     app.gizmoScene = null;
     app.gizmoCamera = null;
     gizmoDiv.innerHTML = '';
-    gizmoDiv.style.display = 'none';
+    gizmoDiv.hidden = true;
     return;
   }
   app.gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   gizmoDiv.appendChild(app.gizmoRenderer.domElement);
-  gizmoDiv.style.display = '';
+  gizmoDiv.hidden = false;
 
   // No label renderer needed for gizmo - labels are in separate legend
 
@@ -623,7 +620,7 @@ export function setGizmoLabelsOnArrows(enabled) {
     }
   }
   const legend = document.getElementById('axesLegend');
-  if (legend) legend.style.display = (general.showAxes && !enabled) ? '' : 'none';
+  if (legend) legend.hidden = !(general.showAxes && !enabled);
   requestRender();
 }
 
@@ -940,6 +937,11 @@ export function fitCameraToCurrentStructure({ resetDirection = false } = {}) {
   if (resetDirection) app.camera.up.set(0, 1, 0);
   app.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
   app.controls.target.copy(center);
+  // A user's zoom (wheel, pinch) lives in camera.zoom; fitting means zoom 1
+  // with the frustum/distance sized to the structure, or a zoomed-in view
+  // stays zoomed and "fit" does not fit.
+  app.camera.zoom = 1;
+  app.camera.updateProjectionMatrix();
   refitOrthographicFrustum();
   stopCameraMomentum();
   app.controls.update();
@@ -1050,10 +1052,10 @@ export function collapseAllAtomExpansions() {
   const expandIcons = document.querySelectorAll('.comp-expand-icon, .bond-expand-icon, .poly-expand-icon');
 
   atomsContainers.forEach(container => {
-    container.style.display = 'none';
+    container.hidden = true;
   });
 
   expandIcons.forEach(icon => {
-    icon.style.transform = 'rotate(0deg)';
+    icon.classList.remove('is-expanded');
   });
 }

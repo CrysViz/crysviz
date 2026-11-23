@@ -65,7 +65,7 @@ export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail, isFrameDepende
 export {
   DEFAULT_FOCUS_REGION, POLYHEDRA_FOCUS_MODES, focusOpacityAt, focusDistanceTo, gradientStartRadius,
   combinedFocusOpacity, focusOpacityForPolyhedron, getFocusOpacityForPolyhedron, getFocusRegions,
-  focusRegionsActive, getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion,
+  focusRegionsActive, getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion, createFocusRegionAt,
   removeFocusRegion, clearFocusRegions, applyFocusRegions, applyFocusRegionEdit, persistFocusRegions,
   setFocusRegionCenterFractional,
   resetFocusRegionCenter, applyFocusToArrows, applyFocusToField,
@@ -88,7 +88,7 @@ export {
 } from './AsymmetricUnitModule.js';
 
 export {
-  updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory, holdPolyhedra, releasePolyhedra,
+  updatePolyhedra, updatePolyhedraColors, setPolyhedronStyles, groupPolyhedraByCategory, holdPolyhedra, releasePolyhedra,
   resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
   polyhedronFaceColor, applyFocusToPolyhedra,
 } from './PolyhedraModule.js';

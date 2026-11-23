@@ -39,7 +39,7 @@ const H = require('../harness');
     const slider = /** @type {HTMLInputElement|null} */ (document.getElementById('depthPeelMotionLayersSlider'));
     const block = slider?.parentElement;
     const label = block?.querySelector('label')?.textContent;
-    return { atRest, moving, settled, exportFrame, noReduction, slider: !!slider, label, shown: block?.style.display !== 'none' };
+    return { atRest, moving, settled, exportFrame, noReduction, slider: !!slider, label, shown: !!block && !block.hidden };
   });
   H.check('at rest the full count is peeled', r.atRest === 15, JSON.stringify(r));
   H.check('a moved camera in an interactive frame peels the motion count', r.moving.layers === 4 && r.moving.motionFrame, JSON.stringify(r.moving));
@@ -65,7 +65,7 @@ const H = require('../harness');
   // hidden under another pipeline
   await H.setSelect(page, 'renderPipelineMenu', 'forward');
   await page.waitForTimeout(300);
-  const hidden = await page.evaluate(() => document.getElementById('depthPeelMotionLayersSlider')?.parentElement?.style.display === 'none');
+  const hidden = await page.evaluate(() => document.getElementById('depthPeelMotionLayersSlider')?.parentElement?.hidden === true);
   H.check('hidden under the forward pipeline', hidden);
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));

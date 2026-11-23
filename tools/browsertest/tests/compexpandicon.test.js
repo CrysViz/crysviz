@@ -36,7 +36,7 @@ const H = require('../harness');
       rotatedSliders: sliders.filter((s) => /rotate/.test(s.style.transform)).length,
       totalSliders: sliders.length,
       // The expanded group's caret is the one that should be rotated.
-      rotatedCarets: carets.filter((c) => c.style.transform.includes('rotate(90deg)')).length,
+      rotatedCarets: carets.filter((c) => c.classList.contains('is-expanded')).length,
       // And the toggle box stays wider-than-tall (horizontal pill).
       firstSliderFlipped: sliders[0]
         ? sliders[0].getBoundingClientRect().height > sliders[0].getBoundingClientRect().width

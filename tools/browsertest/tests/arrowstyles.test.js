@@ -324,7 +324,7 @@ function distinctivePixels(file) {
     const rebuilt = rebuiltButton?.closest('.comp-container')
       ?.querySelector('.spin-force-category-editor');
     return {
-      display: rebuilt?.style.display,
+      display: (rebuilt ? (rebuilt.hidden ? 'none' : 'shown') : undefined),
       forceActive: rebuilt?.querySelector('[data-mode="force"]')?.classList.contains('active'),
     };
   });

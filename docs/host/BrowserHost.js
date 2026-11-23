@@ -1,63 +1,42 @@
 import {
   getActiveStructure,
-  getContainerById,
   getContainerForStructure,
   getContainerId,
-  getContainers,
   onActiveStructureChange,
 } from '../state/structures.js';
 import { LOAD_HASH_RE } from '../io/SessionReceiver.js';
+import { structureContent } from '../model/structureRevision.js';
+import { diffSnapshots, takeSnapshot } from './userChanges.js';
+import { setDownloadSink, settleDownloads } from './downloadSink.js';
+import {
+  COMMAND_HANDLERS,
+  ERROR_KINDS,
+  addressedIndices,
+  checkExpectedRevision,
+  commandError,
+  errorRecord,
+  requirePeriodicOption,
+  responseOrThrow,
+  safeError,
+  safeName,
+  sameOriginURL,
+  snapshotForContainer,
+  strictFetch,
+} from './commands.js';
+import { watchSelection } from './query.js';
 
 const PROTOCOL_VERSION = 1;
-const COMMANDS = new Set([
-  'load',
-  'list_structures',
-  'select',
-  'update_fractional_positions',
-  'update_lattice',
-  'commit_positions',
-  'recenter_camera',
-  'rotate_camera',
-  'set_render_pipeline',
-  'save_image',
-]);
-const PIPELINE_IDS = new Set(['depthpeel', 'wboit', 'forward', 'raytrace', 'pathtrace', 'split-atoms', 'sorted-atoms']);
 const EVENT_NAMES = new Set([
   'ready',
   'structure_loaded',
   'active_structure_changed',
   'error',
   'closed',
+  // The user's hand edits as they happen, in host-launched windows (watchUserChanges).
+  'user_changed',
 ]);
-
-function errorRecord(code, message, details = undefined) {
-  const error = { code, message };
-  if (details !== undefined) error.details = details;
-  return error;
-}
-
-function safeJsonValue(value, seen = new WeakSet(), depth = 0) {
-  if (value == null || typeof value === 'string' || typeof value === 'boolean') return value;
-  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'bigint') return String(value);
-  if (depth > 4) return '[Truncated]';
-  if (typeof value !== 'object') return String(value);
-  if (seen.has(value)) return '[Circular]';
-  seen.add(value);
-  if (Array.isArray(value)) return value.slice(0, 32).map((item) => safeJsonValue(item, seen, depth + 1));
-  const result = {};
-  for (const key of Object.keys(value).slice(0, 32)) {
-    result[key] = safeJsonValue(value[key], seen, depth + 1);
-  }
-  return result;
-}
-
-function safeError(error, fallbackCode = 'COMMAND_FAILED') {
-  const code = typeof error?.code === 'string' ? error.code : fallbackCode;
-  const message = String(error?.message || error || fallbackCode);
-  const details = error?.details === undefined ? undefined : safeJsonValue(error.details);
-  return errorRecord(code, message, details);
-}
+/** Quiet time after the user's last interaction before the window is compared (ms). */
+const USER_CHECK_DELAY_MS = 250;
 
 function deepFreeze(value, seen = new WeakSet()) {
   if (!value || typeof value !== 'object' || seen.has(value)) return value;
@@ -68,42 +47,6 @@ function deepFreeze(value, seen = new WeakSet()) {
 
 function errorFromThrown(error, fallbackCode = 'COMMAND_FAILED') {
   return safeError(error, fallbackCode);
-}
-
-function commandError(code, message, details = undefined) {
-  /** @type {any} */
-  const error = new Error(message);
-  error.code = code;
-  if (details !== undefined) error.details = details;
-  return error;
-}
-
-/** `periodic` is an optional literal boolean; the string "false", 0 and null are all rejected. */
-function requirePeriodicOption(value) {
-  if (value !== undefined && typeof value !== 'boolean') {
-    throw commandError('INVALID_ARGS', 'load.periodic must be boolean');
-  }
-}
-
-function safeName(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-function isBufferData(value) {
-  return typeof value === 'string'
-    || (typeof ArrayBuffer !== 'undefined' && value instanceof ArrayBuffer)
-    || (typeof Uint8Array !== 'undefined' && value instanceof Uint8Array);
-}
-
-function snapshotForContainer(container, activeStructure) {
-  const active = container?.structures.indexOf(activeStructure);
-  return {
-    id: getContainerId(container),
-    name: String(container.fileName),
-    frames: container.structures.length,
-    active: active >= 0,
-    activeFrame: active >= 0 ? active : null,
-  };
 }
 
 function activeSnapshot() {
@@ -127,17 +70,9 @@ function normalizeEvent(event, data = undefined) {
     else if (event === 'active_structure_changed') record.data = {
       id: String(data.id), frame: Number(data.frame),
     };
+    else if (event === 'user_changed') record.data = JSON.parse(JSON.stringify(data));
   }
   return deepFreeze(record);
-}
-
-function sameOriginURL(value, origin) {
-  try {
-    const url = new URL(value, origin);
-    return url.origin === origin ? url : null;
-  } catch {
-    return null;
-  }
 }
 
 function removeQueryParameter(name) {
@@ -151,36 +86,51 @@ function removeQueryParameter(name) {
  * intentionally private to the bootstrap coordinator; only the frozen facade
  * is put on window.
  */
-/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, updateLattice?: Function, recenterCamera?: Function, rotateCamera?: Function, setRenderPipeline?: Function, captureSceneToPng?: Function}} [deps] */
-export function createBrowserHost({
-  loadStructure,
-  selectStructure,
-  applyFrameFast,
-  commitPositions,
-  updateLattice,
-  recenterCamera,
-  rotateCamera,
-  setRenderPipeline,
-  captureSceneToPng,
-} = {}) {
+/** @param {{loadStructure?: Function, selectStructure?: Function, applyFrameFast?: Function, commitPositions?: Function, recenterCamera?: Function, rotateCamera?: Function, setViewDirection?: Function, setRenderPipeline?: Function, getRenderPipeline?: Function, requestRender?: Function, captureSceneToPng?: Function, captureSceneToSvg?: Function}} [initialDeps] */
+export function createBrowserHost(initialDeps = {}) {
   const initialOrigin = window.location.origin;
   const subscribers = new Set();
   const replay = new Map();
+  /** @type {Record<string, any>} the app functions the command handlers call */
+  const deps = { ...initialDeps };
   let bridgeCapability;
   let bridgeReceiver = null;
   let ready = false;
+  /** The window as the last command left it (userChanges.js), null before the first. */
+  let lastSnapshot = null;
+  /** Atom ids per revision this host has seen, newest last: the expectedRevision guard compares them. */
+  const revisionIds = new Map();
+  const REMEMBERED_REVISIONS = 64;
+  function remember(snapshot) {
+    if (!snapshot.revision || !snapshot.ids) return;
+    revisionIds.delete(snapshot.revision);
+    revisionIds.set(snapshot.revision, snapshot.ids);
+    if (revisionIds.size > REMEMBERED_REVISIONS) revisionIds.delete(revisionIds.keys().next().value);
+  }
   let closed = false;
+  /** Commands running now, and how many have started: the user-change watcher stays out of their way. */
+  let inFlight = 0;
+  let commandsStarted = 0;
 
   function configure(next = {}) {
-    if (typeof next.loadStructure === 'function') loadStructure = next.loadStructure;
-    if (typeof next.selectStructure === 'function') selectStructure = next.selectStructure;
-    if (typeof next.applyFrameFast === 'function') applyFrameFast = next.applyFrameFast;
-    if (typeof next.commitPositions === 'function') commitPositions = next.commitPositions;
-    if (typeof next.updateLattice === 'function') updateLattice = next.updateLattice;
-    if (typeof next.recenterCamera === 'function') recenterCamera = next.recenterCamera;
-    if (typeof next.rotateCamera === 'function') rotateCamera = next.rotateCamera;
-    if (typeof next.setRenderPipeline === 'function') setRenderPipeline = next.setRenderPipeline;
-    if (typeof next.captureSceneToPng === 'function') captureSceneToPng = next.captureSceneToPng;
+    for (const [name, value] of Object.entries(next)) {
+      if (typeof value === 'function') deps[name] = value;
+    }
+  }
+
+  // A download offered by downloadBlob: when Python saves downloads (a download
+  // folder is set), the host reserves a one-use upload URL (the route save_image
+  // uses), the file goes there, and Python saves it. Resolves false when the host
+  // declines, and the app downloads it the usual way.
+  async function saveThroughHost(fileName, blob) {
+    const api = window.pywebview?.api;
+    if (!bridgeCapability || typeof api?.reserve_download !== 'function') return false;
+    const type = (blob.type || 'application/octet-stream').toLowerCase();
+    const url = await api.reserve_download(bridgeCapability, String(fileName), type);
+    if (typeof url !== 'string') return false;
+    const response = await strictFetch(url, { method: 'POST', headers: { 'Content-Type': type }, body: blob });
+    await responseOrThrow(response, 'DOWNLOAD_UPLOAD_FAILED', 'Could not hand the download to the host');
+    return await api.download_done(bridgeCapability, url) === true;
   }
 
   function captureBridgeReceiver() {
@@ -230,199 +180,6 @@ export function createBrowserHost({
     return normalized;
   }
 
-  function listStructures() {
-    const active = getActiveStructure();
-    return getContainers().map((container) => snapshotForContainer(container, active));
-  }
-
-  function requireArgs(args, name) {
-    if (!args || typeof args !== 'object' || Array.isArray(args)) {
-      throw commandError('INVALID_ARGS', `${name} requires an object args value`);
-    }
-    return args;
-  }
-
-  async function execute(command, args) {
-    switch (command) {
-      case 'list_structures':
-        if (args !== undefined) requireArgs(args, command);
-        return listStructures();
-      case 'load': {
-        const input = requireArgs(args, command);
-        if (!safeName(input.name)) throw commandError('INVALID_ARGS', 'load.name must be nonempty');
-        if (!isBufferData(input.data)) throw commandError('INVALID_ARGS', 'load.data must be text or binary data');
-        if (input.format !== undefined && (!safeName(input.format) || input.format.includes('/'))) {
-          throw commandError('INVALID_ARGS', 'load.format must be a nonempty format name');
-        }
-        if (input.binary !== undefined && typeof input.binary !== 'boolean') {
-          throw commandError('INVALID_ARGS', 'load.binary must be boolean');
-        }
-        requirePeriodicOption(input.periodic);
-        const data = input.data instanceof Uint8Array
-          ? input.data.buffer.slice(input.data.byteOffset, input.data.byteOffset + input.data.byteLength)
-          : input.data;
-        const result = await loadStructure(data, input.name, false, input.format || '', { periodic: input.periodic });
-        if (result?.cancelled) throw commandError('LOAD_CANCELLED', 'Load cancelled by the user');
-        const container = result?.container || null;
-        if (!container) throw commandError('LOAD_FAILED', 'The structure loader returned no structure');
-        emit('structure_loaded', snapshotForContainer(container, getActiveStructure()));
-        return { id: getContainerId(container), ...snapshotForContainer(container, getActiveStructure()) };
-      }
-      case 'select': {
-        const input = requireArgs(args, command);
-        const container = getContainerById(input.id);
-        if (!container) throw commandError('STRUCTURE_NOT_FOUND', 'Unknown structure id');
-        const frame = input.frame === undefined ? 0 : input.frame;
-        if (!Number.isInteger(frame) || frame < 0 || frame >= container.structures.length) {
-          throw commandError('FRAME_OUT_OF_RANGE', 'Structure frame is out of range');
-        }
-        const rowIndex = getContainers().indexOf(container);
-        if (!selectStructure(rowIndex, frame)) throw commandError('SELECT_FAILED', 'Structure selection failed');
-        return true;
-      }
-      case 'update_fractional_positions': {
-        const input = requireArgs(args, command);
-        const structure = getActiveStructure();
-        if (!structure) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-        if (!Array.isArray(input.positions) || input.positions.length !== structure.atoms.length) {
-          throw commandError('INVALID_POSITIONS', 'positions must contain exactly one point per atom');
-        }
-        const positions = input.positions.map((point) => {
-          if (!Array.isArray(point) || point.length !== 3 || point.some((value) => typeof value !== 'number' || !Number.isFinite(value))) {
-            throw commandError('INVALID_POSITIONS', 'Every position must be exactly three finite numbers');
-          }
-          return [...point];
-        });
-        if (input.commit !== undefined && typeof input.commit !== 'boolean') {
-          throw commandError('INVALID_ARGS', 'commit must be boolean');
-        }
-        for (let i = 0; i < positions.length; i++) structure.atoms[i].position = positions[i];
-        let fastPathApplied = false;
-        let fallbackReason;
-        try {
-          fastPathApplied = applyFrameFast(structure) === true;
-          if (!fastPathApplied) fallbackReason = 'FAST_PATH_UNAVAILABLE';
-        } catch {
-          fallbackReason = 'FAST_PATH_FAILED';
-        }
-        let rebuilt = false;
-        if (!fastPathApplied || input.commit === true) {
-          try {
-            if (commitPositions() === false) throw new Error('Full position commit was not applied');
-          } catch (error) {
-            throw commandError('POSITION_SYNC_FAILED', 'Position synchronization failed', {
-              fallbackReason: fallbackReason || 'COMMIT_REQUESTED',
-              cause: safeError(error, 'POSITION_SYNC_FAILED'),
-            });
-          }
-          rebuilt = true;
-        }
-        return { atomCount: positions.length, fastPathApplied, rebuilt, ...(fallbackReason ? { fallbackReason } : {}) };
-      }
-      case 'update_lattice': {
-        const input = requireArgs(args, command);
-        if (!getActiveStructure()) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-        if (!Array.isArray(input.lattice) || input.lattice.length !== 3
-          || input.lattice.some((row) => !Array.isArray(row) || row.length !== 3
-            || row.some((value) => typeof value !== 'number' || !Number.isFinite(value)))) {
-          throw commandError('INVALID_LATTICE', 'lattice must be exactly three rows of three finite numbers');
-        }
-        const lattice = input.lattice.map((row) => [...row]);
-        const determinant = lattice[0][0] * (lattice[1][1] * lattice[2][2] - lattice[1][2] * lattice[2][1])
-          - lattice[0][1] * (lattice[1][0] * lattice[2][2] - lattice[1][2] * lattice[2][0])
-          + lattice[0][2] * (lattice[1][0] * lattice[2][1] - lattice[1][1] * lattice[2][0]);
-        if (Math.abs(determinant) < 1e-12) {
-          throw commandError('INVALID_LATTICE', 'lattice must be nonsingular');
-        }
-        if (typeof updateLattice !== 'function') {
-          throw commandError('COMMAND_UNAVAILABLE', 'Lattice update is unavailable');
-        }
-        try {
-          if (await updateLattice(lattice) !== true) throw new Error('Lattice update was not applied');
-        } catch (error) {
-          throw commandError('LATTICE_SYNC_FAILED', 'Lattice synchronization failed', {
-            cause: safeError(error, 'LATTICE_SYNC_FAILED'),
-          });
-        }
-        return true;
-      }
-      case 'commit_positions':
-        if (args !== undefined) requireArgs(args, command);
-        if (!getActiveStructure()) throw commandError('NO_ACTIVE_STRUCTURE', 'No active structure');
-        commitPositions();
-        return true;
-      case 'recenter_camera':
-        if (args !== undefined) requireArgs(args, command);
-        recenterCamera();
-        return true;
-      case 'rotate_camera': {
-        const input = requireArgs(args, command);
-        if (typeof input.angleDegrees !== 'number' || !Number.isFinite(input.angleDegrees)) {
-          throw commandError('INVALID_ARGS', 'rotate_camera.angleDegrees must be a finite number');
-        }
-        if (!['x', 'y', 'z'].includes(input.axis)) {
-          throw commandError('INVALID_ARGS', 'rotate_camera.axis must be x, y, or z');
-        }
-        if (typeof rotateCamera !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'Camera rotation is unavailable');
-        rotateCamera(input.angleDegrees, input.axis);
-        return true;
-      }
-      case 'set_render_pipeline': {
-        const input = requireArgs(args, command);
-        if (typeof input.pipelineId !== 'string' || !PIPELINE_IDS.has(input.pipelineId)) {
-          throw commandError('INVALID_PIPELINE', 'Unknown rendering pipeline');
-        }
-        if (typeof setRenderPipeline !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'Pipeline selection is unavailable');
-        const activeId = setRenderPipeline(input.pipelineId);
-        if (typeof activeId !== 'string' || !PIPELINE_IDS.has(activeId)) {
-          throw commandError('PIPELINE_FAILED', 'Pipeline selection returned an invalid active id');
-        }
-        return activeId;
-      }
-      case 'save_image': {
-        const input = requireArgs(args, command);
-        const integerInRange = (value, min, max) => typeof value === 'number'
-          && Number.isInteger(value) && value >= min && value <= max;
-        if (!integerInRange(input.width, 1, 16384) || !integerInRange(input.height, 1, 16384)) {
-          throw commandError('INVALID_ARGS', 'save_image dimensions must be integers from 1 through 16384');
-        }
-        if (!integerInRange(input.margin, 0, 4096)) {
-          throw commandError('INVALID_ARGS', 'save_image.margin must be an integer from 0 through 4096');
-        }
-        if (input.margin * 2 >= input.width || input.margin * 2 >= input.height) {
-          throw commandError('INVALID_ARGS', 'save_image.margin must be smaller than half of each dimension');
-        }
-        if (typeof input.transparent !== 'boolean') {
-          throw commandError('INVALID_ARGS', 'save_image.transparent must be boolean');
-        }
-        if (typeof input.structureOnly !== 'boolean') {
-          throw commandError('INVALID_ARGS', 'save_image.structureOnly must be boolean');
-        }
-        if (typeof captureSceneToPng !== 'function') throw commandError('COMMAND_UNAVAILABLE', 'PNG capture is unavailable');
-        const outputUrl = sameOriginURL(input.outputUrl, window.location.origin);
-        if (!outputUrl || outputUrl.username || outputUrl.password || outputUrl.search || outputUrl.hash
-          || outputUrl.href !== input.outputUrl
-          || !/^\/_crysviz\/output\/[A-Za-z0-9_-]{32,}$/.test(outputUrl.pathname)) {
-          throw commandError('INVALID_OUTPUT_URL', 'Managed output URL is invalid');
-        }
-        const blob = await captureSceneToPng({
-          width: input.width, height: input.height, margin: input.margin,
-          transparent: input.transparent, structureOnly: input.structureOnly,
-        });
-        if (!(blob instanceof Blob) || blob.type !== 'image/png') {
-          throw commandError('CAPTURE_FAILED', 'PNG capture did not return an image/png Blob');
-        }
-        const response = await strictFetch(outputUrl, {
-          method: 'POST', headers: { 'Content-Type': 'image/png' }, body: blob,
-        });
-        await responseOrThrow(response, 'OUTPUT_UPLOAD_FAILED', 'Could not upload managed PNG');
-        return { contentType: 'image/png', size: blob.size };
-      }
-      default:
-        throw commandError('UNKNOWN_COMMAND', `Unknown host command: ${command}`);
-    }
-  }
-
   async function dispatchRequest(request) {
     if (!request || typeof request !== 'object' || Array.isArray(request)
       || typeof request.command !== 'string') {
@@ -430,18 +187,114 @@ export function createBrowserHost({
       emit('error', error);
       return { ok: false, error };
     }
-    if (!COMMANDS.has(request.command)) {
+    if (!Object.hasOwn(COMMAND_HANDLERS, request.command)) {
       const error = errorRecord('UNKNOWN_COMMAND', `Unknown host command: ${request.command}`);
       emit('error', error);
       return { ok: false, error };
     }
+    inFlight += 1;
+    commandsStarted += 1;
+    // What the user changed by hand since the previous command (or since the
+    // watcher last reported) goes back with this one.
+    const now = await takeSnapshot(deps);
+    remember(now);
+    const sinceLastCall = diffSnapshots(lastSnapshot, now);
+    // A command that changed the structure without saying so (crysviz:atoms-changed) is
+    // announced here, so open windows that mirror it, such as the structure editor, follow.
+    const before = getActiveStructure();
+    const beforeContent = before ? structureContent(before) : null;
+    let announced = false;
+    const heard = () => { announced = true; };
+    document.addEventListener('crysviz:atoms-changed', heard);
     try {
-      return { ok: true, result: await execute(request.command, request.args) };
+      const ctx = { deps, emit, origin: window.location.origin };
+      let args = request.args;
+      // Any command may carry expectedRevision (a structure.revision the caller saw):
+      // it runs as long as the atoms it addresses by index are still the same atoms.
+      if (args && typeof args === 'object' && !Array.isArray(args) && 'expectedRevision' in args) {
+        const { expectedRevision, exactRevision, ...rest } = args;
+        checkExpectedRevision(expectedRevision, addressedIndices(rest), (revision) => revisionIds.get(revision),
+          exactRevision === true);
+        args = rest;
+      }
+      const result = await COMMAND_HANDLERS[request.command](args, ctx);
+      // Files a command caused through the app's own download path (a clicked
+      // Save or Download button) are written before the command answers.
+      await settleDownloads();
+      const plain = result && typeof result === 'object' && !Array.isArray(result);
+      return { ok: true, result: sinceLastCall && plain ? { ...result, sinceLastCall } : result };
     } catch (error) {
       const normalized = errorFromThrown(error);
+      // The world saying no (the structure changed, a job is running, atoms would
+      // collide) is an ordinary result, so the client does not report a failed tool.
+      if (ERROR_KINDS[normalized.code] === 'outcome') {
+        return { ok: true, result: {
+          applied: false, reason: normalized.message, code: normalized.code,
+          ...(normalized.details || {}), ...(sinceLastCall ? { sinceLastCall } : {}),
+        } };
+      }
+      if (sinceLastCall) normalized.details = { ...(normalized.details || {}), sinceLastCall };
       emit('error', normalized);
       return { ok: false, error: normalized };
+    } finally {
+      document.removeEventListener('crysviz:atoms-changed', heard);
+      if (!announced && before && getActiveStructure() === before && structureContent(before) !== beforeContent) {
+        document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+      }
+      // The app redraws on demand, asked by a catch-all on the user's DOM
+      // events (render/AnimateModule.js wireRenderOnDemand). A host command
+      // has no such event, so it asks once itself, or a change it made (a
+      // colour, a highlight) would show only on the user's next click.
+      deps.requestRender?.();
+      // The window as this command left it: the next command compares against it.
+      lastSnapshot = await takeSnapshot(deps);
+      remember(lastSnapshot);
+      inFlight -= 1;
     }
+  }
+
+  // The user's hand edits as they happen. A moment after any user interaction
+  // (or an atoms-changed from a window), the window is compared with the last
+  // baseline using the same snapshot and diff a command attaches as
+  // sinceLastCall, and a difference goes out as a user_changed event. Either
+  // way the baseline moves on, so a change is reported once: by this event, or
+  // by the next command's sinceLastCall if no check ran in between. Nothing is
+  // compared while a command runs, and what a command does is its own result.
+  let watchTimer = 0;
+  let watching = false;
+  function scheduleUserCheck() {
+    clearTimeout(watchTimer);
+    watchTimer = setTimeout(checkUserChanges, USER_CHECK_DELAY_MS);
+  }
+  async function checkUserChanges() {
+    watchTimer = 0;
+    if (closed || !ready || !lastSnapshot) return;
+    if (inFlight) { scheduleUserCheck(); return; }
+    const started = commandsStarted;
+    const now = await takeSnapshot(deps);
+    // A command ran meanwhile: its own snapshot is the newer baseline.
+    if (inFlight || commandsStarted !== started) { scheduleUserCheck(); return; }
+    const changes = diffSnapshots(lastSnapshot, now);
+    lastSnapshot = now;
+    remember(now);
+    if (changes) emit('user_changed', changes);
+  }
+  /** Start watching (host-launched windows and subscribers only: a plain browser visit pays nothing). */
+  function watchUserChanges() {
+    if (watching) return;
+    watching = true;
+    // The same user events that ask for a redraw (render/AnimateModule.js), plus the wheel (zoom).
+    for (const type of ['pointerup', 'change', 'keyup', 'wheel']) {
+      document.addEventListener(type, scheduleUserCheck, { capture: true, passive: true });
+    }
+    document.addEventListener('crysviz:atoms-changed', scheduleUserCheck);
+    onActiveStructureChange(scheduleUserCheck);
+    takeBaseline();
+  }
+  /** The baseline the first check compares against, once ready, if no command has set one yet. */
+  function takeBaseline() {
+    if (!watching || !ready || lastSnapshot) return;
+    takeSnapshot(deps).then((snapshot) => { if (!lastSnapshot) { lastSnapshot = snapshot; remember(snapshot); } });
   }
 
   async function dispatch(request) {
@@ -473,8 +326,10 @@ export function createBrowserHost({
         }
         const response = await strictFetch(inputUrl);
         await responseOrThrow(response, 'INPUT_FETCH_FAILED', 'Could not fetch managed host input');
-        const binary = request.args.binary === true;
-        request.args = { ...request.args, data: binary ? await response.arrayBuffer() : await response.text() };
+        // A Blob, as the file picker hands over: loadStructure reads it by its
+        // detected format, so a random-access CHGCAR or WAVECAR is never made
+        // one string (Chromium returns '' from text() past ~512 MiB).
+        request.args = { ...request.args, data: await response.blob() };
         delete request.args.inputUrl;
       }
       const result = await dispatch(request);
@@ -500,6 +355,7 @@ export function createBrowserHost({
         }
       }
       subscribers.add(callback);
+      watchUserChanges();
       return () => subscribers.delete(callback);
     },
   });
@@ -519,6 +375,7 @@ export function createBrowserHost({
     if (closed || ready) return;
     ready = true;
     emit('ready', { protocolVersion: PROTOCOL_VERSION });
+    takeBaseline();
   }
 
   function emitLoaded(container) {
@@ -549,6 +406,13 @@ export function createBrowserHost({
     setBridgeCapability(value) {
       bridgeCapability = typeof value === 'string' ? value : undefined;
       captureBridgeReceiver();
+      // A host-launched window (Python): its hand edits go out as user_changed,
+      // and the app's downloads are saved by the host (host/downloadSink.js).
+      if (bridgeCapability) {
+        watchUserChanges();
+        setDownloadSink(saveThroughHost);
+        watchSelection(); // so get_state can say how the user's selection was made
+      }
     },
     observeSelection: onActiveStructureChange((structure) => {
       const snapshot = activeSnapshot();
@@ -559,62 +423,43 @@ export function createBrowserHost({
   };
 }
 
-function manifestError(code, message) {
-  /** @type {any} */
-  const error = new Error(message);
-  error.code = code;
-  return error;
-}
-
-async function responseOrThrow(response, code, message) {
-  if (!response.ok) throw manifestError(code, `${message} (HTTP ${response.status})`);
-  return response;
-}
-
-function strictFetch(url, options = {}) {
-  return fetch(url, { ...options, redirect: 'error' });
-}
-
 function validateManifest(manifest) {
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
-    throw manifestError('INVALID_MANIFEST', 'Host manifest must be an object');
+    throw commandError('INVALID_MANIFEST', 'Host manifest must be an object');
   }
   const manifestKeys = Object.keys(manifest);
   if (manifestKeys.some((key) => !['version', 'inputs', 'bridgeCapability'].includes(key))) {
-    throw manifestError('INVALID_MANIFEST', 'Host manifest contains an unknown field');
+    throw commandError('INVALID_MANIFEST', 'Host manifest contains an unknown field');
   }
   if (manifest.version !== 1 || !Array.isArray(manifest.inputs)) {
-    throw manifestError('INVALID_MANIFEST', 'Host manifest is not a valid version 1 manifest');
+    throw commandError('INVALID_MANIFEST', 'Host manifest is not a valid version 1 manifest');
   }
   if (manifest.bridgeCapability !== undefined && typeof manifest.bridgeCapability !== 'string') {
-    throw manifestError('INVALID_MANIFEST', 'Host manifest bridgeCapability must be a string');
+    throw commandError('INVALID_MANIFEST', 'Host manifest bridgeCapability must be a string');
   }
   return manifest.inputs.map((input) => {
     if (!input || typeof input !== 'object' || Array.isArray(input)) {
-      throw manifestError('INVALID_MANIFEST', 'Host manifest input must be an object');
+      throw commandError('INVALID_MANIFEST', 'Host manifest input must be an object');
     }
-    if (Object.keys(input).some((key) => !['url', 'name', 'format', 'binary'].includes(key))) {
-      throw manifestError('INVALID_MANIFEST', 'Host manifest input contains an unknown field');
+    if (Object.keys(input).some((key) => !['url', 'name', 'format'].includes(key))) {
+      throw commandError('INVALID_MANIFEST', 'Host manifest input contains an unknown field');
     }
     if (!safeName(input.name) || typeof input.url !== 'string') {
-      throw manifestError('INVALID_MANIFEST', 'Host manifest input requires url and name');
+      throw commandError('INVALID_MANIFEST', 'Host manifest input requires url and name');
     }
     const url = sameOriginURL(input.url, window.location.origin);
     if (!url || url.username || url.password) {
-      throw manifestError('INVALID_MANIFEST', 'Host manifest input URL must be same-origin');
+      throw commandError('INVALID_MANIFEST', 'Host manifest input URL must be same-origin');
     }
     if (input.format !== undefined && (!safeName(input.format) || input.format.includes('/'))) {
-      throw manifestError('INVALID_MANIFEST', 'Host manifest input format must be a nonempty format name');
+      throw commandError('INVALID_MANIFEST', 'Host manifest input format must be a nonempty format name');
     }
-    if (input.binary !== undefined && typeof input.binary !== 'boolean') {
-      throw manifestError('INVALID_MANIFEST', 'Host manifest input binary must be boolean');
-    }
-    return { url, name: input.name, format: input.format, binary: input.binary === true };
+    return { url, name: input.name, format: input.format };
   });
 }
 
 function completionError(original, completion) {
-  return Object.assign(manifestError(
+  return Object.assign(commandError(
     'MANIFEST_COMPLETE_FAILED',
     'Could not complete host manifest',
   ), {
@@ -656,7 +501,7 @@ export async function bootstrapAuthoritative(deps) {
     const route = `${window.location.origin}/_crysviz/manifest/${encodeURIComponent(capability)}`;
     let terminalCompletionPosted = false;
     const postCompletion = async (body) => {
-      if (terminalCompletionPosted) throw manifestError('MANIFEST_COMPLETE_FAILED', 'Host manifest completion was already posted');
+      if (terminalCompletionPosted) throw commandError('MANIFEST_COMPLETE_FAILED', 'Host manifest completion was already posted');
       terminalCompletionPosted = true;
       try {
         const response = await strictFetch(`${route}/complete`, {
@@ -667,7 +512,7 @@ export async function bootstrapAuthoritative(deps) {
         await responseOrThrow(response, 'MANIFEST_COMPLETE_FAILED', 'Could not complete host manifest');
       } catch (error) {
         if (error?.code === 'MANIFEST_COMPLETE_FAILED') throw error;
-        const wrapped = manifestError('MANIFEST_COMPLETE_FAILED', 'Could not complete host manifest');
+        const wrapped = commandError('MANIFEST_COMPLETE_FAILED', 'Could not complete host manifest');
         wrapped.details = { cause: errorFromThrown(error, 'MANIFEST_COMPLETE_FAILED') };
         throw wrapped;
       }
@@ -682,17 +527,16 @@ export async function bootstrapAuthoritative(deps) {
       for (const input of inputs) {
         const inputResponse = await responseOrThrow(
           await strictFetch(input.url), 'INPUT_FETCH_FAILED', `Could not fetch host input ${input.name}`);
-        const data = input.binary ? await inputResponse.arrayBuffer() : await inputResponse.text();
         const result = await host.dispatchInternal({
           command: 'load',
-          args: { name: input.name, data, format: input.format, binary: input.binary },
+          args: { name: input.name, data: await inputResponse.blob(), format: input.format },
         });
         if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
       }
       if (inputs.length === 0) {
         const loadDefault = initialized?.loadDefault || deps.loadDefault;
         if (typeof loadDefault !== 'function') {
-          throw manifestError('DEFAULT_LOAD_UNAVAILABLE', 'The built-in default structure loader is unavailable');
+          throw commandError('DEFAULT_LOAD_UNAVAILABLE', 'The built-in default structure loader is unavailable');
         }
         await loadDefault();
       }
@@ -724,13 +568,13 @@ export async function bootstrapAuthoritative(deps) {
   if (SHARE_FRAGMENT.test(window.location.hash)
     || query.has('state') || query.has('z') || query.has('e')) {
     const result = await loadShared();
-    if (!result) throw manifestError('SHARED_STATE_FAILED', 'Shared state was present but could not be loaded');
+    if (!result) throw commandError('SHARED_STATE_FAILED', 'Shared state was present but could not be loaded');
     return { source: 'shared' };
   }
   if (LOAD_HASH_RE.test(window.location.hash)) {
     const result = await loadHash();
-    if (result === 'cancelled') throw manifestError('LOAD_CANCELLED', 'Load cancelled by the user');
-    if (!result) throw manifestError('HASH_LOAD_FAILED', 'The load hash was present but could not be loaded');
+    if (result === 'cancelled') throw commandError('LOAD_CANCELLED', 'Load cancelled by the user');
+    if (!result) throw commandError('HASH_LOAD_FAILED', 'The load hash was present but could not be loaded');
     return { source: 'hash' };
   }
   await loadDefault();

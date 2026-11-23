@@ -108,6 +108,42 @@ const NOTICE = '[data-role="potential-notice"]';
   const orderPet = await read('#osPotentialNotice');
   H.check('and follows a change of potential', /Runs with PET-MAD/.test(orderPet.line || ''), JSON.stringify(orderPet));
 
+  // --- A calculation tool's potential argument picks the potential as the toggle does.
+  // No network: the PET-MAD model download fails (a console error, left out below).
+  await page.context().route('https://huggingface.co/**', (route) => route.abort());
+  const chosen = await page.evaluate(async () => {
+    const host = (command, args) => window.crysvizHost.dispatch({ command, args });
+    const { general } = await import('./state/store.js');
+    const active = () => document.querySelector('#BackendPotentialSelector .backend-potential-toggle button.active')?.dataset.potential;
+    const siRow = (await host('load', { name: 'Si.vasp', data: 'Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n2\nDirect\n0 0 0\n0.25 0.25 0.25\n' })).result;
+    document.querySelector('#BackendPotentialSelector [data-potential="nep"]').click();
+    const unknown = await host('run_energy', { potential: 'mace' });
+    const ase = (await host('run_energy', { potential: 'ase' })).result;
+    const afterAse = { state: general.atomisticPotential, shown: active() };
+    // A symmetry lock that cannot be made (two atoms 0.0004 Å apart) refuses the run.
+    await host('load', { name: 'overlap.vasp', data: 'X\n1.0\n4 0 0\n0 4 0\n0 0 4\nSi C\n1 1\nDirect\n0 0 0\n0.0001 0 0\n' });
+    const locked = (await host('run_relax', { potential: 'pet-mad', symmetry: true })).result;
+    const afterLock = { state: general.atomisticPotential, shown: active() };
+    await host('select_structure', { structure: siRow.structure });
+    const pet = (await host('run_energy', { potential: 'pet-mad' })).result;
+    const afterPet = { state: general.atomisticPotential, shown: active(),
+      notice: document.querySelector('#osPotentialNotice [data-role="potential-notice-line"]')?.textContent ?? '' };
+    await host('wait_job', { jobId: pet.jobId, waitS: 25 });
+    const nep = (await host('run_energy', { potential: 'nep', waitS: 25 })).result;
+    return { unknown, ase, afterAse, locked, afterLock, afterPet, nep, afterNep: { state: general.atomisticPotential, shown: active() } };
+  });
+  H.check('an unknown potential is INVALID_ARGS', !chosen.unknown.ok && chosen.unknown.error.code === 'INVALID_ARGS', JSON.stringify(chosen.unknown));
+  H.check('potential ase without a connected server is refused and changes nothing',
+    chosen.ase.applied === false && chosen.ase.code === 'POTENTIAL_UNAVAILABLE'
+      && chosen.afterAse.state === 'nep' && chosen.afterAse.shown === 'nep', JSON.stringify(chosen));
+  H.check('a run_relax with potential pet-mad refused by its symmetry lock leaves the picker as it was',
+    chosen.locked.applied === false && chosen.locked.code === 'SYMMETRY_UNAVAILABLE'
+      && chosen.afterLock.state === 'nep' && chosen.afterLock.shown === 'nep', JSON.stringify({ locked: chosen.locked, afterLock: chosen.afterLock }));
+  H.check('potential pet-mad switches the Atomistic window\'s picker, and the other windows follow',
+    chosen.afterPet.state === 'mlip' && chosen.afterPet.shown === 'mlip' && /Runs with PET-MAD/.test(chosen.afterPet.notice), JSON.stringify(chosen));
+  H.check('potential nep switches back and the result names it',
+    chosen.nep.status === 'done' && chosen.nep.result.potential === 'nep' && chosen.afterNep.shown === 'nep', JSON.stringify(chosen.nep));
+
   // --- The Atomistic info page: the models and the warning, not the old modes.
   const info = await page.evaluate(async () => (await fetch('./data/backendInfo.md')).text());
   H.check('the Atomistic info page explains the potentials and carries the warning',
@@ -115,7 +151,7 @@ const NOTICE = '[data-role="potential-notice"]';
       && /### NEP/.test(info) && /### PET-MAD/.test(info) && /### ASE/.test(info) && !/four different modes/.test(info),
     info.slice(0, 120));
 
-  const relevant = errors.filter((e) => !/ERR_TUNNEL_CONNECTION_FAILED|ERR_NAME_NOT_RESOLVED|Plotly/.test(e));
+  const relevant = errors.filter((e) => !/ERR_TUNNEL_CONNECTION_FAILED|ERR_NAME_NOT_RESOLVED|Plotly|huggingface\.co/.test(e));
   H.check('no page errors', relevant.length === 0, relevant[0] || '');
   await H.finish(browser);
 })().catch(H.crash);

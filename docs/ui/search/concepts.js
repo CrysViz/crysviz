@@ -118,6 +118,9 @@ export const CONCEPTS = [
   { to: { control: 'asuHighlightChk' }, phrases: ['highlight unique atoms', 'symmetry unique atoms'] },
   { to: { control: 'getWyckoffBtn' }, phrases: [
     'wyckoff editor', 'edit wyckoff positions', 'move atoms keeping symmetry', 'symmetry constrained editing',
+    // The lock also holds for the Atomistic window: relaxations and MD keep the group.
+    'keep symmetry', 'lock symmetry', 'constrain symmetry', 'symmetry constraint', 'symmetry constrained relaxation',
+    'relax with symmetry', 'relax keeping symmetry', 'symmetric relaxation', 'symmetry constrained md',
   ] },
   { to: { panel: 'cell' }, phrases: [
     'supercell', 'make supercell', 'supercell builder', 'repeat cell', 'repeat unit cell', 'replicate cell', 'expand cell',
@@ -126,8 +129,11 @@ export const CONCEPTS = [
     'order disordered structure', 'partial occupancies', 'site disorder', 'occupancy', 'random alloy', 'solid solution',
   ] },
   { to: { control: 'applyVacuum' }, phrases: [
-    'add vacuum', 'vacuum layer', 'vacuum gap', 'make slab', 'surface slab', 'slab model', 'surface',
-    'molecule in a box', 'vacuum padding',
+    'add vacuum', 'vacuum layer', 'vacuum gap', 'molecule in a box', 'vacuum padding',
+  ] },
+  { to: { control: 'cutSlabBtn' }, phrases: [
+    'make slab', 'surface slab', 'slab model', 'surface', 'cut slab', 'cleave', 'cleave surface',
+    'miller plane surface', 'surface termination', 'build slab',
   ] },
   { to: { control: 'resetVacuum' }, phrases: ['remove vacuum', 'undo vacuum'] },
   { to: { control: 'osBuildBtn' }, phrases: ['random configurations', 'sample orderings', 'enumerate configurations', 'special quasirandom structure'] },
@@ -206,7 +212,7 @@ export const CONCEPTS = [
 
   // ---- files ------------------------------------------------------------------------------
   { to: { control: 'uploadButton' }, phrases: [
-    'open file', 'import structure', 'load structure', 'drag and drop', 'browse files', 'import file',
+    'open file', 'upload', 'upload file', 'import structure', 'load structure', 'drag and drop', 'browse files', 'import file',
     'open poscar', 'open cif', 'load xyz', 'load outcar', 'read vasp output', 'open trajectory',
   ] },
   { to: { control: 'pasteTextButton' }, phrases: [
@@ -224,6 +230,7 @@ export const CONCEPTS = [
   { to: { control: 'qeInputButton' }, phrases: ['quantum espresso input', 'pw.x input', 'qe input', 'pwscf input'] },
   { to: { control: 'saveCellButton' }, phrases: ['castep cell file', 'castep input'] },
   { to: { control: 'saveGeometryButton' }, phrases: ['fhi-aims geometry', 'geometry.in', 'aims input'] },
+  { to: { control: 'saveExtxyzButton' }, phrases: ['export extxyz', 'extended xyz', 'export trajectory', 'save trajectory', 'ase trajectory', 'ovito'] },
   { to: { control: 'saveCrysvizButton' }, phrases: [
     'save session', 'save everything', 'project file', 'save workspace', 'save state', 'keep my structures',
     'back up structures', 'continue later',

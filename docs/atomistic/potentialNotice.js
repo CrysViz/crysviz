@@ -166,11 +166,13 @@ export function highPressureWarning(potential, pressures) {
  * potential or its model changes; call `update()` when the pressures do.
  * @param {HTMLElement} host  appended to, or `before` it when given
  * @param {{ pressures?: () => { label: string, gpa: number }[], showPotential?: boolean,
- *           before?: Element|null, where?: string }} [options]
+ *           before?: Element|null, where?: string, inline?: Element|null }} [options]
+ *   `inline`: where the collapsed ⚠ goes when there is no "Runs with …" line
+ *   (the Atomistic window's "Choose potential" label); the notice otherwise.
  * @returns {{ element: HTMLElement, update: () => void }}
  */
 export function mountPotentialNotice(host, { pressures = () => [], showPotential = true, before = null,
-  where = 'the Atomistic window' } = {}) {
+  where = 'the Atomistic window', inline = null } = {}) {
   const el = document.createElement('div');
   el.className = 'potential-notice';
   el.dataset.role = 'potential-notice';
@@ -180,6 +182,8 @@ export function mountPotentialNotice(host, { pressures = () => [], showPotential
   // Stop listening once the notice has been in the page and left it (its
   // window was rebuilt); one built in a detached container waits.
   let wasConnected = false;
+  /** @type {HTMLButtonElement|null} */
+  let expand = null;
   const render = () => {
     if (el.isConnected) wasConnected = true;
     else if (wasConnected) {
@@ -189,6 +193,8 @@ export function mountPotentialNotice(host, { pressures = () => [], showPotential
     const potential = activePotential();
     el.dataset.potential = potential;
     el.replaceChildren();
+    expand?.remove(); // it may sit outside the notice (`inline`)
+    expand = null;
     let line = null;
     if (showPotential) {
       line = document.createElement('div');
@@ -204,7 +210,7 @@ export function mountPotentialNotice(host, { pressures = () => [], showPotential
     if (isPotentialCaveatCollapsed()) {
       // The caveat folded to a small orange ⚠: still there, one click away.
       // At the end of the "Runs with …" line when there is one.
-      const expand = document.createElement('button');
+      expand = document.createElement('button');
       expand.type = 'button';
       expand.className = 'potential-notice-expand';
       expand.dataset.role = 'potential-notice-expand';
@@ -214,7 +220,7 @@ export function mountPotentialNotice(host, { pressures = () => [], showPotential
       expand.setAttribute('aria-label', 'Show the accuracy warning');
       expand.title = `${caveatText} Click to show this warning again.`;
       expand.addEventListener('click', () => setPotentialCaveatCollapsed(false));
-      (line ?? el).appendChild(expand);
+      (line ?? inline ?? el).appendChild(expand);
     } else {
       const caveat = document.createElement('div');
       caveat.className = 'potential-notice-caveat';

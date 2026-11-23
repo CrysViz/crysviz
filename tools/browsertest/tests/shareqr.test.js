@@ -111,9 +111,10 @@ const H = require('../harness');
   // broken encoder. Via about:blank: a fragment-only change would not reload.
   await page.goto('about:blank');
   await page.goto(opened.url, { waitUntil: 'load' });
+  // Wait for the shared load itself: atoms can appear first from another start-up step.
   await H.waitFor(page, async () => {
-    const { getActiveStructure } = await import('./state/structures.js');
-    return (getActiveStructure()?.atoms?.length ?? 0) > 0;
+    const { general } = await import('./state/store.js');
+    return general.sharedStructureLoaded === true;
   }, { timeout: 40000, interval: 1000 });
   const restored = await page.evaluate(async () => {
     const { general } = await import('./state/store.js');

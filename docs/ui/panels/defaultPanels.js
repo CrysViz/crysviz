@@ -728,7 +728,7 @@ export function registerDefaultPanels() {
           setPanelPref('backgroundDot', on);
           setBackgroundDotVisible(on);
         });
-      bgToggle.style.flex = '1';
+      bgToggle.classList.add('control-row-grow');
       bgRow.appendChild(bgToggle);
       bgRow.appendChild(createBackgroundSwatch());
       sceneGroup.appendChild(bgRow);
@@ -989,8 +989,7 @@ export function registerDefaultPanels() {
       // exports in one pass; the default is safe for integrated GPUs.
       body.appendChild(makeSectionHeadline('Graphics'));
       const gmRow = document.createElement('label');
-      gmRow.className = 'toggle_row toggle_container';
-      gmRow.style.gap = '8px';
+      gmRow.className = 'toggle_row toggle_container cv-pref-slider-row';
       const gmText = document.createElement('span');
       gmText.className = 'toggle_text';
       gmText.textContent = 'Allocated GPU memory';
@@ -1001,11 +1000,8 @@ export function registerDefaultPanels() {
       gmSlider.max = '8';
       gmSlider.step = '0.25';
       gmSlider.value = String(getPanelPref('exportGpuMemoryGiB') || 1);
-      gmSlider.style.flex = '1';
       const gmVal = document.createElement('span');
-      gmVal.className = 'toggle_text';
-      gmVal.style.minWidth = '58px';
-      gmVal.style.textAlign = 'right';
+      gmVal.className = 'toggle_text cv-pref-slider-value';
       gmVal.textContent = `${gmSlider.value} GiB`;
       gmSlider.addEventListener('input', () => {
         setPanelPref('exportGpuMemoryGiB', parseFloat(gmSlider.value));
@@ -1020,8 +1016,7 @@ export function registerDefaultPanels() {
       // the limit" answer moves this slider too.
       body.appendChild(makeSectionHeadline('Memory'));
       const tmRow = document.createElement('label');
-      tmRow.className = 'toggle_row toggle_container';
-      tmRow.style.gap = '8px';
+      tmRow.className = 'toggle_row toggle_container cv-pref-slider-row';
       tmRow.title = 'A trajectory whose frames would take more memory asks what to load: every n-th frame, the first frames, or everything';
       const tmText = document.createElement('span');
       tmText.className = 'toggle_text';
@@ -1033,11 +1028,8 @@ export function registerDefaultPanels() {
       tmSlider.max = String(TRAJECTORY_MEMORY_MAX_GIB);
       tmSlider.step = String(TRAJECTORY_MEMORY_STEP_GIB);
       tmSlider.value = String(trajectoryMemoryGiB());
-      tmSlider.style.flex = '1';
       const tmVal = document.createElement('span');
-      tmVal.className = 'toggle_text';
-      tmVal.style.minWidth = '58px';
-      tmVal.style.textAlign = 'right';
+      tmVal.className = 'toggle_text cv-pref-slider-value';
       tmVal.textContent = `${tmSlider.value} GiB`;
       tmSlider.addEventListener('input', () => {
         setPanelPref('trajectoryMemoryGiB', parseFloat(tmSlider.value));
@@ -1057,8 +1049,7 @@ export function registerDefaultPanels() {
       // labels) live via --cv-font-scale; persisted across sessions.
       body.appendChild(makeSectionHeadline('Text'));
       const fsRow = document.createElement('label');
-      fsRow.className = 'toggle_row toggle_container';
-      fsRow.style.gap = '8px';
+      fsRow.className = 'toggle_row toggle_container cv-pref-slider-row';
       const fsText = document.createElement('span');
       fsText.className = 'toggle_text';
       fsText.textContent = 'Overall font scale';
@@ -1069,15 +1060,13 @@ export function registerDefaultPanels() {
       fsSlider.max = String(FONT_SCALE_MAX);
       fsSlider.step = '0.05';
       fsSlider.value = String(getFontScale());
-      fsSlider.style.flex = '1';
       fsSlider.addEventListener('input', () => setFontScale(parseFloat(fsSlider.value)));
       fsRow.appendChild(fsText);
       fsRow.appendChild(fsSlider);
       body.appendChild(fsRow);
       // Restore every window to its default placement.
       const resetRow = document.createElement('div');
-      resetRow.style.display = 'flex';
-      resetRow.style.gap = '8px';
+      resetRow.className = 'cv-pref-btn-row';
       const resetBtn = document.createElement('button');
       resetBtn.id = 'resetUiButton';
       resetBtn.type = 'button';

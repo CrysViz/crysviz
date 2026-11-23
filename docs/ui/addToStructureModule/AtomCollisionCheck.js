@@ -218,3 +218,27 @@ export function conflictingCandidateIndices(tooClose) {
   }
   return [...indices];
 }
+
+export const COLLISION_THRESHOLD_ANGSTROM = 0.5;
+
+/**
+ * Collisions of atoms about to be added to `structure` (fractional x/y/z, as
+ * the atom tables give them) with its atoms and with each other. The one
+ * check behind Add Atom, Add Vacuum and the host's add_atoms command.
+ * @param {any} structure
+ * @param {Array<{element: string, x: number, y: number, z: number, occupancy?: number}>} atoms
+ */
+export function checkAddedAtomCollisions(structure, atoms) {
+  if (!structure || !atoms.length) return { tooClose: [] };
+  const existingAtoms = structure.atoms.map((atom, i) => ({
+    position: fracToCartPoint(atom.position, structure.lattice), element: structure.elements[i],
+    occupancy: atom.getTotalOccupancy?.() ?? 1,
+  }));
+  // checkAtomCollisions works in Cartesian coordinates.
+  const candidateAtoms = atoms.map((a) => ({
+    position: fracToCartPoint([a.x, a.y, a.z], structure.lattice), element: a.element, occupancy: a.occupancy ?? 1,
+  }));
+  return checkAtomCollisions({
+    lattice: structure.lattice, existingAtoms, candidateAtoms, thresholdAngstrom: COLLISION_THRESHOLD_ANGSTROM,
+  });
+}

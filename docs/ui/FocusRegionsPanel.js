@@ -1,6 +1,6 @@
 import { fileBrowser } from '../state/store.js';
 import {
-  applyFocusRegionEdit, createFocusRegion, focusDistanceTo, getFocusRegions, gradientStartRadius,
+  applyFocusRegionEdit, createFocusRegion, createFocusRegionAt, focusDistanceTo, getFocusRegions, gradientStartRadius,
   prepareFocusRegions, removeFocusRegion, resetFocusRegionCenter, setFocusRegionCenterFractional,
 } from '../render/index.js';
 import {
@@ -53,39 +53,47 @@ function describeSources(indices, structure) {
   return indices.map((index) => `${structure.elements?.[index] ?? '?'} ${index + 1}`).join(', ');
 }
 
-function centerEditor(region, rerender) {
+/** "<label>" over three fractional-coordinate boxes and a button: a region's
+ *  center, or the center a new region is added at. Returns the boxes. */
+function fractionalRow(labelText, values, action) {
   const wrap = document.createElement('div');
   wrap.className = 'focus-regions-center';
   const label = document.createElement('span');
-  label.textContent = 'Center (fractional)';
+  label.textContent = labelText;
   const coordinates = document.createElement('div');
   coordinates.className = 'focus-regions-center-coordinates';
-  const values = region.centerFractional ?? [0, 0, 0];
   const inputs = ['x', 'y', 'z'].map((axis, index) => {
     const input = document.createElement('input');
     input.type = 'number';
     input.step = '0.001';
     input.value = Number(values[index] ?? 0).toFixed(5);
-    input.setAttribute('aria-label', `Center ${axis} fractional coordinate`);
-    input.addEventListener('change', () => {
-      const next = inputs.map((entry) => Number(entry.value));
-      if (!setFocusRegionCenterFractional(region, next)) rerender();
-    });
+    input.setAttribute('aria-label', `${labelText.replace(/ \(fractional\)$/, '')} ${axis} fractional coordinate`);
     return input;
   });
+  coordinates.append(...inputs, action);
+  wrap.append(label, coordinates);
+  return { wrap, inputs };
+}
+
+function centerEditor(region, rerender) {
   const reset = button('Reset', 'btn-mini', () => {
     resetFocusRegionCenter(region);
     rerender();
   });
-  coordinates.append(...inputs, reset);
-  wrap.append(label, coordinates);
+  const { wrap, inputs } = fractionalRow('Center (fractional)', region.centerFractional ?? [0, 0, 0], reset);
+  for (const input of inputs) {
+    input.addEventListener('change', () => {
+      const next = inputs.map((entry) => Number(entry.value));
+      if (!setFocusRegionCenterFractional(region, next)) rerender();
+    });
+  }
   return wrap;
 }
 
 function renderRegionCard(region, index, rerender) {
   const structure = fileBrowser.selectedStructure;
   const card = document.createElement('section');
-  card.className = 'focus-regions-card';
+  card.className = 'panel-section focus-regions-card';
   card.dataset.regionId = region.id;
 
   const header = document.createElement('div');
@@ -107,7 +115,7 @@ function renderRegionCard(region, index, rerender) {
 
   const centerLine = document.createElement('div');
   centerLine.className = 'focus-regions-summary';
-  centerLine.textContent = centers ? `Focus: ${centers}` : 'Focus atoms unavailable';
+  centerLine.textContent = centers ? `Focus: ${centers}` : 'Focus: a point (no atoms)';
   card.appendChild(centerLine);
 
   const innerToggle = createToggleRow({
@@ -261,7 +269,7 @@ export function addFocusRegionsPanel(containerId) {
     if (!regions.length) {
       const empty = document.createElement('p');
       empty.className = 'focus-regions-empty';
-      empty.textContent = 'Select one or more atoms, then add a focus region.';
+      empty.textContent = 'Select one or more atoms, or type a center, then add a focus region.';
       cards.appendChild(empty);
     } else {
       regions.forEach((region, index) => cards.appendChild(renderRegionCard(region, index, render)));
@@ -277,7 +285,13 @@ export function addFocusRegionsPanel(containerId) {
     if (createFocusRegion(getSelectedAtoms())) render();
   });
   actions.appendChild(add);
-  body.append(selectionHint, actions, cards);
+  // Or at a typed center, with nothing selected; edit it later in the card.
+  const addAt = button('+ Add', 'btn-mini highlight focus-regions-add-at', () => {
+    if (createFocusRegionAt(atInputs.map((input) => Number(input.value)))) render();
+  });
+  addAt.title = 'Add a focus region at this fractional center';
+  const { wrap: atRow, inputs: atInputs } = fractionalRow('New center (fractional)', [0.5, 0.5, 0.5], addAt);
+  body.append(selectionHint, actions, atRow, cards);
   unsubscribeSelection?.();
   unsubscribeSelection = subscribeToAtomSelection(({ selectedAtoms }) => updateSelection(selectedAtoms),
     { emitCurrent: true });

@@ -229,7 +229,7 @@ function detectLink(D1, D2) {
 // ── Controller ────────────────────────────────────────────────────────────────
 /**
  * opts (all optional):
- *   controlsHost: element hosting the loader UI (the 📂 button + a drop
+ *   controlsHost: element hosting the loader UI (the folder Load button + a drop
  *     target) instead of `container` — used by the split controls/plots
  *     window pair (ui/LandscapePanel.js), where the loader lives in the
  *     main-dock controls window and `container` is the plots window's body.
@@ -266,8 +266,8 @@ export function createLandscape(container, api, opts = {}) {
   // showEmpty()/buildLinkedDOM()/setupIndependent(), all of which do a
   // root.replaceChildren(). -------------------------------------------------
   const loadLabel = document.createElement('label');
-  loadLabel.className = 'lsc-load-btn';
-  loadLabel.textContent = '📂 Load landscape JSON';
+  loadLabel.className = 'lsc-load-btn cv-folder-icon'; // its folder: styles.css
+  loadLabel.textContent = 'Load landscape JSON';
   const fileInput = document.createElement('input');
   fileInput.type = 'file';
   fileInput.accept = '.json,application/json';

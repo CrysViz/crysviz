@@ -64,7 +64,7 @@ const H = require('../harness');
     const glowingPolys = (groups.polyhedraGroup?.children ?? []).filter((m) => m.userData?.type === 'polyhedron' && m.material.emissive.getHex() !== 0).length;
     const barEl = document.getElementById('selectionActionBar');
     return {
-      shown: !!barEl && barEl.style.display !== 'none',
+      shown: !!barEl && !barEl.hidden,
       tabs, view: getSelectionView(), bonds: sets.bonds.length, polyhedra: sets.polyhedra.length,
       selected: getSelectedAtoms().length,
       glowingAtoms, glowingBondHalves, glowingPolys,
@@ -338,7 +338,7 @@ const H = require('../harness');
     saveSelectionGroup('two bonds');
     const saved = listSelectionGroups().at(-1);
     clearAllHighlights({ reason: 'test' });
-    const cleared = { kind: getDirectSelection().kind, barShown: bar.style.display !== 'none' };
+    const cleared = { kind: getDirectSelection().kind, barShown: !bar.hidden };
     restoreSelectionGroup(listSelectionGroups().length - 1);
     const restored = { kind: getDirectSelection().kind, n: getDirectSelection().bonds.length, atomsTab: getSelectionViewSets().atoms.length };
     // the Atoms tab converts the picked bonds into their end atoms

@@ -233,6 +233,13 @@ input[type="number"].wyckoff-orbit-num-input {
 
 tr.atom-row-filtered { display: none; }
 
+/* The row whose atom is highlighted (AtomTableInput.js paintRows), and the
+   rows that share one site: the first gets an amber top rule, the merged
+   ones after it a faint tint that wins over the highlight. */
+#atomsTable tr.is-row-active { background: rgb(var(--warn-rgb) / 0.18); }
+#atomsTable tr.is-site-first { border-top: 2px solid rgb(var(--best-row-rgb) / 0.35); }
+#atomsTable tr.is-site-merged { background: rgb(var(--best-row-rgb) / 0.06); }
+
 .atom-table-add-row {
   text-align: center;
   margin-top: var(--sp-3);

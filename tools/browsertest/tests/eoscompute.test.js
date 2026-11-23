@@ -12,6 +12,7 @@
 //   - ingestComputedScan feeds the panel: plots window opens, E-V fit runs,
 //     the scan becomes ONE file-browser row (re-runs replace, not pile up)
 //   - clicking an E-V data point shows that point's structure in the viewer
+//   - the window's Compute is a job (host/jobs.js): the host sees and cancels it
 'use strict';
 const H = require('../harness');
 
@@ -245,6 +246,27 @@ const H = require('../harness');
   H.check('clicking another point switches to its frame',
     Math.abs(sixth.volume - ui.scanVolumes[5]) < 1e-6 && sixth.step === '6',
     JSON.stringify(sixth));
+
+  // ---- 4. Compute is a job the host sees and cancels; Stop follows it ------------
+  const job = await page.evaluate(async () => {
+    const host = (command, args) => window.crysvizHost.dispatch({ command, args });
+    const body = document.getElementById('cvPanelBody-eos');
+    const compute = /** @type {HTMLButtonElement} */ (body.querySelector('#eosComputeBtn'));
+    const stop = /** @type {HTMLButtonElement} */ (body.querySelector('#eosComputeStopBtn'));
+    const idle = { compute: compute.disabled, stop: stop.disabled };
+    compute.click();
+    const running = (await host('get_state', { include: ['jobs'] })).result.jobs.find((j) => j.status === 'running');
+    const during = { compute: compute.disabled, stop: stop.disabled };
+    await host('cancel_job', { jobId: running.jobId });
+    const stopAfterCancel = stop.disabled;
+    const ended = (await host('wait_job', { jobId: running.jobId, waitS: 25 })).result;
+    return { idle, running, during, stopAfterCancel, status: ended.status, after: { compute: compute.disabled, stop: stop.disabled } };
+  });
+  H.check('Compute from potential is an eos job the host lists; Compute locks and Stop turns on while it runs',
+    !job.idle.compute && job.idle.stop && job.running?.kind === 'eos' && job.during.compute && !job.during.stop,
+    JSON.stringify(job));
+  H.check('cancel_job stops the window\'s scan; Stop turns off at once, Compute comes back',
+    job.stopAfterCancel && job.status !== 'running' && !job.after.compute && job.after.stop, JSON.stringify(job));
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

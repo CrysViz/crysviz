@@ -86,30 +86,24 @@ export function createColorPicker(initialHex, onChange) {
 
   // --- Create DOM elements ---
   const container = document.createElement('div');
-  container.style.display = 'inline-flex';
-  container.style.flexDirection = 'column';
-  container.style.width = WIDTH + 'px';
-  container.style.fontFamily = "'CrysViz Sans', sans-serif";
-  container.style.userSelect = 'none';
+  container.className = 'cv-colorpicker'; // sceneWidgets.css
+  container.style.width = WIDTH + 'px'; // sized around the canvases below
 
   const svCanvas = document.createElement('canvas');
   svCanvas.width = WIDTH - HUE_WIDTH;
   svCanvas.height = HEIGHT;
-  svCanvas.style.cursor = 'crosshair';
-  svCanvas.style.userSelect = 'none';
+  svCanvas.className = 'cv-colorpicker-sv';
 
   const svCtx = svCanvas.getContext('2d');
 
   const hueCanvas = document.createElement('canvas');
   hueCanvas.width = HUE_WIDTH;
   hueCanvas.height = HEIGHT;
-  hueCanvas.style.cursor = 'ns-resize';
-  hueCanvas.style.marginLeft = '4px';
-  hueCanvas.style.userSelect = 'none';
+  hueCanvas.className = 'cv-colorpicker-hue';
   const hueCtx = hueCanvas.getContext('2d');
 
   const canvasWrapper = document.createElement('div');
-  canvasWrapper.style.display = 'flex';
+  canvasWrapper.className = 'cv-colorpicker-canvases';
   canvasWrapper.appendChild(svCanvas);
   canvasWrapper.appendChild(hueCanvas);
 

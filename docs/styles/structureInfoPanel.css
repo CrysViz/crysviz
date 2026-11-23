@@ -382,6 +382,10 @@
   color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   transform: rotate(0deg);
 }
+/* An expanded category (its list shown); the carets of all three tabs. */
+.comp-expand-icon.is-expanded {
+  transform: rotate(90deg);
+}
 .comp-right {
   display: flex;
   align-items: center;
@@ -474,12 +478,13 @@
   width: auto;
   height: auto;
 }
-/* No `border` here for either dot class: both are <canvas> elements from
-   utils/ColorModule.js's createPieDot(), which always sets its OWN inline
-   `border: 1px solid #666` — an inline style, so it would silently win over
-   any border declared here regardless of specificity. The actual border
-   (rgba(255,255,255,0.4)) is set as an explicit inline override in JS,
-   right where the canvas is created, to actually beat it. */
+/* Both dot classes sit on createPieDot() canvases: canvas.cv-pie-dot
+   (styles.css) draws the round #666 border, and the composition rows trade
+   it for the --fg-3 hairline below (two classes, to outrank it). */
+.cv-pie-dot.comp-mixed-dot,
+.cv-pie-dot.comp-single-dot {
+  border-color: var(--fg-3);
+}
 .comp-mixed-dot {
   width: 18px;
   height: 18px;
@@ -511,11 +516,16 @@
 .individual-atom-row:hover,
 .individual-bond-row:hover,
 .individual-polyhedron-row:hover {
-  /* Selection (SelectAndHighlightModule.js highlightAtomRow) sets an inline
-     background-color on the selected row, which — being inline — always
-     outranks this stylesheet rule regardless of :hover, so a selected row's
-     amber highlight is never overwritten by hovering it. */
   background-color: var(--wash-0); /* was 0.03 — Wave 2.6 */
+}
+/* The selected row (SelectAndHighlightModule.js highlightAtomRow). Same
+   specificity as the :hover rule above and declared after it, so a selected
+   row's amber highlight is never overwritten by hovering it. */
+.individual-atom-row.is-highlighted,
+.individual-bond-row.is-highlighted,
+.individual-polyhedron-row.is-highlighted {
+  background-color: rgb(var(--warn-rgb) / 0.2);
+  border-left: 3px solid var(--row-highlight-bar);
 }
 .individual-bond-row,
 .individual-polyhedron-row {
@@ -672,12 +682,14 @@
   flex: none;
   overflow: hidden;
 }
-/* No `border` here either, for the same createPieDot inline-style reason as
-   .comp-single-dot/.comp-mixed-dot above — JS sets it explicitly. */
+/* A createPieDot() canvas filling its round button, which draws the
+   border; canvas.cv-pie-dot (styles.css) keeps it inline-block. */
+.cv-pie-dot.iar-pie-canvas {
+  border: none;
+}
 .iar-pie-canvas {
   width: 100%;
   height: 100%;
-  display: block;
   pointer-events: none;
 }
 .atom-editor-button.iar-coord-btn,
@@ -834,6 +846,8 @@
    ColorEditor.js — createElementColorEditor (the category-wide editor)
    ================================================================ */
 .element-color-editor {
+  display: flex;
+  flex-direction: column;
   grid-column: 2;
   padding: var(--sp-3);
   background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
@@ -949,6 +963,7 @@
   justify-content: center;
 }
 .spin-color-picker-section {
+  display: flex;
   margin-top: var(--sp-3);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--wash-2);
@@ -980,13 +995,17 @@
   height: 28px;
   font-size: var(--fs-sm);
 }
-/* Per-property slider rows (Gloss/Tint/Rough/Frost/IoR/…) */
+/* Per-property slider rows (Gloss/Tint/Rough/Frost/IoR/…); the ones that
+   do not apply to the chosen material type are hidden (the editor also
+   sits in the Volumetric Field window, outside #composition's [hidden]
+   rule, so it needs its own). */
 .material-prop-row {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   margin-top: var(--sp-2);
 }
+.material-prop-row[hidden] { display: none; }
 .material-prop-row input[type="range"] { flex: 1; }
 .material-prop-value {
   font-size: var(--fs-sm);
@@ -1156,7 +1175,7 @@
    flag it as "your current selection", distinct from the per-species rows
    below. */
 .si-selection-bar {
-  display: none; /* JS switches to block when the selection is non-empty */
+  /* hidden attribute while the selection is empty (SelectionActionBar.js) */
   margin-bottom: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-md);
@@ -1247,9 +1266,10 @@
 .si-selbar-dot {
   width: 100%;
   height: 100%;
-  display: block;
-  border-radius: 50%;
   pointer-events: none; /* clicks belong to the button, not the canvas */
+}
+.cv-pie-dot.si-selbar-dot {
+  border: none; /* the button already draws one */
 }
 .si-selbar-reset {
   margin-left: auto; /* push Reset to the right, dot stays next to the label */

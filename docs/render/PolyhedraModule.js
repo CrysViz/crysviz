@@ -6,6 +6,7 @@ import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.j
 // Polyhedra use the length-only cutoff: hiding bonds (per-pair visibility)
 // must not remove polyhedra — they follow the configured bond distances.
 import { getBondLengthCutoff } from '../render/BondsFracUpdateModule.js'
+import { findVoidCentres } from './voidSearch.js';
 import { CEL_OUTLINE_LAYER } from './CelOutlinePass.js'
 import { addCelPolyOutline } from './MaterialStyles.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
@@ -85,10 +86,7 @@ const DOUBLE_SIDE = true;
 // dodecahedrane, P4. Found from the empty space, see findCages() below.
 // Mirrored in periodic_wasm_src (polyhedra.rs, find_cages).
 const ALLOW_CAGES = true;
-const CAGE_GRID_STEP = 0.4;          // Å, spacing of the void-search grid
-const CAGE_GRID_MAX_POINTS = 400000; // a coarser grid beyond this many points
-const CAGE_SPLAT_RADIUS = 4.5;       // Å, the distance field is resolved up to here
-const CAGE_MIN_VOID = 0.7;           // Å, a void centre is at least this far from every atom
+// Void-grid constants (CAGE_GRID_STEP, CAGE_SPLAT_RADIUS, CAGE_MIN_VOID, ...) live in voidSearch.js.
 const CAGE_SHELL_TOL = 1.35;         // shell: framework atoms within 1.35 × the nearest one…
 const CAGE_SHELL_PAD = 0.6;          // …or within nearest + 0.6 Å, whichever is larger
 const CAGE_SHELL_CAP = 6.5;          // Å, atoms gathered around a void
@@ -958,43 +956,8 @@ export function computePolyhedra(structure) {
    */
   function findCages() {
     if (!fwDeg || !fwDeg.some((d) => d >= 3)) return;
-    const cellVolume = Math.abs(a.dot(new THREE.Vector3().crossVectors(b, c)));
-    // Coarsened in fixed steps (not a cube root) so both paths get the same grid.
-    let h = CAGE_GRID_STEP;
-    while (cellVolume / (h * h * h) > CAGE_GRID_MAX_POINTS) h *= 1.25;
-    const nA = Math.max(4, Math.ceil(a.length() / h));
-    const nB = Math.max(4, Math.ceil(b.length() / h));
-    const nC = Math.max(4, Math.ceil(c.length() / h));
-    const field = new Float64Array(nA * nB * nC).fill(CAGE_SPLAT_RADIUS);
-    const at = (i, j, k) => ((((i % nA) + nA) % nA) * nB + (((j % nB) + nB) % nB)) * nC + (((k % nC) + nC) % nC);
-    const ea = Math.ceil((CAGE_SPLAT_RADIUS / widthA) * nA) + 1;
-    const eb = Math.ceil((CAGE_SPLAT_RADIUS / widthB) * nB) + 1;
-    const ec = Math.ceil((CAGE_SPLAT_RADIUS / widthC) * nC) + 1;
-    for (let j = 0; j < nAtoms; j++) {
-      const f0 = positions[j][0] - Math.floor(positions[j][0]);
-      const f1 = positions[j][1] - Math.floor(positions[j][1]);
-      const f2 = positions[j][2] - Math.floor(positions[j][2]);
-      const px = a.x * f0 + b.x * f1 + c.x * f2;
-      const py = a.y * f0 + b.y * f1 + c.y * f2;
-      const pz = a.z * f0 + b.z * f1 + c.z * f2;
-      const ci = Math.round(f0 * nA), cj = Math.round(f1 * nB), ck = Math.round(f2 * nC);
-      for (let i = ci - ea; i <= ci + ea; i++) {
-        const g0 = i / nA;
-        for (let jj = cj - eb; jj <= cj + eb; jj++) {
-          const g1 = jj / nB;
-          for (let k = ck - ec; k <= ck + ec; k++) {
-            const g2 = k / nC;
-            const dx = a.x * g0 + b.x * g1 + c.x * g2 - px;
-            const dy = a.y * g0 + b.y * g1 + c.y * g2 - py;
-            const dz = a.z * g0 + b.z * g1 + c.z * g2 - pz;
-            const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-            if (d >= CAGE_SPLAT_RADIUS) continue;
-            const idx = at(i, jj, k);
-            if (d < field[idx]) field[idx] = d;
-          }
-        }
-      }
-    }
+    // 1. the voids: local maxima of the distance to the nearest atom
+    const { voids } = findVoidCentres(lattice, positions);
 
     const imgKey = (o) => `${o.srcJ}:${o.shift[0]},${o.shift[1]},${o.shift[2]}`;
     const byImage = (u, v) => (u.srcJ - v.srcJ) || (u.shift[0] - v.shift[0]) || (u.shift[1] - v.shift[1]) || (u.shift[2] - v.shift[2]);
@@ -1002,17 +965,9 @@ export function computePolyhedra(structure) {
     /** @type {Set<string>} */
     const seen = new Set();
 
-    for (let i = 0; i < nA; i++) for (let j = 0; j < nB; j++) for (let k = 0; k < nC; k++) {
-      const v = field[(i * nB + j) * nC + k];
-      if (v < CAGE_MIN_VOID || v >= CAGE_SPLAT_RADIUS) continue;
-      let isMax = true;
-      for (let di = -1; di <= 1 && isMax; di++) for (let dj = -1; dj <= 1 && isMax; dj++) for (let dk = -1; dk <= 1; dk++) {
-        if ((di || dj || dk) && field[at(i + di, j + dj, k + dk)] > v) { isMax = false; break; }
-      }
-      if (!isMax) continue;
-
+    for (const { frac } of voids) {
       // 2. the shell around this void, re-centred until it is stable
-      let P = new THREE.Vector3().addScaledVector(a, i / nA).addScaledVector(b, j / nB).addScaledVector(c, k / nC);
+      let P = new THREE.Vector3().addScaledVector(a, frac[0]).addScaledVector(b, frac[1]).addScaledVector(c, frac[2]);
       let shell = null;
       let prevKey = '';
       let stable = false;
@@ -1341,6 +1296,20 @@ export function applyFocusToPolyhedra(structure = fileBrowser.selectedStructure)
  * without a full (async) `updatePolyhedra`. Never touches material.emissive —
  * that channel is owned by the selection highlight. No-op when nothing drawn.
  */
+/**
+ * Set style fields (color, alpha, ...) on individual polyhedra by key, the
+ * persistent per-polyhedron record (individual > category), and redraw their
+ * colours. Shared by the Polyhedra rows and the host's apply.
+ * @param {any} structure
+ * @param {string[]} keys
+ * @param {Record<string, any>} patch
+ */
+export function setPolyhedronStyles(structure, keys, patch) {
+  structure.polyhedraUserStyles ??= {};
+  for (const k of keys) Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
+  updatePolyhedraColors();
+}
+
 export function updatePolyhedraColors() {
   notifyColorsChanged();
   const grp = groups.polyhedraGroup;

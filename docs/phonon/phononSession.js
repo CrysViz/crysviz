@@ -18,6 +18,7 @@ import { fitCameraToCurrentStructure } from '../ui/WindowAndSceneControls.js';
 import { onActiveStructureChange } from '../state/structures.js';
 import { initializeUIOnLoad } from '../ui/StructureInputModule.js';
 import { selectStructure, updateRow } from '../ui/FileBrowswerPanel.js';
+import { createTrajectoryFromFrames } from '../ui/addToStructureModule/CommitAtoms.js';
 import { applyFrameFast, requestRender } from '../render/index.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { generateID } from '../utils/UUIDModule.js';
@@ -84,6 +85,9 @@ export const phononState = {
   arrowBar: { orientation: 'horizontal', flipSide: false, size: null, legend: null, floating: false, floatPos: null, locked: false },
   playing: false,
   phase: 0,
+  /** true while the atoms sit on their sites (after Stop): phase 0 is the
+   *  displacement's peak, so coming back to the row must not re-apply it */
+  atRest: true,
   /** @type {StructureContainer|null} the file-browser row holding the supercell */
   container: null,
   /** @type {any} the row's phonon record the live state mirrors (see RECORD_FIELDS) */
@@ -247,7 +251,7 @@ function recallUnit(lattice) {
  * @param {any} cellRaw  the cell as written in the file
  * @param {string} fileName
  */
-async function settleUnitFor(cellRaw, fileName) {
+async function settleUnitFor(cellRaw, fileName, { interactive = true } = {}) {
   const known = recallUnit(cellRaw?.lattice);
   if (known) {
     phononState.detectedUnit = known.unit;
@@ -259,7 +263,8 @@ async function settleUnitFor(cellRaw, fileName) {
   assessment.lattice = cellRaw?.lattice?.map((row) => [...row]) ?? null;
   let unit = assessment.guess;
   let source = /** @type {'user'|'geometry'} */ ('geometry');
-  if (phononState.lengthUnit === 'auto') {
+  // Non-interactive (a host load): take the geometry's guess, as dismissing the dialog does.
+  if (phononState.lengthUnit === 'auto' && interactive) {
     const chosen = await promptLengthUnit(assessment, fileName);
     if (chosen) { unit = chosen; source = 'user'; }
     // Only a decision the user saw is worth remembering: under a forced unit
@@ -402,7 +407,7 @@ function rebuildDisplayed() {
  * @param {string} fileName
  * @param {string} kind
  */
-export async function loadPhonopyFile(text, fileName, kind) {
+export async function loadPhonopyFile(text, fileName, kind, { interactive = true } = {}) {
   if (kind === 'phonopy-dos') {
     phononState.dos = parsePhonopyDos(text);
     saveToRecord();
@@ -429,7 +434,7 @@ export async function loadPhonopyFile(text, fileName, kind) {
       // No physical_unit and an unknown (or absent) calculator: judge the cell,
       // and let the other cell of the same run share the answer.
       const judged = cells.unit || cells.primitive;
-      await settleUnitFor(judged, fileName);
+      await settleUnitFor(judged, fileName, { interactive });
       const twin = judged === cells.unit ? cells.primitive : cells.unit;
       rememberUnit(twin?.lattice, phononState.detectedUnit, phononState.detectedUnitSource, phononState.unitAssessment);
     }
@@ -469,7 +474,7 @@ export async function loadPhonopyFile(text, fileName, kind) {
   // Mode files never state their unit. This cell may be known already (its
   // phonopy.yaml, or a sibling mesh/qpoints file of the same run); a new cell
   // is judged and confirmed on its own, whatever earlier files settled on.
-  await settleUnitFor(dataset.cell, fileName);
+  await settleUnitFor(dataset.cell, fileName, { interactive });
   // A fresh dataset gets its own row and record; the previous one stays on
   // its row (select that row to get it back).
   saveToRecord();
@@ -590,19 +595,25 @@ function isDisplayed() {
   return !!phononState.structure && fileBrowser.selectedStructure === phononState.structure && containerRowIndex() >= 0;
 }
 
+/** Fractional positions of the supercell with the mode at `phase` (fresh arrays). */
+function displacedFrac(phase, uBuf = phononState.uBuf) {
+  const { pattern, supercell } = phononState;
+  const u = animationDisplacement(pattern, phase, phononState.amplitude, uBuf);
+  const inv = phononState.invLattice;
+  return supercell.frac.map((base, j) => {
+    const du = cartToFracWithInverse(inv, [u[j * 3], u[j * 3 + 1], u[j * 3 + 2]]);
+    return [base[0] + du[0], base[1] + du[1], base[2] + du[2]];
+  });
+}
+
 /** Write the mode's displacement at `phase` into the shown structure. */
 function applyPhase(phase) {
   const { pattern, structure, supercell } = phononState;
   if (!pattern || !structure || !supercell || !isDisplayed()) return;
-  const u = animationDisplacement(pattern, phase, phononState.amplitude, phononState.uBuf);
-  const inv = phononState.invLattice;
-  const atoms = structure.atoms;
-  const base = supercell.frac;
-  for (let j = 0; j < atoms.length; j++) {
-    const du = cartToFracWithInverse(inv, [u[j * 3], u[j * 3 + 1], u[j * 3 + 2]]);
-    // Replace, never mutate: the as-loaded snapshot aliases the initial arrays.
-    atoms[j].position = [base[j][0] + du[0], base[j][1] + du[1], base[j][2] + du[2]];
-  }
+  phononState.atRest = false;
+  const positions = displacedFrac(phase);
+  // Replace, never mutate: the as-loaded snapshot aliases the initial arrays.
+  structure.atoms.forEach((atom, j) => { atom.position = positions[j]; });
   if (!applyFrameFast(structure)) {
     updateVisualization({
       atomsUpdate: true, bondsUpdate: true, reRenderAtoms: true, reRenderBonds: true,
@@ -672,16 +683,21 @@ export function stopAnimation({ silent = false } = {}) {
   if (rafId) cancelAnimationFrame(rafId);
   rafId = 0;
   phononState.phase = 0;
-  if (phononState.structure && phononState.supercell && isDisplayed()) {
-    phononState.structure.atoms.forEach((atom, j) => { atom.position = [...phononState.supercell.frac[j]]; });
-    if (!applyFrameFast(phononState.structure)) {
-      updateVisualization({ atomsUpdate: true, bondsUpdate: true, reRenderAtoms: true, reRenderBonds: true, reRenderLattice: false, reRenderOther: false, reRenderComposition: false, reRenderPolyhedra: general.showPolyhedra || general.completePolyhedra });
-    }
-    refreshMeasurements();
-    refreshArrows();
-    requestRender();
-  }
+  showAtRest();
   if (!silent && wasPlaying) emit('playing');
+}
+
+/** Put the atoms back on their equilibrium sites (Stop, and a stopped row shown again). */
+function showAtRest() {
+  phononState.atRest = true;
+  if (!phononState.structure || !phononState.supercell || !isDisplayed()) return;
+  phononState.structure.atoms.forEach((atom, j) => { atom.position = [...phononState.supercell.frac[j]]; });
+  if (!applyFrameFast(phononState.structure)) {
+    updateVisualization({ atomsUpdate: true, bondsUpdate: true, reRenderAtoms: true, reRenderBonds: true, reRenderLattice: false, reRenderOther: false, reRenderComposition: false, reRenderPolyhedra: general.showPolyhedra || general.completePolyhedra });
+  }
+  refreshMeasurements();
+  refreshArrows();
+  requestRender();
 }
 
 export function setAmplitude(a) {
@@ -782,6 +798,51 @@ export function setArrowColor(hex) {
   emit('arrows');
 }
 
+/**
+ * The selected mode as `count` frames over one period at the current
+ * amplitude: new Structures (the displayed supercell, displaced), for a
+ * trajectory row (keepModeFrames). Null when no mode is selected.
+ */
+export function modeFrames(count) {
+  const { pattern, supercell } = phononState;
+  if (!pattern || !supercell) return null;
+  const uBuf = new Float64Array(supercell.frac.length * 3);
+  const frames = [];
+  for (let k = 0; k < count; k++) {
+    const frame = buildStructure(supercell);
+    const positions = displacedFrac((2 * Math.PI * k) / count, uBuf);
+    frame.atoms.forEach((atom, j) => { atom.position = positions[j]; });
+    frames.push(frame);
+  }
+  return frames;
+}
+
+/** @returns {never} */
+function refuse(code, message) {
+  throw Object.assign(new Error(message), { code });
+}
+
+/**
+ * The selected mode as a new, selected trajectory row of `count` frames over
+ * one period, at `amplitude` Å (the current one when not given): the Phonons
+ * window's Make Trajectory and the host's build_phonon_frames. Refusals carry
+ * the command's error codes.
+ * @param {{count?: number, amplitude?: number}} [options]
+ */
+export function keepModeFrames({ count = 10, amplitude } = {}) {
+  if (!Number.isInteger(count) || count < 2 || count > 200) refuse('INVALID_ARGS', 'count must be 2 to 200 frames');
+  if (amplitude !== undefined && (typeof amplitude !== 'number' || !Number.isFinite(amplitude) || amplitude < 0 || amplitude > 5)) {
+    refuse('INVALID_ARGS', 'amplitude must be 0 to 5 Å');
+  }
+  if (amplitude !== undefined) setAmplitude(amplitude);
+  if (!phononState.selected) refuse('NO_MODE', 'Choose a mode first (a band in Phonon Plots, an imaginary mode, or set_phonon {qpoint, band})');
+  pause();
+  const frames = modeFrames(count);
+  if (!frames) refuse('NO_MODE', 'The selected mode has no displacement pattern');
+  const { iq, ib } = phononState.selected;
+  return createTrajectoryFromFrames(frames, `${phononState.sourceName || 'phonon'}_q${iq}_band${ib}`);
+}
+
 /** Freeze the animation at the current phase (a static snapshot of the
  *  displaced structure the user can save with the normal Download menu). */
 export function freezeAtPhase(phase) {
@@ -796,7 +857,10 @@ onActiveStructureChange(() => {
   const record = activePhononRecord();
   if (record && record !== phononState.record) activateRecord(record);
   if (isDisplayed()) {
-    if (phononState.pattern) applyPhase(phononState.phase);
+    if (phononState.pattern) {
+      if (phononState.atRest) showAtRest();
+      else applyPhase(phononState.phase);
+    }
   } else {
     removePhononArrows();
   }

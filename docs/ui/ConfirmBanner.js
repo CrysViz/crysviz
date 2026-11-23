@@ -38,14 +38,13 @@ export function showConfirmation(text) {
   }
   banner.style.top = `${Math.round(top)}px`;
   banner.classList.remove('is-leaving');
-  banner.style.display = 'block';
+  banner.classList.add('is-shown');
   clearTimeout(hideTimer);
   clearTimeout(leaveTimer);
   hideTimer = window.setTimeout(() => {
     banner.classList.add('is-leaving');
     leaveTimer = window.setTimeout(() => {
-      banner.style.display = 'none';
-      banner.classList.remove('is-leaving');
+      banner.classList.remove('is-shown', 'is-leaving');
     }, FADE_MS);
   }, SHOW_MS);
 }

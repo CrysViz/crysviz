@@ -1,9 +1,14 @@
-"""Deform a two-atom silicon cell and update its fractional positions."""
+"""Deform a two-atom silicon cell and move its atoms.
 
+set_lattice keeps the fractional positions; move_atoms takes the atoms by
+index and either new positions (to=) or a shift (by=). Run with --keep-open to
+look around afterwards.
+"""
+
+import sys
 import time
 
 from crysviz import Payload, Viewer
-
 
 POSCAR = """Si cell
 1.0
@@ -18,24 +23,23 @@ Direct
 """
 
 
-def main() -> None:
-    with Viewer([Payload("lattice-and-positions.POSCAR", POSCAR)], command_timeout=10) as viewer:
-        structure = viewer.list_structures()[0]
-        for _ in range(26):
-            viewer.rotate_camera(5, axis="y")
-            time.sleep(0.04)
-        time.sleep(2)
-        viewer.select(structure.id, frame=0)
-        viewer.update_lattice([[6.1, 0.0, 0.0], [0.45, 5.2, 0.0], [0.1, 0.35, 5.7]])
-        viewer.update_fractional_positions([[0.0, 0.0, 0.0], [0.32, 0.28, 0.36]], commit=True)
-        viewer.recenter_camera()
-        time.sleep(2)
-        for _ in range(46):
-            viewer.rotate_camera(5, axis="y")
-            time.sleep(0.04)
-        viewer.wait()
-    print("Lattice and fractional-position updates complete; the CrysViz window has closed.")
+def orbit(v: Viewer, steps: int) -> None:
+    for _ in range(steps):
+        v.set_view(rotate={"axis": "y", "degrees": 5})
+        time.sleep(0.04)
+
+
+def main(keep_open: bool = False) -> None:
+    with Viewer([Payload("lattice-and-positions.POSCAR", POSCAR)]) as v:
+        orbit(v, 26)
+        v.set_lattice(lattice=[[6.1, 0.0, 0.0], [0.45, 5.2, 0.0], [0.1, 0.35, 5.7]])
+        moved = v.move_atoms(atoms=[1], to=[[0.32, 0.28, 0.36]])
+        print(f"Moved atom 1; the structure now has {moved['atomCount']} atoms.")
+        v.set_view(recenter=True)
+        orbit(v, 46)
+        if keep_open:
+            v.wait()
 
 
 if __name__ == "__main__":
-    main()
+    main(keep_open="--keep-open" in sys.argv)

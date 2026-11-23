@@ -191,9 +191,7 @@
 
 /* Asymmetric unit ------------------------------------------------------- */
 
-/* Active state for a card's toggle button (the asymmetric-unit wedge). The
-   Wyckoff button next to it still sets the same look through inline styles;
-   this is the class version, and that one should move here too. */
+/* Active state for a card's toggle button (the asymmetric-unit wedge). */
 .sym-card .calcButton.sym-btn-active {
   background: linear-gradient(
     135deg,
@@ -201,6 +199,15 @@
     rgb(var(--blue-accent-rgb))
   );
   color: var(--fg-1);
+  box-shadow: 0 0 0 1px rgb(var(--blue-accent-rgb) / 0.45);
+}
+
+/* The Wyckoff button while the editor is on (MoyoWASM.js
+   syncWyckoffButton): the locked look of the Structure window's segmented
+   control (structureInfoPanel.css .wyckoff-locked), also under :hover. */
+.sym-card .calcButton.sym-wyckoff-on {
+  background: linear-gradient(135deg, var(--locked-grad-1), var(--locked-grad-2));
+  color: var(--locked-btn-fg);
   box-shadow: 0 0 0 1px rgb(var(--blue-accent-rgb) / 0.45);
 }
 

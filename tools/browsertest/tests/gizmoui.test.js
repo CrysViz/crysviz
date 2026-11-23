@@ -71,7 +71,7 @@ const countDrawnGizmoPixels = async (page) => {
 
   const axesReady = await page.evaluate(() => {
     const gizmo = document.getElementById('axesGizmo');
-    if (gizmo) gizmo.style.display = '';
+    if (gizmo) gizmo.hidden = false;
     return !!gizmo && getComputedStyle(gizmo).pointerEvents === 'auto';
   });
   H.check('axes gizmo is interaction-opaque', axesReady);

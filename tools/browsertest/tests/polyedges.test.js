@@ -86,7 +86,7 @@ const H = require('../harness');
     const rowEditor = /** @type {HTMLElement} */ (row.querySelector('.poly-color-editor'));
     const pickers = (el) => (el.textContent.match(/HEX:/g) || []).length;
     return {
-      catVisible: catEditor.style.display !== 'none',
+      catVisible: catEditor.hidden !== true,
       catPickers: pickers(catEditor),
       catHasEdgeAlpha: catEditor.textContent.includes('Edge alpha'),
       rowPickers: pickers(rowEditor),

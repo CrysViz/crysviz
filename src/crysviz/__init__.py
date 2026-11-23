@@ -10,6 +10,7 @@ from importlib.metadata import version
 from ._payload import Payload
 from ._viewer import (
     BrowserCommandError,
+    CommandRefused,
     LoadResult,
     PositionUpdateResult,
     StructureInfo,
@@ -37,6 +38,6 @@ __all__ = [
     "Payload", "Viewer", "show", "StructureInfo", "LoadResult", "PositionUpdateResult",
     "ViewerEvent",
     "ViewerError", "ViewerStartupError", "ViewerClosedError", "ViewerCommandTimeout",
-    "ViewerProtocolError", "BrowserCommandError", "ViewerReentrancyError", "__version__",
+    "ViewerProtocolError", "BrowserCommandError", "CommandRefused", "ViewerReentrancyError", "__version__",
     "StartupError", "ClosedViewerError", "CommandTimeoutError", "ProtocolError",
 ]

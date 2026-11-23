@@ -58,11 +58,11 @@ export function updateDisorderWarning() {
   const el = ensureBanner();
   if (!el) return;
   const disordered = structureHasFractionalOccupancy();
-  if (!disordered) { el.style.display = 'none'; return; }
+  if (!disordered) { el.classList.remove('is-shown'); return; }
 
   const blocked = [];
   if (general.showPolyhedra) blocked.push('Polyhedra');
-  if (!blocked.length) { el.style.display = 'none'; return; }
+  if (!blocked.length) { el.classList.remove('is-shown'); return; }
 
   // textContent replaces all children, so the action button below is never
   // appended twice across repeated calls.
@@ -82,5 +82,5 @@ export function updateDisorderWarning() {
     panel?.el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
   el.appendChild(action);
-  el.style.display = 'block';
+  el.classList.add('is-shown');
 }

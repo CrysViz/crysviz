@@ -192,7 +192,7 @@ const settle = (page, ms = 450) => page.waitForTimeout(ms);
     const box = document.querySelector(`:is(#atomPanel, #wyckoffPanel) .comp-container[data-element="${el}"] .individual-atoms`);
     if (!box) return 'no rows container';
     /** @type {any} */ (box)._populateAtomRows?.();
-    box.style.display = 'block';
+    box.hidden = false;
     const row = document.querySelector(sel);
     if (!row) return 'no row';
     const btn = row.querySelector(`.atom-editor-button[data-editor-button="${editor}"]`);
@@ -202,7 +202,7 @@ const settle = (page, ms = 450) => page.waitForTimeout(ms);
     // Opened? (A position fixed by symmetry has a Position button that does
     // nothing — that edit is skipped, not counted as done.)
     const ed = row.querySelector(editor === 'coord' ? '.atom-coord-editor' : '.atom-color-editor');
-    if (!ed || ed.style.display === 'none') return 'not opened';
+    if (!ed || ed.hidden === true) return 'not opened';
     return 'ok';
   }, { sel: rowSel(el), el, editor });
   // What an edit should change: the row's atom (or the selected atoms) as the
@@ -255,7 +255,7 @@ const settle = (page, ms = 450) => page.waitForTimeout(ms);
       if (await openRow(el, 'color') !== 'ok') return 'skip';
       const r = await clickIn(el, '.atom-color-editor', 'Reset');
       await settle(page, 300);
-      const open = await page.evaluate((sel) => document.querySelector(sel)?.querySelector('.atom-color-editor')?.style.display !== 'none', rowSel(el));
+      const open = await page.evaluate((sel) => document.querySelector(sel)?.querySelector('.atom-color-editor')?.hidden !== true, rowSel(el));
       return open ? 'editor left open' : r;
     }],
     ['row alpha', async (el) => {
@@ -286,7 +286,7 @@ const settle = (page, ms = 450) => page.waitForTimeout(ms);
         if (!dot) return 'no dot';
         dot.click();
         const ed = c.querySelector('.element-color-editor:not(.spin-force-category-editor)');
-        return ed && ed.style.display !== 'none' ? 'ok' : 'not opened';
+        return ed && ed.hidden !== true ? 'ok' : 'not opened';
       }, el);
       if (opened !== 'ok') return opened;
       return page.evaluate((el) => {
@@ -301,7 +301,7 @@ const settle = (page, ms = 450) => page.waitForTimeout(ms);
         apply.click();
         // Apply closes the editor (in the re-rendered row).
         const now = document.querySelector(`:is(#atomPanel, #wyckoffPanel) .comp-container[data-element="${el}"] .element-color-editor:not(.spin-force-category-editor)`);
-        return now && now.style.display !== 'none' ? 'editor left open' : 'ok';
+        return now && now.hidden !== true ? 'editor left open' : 'ok';
       }, el);
     }],
     ['selection bar colour', async () => {

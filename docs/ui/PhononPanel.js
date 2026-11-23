@@ -13,7 +13,7 @@ import {
   setShowArrows, setArrowScale, setArrowColor, imaginaryModes, selectedFrequency, selectedQPoint,
   qLabel, setModeMap, selectedEigenvector, setLengthUnit, effectiveLengthUnit,
   setQConvention, setEnergyPerAtom, adoptContainer, setArrowColorMap, setArrowRadius, setArrowLengthLog,
-  setArrowRange, setArrowColorScale, arrowMagnitudes,
+  setArrowRange, setArrowColorScale, arrowMagnitudes, keepModeFrames,
 } from '../phonon/phononSession.js';
 import { createColorSwatch } from './SwatchColorPicker.js';
 import { isExperimentalMode } from '../debug/experimentalMode.js';
@@ -969,6 +969,13 @@ export function addPhononPanel(target = 'cvPanelBody-phonon') {
         <button type="button" id="phStopBtn" class="btn-mini ph-btn" title="Stop and return to equilibrium">■</button>
         <button type="button" id="phClearBtn" class="btn-mini ph-btn" title="Deselect the mode">Clear</button>
       </div>
+      <div class="ph-row">
+        <label for="phFramesCount" title="Frames over one period of the mode">Frames</label>
+        <input type="number" id="phFramesCount" min="2" max="200" step="1" value="10" class="ph-num">
+        <button type="button" id="phFramesBtn" class="btn-mini ph-btn"
+          title="One period of the mode at this amplitude as a new trajectory row, to step through or export">Make trajectory</button>
+      </div>
+      <div class="ph-status" id="phFramesStatus"></div>
       <details class="ph-collapsible" id="phArrowDetails" open>
         <summary class="eos-collapsible-summary"><span class="eos-collapsible-arrow">▶</span>Displacement arrows</summary>
         <div id="phArrowHost" class="ph-arrow-host"></div>
@@ -1079,6 +1086,16 @@ export function addPhononPanel(target = 'cvPanelBody-phonon') {
   q(container, '#phPauseBtn').addEventListener('click', () => pause());
   q(container, '#phStopBtn').addEventListener('click', () => stopAnimation());
   q(container, '#phClearBtn').addEventListener('click', () => clearMode());
+  // The host's build_phonon_frames path; a refusal shows on the line below.
+  q(container, '#phFramesBtn').addEventListener('click', () => {
+    const status = q(container, '#phFramesStatus');
+    status.textContent = '';
+    try {
+      keepModeFrames({ count: Number(/** @type {HTMLInputElement} */ (q(container, '#phFramesCount')).value) });
+    } catch (error) {
+      status.textContent = error.message || String(error);
+    }
+  });
   buildArrowSection(q(container, '#phArrowHost'));
   q(container, '#phArgument').addEventListener('change', (e) => setArgument(/** @type {HTMLInputElement} */ (e.target).value));
   q(container, '#phImaginaryList').addEventListener('change', (e) => {

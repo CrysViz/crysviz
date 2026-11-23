@@ -28,9 +28,12 @@ dependencies = ["pywebview>=6.2,<7"]
 # The base dependency remains GUI-backend-neutral for --browser.
 qt = ["pywebview[qt]>=6.2,<7"]
 gtk = ["pywebview[gtk]>=6.2,<7"]
+# crysviz-mcp, the local MCP server (src/crysviz/_mcp.py).
+mcp = ["mcp>=2.3,<3"]
 
 [project.scripts]
 crysviz = "crysviz.cli:main"
+crysviz-mcp = "crysviz._mcp:main"
 
 [tool.setuptools]
 package-dir = { "" = "src", "crysviz.web" = "docs" }

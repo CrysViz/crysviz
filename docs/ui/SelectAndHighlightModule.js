@@ -264,8 +264,7 @@ function clearUIHighlight() {
     : (highlightHover.currentlyHighlightedRow ? [highlightHover.currentlyHighlightedRow] : []);
 
   rows.forEach((row) => {
-    row.style.backgroundColor = '';
-    row.style.borderLeft = '';
+    row.classList.remove('is-highlighted');
     delete row.dataset.selectionOrder;
   });
 
@@ -435,12 +434,12 @@ export function highlightBondIn3D(indexList) {
 
 function showPanel(panelId) {
   document.querySelectorAll('.atomBondClass').forEach((panel) => {
-    panel.style.display = 'none';
+    panel.hidden = true;
   });
 
   const panelToShow = document.getElementById(panelId);
   if (panelToShow) {
-    panelToShow.style.display = 'block';
+    panelToShow.hidden = false;
   }
 }
 
@@ -481,10 +480,10 @@ function findBondRow(pair, key, groupKey = null) {
   if (/** @type {any} */ (bondsContainer)._showBondRow) /** @type {any} */ (bondsContainer)._showBondRow(key, groupKey);
   else /** @type {any} */ (bondsContainer)._populateBondRows?.();
 
-  if (bondsContainer.style.display === 'none') {
-    bondsContainer.style.display = 'block';
+  if (bondsContainer.hidden) {
+    bondsContainer.hidden = false;
     const expandIcon = /** @type {HTMLElement} */ (control.querySelector('.bond-expand-icon'));
-    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+    if (expandIcon) expandIcon.classList.add('is-expanded');
   }
 
   for (const row of bondsContainer.querySelectorAll('.individual-bond-row')) {
@@ -639,10 +638,10 @@ function findPolyhedronRow(catKey, key, groupKey = null) {
   if (/** @type {any} */ (listContainer)._showPolyhedronRow) /** @type {any} */ (listContainer)._showPolyhedronRow(key, groupKey);
   else /** @type {any} */ (listContainer)._populatePolyhedronRows?.();
 
-  if (listContainer.style.display === 'none') {
-    listContainer.style.display = 'block';
+  if (listContainer.hidden) {
+    listContainer.hidden = false;
     const expandIcon = /** @type {HTMLElement} */ (control.querySelector('.poly-expand-icon'));
-    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+    if (expandIcon) expandIcon.classList.add('is-expanded');
   }
 
   for (const row of listContainer.querySelectorAll('.individual-polyhedron-row')) {
@@ -1204,10 +1203,10 @@ function findAtomRow(element, sourceIndex, instanceId = null, revealPanel = true
   // Only force the row list open when the caller actually wants the panel
   // revealed — a Shift-add pick still highlights the row once expanded
   // manually, it just doesn't un-collapse the list on its own.
-  if (revealPanel && atomsContainer.style.display === 'none') {
-    atomsContainer.style.display = 'block';
+  if (revealPanel && atomsContainer.hidden) {
+    atomsContainer.hidden = false;
     if (expandIcon) {
-      expandIcon.style.transform = 'rotate(90deg)';
+      expandIcon.classList.add('is-expanded');
     }
   }
 
@@ -1236,8 +1235,7 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
 }
 
 export function highlightAtomRow(row, selectionOrder = null) {
-  row.style.backgroundColor = 'rgba(255, 191, 0, 0.2)';
-  row.style.borderLeft = '3px solid #FFB347';
+  row.classList.add('is-highlighted'); // amber fill + left bar (structureInfoPanel.css)
   if (selectionOrder !== null) {
     row.dataset.selectionOrder = String(selectionOrder);
   }
@@ -1337,12 +1335,8 @@ function closeSpinForceEditorDom(atomIndex) {
   const row = document.querySelector(`.individual-atom-row[data-atom-index="${atomIndex}"]`);
   if (!row) return;
   const editor = row.querySelector('.atom-spin-editor');
-  if (editor) editor.style.display = 'none';
-  const btn = row.querySelector('.atom-editor-button[data-editor-button="spin"]');
-  if (btn) {
-    btn.style.border = '1px solid rgba(255,255,255,0.2)';
-    btn.style.boxShadow = 'none';
-  }
+  if (editor) editor.hidden = true;
+  row.querySelector('.atom-editor-button[data-editor-button="spin"]')?.classList.remove('active');
 }
 
 function commitSelection(nextSelection, eventInfo, options = {}) {

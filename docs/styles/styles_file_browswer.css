@@ -252,7 +252,6 @@
     padding: var(--sp-3-5) var(--sp-5);
     font-size: var(--fs-md);
     box-shadow: var(--shadow-sm);
-    display: none;
     z-index: var(--z-inline-alert);
   }
 

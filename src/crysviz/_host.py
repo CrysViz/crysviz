@@ -6,17 +6,36 @@ import base64
 import json
 import os
 import queue
+import re
 import sys
 import threading
 from multiprocessing.connection import Listener
 from urllib.parse import urlsplit
 
-from ._protocol import Attachment, ProtocolError, recv_frame, send_frame
+from ._protocol import VIEWER_EVENTS, Attachment, ProtocolError, recv_frame, send_frame
 from ._server import CrysVizServer
 from ._sources import PreparedSource
 from ._windowing import create_native_window
 
 _FIXED_TRIGGER = "window.crysvizHost.processBridgeCommand()"
+
+# Commands whose output the browser uploads to a one-use managed URL instead of
+# returning it inline (no 1 MiB IPC frame limit): the Content-Type the upload
+# must carry and the attachment name the response carries it under.
+_OUTPUT_COMMANDS = {
+    "save_image": ("image/png", "image"),
+    "export_structure": ("text/plain; charset=utf-8", "text"),
+}
+# A download handed over by the app (host/downloadSink.js): a file name and a media type.
+_DOWNLOAD_TYPE_RE = re.compile(r"^[a-z0-9][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,63}(;[ a-z0-9=._+-]{1,64})?$")
+_MAX_PENDING_DOWNLOADS = 32
+
+
+def _output_spec(command: str, args: object) -> tuple[str, str]:
+    """The Content-Type an output command's upload carries, and its attachment name."""
+    if command == "save_image" and isinstance(args, dict) and args.get("format") == "svg":
+        return ("image/svg+xml", "image")
+    return _OUTPUT_COMMANDS[command]
 
 
 def _prepared_sources(payload: object, attachments: dict[str, Attachment]) -> list[PreparedSource]:
@@ -26,17 +45,17 @@ def _prepared_sources(payload: object, attachments: dict[str, Attachment]) -> li
     used: set[str] = set()
     try:
         for item in payload["sources"]:
-            if not isinstance(item, dict) or set(item) != {"attachment", "name", "format", "binary"}:
+            if not isinstance(item, dict) or set(item) != {"attachment", "name", "format"}:
                 raise ProtocolError("bootstrap source has an invalid schema")
-            name, format_name, binary, attachment_name = item["name"], item["format"], item["binary"], item["attachment"]
+            name, format_name, attachment_name = item["name"], item["format"], item["attachment"]
             if (not isinstance(name, str) or not isinstance(attachment_name, str) or attachment_name in used
-                    or (format_name is not None and not isinstance(format_name, str)) or not isinstance(binary, bool)):
+                    or (format_name is not None and not isinstance(format_name, str))):
                 raise ProtocolError("bootstrap source fields are invalid")
             attachment = attachments.get(attachment_name)
             if attachment is None:
                 raise ProtocolError("bootstrap source attachment is missing")
             used.add(attachment_name)
-            sources.append(PreparedSource(name=name, format=format_name, binary=binary,
+            sources.append(PreparedSource(name=name, format=format_name,
                                           stream=attachment.stream, spool=attachment.stream))
         if set(attachments) != used:
             raise ProtocolError("bootstrap has unreferenced attachments")
@@ -66,9 +85,16 @@ class _BridgeAPI:
     def command_result(self, capability: object, request_id: object, result: object) -> None:
         return self._runtime._command_result(capability, request_id, result)
 
+    def reserve_download(self, capability: object, name: object, content_type: object) -> object:
+        return self._runtime._reserve_download(capability, name, content_type)
+
+    def download_done(self, capability: object, url: object) -> object:
+        return self._runtime._download_done(capability, url)
+
 
 class HostRuntime:
-    def __init__(self, connection: object, sources: list[PreparedSource], *, gui: str | None = None, debug: bool = False):
+    def __init__(self, connection: object, sources: list[PreparedSource], *, gui: str | None = None, debug: bool = False,
+                 capture_downloads: bool = False):
         self.connection = connection
         self.gui, self.debug = gui, debug
         self.server = CrysVizServer(
@@ -83,6 +109,11 @@ class HostRuntime:
         self._commands: queue.Queue[tuple[dict[str, object], dict[str, Attachment]] | None] = queue.Queue()
         self._closing = threading.Event()
         self._bridge_api = _BridgeAPI(self)
+        # Whether Python saves the app's downloads (Viewer download_dir); otherwise the window does.
+        self.capture_downloads = capture_downloads
+        # App downloads in flight: upload URL -> (file name, media type).
+        self._download_lock = threading.Lock()
+        self._downloads: dict[str, tuple[str, str]] = {}
 
     def send(self, message_type: str, payload: object, attachments: dict[str, object] | None = None) -> None:
         with self._send_lock:
@@ -106,7 +137,7 @@ class HostRuntime:
             return None
         if not isinstance(record, dict) or set(record) - {"event", "data"} or not isinstance(record.get("event"), str):
             return None
-        if record["event"] not in {"ready", "structure_loaded", "active_structure_changed", "error", "closed"}:
+        if record["event"] not in VIEWER_EVENTS:
             return None
         self.send("event", {"event": record["event"], "data": record.get("data")})
         if record["event"] == "closed":
@@ -130,11 +161,50 @@ class HostRuntime:
             pending.put(result)
         return None
 
+    def _reserve_download(self, capability: object, name: object, content_type: object) -> object:
+        """A one-use upload URL for a file the app is downloading (host/downloadSink.js), or None:
+        then the window downloads it itself."""
+        if not self.capture_downloads or not self._authorized(capability):
+            return None
+        if not isinstance(name, str) or not 0 < len(name) <= 255 or "\x00" in name:
+            return None
+        if not isinstance(content_type, str) or not _DOWNLOAD_TYPE_RE.fullmatch(content_type.strip().lower()):
+            return None
+        content_type = content_type.strip().lower()
+        url = self.server.reserve_output(content_type)
+        with self._download_lock:
+            if len(self._downloads) >= _MAX_PENDING_DOWNLOADS:  # drop the oldest unfinished one
+                stale = next(iter(self._downloads))
+                self._downloads.pop(stale)
+                self.server.discard_output(stale)
+            self._downloads[url] = (name, content_type)
+        return url
+
+    def _download_done(self, capability: object, url: object) -> object:
+        """Pass an uploaded download to Python, which saves it in its download folder."""
+        if not self._authorized(capability) or not isinstance(url, str):
+            return False
+        with self._download_lock:
+            entry = self._downloads.pop(url, None)
+        if entry is None:
+            return False
+        output = self.server.take_output(url)
+        if output is None:
+            return False
+        try:
+            name, content_type = entry
+            size = output.seek(0, 2)
+            output.seek(0)
+            self.send("download", {"name": name, "contentType": content_type, "size": size}, {"file": output})
+        finally:
+            output.close()
+        return True
+
     def _prepare_request(self, request_id: str, command: str, args: object, attachments: dict[str, Attachment]) -> dict[str, object]:
-        if command == "save_image":
+        if command in _OUTPUT_COMMANDS:
             if attachments:
-                raise ProtocolError("save_image accepts no attachment")
-            output_url = self.server.reserve_output()
+                raise ProtocolError(f"{command} accepts no attachment")
+            output_url = self.server.reserve_output(_output_spec(command, args)[0])
             if not isinstance(args, dict):
                 self.server.discard_output(output_url)
                 return {"id": request_id, "request": {"command": command, "args": args}}
@@ -148,15 +218,16 @@ class HostRuntime:
             raise ProtocolError("load requires exactly one data attachment")
         attachment = attachments["data"]
         source = PreparedSource(
-            name=args.get("name"), format=args.get("format"), binary=args.get("binary"),
+            name=args.get("name"), format=args.get("format"),
             stream=attachment.stream, spool=attachment.stream,
         )
-        if not isinstance(source.name, str) or (source.format is not None and not isinstance(source.format, str)) or not isinstance(source.binary, bool):
+        if not isinstance(source.name, str) or (source.format is not None and not isinstance(source.format, str)):
             source.close()
             raise ProtocolError("load arguments are invalid")
-        if "periodic" in args and not isinstance(args["periodic"], bool):
-            source.close()
-            raise ProtocolError("load periodic must be boolean")
+        for option in ("periodic", "interactive"):
+            if option in args and not isinstance(args[option], bool):
+                source.close()
+                raise ProtocolError(f"load {option} must be boolean")
         try:
             input_url = self.server.publish(source)
         except BaseException:
@@ -164,11 +235,13 @@ class HostRuntime:
             raise
         # Remove the attachment only after the server has accepted ownership.
         attachments.pop("data")
-        load_args: dict[str, object] = {
-            "name": source.name, "format": source.format, "binary": source.binary, "inputUrl": input_url,
-        }
-        if "periodic" in args:
-            load_args["periodic"] = args["periodic"]
+        load_args: dict[str, object] = {"name": source.name, "inputUrl": input_url}
+        # No format (an unrecognised extension, e.g. CHGCAR) means the browser detects it from the contents.
+        if source.format is not None:
+            load_args["format"] = source.format
+        for option in ("periodic", "interactive"):
+            if option in args:
+                load_args[option] = args[option]
         return {"id": request_id, "request": {"command": "load", "args": load_args}}
 
     def reader_loop(self) -> None:
@@ -229,32 +302,35 @@ class HostRuntime:
                         raise ProtocolError("browser result has an invalid schema")
                     response = {"id": request_id, **result}
                     output_url = descriptor["request"]["args"].get("outputUrl") if (
-                        command == "save_image" and isinstance(descriptor.get("request"), dict)
+                        command in _OUTPUT_COMMANDS and isinstance(descriptor.get("request"), dict)
                         and isinstance(descriptor["request"].get("args"), dict)
                     ) else None
                     output = self.server.take_output(output_url) if isinstance(output_url, str) and result.get("ok") else None
-                    if command == "save_image" and result.get("ok"):
+                    if command in _OUTPUT_COMMANDS and result.get("ok"):
                         if output is None:
-                            raise ProtocolError("PNG upload is missing")
+                            raise ProtocolError(f"{command} upload is missing")
+                        content_type, attachment_name = _output_spec(command, args)
                         try:
+                            browser_result = result.get("result") if isinstance(result.get("result"), dict) else {}
                             response["result"] = {
-                                "contentType": "image/png", "size": output.seek(0, 2), "attachment": "image",
+                                **browser_result, "contentType": content_type,
+                                "size": output.seek(0, 2), "attachment": attachment_name,
                             }
                             output.seek(0)
-                            self.send("response", response, {"image": output})
+                            self.send("response", response, {attachment_name: output})
                         finally:
                             output.close()
                     else:
                         self.send("response", response)
                 except Exception as error:
-                    if command == "save_image" and isinstance(locals().get("descriptor"), dict):
+                    if command in _OUTPUT_COMMANDS and isinstance(locals().get("descriptor"), dict):
                         request_args = descriptor.get("request", {}).get("args", {})
                         if isinstance(request_args, dict) and isinstance(request_args.get("outputUrl"), str):
                             self.server.discard_output(request_args["outputUrl"])
                     self.send("response", {"id": request_id, "ok": False,
                                            "error": {"code": "HOST_COMMAND_FAILED", "message": str(error)}})
                 finally:
-                    if command == "save_image" and isinstance(locals().get("descriptor"), dict):
+                    if command in _OUTPUT_COMMANDS and isinstance(locals().get("descriptor"), dict):
                         request_args = descriptor.get("request", {}).get("args", {})
                         if isinstance(request_args, dict) and isinstance(request_args.get("outputUrl"), str):
                             self.server.discard_output(request_args["outputUrl"])
@@ -342,8 +418,10 @@ def main() -> int:
         bootstrap = json.loads(sys.stdin.readline())
         secret = base64.b64decode(bootstrap["auth"], validate=True)
         gui, debug = bootstrap.get("gui"), bootstrap.get("debug", False)
+        downloads = bootstrap.get("downloads", False)
         if (bootstrap.get("version") != 1 or len(secret) < 16
-                or gui not in {None, "gtk", "qt", "cef"} or not isinstance(debug, bool)):
+                or gui not in {None, "gtk", "qt", "cef"} or not isinstance(debug, bool)
+                or not isinstance(downloads, bool)):
             raise ValueError
     except Exception:
         return 2
@@ -356,7 +434,7 @@ def main() -> int:
         if message_type != "bootstrap":
             raise ProtocolError("first host frame must be bootstrap")
         sources = _prepared_sources(payload, attachments)
-        HostRuntime(connection, sources, gui=gui, debug=debug).run()
+        HostRuntime(connection, sources, gui=gui, debug=debug, capture_downloads=downloads).run()
     except (EOFError, OSError, ProtocolError):
         return 2
     finally:

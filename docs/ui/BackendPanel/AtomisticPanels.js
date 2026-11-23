@@ -58,6 +58,8 @@ import { Force } from '../../model/index.js';
 import { Stress } from '../../model/index.js';
 import { Structure } from '../../model/index.js';
 import { refreshBackendTheme } from './BackendTheme.js';
+import { JOBS_CHANGED, cancelJob, runningJob, startJob } from '../../host/jobs.js';
+import { mdJobResult, mdProgress, relaxJobResult, relaxProgress } from '../../host/commands.js';
 import { isVacancy } from '../../render/VacancyMarkerModule.js';
 
 const tableBody = document.querySelector('#objectTable tbody');
@@ -499,7 +501,7 @@ function potentialAtomCount(structure = fileBrowser.selectedStructure) {
 }
 
 /** Refuse, before anything is set up, a structure the potential cannot take. */
-function assertStructureFitsPotential(potential) {
+export function assertStructureFitsPotential(potential) {
   assertPotentialSize(potential, potentialAtomCount());
 }
 
@@ -515,6 +517,7 @@ function showPotentialSizeNotice(shell, potential) {
 // headless load matches (and shares the singleton with) whatever the user
 // picked there. 'ase' throws — it computes on a remote server, not in the
 // browser.
+/** @param {(text: string) => void} [onStatus] */
 async function resolveCalculatorRunner(onStatus = () => {}) {
   const potential = general.atomisticPotential || 'nep';
   const statusEl = statusElAdapter(onStatus);
@@ -540,6 +543,7 @@ async function resolveCalculatorRunner(onStatus = () => {}) {
  * Headless access to the active in-browser calculator (EOS scans, addons):
  * resolves general.atomisticPotential to a ready { runner, potential } without
  * needing the Relax/MD panel open.
+ * @param {(text: string) => void} [onStatus]
  */
 export async function ensureActiveCalculator(onStatus = () => {}) {
   assertOrderedStructure();
@@ -553,6 +557,7 @@ export async function ensureActiveCalculator(onStatus = () => {}) {
  * builds fully-ordered candidates from a disordered source; asserting against
  * fileBrowser.selectedStructure there would reject on the still-disordered
  * structure the candidates were built FROM, not the candidates themselves).
+ * @param {(text: string) => void} [onStatus]
  */
 export async function ensureCalculatorRunner(onStatus = () => {}) {
   return resolveCalculatorRunner(onStatus);
@@ -820,7 +825,7 @@ function buildSourcePanel() {
     <div class="atomistic-panel">
       <div class="atomistic-source-panel">
         <div class="atomistic-source-row">
-          <div class="atomistic-source-label">Choose potential</div>
+          <div class="atomistic-source-label" data-role="potential-label">Choose potential</div>
           <div class="backend-potential-toggle" data-role="potential-toggle">
             <button type="button" class="active" data-potential="nep">NEP</button>
             <button type="button" data-potential="mlip">PET-MAD</button>
@@ -914,6 +919,7 @@ function getShellBindings() {
     toggle: selector?.querySelector('[data-role="potential-toggle"]'),
     sourceStateEl,
     potentialNoticeHost: selector?.querySelector('[data-role="potential-notice-host"]'),
+    potentialLabel: selector?.querySelector('[data-role="potential-label"]'),
     aseConnectorsEl: selector?.querySelector('[data-role="ase-connectors"]'),
     aseUrlInput: selector?.querySelector('[data-role="ase-url"]'),
     aseModelRow: selector?.querySelector('[data-role="ase-model-row"]'),
@@ -1212,27 +1218,63 @@ function renderMDBody(bodyEl, potential) {
 
 /**
  * @param {any} shell @param {any} params @param {string} potential
- * @param {{ shouldStop?: () => boolean }} [options] cooperative stop (the Stop
- *   button), checked once per step; the steps so far are kept.
+ * @param {any} job its job (host/jobs.js): progress goes there too, and Stop
+ *   (cancelJob) ends it after the current step; the steps so far are kept.
  */
-async function runLocalRelax(shell, params, potential, options = {}) {
-  const { shouldStop } = options;
+async function runLocalRelax(shell, params, potential, job) {
   const metricsEl = shell.bodyEl.querySelector('#relaxEfsMetrics');
   // How far it got. A relaxation has no known end (it stops when converged),
   // so the bar sweeps and the label carries the step and the max force.
   const progressBox = shell.bodyEl.querySelector('[data-role="relax-progress"]');
   try {
-    return await relaxWithProgress(shell, params, potential, shouldStop, metricsEl, progressBox);
+    showProgress(progressBox, 'Relaxation: getting the potential ready …');
+    setAtomisticTitleStatus('Relax …');
+    const runner = await ensureCalculatorReady(potential, shell);
+    shell.statusEl.textContent = 'Relaxation running...';
+    shell.resultEl.textContent = '';
+    const relaxed = await runRelax(params, {
+      runner,
+      potential,
+      shouldStop: () => job.cancelled,
+      onProgress: (progress) => {
+        const { step, maxSteps, maxForce: mF, energyPerAtomEv, pressureGPa } = progress;
+        job.progress = relaxProgress(progress);
+        shell.statusEl.textContent = `step ${step} / ${maxSteps}`;
+        showProgress(progressBox, `Relaxation: step ${step} (max ${maxSteps}) · `
+          + `max force ${mF.toFixed(3)} eV/Å, target ${params.forceTol}`);
+        if (metricsEl) {
+          metricsEl.innerHTML = `
+            <div>energy / atom: ${energyPerAtomEv.toFixed(6)} eV</div>
+            <div>max force: ${mF.toFixed(5)} eV/Å</div>
+            <div>pressure: ${pressureGPa === null ? 'n/a' : `${pressureGPa.toFixed(2)} GPa`}</div>
+          `;
+        }
+      },
+    });
+    shell.statusEl.textContent = '';
+    shell.resultEl.textContent = relaxed.converged
+      ? `Converged after ${relaxed.steps} steps.`
+      : relaxed.stopped
+        ? `Stopped after ${relaxed.steps} steps, before converging.`
+        : `Stopped after ${relaxed.steps} steps (max steps), not converged.`;
+    return relaxed;
   } finally {
     hideProgress(progressBox);
     setAtomisticTitleStatus(null);
   }
 }
 
-async function relaxWithProgress(shell, params, potential, shouldStop, metricsEl, progressBox) {
-  showProgress(progressBox, 'Relaxation: getting the potential ready …');
-  setAtomisticTitleStatus('Relax …');
-  const runner = await ensureCalculatorReady(potential, shell);
+/**
+ * One relaxation of the selected structure, recorded into a new relax_… row
+ * (the source row is left as it was). The Relax window and the host's
+ * run_relax job both call this; the caller gets the potential ready first.
+ * params: forceTol (eV/Å), maxSteps, targetPressure (GPa), stressTol (GPa),
+ * relaxCell (default true: the cell relaxes to targetPressure too).
+ * @param {any} params
+ * @param {{ runner: any, potential: string, shouldStop?: () => boolean,
+ *   onProgress?: (p: {step: number, maxSteps: number, maxForce: number, energyPerAtomEv: number, pressureGPa: number|null}) => void }} ctx
+ */
+export async function runRelax(params, { runner, potential, shouldStop = () => false, onProgress = () => {} }) {
   const noStress = runner.supportsStress === false;
   const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
   const saveStride = Math.max(1, Number(general.backendTrajectorySaveStride || 1));
@@ -1250,9 +1292,6 @@ async function relaxWithProgress(shell, params, potential, shouldStop, metricsEl
   structureShip.container.push(relaxContainer);
   const relaxRow = createRow({ name: relaxLabel, traj: 1, step: 1 });
   tableBody.appendChild(relaxRow);
-
-  shell.statusEl.textContent = 'Relaxation running...';
-  shell.resultEl.textContent = '';
 
   resetLivePlot();
   ensureTrajectoryPanelForLive();
@@ -1288,6 +1327,7 @@ async function relaxWithProgress(shell, params, potential, shouldStop, metricsEl
       cellStep: 0.002,
       targetPressureGPa: params.targetPressure,
       pressureTolGPa: params.stressTol,
+      relaxCell: params.relaxCell ?? true,
       shouldStop,
       onStep: (step, current, out, mF) => {
         // snapshotCurrentStructure copies the viewer structure, so a save-step must
@@ -1312,20 +1352,11 @@ async function relaxWithProgress(shell, params, potential, shouldStop, metricsEl
           pushRelaxSeries(lastMetrics);
         }
 
-        const pressureText = (!noStress && out.stress?.matrix3x3)
-          ? `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`
-          : 'n/a';
-        shell.statusEl.textContent = `step ${step} / ${params.maxSteps}`;
-        showProgress(progressBox, `Relaxation: step ${step} (max ${params.maxSteps}) · `
-          + `max force ${mF.toFixed(3)} eV/Å, target ${params.forceTol}`);
         setAtomisticTitleStatus(`Relax step ${step}`);
-        if (metricsEl) {
-          metricsEl.innerHTML = `
-            <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
-            <div>max force: ${mF.toFixed(5)} eV/Å</div>
-            <div>pressure: ${pressureText}</div>
-          `;
-        }
+        onProgress({
+          step, maxSteps: params.maxSteps, maxForce: mF, energyPerAtomEv: Number(out.energy_per_atom),
+          pressureGPa: (!noStress && out.stress?.matrix3x3) ? pressureGPaFromStress(out.stress.matrix3x3) : null,
+        });
       },
     });
 
@@ -1340,16 +1371,14 @@ async function relaxWithProgress(shell, params, potential, shouldStop, metricsEl
         pushRelaxSeries(lastMetrics);
       }
     }
-
     const stepsSaved = relaxContainer.structures.length;
     updateRow(relaxRow, { name: relaxLabel, traj: stepsSaved, step: stepsSaved });
-
-    shell.statusEl.textContent = '';
-    shell.resultEl.textContent = relaxed.converged
-      ? `Converged after ${relaxed.steps} steps.`
-      : relaxed.stopped
-        ? `Stopped after ${relaxed.steps} steps, before converging.`
-        : `Stopped after ${relaxed.steps} steps (max steps), not converged.`;
+    const out = relaxed.result;
+    return {
+      container: relaxContainer, steps: relaxed.steps, converged: relaxed.converged, stopped: relaxed.stopped,
+      frames: stepsSaved, maxForce: relaxed.maxForce, energyEv: Number(out?.total_energy),
+      energyPerAtomEv: Number(out?.energy_per_atom), pressureGPa: noStress ? null : relaxed.pressureGPa,
+    };
   } finally {
     // Live run over: release the plot, restore the source structure (relax
     // mutated it in place), and switch to the recorded relaxation trajectory.
@@ -1367,18 +1396,29 @@ async function relaxWithProgress(shell, params, potential, shouldStop, metricsEl
   }
 }
 
-async function runLocalEFS(shell, metricsEl, potential) {
-  const runner = await ensureCalculatorReady(potential, shell);
+/**
+ * Energy, forces and stress of the selected structure, shown as the window
+ * shows them (force arrows, current EFS). Shared by the EFS button and the
+ * host's compute_energy; the caller gets the potential ready first.
+ */
+export async function computeCurrentEFS(runner) {
   const nepStruct = buildNEPStructure(runner, fileBrowser.selectedStructure);
   const out = await runner.compute(nepStruct);
   setCurrentEFS(out, nepStruct.keptIndices);
-  const pressureText = runner.supportsStress === false
-    ? 'n/a'
-    : `${pressureGPaFromStress(out.stress.matrix3x3).toFixed(2)} GPa`;
+  return {
+    out,
+    maxForce: maxForce(out.forces),
+    pressureGPa: runner.supportsStress === false ? null : pressureGPaFromStress(out.stress.matrix3x3),
+  };
+}
+
+async function runLocalEFS(shell, metricsEl, potential) {
+  const runner = await ensureCalculatorReady(potential, shell);
+  const { out, maxForce: mF, pressureGPa } = await computeCurrentEFS(runner);
   metricsEl.innerHTML = `
     <div>energy / atom: ${Number(out.energy_per_atom).toFixed(6)} eV</div>
-    <div>max force: ${maxForce(out.forces).toFixed(5)} eV/Å</div>
-    <div>pressure: ${pressureText}</div>
+    <div>max force: ${mF.toFixed(5)} eV/Å</div>
+    <div>pressure: ${pressureGPa === null ? 'n/a' : `${pressureGPa.toFixed(2)} GPa`}</div>
   `;
   shell.resultEl.textContent = '';
 }
@@ -1390,8 +1430,6 @@ function bindRelaxBody(panel, shell, potential) {
   const efsCard = shell.bodyEl.querySelector('#relaxEfsCard');
   const relaxBtn = shell.bodyEl.querySelector('#relaxBtn');
   const relaxStopBtn = shell.bodyEl.querySelector('#relaxStopBtn');
-  let relaxRunning = false;
-  let relaxStopRequested = false;
 
   efsCard.addEventListener('click', async () => {
     try {
@@ -1404,35 +1442,35 @@ function bindRelaxBody(panel, shell, potential) {
     }
   });
 
-  // One relaxation at a time: Relax is locked while one runs, and Stop ends it
-  // after the current step, keeping the trajectory so far (like MD's stop).
-  relaxBtn.addEventListener('click', async () => {
-    if (relaxRunning) return;
+  // A relaxation is a job (host/jobs.js), as the host's run_relax: one
+  // calculation at a time, whoever starts it (syncRunButtons locks Relax), and
+  // Stop ends the running one after the current step, keeping the trajectory so far.
+  const failed = (error) => { shell.resultEl.textContent = `Relax failed: ${error.message || String(error)}`; };
+  relaxBtn.addEventListener('click', () => {
     try {
       const params = readRelaxParams(shell.bodyEl);
       shell.resultEl.textContent = '';
       assertOrderedStructure();
       assertStructureFitsPotential(potential);
-      relaxRunning = true;
-      relaxStopRequested = false;
-      relaxBtn.disabled = true;
-      if (relaxStopBtn) relaxStopBtn.disabled = false;
-      await runLocalRelax(shell, params, potential, { shouldStop: () => relaxStopRequested });
+      startJob('relax', async (job) => {
+        try {
+          return relaxJobResult(params, potential, await runLocalRelax(shell, params, potential, job));
+        } catch (error) {
+          failed(error);
+          throw error;
+        }
+      });
     } catch (error) {
-      shell.resultEl.textContent = `Relax failed: ${error.message || String(error)}`;
-    } finally {
-      relaxRunning = false;
-      relaxStopRequested = false;
-      relaxBtn.disabled = false;
-      if (relaxStopBtn) relaxStopBtn.disabled = true;
+      failed(error);
     }
   });
   relaxStopBtn?.addEventListener('click', () => {
-    if (!relaxRunning) return;
-    relaxStopRequested = true;
-    relaxStopBtn.disabled = true;
+    const job = runningJob('relax');
+    if (!job) return;
+    cancelJob(job.id);
     shell.statusEl.textContent = 'Stopping the relaxation after the current step...';
   });
+  syncRunButtons();
 
   const rattleBtn = shell.bodyEl.querySelector('#relaxRattleBtn');
   rattleBtn?.addEventListener('click', () => {
@@ -1458,8 +1496,6 @@ function bindMDBody(panel, shell, potential) {
   const annealControls = shell.bodyEl.querySelector('#mdAnnealControls');
   const startBtn = shell.bodyEl.querySelector('#mdStartBtn');
   const stopBtn = shell.bodyEl.querySelector('#mdStopBtn');
-  let mdRunning = false;
-  let mdStopRequested = false;
 
   annealHeader?.addEventListener('click', () => {
     annealControls.classList.toggle('hidden');
@@ -1472,11 +1508,13 @@ function bindMDBody(panel, shell, potential) {
   // MD's progress under its buttons, and in the window's title bar: visible
   // while the Trajectory window (live plot) or this window is collapsed.
   const mdProgressBox = shell.bodyEl.querySelector('[data-role="md-progress"]');
-  let mdTitlePct = -1;
   stopBtn?.addEventListener('click', () => {
-    mdStopRequested = true;
+    const job = runningJob('md');
+    if (!job) return;
+    cancelJob(job.id);
     shell.statusEl.textContent = 'Stopping MD after current step...';
-    showProgress(mdProgressBox, 'MD: stopping after the current step …');
+    // The bar shows only for a run started here.
+    if (mdProgressBox && !mdProgressBox.hidden) showProgress(mdProgressBox, 'MD: stopping after the current step …');
   });
 
   // Ensemble: NVT (thermostat, fixed cell) or NPT (thermostat + barostat, cell
@@ -1531,303 +1569,357 @@ function bindMDBody(panel, shell, potential) {
     if (couplingIcon) couplingIcon.textContent = hidden ? '▸' : '▾';
   });
 
-  startBtn?.addEventListener('click', async () => {
-    if (mdRunning) return;
-
-    // Declared out here (not inside the try) so the finally block can see them
-    // for the restore/switch even if the run throws before/after assigning.
-    let originalStructure = /** @type {any} */ (null);
-    let mdContainer = /** @type {any} */ (null);
-    let seedFrame = /** @type {any} */ (null);
-    let isContinuation = false;
+  // An MD run is a job (host/jobs.js), as the host's run_md: see bindRelaxBody.
+  const failed = (error) => { shell.resultEl.textContent = `MD failed: ${error.message || String(error)}`; };
+  startBtn?.addEventListener('click', () => {
     try {
       assertOrderedStructure();
       assertStructureFitsPotential(potential);
-      mdRunning = true;
-      mdStopRequested = false;
-      startBtn.disabled = true;
-      stopBtn.disabled = false;
-      shell.resultEl.textContent = '';
-
-      showProgress(mdProgressBox, 'MD: getting the potential ready …');
-      setAtomisticTitleStatus('MD …');
-      mdTitlePct = -1;
-      const runner = await ensureCalculatorReady(potential, shell);
-      const steps = Number(shell.bodyEl.querySelector('#mdStepsInput')?.value || 500);
-      const dtFs = Number(shell.bodyEl.querySelector('#mdTimestepInput')?.value || 1);
-      const startTemperatureK = Number(shell.bodyEl.querySelector('#mdTemperatureInput')?.value || 300);
-      const useAnneal = !annealControls.classList.contains('hidden');
-      const useNpt = shell.bodyEl.querySelector('#mdEnsembleSwitch button.active')?.dataset.ensemble === 'npt';
-      const targetPressureGPa = Number(shell.bodyEl.querySelector('#mdPressureInput')?.value || 0);
-      const thermostatTauFs = Math.max(1,
-        Number(shell.bodyEl.querySelector('#mdTauTInput')?.value) || DEFAULT_THERMOSTAT_TAU_FS);
-      // Clamped rather than merely warned about: a barostat running as fast as
-      // the thermostat is unstable, and silently producing a bad trajectory is
-      // worse than quietly slowing the cell down.
-      const barostatTauFs = Math.max(
-        thermostatTauFs * MIN_BAROSTAT_TAU_RATIO,
-        Number(shell.bodyEl.querySelector('#mdTauPInput')?.value) || DEFAULT_BAROSTAT_TAU_FS);
-      const minTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMinInput')?.value || 100);
-      const maxTemperatureK = Number(shell.bodyEl.querySelector('#mdAnnealMaxInput')?.value || 1200);
-      const peakFraction = Math.max(0.01, Math.min(0.99, Number(shell.bodyEl.querySelector('#mdAnnealPeakPctInput')?.value || 30) / 100));
-      const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
-      const saveStride = Math.max(1, Number(shell.bodyEl.querySelector('#mdSaveStrideInput')?.value || general.backendTrajectorySaveStride || 4));
-      general.backendTrajectorySaveStride = saveStride;
-      let lastSavedStep = 0;
-      let lastStepMetrics = /** @type {any} */ (null);
-      const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
-      // MD animates this structure in place for live viewer feedback; keep the
-      // reference so it can be restored (from the seed frame) once the run ends.
-      originalStructure = fileBrowser.selectedStructure;
-
-      // "Continue MD": resume with the selected frame's own velocities and grow
-      // its container in place, instead of a fresh start — but only when that
-      // frame is genuinely the trajectory's tip (compared by reference, the
-      // same way this file already tracks "the" selected structure) and it was
-      // actually produced by MD (relax/rattle null out .velocities, so a relaxed
-      // or rattled tip always falls through to the fresh-start branch below).
-      const isLastFrame = !!srcContainer
-        && srcContainer.structures[srcContainer.structures.length - 1] === originalStructure;
-      const resumeVelocities = (isLastFrame && originalStructure.velocities) || null;
-      isContinuation = !!resumeVelocities;
-
-      const mdLabel = `md_${potential}_${srcContainer?.fileName ?? 'run'}`;
-      let mdRow;
-      if (isContinuation) {
-        mdContainer = srcContainer;
-        seedFrame = originalStructure;
-        mdRow = fileBrowser.selectedRow;
-      } else {
-        seedFrame = snapshotCurrentStructure();
-        // Store-backed: frames pack into the trajectory store as the run saves them.
-        mdContainer = TrajectoryContainer.fromStructures(mdLabel, [seedFrame]);
-        // Persist the plotted series on the container so the trajectory plot can be
-        // rebuilt (e.g. after a panel rebuild from a structure-table interaction)
-        // long after the live run's in-memory plot was torn down. Seed one NaN gap
-        // for the initial (pre-run) frame so the series stays index-aligned with
-        // mdContainer.structures.
-        // No pressure series: NEP/PET-MAD/ASE MD here runs at fixed cell, so the
-        // stress trace is not a meaningful pressure to plot. `step` records the
-        // real MD step per saved frame so the plot's x-axis reads steps (a
-        // multiple of the save stride), not the frame index; seed frame = step 0.
-        mdContainer.plotSeries = {
-          step: [0], temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN], pressure: [NaN],
-        };
-        structureShip.container.push(mdContainer);
-        mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
-        tableBody.appendChild(mdRow);
-      }
-      // Continuing picks the step/time clock up from the trajectory's own
-      // record, so the plot's x-axis and the on-screen step counter don't snap
-      // back to 0 partway through an otherwise-continuous run.
-      const resumeStep = isContinuation
-        ? (mdContainer.plotSeries?.step?.[mdContainer.plotSeries.step.length - 1] ?? 0)
-        : 0;
-      lastSavedStep = resumeStep;
-
-      resetLivePlot();
-      ensureTrajectoryPanelForLive();
-      // Evaluate the potential off-thread when we can: it is by far the longest
-      // part of a step, and on the main thread it blocks paint, so the render of
-      // one frame and the compute of the next serialise instead of overlapping.
-      // Falls back to the in-thread runner if the worker cannot start (and for
-      // MLIP/ASE, which have their own transports).
-      let forceEvaluator = createNEPForceEvaluator(runner);
-      // PET-MAD's runner is already worker-backed when it could be
-      // (ensureMLIPReady), and ASE computes on its server; the loop only needs
-      // to know so it yields with a macrotask instead of waiting for a paint it
-      // does not block.
-      let offThreadForces = (potential === 'mlip' || potential === 'ase') && runner.offThread === true;
-      if (potential === 'nep' && general.mdWorker !== false && typeof Worker !== 'undefined') {
+      startJob('md', async (job) => {
         try {
-          await ensureWorkerNEPReady();
-          forceEvaluator = createWorkerNEPForceEvaluator();
-          offThreadForces = true;
-        } catch (workerError) {
-          console.warn('NEP worker unavailable, running the potential on the main thread:', workerError);
+          shell.resultEl.textContent = '';
+          showProgress(mdProgressBox, 'MD: getting the potential ready …');
+          setAtomisticTitleStatus('MD …');
+          const runner = await ensureCalculatorReady(potential, shell);
+          const value = (sel, fallback) => Number(shell.bodyEl.querySelector(sel)?.value || fallback);
+          const result = await runMD({
+            steps: value('#mdStepsInput', 500),
+            dtFs: value('#mdTimestepInput', 1),
+            startTemperatureK: value('#mdTemperatureInput', 300),
+            useAnneal: !annealControls.classList.contains('hidden'),
+            useNpt: shell.bodyEl.querySelector('#mdEnsembleSwitch button.active')?.dataset.ensemble === 'npt',
+            targetPressureGPa: value('#mdPressureInput', 0),
+            thermostatTauFs: Number(shell.bodyEl.querySelector('#mdTauTInput')?.value),
+            barostatTauFs: Number(shell.bodyEl.querySelector('#mdTauPInput')?.value),
+            minTemperatureK: value('#mdAnnealMinInput', 100),
+            maxTemperatureK: value('#mdAnnealMaxInput', 1200),
+            peakFraction: value('#mdAnnealPeakPctInput', 30) / 100,
+            saveStride: value('#mdSaveStrideInput', general.backendTrajectorySaveStride || 4),
+          }, {
+            runner,
+            potential,
+            shouldStop: () => job.cancelled,
+            onProgress: (progress) => {
+              const { step, steps, timeFs, text } = progress;
+              job.progress = mdProgress(progress);
+              shell.statusEl.textContent = text;
+              if (!job.cancelled) {
+                showProgress(mdProgressBox, `MD: step ${step} of ${steps} · ${timeFs.toFixed(1)} fs`, step / steps);
+              }
+            },
+          });
+          shell.statusEl.textContent = '';
+          shell.resultEl.textContent = result.stopped ? `Stopped at step ${result.finalStep}.` : `Finished at step ${result.finalStep}.`;
+          return mdJobResult(potential, result);
+        } catch (error) {
+          failed(error);
+          throw error;
+        } finally {
+          hideProgress(mdProgressBox);
+          setAtomisticTitleStatus(null);
         }
-      }
-      const integrator = createVelocityVerletIntegrator();
-      const targetTemperatureSchedule = useAnneal
-        ? createCosineAnnealingSchedule({
-            startTemperatureK,
-            peakTemperatureK: maxTemperatureK,
-            minTemperatureK,
-            peakFraction,
-            totalSteps: steps,
-          })
-        : startTemperatureK;
-      // CSVR rather than the old Berendsen rescale: same cost, but it samples
-      // the canonical ensemble instead of merely holding the mean temperature.
-      const thermostat = createBussiThermostat({
-        targetTemperatureK: /** @type {any} */ (targetTemperatureSchedule),
-        tauFs: thermostatTauFs,
       });
-      const barostat = useNpt
-        ? createStochasticCellBarostat({ targetPressureGPa, tauFs: barostatTauFs })
-        : createNoBarostat();
-
-      // Animate a throwaway working copy of the source structure, not the
-      // source itself: the MD loop mutates fileBrowser.selectedStructure in
-      // place every step for live viewer feedback, and we do NOT want that to
-      // alter the user's starting structure. With a working copy the source row
-      // stays exactly as provided and only MD_… holds the trajectory. (The
-      // end-of-run restoreStructureInPlace remains as a belt-and-suspenders.)
-      const workingStructure = snapshotCurrentStructure();
-      fileBrowser.selectedStructure = workingStructure;
-
-      const state = await initializeMDState({
-        nepRunner: runner,
-        structure: fileBrowser.selectedStructure,
-        temperatureTargetK: startTemperatureK,
-        forceEvaluator,
-        initialVelocities: resumeVelocities,
-      });
-      if (isContinuation) {
-        state.step = resumeStep;
-        state.timeFs = resumeStep * dtFs;
-      }
-
-      await runMDSimulation({
-        state,
-        steps,
-        dtFs,
-        forceEvaluator,
-        integrator,
-        thermostat,
-        barostat,
-        offThreadForces,
-        shouldStop: () => mdStopRequested,
-        onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv,
-                   pressureGPa, volumeA3, state: mdState }) => {
-          // snapshotCurrentStructure copies the viewer structure, so a save-step
-          // must also apply the current state to the viewer first. Bond-topology
-          // refresh is handled inside applyMDStateToViewer (BOND_TOPOLOGY_STRIDE);
-          // the old forceRerender-every-5-steps full rebuild is gone.
-          const shouldSave = step % saveStride === 0;
-          const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
-          if (shouldUpdateViewer) {
-            mdProfileMeasure('viewerMs', () => {
-              applyMDStateToViewer(mdState, fileBrowser.selectedStructure);
-              setCurrentEFS({
-                forces: mdState.forces,
-                total_energy: mdState.potentialEnergyEv,
-                stress: { matrix3x3: mdState.stress },
-              });
-            });
-          }
-
-          // Fixed-cell MD: no pressure series (see plotSeries seed above).
-          lastStepMetrics = {
-            step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, pressure: pressureGPa,
-          };
-          if (shouldSave) {
-            mdProfileMeasure('saveMs', () => {
-              const frame = snapshotCurrentStructure();
-              frame.energy = epotEv;
-              mdContainer.appendFrame(frame);
-              lastSavedStep = step;
-            });
-            // Feed the plot exactly once per SAVED trajectory frame so the plot's
-            // sample count stays 1:1 with the scrubber's frames — this is what
-            // keeps the frame cursor aligned with the slider (feeding every step
-            // would desync the cursor from the 1..N frame index).
-            mdProfileMeasure('plotMs', () => {
-              feedLiveStep(lastStepMetrics);
-              mdContainer.plotSeries.step.push(step);
-              mdContainer.plotSeries.temperatureK.push(temperatureK);
-              mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
-              mdContainer.plotSeries.etotEv.push(etotEv);
-              mdContainer.plotSeries.pressure.push(Number.isFinite(pressureGPa) ? pressureGPa : NaN);
-            });
-          }
-          const tLabel = Number.isFinite(targetTemperatureK)
-            ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
-            : `T=${temperatureK.toFixed(0)} K`;
-          const pvLabel = useNpt && Number.isFinite(pressureGPa)
-            ? `  ·  P=${pressureGPa.toFixed(2)} GPa  ·  V=${volumeA3.toFixed(1)} A^3`
-            : '';
-          shell.statusEl.textContent = `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}${pvLabel}`;
-          if (!mdStopRequested) {
-            showProgress(mdProgressBox, `MD: step ${step} of ${steps} · ${timeFs.toFixed(1)} fs`, step / steps);
-          }
-          const pct = Math.floor((100 * step) / steps);
-          if (pct !== mdTitlePct) {
-            mdTitlePct = pct;
-            setAtomisticTitleStatus(`MD ${pct}%`);
-          }
-        },
-      });
-
-      // Run-end full apply: rebuild bond topology + refresh polyhedra one last time.
-      applyMDStateToViewer(state, fileBrowser.selectedStructure, { full: true });
-      setCurrentEFS({
-        forces: state.forces,
-        total_energy: state.potentialEnergyEv,
-        stress: { matrix3x3: state.stress },
-      }, state.keptIndices);
-
-      // Always keep the final state in the trajectory, even off-stride.
-      if (state.step !== lastSavedStep) {
-        const frame = snapshotCurrentStructure();
-        frame.energy = state.potentialEnergyEv;
-        mdContainer.appendFrame(frame);
-        // Keep the plot 1:1 with frames: feed this final frame too, reusing the
-        // last step's computed metrics (state carries no temperature/KE fields).
-        if (lastStepMetrics) {
-          feedLiveStep({ ...lastStepMetrics, step: state.step });
-          mdContainer.plotSeries.step.push(state.step);
-          mdContainer.plotSeries.temperatureK.push(lastStepMetrics.temperatureK);
-          mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(lastStepMetrics.targetTemperatureK) ? lastStepMetrics.targetTemperatureK : NaN);
-          mdContainer.plotSeries.etotEv.push(lastStepMetrics.etotEv);
-          mdContainer.plotSeries.pressure.push(
-            Number.isFinite(lastStepMetrics.pressure) ? lastStepMetrics.pressure : NaN);
-        }
-      }
-
-      const count = mdContainer.structures.length;
-      // Continuation keeps the row's existing name — it's the same container,
-      // not a freshly labeled one.
-      updateRow(mdRow, { name: isContinuation ? srcContainer.fileName : mdLabel, traj: count, step: count });
-      shell.statusEl.textContent = '';
-      shell.resultEl.textContent = mdStopRequested ? `Stopped at step ${state.step}.` : `Finished at step ${state.step}.`;
     } catch (error) {
-      shell.resultEl.textContent = `MD failed: ${error.message || String(error)}`;
-    } finally {
-      hideProgress(mdProgressBox);
-      setAtomisticTitleStatus(null);
-      mdRunning = false;
-      mdStopRequested = false;
-      if (startBtn) startBtn.disabled = false;
-      if (stopBtn) stopBtn.disabled = true;
-      // Live run is over: hand ownership of the plot back to the container's
-      // persisted series so scrubbing/replay survives later panel rebuilds.
-      endLiveFeed();
-      // Safety-net restore of the source structure (it's normally untouched now
-      // that MD animates a working copy). SEPARATE try/catch from the row switch
-      // below: a restore hiccup must not prevent switching to MD_…. seedFrame is
-      // the frame the run actually started from — mdContainer.structures[0] for
-      // a fresh run, but the (unmoved) resumed frame itself when continuing.
-      try {
-        restoreStructureInPlace(originalStructure, seedFrame);
-      } catch { /* safety net only */ }
-      // Auto-select the recorded trajectory so the viewer refreshes to the new
-      // frame(s). refreshActivePanels() rebuilds the Trajectory panel (selection
-      // alone doesn't, so the scrubber otherwise stayed put until a manual row
-      // click).
-      try {
-        // By container, not by position: the user may have selected or
-        // reordered rows while the run was going.
-        if (isContinuation) {
-          // Same row as before the run — jump it to the newly appended tip.
-          selectStructure(structureShip.container.indexOf(mdContainer), mdContainer.structures.length - 1);
-        } else {
-          selectContainer(mdContainer);
-        }
-        refreshActivePanels();
-      } catch { /* non-fatal: leave selection as-is */ }
+      failed(error);
     }
   });
+  syncRunButtons();
+}
+
+// Relax / MD and Stop follow the job list (host/jobs.js), whoever started the
+// run: Relax and MD are locked while any calculation runs, and Stop is on
+// while a run of its kind runs and has not been asked to stop.
+function syncRunButtons() {
+  const busy = runningJob();
+  const sync = (startId, stopId, kind) => {
+    const start = /** @type {HTMLButtonElement|null} */ (document.getElementById(startId));
+    const stop = /** @type {HTMLButtonElement|null} */ (document.getElementById(stopId));
+    if (start) start.disabled = !!busy;
+    if (stop) stop.disabled = !(busy?.kind === kind && !busy.cancelled);
+  };
+  sync('relaxBtn', 'relaxStopBtn', 'relax');
+  sync('mdStartBtn', 'mdStopBtn', 'md');
+}
+
+/**
+ * One MD run on the selected structure, recorded into a new trajectory row
+ * (or, from an MD trajectory's last frame, continuing it). The MD window's
+ * start button and the host's run_md job both call this; the caller gets the
+ * potential ready (ensureCalculatorReady / ensureActiveCalculator) first.
+ * Settings are the MD window's: steps, dtFs, startTemperatureK, useAnneal
+ * (min/maxTemperatureK, peakFraction), useNpt (targetPressureGPa),
+ * thermostatTauFs, barostatTauFs, saveStride.
+ * @param {any} params
+ * @param {{ runner: any, potential: string, shouldStop?: () => boolean,
+ *   onProgress?: (p: {step: number, steps: number, timeFs: number, temperatureK: number, text: string}) => void }} ctx
+ * @returns {Promise<{ container: any, finalStep: number, stopped: boolean, frames: number }>}
+ */
+export async function runMD(params, { runner, potential, shouldStop = () => false, onProgress = () => {} }) {
+  // Declared out here (not inside the try) so the finally block can see them
+  // for the restore/switch even if the run throws before/after assigning.
+  let originalStructure = /** @type {any} */ (null);
+  let mdContainer = /** @type {any} */ (null);
+  let seedFrame = /** @type {any} */ (null);
+  let isContinuation = false;
+  let mdTitlePct = -1;
+  try {
+    const { steps, dtFs, startTemperatureK, useAnneal, useNpt, targetPressureGPa,
+      minTemperatureK, maxTemperatureK } = params;
+    const thermostatTauFs = Math.max(1, Number(params.thermostatTauFs) || DEFAULT_THERMOSTAT_TAU_FS);
+    // Clamped rather than merely warned about: a barostat running as fast as
+    // the thermostat is unstable, and silently producing a bad trajectory is
+    // worse than quietly slowing the cell down.
+    const barostatTauFs = Math.max(
+      thermostatTauFs * MIN_BAROSTAT_TAU_RATIO,
+      Number(params.barostatTauFs) || DEFAULT_BAROSTAT_TAU_FS);
+    const peakFraction = Math.max(0.01, Math.min(0.99, Number(params.peakFraction ?? 0.3)));
+    const viewerStride = Math.max(1, Number(general.backendViewerUpdateStride || 1));
+    const saveStride = Math.max(1, Number(params.saveStride) || 4);
+    general.backendTrajectorySaveStride = saveStride;
+    let lastSavedStep = 0;
+    let lastStepMetrics = /** @type {any} */ (null);
+    const srcContainer = structureShip.container[fileBrowser.selectedRowIndex];
+    // MD animates this structure in place for live viewer feedback; keep the
+    // reference so it can be restored (from the seed frame) once the run ends.
+    originalStructure = fileBrowser.selectedStructure;
+
+    // "Continue MD": resume with the selected frame's own velocities and grow
+    // its container in place, instead of a fresh start — but only when that
+    // frame is genuinely the trajectory's tip (compared by reference, the
+    // same way this file already tracks "the" selected structure) and it was
+    // actually produced by MD (relax/rattle null out .velocities, so a relaxed
+    // or rattled tip always falls through to the fresh-start branch below).
+    const isLastFrame = !!srcContainer
+      && srcContainer.structures[srcContainer.structures.length - 1] === originalStructure;
+    const resumeVelocities = (isLastFrame && originalStructure.velocities) || null;
+    isContinuation = !!resumeVelocities;
+
+    const mdLabel = `md_${potential}_${srcContainer?.fileName ?? 'run'}`;
+    let mdRow;
+    if (isContinuation) {
+      mdContainer = srcContainer;
+      seedFrame = originalStructure;
+      mdRow = fileBrowser.selectedRow;
+    } else {
+      seedFrame = snapshotCurrentStructure();
+      // Store-backed: frames pack into the trajectory store as the run saves them.
+      mdContainer = TrajectoryContainer.fromStructures(mdLabel, [seedFrame]);
+      // Persist the plotted series on the container so the trajectory plot can be
+      // rebuilt (e.g. after a panel rebuild from a structure-table interaction)
+      // long after the live run's in-memory plot was torn down. Seed one NaN gap
+      // for the initial (pre-run) frame so the series stays index-aligned with
+      // mdContainer.structures.
+      // No pressure series: NEP/PET-MAD/ASE MD here runs at fixed cell, so the
+      // stress trace is not a meaningful pressure to plot. `step` records the
+      // real MD step per saved frame so the plot's x-axis reads steps (a
+      // multiple of the save stride), not the frame index; seed frame = step 0.
+      mdContainer.plotSeries = {
+        step: [0], temperatureK: [NaN], targetTemperatureK: [NaN], etotEv: [NaN], pressure: [NaN],
+      };
+      structureShip.container.push(mdContainer);
+      mdRow = createRow({ name: mdLabel, traj: 1, step: 1 });
+      tableBody.appendChild(mdRow);
+    }
+    // Continuing picks the step/time clock up from the trajectory's own
+    // record, so the plot's x-axis and the on-screen step counter don't snap
+    // back to 0 partway through an otherwise-continuous run.
+    const resumeStep = isContinuation
+      ? (mdContainer.plotSeries?.step?.[mdContainer.plotSeries.step.length - 1] ?? 0)
+      : 0;
+    lastSavedStep = resumeStep;
+
+    resetLivePlot();
+    ensureTrajectoryPanelForLive();
+    // Evaluate the potential off-thread when we can: it is by far the longest
+    // part of a step, and on the main thread it blocks paint, so the render of
+    // one frame and the compute of the next serialise instead of overlapping.
+    // Falls back to the in-thread runner if the worker cannot start (and for
+    // MLIP/ASE, which have their own transports).
+    let forceEvaluator = createNEPForceEvaluator(runner);
+    // PET-MAD's runner is already worker-backed when it could be
+    // (ensureMLIPReady), and ASE computes on its server; the loop only needs
+    // to know so it yields with a macrotask instead of waiting for a paint it
+    // does not block.
+    let offThreadForces = (potential === 'mlip' || potential === 'ase') && runner.offThread === true;
+    if (potential === 'nep' && general.mdWorker !== false && typeof Worker !== 'undefined') {
+      try {
+        await ensureWorkerNEPReady();
+        forceEvaluator = createWorkerNEPForceEvaluator();
+        offThreadForces = true;
+      } catch (workerError) {
+        console.warn('NEP worker unavailable, running the potential on the main thread:', workerError);
+      }
+    }
+    const integrator = createVelocityVerletIntegrator();
+    const targetTemperatureSchedule = useAnneal
+      ? createCosineAnnealingSchedule({
+          startTemperatureK,
+          peakTemperatureK: maxTemperatureK,
+          minTemperatureK,
+          peakFraction,
+          totalSteps: steps,
+        })
+      : startTemperatureK;
+    // CSVR rather than the old Berendsen rescale: same cost, but it samples
+    // the canonical ensemble instead of merely holding the mean temperature.
+    const thermostat = createBussiThermostat({
+      targetTemperatureK: /** @type {any} */ (targetTemperatureSchedule),
+      tauFs: thermostatTauFs,
+    });
+    const barostat = useNpt
+      ? createStochasticCellBarostat({ targetPressureGPa, tauFs: barostatTauFs })
+      : createNoBarostat();
+
+    // Animate a throwaway working copy of the source structure, not the
+    // source itself: the MD loop mutates fileBrowser.selectedStructure in
+    // place every step for live viewer feedback, and we do NOT want that to
+    // alter the user's starting structure. With a working copy the source row
+    // stays exactly as provided and only MD_… holds the trajectory. (The
+    // end-of-run restoreStructureInPlace remains as a belt-and-suspenders.)
+    const workingStructure = snapshotCurrentStructure();
+    fileBrowser.selectedStructure = workingStructure;
+
+    const state = await initializeMDState({
+      nepRunner: runner,
+      structure: fileBrowser.selectedStructure,
+      temperatureTargetK: startTemperatureK,
+      forceEvaluator,
+      initialVelocities: resumeVelocities,
+    });
+    if (isContinuation) {
+      state.step = resumeStep;
+      state.timeFs = resumeStep * dtFs;
+    }
+
+    await runMDSimulation({
+      state,
+      steps,
+      dtFs,
+      forceEvaluator,
+      integrator,
+      thermostat,
+      barostat,
+      offThreadForces,
+      shouldStop,
+      onStep: ({ step, timeFs, temperatureK, targetTemperatureK, epotEv, ekinEv, etotEv,
+                 pressureGPa, volumeA3, state: mdState }) => {
+        // snapshotCurrentStructure copies the viewer structure, so a save-step
+        // must also apply the current state to the viewer first. Bond-topology
+        // refresh is handled inside applyMDStateToViewer (BOND_TOPOLOGY_STRIDE);
+        // the old forceRerender-every-5-steps full rebuild is gone.
+        const shouldSave = step % saveStride === 0;
+        const shouldUpdateViewer = step === 1 || shouldSave || step % viewerStride === 0;
+        if (shouldUpdateViewer) {
+          mdProfileMeasure('viewerMs', () => {
+            applyMDStateToViewer(mdState, fileBrowser.selectedStructure);
+            setCurrentEFS({
+              forces: mdState.forces,
+              total_energy: mdState.potentialEnergyEv,
+              stress: { matrix3x3: mdState.stress },
+            });
+          });
+        }
+
+        // Fixed-cell MD: no pressure series (see plotSeries seed above).
+        lastStepMetrics = {
+          step, temperatureK, targetTemperatureK, etotEv, epotEv, ekinEv, pressure: pressureGPa,
+        };
+        if (shouldSave) {
+          mdProfileMeasure('saveMs', () => {
+            const frame = snapshotCurrentStructure();
+            frame.energy = epotEv;
+            mdContainer.appendFrame(frame);
+            lastSavedStep = step;
+          });
+          // Feed the plot exactly once per SAVED trajectory frame so the plot's
+          // sample count stays 1:1 with the scrubber's frames — this is what
+          // keeps the frame cursor aligned with the slider (feeding every step
+          // would desync the cursor from the 1..N frame index).
+          mdProfileMeasure('plotMs', () => {
+            feedLiveStep(lastStepMetrics);
+            mdContainer.plotSeries.step.push(step);
+            mdContainer.plotSeries.temperatureK.push(temperatureK);
+            mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(targetTemperatureK) ? targetTemperatureK : NaN);
+            mdContainer.plotSeries.etotEv.push(etotEv);
+            mdContainer.plotSeries.pressure.push(Number.isFinite(pressureGPa) ? pressureGPa : NaN);
+          });
+        }
+        const tLabel = Number.isFinite(targetTemperatureK)
+          ? `T=${temperatureK.toFixed(0)} K → ${targetTemperatureK.toFixed(0)} K`
+          : `T=${temperatureK.toFixed(0)} K`;
+        const pvLabel = useNpt && Number.isFinite(pressureGPa)
+          ? `  ·  P=${pressureGPa.toFixed(2)} GPa  ·  V=${volumeA3.toFixed(1)} A^3`
+          : '';
+        onProgress({ step, steps, timeFs, temperatureK,
+          text: `step ${step} / ${steps}  ·  t=${timeFs.toFixed(1)} fs  ·  ${tLabel}${pvLabel}` });
+        const pct = Math.floor((100 * step) / steps);
+        if (pct !== mdTitlePct) {
+          mdTitlePct = pct;
+          setAtomisticTitleStatus(`MD ${pct}%`);
+        }
+      },
+    });
+
+    // Run-end full apply: rebuild bond topology + refresh polyhedra one last time.
+    applyMDStateToViewer(state, fileBrowser.selectedStructure, { full: true });
+    setCurrentEFS({
+      forces: state.forces,
+      total_energy: state.potentialEnergyEv,
+      stress: { matrix3x3: state.stress },
+    }, state.keptIndices);
+
+    // Always keep the final state in the trajectory, even off-stride.
+    if (state.step !== lastSavedStep) {
+      const frame = snapshotCurrentStructure();
+      frame.energy = state.potentialEnergyEv;
+      mdContainer.appendFrame(frame);
+      // Keep the plot 1:1 with frames: feed this final frame too, reusing the
+      // last step's computed metrics (state carries no temperature/KE fields).
+      if (lastStepMetrics) {
+        feedLiveStep({ ...lastStepMetrics, step: state.step });
+        mdContainer.plotSeries.step.push(state.step);
+        mdContainer.plotSeries.temperatureK.push(lastStepMetrics.temperatureK);
+        mdContainer.plotSeries.targetTemperatureK.push(Number.isFinite(lastStepMetrics.targetTemperatureK) ? lastStepMetrics.targetTemperatureK : NaN);
+        mdContainer.plotSeries.etotEv.push(lastStepMetrics.etotEv);
+        mdContainer.plotSeries.pressure.push(
+          Number.isFinite(lastStepMetrics.pressure) ? lastStepMetrics.pressure : NaN);
+      }
+    }
+
+    const count = mdContainer.structures.length;
+    // Continuation keeps the row's existing name — it's the same container,
+    // not a freshly labeled one.
+    updateRow(mdRow, { name: isContinuation ? mdContainer.fileName : mdLabel, traj: count, step: count });
+    return { container: mdContainer, finalStep: state.step, stopped: shouldStop(), frames: count };
+  } finally {
+    setAtomisticTitleStatus(null);
+    // Live run is over: hand ownership of the plot back to the container's
+    // persisted series so scrubbing/replay survives later panel rebuilds.
+    endLiveFeed();
+    // Safety-net restore of the source structure (it's normally untouched now
+    // that MD animates a working copy). SEPARATE try/catch from the row switch
+    // below: a restore hiccup must not prevent switching to MD_…. seedFrame is
+    // the frame the run actually started from — mdContainer.structures[0] for
+    // a fresh run, but the (unmoved) resumed frame itself when continuing.
+    try {
+      restoreStructureInPlace(originalStructure, seedFrame);
+    } catch { /* safety net only */ }
+    // Auto-select the recorded trajectory so the viewer refreshes to the new
+    // frame(s). refreshActivePanels() rebuilds the Trajectory panel (selection
+    // alone doesn't, so the scrubber otherwise stayed put until a manual row
+    // click).
+    try {
+      // By container, not by position: the user may have selected or
+      // reordered rows while the run was going.
+      if (isContinuation) {
+        // Same row as before the run — jump it to the newly appended tip.
+        selectStructure(structureShip.container.indexOf(mdContainer), mdContainer.structures.length - 1);
+      } else {
+        selectContainer(mdContainer);
+      }
+      refreshActivePanels();
+    } catch { /* non-fatal: leave selection as-is */ }
+  }
 }
 
 // Reflect the current general.atomisticPotential in the selector's own widgets
@@ -1867,20 +1959,35 @@ function renderActiveBody() {
   }
 }
 
-// Wire the persistent potential picker ONCE. Selecting a potential updates the
-// shared state and re-renders the active action's body in place — it never
+/**
+ * Choose the potential ('nep' | 'mlip' | 'ase'), as a click on "Choose
+ * potential" does: the shared state, the picker's own widgets, the active
+ * action's body (re-rendered in place) and the other windows' notices follow.
+ * The picker and the host's run_* potential argument.
+ * @param {'nep'|'mlip'|'ase'} potential
+ */
+export function selectPotential(potential) {
+  const shell = getShellBindings();
+  general.atomisticPotential = potential;
+  updatePotentialUI(shell);
+  if (shell.resultEl) shell.resultEl.textContent = '';
+  renderActiveBody();
+  notifyPotentialChange();
+}
+
+/** Whether the ASE server is connected with a model (ensureASEReady has run). */
+export function aseConnected() {
+  return Boolean(aseRunner?.connected && aseRunner.modelInfo);
+}
+
+// Wire the persistent potential picker ONCE. Selecting a potential never
 // rebuilds (or resets) the selector itself.
 function bindPotentialToggle() {
   const shell = getShellBindings();
 
   shell.toggle?.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-potential]');
-    if (!button) return;
-    general.atomisticPotential = button.dataset.potential;
-    updatePotentialUI(shell);
-    if (shell.resultEl) shell.resultEl.textContent = '';
-    renderActiveBody();
-    notifyPotentialChange();
+    if (button) selectPotential(button.dataset.potential);
   });
 
   if (shell.aseUrlInput) shell.aseUrlInput.value = aseServerUrl(null);
@@ -1920,7 +2027,9 @@ function bindPotentialToggle() {
   shell.mlipModelSelect?.addEventListener('change', notifyPotentialChange);
   shell.mlipFileInput?.addEventListener('change', notifyPotentialChange);
   if (shell.potentialNoticeHost) {
-    const notice = mountPotentialNotice(shell.potentialNoticeHost, { showPotential: false, pressures: atomisticPressures });
+    // The collapsed ⚠ sits after "Choose potential", not on a row of its own.
+    const notice = mountPotentialNotice(shell.potentialNoticeHost, { showPotential: false, pressures: atomisticPressures,
+      inline: shell.potentialLabel });
     // The relax / NPT target pressures live in the action body, rebuilt on
     // every Relax/MD switch: listen on its persistent container.
     const calc = document.getElementById('BackendCalcPanel');
@@ -2046,6 +2155,7 @@ export function initAtomisticSelector() {
   selector.innerHTML = buildSourcePanel();
   selector.dataset.ready = '1';
   bindPotentialToggle();
+  document.addEventListener(JOBS_CHANGED, syncRunButtons);
 }
 
 function addAtomisticPanel(mode) {

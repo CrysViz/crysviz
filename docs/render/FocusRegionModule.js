@@ -294,6 +294,8 @@ export function getFocusOpacityForPolyhedron(poly, structure = fileBrowser.selec
   return focusOpacityForPolyhedron(poly, getFocusRegions(structure), periodicBasis(structure?.lattice));
 }
 
+/** A region around the centroid of `centerAtoms` (the panel's "Add from
+ *  selection"); see createFocusRegionAt. */
 export function createFocusRegion(centerAtoms, structure = fileBrowser.selectedStructure) {
   if (!structure || !centerAtoms?.length) return null;
   const positions = centerAtoms.map((atom) => {
@@ -305,16 +307,27 @@ export function createFocusRegion(centerAtoms, structure = fileBrowser.selectedS
   if (!positions.length) return null;
   const center = [0, 1, 2].map((axis) =>
     positions.reduce((sum, position) => sum + Number(position[axis]), 0) / positions.length);
+  // Which atoms the center came from, for the panel label only: the center
+  // does not follow them (see prepareFocusRegions).
+  const sources = [...new Set(centerAtoms.map((atom) => atom.sourceIndex).filter(Number.isInteger))];
+  return createFocusRegionAt(cartToFrac(center, structure.lattice), structure, sources);
+}
+
+/** A region centered at `fractional` (the one place regions are made: from
+ *  the selection, or at a centre typed in the panel). Returns null when the
+ *  centre is not three finite numbers. */
+export function createFocusRegionAt(fractional, structure = fileBrowser.selectedStructure,
+  centerSourceIndices = []) {
+  if (!structure?.lattice || fractional?.length !== 3) return null;
+  const centerFractional = fractional.map(Number);
+  if (!centerFractional.every(Number.isFinite)) return null;
   const region = {
     ...DEFAULT_FOCUS_REGION,
     id: `focus-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    center,
-    centerFractional: cartToFrac(center, structure.lattice),
-    initialCenterFractional: cartToFrac(center, structure.lattice),
-    // Which atoms the center came from, for the panel label only: the center
-    // does not follow them (see prepareFocusRegions).
-    centerSourceIndices: [...new Set(centerAtoms.map((atom) => atom.sourceIndex)
-      .filter(Number.isInteger))],
+    center: fracToCart([centerFractional], structure.lattice)[0],
+    centerFractional,
+    initialCenterFractional: [...centerFractional],
+    centerSourceIndices,
     excludedSourceIndices: [],
   };
   (structure.focusRegions ??= []).push(region);

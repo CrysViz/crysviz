@@ -179,7 +179,7 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
     setStatus('Error loading structures.');
   }
 
-  // ---- Upload: open the file dialog directly ----
+  // ---- Open: the file dialog directly ----
 
   if (fileInput) {
     fileInput.onchange = async (e) => {
@@ -220,7 +220,7 @@ export function setupStructureInput({ onLoadStructure, setStatus }) {
   optimadeWarningDialog.setAttribute('aria-labelledby', 'optimadeWarningTitle');
   optimadeWarningDialog.innerHTML = `
     <h2 id="optimadeWarningTitle">Structure could not be loaded</h2>
-    <p>The provider's CORS policy blocks browser access. Download the structure and use Upload instead.</p>
+    <p>The provider's CORS policy blocks browser access. Download the structure and use Open instead.</p>
     <button type="button" id="optimadeWarningClose">OK</button>
   `;
   document.body.appendChild(optimadeWarningDialog);

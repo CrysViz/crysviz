@@ -102,6 +102,25 @@ function isoEntry(field) {
   return entry;
 }
 
+/**
+ * Set a field's iso level, clamped to the data's own range (a level outside it
+ * has no surface to draw, and the slider could not represent it either);
+ * remember it and rebuild the isosurface when that field is shown. The typed
+ * iso box and the host's set_isosurface. Returns the level applied.
+ */
+export function setFieldIsoValue(field, value) {
+  const lo = Number.isFinite(field.minValue) ? field.minValue : -Infinity;
+  const hi = Number.isFinite(field.maxValue) ? field.maxValue : Infinity;
+  const isoValue = Math.min(Math.max(value, lo), hi);
+  field.isoValue = isoValue;
+  persistFieldIso(field);
+  if (field === fieldBrowser.selectedField && fileBrowser.selectedStructure?.volumetricFields) {
+    updateField(isoValue);
+    requestRender();
+  }
+  return isoValue;
+}
+
 /** User edit of a field's iso value / absolute toggle: debounced save. */
 function persistFieldIso(field) {
   const owner = selectedFieldOwner(field);
@@ -927,23 +946,10 @@ function setupFieldControlEvents(container) {
       setIsoReadout(field.isoValue, true); // unparseable: put the live value back
       return;
     }
-    // Clamp to the data's own range — an iso level outside it has no surface
-    // to draw, and the slider could not represent it either.
-    const lo = Number.isFinite(field.minValue) ? field.minValue : -Infinity;
-    const hi = Number.isFinite(field.maxValue) ? field.maxValue : Infinity;
-    const isoValue = Math.min(Math.max(typed, lo), hi);
-
-    field.isoValue = isoValue;
-    persistFieldIso(field);
+    const isoValue = setFieldIsoValue(field, typed);
+    lastBuiltIso = isoValue;
     setIsoReadout(isoValue, true);    // echo back canonical formatting + any clamp
     slider.value = String(isoValueToSlider(isoValue, field));
-
-    const structure = fileBrowser.selectedStructure;
-    if (structure && structure.volumetricFields && isoValue !== lastBuiltIso) {
-      lastBuiltIso = isoValue;
-      updateField(isoValue);
-      requestRender();
-    }
   }
 
   // 'change' already covers both commit gestures (blur and Enter) whenever the

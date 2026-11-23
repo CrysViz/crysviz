@@ -45,7 +45,7 @@ export function togglePlotTheme(plotId) {
  * give site series shades of their element's colour, histogramColors.js);
  * `legendgroup`/`legendgrouptitle` group the legend under element headings.
  *
- * Each plot id remembers its own light/dark choice (togglePlotTheme, the 🌓
+ * Each plot id remembers its own light/dark choice (togglePlotTheme, the light/dark
  * on every chart card, the Bond Length Histogram's per-pair cards included);
  * `theme`, when given ('light'|'dark'), overrides it for a caller that wants
  * one setting for several plots. `compact`, for low-profile cards, skips the boundary-tick

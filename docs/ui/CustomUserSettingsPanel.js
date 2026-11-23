@@ -42,9 +42,9 @@ const LS_KEY = 'crysvizCustomUserSettings';
 // Popup z-index (1300, above floating panels' 1200; child popovers' 1400
 // still layer above it) now lives in .cv-cus-popup (styles/sceneWidgets.css).
 
-const OVERRIDE_COLOR = 'rgba(240, 132, 18, 1)'; // orange - the app's existing "user override" accent
-const DEFAULT_BORDER = 'rgba(255, 255, 255, 0.55)'; // white - untouched/default
-const DEFAULT_TEXT = 'rgba(255, 255, 255, 0.85)';
+// Override vs. default is drawn by classes (sceneWidgets.css): .is-selected
+// on a colour/bond tile and .is-overridden on a JSON row paint the app's
+// orange "user override" accent; untouched ones stay white.
 
 // ---------------------------------------------------------------------------
 // Persistence - one small JSON blob, separate from the panel-layout key
@@ -193,11 +193,11 @@ function makePopupShell(title, width = 660) {
  *   tileLabel: (symbol: string) => string,
  *   tileFill: (symbol: string) => string,
  *   tileTextColor?: (symbol: string) => string,
- *   tileBorderColor?: (symbol: string, selected: boolean) => string,
+ *   tileCategoryBorder?: (symbol: string) => string,
  *   isSelected?: (symbol: string) => boolean,
  * }} options
  */
-function buildPeriodicGrid({ onTileClick, tileLabel, tileFill, tileTextColor, tileBorderColor, isSelected }) {
+function buildPeriodicGrid({ onTileClick, tileLabel, tileFill, tileTextColor, tileCategoryBorder, isSelected }) {
   const wrap = document.createElement('div');
 
   function makeRow(symbols, cols) {
@@ -220,17 +220,18 @@ function buildPeriodicGrid({ onTileClick, tileLabel, tileFill, tileTextColor, ti
       // symbol color/shadow (computed for contrast against that fill —
       // getContrastingBorder, same luminance-based pick used for the scene
       // background/lattice contrast elsewhere) and the override/category
-      // border colour. Only the tile's fixed geometry lives in the class.
+      // category border colour. The default and override borders are the
+      // class's (.is-selected).
       tile.style.background = tileFill(symbol) || '';
-      const selected = isSelected?.(symbol);
+      const selected = !!isSelected?.(symbol);
       const textColor = tileTextColor ? tileTextColor(symbol) : '#ffffff';
       const shadow = textColor === '#ffffff'
         ? '0 1px 2px rgba(0,0,0,0.9), 0 0 3px rgba(0,0,0,0.6)'
         : '0 1px 1px rgba(255,255,255,0.5)';
-      const borderColor = tileBorderColor ? tileBorderColor(symbol, selected) : (selected ? OVERRIDE_COLOR : DEFAULT_BORDER);
       tile.style.color = textColor;
       tile.style.textShadow = shadow;
-      tile.style.border = `2px solid ${borderColor}`;
+      tile.classList.toggle('is-selected', selected);
+      if (tileCategoryBorder && !selected) tile.style.borderColor = tileCategoryBorder(symbol);
       tile.addEventListener('click', () => onTileClick(symbol, tile));
       row.appendChild(tile);
     });
@@ -290,10 +291,7 @@ function buildJsonListView({ keys, isOverridden, buildRow, emptyText, footer }) 
   keys.forEach((key, i) => {
     const row = document.createElement('div');
     row.className = 'cv-cus-json-row';
-    // Override vs. default is a per-key data lookup, not a fixed choice —
-    // the two colours themselves (OVERRIDE_COLOR/DEFAULT_TEXT) are constants
-    // declared once at the top of this file.
-    row.style.color = isOverridden(key) ? OVERRIDE_COLOR : DEFAULT_TEXT;
+    row.classList.toggle('is-overridden', isOverridden(key));
     buildRow(key, row, i < keys.length - 1);
     wrap.appendChild(row);
   });
@@ -376,7 +374,7 @@ function openColorPeriodicTable(onChange) {
           general.customColorMap[el] = num;
           applyColorOverrideLive(el);
           saveCustomSettings();
-          row.style.color = OVERRIDE_COLOR;
+          row.classList.add('is-overridden');
           onChange?.();
         }
         input.addEventListener('blur', commit);
@@ -419,9 +417,8 @@ function radiusCategoryColor(el) {
 // category color can be confused with.
 function applyRadiusTileVisual(tile, symbol) {
   const overridden = Object.prototype.hasOwnProperty.call(general.customAtomicRadii, symbol);
-  tile.style.background = overridden ? '#ffffff' : 'transparent';
-  tile.style.borderColor = overridden ? '#ffffff' : radiusCategoryColor(symbol);
-  tile.style.color = overridden ? '#000000' : '#ffffff';
+  tile.classList.toggle('is-overridden', overridden);
+  tile.style.borderColor = overridden ? '' : radiusCategoryColor(symbol);
 }
 
 // Radius grid tiles use the exact same look as the Add Atom/Add Structure
@@ -463,17 +460,7 @@ function buildRadiusGrid({ onTileClick }) {
       tile.appendChild(label);
       tile.appendChild(radLabel);
 
-      const category = radiusCategoryColor(symbol);
-      tile.addEventListener('mouseover', () => {
-        tile.style.transform = 'scale(1.2)';
-        tile.style.boxShadow = `0 0 12px ${category}`;
-        tile.style.zIndex = '2';
-      });
-      tile.addEventListener('mouseout', () => {
-        tile.style.transform = 'scale(1)';
-        tile.style.boxShadow = 'none';
-        tile.style.zIndex = '1';
-      });
+      tile.style.setProperty('--tile-glow', radiusCategoryColor(symbol)); // :hover glow
       tile.addEventListener('click', () => onTileClick(symbol, tile));
 
       row.appendChild(tile);
@@ -628,7 +615,7 @@ function openRadiusPeriodicTable(onChange) {
           general.customAtomicRadii[el] = value;
           applyRadiusOverrideLive();
           saveCustomSettings();
-          row.style.color = OVERRIDE_COLOR;
+          row.classList.add('is-overridden');
           onChange?.();
         }
         input.addEventListener('blur', commit);
@@ -700,7 +687,7 @@ function openBondPairPicker(onChange) {
     const grid = buildPeriodicGrid({
       tileLabel: (el) => el,
       tileFill: () => 'transparent',
-      tileBorderColor: (el, isSel) => (isSel ? OVERRIDE_COLOR : radiusCategoryColor(el)),
+      tileCategoryBorder: radiusCategoryColor,
       isSelected: (el) => selected.includes(el),
       onTileClick: (el) => {
         // Always APPEND (never toggle by value) so clicking the same element
@@ -728,7 +715,9 @@ function openBondPairPicker(onChange) {
     function refreshTileBorders() {
       grid.querySelectorAll('button[data-symbol]').forEach((tile) => {
         const symbol = tile.dataset.symbol;
-        tile.style.borderColor = selected.includes(symbol) ? OVERRIDE_COLOR : radiusCategoryColor(symbol);
+        const isSel = selected.includes(symbol);
+        tile.classList.toggle('is-selected', isSel);
+        tile.style.borderColor = isSel ? '' : radiusCategoryColor(symbol);
       });
     }
 
@@ -885,7 +874,7 @@ function openBondPairPicker(onChange) {
           if (maxV <= 0) return;
           applyBondOverrideLive(pair, { min: minV, max: maxV });
           saveCustomSettings();
-          row.style.color = OVERRIDE_COLOR;
+          row.classList.add('is-overridden');
           onChange?.();
         }
         [minInput, maxInput].forEach((inp) => {
