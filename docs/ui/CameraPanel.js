@@ -2,6 +2,8 @@ import {general,app} from '../state/store.js'
 import * as THREE from '../external/three/three.module.js';
 import {switchCameraType, setCameraSpeedFactor} from  '../ui/WindowAndSceneControls.js'
 import {getPanelPref, setPanelPref, onPanelsReset} from './panels/PanelManager.js'
+import {cameraSyncSupported, isCameraSyncOn, getCameraSyncMode, setCameraSync, setCameraSyncMode, onCameraSyncChange} from './CameraSync.js'
+import {wireButtonLongPress, wirePopoverDismiss, openPopoverUnder} from './ButtonPopover.js'
 
 // 1× = the app's tuned default sensitivity (see WindowAndSceneControls BASE_*).
 const DEFAULT_CAMERA_SPEED = 1;
@@ -68,6 +70,91 @@ function makeCameraSpeedSliderRow() {
   controlsRow.appendChild(reset);
   label.appendChild(controlsRow);
   return label;
+}
+
+// ---- "Sync camera across tabs" (ui/CameraSync.js) --------------------------
+//
+// A click switches sync on or off for this tab. A long press opens a menu
+// under the button: what this tab copies from the others (rotation and zoom,
+// or the whole view; picking one also switches sync on), "Make other tabs
+// match this one", and Cancel.
+
+const SYNC_MODE_LABELS = { rotation: 'Rotation & zoom', view: 'Whole view' };
+let syncMenu = null;
+
+function buildSyncMenu() {
+  if (syncMenu) return syncMenu;
+  const el = document.createElement('div');
+  el.id = 'cameraSyncMenu';
+  el.className = 'restore-popover camera-sync-menu';
+  el.setAttribute('role', 'menu');
+  el.hidden = true;
+  el.innerHTML = `
+    <button type="button" id="cameraSyncModeRotation" class="restore-popover-btn restore-popover-cancel" role="menuitemradio"
+      title="Copy the turn and zoom of the other tabs; each tab keeps its own centre, so different structures turn together">Match rotation &amp; zoom</button>
+    <button type="button" id="cameraSyncModeView" class="restore-popover-btn restore-popover-cancel" role="menuitemradio"
+      title="Copy the whole view of the other tabs, centre and pan too: for the same structure shown two ways">Match the whole view</button>
+    <button type="button" id="cameraSyncLead" class="restore-popover-btn restore-popover-cancel" role="menuitem"
+      title="Switch sync on and turn the other synced tabs to this tab's view">Make other tabs match this one</button>
+    <button type="button" id="cameraSyncMenuCancel" class="restore-popover-btn restore-popover-cancel" role="menuitem">Cancel</button>
+  `;
+  document.body.appendChild(el);
+  const on = (id, run) => el.querySelector(`#${id}`).addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    el.hidden = true;
+    run();
+  });
+  on('cameraSyncModeRotation', () => { setCameraSyncMode('rotation'); setCameraSync(true); });
+  on('cameraSyncModeView', () => { setCameraSyncMode('view'); setCameraSync(true); });
+  on('cameraSyncLead', () => setCameraSync(true, { lead: true }));
+  on('cameraSyncMenuCancel', () => {});
+  wirePopoverDismiss(el);
+  syncMenu = el;
+  return el;
+}
+
+function showSyncMenu(btn) {
+  const el = buildSyncMenu();
+  el.querySelector('#cameraSyncModeRotation').setAttribute('aria-checked', String(getCameraSyncMode() === 'rotation'));
+  el.querySelector('#cameraSyncModeView').setAttribute('aria-checked', String(getCameraSyncMode() === 'view'));
+  openPopoverUnder(el, btn);
+  /** @type {HTMLElement|null} */ (el.querySelector('[aria-checked="true"]'))?.focus({ preventScroll: true });
+}
+
+function makeCameraSyncButton() {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'cameraSyncBtn';
+  btn.className = 'camera_sync_btn';
+  const label = document.createElement('span');
+  label.id = 'cameraSyncLabel';
+  label.textContent = 'Sync camera across tabs';
+  const state = document.createElement('span');
+  state.id = 'cameraSyncState';
+  state.className = 'camera_sync_state';
+  btn.append(label, state);
+  // Named by the label alone (also in the feature search); the state is its description.
+  btn.setAttribute('aria-labelledby', label.id);
+  btn.setAttribute('aria-describedby', state.id);
+
+  if (!cameraSyncSupported()) {
+    btn.disabled = true;
+    state.textContent = 'Not available';
+    btn.title = 'This browser cannot pass messages between tabs (no BroadcastChannel)';
+    return btn;
+  }
+  const refresh = () => {
+    const on = isCameraSyncOn();
+    btn.setAttribute('aria-pressed', String(on));
+    state.textContent = on ? SYNC_MODE_LABELS[getCameraSyncMode()] : 'Off';
+  };
+  btn.title = 'Turn and zoom the CrysViz tabs and windows of this browser together. '
+    + 'Only tabs with sync on take part, and nothing leaves the browser. Long press for options.';
+  btn.addEventListener('click', () => setCameraSync(!isCameraSyncOn()));
+  wireButtonLongPress(btn, () => showSyncMenu(btn));
+  onCameraSyncChange(refresh);
+  refresh();
+  return btn;
 }
 
 export function addCameraPanel(target = "cameraContainer") {
@@ -188,6 +275,9 @@ export function addCameraPanel(target = "cameraContainer") {
 
   // Rotate & pan speed slider (mouse/touch sensitivity multiplier).
   content.appendChild(makeCameraSpeedSliderRow());
+
+  // Follow the camera of other CrysViz tabs (ui/CameraSync.js).
+  content.appendChild(makeCameraSyncButton());
 
   // Build hierarchy
   group.appendChild(content);

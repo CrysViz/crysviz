@@ -231,6 +231,7 @@ export const CONTROL_INDEX = [
   {"panel":"visual","label":"Push & Release Random","section":"Camera","kind":"toggle","id":"pushRandom"},
   {"panel":"visual","label":"Rotate and pan speed","section":"Camera","kind":"slider","id":"cameraSpeedFactor"},
   {"panel":"visual","label":"Reset rotate and pan speed to default","section":"Camera","kind":"button"},
+  {"panel":"visual","label":"Sync camera across tabs","section":"Camera","kind":"button","id":"cameraSyncBtn"},
   {"panel":"latticeAnalysis","label":"Points","kind":"select","id":"laSource"},
   {"panel":"latticeAnalysis","label":"Sort by","kind":"select","id":"laSortBy"},
   {"panel":"latticeAnalysis","label":"Show plots","kind":"button","id":"laShowPlotsBtn"},

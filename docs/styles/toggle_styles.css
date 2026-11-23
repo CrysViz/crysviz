@@ -380,6 +380,45 @@ body.cv-busy * {
   background: var(--wash-3, var(--wash-2));
 }
 
+/* "Sync camera across tabs" (ui/CameraPanel.js): a full-width toggle button,
+   the name on the left and the state (Off / the mode) on the right; lit while
+   sync is on. Long press opens .camera-sync-menu. */
+.camera_sync_btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-3-5);
+  width: 100%;
+  margin-top: var(--sp-3-5);
+  padding: 5px 8px;
+  font-size: var(--fs-base);
+  color: var(--panel-fg, var(--fg-1));
+  background: var(--wash-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-4);
+  cursor: pointer;
+  touch-action: manipulation;
+  user-select: none;
+}
+.camera_sync_btn:hover:not(:disabled) {
+  background: var(--wash-3, var(--wash-2));
+}
+.camera_sync_btn[aria-pressed="true"] {
+  background: var(--highlight-color);
+}
+.camera_sync_btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.camera_sync_state {
+  font-size: var(--fs-sm);
+  opacity: 0.85;
+}
+/* The mode picked in the long-press menu (role=menuitemradio). */
+.camera-sync-menu .restore-popover-btn[aria-checked="true"] {
+  background: var(--highlight-color);
+}
+
 .camera_label,
 .camera_label_r,
 .camera_label-pnr {

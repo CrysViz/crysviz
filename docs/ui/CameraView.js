@@ -1,5 +1,6 @@
-// A relative camera `view`, as a widget host page links the cameras of
-// embedded widgets with it (ui/WidgetControl.js).
+// A relative camera `view`, shared by the two ways CrysViz links cameras: a
+// widget host page linking embedded widgets (ui/WidgetControl.js) and tabs of
+// the same browser following each other (ui/CameraSync.js).
 //
 // A `view` is relative, so it carries over between two different structures:
 //   direction [x,y,z]  unit vector from the rotation centre (the structure's centre) to the camera
@@ -46,8 +47,12 @@ function vector3(value) {
   return new THREE.Vector3(value[0], value[1], value[2]);
 }
 
-/** Turn and zoom the camera to `view`, around this window's own rotation centre; keeps the pan. */
-export function applyView(view) {
+/**
+ * Turn and zoom the camera to `view`, around this window's own rotation centre; keeps the pan.
+ * `absolute` ({ target: [x,y,z], pan: {x, y} }, both optional) also moves the rotation centre
+ * and sets the pan, for a view copied whole between two windows showing the same structure.
+ */
+export function applyView(view, absolute = null) {
   const camera = app.camera;
   const controls = app.controls;
   if (!camera || !controls || !view || typeof view !== 'object') return;
@@ -60,9 +65,17 @@ export function applyView(view) {
   up.normalize();
 
   // Take the pan off, re-aim, then put the pan back in the new camera axes (as applyCameraSnapshot does).
-  const panX = app.cameraPan.x;
-  const panY = app.cameraPan.y;
-  shiftCamera(-panX, -panY);
+  shiftCamera(-app.cameraPan.x, -app.cameraPan.y);
+  const target = vector3(absolute?.target);
+  if (target) {
+    camera.position.add(target.clone().sub(controls.target));
+    controls.target.copy(target);
+  }
+  const pan = absolute?.pan;
+  if (pan && Number.isFinite(pan.x) && Number.isFinite(pan.y)) {
+    app.cameraPan.x = pan.x;
+    app.cameraPan.y = pan.y;
+  }
   let distance = camera.position.distanceTo(controls.target);
   if (Number.isFinite(view.distance) && view.distance > 0) {
     distance = view.distance * getCellCenterAndDist().dist;
@@ -76,6 +89,6 @@ export function applyView(view) {
   // Drop any rotation/zoom momentum, so the view sticks.
   stopCameraMomentum();
   controls.update();  // lookAt the target
-  shiftCamera(panX, panY);
+  shiftCamera(app.cameraPan.x, app.cameraPan.y);
   requestRender();
 }
