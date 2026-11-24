@@ -20,8 +20,15 @@
 //
 // Protocol (channel 'crysviz-camera-sync')
 //   { v:1, type:'hello', from }                      a tab switched sync on: synced tabs answer with a pose
-//   { v:1, type:'pose', from, view, target, pan }    a tab's camera: a CameraView `view`, plus its
-//                                                    rotation centre [x,y,z] and pan {x,y} for 'view' mode
+//   { v:1, type:'pose', from, view, target, pan, projection }
+//                                                    a tab's camera: a CameraView `view`, plus its
+//                                                    rotation centre [x,y,z] and pan {x,y} for 'view'
+//                                                    mode, and 'parallel' or 'perspective'
+//
+// A parallel camera zooms with its zoom factor, a perspective one by moving in.
+// Both are measured against the view fitted to the structure, so a pose from
+// the other kind of camera is converted: zoom 2 there is half the fitted
+// distance here, and the other way round.
 //
 // Smoothness: one animation-frame loop runs while sync is on. Each frame it
 // compares the camera with the pose it last sent or applied. A difference is
@@ -120,6 +127,10 @@ onPanelsReset(() => {
   setCameraSyncMode(DEFAULT_MODE);
 });
 
+function projectionOf(camera) {
+  return camera.isOrthographicCamera ? 'parallel' : 'perspective';
+}
+
 function post(message) {
   try {
     channel?.postMessage({ v: VERSION, from: tabId, ...message });
@@ -149,6 +160,7 @@ function currentPose() {
       view: cameraView(),
       target: app.controls.target.toArray(),
       pan: { x: app.cameraPan.x, y: app.cameraPan.y },
+      projection: projectionOf(app.camera),
     };
   } catch {
     return null;  // nothing loaded yet: no structure to measure the view against
@@ -198,6 +210,28 @@ function readPose(data) {
   };
 }
 
+const clampRange = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
+
+/**
+ * `pose` from a camera of the kind `projection`, with its zoom in this camera's terms.
+ * How much bigger than fitted the structure looks: a parallel camera's zoom, a
+ * perspective camera's zoom over its distance (both 1 when fitted).
+ */
+function inOwnProjection(pose, projection) {
+  const own = projectionOf(app.camera);
+  if ((projection !== 'parallel' && projection !== 'perspective') || projection === own) return pose;
+  const view = pose.view;
+  const magnification = projection === 'parallel' ? view.zoom : view.zoom / view.distance;
+  if (own === 'parallel') {
+    // A parallel view does not depend on the distance: this camera stays where it is.
+    const here = currentPose();
+    if (!here) return null;
+    return { ...pose, view: { ...view, zoom: clampRange(magnification, 1e-4, 1e4), distance: here.view.distance } };
+  }
+  const zoom = app.camera.zoom;
+  return { ...pose, view: { ...view, zoom, distance: clampRange(zoom / magnification, 1e-4, 1e4) } };
+}
+
 function onMessage(event) {
   const data = event.data;
   if (!data || typeof data !== 'object' || data.v !== VERSION) return;
@@ -205,7 +239,8 @@ function onMessage(event) {
   if (data.type === 'hello') {
     sendPose();
   } else if (data.type === 'pose') {
-    const pose = readPose(data);
+    const read = readPose(data);
+    const pose = read && inOwnProjection(read, data.projection);
     if (pose) goal = pose;
   }
 }

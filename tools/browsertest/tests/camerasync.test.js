@@ -10,6 +10,7 @@
 //   - a long press opens the menu (mode, "Make other tabs match this one", Cancel)
 //     and does not also toggle sync; "Make other tabs match" turns the others
 //   - switching a tab off stops it following
+//   - a perspective tab and a parallel tab zoom together (zoom factor <-> distance)
 'use strict';
 const H = require('../harness');
 
@@ -260,6 +261,45 @@ async function settle(...pages) {
   await settle(a, b);
   const cbOff = await b.evaluate(CAMERA);
   H.check('switched off, tab B no longer follows', cbOff.pressed === 'false' && sameView(cb, cbOff), JSON.stringify(cbOff));
+
+  // ---- perspective and parallel tabs zoom together ----------------------------------
+  /** The relative view (ui/CameraView.js) and the camera kind. */
+  const REL = async () => {
+    const { cameraView } = await import('./ui/CameraView.js');
+    const { app } = await import('./state/store.js');
+    const v = cameraView();
+    return { ...v, parallel: !!app.camera.isOrthographicCamera };
+  };
+  const PROJECTION = async (parallel) => {
+    const el = document.getElementById('orthographicCamera');
+    el.checked = parallel;
+    el.dispatchEvent(new Event('change'));
+  };
+  /** Move a perspective camera in to `f` of its distance (as its wheel zoom does). */
+  const DOLLY = async (f) => {
+    const { app } = await import('./state/store.js');
+    const t = app.controls.target;
+    app.camera.position.sub(t).multiplyScalar(f).add(t);
+    app.controls.update();
+  };
+  await H.clickById(b, 'cameraSyncBtn');  // B on again ('view' mode from the menu test)
+  await settle(b, a);
+  await a.evaluate(PROJECTION, false);
+  await a.evaluate(DOLLY, 0.5);
+  await settle(a, b);
+  let ra = await a.evaluate(REL);
+  let rb = await b.evaluate(REL);
+  H.check('a perspective tab moving in zooms a parallel tab (zoom = 1 / distance)',
+    !ra.parallel && rb.parallel && Math.abs(rb.zoom * ra.distance / ra.zoom - 1) < 0.02 && close(ra.direction, rb.direction),
+    JSON.stringify({ ra, rb }));
+  await b.evaluate(ZOOM, 1.5);
+  await settle(b, a);
+  ra = await a.evaluate(REL);
+  rb = await b.evaluate(REL);
+  H.check('a parallel tab zooming moves a perspective tab (distance = 1 / zoom)',
+    Math.abs(rb.zoom * ra.distance / ra.zoom - 1) < 0.02 && rb.zoom > 1.5, JSON.stringify({ ra, rb }));
+  await a.evaluate(PROJECTION, true);
+  await settle(a, b);
 
   H.check('no page errors', errors.length === 0, errors.join('\n'));
   await H.finish(browser);
