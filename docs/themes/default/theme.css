@@ -372,7 +372,9 @@
   --ui-padding: 20px;                /* panel padding */
   --ui-total-width: calc(var(--ui-width) + 2 * var(--ui-border) + 2 * var(--ui-padding));
   --gizmo-size: 90px;
-  --gizmo-bottom: 20px;
+  /* Gizmo centre on the collapsed Structure bar's centre line: the bar sits
+     20px up and is 58px tall (40px formula box + 2 x 8px padding + 2px border). */
+  --gizmo-bottom: calc(20px + 58px / 2 - var(--gizmo-size) / 2);
   --gizmo-left: calc(var(--ui-total-width) + 10px);   /* beside the panel */
   --camera-tools-left: calc(var(--ui-total-width) + 10px);
   --popup-left: calc(var(--ui-total-width) + 10px);
