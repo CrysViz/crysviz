@@ -23,6 +23,7 @@ import { addBondPanel, removeBondPanel } from '../BondPanel.js';
 import { createToggleRow } from '../ToggleSwitch.js';
 import { addLatticeAndSupercellPanel, removeLatticeAndSupercellPanel } from '../LatticeSupercellPanel.js';
 import { addPolyhedraPanel, removePolyhedraPanel } from '../PolyhedraPanel.js';
+import { createPolyhedraSearchRow } from '../PolyhedraSearchControl.js';
 import { addMoyoPanel } from '../BackendPanel/MoyoWASM.js';
 import { addEOSPanel, removeEOSPanel } from '../EOSPanel.js';
 import { addEOSPlotsPanel, removeEOSPlotsPanel } from '../EOSPlotsPanel.js';
@@ -210,8 +211,19 @@ function buildFeaturesBody(body) {
     updateForceSpinWarning();
   }));
 
+  // Show Polyhedra and, on the same line, right-aligned, the Fast | Auto |
+  // Advanced polyhedra search (what runs now is in its tooltip). A wrapper,
+  // not the <label> itself, holds the control, so a click on the control
+  // never toggles the checkbox; on a very narrow window the control wraps
+  // under the label (toggle_styles.css .cv-poly-toggle-line). The Bond
+  // breaking tolerance lives in the Polyhedra window (PolyhedraPanel.js).
   const showPolyhedra = detachStaticRow('showPolyhedra');
-  if (showPolyhedra) group.appendChild(showPolyhedra);
+  const polyLine = document.createElement('div');
+  polyLine.className = 'cv-poly-toggle-line';
+  polyLine.id = 'showPolyhedraLine';
+  if (showPolyhedra) polyLine.appendChild(showPolyhedra);
+  polyLine.appendChild(createPolyhedraSearchRow());
+  group.appendChild(polyLine);
 
   const completePolyhedra = detachStaticRow('completePolyhedraToggle');
   if (completePolyhedra) group.appendChild(completePolyhedra);
@@ -1064,6 +1076,10 @@ export function registerDefaultPanels() {
       fsRow.appendChild(fsText);
       fsRow.appendChild(fsSlider);
       body.appendChild(fsRow);
+      // Its own headline: the search files a control under the headline above
+      // it (ui/search/controlHarvest.js), and under "Text" Reset UI and Clear
+      // local data read as text settings.
+      body.appendChild(makeSectionHeadline('Reset'));
       // Restore every window to its default placement.
       const resetRow = document.createElement('div');
       resetRow.className = 'cv-pref-btn-row';

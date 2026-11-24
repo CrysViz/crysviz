@@ -14,6 +14,11 @@ export class Polyhedron extends ColoredObject {
    * @param {string|null} [opts.centerElement] element symbol of the center atom ('centered' only)
    * @param {string|null} [opts.colorElem]    element symbol used to color the polyhedron
    * @param {number[]} [opts.vertexSrcList]   source atom index per vertex
+   * @param {number[][]} [opts.reserveVertices] corners not in use now but kept
+   *   for return during playback (bond breaking tolerance,
+   *   render/PolyhedraFrameModule.js): their bond to the centre is broken;
+   *   one that comes back within the cutoff becomes a vertex again
+   * @param {number[]} [opts.reserveSrcList]    source atom index per reserved corner
    */
   constructor({
     name = "",
@@ -23,6 +28,8 @@ export class Polyhedron extends ColoredObject {
     centerElement = null,
     colorElem = null,
     vertexSrcList = [],
+    reserveVertices = [],
+    reserveSrcList = [],
   } = {}) {
     super();
     this.name = name;
@@ -32,6 +39,8 @@ export class Polyhedron extends ColoredObject {
     this.centerElement = centerElement;
     this.colorElem = colorElem;
     this.vertexSrcList = vertexSrcList;
+    this.reserveVertices = reserveVertices;
+    this.reserveSrcList = reserveSrcList;
   }
 
   get numVertices() {

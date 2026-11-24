@@ -363,34 +363,37 @@ function asymmetricUnitParts() {
   return { faces, edges, rings };
 }
 
-/** Visible polyhedron meshes with their world-space face triangles, plus the
- *  fat-line edge segments cached on the edge child by PolyhedraModule. */
+/** Shown polyhedra with their world-space face triangles and edge segments,
+ *  read from the polyhedra table's ranges (render/PolyhedraMesh.js: one face
+ *  geometry and one `segments` array for all of them). */
 function polyhedronParts() {
   /** @type {any[]} */
   const faces = [];
   /** @type {any[]} */
   const edges = [];
   const group = groups.polyhedraGroup;
-  if (!group || !group.visible) return { faces, edges };
+  const table = group?.userData?.polyTable;
+  if (!group || !group.visible || !table) return { faces, edges };
   const edgeWidth = general.polyEdgeWidth ?? 1;
-  let polyIndex = -1;
-  for (const mesh of group.children ?? []) {
-    if (mesh.userData?.type !== 'polyhedron' || !mesh.visible) continue;
-    polyIndex++;
-    const alpha = mesh.material?.opacity ?? 1;
-    const position = mesh.geometry?.attributes?.position;
-    if (position && alpha > 0.01) {
-      mesh.updateWorldMatrix(true, false);
-      _mWorld.copy(mesh.matrixWorld);
-      const index = mesh.geometry.index;
-      const triCount = (index ? index.count : position.count) / 3;
-      const hex = hexFromColor(mesh.material.color);
+  // LineMaterial.linewidth is worldUnits and means the line DIAMETER.
+  const radius = 0.03 * edgeWidth / 2;
+  group.updateWorldMatrix(true, false);
+  _mWorld.copy(group.matrixWorld);
+  const pos = table.positions;
+  const seg = table.segments;
+  for (let polyIndex = 0; polyIndex < table.n; polyIndex++) {
+    if (!table.visible[polyIndex] || !table.faceCount[polyIndex]) continue;
+    const alpha = table.opacity[polyIndex];
+    if (alpha > 0.01) {
+      _color.setRGB(table.color[3 * polyIndex], table.color[3 * polyIndex + 1], table.color[3 * polyIndex + 2]);
+      const hex = hexFromColor(_color);
       const tris = [];
-      for (let t = 0; t < triCount; t++) {
+      const t0 = table.faceStart[polyIndex];
+      for (let t = t0; t < t0 + table.faceCount[polyIndex]; t++) {
         const verts = [];
         for (let k = 0; k < 3; k++) {
-          const vi = index ? index.getX(t * 3 + k) : t * 3 + k;
-          _v.fromBufferAttribute(position, vi).applyMatrix4(_mWorld);
+          const o = t * 9 + k * 3;
+          _v.set(pos[o], pos[o + 1], pos[o + 2]).applyMatrix4(_mWorld);
           verts.push([_v.x, _v.y, _v.z]);
         }
         tris.push(verts);
@@ -398,18 +401,16 @@ function polyhedronParts() {
       faces.push({ polyIndex, hex, alpha, tris });
     }
     if (!(edgeWidth > 0)) continue;
-    const edgeLines = mesh.children?.find((c) => c.userData?.type === 'polyhedron-edges');
-    const segments = edgeLines?.userData?.segments;
-    if (!edgeLines?.visible || !segments) continue;
-    const edgeAlpha = edgeLines.material?.opacity ?? 1;
-    if (edgeAlpha <= 0.01) continue;
-    // LineMaterial.linewidth is worldUnits here and means the line DIAMETER.
-    const radius = (edgeLines.material?.linewidth ?? 0.03) / 2;
-    const hex = hexFromColor(edgeLines.material.color);
-    for (let s = 0; s + 5 < segments.length; s += 6) {
+    const edgeAlpha = table.edgeOpacity[polyIndex];
+    if (edgeAlpha <= 0.01 || !table.edgeCount[polyIndex]) continue;
+    _color.setRGB(table.edgeColor[3 * polyIndex], table.edgeColor[3 * polyIndex + 1], table.edgeColor[3 * polyIndex + 2]);
+    const hex = hexFromColor(_color);
+    const s0 = table.edgeStart[polyIndex];
+    for (let e = s0; e < s0 + table.edgeCount[polyIndex]; e++) {
+      const s = e * 6;
       edges.push({
-        x1: segments[s], y1: segments[s + 1], z1: segments[s + 2],
-        x2: segments[s + 3], y2: segments[s + 4], z2: segments[s + 5],
+        x1: seg[s], y1: seg[s + 1], z1: seg[s + 2],
+        x2: seg[s + 3], y2: seg[s + 4], z2: seg[s + 5],
         radius, hex, alpha: edgeAlpha, polyIndex,
       });
     }
@@ -960,17 +961,13 @@ export function estimateVectorPrimitiveCount() {
     total += (groups.latticeGroup.children ?? []).length;
   }
   const polyGroup = groups.polyhedraGroup;
-  if (polyGroup?.visible) {
+  const polyTable = polyGroup?.userData?.polyTable;
+  if (polyGroup?.visible && polyTable) {
     const edgeWidth = general.polyEdgeWidth ?? 1;
-    for (const mesh of polyGroup.children ?? []) {
-      if (mesh.userData?.type !== 'polyhedron' || !mesh.visible) continue;
-      const position = mesh.geometry?.attributes?.position;
-      const index = mesh.geometry?.index;
-      if (position) total += Math.floor((index ? index.count : position.count) / 3);
-      if (!(edgeWidth > 0)) continue;
-      const edgeLines = mesh.children?.find((c) => c.userData?.type === 'polyhedron-edges');
-      const segments = edgeLines?.visible ? edgeLines.userData?.segments : null;
-      if (segments) total += Math.floor(segments.length / 6);
+    for (let i = 0; i < polyTable.n; i++) {
+      if (!polyTable.visible[i]) continue;
+      total += polyTable.faceCount[i];
+      if (edgeWidth > 0) total += polyTable.edgeCount[i];
     }
   }
   const asu = asymmetricUnitParts();

@@ -260,6 +260,8 @@ async function loadOutcar(page) {
     if (!s.bonds?.length) return false;
     const row = createIndividualBondRow(s.bonds[0], 0);
     document.body.appendChild(row);
+    // the row builds its editor on the first click on Edit
+    /** @type {HTMLElement} */ (row.querySelector('button[data-editor-button="color"]')).click();
     const sizeRow = [...row.querySelectorAll('.bond-color-editor .si-row')]
       .find((r) => r.querySelector('.si-row-label')?.textContent === 'Size');
     const slider = sizeRow?.querySelector('input[type="range"]');
@@ -267,6 +269,7 @@ async function loadOutcar(page) {
       slider.value = '1.8';
       slider.dispatchEvent(new Event('input'));
     }
+    /** @type {HTMLElement} */ (row.querySelector('button[data-editor-button="color"]')).click(); // close
     row.remove();
     return !!slider;
   });

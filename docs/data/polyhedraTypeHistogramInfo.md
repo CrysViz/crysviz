@@ -5,5 +5,6 @@ tab (e.g. "SiO4", "AlO6", or "O6 cage · CN 8"). Click a bar to highlight every 
 vertices) belonging to a polyhedron of that type in the 3D view — click it again to clear the
 highlight.
 
-Also available in the split view beside the 3D scene (see the "Split View" button next to this
-one in the Polyhedra panel).
+Opened with **Open** next to *Type* under **Histograms** in the Polyhedra window. It opens in the
+wide dock on the right of the 3D scene; like any window, it can be dragged out to float, or into
+the left bar.

@@ -25,4 +25,6 @@ Polyhedron Inspectors, including the values they derive (mean bond length; polyh
 distortion index and angle variance). **Show CIF Errors** switches that off (plain values) and on
 again; nothing is lost either way. It does nothing for structures loaded without errors. The
 Files window's Parameters write the lattice vectors, cell parameters, volume and fractional positions with their
-errors too; the Bonds tab, the histograms and the atom tooltip show plain values.
+errors too, and the Bond Length Histogram gives each bond length's error in its hover list and its
+**Show distances** labels, `1.6047(17) Å`. The Bonds tab and the other histograms (Force,
+Polyhedra Volume, …) show plain values.

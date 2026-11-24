@@ -112,6 +112,11 @@ async function redraw(plotId) {
   }
 }
 
+// A fit statistic; null when SciPy's was not finite (eosFit.js).
+function formatStat(value, unit) {
+  return Number.isFinite(value) ? `${value.toFixed(6)} ${unit}` : 'N/A';
+}
+
 function updateResultsUI(container) {
   const { pvResult, evResult } = state;
   if (!pvResult) return;
@@ -120,8 +125,8 @@ function updateResultsUI(container) {
   q('#eos-pv-V0').textContent = `${formatParam(pvResult.params[0], pvResult.errors?.[0])} Å³`;
   q('#eos-pv-K0').textContent = `${formatParam(pvResult.params[1], pvResult.errors?.[1])} GPa`;
   q('#eos-pv-K0Prime').textContent = formatParam(pvResult.params[2], pvResult.errors?.[2]);
-  q('#eos-pv-rms').textContent = `${pvResult.fitStats.rms.toFixed(6)} GPa`;
-  q('#eos-pv-maxres').textContent = `${pvResult.fitStats.maxRes.toFixed(6)} GPa`;
+  q('#eos-pv-rms').textContent = formatStat(pvResult.fitStats.rms, 'GPa');
+  q('#eos-pv-maxres').textContent = formatStat(pvResult.fitStats.maxRes, 'GPa');
   q('#eos-pv-points').textContent = String(pvResult.fitStats.nPoints);
 
   container.querySelector('.eos-ev-results').hidden = !evResult;
@@ -130,18 +135,46 @@ function updateResultsUI(container) {
     q('#eos-ev-V0').textContent = `${formatParam(evResult.params[1], evResult.errors?.[1])} Å³`;
     q('#eos-ev-K0').textContent = `${formatParam(evResult.params[2], evResult.errors?.[2])} GPa`;
     q('#eos-ev-K0Prime').textContent = formatParam(evResult.params[3], evResult.errors?.[3]);
-    q('#eos-ev-rms').textContent = `${evResult.fitStats.rms.toFixed(6)} eV`;
-    q('#eos-ev-maxres').textContent = `${evResult.fitStats.maxRes.toFixed(6)} eV`;
+    q('#eos-ev-rms').textContent = formatStat(evResult.fitStats.rms, 'eV');
+    q('#eos-ev-maxres').textContent = formatStat(evResult.fitStats.maxRes, 'eV');
     q('#eos-ev-points').textContent = String(evResult.fitStats.nPoints);
   }
 
   container.querySelector('.eos-results').hidden = false;
 }
 
+/** Drop the shown fit: its tables and curves belong to the data it was
+ *  made from, not to a dataset being fitted now or one that failed. */
+async function clearShownFit(container) {
+  state.pvResult = null;
+  state.evResult = null;
+  container.querySelector('.eos-results').hidden = true;
+  await Promise.all([clearPlot('ev-plot'), clearPlot('pv-plot')]);
+}
+
+/** The status line for a fit that ran but did not converge (eosFit.js). */
+function unconvergedStatus(fits) {
+  const sentence = (names, what) => `The ${names.join(' and ')} fit${names.length > 1 ? 's' : ''} did not converge: ${what}`;
+  const named = (reason) => fits.filter(([, r]) => r?.failed === reason).map(([name]) => name);
+  const parts = [];
+  const guesses = named('not-converged');
+  const noErrors = named('no-errors');
+  if (noErrors.length) {
+    parts.push(sentence(noErrors, `${noErrors.length > 1 ? 'their' : 'its'} errors are infinite (too few or degenerate points), so the values shown have none.`));
+  }
+  if (guesses.length) {
+    parts.push(sentence(guesses, `the values shown are ${guesses.length > 1 ? 'their' : 'its'} starting guesses.`));
+  }
+  return parts.join(' ');
+}
+
 async function fitAndDisplay(container) {
   // A dataset is loaded (or re-fit) — open the plots window BEFORE drawing so
   // the plot elements exist and the user sees the result appear.
   ensurePlotsWindowOpen();
+  // The previous file's results must not stay up while this one is fitted,
+  // nor after its fit fails, as if they were this file's.
+  await clearShownFit(container);
   try {
     const si = toSI(state.originalColumnData, state.units);
     const hasEnergy = Array.isArray(si.energies);
@@ -157,9 +190,10 @@ async function fitAndDisplay(container) {
     // its starting guesses, and says so (both used to read "Fit complete.").
     if ([pvResult, evResult].some((r) => r?.failed === 'error')) {
       setStatus(container, 'Error: the fit failed (details in the browser console). Check the detected columns and units.');
+      closePanel('eosPlots');
       return;
     }
-    const unconverged = [['P–V', pvResult], ['E–V', evResult]].filter(([, r]) => r?.failed).map(([name]) => name);
+    const unconverged = unconvergedStatus([['P–V', pvResult], ['E–V', evResult]]);
     state.pvResult = pvResult;
     state.evResult = evResult;
 
@@ -167,13 +201,13 @@ async function fitAndDisplay(container) {
     setPlotVisible('ev-plot', !!evResult);
     if (evResult) await redraw('ev-plot');
     await redraw('pv-plot');
-    setStatus(container, unconverged.length
-      ? `The ${unconverged.join(' and ')} fit did not converge: the values shown are its starting guesses.`
-      : 'Fit complete.');
+    setStatus(container, unconverged || 'Fit complete.');
     return { pvResult, evResult };
   } catch (error) {
     setStatus(container, `Error: ${error.message}`);
     console.error(error);
+    await clearShownFit(container);
+    closePanel('eosPlots');
   }
   return null;
 }

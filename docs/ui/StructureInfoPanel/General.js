@@ -7,7 +7,7 @@ import {fileBrowser, general, structureShip} from '../../state/store.js';
 import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow, clearCompositionRowRegistry} from './Species.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
-import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
+import { createPolyhedraListControls, capturePolyGroupExpansion, restorePolyGroupExpansion } from '../PolyhedraListPanel.js'
 import { captureAnySelection, reapplySelection } from '../SelectAndHighlightModule.js'
 import { getPanel, isCompactViewport } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
@@ -22,7 +22,7 @@ import { renderSelectionActionBarInto } from './SelectionActionBar.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
-                          'polyhedraUserStyles', 'polyhedraCategoryStyles',
+                          'polyhedraUserStyles', 'polyhedraCategoryStyles', 'polyhedraElementStyles',
                           'spinCategoryStyles', 'forceCategoryStyles'];
 
 /** Reset every COLOR customization; alpha/size/visibility overrides survive. */
@@ -337,6 +337,7 @@ function captureCompositionUiState() {
     expandedElements, elementEditorsOpen, atomEditorsOpen,
     expandedBondPairs, bondEditorsOpen,
     expandedPolyCategories, polyEditorsOpen, polyCatEditorsOpen,
+    polyGroupsOpen: capturePolyGroupExpansion(compDiv),
     spinForceEditorsOpen,
   };
 }
@@ -371,10 +372,17 @@ function restoreCompositionUiState(state) {
     if (expandIcon) expandIcon.classList.add('is-expanded');
   }
 
+  // A row builds its editors on first open (IndividualBondRow.js and the
+  // atom/polyhedron rows): _ensureEditors fills the shell before it is shown.
   for (const bondRowKey of state.bondEditorsOpen || []) {
-    const editor = compDiv.querySelector(`.individual-bond-row[data-bond-key="${bondRowKey}"] .bond-color-editor`);
+    const row = compDiv.querySelector(`.individual-bond-row[data-bond-key="${bondRowKey}"]`);
+    /** @type {any} */ (row)?._ensureEditors?.();
+    const editor = row?.querySelector('.bond-color-editor');
     if (editor) editor.hidden = false;
   }
+
+  // The Poly tab's element groups (Ca, Ti, Cages) before their categories.
+  restorePolyGroupExpansion(compDiv, state.polyGroupsOpen);
 
   for (const catKey of state.expandedPolyCategories || []) {
     const control = compDiv.querySelector(`.poly-control[data-cat-key="${catKey}"]`);
@@ -392,7 +400,9 @@ function restoreCompositionUiState(state) {
   }
 
   for (const polyKey of state.polyEditorsOpen || []) {
-    const editor = compDiv.querySelector(`.individual-polyhedron-row[data-poly-key="${polyKey}"] .poly-color-editor`);
+    const row = compDiv.querySelector(`.individual-polyhedron-row[data-poly-key="${polyKey}"]`);
+    /** @type {any} */ (row)?._ensureEditors?.();
+    const editor = row?.querySelector('.poly-color-editor');
     if (editor) editor.hidden = false;
   }
 
@@ -424,6 +434,7 @@ function restoreCompositionUiState(state) {
       : null)
       ?? compDiv.querySelector(`.individual-atom-row[data-atom-index="${entry.atomIndex}"]`);
     if (!row) continue;
+    /** @type {any} */ (row)._ensureEditors?.();
 
     const editors = {
       color: row.querySelector('.atom-color-editor'),
@@ -650,7 +661,7 @@ const resetAllColorsBtn = document.createElement('button');
 resetAllColorsBtn.id="resetAllColorsBtn"
 resetAllColorsBtn.textContent = 'Reset Colors';
 resetAllColorsBtn.className = 'reset-btn si-action-btn';
-resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
+resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults. Category colors (bond pairs, polyhedron types, arrow categories) reset on the whole trajectory, individual colors on this frame.\nPress and hold: also resets the individual colors on every frame.';
 wirePressHoldPopup(resetAllColorsBtn, {
   holdLabel: 'Reset Trajectory',
   onPress: () => resetColors(fileBrowser.selectedStructure),
@@ -673,7 +684,7 @@ const resetAtomsBtn = document.createElement('button');
 resetAtomsBtn.id = "resetAtomsBtn"
 resetAtomsBtn.textContent = 'Reset Styling';
 resetAtomsBtn.className = 'reset-btn si-action-btn';
-resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity) and unhide every individually-hidden force/spin arrow. Bond lengths/visibility keep their own reset in the Bonds tab.\nClick: this frame. Press and hold: whole trajectory.';
+resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity) and unhide every individually-hidden force/spin arrow. Bond lengths/visibility keep their own reset in the Bonds tab. Category styles and element materials reset on the whole trajectory, individual styling on this frame.\nPress and hold: also resets the individual styling on every frame.';
 wirePressHoldPopup(resetAtomsBtn, {
   holdLabel: 'Reset Trajectory',
   onPress: () => {

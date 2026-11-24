@@ -77,28 +77,28 @@ const H = require('../harness');
   // --- Category style: applied in place, persists across an async rebuild --------
   const catStyled = await page.evaluate(async () => {
     const { fileBrowser, groups, general } = await import('./state/store.js');
-    const { updatePolyhedraColors } = await import('./render/index.js');
+    const { updatePolyhedraColors, polyhedraInfo } = await import('./render/index.js');
     const { updateVisualization } = await import('./core/crystal-viewer.js');
     const s = fileBrowser.selectedStructure;
-    const meshes = groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
-    const catKey = meshes[0].userData.catKey;
+    // all polyhedra are one mesh: per-polyhedron style from its table rows
+    const catKey = polyhedraInfo()[0].catKey;
     s.polyhedraCategoryStyles[catKey] = { color: '#ff0000', alpha: 0.3 };
     updatePolyhedraColors();
-    const inCat = (m) => m.userData.catKey === catKey;
+    const inCat = (m) => m.catKey === catKey;
     const snapshot = (list) => ({
-      members: list.filter(inCat).map((m) => [m.material.color.getHexString(), m.material.opacity]),
+      members: list.filter(inCat).map((m) => [m.color.slice(1), m.opacity]),
       other: list.find((m) => !inCat(m))
-        ? [list.find((m) => !inCat(m)).material.color.getHexString(), list.find((m) => !inCat(m)).material.opacity]
+        ? [list.find((m) => !inCat(m)).color.slice(1), list.find((m) => !inCat(m)).opacity]
         : null,
     });
-    const before = snapshot(meshes);
+    const before = snapshot(polyhedraInfo());
     const counterBefore = general.polyhedraBuildCounter;
     updateVisualization({ reRenderOther: false, reRenderComposition: false }); // triggers async updatePolyhedra
     // Wait for the rebuild swap in-page (counter bumps after the atomic swap).
     for (let i = 0; i < 100 && general.polyhedraBuildCounter === counterBefore; i++) {
       await new Promise((r) => setTimeout(r, 200));
     }
-    const after = snapshot(groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron'));
+    const after = snapshot(polyhedraInfo());
     return { catKey, before, after, rebuilt: general.polyhedraBuildCounter > counterBefore };
   });
   H.check('category color+alpha applies in place to all members (others untouched)',
@@ -114,18 +114,17 @@ const H = require('../harness');
 
   // --- Individual override wins over the category ---------------------------------
   const indStyled = await page.evaluate(async () => {
-    const { fileBrowser, groups } = await import('./state/store.js');
-    const { updatePolyhedraColors } = await import('./render/index.js');
+    const { fileBrowser } = await import('./state/store.js');
+    const { updatePolyhedraColors, polyhedronInfo, polyhedraInfo } = await import('./render/index.js');
     const s = fileBrowser.selectedStructure;
-    const meshes = groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
     const catKey = Object.keys(s.polyhedraCategoryStyles)[0];
-    const members = meshes.filter((m) => m.userData.catKey === catKey);
+    const members = polyhedraInfo().filter((m) => m.catKey === catKey);
     const target = members[0];
-    s.polyhedraUserStyles[target.userData.key] = { color: '#00ff00' };
+    s.polyhedraUserStyles[target.key] = { color: '#00ff00' };
     updatePolyhedraColors();
     return {
-      targetColor: target.material.color.getHexString(),
-      siblingColor: members[1] ? members[1].material.color.getHexString() : 'ff0000',
+      targetColor: polyhedronInfo(target.index).color.slice(1),
+      siblingColor: members[1] ? polyhedronInfo(members[1].index).color.slice(1) : 'ff0000',
     };
   });
   H.check('individual override wins over the category style',
@@ -134,16 +133,16 @@ const H = require('../harness');
 
   // --- Category visibility hides member meshes ------------------------------------
   const vis = await page.evaluate(async () => {
-    const { fileBrowser, groups } = await import('./state/store.js');
-    const { updatePolyhedraColors } = await import('./render/index.js');
+    const { fileBrowser } = await import('./state/store.js');
+    const { updatePolyhedraColors, polyhedraInfo } = await import('./render/index.js');
     const s = fileBrowser.selectedStructure;
     const catKey = Object.keys(s.polyhedraCategoryStyles)[0];
     s.polyhedraCategoryStyles[catKey].visible = false;
     updatePolyhedraColors();
-    const meshes = groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
+    const meshes = polyhedraInfo();
     const result = {
-      membersHidden: meshes.filter((m) => m.userData.catKey === catKey).every((m) => m.visible === false),
-      othersVisible: meshes.filter((m) => m.userData.catKey !== catKey).every((m) => m.visible === true),
+      membersHidden: meshes.filter((m) => m.catKey === catKey).every((m) => m.visible === false),
+      othersVisible: meshes.filter((m) => m.catKey !== catKey).every((m) => m.visible === true),
     };
     s.polyhedraCategoryStyles[catKey].visible = true; // restore for selection tests
     updatePolyhedraColors();
@@ -154,16 +153,17 @@ const H = require('../harness');
 
   // --- Two-way selection ----------------------------------------------------------
   const sel = await page.evaluate(async () => {
-    const { highlightHover, groups } = await import('./state/store.js');
+    const { highlightHover } = await import('./state/store.js');
+    const { polyhedraInfo } = await import('./render/index.js');
     const { selectPolyhedronFromRow } = await import('./ui/SelectAndHighlightModule.js');
     const row = /** @type {HTMLElement} */ (document.querySelector('#infoPolyControls .individual-polyhedron-row'));
     selectPolyhedronFromRow(row.dataset.polyKey, row);
     const state = highlightHover.currentlyHighlightedPolyhedron;
-    const mesh = groups.polyhedraGroup.children.find((m) => m.userData?.key === state?.key);
+    const mesh = polyhedraInfo().find((m) => m.key === state?.key);
     return {
       rowKey: row.dataset.polyKey,
       state,
-      emissive: mesh ? mesh.material.emissive.getHex() : 0,
+      emissive: mesh?.glow ? 0xFF8C00 : 0,
       rowHighlighted: getComputedStyle(row).borderLeftColor === 'rgb(255, 179, 71)',
     };
   });
@@ -172,37 +172,39 @@ const H = require('../harness');
     JSON.stringify(sel));
 
   const sel2 = await page.evaluate(async () => {
-    const { highlightHover, groups } = await import('./state/store.js');
-    const { selectPolyhedronFromMesh } = await import('./ui/SelectAndHighlightModule.js');
+    const { highlightHover } = await import('./state/store.js');
+    const { polyhedraInfo, polyhedronInfo } = await import('./render/index.js');
+    const { selectPolyhedronFromIndex } = await import('./ui/SelectAndHighlightModule.js');
     const prevKey = highlightHover.currentlyHighlightedPolyhedron.key;
-    const meshes = groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
-    const other = meshes.find((m) => m.userData.key !== prevKey);
-    selectPolyhedronFromMesh(other, { scrollToSelection: false });
-    const prevMesh = meshes.find((m) => m.userData.key === prevKey);
-    const row = document.querySelector(`#infoPolyControls .individual-polyhedron-row[data-poly-key="${other.userData.key}"]`);
+    const meshes = polyhedraInfo();
+    const other = meshes.find((m) => m.key !== prevKey);
+    selectPolyhedronFromIndex(other.index, { scrollToSelection: false });
+    const prevMesh = meshes.find((m) => m.key === prevKey);
+    const row = document.querySelector(`#infoPolyControls .individual-polyhedron-row[data-poly-key="${other.key}"]`);
     return {
       newKey: highlightHover.currentlyHighlightedPolyhedron?.key,
-      expectedKey: other.userData.key,
-      prevGlowCleared: prevMesh.material.emissive.getHex() === 0x000000,
-      newGlow: other.material.emissive.getHex(),
+      expectedKey: other.key,
+      prevGlowCleared: !polyhedronInfo(prevMesh.index).glow,
+      newGlow: polyhedronInfo(other.index).glow ? 0xFF8C00 : 0,
       rowFoundAndListVisible: !!row
         && /** @type {HTMLElement} */ (row.closest('.individual-polyhedra')).hidden !== true,
     };
   });
-  H.check('selectPolyhedronFromMesh moves the glow and opens/expands the right row',
+  H.check('selectPolyhedronFromIndex (a 3D pick) moves the glow and opens/expands the right row',
     sel2.newKey === sel2.expectedKey && sel2.prevGlowCleared && sel2.newGlow === 0xFF8C00
       && sel2.rowFoundAndListVisible,
     JSON.stringify(sel2));
 
   const desel = await page.evaluate(async () => {
-    const { highlightHover, groups } = await import('./state/store.js');
-    const { selectPolyhedronFromMesh } = await import('./ui/SelectAndHighlightModule.js');
+    const { highlightHover } = await import('./state/store.js');
+    const { polyhedronIndexOfKey, polyhedronInfo } = await import('./render/index.js');
+    const { selectPolyhedronFromIndex } = await import('./ui/SelectAndHighlightModule.js');
     const key = highlightHover.currentlyHighlightedPolyhedron.key;
-    const mesh = groups.polyhedraGroup.children.find((m) => m.userData?.key === key);
-    selectPolyhedronFromMesh(mesh); // same key → toggle off
+    const i = polyhedronIndexOfKey(key);
+    selectPolyhedronFromIndex(i); // same key → toggle off
     return {
       state: highlightHover.currentlyHighlightedPolyhedron,
-      emissive: mesh.material.emissive.getHex(),
+      emissive: polyhedronInfo(i).glow ? 0xFF8C00 : 0,
     };
   });
   H.check('re-selecting the same polyhedron deselects (state null, glow cleared)',
@@ -211,6 +213,7 @@ const H = require('../harness');
   // --- Polyhedra follow bond-length settings, not bond visibility -----------------
   const bondsHidden = await page.evaluate(async () => {
     const { general, groups } = await import('./state/store.js');
+    const { polyhedraDrawnCount } = await import('./render/index.js');
     const { updateVisualization } = await import('./core/crystal-viewer.js');
     Object.keys(general.bondVisibility).forEach((p) => { general.bondVisibility[p] = false; });
     general.showBonds = false;
@@ -220,7 +223,7 @@ const H = require('../harness');
       await new Promise((r) => setTimeout(r, 200));
     }
     return {
-      polys: groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron').length,
+      polys: polyhedraDrawnCount(),
       bondsDrawn: !!groups.bondsMesh,
     };
   });
@@ -239,7 +242,9 @@ const H = require('../harness');
     (await import('./ui/StructureInfoPanel/General.js')).setStructurePanelOpen(true);
     /** @type {HTMLElement} */ (document.querySelector('#atomBondControlSwitch button[data-mode="polyhedra"]')).click();
     await new Promise((r) => setTimeout(r, 200));
-    const row = document.querySelector('#infoPolyControls .phl-cat-button-row');
+    // The category rows sit in their element's group (polygroups.test.js): open them.
+    document.querySelectorAll('#infoPolyControls .phl-group').forEach((g) => /** @type {any} */ (g)._setExpanded(true));
+    const row = document.querySelector('#infoPolyControls .poly-control .phl-cat-button-row');
     if (!(/** @type {HTMLElement} */ (row)?.offsetParent)) {
       /** @type {HTMLElement} */ (document.querySelector('#infoPolyControls .poly-control canvas')).click();
     }

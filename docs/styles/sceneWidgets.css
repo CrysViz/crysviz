@@ -470,6 +470,17 @@
   -moz-appearance: textfield;
 }
 
+/* Recent Chrome ignores appearance:textfield for the spinner, which then
+   takes ~15px of the field's text room that ColorBarWidget.js's width
+   measure does not count: on a bar built in a hidden window "0.12" showed
+   as "0.1" until a focus/blur re-measured it. */
+.cv-colorbar-value-input::-webkit-inner-spin-button,
+.cv-colorbar-value-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
+}
+
 /* --- Custom User Settings panel (ui/CustomUserSettingsPanel.js) ---
    Colour/radius/bond-distance override pickers: popups, periodic-table
    grids (shared by all three pickers), the click-to-edit JSON list view,
@@ -970,15 +981,25 @@ input[type="checkbox"].cv-tiny-toggle:checked {
   display: inline-flex;
   flex-direction: column;
   user-select: none;
+  /* Never wider than its column: inside a narrow docked Structure window
+     (the Poly tab's grouped rows add an indent) the picker used to be
+     clipped. The canvases keep their drawing size and scale down. */
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .cv-colorpicker-canvases {
   display: flex;
+  min-width: 0;
 }
 
 .cv-colorpicker-sv {
   cursor: crosshair;
   user-select: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
 }
 
 .cv-colorpicker-hue {

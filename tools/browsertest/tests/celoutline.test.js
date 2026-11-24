@@ -16,10 +16,8 @@ const H = require('../harness');
   // Polyhedra on (real Features toggle), wait for the async compute.
   await H.clickById(page, 'showPolyhedra');
   const polys = await H.waitFor(page, async () => {
-    const { groups } = await import('./state/store.js');
-    let n = 0;
-    groups.polyhedraGroup?.traverse((o) => { if (o.userData?.type === 'polyhedron') n++; });
-    return n;
+    const { polyhedraDrawnCount } = await import('./render/index.js');
+    return polyhedraDrawnCount();
   });
   H.check('polyhedra rendered', polys > 0, `count=${polys}`);
 
@@ -105,9 +103,8 @@ const H = require('../harness');
     const { updatePolyhedraColors, requestRender } = await import('./render/index.js');
     const s = fileBrowser.selectedStructure;
     s.polyhedraCategoryStyles ??= {};
-    for (const mesh of groups.polyhedraGroup.children) {
-      if (mesh.userData?.type !== 'polyhedron') continue;
-      s.polyhedraCategoryStyles[mesh.userData.catKey] = { alpha: 1.0, edgeColor: '#000000' };
+    for (const catKey of new Set(groups.polyhedraGroup.userData.polyTable.catKey)) {
+      s.polyhedraCategoryStyles[catKey] = { alpha: 1.0, edgeColor: '#000000' };
     }
     updatePolyhedraColors();
     requestRender();

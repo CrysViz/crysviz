@@ -7,8 +7,6 @@ import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.j
 // must not remove polyhedra — they follow the configured bond distances.
 import { getBondLengthCutoff } from '../render/BondsFracUpdateModule.js'
 import { findVoidCentres } from './voidSearch.js';
-import { CEL_OUTLINE_LAYER } from './CelOutlinePass.js'
-import { addCelPolyOutline } from './MaterialStyles.js'
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
@@ -18,11 +16,11 @@ import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
 import { electronegativity, ANION_FORMERS } from '../defaults/electronegativity_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js'
-import { applyTransparency } from '../utils/TransparencyPolicy.js'
 import { getFocusOpacityForPolyhedron } from './FocusRegionModule.js'
-import { LineSegments2 } from '../external/three/LineSegments2.js'
-import { LineSegmentsGeometry } from '../external/three/LineSegmentsGeometry.js'
-import { LineMaterial } from '../external/three/LineMaterial.js'
+import {
+  buildPolyhedraTable, addPolyhedraObjects, setPolyStyle, setPolyFocus, setPolyColorRGB, uploadPolyStyles,
+  setPolyGlow, setPolyEdgeLinewidth, polyColorHex, polyIndexOfKey, polyIndicesOfGroup, polyPaintOverride,
+} from './PolyhedraMesh.js'
 import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
@@ -30,6 +28,10 @@ import { rebuildBonds } from '../render/BondsFracUpdateModule.js'
 import { runPeriodicWrapped, normalizePeriodicBounds } from '../render/LatticeModule.js'
 import { updatePolyhedraComparisonWarning } from '../ui/PolyhedraComparisonWarningBanner.js'
 import { updateDisorderWarning, structureHasFractionalOccupancy } from '../ui/DisorderWarningBanner.js'
+import { updatePolyhedraFastNotice } from '../ui/PolyhedraFastNotice.js'
+import {
+  captureTopology, applyPolyhedraPropertyColors, mergeToleranceHeldPolyhedra, polyhedraToleranceSignature,
+} from './PolyhedraFrameModule.js'
 
 // Single-flight guard for the async compute. Only one compute runs at a time; any
 // updatePolyhedra() request that arrives while one is in flight sets `polyhedraDirty`
@@ -47,6 +49,7 @@ let polyhedraPromise = null;
 function notifyPolyhedraRebuilt() {
   general.polyhedraBuildCounter = (general.polyhedraBuildCounter || 0) + 1;
   highlightHover.currentlyHighlightedPolyhedron = null;
+  highlightHover.currentlyHighlightedPolyIndices = []; // rows of the old table
   document.dispatchEvent(new CustomEvent('crysviz:polyhedra-rebuilt'));
 }
 
@@ -75,10 +78,10 @@ const FACE_OPACITY = 0.50;
 const EDGE_OPACITY = 1;
 const FACE_FALLBACK_COLOR = 0x00aaff;
 const EDGE_COLOR = 0x000000;
-const EDGE_ANGLE = 18;
-const DOUBLE_SIDE = true;
-// Transparency-related face flags (depthWrite, polygonOffset) moved to the
-// rendering pipeline policy: 'polyhedraFace' in render/pipeline/ForwardPipeline.js.
+// Feature-edge angle (18°), double-sided faces and the face material live with
+// the one-mesh drawing in render/PolyhedraMesh.js. Transparency-related face
+// flags (depthWrite, polygonOffset) are the rendering pipeline's policy:
+// 'polyhedraFace' in render/pipeline/ForwardPipeline.js.
 
 // ---------- BEHAVIOR (compute) ----------
 // Cages (uncentred): empty closed shells of mutually bonded framework atoms —
@@ -243,6 +246,15 @@ function polyhedronIdentity(structure, poly, latInv) {
   };
 }
 
+/** What decides the polyhedra besides the positions and the bond cutoffs:
+ *  the search mode and settings (a bond breaking tolerance memory made under
+ *  others is dropped). */
+function polyhedraSearchSettings(structure) {
+  let settings = '';
+  try { settings = JSON.stringify(structure?.polyhedraSettings ?? null); } catch { /* unserialisable */ }
+  return `${effectivePolyhedraMode(structure)}|${settings}|${general.showPeriodic ? 1 : 0}`;
+}
+
 /** Strip the periodic-image segment from a polyhedron key ("c:5:0,0,1" -> "c:5"). */
 export function polyhedronGroupKey(key) {
   const s = String(key);
@@ -283,25 +295,35 @@ export function groupPolyhedraByCategory(structure) {
   return map;
 }
 
+/** The Poly tab's element-row key of a category: its centre element
+ *  ("c:Ca:O8" -> "Ca"), or 'cage' for every cage category ("g:…"). */
+export function polyhedraElementKeyOf(catKey) {
+  if (!catKey) return null;
+  return catKey.startsWith('c:') ? catKey.split(':')[1] : 'cage';
+}
+
 /**
  * Resolve the effective style for one polyhedron: individual override >
- * category override > default (center-atom/element color, FACE_OPACITY,
- * EDGE_COLOR/EDGE_OPACITY for the edge lines).
- * `visible` is a category-level setting only.
+ * category override > element override (the Poly tab's element row,
+ * structure.polyhedraElementStyles) > default (center-atom/element color,
+ * FACE_OPACITY, EDGE_COLOR/EDGE_OPACITY for the edge lines).
+ * `visible` is a category/element-level setting only.
  * @returns {{color: string|number, opacity: number, visible: boolean,
  *            edgeColor: string|number, edgeOpacity: number}}
  */
 export function resolvePolyhedronStyle(structure, key, catKey, type, centerIndex, colorElem) {
   structure.polyhedraUserStyles ??= {}; // defensive: pre-existing structures
   structure.polyhedraCategoryStyles ??= {};
+  structure.polyhedraElementStyles ??= {}; // files from before the element rows
   const ind = key ? structure.polyhedraUserStyles[key] : null;
   const cat = catKey ? structure.polyhedraCategoryStyles[catKey] : null;
+  const el = catKey ? structure.polyhedraElementStyles[polyhedraElementKeyOf(catKey)] : null;
   return {
-    color: ind?.color ?? cat?.color ?? polyhedronFaceColor(type, centerIndex, colorElem),
-    opacity: clamp01(ind?.alpha ?? cat?.alpha ?? FACE_OPACITY),
-    visible: cat?.visible !== false,
-    edgeColor: ind?.edgeColor ?? cat?.edgeColor ?? EDGE_COLOR,
-    edgeOpacity: clamp01(ind?.edgeAlpha ?? cat?.edgeAlpha ?? EDGE_OPACITY),
+    color: ind?.color ?? cat?.color ?? el?.color ?? polyhedronFaceColor(type, centerIndex, colorElem),
+    opacity: clamp01(ind?.alpha ?? cat?.alpha ?? el?.alpha ?? FACE_OPACITY),
+    visible: (cat?.visible ?? el?.visible) !== false,
+    edgeColor: ind?.edgeColor ?? cat?.edgeColor ?? el?.edgeColor ?? EDGE_COLOR,
+    edgeOpacity: clamp01(ind?.edgeAlpha ?? cat?.edgeAlpha ?? el?.edgeAlpha ?? EDGE_OPACITY),
   };
 }
 
@@ -442,6 +464,39 @@ function isAtomImageVisible(position, atom, cutPlanes) {
   return !isPointCutByPlanes(position, cutPlanes);
 }
 
+// ---------- Search mode (Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced) ----------
+
+/**
+ * The search computePolyhedra runs for `structure`: general.polyhedraMode when
+ * it is 'fast' or 'advanced'; for 'auto', fast from general.polyhedraFastMin
+ * atoms on (structure.atoms.length, see the note in state/store.js).
+ * @param {any} [structure]
+ * @returns {'fast' | 'advanced'}
+ */
+export function effectivePolyhedraMode(structure = fileBrowser.selectedStructure) {
+  const setting = general.polyhedraMode;
+  if (setting === 'fast' || setting === 'advanced') return setting;
+  const min = Number(general.polyhedraFastMin);
+  return (structure?.atoms?.length ?? 0) >= (Number.isFinite(min) ? min : 2000) ? 'fast' : 'advanced';
+}
+
+/**
+ * Tell the Features window's status line and the Polyhedra window's greyed
+ * rows which search runs (a DOM event, as notifyPolyhedraRebuilt, to keep
+ * render → ui loose). Sent by computePolyhedra and by every updatePolyhedra,
+ * so a structure switch updates them while polyhedra are off too.
+ * @param {any} [structure]
+ */
+function announcePolyhedraMode(structure = fileBrowser.selectedStructure) {
+  document.dispatchEvent(new CustomEvent('crysviz:polyhedra-mode', {
+    detail: {
+      mode: effectivePolyhedraMode(structure),
+      setting: general.polyhedraMode,
+      atoms: structure?.atoms?.length ?? 0,
+    },
+  }));
+}
+
 /**
  * Compute coordination polyhedra for a structure and return them as a model
  * `Polyhedra` (plain data; no GPU resources). ConvexGeometry is used transiently
@@ -458,8 +513,16 @@ export function computePolyhedra(structure) {
     return new Polyhedra({ polyhedra: [] });
   }
 
+  // Fast mode: hull of the bonded ligands (cutoff + the chemical filter applied
+  // to those neighbours only), no Voronoi selection and no cages; see the fast
+  // block in periodic_wasm_src/src/polyhedra.rs (build_candidates) and
+  // runJsPath below.
+  const polyMode = effectivePolyhedraMode(structure);
+  const simple = polyMode === 'fast';
   const useChemicalFilter = structure?.polyhedraSettings?.useChemicalFilter !== false;
-  const detectCages = structure?.polyhedraSettings?.detectCages !== false;
+  const detectCages = !simple && structure?.polyhedraSettings?.detectCages !== false;
+  updatePolyhedraFastNotice(structure, polyMode);
+  announcePolyhedraMode(structure);
 
   // ---------- Perf timing ----------
   const _t0 = performance.now();
@@ -555,7 +618,7 @@ export function computePolyhedra(structure) {
     : null;
   const prep = {
     positions, elements, lattice, maxCutoff,
-    useChemicalFilter, detectCages, cageBounds,
+    useChemicalFilter, detectCages, simple, cageBounds,
     displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData,
     getBondCutoff: getBondLengthCutoff, // length-only (visibility-independent)
   };
@@ -570,7 +633,7 @@ export function computePolyhedra(structure) {
       `cages=${ms(timing.cages)}(pool=${ms(timing.cagePool)} band=${ms(timing.cageBand)}[built=${timing.bandsBuilt} skip=${timing.bandsSkipped}] nloop=${ms(timing.cageNloop)}) ` +
       `accept=${ms(timing.accept)}) | ` +
       `atoms=${nAtoms} centers=${displayCenters.length} ` +
-      `accepted=${polyhedra.length} detectCages=${detectCages}`
+      `accepted=${polyhedra.length} mode=${polyMode} detectCages=${detectCages}`
     );
     return new Polyhedra({ polyhedra: polyhedra.map(p => new Polyhedron(p)) });
   };
@@ -594,7 +657,8 @@ export function computePolyhedra(structure) {
         const accepted = polys.map(p => new Polyhedron(p));
         console.log(
           `[polyhedra] WASM-parallel total=${(performance.now() - _t0).toFixed(1)}ms ` +
-          `atoms=${nAtoms} centers=${displayCenters.length} accepted=${accepted.length} detectCages=${detectCages}`
+          `atoms=${nAtoms} centers=${displayCenters.length} accepted=${accepted.length} ` +
+          `mode=${polyMode} detectCages=${detectCages}`
         );
         return new Polyhedra({ polyhedra: accepted });
       })
@@ -862,6 +926,33 @@ export function computePolyhedra(structure) {
   for (const dc of displayCenters) {
     const centerPos = dc.cart;
     const centerElem = elements[dc.src];
+
+    // Fast mode: every bonded neighbour that passes the element rule is a
+    // corner, less (with the chemical filter) the cations seen through a
+    // nearer anion among those neighbours (mirrors the fast block of
+    // polyhedra.rs build_candidates).
+    if (simple) {
+      const bonded = neighborImages(centerPos, centerElem)
+        .map((o) => ({ ...o, elem: elements[o.srcJ] }))
+        .filter((o) => isLigandOf(o.elem, centerElem, useChemicalFilter)
+          && isAtomImageVisible(o.pos.toArray(), structure.atoms[o.srcJ], activeCutPlanes));
+      const ligands = useChemicalFilter ? bonded.filter((o) => !isBridgedCation(o, bonded)) : bonded;
+      if (ligands.length < 4) continue;
+      const posList = ligands.map((o) => o.pos);
+      if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue;
+      candidates.push({
+        kind: 'centered',
+        colorElem: centerElem,
+        centerSrc: dc.src,
+        centerShift: dc.shift,
+        centerPos: centerPos.clone(),
+        posList,
+        vertexSrcList: ligands.map((o) => o.srcJ),
+        vertexImageList: [],
+        refPoint: centerPos.clone(),
+      });
+      continue;
+    }
 
     // Radical-Voronoi + solid-angle neighbour selection (distance-independent:
     // keeps elongated bonds, rejects shadowed far atoms). Candidates include all
@@ -1136,7 +1227,7 @@ export function computePolyhedra(structure) {
     `cages=${ms(_tCages - _tCentered)}(pool=${ms(_cagePoolMs)}) accept=${ms(_tEnd - _tCages)} | ` +
     `atoms=${nAtoms} centers=${displayCenters.length} ` +
     `candidates=${candidates.length} accepted=${accepted.length} ` +
-    `detectCages=${detectCages}`
+    `mode=${polyMode} detectCages=${detectCages}`
   );
 
   return new Polyhedra({ polyhedra: accepted });
@@ -1144,157 +1235,132 @@ export function computePolyhedra(structure) {
 }
 
 /**
- * Build three.js meshes for the polyhedra stored on `structure.polyhedra` and
- * add them to `groups.polyhedraGroup` (which the caller has already reset).
+ * Draw the polyhedra stored on `structure.polyhedra` into
+ * `groups.polyhedraGroup` (which the caller has already reset): one table +
+ * one face geometry + one edge geometry for all of them
+ * (render/PolyhedraMesh.js), styled here from the store.
  *
  * @param {any} structure active Structure with a populated `polyhedra` model
  */
 export function renderPolyhedra(structure) {
   const model = structure.polyhedra;
   if (!model || !model.polyhedra || !model.polyhedra.length) return;
-  if (!ConvexGeomCtor) return;
-
-  // Depth proxy material for the screen-space cel outline pass: the faces are
-  // transparent (no depth write), so an opaque copy on the outline-only layer
-  // provides the polyhedron silhouette there. Invisible in the main render.
-  const sharedDepthProxyMat = new THREE.MeshBasicMaterial();
 
   // Keys are normally stamped in updatePolyhedra right after the compute;
   // stamp defensively for any model that predates that (e.g. restored sessions).
   if (model.polyhedra.some((p) => !p.key)) assignPolyhedraKeys(structure, model);
 
-  let polyIndex = -1;
-  for (const poly of model.polyhedra) {
-    polyIndex++;
-    const posList = poly.vertices.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-    let geom;
-    try { geom = new ConvexGeomCtor(posList); } catch { continue; }
-    geom.computeVertexNormals();
+  const table = buildPolyhedraTable(model, {
+    outlineDirs: general.renderStyle === 'cel' && general.celOutlineMode === 'hull',
+  });
+  writePolyhedraStyles(structure, table);
+  addPolyhedraObjects(table, groups.polyhedraGroup);
+  // What an MD / trajectory fast frame needs to move these polyhedra
+  // (render/PolyhedraFrameModule.js), then the property colours over the
+  // style ones when Colour by is set.
+  captureTopology(table, structure, model, { cutoffOf: getBondLengthCutoff });
+  applyPolyhedraPropertyColors(table, { upload: false, saveStyle: true });
+  repaintOverride(table);
+  uploadPolyStyles(table);
+}
 
+/** Resolve every row's style (and focus factor) into the table — CPU only. */
+function writePolyhedraStyles(structure, table) {
+  // The table's own model: a trajectory frame switch may have dropped
+  // structure.polyhedra while these polyhedra are still the ones drawn.
+  const polys = (table.topo?.model ?? structure.polyhedra)?.polyhedra ?? [];
+  for (let i = 0; i < table.n; i++) {
+    const poly = polys[i];
+    if (!poly) continue;
     const style = resolvePolyhedronStyle(
       structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem);
-    const focus = getFocusOpacityForPolyhedron(poly, structure);
-    const mat = new THREE.MeshStandardMaterial({
-      color: style.color,
-      opacity: style.opacity * focus,
-      metalness: 0.0,
-      roughness: 1.0,
-      side: DOUBLE_SIDE ? THREE.DoubleSide : THREE.FrontSide,
-    });
-    applyTransparency(mat, { kind: 'polyhedraFace', opacity: mat.opacity });
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.visible = style.visible; // category-level show/hide
-    mesh.userData = {
-      type: 'polyhedron',
-      mode: poly.type,
-      cn: posList.length,
-      centerSrcIndex: (poly.type === 'centered') ? poly.centerIndex : undefined,
-      centerElement:  (poly.type === 'centered') ? poly.centerElement : undefined,
-      colorElem: poly.colorElem, // for in-place recolour (updatePolyhedraColors)
-      vertexSrcs: poly.vertexSrcList,
-      key: poly.key,           // stable identity (persistence + selection)
-      groupKey: poly.groupKey, // periodic-copy group ("Link periodic copies")
-      catKey: poly.catKey,     // category (Poly tab grouping)
-      polyIndex,               // index into structure.polyhedra.polyhedra
-      // Authored alpha (style) — focus regions scale it (applyFocusToPolyhedra)
-      // without ever overwriting it, mirroring Atom.opacity.
-      baseOpacity: style.opacity,
-      baseEdgeOpacity: style.edgeOpacity,
-    };
-
-    // Per-polyhedron edge material so edge color/alpha are styleable via the
-    // same store precedence as the faces (disposeGroup disposes it with the rest).
-    // Edges as "fat lines" (LineSegments2) so their thickness is adjustable
-    // (plain LineSegments linewidth is capped at 1px in WebGL). WORLD units
-    // (LineMaterial.worldUnits) so the edges scale with the structure when
-    // zooming, instead of staying N pixels wide (which read as THICKER edges
-    // when zoomed out). polyEdgeWidth 1 = the unit-cell line thickness
-    // (0.03 A diameter), matching the tracers' edge cylinders (0.015 radius).
-    const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    const edgeSegments = Array.from(/** @type {any} */ (egeom.attributes.position).array);
-    const edgeGeom = new LineSegmentsGeometry().setPositions(edgeSegments);
-    egeom.dispose();
-    const edgeMat = new LineMaterial({
-      color: style.edgeColor, opacity: style.edgeOpacity * focus,
-      linewidth: 0.03 * (general.polyEdgeWidth ?? 1),
-      worldUnits: true,
-    });
-    if (app.renderer) {
-      const size = app.renderer.getSize(new THREE.Vector2());
-      edgeMat.resolution.set(size.x, size.y);
-    }
-    applyTransparency(edgeMat, { kind: 'polyhedraEdge', opacity: edgeMat.opacity });
-    const edgeLines = new LineSegments2(edgeGeom, edgeMat);
-    edgeLines.raycast = () => {}; // never intercept picking
-    edgeLines.userData.type = 'polyhedron-edges';
-    // flat [x1,y1,z1,x2,y2,z2,...] world segments — the ray/path-tracing
-    // SceneEncoder re-encodes the edges as thin cylinders from these
-    edgeLines.userData.segments = edgeSegments;
-    edgeLines.visible = (general.polyEdgeWidth ?? 1) > 0; // width 0 = no edges
-    mesh.add(edgeLines);
-
-    const depthProxy = new THREE.Mesh(geom, sharedDepthProxyMat);
-    depthProxy.layers.set(CEL_OUTLINE_LAYER); // outline pass only
-    depthProxy.raycast = () => {};
-    mesh.add(depthProxy);
-
-    if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') {
-      const center = new THREE.Vector3();
-      for (const p of posList) center.add(p);
-      center.multiplyScalar(1 / posList.length);
-      addCelPolyOutline(mesh, center);
-      const hull = mesh.children.find((c) => c.name === 'celOutline');
-      if (hull) hull.visible = general.celHullPolyWidth > 0 && mat.opacity >= 0.999;
-    }
-
-    groups.polyhedraGroup.add(mesh);
+    // Authored alpha (style) — focus regions scale it (applyFocusToPolyhedra)
+    // without ever overwriting it, mirroring Atom.opacity.
+    table.focus[i] = getFocusOpacityForPolyhedron(poly, structure);
+    setPolyStyle(table, i, style.color, style.opacity, style.edgeColor, style.edgeOpacity, style.visible);
   }
 }
 
-/** Write a polyhedron's displayed alpha: authored style alpha × focus factor,
- *  for the faces, the edge lines and the cel hull's opaque-only rule. */
-function applyPolyhedronOpacity(mesh, faceOpacity, edgeOpacity) {
-  mesh.material.opacity = faceOpacity;
-  applyTransparency(mesh.material, { kind: 'polyhedraFace', opacity: faceOpacity, mesh });
-  const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
-  if (edge?.material) {
-    edge.material.opacity = edgeOpacity;
-    applyTransparency(edge.material, { kind: 'polyhedraEdge', opacity: edgeOpacity, mesh: edge });
-  }
-  // Cel hull outlines are suppressed on transparent objects (the opaque
-  // inverted-hull shell would black out the background behind a transparent
-  // polyhedron) — keep the shell's visibility in sync with alpha edits.
-  const hull = mesh.children.find((c) => c.name === 'celOutline');
-  if (hull) hull.visible = general.celHullPolyWidth > 0 && faceOpacity >= 0.999;
+/** The drawn polyhedra's table (render/PolyhedraMesh.js), or null when none
+ *  are drawn. Row i is structure.polyhedra.polyhedra[i]. */
+export function polyhedraTable() {
+  return groups.polyhedraGroup?.userData?.polyTable ?? null;
+}
+
+/** How many polyhedra are drawn (a hull was built), and of those how many
+ *  are shown (category visible). */
+export function polyhedraDrawnCount({ shownOnly = false } = {}) {
+  const table = polyhedraTable();
+  if (!table) return 0;
+  let n = 0;
+  for (let i = 0; i < table.n; i++) if (table.faceCount[i] && (!shownOnly || table.visible[i])) n++;
+  return n;
+}
+
+/** One drawn polyhedron as a plain object (tests, the selection bar):
+ *  identity, displayed and authored alpha, colours, glow. Not for per-frame
+ *  use. */
+export function polyhedronInfo(i) {
+  const table = polyhedraTable();
+  if (!table || !(i >= 0 && i < table.n)) return null;
+  return {
+    index: i,
+    key: table.key[i], groupKey: table.groupKey[i], catKey: table.catKey[i],
+    centerIndex: table.centerIndex[i] >= 0 ? table.centerIndex[i] : null,
+    kind: table.kind[i] ? 'cage' : 'centered', cn: table.cn[i],
+    drawn: table.faceCount[i] > 0, visible: table.visible[i] === 1,
+    opacity: table.opacity[i], baseOpacity: table.baseOpacity[i],
+    edgeOpacity: table.edgeOpacity[i], baseEdgeOpacity: table.baseEdgeOpacity[i],
+    focus: table.focus[i],
+    color: polyColorHex(table, i), edgeColor: polyColorHex(table, i, true),
+    glow: table.glow[i] === 1,
+    faceStart: table.faceStart[i], faceCount: table.faceCount[i],
+    edgeStart: table.edgeStart[i], edgeCount: table.edgeCount[i],
+  };
+}
+
+/** polyhedronInfo() of every drawn polyhedron (tests, debugging). */
+export function polyhedraInfo() {
+  const table = polyhedraTable();
+  const out = [];
+  for (let i = 0; table && i < table.n; i++) if (table.faceCount[i]) out.push(polyhedronInfo(i));
+  return out;
+}
+
+/** Rows of the drawn polyhedra by stable key / periodic-copy group key. */
+export function polyhedronIndexOfKey(key) {
+  return polyIndexOfKey(polyhedraTable(), key);
+}
+export function polyhedronIndicesOfGroup(groupKey) {
+  return polyIndicesOfGroup(polyhedraTable(), groupKey);
+}
+
+/** Selection glow (orange emissive) on/off for table rows. */
+export function setPolyhedraGlow(rows, on) {
+  setPolyGlow(polyhedraTable(), rows, on);
 }
 
 /** Re-scale every drawn polyhedron by its focus-region factor (see
- *  FocusRegionModule.focusOpacityForPolyhedron). Authored alpha is read from
- *  the userData stamp, so repeated calls never compound. */
+ *  FocusRegionModule.focusOpacityForPolyhedron). Authored alpha stays in the
+ *  table (baseOpacity), so repeated calls never compound. */
 export function applyFocusToPolyhedra(structure = fileBrowser.selectedStructure) {
-  const grp = groups.polyhedraGroup;
-  if (!grp || !structure) return;
-  for (const mesh of grp.children) {
-    const ud = mesh.userData;
-    if (ud?.type !== 'polyhedron' || !mesh.material) continue;
-    const poly = structure.polyhedra?.polyhedra?.[ud.polyIndex];
-    const focus = poly ? getFocusOpacityForPolyhedron(poly, structure) : 1;
-    const base = ud.baseOpacity ?? mesh.material.opacity;
-    const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
-    const baseEdge = ud.baseEdgeOpacity ?? edge?.material?.opacity ?? 1;
-    ud.baseOpacity = base;
-    ud.baseEdgeOpacity = baseEdge;
-    applyPolyhedronOpacity(mesh, base * focus, baseEdge * focus);
+  const table = polyhedraTable();
+  if (!table || !structure) return;
+  const polys = structure.polyhedra?.polyhedra ?? [];
+  for (let i = 0; i < table.n; i++) {
+    const poly = polys[i];
+    setPolyFocus(table, i, poly ? getFocusOpacityForPolyhedron(poly, structure) : 1);
   }
+  uploadPolyStyles(table);
 }
 
 /**
- * Restyle the existing polyhedra faces in place — no geometry recompute. Applies
+ * Restyle the existing polyhedra in place — no geometry recompute. Applies
  * the full resolved style (color, opacity, category visibility) with user
  * overrides taking precedence over the default atom/element colours. Use after
  * an element-colour change or a Poly-tab style edit, so the polyhedra match
- * without a full (async) `updatePolyhedra`. Never touches material.emissive —
- * that channel is owned by the selection highlight. No-op when nothing drawn.
+ * without a full (async) `updatePolyhedra`. Never touches the glow — that is
+ * owned by the selection highlight. No-op when nothing drawn.
  */
 /**
  * Set style fields (color, alpha, ...) on individual polyhedra by key, the
@@ -1312,38 +1378,68 @@ export function setPolyhedronStyles(structure, keys, patch) {
 
 export function updatePolyhedraColors() {
   notifyColorsChanged();
-  const grp = groups.polyhedraGroup;
+  const table = polyhedraTable();
   const structure = fileBrowser.selectedStructure;
-  if (!grp || !structure) return;
-  for (const mesh of grp.children) {
-    const ud = mesh.userData;
-    if (ud?.type !== 'polyhedron' || !mesh.material?.color) continue;
-    const style = resolvePolyhedronStyle(
-      structure, ud.key, ud.catKey, ud.mode, ud.centerSrcIndex, ud.colorElem);
-    mesh.material.color.set(style.color);
-    mesh.visible = style.visible;
-    const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
-    if (edge?.material) edge.material.color.set(style.edgeColor);
-    const poly = structure.polyhedra?.polyhedra?.[ud.polyIndex];
-    const focus = poly ? getFocusOpacityForPolyhedron(poly, structure) : 1;
-    ud.baseOpacity = style.opacity;
-    ud.baseEdgeOpacity = style.edgeOpacity;
-    applyPolyhedronOpacity(mesh, style.opacity * focus, style.edgeOpacity * focus);
+  if (!table || !structure) return;
+  writePolyhedraStyles(structure, table);
+  // Colour by a property: its colours stay over the freshly written styles
+  // (an alpha or show/hide edit keeps them); 'style' leaves the styles.
+  applyPolyhedraPropertyColors(table, { upload: false, saveStyle: true });
+  repaintOverride(table);
+  uploadPolyStyles(table);
+  // Complete Polyhedra adds the corner atoms of the DRAWN polyhedra
+  // (syncCompletingAtoms); a show/hide edit changes that set, so recompute —
+  // only then: a colour or alpha edit must not rebuild (the rebuild re-renders
+  // the Poly tab and would close the editor being used).
+  if (general.completePolyhedra && !polyhedraBusy) {
+    const sig = polyhedraVisibilitySignature(structure);
+    if (sig !== structure._completingVisSig) updatePolyhedra();
   }
+}
+
+/** The show/hide state of every polyhedra category and element, as one
+ *  string: what decides which polyhedra Complete Polyhedra completes. */
+function polyhedraVisibilitySignature(structure) {
+  const parts = [];
+  for (const [k, v] of Object.entries(structure.polyhedraCategoryStyles ?? {})) if (v?.visible != null) parts.push(`c:${k}=${v.visible ? 1 : 0}`);
+  for (const [k, v] of Object.entries(structure.polyhedraElementStyles ?? {})) if (v?.visible != null) parts.push(`e:${k}=${v.visible ? 1 : 0}`);
+  for (const [k, v] of Object.entries(structure.polyhedraUserStyles ?? {})) if (v?.visible != null) parts.push(`u:${k}=${v.visible ? 1 : 0}`);
+  return parts.sort().join('|');
+}
+
+/** Disco mode's paint override (render/PolyhedraMesh.js): reapply it over
+ *  freshly written styles, so a rebuild or a restyle keeps the paint. */
+function repaintOverride(table) {
+  const pick = polyPaintOverride();
+  if (!pick) return;
+  for (let i = 0; i < table.n; i++) {
+    if (!table.faceCount[i]) continue;
+    _paint.set(pick(i));
+    setPolyColorRGB(table, i, _paint.r, _paint.g, _paint.b);
+  }
+}
+
+const _paint = new THREE.Color();
+
+/** Paint every drawn polyhedron's faces and edges with `pick(i)` (anything
+ *  THREE.Color.set takes) WITHOUT touching the stored styles — the disco
+ *  ball's reversible paint; updatePolyhedraColors() restores the styles. */
+export function paintPolyhedraColors(pick) {
+  const table = polyhedraTable();
+  if (!table) return;
+  for (let i = 0; i < table.n; i++) {
+    if (!table.faceCount[i]) continue;
+    _paint.set(pick(i));
+    setPolyColorRGB(table, i, _paint.r, _paint.g, _paint.b);
+  }
+  uploadPolyStyles(table);
 }
 
 /** Live-update the polyhedra edge thickness (world units: width 1 = the
  *  unit-cell line thickness; 0 hides the edges entirely). */
 export function setPolyEdgeWidth(width) {
   general.polyEdgeWidth = width;
-  if (groups.polyhedraGroup) {
-    groups.polyhedraGroup.traverse((obj) => {
-      if (obj.userData?.type === 'polyhedron-edges' && obj.material) {
-        obj.material.linewidth = Math.max(0.03 * width, 1e-5); // world units
-        obj.visible = width > 0;
-      }
-    });
-  }
+  setPolyEdgeLinewidth(polyhedraTable(), width);
 }
 
 /**
@@ -1380,6 +1476,8 @@ export function updatePolyhedra() {
   // (toggles, comparison enable/disable/step-change all funnel through here).
   updatePolyhedraComparisonWarning();
   updateDisorderWarning();
+  updatePolyhedraFastNotice();
+  announcePolyhedraMode();
 
   if (holdDepth) {
     heldRequest = true;
@@ -1392,6 +1490,7 @@ export function updatePolyhedra() {
   // looks authoritative but isn't, the feature is unavailable for such
   // structures; the banner says so.
   if (structureHasFractionalOccupancy()) {
+    updatePolyhedraFastNotice(null);
     clearPolyhedraGroup();
     if (polyhedraBusy) polyhedraDirty = true;
     return;
@@ -1440,9 +1539,14 @@ export function updatePolyhedra() {
       }
 
       const _tc = performance.now();
+      // The cell the corners are computed in: an MD frame's fast path
+      // (render/PolyhedraFrameModule.js) reads the corners back as fractional
+      // positions, and under a barostat the cell may move during the compute.
+      const srcLattice = structure.lattice.map((row) => [...row]);
       // computePolyhedra returns a Polyhedra (serial) or a Promise<Polyhedra> (parallel);
       // awaiting handles both. A newer request during the await sets `polyhedraDirty`.
       const model = await computePolyhedra(structure);
+      model.srcLattice = srcLattice;
 
       // A newer request arrived while computing → this result is stale; loop and recompute.
       if (polyhedraDirty) continue;
@@ -1458,11 +1562,28 @@ export function updatePolyhedra() {
       // Poly tab can list/group polyhedra even before/without faces being drawn.
       assignPolyhedraKeys(structure, model);
 
+      // Bond breaking tolerance (render/BondBreakTolerance.js): during playback
+      // the polyhedra drawn now are the memory — corners and polyhedra the
+      // tolerance still holds join the strict search result, then get their
+      // keys by the same code as searched ones. Nothing on a fresh load,
+      // another structure, tol 0, or after a cutoff / search setting change.
+      model.toleranceSig = polyhedraToleranceSignature(polyhedraSearchSettings(structure));
+      if (!general.completePolyhedra && !getActiveCutPlanes().length) {
+        const latInv = invert3x3(transpose3x3(structure.lattice));
+        const merged = mergeToleranceHeldPolyhedra(structure, model, {
+          cutoffOf: getBondLengthCutoff,
+          keyOf: (poly) => polyhedronIdentity(structure, poly, latInv).key,
+          makePolyhedron: (opts) => new Polyhedron(opts),
+        });
+        if (merged) assignPolyhedraKeys(structure, model);
+      }
+
       // "Complete Polyhedra": append the out-of-cell vertex atoms to the displayed set so
       // every polyhedron has an atom (with bonds) at each vertex. Only re-renders atoms/bonds
       // when the completing set actually changes (see syncCompletingAtoms). When it DID
       // change, the compute inputs changed too — loop for the fixed point (see above).
       if (general.completePolyhedra) {
+        structure._completingVisSig = polyhedraVisibilitySignature(structure);
         const completingChanged = syncCompletingAtoms(structure, model);
         if (completingChanged && ++completingPasses <= 4) polyhedraDirty = true;
       }
@@ -1557,6 +1678,10 @@ function syncCompletingAtoms(structure, model) {
   const seen = new Set();
   const add = { elements: [], frac: [], cart: [], srcIndex: [] };
   for (const poly of (model?.polyhedra ?? [])) {
+    // Only drawn polyhedra are completed: a hidden category or element
+    // (Poly tab switches) would otherwise leave a halo of its corner atoms
+    // around the cell with nothing to attach to.
+    if (poly.key && resolvePolyhedronStyle(structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem).visible === false) continue;
     const verts = poly.vertices || [];
     const srcs = poly.vertexSrcList || [];
     for (let v = 0; v < verts.length; v++) {

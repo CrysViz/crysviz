@@ -70,18 +70,22 @@ function stats(a, ref, mask) {
   // the empty scene (polyhedra hidden) marks where the glass is
   const setPolys = (visible, frost) => page.evaluate(async ({ visible, frost }) => {
     const { groups, fileBrowser } = await import('./state/store.js');
+    const { uploadPolyStyles } = await import('./render/PolyhedraMesh.js');
     const s = fileBrowser.selectedStructure;
     s.polyhedraCategoryStyles ??= {};
-    for (const m of groups.polyhedraGroup.children) {
-      if (m.userData?.type !== 'polyhedron') continue;
-      m.visible = visible;
-      if (frost != null && m.userData.catKey) {
-        s.polyhedraCategoryStyles[m.userData.catKey] = {
-          ...(s.polyhedraCategoryStyles[m.userData.catKey] || {}),
+    // one mesh for all polyhedra: show/hide every table row directly
+    const table = groups.polyhedraGroup.userData.polyTable;
+    for (let i = 0; i < table.n; i++) {
+      table.visible[i] = visible ? 1 : 0;
+      const catKey = table.catKey[i];
+      if (frost != null && catKey) {
+        s.polyhedraCategoryStyles[catKey] = {
+          ...(s.polyhedraCategoryStyles[catKey] || {}),
           material: { type: 'glass', ior: 1.5, frost, tint: 0.5, tintDepth: 0.4 },
         };
       }
     }
+    uploadPolyStyles(table);
   }, { visible, frost });
   await setPolys(false, null);
   await page.waitForTimeout(300);

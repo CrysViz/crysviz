@@ -314,11 +314,15 @@ function changedPixelCount(fileA, fileB) {
     JSON.stringify(interactive));
 
   // --- the bond editor exposes Alpha and Size ranges ------------------------------
+  // The editor is built on the first click on Edit (lazy rows): open it to
+  // look inside, then close it again.
   const editorRows = await page.evaluate(() => {
     const row = document.querySelector('#infoBondControls .individual-bond-row');
     const btn = /** @type {HTMLElement} */ (row.querySelector('button[data-editor-button="color"]'));
+    btn.click();
     const labels = [...row.querySelectorAll('.bond-color-editor span')].map((s) => s.textContent);
     const ranges = row.querySelectorAll('.bond-color-editor input[type="range"]').length;
+    btn.click();
     return { buttonLabel: btn.textContent, labels, ranges };
   });
   H.check('bond rows have an "Edit" button whose editor holds Alpha and Size ranges',

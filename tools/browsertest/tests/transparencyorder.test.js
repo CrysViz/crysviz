@@ -513,16 +513,17 @@ function redCentroid(file) {
     const structure = fileBrowser.selectedStructure;
     structure.polyhedraCategoryStyles = structure.polyhedraCategoryStyles || {};
     const setAlpha = (alpha) => {
-      for (const mesh of groups.polyhedraGroup.children) {
-        const catKey = mesh.userData?.catKey;
+      for (const catKey of new Set(groups.polyhedraGroup.userData.polyTable.catKey)) {
         if (!catKey) continue;
         structure.polyhedraCategoryStyles[catKey] =
           { ...(structure.polyhedraCategoryStyles[catKey] || {}), alpha };
       }
       updatePolyhedraColors();
     };
+    // all polyhedra are one geometry drawn by an opaque and a see-through
+    // face mesh; only the one with something to draw is visible
     const firstPoly = () => groups.polyhedraGroup.children.find(
-      (c) => c.userData?.type === 'polyhedron');
+      (c) => c.userData?.type === 'polyhedra-faces' && c.visible);
     setAlpha(1);
     const m1 = firstPoly()?.material;
     const opaque = m1 && { transparent: m1.transparent, depthWrite: m1.depthWrite };

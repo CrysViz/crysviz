@@ -89,9 +89,16 @@ export {
 
 export {
   updatePolyhedra, updatePolyhedraColors, setPolyhedronStyles, groupPolyhedraByCategory, holdPolyhedra, releasePolyhedra,
-  resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
-  polyhedronFaceColor, applyFocusToPolyhedra,
+  resolvePolyhedronStyle, polyhedraElementKeyOf, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
+  polyhedronFaceColor, applyFocusToPolyhedra, effectivePolyhedraMode,
+  polyhedraTable, polyhedraDrawnCount, polyhedronInfo, polyhedraInfo, polyhedronIndexOfKey,
+  polyhedronIndicesOfGroup, setPolyhedraGlow,
 } from './PolyhedraModule.js';
+
+export {
+  polyhedraFastFrameStats, polyhedraPropertyValues, polyhedraTiltFrameInfo, polyhedraColorMapName,
+  polyhedraPropertyColorActive, polyhedraColorRangeInfo,
+} from './PolyhedraFrameModule.js';
 
 export {
   updateField, applyFieldPeriodicBounds, setActiveField, toggleFieldVisibility, clearField,

@@ -25,5 +25,6 @@ When the structure was read from a CIF with its errors (and **Show CIF Errors** 
 bond lengths in the hover list and the distance labels carry their standard uncertainty, e.g.
 1.6047(17) Å.
 
-Also available in the split view beside the 3D scene (see the "Split View" button next to this
-one in the Bonds panel).
+Opened with **Open** next to *Bond Length* under **Histograms** in the Bonds window. It opens in
+the wide dock on the right of the 3D scene; like any window, it can be dragged out to float, or
+into the left bar.

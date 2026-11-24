@@ -86,7 +86,9 @@ print(json.dumps({'energy': a.get_potential_energy(), 'forces': a.get_forces().t
       url.value = 'http://127.0.0.1:1';
       /** @type {HTMLElement} */ (document.querySelector('#BackendPotentialSelector [data-role="connect-ase"]')).click();
       const state = document.querySelector('#BackendPotentialSelector [data-role="source-state"]');
-      for (let i = 0; i < 60 && !/ASE: /.test(state?.textContent || ''); i++) await new Promise((r) => setTimeout(r, 100));
+      // The line already holds the ASE hint ("ASE: start python …") from
+      // picking ASE: wait for Connect's own answer.
+      for (let i = 0; i < 60 && !/ASE: (?!start python)/.test(state?.textContent || ''); i++) await new Promise((r) => setTimeout(r, 100));
       return { urlShown: !!url, message: state?.textContent || '' };
     });
     H.check('no server: the panel says where it looked and how to start one',

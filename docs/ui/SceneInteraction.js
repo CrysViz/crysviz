@@ -7,7 +7,7 @@
 import * as THREE from '../external/three/three.module.js';
 import { app, groups, mode, fileBrowser, measurements, general } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updateForces, updateSpins } from '../render/index.js';
+import { updateForces, updateSpins, polyhedraTable } from '../render/index.js';
 import {
   clearHighlightAtom, applyAtomHighlightIndices,
   clearAllHighlights, clearBondSelection,
@@ -158,6 +158,9 @@ export function setupSceneInteraction() {
     if (point) focusOnPoint(point);
   }
 
+  // The rendered instance the last distance/angle click picked or dropped.
+  let lastMeasureInstance = null;
+
   function onClickPick(event){
     if (isFocusPickActive()) {
       handleFocusPickClick(event);
@@ -195,6 +198,7 @@ export function setupSceneInteraction() {
     const picked = pickScene(raycaster, { bonds: false });
     if (picked?.kind !== 'atom') {
       // Clicked on empty space - reset selection
+      lastMeasureInstance = null;
       measurements.selectedAtoms.forEach(a => clearHighlightAtom());
       measurements.selectedAtoms = [];
       clearMeasureGraphics();
@@ -218,9 +222,23 @@ export function setupSceneInteraction() {
       }
     };
 
-    // Allow selecting the same source atom through a different periodic image,
-    // but avoid double-picking the exact same rendered instance.
-    if (measurements.selectedAtoms.some(a => a.userData.instanceId === instanceId)) return;
+    // A desktop double-click is two clicks first: its second one (detail 2)
+    // on the atom the first just picked or dropped would undo that, so it
+    // counts as one click. (A touch double-tap's second tap never gets here:
+    // it goes to onDoubleClickAtom, which does nothing while measuring.)
+    if (event.detail > 1 && instanceId === lastMeasureInstance) return;
+    lastMeasureInstance = instanceId;
+
+    // Clicking a picked instance again drops it from the unfinished
+    // measurement (measureInfo.md). The same source atom through a different
+    // periodic image is a different instance, so it is still added below.
+    const pickedAt = measurements.selectedAtoms.findIndex(a => a.userData.instanceId === instanceId);
+    if (pickedAt >= 0) {
+      measurements.selectedAtoms.splice(pickedAt, 1);
+      applyAtomHighlightIndices(measurements.selectedAtoms.map(a => a.userData.instanceId));
+      drawMeasureGraphics(); // the preview for what is left, or none
+      return;
+    }
 
     // Add atom to selection and highlight it (all selected atoms stay
     // highlighted at once — highlightAtomIn3D would clear prior highlights).
@@ -318,7 +336,8 @@ export function setupSceneInteraction() {
     // Emissive glow + open/expand/scroll to the polyhedron's row in the
     // Structure window's Poly tab (double-click same polyhedron deselects);
     // Shift / Ctrl/⌘ build a set of polyhedra, as for bonds.
-    const key = hit.object?.userData?.key;
+    // hit.polyIndex: the picked row of the polyhedra table (one mesh for all)
+    const key = polyhedraTable()?.key?.[hit.polyIndex];
     if (key) {
       selectPolyhedraDirect([key], {
         mode: (event.ctrlKey || event.metaKey) ? 'toggle' : (event.shiftKey ? 'add' : 'replace'),
@@ -622,7 +641,11 @@ function onPointerUp(e) {
     // double-click); a lone tap picks/measures. The double-tap's own second
     // pointerup fires it, so the highlight paints on this release — immediate
     // feedback, unlike the old hold-and-wait long-press.
-    const now = lastTouchTime;
+    // Timed by the events' own timestamps, not when this handler gets to run:
+    // a second tap queued behind a slow frame (software GL, a large scene)
+    // would otherwise miss the window and count as a tap of its own — which
+    // while measuring drops the atom the first tap just picked.
+    const now = e.timeStamp;
     const near = lastTapPos &&
       Math.hypot(e.clientX - lastTapPos.x, e.clientY - lastTapPos.y) < DOUBLE_TAP_DIST_PX;
     if (near && now - lastTapTime < DOUBLE_TAP_MS) {

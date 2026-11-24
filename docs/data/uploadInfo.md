@@ -22,7 +22,8 @@ Currently it is possible to view the following file types:
   `5.4307(2)`) for its cell or coordinates also asks whether to read them — a tick box in the
   symmetry dialog (ticked unless you said no last time), or a dialog of its own for a CIF without
   symmetry and for an mCIF. With the errors read, measured lengths and angles (the measurement
-  labels, the Selection and Polyhedron Inspectors) are written with their error, `2.3456(12) Å`,
+  labels, the Selection and Polyhedron Inspectors, the Bond Length Histogram's hover list and
+  distance labels) are written with their error, `2.3456(12) Å`,
   and so are the cell parameters and positions in **Parameters** below;
   **Show CIF Errors** in the Features window hides them again. The errors are kept in a supercell
   and saved with a `.crysviz` file or a share link.
@@ -43,6 +44,35 @@ Currently it is possible to view the following file types:
 - **FHI-aims**:
     - `geometry.in`: structure and magnetism (`initial_moment`, collinear or non-collinear). A non-periodic geometry loads as a molecule in a centered box.
     - `aims.out` output: the full relaxation/MD trajectory with per-frame energy and forces, plus per-atom spin moments when the Mulliken analysis is present.
+
+## Selection menu (≡)
+
+The ≡ button at the top left of the structure list acts on the rows whose boxes are ticked:
+
+- **Deselect** and **Select all** untick or tick every row.
+- **Make Trajectory** joins the frames of two or more ticked rows, in list order, into one new
+  trajectory row.
+- **Average Structure** makes one new structure whose atomic positions and cell are the mean over
+  every frame of the ticked rows: the time-averaged structure of an MD run (tick its row alone), or
+  the mean of several structures. Atoms are matched by their place in the list, so every frame
+  must have the same atoms in the same order; otherwise the item is greyed out and its tooltip
+  says where they differ. An atom that leaves through one face of the cell between frames and
+  comes back through the opposite one is averaged at its nearest image to where it is in the
+  first frame, so it stays at its site instead of being pulled to the middle of the cell.
+  If an atom moves more than 0.1 of a cell axis (a, b or c) away from where it is in the first
+  frame, in any frame, its average may fall between sites (a hop, diffusion, structures that do
+  not match atom for atom), so a warning comes first. It lists those atoms, largest move first:
+  the atom's name, its largest move in Å and as a fraction of the axis (`1.20 Å · 0.30 of a`),
+  and the row and frame where it happens. Click one to see it: its row is shown at that frame,
+  with the atom glowing. **Average anyway** goes on to the name; **Cancel** (or Esc) makes
+  nothing. Either way the row shown, its frame and the camera are put back as they were.
+  Positions are averaged as fractional coordinates and the cell component by component;
+  mixed or partially occupied sites keep the first frame's occupancies. Forces, spins, energy and
+  stress are not carried over. To leave out the start of a run, copy the frames you want with
+  the row's ⧉ (**Copy Range of Steps**) and average the copy.
+
+Both add the new row at the end of the list, select it and untick the rows they were made from,
+which stay as they are.
 
 ## Parameters
 

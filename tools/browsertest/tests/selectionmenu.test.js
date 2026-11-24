@@ -3,10 +3,13 @@
 //
 //   - clicking ≡ opens a dropdown with the window-menu chrome (.cv-panel-menu),
 //     portaled to <body>
-//   - items, in order: Deselect, Select all, a separator, Make Trajectory
-//   - with nothing checked: Deselect and Make Trajectory are disabled
+//   - items, in order: Deselect, Select all, a separator, Make Trajectory,
+//     Average Structure (averagestructure.test.js tests that one in depth)
+//   - with nothing checked: Deselect, Make Trajectory and Average Structure
+//     are disabled
 //   - "Select all" checks every row; then Deselect is enabled and Make
-//     Trajectory (≥2 rows checked) is enabled too
+//     Trajectory (≥2 rows checked) is enabled too, Average Structure stays
+//     disabled (the structures have different atoms)
 //   - "Deselect" unchecks every row
 //   - the menu closes on an outside click and on Escape
 //   - "Make Trajectory" opens the name prompt, and confirming appends one
@@ -71,11 +74,12 @@ const H = require('../harness');
   let m = await readMenu();
   H.check('≡ opens a .cv-panel-menu dropdown portaled to <body>',
     m.open && m.portaledToBody, JSON.stringify(m));
-  H.check('items are Deselect, Select all, <sep>, Make Trajectory',
-    JSON.stringify(m.labels) === JSON.stringify(['Deselect', 'Select all', 'Make Trajectory'])
+  H.check('items are Deselect, Select all, <sep>, Make Trajectory, Average Structure',
+    JSON.stringify(m.labels) === JSON.stringify(['Deselect', 'Select all', 'Make Trajectory', 'Average Structure'])
       && m.hasSep && m.sepBeforeMake, JSON.stringify(m));
-  H.check('with nothing checked: Deselect and Make Trajectory disabled, Select all enabled',
-    m.disabled[0] === true && m.disabled[1] === false && m.disabled[2] === true, JSON.stringify(m));
+  H.check('with nothing checked: Deselect, Make Trajectory and Average Structure disabled, Select all enabled',
+    m.disabled[0] === true && m.disabled[1] === false && m.disabled[2] === true && m.disabled[3] === true,
+    JSON.stringify(m));
 
   // ---- 2b. clicking the ≡ button again closes the menu ------------------------
   await btn.click();
@@ -95,6 +99,8 @@ const H = require('../harness');
   m = await readMenu();
   H.check('with all checked: Deselect and Make Trajectory now enabled',
     m.disabled[0] === false && m.disabled[2] === false, JSON.stringify(m));
+  H.check('with all checked: Average Structure stays disabled (different atoms)',
+    m.disabled[3] === true, JSON.stringify(m));
 
   // ---- 4. Escape closes the menu ----------------------------------------------
   await page.keyboard.press('Escape');

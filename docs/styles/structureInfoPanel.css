@@ -512,6 +512,13 @@
   font-size: var(--fs-sm);
   cursor: pointer;
   transition: background-color 0.2s ease;
+  /* An off-screen row skips layout and paint: a 3D pick reveals its row in a
+     list of up to 1000, and laying them all out was most of the pick's time.
+     The (content) height a skipped row counts with is that of the last row
+     a pick scrolled to in its list (PagedRows.js scrollRowIntoView), then
+     its own once it has been on screen (auto). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--row-intrinsic-height, 40px);
 }
 .individual-atom-row:hover,
 .individual-bond-row:hover,

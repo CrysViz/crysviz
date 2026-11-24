@@ -401,16 +401,12 @@ export class SceneEncoder {
     const polyGroup = groups.polyhedraGroup;
     if (polyGroup) {
       parts.push('pe', general.polyEdgeWidth ?? 1);
-      for (const mesh of polyGroup.children) {
-        if (mesh.userData?.type !== 'polyhedron') continue;
-        parts.push('p', mesh.id, mesh.visible ? 1 : 0,
-          mesh.material.color.getHex(), mesh.material.opacity);
-        const edgeLines = mesh.children?.find((c) => c.userData?.type === 'polyhedron-edges');
-        if (edgeLines?.material) {
-          parts.push(edgeLines.visible ? 1 : 0,
-            edgeLines.material.color.getHex(), edgeLines.material.opacity);
-        }
-      }
+      // One table for all polyhedra (render/PolyhedraMesh.js): its serial
+      // changes with every rebuild, styleVersion with every colour, alpha,
+      // focus or show/hide write — not with the selection glow.
+      const table = polyGroup.userData?.polyTable;
+      // geomVersion: an MD / trajectory frame moved them in place.
+      if (table) parts.push('p', table.serial, table.styleVersion, table.geomVersion);
     }
     if (general.showLattice && fileBrowser.selectedStructure?.lattice
         && (!groups.latticeGroup || groups.latticeGroup.visible)) {
@@ -432,6 +428,7 @@ export class SceneEncoder {
         JSON.stringify(structure.bondCategoryStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.bondUserStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.polyhedraElementStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraUserStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.spinCategoryStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.forceCategoryStyles ?? {}, dropMaterialKey));
@@ -515,6 +512,7 @@ export class SceneEncoder {
         JSON.stringify(structure.bondCategoryStyles ?? {}),
         JSON.stringify(structure.bondUserStyles ?? {}),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
+        JSON.stringify(structure.polyhedraElementStyles ?? {}),
         JSON.stringify(structure.polyhedraUserStyles ?? {}),
         JSON.stringify(structure.fieldMaterial ?? {}),
         JSON.stringify(structure.spinCategoryStyles ?? {}),
@@ -1191,19 +1189,18 @@ export class SceneEncoder {
   _polyEdges() {
     const width = general.polyEdgeWidth ?? 1;
     if (!(width > 0)) return [];
-    const group = groups.polyhedraGroup;
-    if (!group) return [];
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    if (!table) return [];
     const radius = 0.015 * width;
     const result = [];
-    for (const mesh of group.children) {
-      if (mesh.userData?.type !== 'polyhedron' || !mesh.visible) continue;
-      const edgeLines = mesh.children?.find((c) => c.userData?.type === 'polyhedron-edges');
-      const segments = edgeLines?.userData?.segments;
-      if (!edgeLines?.visible || !segments) continue;
-      const alpha = edgeLines.material?.opacity ?? 1;
+    const segments = table.segments;
+    for (let i = 0; i < table.n; i++) {
+      if (!table.visible[i] || !table.edgeCount[i]) continue;
+      const alpha = table.edgeOpacity[i];
       if (alpha < INVISIBLE_ALPHA) continue;
-      _color.copy(edgeLines.material.color);
-      for (let s = 0; s + 5 < segments.length; s += 6) {
+      _color.setRGB(table.edgeColor[3 * i], table.edgeColor[3 * i + 1], table.edgeColor[3 * i + 2]);
+      const s1 = (table.edgeStart[i] + table.edgeCount[i]) * 6;
+      for (let s = table.edgeStart[i] * 6; s + 5 < s1; s += 6) {
         const dx = segments[s + 3] - segments[s];
         const dy = segments[s + 4] - segments[s + 1];
         const dz = segments[s + 5] - segments[s + 2];
@@ -1339,12 +1336,15 @@ export class SceneEncoder {
   }
 
   _encodePolyhedra() {
-    const group = groups.polyhedraGroup;
-    const meshes = (group?.children ?? []).filter(
-      (m) => m.userData?.type === 'polyhedron' && m.visible
-        && (m.material?.opacity ?? 1) >= INVISIBLE_ALPHA && this._polyPlanes(m));
-    const entries = meshes.map((mesh) => ({ kind: 'poly', mesh,
-      planes: mesh.userData.rtPlanes, aabb: mesh.userData.rtAabb }));
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    const entries = [];
+    if (table) {
+      for (let i = 0; i < table.n; i++) {
+        if (!table.visible[i] || !table.faceCount[i] || table.opacity[i] < INVISIBLE_ALPHA) continue;
+        const cached = this._polyPlanes(table, i);
+        if (cached) entries.push({ kind: 'poly', index: i, planes: cached.planes, aabb: cached.aabb });
+      }
+    }
     // layout: 4 header texels per convex body up front, then the plane texels
     let planeTexels = 0;
     for (const entry of entries) planeTexels += entry.planes.length;
@@ -1356,20 +1356,21 @@ export class SceneEncoder {
     this._polyMin = [Infinity, Infinity, Infinity];
     this._polyMax = [-Infinity, -Infinity, -Infinity];
     entries.forEach((entry, p) => {
-      const { mesh, planes, aabb } = entry;
+      const { index, planes, aabb } = entry;
       if (aabb.min.x < this._polyMin[0]) this._polyMin[0] = aabb.min.x;
       if (aabb.min.y < this._polyMin[1]) this._polyMin[1] = aabb.min.y;
       if (aabb.min.z < this._polyMin[2]) this._polyMin[2] = aabb.min.z;
       if (aabb.max.x > this._polyMax[0]) this._polyMax[0] = aabb.max.x;
       if (aabb.max.y > this._polyMax[1]) this._polyMax[1] = aabb.max.y;
       if (aabb.max.z > this._polyMax[2]) this._polyMax[2] = aabb.max.z;
-      // per-polyhedron override > per-category material, packed into the
+      // per-polyhedron override > per-category > per-element material, packed into the
       // spare header/AABB w slots (poly.key/catKey are stamped by
       // PolyhedraModule.assignPolyhedraKeys; when absent — list panel never
       // built — the default material applies)
-      const poly = structure?.polyhedra?.polyhedra?.[mesh.userData.polyIndex];
+      const poly = structure?.polyhedra?.polyhedra?.[index];
       const material = (poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
-        ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null);
+        ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null)
+        ?? (poly?.catKey ? structure?.polyhedraElementStyles?.[poly.catKey.startsWith('c:') ? poly.catKey.split(':')[1] : 'cage']?.material : null);
       const [matType, roughness, typeParam, reflectivity] = materialTexel(material);
       let listedReflect = reflectivity; // aabbMax.w slot (listed bit for emissive)
       if (matType === 3) {
@@ -1387,9 +1388,8 @@ export class SceneEncoder {
       }
       const d = p * 16;
       data[d] = planeOffset; data[d + 1] = planes.length; data[d + 2] = matType; data[d + 3] = roughness;
-      _color.copy(mesh.material.color);
-      data[d + 4] = _color.r; data[d + 5] = _color.g; data[d + 6] = _color.b;
-      data[d + 7] = mesh.material.opacity ?? 1;
+      data[d + 4] = table.color[3 * index]; data[d + 5] = table.color[3 * index + 1]; data[d + 6] = table.color[3 * index + 2];
+      data[d + 7] = table.opacity[index];
       data[d + 8] = aabb.min.x; data[d + 9] = aabb.min.y; data[d + 10] = aabb.min.z; data[d + 11] = typeParam;
       data[d + 12] = aabb.max.x; data[d + 13] = aabb.max.y; data[d + 14] = aabb.max.z; data[d + 15] = listedReflect;
       for (const plane of planes) {
@@ -1402,26 +1402,22 @@ export class SceneEncoder {
   }
 
   /** World-space face planes (deduped, any count up to the MAX_PLANES sanity
-   *  cap) + AABB for one polyhedron mesh, cached on its userData (dies with the
-   *  mesh on rebuild). The shader streams these planes (convexChunk.js), so
-   *  there is no fixed-array limit; returns false (and warns once) only for a
-   *  degenerate hull or one beyond the sanity cap. */
-  _polyPlanes(mesh) {
-    if (mesh.userData.rtPlanes) return true;
-    if (mesh.userData.rtPlanesUnsupported) return false;
-    const polyIndex = mesh.userData.polyIndex;
+   *  cap) + AABB for one polyhedron (row i of the polyhedra table), cached on
+   *  the table (dies with it on rebuild): { planes, aabb }, or false for a
+   *  degenerate hull or one beyond the sanity cap (warned). The shader
+   *  streams these planes (convexChunk.js), so there is no fixed-array limit. */
+  _polyPlanes(table, polyIndex) {
+    const cache = (table.rtPlanes ??= new Array(table.n));
+    if (cache[polyIndex] !== undefined) return cache[polyIndex];
+    cache[polyIndex] = false;
     const poly = fileBrowser.selectedStructure?.polyhedra?.polyhedra?.[polyIndex];
     const vertices = poly?.vertices;
-    if (!vertices || vertices.length < 4) {
-      mesh.userData.rtPlanesUnsupported = true;
-      return false;
-    }
+    if (!vertices || vertices.length < 4) return false;
     const points = vertices.map((v) => new THREE.Vector3(v[0], v[1], v[2]));
     let hull;
     try {
       hull = new ConvexHull().setFromPoints(points);
     } catch {
-      mesh.userData.rtPlanesUnsupported = true;
       return false;
     }
     // dedupe coplanar hull faces into unique (normal, constant) planes
@@ -1437,13 +1433,11 @@ export class SceneEncoder {
       console.warn(`raytrace: polyhedron with ${planes.length} faces exceeds the `
         + `${MAX_PLANES}-plane texture/perf sanity cap — skipped (should never `
         + `fire for real coordination shells)`);
-      mesh.userData.rtPlanesUnsupported = true;
       return false;
     }
     const aabb = new THREE.Box3().setFromPoints(points);
-    mesh.userData.rtPlanes = planes;
-    mesh.userData.rtAabb = aabb;
-    return true;
+    cache[polyIndex] = { planes, aabb };
+    return cache[polyIndex];
   }
 
   /** Encode the live isosurface field for the tracers: uploads field.values as

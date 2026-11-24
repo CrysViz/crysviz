@@ -56,8 +56,8 @@ const H = require('../harness');
     const bond = s.bonds.find((b) => b.instanceIds
       && (b.indices[0] <= b.indices[1] ? `${b.indices[0]}_${b.indices[1]}` : `${b.indices[1]}_${b.indices[0]}`) === bKey);
     const attrs = groups.bondsMesh.geometry.attributes;
-    const polyMesh = groups.polyhedraGroup.children.find((m) => m.userData?.key === polyKey);
-    const edge = polyMesh?.children.find((c) => c.userData?.type === 'polyhedron-edges');
+    // one mesh for all polyhedra: the polyhedron's table row
+    const polyMesh = (await import('./render/index.js')).polyhedraInfo().find((m) => m.key === polyKey);
     return {
       stores: {
         bondUser: s.bondUserStyles[bKey],
@@ -67,10 +67,10 @@ const H = require('../harness');
       },
       bondColor: bond?.color?.[0],
       bondOpacity: bond ? attrs.instanceOpacity.getX(bond.instanceIds[0]) : null,
-      polyFace: polyMesh?.material.color.getHexString(),
-      polyFaceOpacity: polyMesh?.material.opacity,
-      polyEdge: edge?.material.color.getHexString(),
-      polyEdgeOpacity: edge?.material.opacity,
+      polyFace: polyMesh?.color.slice(1),
+      polyFaceOpacity: polyMesh?.opacity,
+      polyEdge: polyMesh?.edgeColor.slice(1),
+      polyEdgeOpacity: polyMesh?.edgeOpacity,
     };
   }, { state: captured.state, bKey: captured.bKey, pair: captured.pair, polyKey: captured.polyKey, catKey: captured.catKey });
   H.check('all four stores restored onto the fresh structure',

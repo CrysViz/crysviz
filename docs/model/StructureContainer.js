@@ -155,6 +155,19 @@ export class StructureContainer {
     });
   }
 
+  /**
+   * Change the styles that apply to the whole trajectory (category styles,
+   * element materials, polyhedra settings: materializeFrame.js
+   * SHARED_STYLE_DICTS) with `fn(holder)`, which edits those fields on
+   * `holder` as it would on a Structure. Here every frame is its own
+   * Structure, so `fn` runs on each; a store-backed trajectory keeps ONE
+   * record for them and changes it once (TrajectoryContainer).
+   * @param {(holder: any) => void} fn
+   */
+  updateSharedStyles(fn) {
+    this.forEachFrameMaterialized((frame) => fn(frame));
+  }
+
   /** Per-frame energies for plots; NaN where unknown. */
   energySeries() {
     return this.structures.map(s => (Number.isFinite(s?.energy) ? s.energy : NaN));
@@ -251,7 +264,7 @@ export class StructureContainer {
     // them here, no Apply/Reset action in the app ever propagated a material
     // override to other trajectory frames.
     const STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
-                    'polyhedraUserStyles', 'polyhedraCategoryStyles',
+                    'polyhedraUserStyles', 'polyhedraCategoryStyles', 'polyhedraElementStyles',
                     'atomMaterials', 'atomUserMaterials',
                     'spinCategoryStyles', 'forceCategoryStyles'];
     this.forEachFrameMaterialized(structure => {

@@ -305,8 +305,10 @@ export function restoreArrowStyle(kind, container, value, structure = fileBrowse
   const styles = value.categoryStyles && typeof value.categoryStyles === 'object' ? value.categoryStyles : null;
   const colors = value.arrowColors && typeof value.arrowColors === 'object' ? Object.entries(value.arrowColors) : [];
   const hidden = Array.isArray(value.hidden) ? value.hidden : [];
+  // The category styles are one for the whole trajectory; the per-arrow
+  // colours and hidden flags are per frame.
+  const applyCategory = (frame) => { frame[spec.stylesKey] = clone(styles); };
   const applyFrame = (frame) => {
-    if (styles) frame[spec.stylesKey] = clone(styles);
     const arrows = frame[spec.arrays];
     if (!arrows) return;
     for (const [idx, hex] of colors) {
@@ -318,7 +320,11 @@ export function restoreArrowStyle(kind, container, value, structure = fileBrowse
       if (a) a.hidden = true;
     }
   };
-  if (styles || colors.length || hidden.length) {
+  if (styles) {
+    if (typeof container?.updateSharedStyles === 'function') container.updateSharedStyles(applyCategory);
+    else if (structure) applyCategory(structure);
+  }
+  if (colors.length || hidden.length) {
     if (typeof container?.forEachFrameMaterialized === 'function') container.forEachFrameMaterialized(applyFrame);
     else if (structure) applyFrame(structure);
   }

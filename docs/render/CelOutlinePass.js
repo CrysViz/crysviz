@@ -10,9 +10,9 @@
 //
 // Participation is by layer: meshes that should contribute outlines enable
 // CEL_OUTLINE_LAYER (atoms/bonds enable it in addition to the default layer;
-// the transparent polyhedra faces don't write depth, so PolyhedraModule adds
-// an opaque depth-proxy child that lives ONLY on the outline layer and is
-// invisible in the main render). The depth pass renders those meshes with
+// the transparent polyhedra faces don't write depth, so PolyhedraMesh.js adds
+// one opaque depth-proxy mesh over all polyhedra that lives ONLY on the
+// outline layer and is invisible in the main render). The depth pass renders those meshes with
 // their real materials, so per-instance opacity discards and cut planes are
 // respected. Arrows (forces, spins, phonon modes) always enable
 // CEL_OCCLUDER_LAYER, so a line behind one is not painted over it, and join

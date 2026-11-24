@@ -20,7 +20,7 @@ import {
   clearAtomImageStylesForAtom, setAtomImageStyle, clearAtomImageStyle,
   getAtomImageStyle, getAtomImageColor, updateSingleAtomImageColor,
 } from '../../render/AtomsFracUpdateModule.js';
-import { setSpeciesColorBulk, updatePolyhedraColors, scheduleBondRebuild } from '../../render/index.js';
+import { setSpeciesColorBulk, updatePolyhedraColors, scheduleBondRebuild, polyhedraTable, polyhedronInfo } from '../../render/index.js';
 import { updateMeasurementMarkers } from '../../render/MeasurementModule.js';
 import { refreshGhostAtoms } from '../../render/GhostAtomsModule.js';
 import { syncBondHalvesToImageColor } from '../ColorPanel.js';
@@ -487,22 +487,24 @@ function resetBulkBondStyle(bonds) {
   scheduleBondRebuild(); // rebuilt from the pair defaults
 }
 
-function polyKeys(meshes) {
-  return meshes.map((m) => m.userData?.key).filter(Boolean);
+// The view's polyhedra are rows of the polyhedra table (render/PolyhedraMesh.js).
+function polyKeys(rows) {
+  const table = polyhedraTable();
+  return table ? rows.map((i) => table.key[i]).filter(Boolean) : [];
 }
 
-function applyBulkPolyStyle(meshes, patch) {
+function applyBulkPolyStyle(rows, patch) {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return;
   structure.polyhedraUserStyles ??= {};
-  for (const k of polyKeys(meshes)) Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
+  for (const k of polyKeys(rows)) Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
   updatePolyhedraColors();
 }
 
-function resetBulkPolyStyle(meshes) {
+function resetBulkPolyStyle(rows) {
   const structure = fileBrowser.selectedStructure;
   if (!structure?.polyhedraUserStyles) return;
-  for (const k of polyKeys(meshes)) {
+  for (const k of polyKeys(rows)) {
     const st = structure.polyhedraUserStyles[k];
     if (!st) continue;
     delete st.color; delete st.alpha;
@@ -620,31 +622,32 @@ function buildBondsView(container) {
 
 function buildPolyhedraView(container) {
   const structure = fileBrowser.selectedStructure;
-  const meshes = viewPolyhedra();
-  const n = meshes.length;
+  const rows = viewPolyhedra();
+  const table = polyhedraTable();
+  const n = table ? rows.length : 0;
   const picked = getDirectSelection().kind === 'polyhedra';
   buildViewHeader(container, picked ? `${n} polyhedr${n === 1 ? 'on' : 'a'} selected`
     : (n ? `${n} polyhedr${n === 1 ? 'on' : 'a'} of the selected atoms` : 'No polyhedra of the selected atoms'));
   if (!n) return;
   const colors = () => {
     const seen = [];
-    for (const m of meshes) {
-      const c = safeColor(structure?.polyhedraUserStyles?.[m.userData?.key]?.color ?? `#${m.material.color.getHexString()}`);
+    for (const i of rows) {
+      const c = safeColor(structure?.polyhedraUserStyles?.[table.key[i]]?.color ?? polyhedronInfo(i)?.color);
       if (!seen.includes(c)) seen.push(c);
     }
     return seen;
   };
-  const firstAlpha = structure?.polyhedraUserStyles?.[meshes[0].userData?.key]?.alpha ?? meshes[0].userData?.baseOpacity ?? meshes[0].material.opacity;
+  const firstAlpha = structure?.polyhedraUserStyles?.[table.key[rows[0]]]?.alpha ?? table.baseOpacity[rows[0]];
   container.appendChild(buildColorRow({
     colors, hex: colors()[0] ?? '#808080',
-    onPick: (hex) => applyBulkPolyStyle(meshes, { color: hex }),
-    onReset: () => resetBulkPolyStyle(meshes),
+    onPick: (hex) => applyBulkPolyStyle(rows, { color: hex }),
+    onReset: () => resetBulkPolyStyle(rows),
     swatchTitle: 'Apply a face color to every polyhedron of the selected atoms',
     resetTitle: 'Reset color and alpha of these polyhedra to their category style',
   }));
   container.appendChild(buildLabeledSlider('Alpha', 0, 1, 0.01, clampOpacity(firstAlpha), (raw) => {
     const v = clampOpacity(raw);
-    applyBulkPolyStyle(meshes, { alpha: v });
+    applyBulkPolyStyle(rows, { alpha: v });
     return v;
   }));
 }
@@ -1002,7 +1005,7 @@ export function renderSelectionActionBarInto(parent) {
     subscribed = true;
   }
   // The panel was rebuilt (a structure change or a bond/polyhedra rebuild):
-  // the Bonds / Polyhedra view glows new instance ids and meshes.
+  // the Bonds / Polyhedra view glows new instance ids and polyhedra rows.
   repaintSelectionView();
   refreshSelectionActionBar();
 }

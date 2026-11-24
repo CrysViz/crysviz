@@ -252,7 +252,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     if (structure.atomMaterials) delete structure.atomMaterials[el];
   }
 
-  resetBtn.title = 'Click: this frame. Press and hold: whole trajectory.';
+  resetBtn.title = 'Click: the atom colors, alpha and size on this frame (the element material: whole trajectory). Press and hold: every frame.';
   function doResetThisFrame() {
     const structure = fileBrowser.selectedStructure;
     const currentMode = general.atomsColor; // current color mode

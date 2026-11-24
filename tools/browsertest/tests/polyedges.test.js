@@ -15,20 +15,20 @@ const H = require('../harness');
 
   // --- Category edge style applies to members only, in place ---------------------
   const catEdge = await page.evaluate(async () => {
-    const { fileBrowser, groups } = await import('./state/store.js');
-    const { updatePolyhedraColors } = await import('./render/index.js');
+    const { fileBrowser } = await import('./state/store.js');
+    const { updatePolyhedraColors, polyhedraInfo } = await import('./render/index.js');
     const s = fileBrowser.selectedStructure;
-    const meshes = () => groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
-    const edgeOf = (m) => m.children.find((c) => c.userData?.type === 'polyhedron-edges');
-    const catKey = meshes()[0].userData.catKey;
+    // all polyhedra are one mesh: edge colour/alpha per table row
+    const meshes = () => polyhedraInfo();
+    const catKey = meshes()[0].catKey;
     s.polyhedraCategoryStyles[catKey] = { edgeColor: '#ff0000', edgeAlpha: 0.9 };
     updatePolyhedraColors();
-    const members = meshes().filter((m) => m.userData.catKey === catKey);
-    const others = meshes().filter((m) => m.userData.catKey !== catKey);
+    const members = meshes().filter((m) => m.catKey === catKey);
+    const others = meshes().filter((m) => m.catKey !== catKey);
     return {
       catKey,
-      memberEdges: members.map((m) => [edgeOf(m).material.color.getHexString(), edgeOf(m).material.opacity]),
-      otherEdges: others.map((m) => [edgeOf(m).material.color.getHexString(), edgeOf(m).material.opacity]),
+      memberEdges: members.map((m) => [m.edgeColor.slice(1), m.edgeOpacity]),
+      otherEdges: others.map((m) => [m.edgeColor.slice(1), m.edgeOpacity]),
     };
   });
   H.check('category edgeColor/edgeAlpha restyle member edge materials in place',
@@ -41,14 +41,13 @@ const H = require('../harness');
 
   // --- Individual override wins; both survive an async rebuild --------------------
   const survived = await page.evaluate(async ({ catKey }) => {
-    const { fileBrowser, groups, general } = await import('./state/store.js');
-    const { updatePolyhedraColors } = await import('./render/index.js');
+    const { fileBrowser, general } = await import('./state/store.js');
+    const { updatePolyhedraColors, polyhedraInfo } = await import('./render/index.js');
     const { updateVisualization } = await import('./core/crystal-viewer.js');
     const s = fileBrowser.selectedStructure;
-    const meshes = () => groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
-    const edgeOf = (m) => m.children.find((c) => c.userData?.type === 'polyhedron-edges');
-    const members = meshes().filter((m) => m.userData.catKey === catKey);
-    const targetKey = members[0].userData.key;
+    const meshes = () => polyhedraInfo();
+    const members = meshes().filter((m) => m.catKey === catKey);
+    const targetKey = members[0].key;
     s.polyhedraUserStyles[targetKey] = { edgeColor: '#00ff00' };
     updatePolyhedraColors();
     const before = general.polyhedraBuildCounter;
@@ -56,12 +55,12 @@ const H = require('../harness');
     for (let i = 0; i < 100 && general.polyhedraBuildCounter === before; i++) {
       await new Promise((r) => setTimeout(r, 100));
     }
-    const rebuilt = meshes().filter((m) => m.userData.catKey === catKey);
-    const target = rebuilt.find((m) => m.userData.key === targetKey);
-    const sibling = rebuilt.find((m) => m.userData.key !== targetKey);
+    const rebuilt = meshes().filter((m) => m.catKey === catKey);
+    const target = rebuilt.find((m) => m.key === targetKey);
+    const sibling = rebuilt.find((m) => m.key !== targetKey);
     return {
-      targetEdge: edgeOf(target).material.color.getHexString(),
-      siblingEdge: sibling ? edgeOf(sibling).material.color.getHexString() : 'ff0000',
+      targetEdge: target.edgeColor.slice(1),
+      siblingEdge: sibling ? sibling.edgeColor.slice(1) : 'ff0000',
     };
   }, { catKey: catEdge.catKey });
   H.check('individual edgeColor wins over category and survives a rebuild',
@@ -103,9 +102,7 @@ const H = require('../harness');
     const { groups, general } = await import('./state/store.js');
     const { setPolyEdgeWidth } = await import('./render/PolyhedraModule.js');
     setPolyEdgeWidth(4);
-    const edge = groups.polyhedraGroup.children
-      .find((m) => m.userData?.type === 'polyhedron')?.children
-      .find((c) => c.userData?.type === 'polyhedron-edges');
+    const edge = groups.polyhedraGroup.children.find((c) => c.userData?.type === 'polyhedra-edges');
     const result = {
       worldUnits: edge?.material?.worldUnits === true,
       linewidth: edge?.material?.linewidth,

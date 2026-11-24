@@ -1,12 +1,14 @@
 // Bonds stay in step with the atoms during fast playback
 // (render/PlaybackBondsModule.js): every pair of the last rebuild plus every
-// candidate within cutoff + skin is drawn exactly while its current length is
-// within its cutoff, so a bond forms and breaks in the frame the atoms move —
-// not at the next topology rebuild, as before.
+// candidate within cutoff + the candidate margin (BOND_SKIN) is drawn exactly
+// while it exists — formed
+// within its cutoff, kept up to cutoff × (1 + the bond breaking tolerance) —
+// so a bond forms and breaks in the frame the atoms move, not at the next
+// topology rebuild, as before.
 //  1. Two C atoms approach (3.0 -> 1.0 Å) and separate again over 19 fast
-//     frames: the bond must be drawn in exactly the frames where it is within
-//     cutoff and longer than the two atom radii — it is not in the topology of
-//     frame 0, so it can only come from the candidate list.
+//     frames: the bond must be drawn in exactly the frames where it exists by
+//     that rule and is longer than the two atom radii — it is not in the
+//     topology of frame 0, so it can only come from the candidate list.
 //  2. A 39k-atom Si trajectory (above the inline-search size) refreshes its
 //     candidate list in a worker as the atoms drift; a fast frame still draws
 //     exactly the bonds of a full rebuild of that frame.
@@ -39,6 +41,7 @@ async function load(page, text, name) {
     const { showTrajectoryFrame } = await import('./ui/TrajectoryPanel.js');
     const { getBondCutoff, getBondMinCutoff } = await import('./render/BondsFracUpdateModule.js');
     const { playbackBondStats } = await import('./render/PlaybackBondsModule.js');
+    const { bondBreakTolerance } = await import('./render/BondBreakTolerance.js');
     const { Bond } = await import('./model/index.js');
     const trace = await import('./debug/debugTrace.js');
     general.showBonds = true;
@@ -57,20 +60,23 @@ async function load(page, text, name) {
     const initialBonds = fileBrowser.selectedStructure.bonds.length;
     const c0 = trace.counters();
     const rows = [];
+    const tol = bondBreakTolerance();
+    let exists = false;
     for (let f = 1; f < Math.min(c.frameCount, 20); f++) {
       showTrajectoryFrame(f, c, { full: false, playback: { forceFull: false }, recenter: false });
       const d = ds[f];
       const probe = new Bond({ elements: ['C', 'C'], positions: [[0, 0, 0], [d, 0, 0]] });
-      const expected = d <= cut && d >= minCut && probe.visibleLen > 1e-3;
+      exists = d >= minCut && d <= (exists ? cut * (1 + tol) : cut);
+      const expected = exists && probe.visibleLen > 1e-3;
       const halves = drawn(groups.bondsMesh) + drawn(groups.bondsCandidateMesh);
       rows.push({ f, d, expected, halves, stats: playbackBondStats(fileBrowser.selectedStructure) });
     }
     const c1 = trace.counters();
-    return { cut, minCut, initialBonds, rows, fast: (c1.playbackFast || 0) - (c0.playbackFast || 0) };
+    return { cut, minCut, tol, initialBonds, rows, fast: (c1.playbackFast || 0) - (c0.playbackFast || 0) };
   }, { ds });
   const wrong = pair.rows.filter((r) => (r.halves === 2) !== r.expected || (r.halves !== 0 && r.halves !== 2));
   const formed = pair.rows.filter((r) => r.expected).map((r) => r.f);
-  H.check(`C-C bond (cutoff ${pair.cut.toFixed(2)} Å) is drawn in exactly the frames it exists: ${formed.join(',')}`,
+  H.check(`C-C bond (cutoff ${pair.cut.toFixed(2)} Å, tolerance ${(pair.tol * 100).toFixed(0)} %) is drawn in exactly the frames it exists: ${formed.join(',')}`,
     wrong.length === 0 && formed.length > 0 && pair.initialBonds === 0 && pair.fast === pair.rows.length,
     JSON.stringify({ wrong, fast: pair.fast, initialBonds: pair.initialBonds, rows: pair.rows.map((r) => [r.f, r.d, r.expected, r.halves]) }));
   H.check('the forming bond came from the candidate list (not in frame 0\'s topology)',

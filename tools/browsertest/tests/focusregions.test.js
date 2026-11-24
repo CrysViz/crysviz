@@ -254,19 +254,21 @@ const H = require('../harness');
     general.showPolyhedra = true;
     await updatePolyhedra();
     applyFocusRegions();
-    const meshes = (groups.polyhedraGroup?.children ?? []).filter((m) => m.userData?.type === 'polyhedron');
-    const dimmed = meshes.filter((m) => m.material.opacity <= m.userData.baseOpacity * 0.1001);
-    const authored = meshes.every((m) => m.userData.baseOpacity > 0.1001);
-    const edgeDimmed = meshes.every((m) => {
-      const edge = m.children.find((c) => c.userData?.type === 'polyhedron-edges');
-      return !edge || edge.material.opacity <= m.userData.baseEdgeOpacity + 1e-6;
-    });
+    // all polyhedra are one mesh: per-polyhedron alpha lives in the
+    // polyhedra table and in the face geometry's per-vertex alpha
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    const rows = table ? [...Array(table.n).keys()].filter((i) => table.faceCount[i]) : [];
+    const dimmed = rows.filter((i) => table.opacity[i] <= table.baseOpacity[i] * 0.1001);
+    const authored = rows.every((i) => table.baseOpacity[i] > 0.1001);
+    const edgeDimmed = rows.every((i) => table.edgeOpacity[i] <= table.baseEdgeOpacity[i] + 1e-6);
+    const color = table?.faceGeometry?.getAttribute('color');
+    const gpuAlpha = rows.every((i) => Math.abs(color.array[table.faceStart[i] * 12 + 3] - table.opacity[i]) < 1e-6);
     general.showPolyhedra = false;
     await updatePolyhedra();
-    return { count: meshes.length, dimmed: dimmed.length, authored, edgeDimmed };
+    return { count: rows.length, dimmed: dimmed.length, authored, edgeDimmed, gpuAlpha };
   });
   H.check('polyhedra away from every focus scale by the outer value and keep their authored alpha',
-    polyhedra.count === 0 || (polyhedra.dimmed > 0 && polyhedra.authored && polyhedra.edgeDimmed),
+    polyhedra.count === 0 || (polyhedra.dimmed > 0 && polyhedra.authored && polyhedra.edgeDimmed && polyhedra.gpuAlpha),
     JSON.stringify(polyhedra));
 
   // The volumetric field: a synthetic blob over the cell. Its material keeps

@@ -157,6 +157,12 @@ export class Structure {
     // entries are simply ignored.
     this.polyhedraUserStyles = {};
     this.polyhedraCategoryStyles = {};
+    // The Poly tab's element rows: polyhedraElementStyles[centre element, or
+    // 'cage' for every cage] -> the same fields as a category entry. A layer
+    // under the category styles (resolvePolyhedronStyle: individual >
+    // category > element > default), so it also covers categories that
+    // appear later in a trajectory.
+    this.polyhedraElementStyles = {};
     // Ray/path-tracing materials: { type: 'standard'|'metal'|'glass'|
     // 'emissive', gloss?, tint?, roughness?, ior?, intensity?, reflectivity? }
     // — reflectivity (when set) overrides the global "Reflectivity" slider for

@@ -1,11 +1,13 @@
 import { fileBrowser, general } from '../state/store.js';
-import { updatePolyhedra } from '../render/index.js';
+import { updatePolyhedra, effectivePolyhedraMode } from '../render/index.js';
 import { makeSectionHeadline } from './panels/sectionHeadline.js';
 import { addPolyhedraTypeHistogramPanel } from './AnalysisPanels/PolyhedraTypeHistogram.js';
 import { addPolyhedronInspectorPanel } from './AnalysisPanels/PolyhedronInspector.js';
 import { addPolyhedraConnectivityHistogramPanel } from './AnalysisPanels/PolyhedraConnectivityHistogram.js';
 import { addPolyhedraVolumeHistogramPanel } from './AnalysisPanels/PolyhedraVolumeHistogram.js';
 import { createToggleRow } from './ToggleSwitch.js';
+import { createBondBreakToleranceRow } from './BondBreakToleranceControl.js';
+import { buildPolyhedraColorControls, removePolyhedraColorControls } from './PolyhedraColorControls.js';
 
 function getSelectedStructureSettings() {
   const structure = fileBrowser.selectedStructure;
@@ -102,6 +104,12 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
         updatePolyhedra();
       },
     }).row);
+    // Shown (and Detect Cages greyed) while the fast search runs.
+    const modeNote = document.createElement('div');
+    modeNote.id = 'polyhedraModeNote';
+    modeNote.className = 'cv-polyhedra-mode-note';
+    modeNote.textContent = 'Fast search runs (Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced): bonded neighbours only, no cages.';
+    body.appendChild(modeNote);
     body.appendChild(createToggleRow({
       id: 'polyhedraUseWasmToggle',
       label: 'Use WASM (faster)',
@@ -111,6 +119,11 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
         updatePolyhedra();
       },
     }).row);
+    // While frames play (trajectory, relaxation, MD): how much longer than
+    // its cutoff a bond (and the polyhedron corner with it) may get before it
+    // breaks. A global setting (general.bondBreakTolerance), shown here with
+    // the other polyhedra search settings, above the Colour section.
+    body.appendChild(createBondBreakToleranceRow());
   } else {
     const empty = document.createElement('div');
     empty.textContent = 'Load a structure to edit polyhedra settings.';
@@ -121,10 +134,39 @@ export function addPolyhedraPanel(target = 'cvPanelBody-polyhedra') {
   content.appendChild(body);
   panel.appendChild(content);
   group.appendChild(panel);
+  // Colour by a per-polyhedron property, with its colour bar.
+  if (structure) buildPolyhedraColorControls(group);
   targetPanel.appendChild(group);
+  syncPolyhedraModeRows();
 }
 
+// Rows for the advanced search only: the fast search finds no cages. (Use
+// Chemical Filter stays live: fast mode applies it too, to the bonded
+// neighbours — electronegativity rule and bridged-cation test.)
+const ADVANCED_ONLY_ROWS = ['polyhedraDetectCagesToggle'];
+
+/** Grey the advanced-only row (and show the note) while the fast search is
+ *  in effect for the selected structure — the Bond Length histogram's
+ *  "Group by Wyckoff" idiom: disabled, .is-disabled-style class, a title. */
+export function syncPolyhedraModeRows() {
+  const note = document.getElementById('polyhedraModeNote');
+  if (!note) return;
+  const fast = effectivePolyhedraMode() === 'fast';
+  note.hidden = !fast;
+  for (const id of ADVANCED_ONLY_ROWS) {
+    const input = /** @type {HTMLInputElement | null} */ (document.getElementById(id));
+    const row = input?.closest('label');
+    if (!input || !row) continue;
+    input.disabled = fast;
+    row.classList.toggle('is-mode-inactive', fast);
+    row.title = fast ? 'Applies to the Advanced polyhedra search (Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced)' : '';
+  }
+}
+
+document.addEventListener('crysviz:polyhedra-mode', syncPolyhedraModeRows);
+
 export function removePolyhedraPanel(target = 'cvPanelBody-polyhedra') {
+  removePolyhedraColorControls();
   const targetPanel = document.getElementById(target);
   const existing = document.getElementById('polyhedraSettingsGroup');
   if (targetPanel && existing && existing.parentNode === targetPanel) {

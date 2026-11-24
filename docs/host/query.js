@@ -414,7 +414,9 @@ export async function userPick() {
     const bonds = [...pairs.values()];
     return { kind, count: bonds.length, bonds: bonds.slice(0, MAX_PICK), ...(bonds.length > MAX_PICK ? { truncated: true } : {}) };
   }
-  const centres = [...new Set(sets.polyhedra.map((mesh) => mesh.userData?.centerSrcIndex ?? null))];
+  // sets.polyhedra are rows of the polyhedra table (one mesh, render/PolyhedraMesh.js).
+  const { polyhedronInfo } = await import('../render/PolyhedraModule.js');
+  const centres = [...new Set(sets.polyhedra.map((i) => polyhedronInfo(i)?.centerIndex ?? null))];
   return { kind, count: sets.polyhedra.length, centres: centres.slice(0, MAX_PICK), ...(centres.length > MAX_PICK ? { truncated: true } : {}) };
 }
 

@@ -121,3 +121,29 @@ export function fillRows(container, count, buildRow, { noun = 'rows', page = 0, 
   show(focus >= 0 && focus < count ? focus / ROW_PAGE_SIZE : page);
   return { paged: true, showItem: (i) => { if (i >= 0 && i < count) show(i / ROW_PAGE_SIZE); } };
 }
+
+/**
+ * Smooth-scroll a row of one of these lists to the middle of the panel.
+ * The rows skip rendering while off screen (content-visibility: auto,
+ * structureInfoPanel.css — laying out a whole list of 1000 rows took most of
+ * a 3D pick's time), so the rows above one never shown count with their
+ * contain-intrinsic-size, and with a fixed guess the scroll stopped short or
+ * overshot by a few px per row: hundreds of rows down, out of view. The
+ * picked row's real height is that of its neighbours (the rows of a list are
+ * alike), so it becomes the list's guess first.
+ * @param {HTMLElement} row
+ */
+export function scrollRowIntoView(row) {
+  const list = row.closest('.individual-atoms, .individual-bonds, .individual-polyhedra');
+  if (list instanceof HTMLElement) {
+    row.style.contentVisibility = 'visible';
+    // contain-intrinsic-size is the content box: the padding comes on top.
+    const cs = getComputedStyle(row);
+    const height = row.getBoundingClientRect().height
+      - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+      - parseFloat(cs.borderTopWidth) - parseFloat(cs.borderBottomWidth);
+    row.style.contentVisibility = '';
+    if (height > 0) list.style.setProperty('--row-intrinsic-height', `${height}px`);
+  }
+  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}

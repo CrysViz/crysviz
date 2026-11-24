@@ -17,7 +17,7 @@ const H = require('../harness');
   await page.waitForTimeout(2500);
 
   const r = await page.evaluate(async () => {
-    const { fileBrowser, groups } = await import('./state/store.js');
+    const { fileBrowser } = await import('./state/store.js');
     const sel = await import('./ui/SelectAndHighlightModule.js');
     const { saveSelectionGroup, deleteSelectionGroup } = await import('./ui/StructureInfoPanel/SelectionGroups.js');
     const host = (command, args) => window.crysvizHost.dispatch({ command, args });
@@ -47,9 +47,11 @@ const H = require('../harness');
     out.kindAfterSelect = sel.getDirectSelection().kind;
 
     // The user clicks a polyhedron.
-    const poly = (groups.polyhedraGroup?.children ?? []).find((m) => m.userData?.type === 'polyhedron' && m.userData.centerSrcIndex !== undefined);
-    sel.selectPolyhedraDirect([poly.userData.key], { mode: 'replace' });
-    out.expectedCentre = poly.userData.centerSrcIndex;
+    // Polyhedra are rows of one mesh's table (render/PolyhedraMesh.js).
+    const { polyhedraInfo } = await import('./render/index.js');
+    const poly = polyhedraInfo().find((p) => p.kind === 'centered' && p.centerIndex !== null);
+    sel.selectPolyhedraDirect([poly.key], { mode: 'replace' });
+    out.expectedCentre = poly.centerIndex;
     const afterPoly = await state();
     out.polyNotice = afterPoly.sinceLastCall ?? null;
     out.polyPick = afterPoly.selection;

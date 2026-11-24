@@ -208,8 +208,19 @@ export function colorHexToCss(hex) {
 }
 
 // Helper: convert CSS color to rgba
+// One shared 2D context parses what is not plain #rrggbb: every row swatch of
+// the Structure window calls this, and a new canvas + getContext per call
+// made building a list of 1000 rows spend tens of ms on canvases alone.
+let colorParseCtx = null;
 export function hexToRgba(color, alpha = 1) {
-  const ctx = document.createElement("canvas").getContext("2d");
+  if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) {
+    const n = parseInt(color.slice(1), 16);
+    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  const ctx = colorParseCtx ??= document.createElement("canvas").getContext("2d");
+  // A colour the context cannot parse leaves fillStyle as it was: start from
+  // black, which is what a fresh context gave such a colour.
+  ctx.fillStyle = '#000000';
   ctx.fillStyle = color;
   const computed = /** @type {string} */ (ctx.fillStyle);
   const r = parseInt(computed.substr(1, 2), 16);

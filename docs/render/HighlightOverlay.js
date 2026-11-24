@@ -30,7 +30,9 @@ export class HighlightOverlay {
   _atomsMesh = null;
   _bondsMesh = null;
   _polyMat = null;
-  _polyGhosts = null;
+  _polyGhost = null;   // one mesh: the highlighted polyhedra's triangles
+  _ghostTable = null;  // the table and rows _polyGhost was built from
+  _ghostRows = null;
   _mat = null;
   _scaleAtom = null;
   _scaleBond = null;
@@ -56,7 +58,6 @@ export class HighlightOverlay {
     this._scene.add(this._bondsMesh);
     this._polyMat = new THREE.MeshBasicMaterial({
       color: HL, transparent: true, opacity: 0.35, depthTest: false, depthWrite: false });
-    this._polyGhosts = []; // reused Mesh pool (share the highlighted geometry)
     this._mat = new THREE.Matrix4();
     this._scaleAtom = new THREE.Matrix4().makeScale(1.12, 1.12, 1.12); // rim
     this._scaleBond = new THREE.Matrix4().makeScale(1.3, 1, 1.3);      // fatten radius only
@@ -75,17 +76,50 @@ export class HighlightOverlay {
     return grown;
   }
 
-  /** Meshes of the currently-highlighted polyhedron (all periodic copies when
-   *  linked). Matched by stable key or group key on the mesh userData. */
-  static highlightedPolyMeshes() {
-    const sel = highlightHover.currentlyHighlightedPolyhedron;
-    const group = groups.polyhedraGroup;
-    // the selection bar's Polyhedra view (a set of meshes, no single pick)
-    const viewMeshes = (highlightHover.currentlyHighlightedPolyMeshes ?? []).filter((m) => m.visible && m.parent);
-    if (!sel || !group) return viewMeshes;
-    return group.children.filter((m) => m.userData?.type === 'polyhedron' && m.visible
-      && (sel.groupKey ? m.userData.groupKey === sel.groupKey : m.userData.key === sel.key))
-      .concat(viewMeshes.filter((m) => m.userData?.key !== sel.key));
+  /** Rows of the polyhedra table (render/PolyhedraMesh.js) that are
+   *  highlighted: the picked polyhedron (all periodic copies when linked)
+   *  and the selection bar's Polyhedra view, shown ones only. */
+  static highlightedPolyIndices() {
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    if (!table) return [];
+    const single = highlightHover.currentlyHighlightedPolyhedron?.indices ?? [];
+    const view = highlightHover.currentlyHighlightedPolyIndices ?? [];
+    const rows = !view.length ? single : (!single.length ? view : [...new Set([...single, ...view])]);
+    return rows.filter((i) => i >= 0 && i < table.n && table.faceCount[i] > 0 && table.visible[i] === 1);
+  }
+
+  /** The ghost mesh for `rows`: their triangles copied out of the shared
+   *  face geometry, rebuilt only when the rows (or the table) change. */
+  _polyGhostFor(table, rows) {
+    const prev = this._ghostRows;
+    // geomVersion: an MD / trajectory frame moved the polyhedra in place.
+    if (this._polyGhost && this._ghostTable === table && this._ghostGeom === table.geomVersion
+        && prev && prev.length === rows.length
+        && rows.every((r, k) => r === prev[k])) return this._polyGhost;
+    let tris = 0;
+    for (const i of rows) tris += table.faceCount[i];
+    const positions = new Float32Array(tris * 9);
+    let o = 0;
+    for (const i of rows) {
+      const a = table.faceStart[i] * 9, b = a + table.faceCount[i] * 9;
+      positions.set(table.positions.subarray(a, b), o);
+      o += b - a;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    if (!this._polyGhost) {
+      this._polyGhost = new THREE.Mesh(geometry, this._polyMat);
+      this._polyGhost.frustumCulled = false;
+      this._polyGhost.matrixAutoUpdate = false;
+      this._scene.add(this._polyGhost);
+    } else {
+      this._polyGhost.geometry.dispose();
+      this._polyGhost.geometry = geometry;
+    }
+    this._ghostTable = table;
+    this._ghostGeom = table.geomVersion;
+    this._ghostRows = rows.slice();
+    return this._polyGhost;
   }
 
   /** Draw the ghosts over the current framebuffer (the caller leaves the
@@ -100,13 +134,14 @@ export class HighlightOverlay {
     const bondIds = (highlightHover.currentlyHighlightedBond?.instanceIds
       ?? highlightHover.currentlyHighlightedBondInstances ?? [])
       .filter((id) => bondsMesh && id >= 0 && id < bondsMesh.count && translucent(bondsMesh, id));
-    const polyMeshes = HighlightOverlay.highlightedPolyMeshes()
-      .filter((m) => !translucentOnly || (m.material?.opacity ?? 1) < TRANSLUCENT_BELOW);
-    if (!atomIds.length && !bondIds.length && !polyMeshes.length) {
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    const polyRows = HighlightOverlay.highlightedPolyIndices()
+      .filter((i) => !translucentOnly || table.opacity[i] < TRANSLUCENT_BELOW);
+    if (!atomIds.length && !bondIds.length && !polyRows.length) {
       if (this._scene) { // nothing selected: make sure any stale ghosts are hidden
         this._atomsMesh.count = 0;
         this._bondsMesh.count = 0;
-        for (const g of this._polyGhosts) g.visible = false;
+        if (this._polyGhost) this._polyGhost.visible = false;
       }
       return;
     }
@@ -144,22 +179,15 @@ export class HighlightOverlay {
       this._bondsMesh.count = 0;
     }
 
-    // polyhedra: ghost copies sharing the highlighted meshes' geometry
-    for (const g of this._polyGhosts) g.visible = false;
-    polyMeshes.forEach((pm, i) => {
-      let ghost = this._polyGhosts[i];
-      if (!ghost) {
-        ghost = new THREE.Mesh(pm.geometry, this._polyMat);
-        ghost.frustumCulled = false;
-        ghost.matrixAutoUpdate = false;
-        this._scene.add(ghost);
-        this._polyGhosts[i] = ghost;
-      }
-      ghost.geometry = pm.geometry;
-      pm.updateWorldMatrix(true, false);
-      ghost.matrix.copy(pm.matrixWorld);
+    // polyhedra: one ghost mesh of the highlighted rows' triangles
+    if (polyRows.length) {
+      const ghost = this._polyGhostFor(table, polyRows);
+      groups.polyhedraGroup.updateWorldMatrix(true, false);
+      ghost.matrix.copy(groups.polyhedraGroup.matrixWorld);
       ghost.visible = true;
-    });
+    } else if (this._polyGhost) {
+      this._polyGhost.visible = false;
+    }
 
     const oldAutoClear = renderer.autoClear;
     renderer.autoClear = false;
@@ -176,8 +204,11 @@ export class HighlightOverlay {
     this._bondsMesh.material.dispose();
     this._bondsMesh.dispose();
     this._polyMat.dispose();
+    this._polyGhost?.geometry.dispose();
     this._scene = null;
-    this._polyGhosts = null;
+    this._polyGhost = null;
+    this._ghostTable = null;
+    this._ghostRows = null;
   }
 }
 

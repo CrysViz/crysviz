@@ -525,6 +525,22 @@ font-size: var(--fs-base);
   border-radius: var(--radius) !important;
 }
 
+/* The ASE server address and the PET-MAD link box. Text fields have no
+   app-wide rule (selects get theirs in formControls.css, number boxes in
+   trajectoryPanel.css), so these drew as the browser's white field with a
+   grey inset border on every palette. Same field as the selects beside them. */
+input.atomistic-input-sm:is([type="text"], [type="url"]) {
+  color-scheme: var(--color-scheme);
+  background-color: var(--input-bg);
+  border: 1px solid var(--line-2);
+  color: var(--fg-1);
+  box-sizing: border-box;
+}
+
+input.atomistic-input-sm:is([type="text"], [type="url"])::placeholder {
+  color: var(--fg-50);
+}
+
 /* PET-MAD "threads": its widest option ("auto") is no wider than the arrow
    needs, so the content-sized select clipped it. */
 .atomistic-threads-select {

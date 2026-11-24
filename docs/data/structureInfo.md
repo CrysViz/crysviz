@@ -3,6 +3,11 @@
 Shows the chemical formula of the currently loaded structure. Click it to open the composition
 breakdown, with **Atoms**, **Bonds** and **Polyhedra** tabs (plus **Wyckoff** when symmetry is
 active) listing every species/category with its own color, opacity, size and position editors.
+The **Polyhedra** tab groups the categories by centre element (**Ca**, **Ti**, and **Cages**): the
+element's row shows, hides, recolours or changes the alpha of all of its categories (CaO7, CaO8, …)
+at once, including categories that only appear on later trajectory frames, and its caret opens the
+categories beneath it. A category's own switch, colour or alpha overrides its element's (to show one
+category of a hidden element, switch that category on; the element's switch then reads half-way).
 
 The buttons beside the box's title: **✎** opens Modify Structure, **❖** puts a colour legend of the
 composition on the view (for figures), and **Aₓ** shows **atom labels**: each atom's name, as its

@@ -55,15 +55,12 @@ export function isBondInstanceVisible(mesh, i) {
   return instanceAlpha(mesh, i) > PICK_MIN_ALPHA;
 }
 
-function polyAlpha(mesh) {
-  return mesh?.material?.opacity ?? 1;
-}
-
 /**
  * The visible object under a ray (see the file header).
  * @param {import('../external/three/three.module.js').Raycaster} raycaster already set from the camera
  * @param {{atoms?: boolean, bonds?: boolean, polyhedra?: boolean}} [kinds] which kinds may be picked
- * @returns {{kind: 'atom'|'bond'|'polyhedron', hit: any}|null}
+ * @returns {{kind: 'atom'|'bond'|'polyhedron', hit: any}|null} a polyhedron
+ *   hit carries `polyIndex` (row of the polyhedra table)
  */
 export function pickScene(raycaster, { atoms = true, bonds = true, polyhedra = true } = {}) {
   const cutPlanes = activeAtomCutPlanes();
@@ -85,16 +82,18 @@ export function pickScene(raycaster, { atoms = true, bonds = true, polyhedra = t
       break;
     }
   }
-  // Polyhedron faces: non-recursive so the edge lines / outline proxies never
-  // take part; THREE.Raycaster does not skip invisible meshes itself.
+  // Polyhedron faces: all polyhedra are one mesh (render/PolyhedraMesh.js);
+  // its raycast skips hidden polyhedra and returns one hit per polyhedron
+  // with `polyIndex`, its row in the polyhedra table (displayed alpha there).
+  // Non-recursive over the group's children: only the face mesh answers.
   const polyGroup = groups.polyhedraGroup;
-  if (polyGroup) {
+  const table = polyGroup?.userData?.polyTable;
+  if (polyGroup && table) {
     let nearestVisible = null;
     let nearestOpaque = null;
     for (const h of raycaster.intersectObjects(polyGroup.children, false)) {
-      const mesh = h.object;
-      if (!mesh.visible || mesh.userData?.type !== 'polyhedron') continue;
-      const alpha = polyAlpha(mesh);
+      if (!Number.isInteger(h.polyIndex)) continue;
+      const alpha = table.opacity[h.polyIndex];
       if (alpha <= PICK_MIN_ALPHA) continue;
       if (!nearestVisible) nearestVisible = h;
       if (alpha >= PICK_OPAQUE_ALPHA) { nearestOpaque = h; break; } // hits are sorted by distance

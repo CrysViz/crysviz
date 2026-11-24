@@ -1,6 +1,8 @@
 // Trajectory style propagation: the "Apply styles to trajectory" button copies
 // all style stores from the current frame to every frame; frame switching then
-// renders the propagated styles.
+// renders the propagated styles. A bond pair (category) style applies to the
+// whole trajectory without the button (trajsharedstyles.test.js); a per-atom
+// colour needs it.
 'use strict';
 const H = require('../harness');
 
@@ -52,11 +54,15 @@ const H = require('../harness');
       frames: container.frameCount,
       frameIndex: currentIndex,
       buttonPresent: !!document.getElementById('applyStylesToTrajectoryBtn'),
-      otherFrameEmpty: Object.keys(other?.bondCategoryStyles ?? {}).length === 0,
+      // shared by the whole trajectory: already on the other frame
+      otherCategory: other?.bondCategoryStyles?.['Cl-Na'] ?? null,
+      // per frame: not yet
+      otherAtomColor: other?.atoms?.[0]?.userColor ?? null,
     };
   });
-  H.check('2-frame trajectory loaded with the button present and other frame unstyled',
-    before.frames === 2 && before.buttonPresent && before.otherFrameEmpty,
+  H.check('2-frame trajectory loaded with the button present; the pair style is on the other frame already, the atom colour is not',
+    before.frames === 2 && before.buttonPresent && before.otherCategory?.color === '#ff0000'
+      && before.otherAtomColor === null,
     JSON.stringify(before));
 
   await H.clickById(page, 'applyStylesToTrajectoryBtn');

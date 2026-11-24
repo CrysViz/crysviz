@@ -27,12 +27,18 @@ function contrastTextColor(hex) {
 /**
  * @param {number} atomIndex
  * @param {HTMLElement} element
- * @param {{ onModeChange?: (mode: string) => void }} [opts]
+ * @param {{ onModeChange?: (mode: string) => void, host?: HTMLElement }} [opts]
+ *   host: an empty `.atom-spin-editor` element to fill instead of a new one —
+ *   the atom row builds its editors on first open into shells it made with
+ *   the row (IndividualAtomRow.js), and the shell must stay the element
+ *   others find, so the methods below land on it.
  */
-export function createSpinForceEditor(atomIndex, element, { onModeChange = () => {} } = {}) {
-  const spinEditor = document.createElement('div');
-  spinEditor.className = 'atom-spin-editor';
-  spinEditor.hidden = true; // read back via .hidden elsewhere (see IndividualAtomRow.js)
+export function createSpinForceEditor(atomIndex, element, { onModeChange = () => {}, host = null } = {}) {
+  const spinEditor = host ?? document.createElement('div');
+  if (!host) {
+    spinEditor.className = 'atom-spin-editor';
+    spinEditor.hidden = true; // read back via .hidden elsewhere (see IndividualAtomRow.js)
+  }
 
   const switchWrapper = document.createElement('div');
   switchWrapper.className = 'spin-mode-switch';

@@ -1042,7 +1042,7 @@ export function drawMeasureGraphics(){
     // Show preview for distance measurement (1 atom selected)
     const atom1 = measurements.selectedAtoms[0];
     const div = document.createElement('div');
-    div.className = 'measure-label measure-preview-distance';
+    div.className = 'measure-label measure-label-preview measure-preview-distance';
     //div.textContent = `${atom1.userData.element} — ? (click 2nd atom)`;
     div.textContent = `choose 2nd atom`;
     measureLabel = new CSS2DObject(div);
@@ -1060,7 +1060,7 @@ export function drawMeasureGraphics(){
     // carries guidance text ("select vertex", etc.) since it's transient
     // picking UI, not the completed measurement's own display.
     const div = document.createElement('div');
-    div.className = 'measure-label measure-preview-angle';
+    div.className = 'measure-label measure-label-preview measure-preview-angle';
 
     if (measurements.selectedAtoms.length === 1) {
       div.textContent = `${measurements.selectedAtoms[0].userData.element} — ? — ? (select vertex)`;

@@ -13,9 +13,12 @@
 //    by the same code as real bonds (createModeColoredBonds /
 //    applyBondStyleOverrides) into a second mesh, groups.bondsCandidateMesh.
 //
-// Every frame each pair is drawn exactly when its CURRENT length is within its
-// cutoff (and above the minimum), so bonds form and break in the same frame as
-// the atom motion that causes it. Correct while no atom has moved more than
+// Every frame each pair is drawn by its CURRENT length (and never below the
+// minimum): a pair not drawn last frame forms within its cutoff, a pair drawn
+// last frame breaks only beyond cutoff × (1 + the bond breaking tolerance) —
+// a `drawn` bit per pair, render/BondBreakTolerance.js — so bonds form and
+// break in the same frame as the atom motion that causes it, without
+// flickering while a bond vibrates about its cutoff. Correct while no atom has moved more than
 // BOND_SKIN / 2 since the candidate list was computed: the list is refreshed in
 // a worker (workers/computeWorker.js `bondPairs`) once atoms have moved
 // CANDIDATE_REFRESH_DISPLACEMENT, and synchronously only if the result is not
@@ -36,14 +39,20 @@ import {
 } from './BondsFracUpdateModule.js';
 import { computeBondPairsWasm } from '../compiled/bondsWasm.js';
 import { getFocusOpacityForInstance } from './FocusRegionModule.js';
-import { peekAtoms } from '../model/materializeFrame.js';
+import { peekAtoms, pendingFramePositions } from '../model/materializeFrame.js';
 import { colorBin } from './ColorMapBins.js';
 import { syncBondModelColors } from './FrameColorsModule.js';
 import * as workerPool from '../workers/workerPool.js';
 import { count as traceCount } from '../debug/debugTrace.js';
+import {
+  toleranceFactorSq, setBondToleranceSource, sourceFracReader, instancePairKey, TOLERANCE_LENGTH_LIMIT,
+} from './BondBreakTolerance.js';
 
 /** Margin (Å) beyond each pair's cutoff that the candidate list covers. */
 export const BOND_SKIN = 1.0;
+// A bond held by the bond breaking tolerance must stay inside the candidate
+// list: the tolerance never widens a cutoff by more than this margin.
+if (TOLERANCE_LENGTH_LIMIT > BOND_SKIN) throw new Error('bond breaking tolerance limit exceeds the candidate margin');
 /** Request a fresh candidate list once any atom moved this far (Å). */
 export const CANDIDATE_REFRESH_DISPLACEMENT = 0.3;
 /** Past this (Å) the list may miss a forming bond: refresh synchronously. */
@@ -81,6 +90,9 @@ function emptySet(n) {
     pairType: new Int32Array(n),
     // Bit h set: half h has a user/category colour, kept through colour maps.
     fixed: new Uint8Array(n),
+    // 1 while the pair exists (was drawn last frame, cut planes aside): it is
+    // then kept up to cutoff × (1 + tol), else formed within the cutoff.
+    drawn: new Uint8Array(n),
   };
 }
 
@@ -127,7 +139,8 @@ const rec = new Float64Array(R.STRIDE);
  * of the halves drawn. Returns the number of pairs drawn.
  */
 function writeSet(set, matrices, cart, ctx, colorsOut = null) {
-  const { planes, atoms, immune, radius } = ctx;
+  const { planes, atoms, immune, radius, holdSq } = ctx;
+  const drawn = set.drawn;
   const fc = colorsOut ? ctx.colors : null;
   syncClip(set, radius);
   let shown = 0;
@@ -139,11 +152,16 @@ function writeSet(set, matrices, cart, ctx, colorsOut = null) {
     const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
     const distSq = dx * dx + dy * dy + dz * dz;
     const cut = set.cutoffSq[k];
-    if ((cut > 0 && distSq > cut) || distSq < set.minCutoffSq[k] || distSq < BOND_MIN_DIST_SQ) {
+    // The bond breaking tolerance: a drawn pair breaks beyond cut × (1+tol)²,
+    // a pair not drawn forms within cut (model/bondBreakTolerance.js).
+    if ((cut > 0 && distSq > (drawn[k] ? cut * holdSq : cut)) || distSq < set.minCutoffSq[k] || distSq < BOND_MIN_DIST_SQ) {
+      drawn[k] = 0;
       writeHiddenBondHalf(matrices, slot * 2);
       writeHiddenBondHalf(matrices, slot * 2 + 1);
       continue;
     }
+    // The pair exists; a cut plane or overlapping atoms may still hide it.
+    drawn[k] = 1;
     // Bond.updateEndpoints' clipped geometry.
     const dist = Math.sqrt(distSq);
     const r1 = set.r1[k], r2 = set.r2[k];
@@ -206,14 +224,17 @@ function writePairColors(out, slot, set, k, fc, dist) {
 function resolveLengthRange(state, cart) {
   if (general.BondMin < general.BondMax) return true;
   let lo = Infinity, hi = -Infinity;
+  const holdSq = toleranceFactorSq();
   for (const set of [state.real, state.cand]) {
     if (!set) continue;
+    const drawn = set.drawn;
     for (let k = 0; k < set.n; k++) {
       const p1 = cart[set.i[k]], p2 = cart[set.j[k]];
       const dx = p2[0] - p1[0], dy = p2[1] - p1[1], dz = p2[2] - p1[2];
       const distSq = dx * dx + dy * dy + dz * dz;
       const cut = set.cutoffSq[k];
-      if ((cut > 0 && distSq > cut) || distSq < set.minCutoffSq[k] || distSq < BOND_MIN_DIST_SQ) continue;
+      // the same rule writeSet applies next (it updates the bits)
+      if ((cut > 0 && distSq > (drawn[k] ? cut * holdSq : cut)) || distSq < set.minCutoffSq[k] || distSq < BOND_MIN_DIST_SQ) continue;
       const d = Math.sqrt(distSq);
       if (d < lo) lo = d;
       if (d > hi) hi = d;
@@ -259,6 +280,9 @@ function ensureState(structure, wrapped, bondsMesh) {
     fillFromBond(real, k, b, b.renderIndex, tables);
     realKeys.add(pairKey(n, b.indexA, b.indexB));
   });
+  // The Bond objects of the last rebuild exist (those held by the bond
+  // breaking tolerance among them, BondsFracUpdateModule.buildBondObjects).
+  real.drawn.fill(1);
   const state = {
     mesh: bondsMesh,
     buildId: general.bondsBuildCounter,
@@ -270,6 +294,11 @@ function ensureState(structure, wrapped, bondsMesh) {
     token: 0,
     pending: false,
     refreshes: 0,
+    frames: 0,
+    // Pairs drawn by the previous state of this same wrapping (a new mesh
+    // without a new bond build): their bits carry over to the candidates.
+    carry: existing && existing.wrapped === wrapped ? drawnPairKeys(existing, n) : null,
+    wrapped,
     frameColors: null,
     // Search inline when cheap (no latency at all), else in a worker (the real
     // bonds are exact meanwhile; a bond forming before the list arrives shows
@@ -277,8 +306,46 @@ function ensureState(structure, wrapped, bondsMesh) {
     inline: n <= SYNC_SEARCH_MAX_INSTANCES || !workerPool.available(),
   };
   wrapped.playbackBonds = state;
+  // What the next bond build keeps by the tolerance: this state's drawn pairs.
+  setBondToleranceSource(structure, () => toleranceKeysOf(state, structure));
   refreshCandidates(state, structure, wrapped, state.inline);
   return state;
+}
+
+/** Instance pair keys (pairKey) of the pairs `state` drew in its last frame. */
+function drawnPairKeys(state, n) {
+  const keys = new Set();
+  for (const set of [state.real, state.cand]) {
+    if (!set) continue;
+    for (let k = 0; k < set.n; k++) if (set.drawn[k]) keys.add(pairKey(n, set.i[k], set.j[k]));
+  }
+  return keys;
+}
+
+/**
+ * The bond breaking tolerance memory of `state` (render/BondBreakTolerance.js):
+ * keys of the pairs it drew in its last frame, by source atoms and image
+ * shift relative to the structure's current source positions — what a
+ * rebuild's new wrapping can recognise. Runs once per rebuild, not per frame.
+ * @returns {Set<number>}
+ */
+function toleranceKeysOf(state, structure) {
+  const keys = new Set();
+  if (!state.frames) return keys;
+  const col = pendingFramePositions(structure);
+  const atoms = col ? null : peekAtoms(structure);
+  const nSrc = col ? col.length / 3 : (atoms?.length ?? 0);
+  const pos = sourceFracReader(col, atoms);
+  const wrapped = state.wrapped;
+  for (const set of [state.real, state.cand]) {
+    if (!set) continue;
+    for (let k = 0; k < set.n; k++) {
+      if (!set.drawn[k]) continue;
+      const key = instancePairKey(nSrc, wrapped, pos, set.i[k], set.j[k]);
+      if (key >= 0) keys.add(key);
+    }
+  }
+  return keys;
 }
 
 /** Pair-search inputs with every cutoff widened by BOND_SKIN. */
@@ -344,6 +411,11 @@ function applyCandidates(state, structure, wrapped, pairI, pairJ) {
   state.refreshes++;
   traceCount('playbackBondCandidates');
   const n = wrapped.cart.length;
+  // Pairs drawn so far keep their bit across the refresh (a held bond must
+  // not drop at a refresh): from the previous candidate set, or from the
+  // previous state of this wrapping on the first list.
+  const carry = state.cand ? drawnPairKeys({ real: null, cand: state.cand }, n) : state.carry;
+  state.carry = null;
   const ci = [], cj = [];
   for (let k = 0; k < pairI.length; k++) {
     if (!state.realKeys.has(pairKey(n, pairI[k], pairJ[k]))) { ci.push(pairI[k]); cj.push(pairJ[k]); }
@@ -354,7 +426,10 @@ function applyCandidates(state, structure, wrapped, pairI, pairJ) {
   applyBondStyleOverrides(structure, bonds);
   const usable = bonds.filter((b) => b.atomR1 != null && b.atomR2 != null);
   const set = emptySet(usable.length);
-  usable.forEach((b, k) => fillFromBond(set, k, b, k, t));
+  usable.forEach((b, k) => {
+    fillFromBond(set, k, b, k, t);
+    if (carry?.has(pairKey(n, b.indexA, b.indexB))) set.drawn[k] = 1;
+  });
   state.cand = set;
   state.candBonds = usable;
 
@@ -403,6 +478,7 @@ function frameContext(state, structure, planes = null) {
     atoms: peekAtoms(structure),
     immune: immunityTable(state.tables),
     radius: general.bondRadius,
+    holdSq: toleranceFactorSq(),
     colors: fc && (fc.mode !== 'length' || general.BondMin < general.BondMax)
       ? { ...fc, min: general.BondMin, max: general.BondMax } : null,
   };
@@ -411,7 +487,7 @@ function frameContext(state, structure, planes = null) {
 /**
  * Draw this frame's bonds for the instance positions in wrapped.cart: real
  * bonds into groups.bondsMesh, candidates into groups.bondsCandidateMesh, each
- * shown exactly while within its cutoff. Refreshes the candidate list as the
+ * shown while it exists by the bond breaking tolerance rule (see the header). Refreshes the candidate list as the
  * atoms move. The Bond objects are left for markBondObjectsStale.
  * @param {any} structure
  * @param {any} wrapped
@@ -423,6 +499,7 @@ function frameContext(state, structure, planes = null) {
  */
 export function writePlaybackBonds(structure, wrapped, bondsMesh, cutPlanes, frameColors = null) {
   const state = ensureState(structure, wrapped, bondsMesh);
+  state.frames++;
   state.frameColors = frameColors;
   if (frameColors?.mode === 'length' && !resolveLengthRange(state, wrapped.cart)) state.frameColors = null;
   const ctx = frameContext(state, structure, cutPlanes);

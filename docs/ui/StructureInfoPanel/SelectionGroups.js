@@ -15,9 +15,9 @@
 //
 // The UI lives in the selection bar (SelectionActionBar.js).
 
-import { fileBrowser, groups } from '../../state/store.js';
+import { fileBrowser } from '../../state/store.js';
 import { registerStructurePrefField, scheduleStructurePrefSave } from '../../state/structurePrefs.js';
-import { bondKey } from '../../render/index.js';
+import { bondKey, polyhedraTable, polyhedronIndexOfKey } from '../../render/index.js';
 import {
   getSelectedAtoms, getSelectionView, getSelectionViewSets, setSelectionView,
   selectAtomsByInstances, addAtomsToSelectionByInstances, getDirectSelection,
@@ -69,7 +69,7 @@ export function saveSelectionGroup(name) {
     // a picked bond/polyhedron set keeps no atoms: it is restored as that set
     atoms: direct.kind ? [] : selected.map((a) => [a.sourceIndex, a.instanceId]),
     bonds: sets.bonds.map((i) => structure.bonds?.[i]?.indices).filter(Boolean).map((idx) => bondKey(idx)),
-    polyhedra: sets.polyhedra.map((m) => m.userData?.key).filter(Boolean),
+    polyhedra: sets.polyhedra.map((i) => polyhedraTable()?.key?.[i]).filter(Boolean),
   };
   structure.selectionGroups = [...listSelectionGroups(structure), group];
   notify(structure);
@@ -97,8 +97,8 @@ function resolveExplicit(group, structure) {
   const bondsByKey = new Map();
   (structure?.bonds ?? []).forEach((b, i) => { if (b.indices) bondsByKey.set(bondKey(b.indices), i); });
   const bonds = (group.bonds ?? []).map((k) => bondsByKey.get(k)).filter((i) => i !== undefined);
-  const meshes = groups.polyhedraGroup?.children ?? [];
-  const polyhedra = (group.polyhedra ?? []).map((k) => meshes.find((m) => m.userData?.key === k)).filter(Boolean);
+  // polyhedra: rows of the polyhedra table (render/PolyhedraMesh.js)
+  const polyhedra = (group.polyhedra ?? []).map((k) => polyhedronIndexOfKey(k)).filter((i) => i >= 0);
   if (!bonds.length && !polyhedra.length) return null;
   return { bonds, polyhedra };
 }
@@ -119,7 +119,7 @@ export function restoreSelectionGroup(index, { add = false } = {}) {
     const explicit = resolveExplicit(group, structure);
     if (!explicit) return false;
     if (group.tab === 'polyhedra' && explicit.polyhedra.length) {
-      selectPolyhedraDirect(explicit.polyhedra.map((m) => m.userData?.key).filter(Boolean), { mode: add ? 'add' : 'replace' });
+      selectPolyhedraDirect(explicit.polyhedra.map((i) => polyhedraTable()?.key?.[i]).filter(Boolean), { mode: add ? 'add' : 'replace' });
       return true;
     }
     if (explicit.bonds.length) { selectBondsDirect(explicit.bonds, { mode: add ? 'add' : 'replace' }); return true; }
