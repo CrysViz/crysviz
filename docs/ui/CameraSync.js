@@ -20,15 +20,25 @@
 //
 // Protocol (channel 'crysviz-camera-sync')
 //   { v:1, type:'hello', from }                      a tab switched sync on: synced tabs answer with a pose
-//   { v:1, type:'pose', from, view, target, pan, projection }
+//   { v:1, type:'pose', from, to?, view, target, pan, projection, touchedAt }
 //                                                    a tab's camera: a CameraView `view`, plus its
 //                                                    rotation centre [x,y,z] and pan {x,y} for 'view'
-//                                                    mode, and 'parallel' or 'perspective'
+//                                                    mode, 'parallel' or 'perspective', and when its
+//                                                    user last touched it (ms since 1970); `to` (the
+//                                                    answer to a hello) is for that tab only
 //
 // A parallel camera zooms with its zoom factor, a perspective one by moving in.
 // Both are measured against the view fitted to the structure, so a pose from
 // the other kind of camera is converted: zoom 2 there is half the fitted
 // distance here, and the other way round.
+//
+// A tab spinning by itself (Camera ▸ Random) hands over when another tab
+// sends it a pose: it then undoes its own spin each frame and follows,
+// until its user touches it again (a press, a wheel turn or a key in that
+// tab) and it leads, spin and all. While it leads, it ignores poses from a
+// tab touched before it was: those were sent before that tab heard it, and
+// the tab touched last wins. Without this, two spinning tabs would each lead
+// and the others would jump between them every frame.
 //
 // Smoothness: one animation-frame loop runs while sync is on. Each frame it
 // compares the camera with the pose it last sent or applied. A difference is
@@ -39,7 +49,7 @@
 // leading tab glides here and tabs with different frame rates stay smooth.
 
 import * as THREE from '../external/three/three.module.js';
-import { app } from '../state/store.js';
+import { app, general } from '../state/store.js';
 import { cameraView, applyView } from './CameraView.js';
 import { getPanelPref, setPanelPref, onPanelsReset } from './panels/PanelManager.js';
 
@@ -61,6 +71,10 @@ let goal = null;
 let last = null;
 let frame = 0;
 let lastTime = 0;
+/** A pose came from another tab since this tab's user last touched it. */
+let following = false;
+/** When this tab's user last touched it (Date.now()), sent with each pose. */
+let touchedAt = 0;
 const listeners = new Set();
 
 export function cameraSyncSupported() {
@@ -104,6 +118,7 @@ export function setCameraSync(on, { lead = false } = {}) {
     channel.close();
     channel = null;
     goal = null;
+    USER_INPUT.forEach((type) => document.removeEventListener(type, onUserInput, true));
     cancelAnimationFrame(frame);
     frame = 0;
     changed();
@@ -112,6 +127,8 @@ export function setCameraSync(on, { lead = false } = {}) {
   if (!channel) {
     channel = new BroadcastChannel(CHANNEL);
     channel.onmessage = onMessage;
+    following = false;
+    USER_INPUT.forEach((type) => document.addEventListener(type, onUserInput, { capture: true, passive: true }));
     // The camera as it is now is not a move of ours: nothing to send yet.
     last = rawPose();
     lastTime = 0;
@@ -119,13 +136,29 @@ export function setCameraSync(on, { lead = false } = {}) {
     if (!lead) post({ type: 'hello' });
     changed();
   }
-  if (lead) sendPose();
+  if (lead) {
+    onUserInput();
+    sendPose();
+  }
 }
 
 onPanelsReset(() => {
   setCameraSync(false);
   setCameraSyncMode(DEFAULT_MODE);
 });
+
+/** Input that makes this tab lead again after following (see the header). */
+const USER_INPUT = ['pointerdown', 'wheel', 'keydown'];
+
+function onUserInput() {
+  following = false;
+  touchedAt = Date.now();
+}
+
+/** The Camera panel's Random spin is turning this tab's camera by itself. */
+function spinning() {
+  return !!general.autoRandomEnabled && (app.angularVelocity?.lengthSq() ?? 0) > 0;
+}
 
 function projectionOf(camera) {
   return camera.isOrthographicCamera ? 'parallel' : 'perspective';
@@ -148,6 +181,19 @@ function rawPose() {
   ];
 }
 
+/** Put the camera back to a rawPose(). */
+function restorePose(raw) {
+  const camera = app.camera;
+  camera.position.fromArray(raw, 0);
+  camera.quaternion.fromArray(raw, 3);
+  camera.zoom = raw[7];
+  camera.updateProjectionMatrix();
+  app.controls.target.fromArray(raw, 8);
+  app.cameraPan.x = raw[11];
+  app.cameraPan.y = raw[12];
+  camera.updateMatrixWorld(true);
+}
+
 function samePose(a, b) {
   if (!a || !b) return a === b;
   return a.every((value, i) => Math.abs(value - b[i]) <= 1e-7 * (1 + Math.abs(value)));
@@ -167,9 +213,9 @@ function currentPose() {
   }
 }
 
-function sendPose() {
+function sendPose(to = undefined) {
   const pose = currentPose();
-  if (pose) post({ type: 'pose', ...pose });
+  if (pose) post({ type: 'pose', ...pose, touchedAt, ...(to ? { to } : {}) });
   last = rawPose();
 }
 
@@ -237,11 +283,18 @@ function onMessage(event) {
   if (!data || typeof data !== 'object' || data.v !== VERSION) return;
   if (typeof data.from !== 'string' || data.from.length === 0 || data.from.length > 64 || data.from === tabId) return;
   if (data.type === 'hello') {
-    sendPose();
+    sendPose(data.from);
   } else if (data.type === 'pose') {
+    if (data.to !== undefined && data.to !== tabId) return;  // an answer to another tab's hello
+    const theirs = inRange(data.touchedAt, 0, Number.MAX_SAFE_INTEGER) ? data.touchedAt : 0;
+    // Leading a spin, this tab was touched last: that tab has not heard it yet.
+    if (!following && spinning() && theirs < touchedAt) return;
     const read = readPose(data);
     const pose = read && inOwnProjection(read, data.projection);
-    if (pose) goal = pose;
+    if (pose) {
+      goal = pose;
+      following = true;
+    }
   }
 }
 
@@ -302,10 +355,16 @@ function tick(time) {
   frame = requestAnimationFrame(tick);
   const dt = lastTime ? Math.min((time - lastTime) / 1000, 1) : 1;
   lastTime = time;
-  const pose = rawPose();
+  let pose = rawPose();
+  if (last && !samePose(pose, last) && following && spinning()) {
+    // Its own spin, while another tab leads: undo it, and follow as usual.
+    restorePose(last);
+    pose = last;
+  }
   if (!samePose(pose, last)) {
-    // This tab moved by itself: it leads, and the others follow it.
+    // This tab moved: it leads, and the others follow it.
     goal = null;
+    following = false;
     sendPose();
   } else if (goal) {
     easeTowardGoal(1 - Math.exp(-dt / TAU_S));

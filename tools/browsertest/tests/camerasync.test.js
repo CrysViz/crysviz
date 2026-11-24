@@ -11,6 +11,8 @@
 //     and does not also toggle sync; "Make other tabs match" turns the others
 //   - switching a tab off stops it following
 //   - a perspective tab and a parallel tab zoom together (zoom factor <-> distance)
+//   - a tab spinning by itself (Random) holds the leading tab's pose instead of
+//     sending its spin; touched, it leads and the others follow its spin
 'use strict';
 const H = require('../harness');
 
@@ -300,6 +302,67 @@ async function settle(...pages) {
     Math.abs(rb.zoom * ra.distance / ra.zoom - 1) < 0.02 && rb.zoom > 1.5, JSON.stringify({ ra, rb }));
   await a.evaluate(PROJECTION, true);
   await settle(a, b);
+
+  // ---- a tab spinning by itself ------------------------------------------------------
+  /** Camera ▸ Random on or off, with a fixed spin so the test does not depend on the random impulse. */
+  const SPIN = async (on) => {
+    const el = document.getElementById('pushRandom');
+    el.checked = on;
+    el.dispatchEvent(new Event('change'));
+    if (on) (await import('./state/store.js')).app.angularVelocity.set(0.4, 0.6, 0.2);
+  };
+  /** A press in the tab, as a user touching it makes (not on any control). */
+  const TOUCH = async () => {
+    document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0 }));
+  };
+  // B last took a pose from A, so B follows: its own spin must not take over.
+  const bBefore = await b.evaluate(CAMERA);
+  await b.evaluate(SPIN, true);
+  await settle(b, a);
+  await b.waitForTimeout(600);
+  let sa = await a.evaluate(CAMERA);
+  let sb = await b.evaluate(CAMERA);
+  H.check('a following tab that spins holds the leading tab\'s pose (no spin sent, none shown)',
+    sameView(sb, bBefore) && sameView(sa, sb), JSON.stringify({ bBefore, sa, sb }));
+  // Touched, B leads: A follows its spin, and stays with it when the spin stops.
+  await b.evaluate(TOUCH);
+  await b.waitForTimeout(1200);
+  await b.evaluate(SPIN, false);
+  await settle(b, a);
+  sa = await a.evaluate(CAMERA);
+  sb = await b.evaluate(CAMERA);
+  H.check('touched, the spinning tab leads: the other tab follows its spin',
+    !sameView(sb, bBefore) && sameView(sa, sb), JSON.stringify({ bBefore, sa, sb }));
+  // Both spinning: the tab touched last leads, the other holds its pose. Tab B
+  // records its per-frame turn meanwhile: following one leader it turns a little
+  // each frame, jumping between two leaders it would swing back and forth.
+  await a.evaluate(SPIN, true);
+  await b.evaluate(SPIN, true);
+  await a.evaluate(TOUCH);
+  await a.waitForTimeout(400);  // the hand-over from B to A glides; sample after it
+  await b.evaluate(() => {
+    window.__spinSteps = [];
+    let prev = null;
+    const sample = async () => {
+      const { app } = await import('./state/store.js');
+      const q = app.camera.quaternion.clone();
+      if (prev) window.__spinSteps.push(prev.angleTo(q));
+      prev = q;
+      if (window.__spinSteps.length < 50) requestAnimationFrame(sample);
+    };
+    requestAnimationFrame(sample);
+  });
+  await a.waitForTimeout(1500);
+  const steps = await b.evaluate(() => window.__spinSteps);
+  await a.evaluate(SPIN, false);
+  await b.evaluate(SPIN, false);
+  await settle(a, b);
+  sa = await a.evaluate(CAMERA);
+  sb = await b.evaluate(CAMERA);
+  const maxStep = Math.max(...steps);
+  H.check('two spinning tabs: the one touched last leads, the other follows it smoothly',
+    sameView(sa, sb) && steps.length >= 20 && maxStep < 0.05 && steps.some((t) => t > 1e-4),
+    JSON.stringify({ maxStep, frames: steps.length, sa, sb }));
 
   H.check('no page errors', errors.length === 0, errors.join('\n'));
   await H.finish(browser);
