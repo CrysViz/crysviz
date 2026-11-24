@@ -121,7 +121,11 @@ const sameSu = (v) => v != null && Math.abs(v - CC_SU) < 1e-6;
     const cv = await import('./core/crystal-viewer.js');
     window.__cifLoad = cv.loadStructure(text, 'pm1.cif');
   }, PM1_CIF);
-  await page.waitForFunction(() => !document.getElementById('cifSymmetryModal')?.hidden, null, { timeout: 30000 });
+  // The modal is built on first use: wait for it to exist, not just "not hidden".
+  await page.waitForFunction(() => {
+    const m = document.getElementById('cifSymmetryModal');
+    return !!m && !m.hidden;
+  }, null, { timeout: 30000 });
   await page.evaluate(() => {
     const box = /** @type {HTMLInputElement} */ (document.getElementById('cifSymmetryModalErrors'));
     if (!box.checked) box.click();

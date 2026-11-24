@@ -10,7 +10,7 @@
 // (and holding) the deleted trajectory — covered by a short MD run, which opens
 // the panel on its trajectory, then deleting that row. Loads three
 // trajectories, plays them, deletes the rows, runs and deletes the MD, takes a
-// heap snapshot (CDP, Chromium only) and expects no TrajectoryContainer and no
+// heap snapshot (CDP, Chromium only; skipped elsewhere) and expects no TrajectoryContainer and no
 // frame's Atoms left; on failure prints the retainer path.
 'use strict';
 const H = require('../harness');
@@ -68,6 +68,10 @@ const H = require('../harness');
     JSON.stringify(ids));
   H.check('the id registry is back to its idle size after the rows are deleted',
     ids.after <= ids.idle, JSON.stringify(ids));
+  if (browser.browserType().name() !== 'chromium') {
+    console.log('  (skipped: heap-snapshot checks need CDP, run with CRYSVIZ_BROWSER=chromium)');
+    return H.finish(browser);
+  }
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('HeapProfiler.enable');
   await cdp.send('HeapProfiler.collectGarbage');

@@ -267,17 +267,22 @@ const H = require('../harness');
     JSON.stringify(mouse));
   H.check('the Alpha and Edge alpha fields show their whole value',
     mouse.fields.length === 2 && mouse.fields.every((f) => f.fits), JSON.stringify(mouse.fields));
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-  await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }, { name: 'hover', value: 'none' }] });
-  await page.waitForTimeout(300);
-  const touch = await editorSizes();
-  H.check('narrow window, touch: checkboxes grow for fingers, Reset/Apply still fit',
-    touch.coarse && String(touch.checkbox).startsWith('matrix(1.5')
-      && touch.buttons.length === 2 && touch.buttons.every((b) => b.fits),
-    JSON.stringify(touch));
-  await cdp.send('Emulation.setEmulatedMedia', { features: [] });
-  await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  // Touch emulation needs CDP; Firefox (the default runner) skips the touch half.
+  if (browser.browserType().name() === 'chromium') {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'pointer', value: 'coarse' }, { name: 'hover', value: 'none' }] });
+    await page.waitForTimeout(300);
+    const touch = await editorSizes();
+    H.check('narrow window, touch: checkboxes grow for fingers, Reset/Apply still fit',
+      touch.coarse && String(touch.checkbox).startsWith('matrix(1.5')
+        && touch.buttons.length === 2 && touch.buttons.every((b) => b.fits),
+      JSON.stringify(touch));
+    await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  } else {
+    console.log('  (skipped: touch-size check needs CDP, run with CRYSVIZ_BROWSER=chromium)');
+  }
 
   H.check('no page errors', errors.length === 0, errors[0] || '');
   await H.finish(browser);

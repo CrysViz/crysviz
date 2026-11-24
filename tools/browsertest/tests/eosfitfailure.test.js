@@ -100,8 +100,9 @@ function read(page) {
   const again = await load(page, 'good.dat', GOOD);
   H.check('the next good file fits and shows again', again.status === 'Fit complete.' && again.shown, JSON.stringify(again));
 
-  // The simulated failure logs its own console.error; nothing else may.
-  const other = errors.filter((e) => !/simulated SciPy failure/.test(e));
+  // The simulated failure logs its own console.error; nothing else may. Match
+  // the app's log line: Firefox prints the Error argument as just "Error".
+  const other = errors.filter((e) => !/EOS SciPy fitting failed/.test(e));
   H.check('no other page errors (no JSON.parse failure)', other.length === 0, other[0] || '');
   await H.finish(browser);
 })().catch(H.crash);
