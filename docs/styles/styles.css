@@ -2925,7 +2925,10 @@ touch-action: none;
 }
 
 #axesLegend{
-position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px));
+/* Centred on the gizmo's centre line: bottom at the gizmo's centre, then
+   translate (not transform, which the breakpoints use) down by half its height. */
+position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px) + var(--gizmo-size) / 2);
+translate: 0 50%;
 background: var(--float-panel-bg);
 border: 1px solid var(--line-2);
 border-radius: var(--radius);

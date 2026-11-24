@@ -79,7 +79,9 @@ export function initGizmoDrag() {
     const gRect = gizmoDiv.getBoundingClientRect();
     legendDiv.style.left = `${gRect.right + 8}px`;
     legendDiv.style.top = '';
-    legendDiv.style.bottom = `${window.innerHeight - gRect.bottom}px`;
+    // Bottom at the gizmo's centre; the CSS translate (styles.css) centres the
+    // legend on that line.
+    legendDiv.style.bottom = `${window.innerHeight - (gRect.top + gRect.height / 2)}px`;
     // Some breakpoints (styles.css) nudge the legend with an extra
     // translateX() on top of `left`, tuned for the CSS default position —
     // once JS is driving `left` directly that extra shift would double up.
