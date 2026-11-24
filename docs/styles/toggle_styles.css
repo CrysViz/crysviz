@@ -414,6 +414,12 @@ body.cv-busy * {
   font-size: var(--fs-sm);
   opacity: 0.85;
 }
+/* The long-press menu opens from a docked or floating window, which sit
+   above .restore-popover's layer: lift it to the window menus' layer
+   (.cv-panel-menu), or it opens out of sight behind the window. */
+.camera-sync-menu {
+  z-index: var(--z-context-menu);
+}
 /* The mode picked in the long-press menu (role=menuitemradio). */
 .camera-sync-menu .restore-popover-btn[aria-checked="true"] {
   background: var(--highlight-color);

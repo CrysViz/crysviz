@@ -95,7 +95,7 @@ function buildSyncMenu() {
     <button type="button" id="cameraSyncModeView" class="restore-popover-btn restore-popover-cancel" role="menuitemradio"
       title="Copy the whole view of the other tabs, centre and pan too: for the same structure shown two ways">Match the whole view</button>
     <button type="button" id="cameraSyncLead" class="restore-popover-btn restore-popover-cancel" role="menuitem"
-      title="Switch sync on and turn the other synced tabs to this tab's view">Make other tabs match this one</button>
+      title="Switch sync on here and turn the other tabs to this tab's view (only tabs with sync on follow)">Make other tabs match this one</button>
     <button type="button" id="cameraSyncMenuCancel" class="restore-popover-btn restore-popover-cancel" role="menuitem">Cancel</button>
   `;
   document.body.appendChild(el);
@@ -148,8 +148,9 @@ function makeCameraSyncButton() {
     btn.setAttribute('aria-pressed', String(on));
     state.textContent = on ? SYNC_MODE_LABELS[getCameraSyncMode()] : 'Off';
   };
-  btn.title = 'Turn and zoom the CrysViz tabs and windows of this browser together. '
-    + 'Only tabs with sync on take part, and nothing leaves the browser. Long press for options.';
+  btn.title = 'Turn and zoom CrysViz tabs and windows of this browser together.\n'
+    + 'Only tabs where this button is on take part: switch it on in every tab you want synced.\n'
+    + 'Nothing leaves the browser. Long press (hold) for options.';
   btn.addEventListener('click', () => setCameraSync(!isCameraSyncOn()));
   wireButtonLongPress(btn, () => showSyncMenu(btn));
   onCameraSyncChange(refresh);

@@ -195,22 +195,50 @@ async function settle(...pages) {
     JSON.stringify({ cb, cbAfter }));
 
   // ---- long press: the menu ----------------------------------------------------------
-  const press = await b.evaluate(async () => {
-    const btn = document.getElementById('cameraSyncBtn');
-    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse', button: 0 }));
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    btn.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse', button: 0 }));
-    btn.click();  // the click that ends the hold
-    const menu = document.getElementById('cameraSyncMenu');
-    return {
-      open: !!menu && !menu.hidden,
-      checked: menu?.querySelector('[aria-checked="true"]')?.id,
-      pressed: btn.getAttribute('aria-pressed'),
-    };
+  // A real mouse hold on the button in its window (Visual ▸ Camera), as the user does it,
+  // with the window docked and floating (floating windows sit on a higher layer).
+  await b.evaluate(async () => {
+    const { openPanel } = await import('./ui/panels/PanelManager.js');
+    openPanel('visual');
   });
-  H.check('a long press opens the menu, the current mode checked, and does not toggle sync',
-    press.open && press.checked === 'cameraSyncModeView' && press.pressed === 'true', JSON.stringify(press));
-  await b.keyboard.press('Escape');
+  await b.waitForTimeout(500);
+  const holdSyncButton = async () => {
+    await b.locator('#cameraSyncBtn').scrollIntoViewIfNeeded();
+    const box = await b.locator('#cameraSyncBtn').boundingBox();
+    await b.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await b.mouse.down();
+    await b.waitForTimeout(800);
+    await b.mouse.up();
+    await b.waitForTimeout(200);
+    return b.evaluate(() => {
+      const btn = document.getElementById('cameraSyncBtn');
+      const menu = document.getElementById('cameraSyncMenu');
+      const r = menu && !menu.hidden ? menu.getBoundingClientRect() : null;
+      // On top where it opened, not behind the window that holds the button.
+      const top = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
+      return {
+        open: !!r,
+        onTop: !!top && menu.contains(top),
+        topIs: top ? `${top.tagName}#${top.id}.${top.className}` : null,
+        checked: menu?.querySelector('[aria-checked="true"]')?.id,
+        pressed: btn.getAttribute('aria-pressed'),
+      };
+    });
+  };
+  for (const placement of ['docked', 'floating']) {
+    if (placement === 'floating') {
+      await b.evaluate(async () => {
+        const { getPanel } = await import('./ui/panels/PanelManager.js');
+        const panel = getPanel('visual');
+        panel.hooks.positionPanel(panel, 'float');
+      });
+      await b.waitForTimeout(500);
+    }
+    const press = await holdSyncButton();
+    H.check(`${placement} window: a long press opens the menu on top, the current mode checked, and does not toggle sync`,
+      press.open && press.onTop && press.checked === 'cameraSyncModeView' && press.pressed === 'true', JSON.stringify(press));
+    await b.keyboard.press('Escape');
+  }
   H.check('Escape closes the menu', await b.evaluate(() => document.getElementById('cameraSyncMenu').hidden));
 
   // "Make other tabs match this one": B turns while its sync is off, then leads.
