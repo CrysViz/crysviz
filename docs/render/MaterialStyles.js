@@ -352,9 +352,13 @@ export function addCelOutline(mesh, { cutPlanes = false, opacityDiscard = false,
 // normals would split them open at every edge. The displacement direction is
 // instead baked per vertex as an `outlineDir` attribute pointing radially
 // away from the polyhedron centre (duplicated flat-shaded vertices at the
-// same position get the same direction — the hull stays watertight). The
-// singleton material survives disposeGroup()'s dispose (three recompiles it
-// on next use, re-seeding the width from `general`).
+// same position get the same direction — the hull stays watertight); see
+// render/PolyhedraMesh.js, which bakes it for all polyhedra into the one face
+// geometry. The shell reads that geometry's per-vertex RGBA colour and
+// polyState: see-through polyhedra (alpha below 1) get no shell — the opaque
+// inverted hull would black out everything behind them — and hidden ones
+// none either. The singleton material survives disposeGroup()'s dispose
+// (three recompiles it on next use, re-seeding the width from `general`).
 
 let polyOutlineMaterial = null;
 
@@ -366,49 +370,42 @@ function makePolyOutlineMaterial() {
     shader.vertexShader = `
       uniform float uOutlineWidth;
       attribute vec3 outlineDir;
+      attribute vec4 color;
+      attribute float polyState;
+      varying float vHullKeep;
     ` + shader.vertexShader;
     shader.vertexShader = shader.vertexShader.replace(
       '#include <project_vertex>',
       `
+      vHullKeep = ( polyState < 1.5 && color.a >= 0.999 ) ? 1.0 : 0.0;
       vec4 outlinePos = vec4( transformed + outlineDir * uOutlineWidth, 1.0 );
       vec4 mvPosition = modelViewMatrix * outlinePos;
       gl_Position = projectionMatrix * mvPosition;
       `
     );
+    shader.fragmentShader = 'varying float vHullKeep;\n' + shader.fragmentShader.replace(
+      'void main() {', 'void main() {\n\tif ( vHullKeep < 0.5 ) discard;');
     material.userData.shader = shader;
   };
   return material;
 }
 
 /**
- * Attach a black hull outline to one polyhedron mesh (call only in cel style
- * with celOutlineMode === 'hull'). `center` is the polyhedron centre the
- * per-vertex displacement directions point away from.
- * @param {any} mesh
- * @param {any} center THREE.Vector3
+ * Add the cel hull outline of all polyhedra (call only in cel style with
+ * celOutlineMode === 'hull'): one back-face shell over the shared face
+ * geometry, which must carry `outlineDir`, `color` (RGBA) and `polyState`.
+ * @param {any} parent the polyhedra group
+ * @param {any} geometry the polyhedra face geometry
  */
-export function addCelPolyOutline(mesh, center) {
+export function addCelPolyOutline(parent, geometry) {
   if (!polyOutlineMaterial) polyOutlineMaterial = makePolyOutlineMaterial();
-  const pos = mesh.geometry.attributes.position;
-  const dirs = new Float32Array(pos.count * 3);
-  const v = new THREE.Vector3();
-  for (let i = 0; i < pos.count; i++) {
-    v.set(pos.getX(i) - center.x, pos.getY(i) - center.y, pos.getZ(i) - center.z);
-    const len = v.length();
-    if (len > 0) v.multiplyScalar(1 / len);
-    dirs[i * 3] = v.x;
-    dirs[i * 3 + 1] = v.y;
-    dirs[i * 3 + 2] = v.z;
-  }
-  mesh.geometry.setAttribute('outlineDir', new THREE.BufferAttribute(dirs, 3));
-
-  const outline = new THREE.Mesh(mesh.geometry, polyOutlineMaterial);
+  const outline = new THREE.Mesh(geometry, polyOutlineMaterial);
   outline.raycast = () => {}; // never intercept picking
-  // Transparent polyhedra get no hull outline (the opaque shell would black
-  // out everything behind them); alpha edits re-sync via updatePolyhedraColors.
-  outline.visible = general.celHullPolyWidth > 0 && (mesh.material?.opacity ?? 1) >= 0.999;
+  // Shown while any polyhedron is opaque (PolyhedraMesh.js
+  // syncPolyhedraVisibility stamps userData.anyOpaque).
+  outline.visible = general.celHullPolyWidth > 0;
   outline.name = 'celOutline';
-  mesh.add(outline);
+  parent.add(outline);
   return outline;
 }
 
@@ -468,10 +465,11 @@ export function setCelHullPolyWidth(width) {
   applyHullWidths();
   if (groups.polyhedraGroup) {
     groups.polyhedraGroup.traverse((obj) => {
-      // Transparent polyhedra get no hull outline: the opaque inverted-hull
-      // shell would black out everything behind them.
+      // The shell's shader drops see-through polyhedra (an opaque inverted
+      // hull would black out what lies behind them); with none opaque there
+      // is nothing to draw (PolyhedraMesh.js syncPolyhedraVisibility).
       if (obj.name === 'celOutline') {
-        obj.visible = width > 0 && (obj.parent?.material?.opacity ?? 1) >= 0.999;
+        obj.visible = width > 0 && obj.userData.anyOpaque !== false;
       }
     });
   }

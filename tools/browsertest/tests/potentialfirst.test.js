@@ -2,6 +2,9 @@
 // Relax/MD action switch, is its own persistent element, and the chosen
 // potential survives switching action (it used to reset to NEP on every
 // Relax<->MD rebuild). Order Structure / EOS read the same shared choice.
+// Picking ASE or PET-MAD shows its one-line hint under the picker (the click
+// handler used to clear that line right after writing it), and replaces an
+// earlier run's result there; NEP leaves the line empty.
 'use strict';
 const H = require('../harness');
 
@@ -24,11 +27,19 @@ const H = require('../harness');
       selector.querySelector(`[data-role="potential-toggle"] button[data-potential="${p}"]`)?.click();
     const clickMode = (m) => modeSwitch.querySelector(`button[data-mode="${m}"]`)?.click();
     const mlipHidden = () => selector.querySelector('[data-role="mlip-source"]').classList.contains('hidden');
+    const hint = () => selector.querySelector('[data-role="source-state"]').textContent;
 
-    // Choose PET-MAD (mlip) while in the default Relax action.
+    // An earlier run's result on the line, then PET-MAD (mlip) while in the
+    // default Relax action.
+    selector.querySelector('[data-role="source-state"]').textContent = 'Relax failed: earlier run';
     clickPotential('mlip');
     const afterPick = { potential: general.atomisticPotential, mlipShown: !mlipHidden(),
-      relaxBody: !!calc.querySelector('#relaxBtn') };
+      relaxBody: !!calc.querySelector('#relaxBtn'), hint: hint() };
+    clickPotential('ase');
+    const aseHint = hint();
+    clickPotential('nep');
+    const nepHint = hint();
+    clickPotential('mlip');
 
     // Switch action to MD — the potential must NOT reset.
     clickMode('md');
@@ -42,7 +53,7 @@ const H = require('../harness');
     // Reset to NEP so we don't leave a heavy backend selected for other tests.
     clickPotential('nep');
 
-    return { selectorBeforeSwitch, switchBeforeBody, afterPick, afterMD, afterRelax,
+    return { selectorBeforeSwitch, switchBeforeBody, afterPick, aseHint, nepHint, afterMD, afterRelax,
       selectorVisible: !selector.classList.contains('hidden') };
   });
 
@@ -52,6 +63,12 @@ const H = require('../harness');
   H.check('picking a potential updates state and shows its controls, action body intact',
     r.afterPick.potential === 'mlip' && r.afterPick.mlipShown && r.afterPick.relaxBody,
     JSON.stringify(r.afterPick));
+
+  H.check('PET-MAD shows its hint, in place of the earlier result',
+    /^PET-MAD selected: load a model/.test(r.afterPick.hint), JSON.stringify(r.afterPick.hint));
+  H.check('ASE shows how to start the server (the hint was cleared at once)',
+    /^ASE: start python backend\/server\.py/.test(r.aseHint), JSON.stringify(r.aseHint));
+  H.check('NEP leaves the hint line empty', r.nepHint === '', JSON.stringify(r.nepHint));
 
   H.check('switching Relax->MD keeps the chosen potential (no reset to NEP)',
     r.afterMD.potential === 'mlip' && r.afterMD.mlipShown && r.afterMD.mdBody && !r.afterMD.relaxBody,

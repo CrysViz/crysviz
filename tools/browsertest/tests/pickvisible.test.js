@@ -28,11 +28,13 @@ const PROBE = `
     ray.setFromCamera(new THREE.Vector2(nx, ny), app.camera);
     const atom = groups.atomsMesh ? ray.intersectObject(groups.atomsMesh)[0] : null;
     const bond = groups.bondsMesh ? ray.intersectObject(groups.bondsMesh)[0] : null;
-    const polys = groups.polyhedraGroup
-      ? ray.intersectObjects(groups.polyhedraGroup.children, false).filter((h) => h.object.visible && h.object.userData?.type === 'polyhedron') : [];
+    // all polyhedra are one mesh: hits carry polyIndex, a row of its table
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    const polys = table
+      ? ray.intersectObjects(groups.polyhedraGroup.children, false).filter((h) => Number.isInteger(h.polyIndex)) : [];
     return { atom: atom ? { i: atom.instanceId, d: atom.distance } : null,
       bond: bond ? { i: bond.instanceId, d: bond.distance } : null,
-      poly: polys[0] ? { key: polys[0].object.userData.key, d: polys[0].distance, centre: polys[0].object.userData.centerSrcIndex } : null };
+      poly: polys[0] ? { key: table.key[polys[0].polyIndex], d: polys[0].distance, centre: table.centerIndex[polys[0].polyIndex] } : null };
   };
   const onCanvas = (pt) => Math.abs(pt.nx) < 0.9 && Math.abs(pt.ny) < 0.9
     && document.elementFromPoint(pt.x, pt.y) === app.renderer.domElement;
@@ -149,13 +151,13 @@ const PROBE = `
     const { updatePolyhedraColors } = await import('./render/PolyhedraModule.js');
     const s = fileBrowser.selectedStructure;
     s.polyhedraCategoryStyles ??= {};
-    for (const mesh of groups.polyhedraGroup?.children ?? []) {
-      const catKey = mesh.userData?.catKey;
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    for (const catKey of new Set(table?.catKey ?? [])) {
       if (!catKey) continue;
       s.polyhedraCategoryStyles[catKey] = { ...(s.polyhedraCategoryStyles[catKey] ?? {}), alpha };
     }
     updatePolyhedraColors();
-    return (groups.polyhedraGroup?.children ?? []).filter((m) => m.userData?.type === 'polyhedron').map((m) => m.material.opacity);
+    return table ? [...Array(table.n).keys()].filter((i) => table.faceCount[i]).map((i) => table.opacity[i]) : [];
   }, alpha);
   const opaqueAlphas = await setPolyAlpha(1);
   H.check('polyhedra set to alpha 1', opaqueAlphas.length > 0 && opaqueAlphas.every((a) => a === 1), JSON.stringify(opaqueAlphas));
@@ -163,10 +165,10 @@ const PROBE = `
   const facePt = await page.evaluate(`(async () => { ${PROBE}
     const w = fileBrowser.selectedStructure.periodic.visibleWrapped;
     const centre = new THREE.Vector3();
-    for (const mesh of groups.polyhedraGroup?.children ?? []) {
-      if (mesh.userData?.type !== 'polyhedron' || !mesh.visible) continue;
-      mesh.geometry.computeBoundingSphere();
-      centre.copy(mesh.geometry.boundingSphere.center).applyMatrix4(mesh.matrixWorld);
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    for (let i = 0; table && i < table.n; i++) {
+      if (!table.faceCount[i] || !table.visible[i]) continue;
+      centre.set(table.center[3 * i], table.center[3 * i + 1], table.center[3 * i + 2]);
       // points around the projected centre: a face in front of an atom (the centre atom)
       const c0 = toScreen(centre);
       for (const [dx, dy] of [[0, 0], [0.01, 0.01], [-0.01, 0.01], [0.01, -0.01], [-0.01, -0.01], [0.02, 0], [0, 0.02]]) {
@@ -175,7 +177,7 @@ const PROBE = `
         if (!onCanvas(pt)) continue;
         const c = castAt(pt.nx, pt.ny);
         if (c.poly && c.atom && c.poly.d < c.atom.d - 0.05 && (!c.bond || c.poly.d < c.bond.d - 0.05)) {
-          return { key: mesh.userData.key, x: pt.x, y: pt.y, atomSrc: w.srcIndex[c.atom.i], cast: c };
+          return { key: table.key[i], x: pt.x, y: pt.y, atomSrc: w.srcIndex[c.atom.i], cast: c };
         }
       }
     }

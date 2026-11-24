@@ -126,6 +126,20 @@ async function launchApp({ navigate = true, gpu = process.env.CRYSVIZ_GPU || fal
   //   (printf 'var module = { exports: {} }; var exports = module.exports;\n';
   //    cat package/plotly.min.js; printf '\nexport default module.exports;\n') > plotly-esm.js
   if (process.env.CRYSVIZ_PLOTLY_ESM) await page.route('https://esm.sh/plotly.js-dist-min*', (route) => route.fulfill({ path: process.env.CRYSVIZ_PLOTLY_ESM, contentType: 'application/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
+  // Likewise CRYSVIZ_PYODIDE_DIR, the unpacked full Pyodide 0.25.0 release
+  // (pyodide-0.25.0.tar.bz2 from its GitHub releases, the `pyodide/` folder
+  // in it): served for the jsdelivr URL eos/eosFit.js loads the EOS fit's
+  // SciPy from.
+  if (process.env.CRYSVIZ_PYODIDE_DIR) {
+    const MIME = { '.mjs': 'application/javascript', '.js': 'application/javascript', '.wasm': 'application/wasm', '.json': 'application/json' };
+    await page.route('https://cdn.jsdelivr.net/pyodide/v0.25.0/full/**', (route) => {
+      const rel = decodeURIComponent(new globalThis.URL(route.request().url()).pathname.replace('/pyodide/v0.25.0/full/', ''));
+      const file = path.join(process.env.CRYSVIZ_PYODIDE_DIR, rel);
+      const headers = { 'Access-Control-Allow-Origin': '*' };
+      if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: 'not found', headers });
+      return route.fulfill({ path: file, contentType: MIME[path.extname(file)] || 'application/octet-stream', headers });
+    });
+  }
   // Pre-dismiss the ray/path-tracing performance-warning modal: shotCanvas is a
   // page screenshot (DOM overlays included), so the modal backdrop would dim
   // every capture taken after a dropdown switch into a tracer. Tests that TEST

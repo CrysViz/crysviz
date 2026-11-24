@@ -343,7 +343,17 @@ export function resetBondLengths() {
  *  data — no mesh/render calls — so it's safe to re-run against off-screen
  *  trajectory frames too. */
 function resetAllBondColors(structure) {
-  for (const store of [structure.bondCategoryStyles, structure.bondUserStyles]) {
+  resetBondColorsIn(structure.bondCategoryStyles);
+  resetUserBondColors(structure);
+}
+
+/** The individual bond colours of one frame (per-frame overrides). */
+function resetUserBondColors(structure) {
+  resetBondColorsIn(structure.bondUserStyles);
+}
+
+function resetBondColorsIn(...stores) {
+  for (const store of stores) {
     if (!store) continue;
     for (const [key, entry] of Object.entries(store)) {
       delete entry.color;
@@ -691,7 +701,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     const catResetBtn = document.createElement('button');
     catResetBtn.textContent = 'Reset';
     catResetBtn.className = 'btn-mini bond-cat-btn';
-    catResetBtn.title = `Reset ${pair} bonds: removes the group style AND every individual override.\nClick: this frame. Press and hold: whole trajectory.`;
+    catResetBtn.title = `Reset ${pair} bonds: removes the group style (whole trajectory) and every individual override on this frame.\nPress and hold: also clears the individual overrides on every frame.`;
     // Preview the two elements' default (pre-override) half-colors, same idea
     // as the element editor's Reset swatch — each bond half is colored by its
     // own endpoint element by default.
@@ -701,8 +711,15 @@ export function createBondLengthControls(targetPanel='bondControls') {
       catResetBtn.style.background = `linear-gradient(90deg, ${defColor1} 50%, ${defColor2} 50%)`;
       catResetBtn.style.color = textColorForBg(defColor1);
     }
+    // The group style is one for the whole trajectory (the trajectory's
+    // shared styles, model/materializeFrame.js SHARED_STYLE_DICTS): one
+    // delete on the shown frame resets it everywhere. Individual overrides
+    // are per frame.
     function resetPairOnFrame(frame) {
       delete frame.bondCategoryStyles?.[pair];
+      resetPairMembersOnFrame(frame);
+    }
+    function resetPairMembersOnFrame(frame) {
       (frame.bonds ?? []).filter((b) => pairOfBond(b) === pair)
         .forEach((b) => delete frame.bondUserStyles?.[bondKey(b.indices)]);
     }
@@ -719,10 +736,10 @@ export function createBondLengthControls(targetPanel='bondControls') {
       onConfirm: (e) => {
         e.stopPropagation();
         resetPairOnFrame(structure());
-        // Clear this same pair's category + member overrides on every other
-        // frame too, using each frame's OWN bond list/keys (not a copy of
-        // this frame's), since wrapped-index bond keys can drift frame to frame.
-        applyToOtherTrajectoryFrames(structure(), resetPairOnFrame);
+        // Clear this same pair's member overrides on every other frame too,
+        // using each frame's OWN bond list/keys (not a copy of this frame's),
+        // since wrapped-index bond keys can drift frame to frame.
+        applyToOtherTrajectoryFrames(structure(), resetPairMembersOnFrame);
         saveBondStyles(structure());
         updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
         refreshExpandedBondLists(bondControls);
@@ -733,22 +750,12 @@ export function createBondLengthControls(targetPanel='bondControls') {
     const catApplyBtn = document.createElement('button');
     catApplyBtn.textContent = 'Apply';
     catApplyBtn.className = 'btn-mini highlight bond-cat-btn';
-    catApplyBtn.title = `Click: close. Press and hold: copy ${pair} bonds' group color/alpha/size to every trajectory frame.`;
-    wirePressHoldPopup(catApplyBtn, {
-      holdLabel: 'Apply to Trajectory',
-      onPress: (e) => {
-        e.stopPropagation();
-        catEditor.hidden = true;
-      },
-      onConfirm: (e) => {
-        e.stopPropagation();
-        const style = { ...structure().bondCategoryStyles[pair] };
-        applyToOtherTrajectoryFrames(structure(), (frame) => {
-          frame.bondCategoryStyles ??= {};
-          frame.bondCategoryStyles[pair] = { ...style };
-        });
-      },
-    });
+    // A group style already applies to every frame of a trajectory.
+    catApplyBtn.title = 'Close. The group style applies to every trajectory frame.';
+    catApplyBtn.onclick = (e) => {
+      e.stopPropagation();
+      catEditor.hidden = true;
+    };
 
     const catButtonRow = document.createElement('div');
     catButtonRow.className = 'bond-cat-btn-row';
@@ -1021,7 +1028,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
   resetBondColorsBtn.id = 'resetBondColorsBtn';
   resetBondColorsBtn.textContent = 'Reset Colors';
   resetBondColorsBtn.className = 'reset-btn blp-reset-btn';
-  resetBondColorsBtn.title = 'Reset every bond color customization (category and individual) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
+  resetBondColorsBtn.title = 'Reset every bond color customization to element defaults: pair colors (whole trajectory) and individual colors on this frame.\nPress and hold: also clears the individual colors on every frame.';
   wirePressHoldPopup(resetBondColorsBtn, {
     holdLabel: 'Reset Trajectory',
     onPress: () => {
@@ -1032,7 +1039,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     onConfirm: () => {
       const structure = fileBrowser.selectedStructure;
       resetAllBondColors(structure);
-      applyToOtherTrajectoryFrames(structure, resetAllBondColors);
+      applyToOtherTrajectoryFrames(structure, resetUserBondColors);
       saveBondStyles(structure);
       updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     },

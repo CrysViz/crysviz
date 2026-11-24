@@ -11,6 +11,7 @@ import { requestRender } from './AnimateModule.js';
 import { pendingFramePositions } from '../model/materializeFrame.js';
 import { updateGroundPlane } from './GroundPlaneModule.js';
 import { updateAsuAtomHighlight, refreshAsymmetricUnitIfStale } from './AsymmetricUnitModule.js';
+import { fastUpdatePolyhedra } from './PolyhedraFrameModule.js';
 
 // ── Render fast path for MD / relax frames ────────────────────────────────────
 //
@@ -268,9 +269,12 @@ export function applyFrameFast(structure) {
 
   // "Complete Polyhedra" appends extra atoms to the wrapped set (beyond baseCount)
   // and grows atomsMesh; the direct recompute here won't reproduce them, so bail
-  // and let the full pipeline handle that mode. Visible polyhedra must track the
-  // moving atoms every frame (updatePolyhedra), which only the full path does.
-  if (general.completePolyhedra || general.showPolyhedra) return bail('polyhedra visible');
+  // and let the full pipeline handle that mode. Visible polyhedra move with the
+  // atoms below (render/PolyhedraFrameModule.js) — except under a cut plane,
+  // which decides which polyhedra exist at all: that set is the search's.
+  if (general.completePolyhedra) return bail('complete polyhedra');
+  const polyhedraOn = !!general.showPolyhedra;
+  if (polyhedraOn && getActiveCutPlanes().length) return bail('polyhedra under a cut plane');
 
   const lattice = structure.lattice;
   const wrapped = periodic.wrapped;
@@ -303,6 +307,14 @@ export function applyFrameFast(structure) {
   const bondsOn = !!general.showBonds;
   const bondsMesh = groups.bondsMesh;
   if (bondsOn && !bondsMesh) return bail('bonds on but no bondsMesh');
+
+  // ---- Polyhedra: the last check that can fail (a hull that no longer
+  // closes), so it runs before any atom or bond is written; on success the
+  // polyhedra and their property colours are already up to date. ----
+  if (polyhedraOn) {
+    const polyResult = fastUpdatePolyhedra(structure);
+    if (polyResult !== true) return bail(polyResult);
+  }
 
   // ---- Move every instance from its source atom + its frozen lattice shift ----
   // Re-deriving the wrapping with periodicWrapped() here is what used to make

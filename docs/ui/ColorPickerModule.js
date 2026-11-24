@@ -79,15 +79,17 @@ export function createColorPicker(initialHex, onChange) {
   let hsv = rgbToHsv(initialRgb.r, initialRgb.g, initialRgb.b);
   let rgb = initialRgb;
 
-  // --- Dimensions ---
-  const WIDTH = 200;
-  const HEIGHT = 150;
+  // --- Dimensions (the drawing resolution; the CSS lets the picker shrink
+  // with a narrow column, see .cv-colorpicker in sceneWidgets.css, so the
+  // pointer maths below works in the canvas's on-screen size) ---
+  const WIDTH = 170;
+  const HEIGHT = 120;
   const HUE_WIDTH = 30;
 
   // --- Create DOM elements ---
   const container = document.createElement('div');
   container.className = 'cv-colorpicker'; // sceneWidgets.css
-  container.style.width = WIDTH + 'px'; // sized around the canvases below
+  container.style.width = WIDTH + 'px'; // sized around the canvases below; shrinks via max-width
 
   const svCanvas = document.createElement('canvas');
   svCanvas.width = WIDTH - HUE_WIDTH;
@@ -234,8 +236,8 @@ export function createColorPicker(initialHex, onChange) {
     const rect = svCanvas.getBoundingClientRect();
     let sx = e.clientX - rect.left;
     let sy = e.clientY - rect.top;
-    hsv.s = Math.max(0, Math.min(1, sx / svCanvas.width));
-    hsv.v = Math.max(0, Math.min(1, 1 - sy / svCanvas.height));
+    hsv.s = Math.max(0, Math.min(1, sx / (rect.width || svCanvas.width)));
+    hsv.v = Math.max(0, Math.min(1, 1 - sy / (rect.height || svCanvas.height)));
     updateColorFromHSV();
     render();
   }
@@ -243,7 +245,7 @@ export function createColorPicker(initialHex, onChange) {
   function huePointerEvent(e) {
     const rect = hueCanvas.getBoundingClientRect();
     let hy = e.clientY - rect.top;
-    hsv.h = Math.max(0, Math.min(360, (hy / hueCanvas.height) * 360));
+    hsv.h = Math.max(0, Math.min(360, (hy / (rect.height || hueCanvas.height)) * 360));
     updateColorFromHSV();
     render();
   }

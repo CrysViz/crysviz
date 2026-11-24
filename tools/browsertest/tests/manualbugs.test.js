@@ -317,11 +317,11 @@ function rutilePoscar(n) {
   const placeholder = await page.evaluate(() => document.querySelector('.cv-panel[data-panel-id="polyhedronInspector"] .pi-summary-empty')?.textContent ?? '');
   H.check('10. the Polyhedron Inspector asks for a double-click on a polyhedron', /^Double-click a polyhedron/.test(placeholder), placeholder);
   await page.evaluate(async () => {
-    const { groups } = await import('./state/store.js');
-    const { selectPolyhedronFromMesh } = await import('./ui/SelectAndHighlightModule.js');
-    let mesh = null;
-    groups.polyhedraGroup?.traverse((o) => { if (!mesh && o.userData?.type === 'polyhedron') mesh = o; });
-    selectPolyhedronFromMesh(mesh);
+    const { polyhedraTable } = await import('./render/index.js');
+    const { selectPolyhedronFromIndex } = await import('./ui/SelectAndHighlightModule.js');
+    // all polyhedra are one mesh: pick the first drawn row of its table
+    const table = polyhedraTable();
+    selectPolyhedronFromIndex(table ? table.faceCount.findIndex((c) => c > 0) : -1);
   });
   await page.waitForTimeout(1200);
   const reset = await page.evaluate(() => {

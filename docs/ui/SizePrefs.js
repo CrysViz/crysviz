@@ -1,6 +1,7 @@
 import { fileBrowser, general } from '../state/store.js';
 import { saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
 import { getDefaultBondCutoff } from '../defaults/radii_defaults.js';
+import { SHARED_STYLE_DICTS } from '../model/materializeFrame.js';
 import { sizeSliderToValue, sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE } from './ControlsWiring.js';
 
 // ---------------------------------------------------------------------------
@@ -226,9 +227,17 @@ function restoreAtomRadiusScales(container, value) {
 function styleStoreRestorer(field) {
   return (container, value) => {
     if (!value || typeof value !== 'object' || typeof container?.forEachFrameMaterialized !== 'function') return;
-    container.forEachFrameMaterialized((frame) => {
+    const merge = (/** @type {any} */ frame) => {
       frame[field] = { ...(frame[field] ?? {}), ...JSON.parse(JSON.stringify(value)) };
-    });
+    };
+    // A category store is one for the whole trajectory; individual styles
+    // are per frame.
+    if (/** @type {readonly string[]} */ (SHARED_STYLE_DICTS).includes(field)
+      && typeof container.updateSharedStyles === 'function') {
+      container.updateSharedStyles(merge);
+    } else {
+      container.forEachFrameMaterialized(merge);
+    }
   };
 }
 

@@ -100,8 +100,10 @@ export class ForwardPipeline {
         // Opacity-aware: alpha = 1 polyhedra are genuinely OPAQUE (write
         // depth, skip the blend/OIT passes) so their own hidden edges and
         // objects behind them are properly occluded; alpha < 1 keeps the
-        // legacy always-transparent flags verbatim.
-        const isTransparent = opacity < 1;
+        // legacy always-transparent flags verbatim. needsTransparency: the
+        // see-through half of the one polyhedra mesh (render/PolyhedraMesh.js),
+        // whose per-vertex alpha is below 1 while the material opacity is 1.
+        const isTransparent = opacity < 1 || !!spec.needsTransparency;
         material.transparent = isTransparent;
         material.depthWrite = !isTransparent;
         material.polygonOffset = true;
@@ -110,8 +112,9 @@ export class ForwardPipeline {
         break;
       }
       case 'polyhedraEdge':
-        // Same: fully opaque edges depth-test/write like opaque geometry.
-        material.transparent = opacity < 1;
+        // Same: fully opaque edges depth-test/write like opaque geometry
+        // (needsTransparency: per-segment alpha, as for the faces).
+        material.transparent = opacity < 1 || !!spec.needsTransparency;
         break;
       case 'asuFace':
         // The asymmetric-unit wedge (render/AsymmetricUnitModule.js) is a hull

@@ -35,6 +35,7 @@ const STORE_KEYS = /** @type {ReadonlyArray<readonly [string, string, string]>} 
   ['colors', 'bondCategoryStyles', 'bc'],
   ['colors', 'polyhedraUserStyles', 'pu'],
   ['colors', 'polyhedraCategoryStyles', 'pc'],
+  ['colors', 'polyhedraElementStyles', 'pe'],
   ['colors', 'atomMaterials', 'am'],
   ['colors', 'atomUserMaterials', 'au'],
   ['colors', 'spinCategoryStyles', 'sc'],
@@ -273,6 +274,187 @@ function decodeSiteSpecies(encoded, n) {
   const out = {};
   for (const [k, v] of Object.entries(tuples)) out[k] = speciesFromTuples(v);
   return Object.keys(out).length ? out : null;
+}
+
+// ---------------------------------------------------------------------------
+// CIF errors: the standard uncertainties read from a CIF
+// ---------------------------------------------------------------------------
+//
+// captureState's `cifErrors` (model/cifErrors.js serializeCifErrors), aligned
+// with the shared atoms, travels as `er`:
+//   c  the cell's six values, then their s.u.s, then their resolutions
+//   d  the cell's free directions, [d1..d6, s.u.] each
+//   s  the sites, [label, s.u. x y z, resolution x y z, dirs?]; dirs
+//      [[dx, dy, dz, s.u.], ...]
+//   R  the rotations, row-major: a string over "-0+" when every entry is
+//      -1, 0 or 1 ("+000+000+" is the identity), else nine numbers
+//   a  per atom: 0 without an error, else 1 + site · R.length + rotation.
+//      A supercell link that tiles its base cell lists only the base cell's
+//      atoms when every copy has its base atom's entry (SuperCellModule copies
+//      the site), so the errors do not grow with the multipliers either.
+//   o  { index into a: [dx, dy, dz] } where an atom is off the CIF position
+//   T  toCif (a supercell's), row-major
+// Free directions that are just the coordinates one by one (a general
+// position, a triclinic cell) are left out: model/cifErrors.js assumes those
+// without any. A structure without errors writes nothing. Values, s.u.s and
+// resolutions keep the file's own digits — 10 significant digits drop float
+// noise (0.00009999999999999999) without moving the cell that
+// model/cifErrors.js cellMatchesCif compares against.
+
+const fileDigits = (v) => roundSig(v, 10);
+const ROTATION_SYMBOLS = '-0+';
+
+function encodeDirections(list, su) {
+  if (!Array.isArray(list)) return null;
+  const rows = list.map(({ d, su: sigma }) => [...d.map((v) => roundSig(v)), roundSig(sigma)]);
+  const oneByOne = su.flatMap((sigma, k) => (sigma > 0 ? [[...su.map((_, m) => (m === k ? 1 : 0)), roundSig(sigma)]] : []));
+  // In any order: the propagation sums over the directions.
+  const key = (dirs) => JSON.stringify(dirs.map((row) => JSON.stringify(row)).sort());
+  return key(rows) === key(oneByOne) ? null : rows;
+}
+
+/**
+ * The `er` block for captureState().cifErrors, or null.
+ * @param {any} rec captureState().cifErrors
+ * @param {number} n atoms in the shared structure
+ * @param {number[] | null} mult supercell multipliers when the link tiles a base cell
+ */
+function encodeCifErrors(rec, n, mult) {
+  if (!isPlainObject(rec) || !Array.isArray(rec.atoms) || rec.atoms.length !== n) return null;
+  // A link lives forever and the decoder refuses a bad block, so a record
+  // that does not make a block it accepts is left out: the link then opens
+  // without the errors rather than not at all.
+  try {
+    const out = cifErrorsBlock(rec, n, mult);
+    decodeCifErrors(JSON.parse(JSON.stringify(out)), n, mult);
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+function cifErrorsBlock(rec, n, mult) {
+  const nR = rec.rotations.length;
+  const a = [];
+  const offsets = {};
+  rec.atoms.forEach((entry, i) => {
+    if (!Array.isArray(entry)) { a.push(0); return; }
+    a.push(1 + entry[0] * nR + entry[1]);
+    if (entry.length >= 5) offsets[i] = entry.slice(2, 5).map((v) => roundSig(v));
+  });
+  const base = mult ? n / (mult[0] * mult[1] * mult[2]) : n;
+  const count = base < n && a.every((v, i) => v === a[i % base]
+    && JSON.stringify(offsets[i]) === JSON.stringify(offsets[i % base])) ? base : n;
+  /** @type {Record<string, any>} */
+  const out = {
+    c: [...rec.cell.values, ...rec.cell.su, ...rec.cell.resolution].map(fileDigits),
+    s: rec.sites.map((site) => {
+      const row = [String(site.label ?? '').slice(0, MAX_STRING), ...[...site.su, ...site.resolution].map(fileDigits)];
+      const dirs = encodeDirections(site.dirs, site.su);
+      if (dirs) row.push(dirs);
+      return row;
+    }),
+    R: rec.rotations.map((R) => {
+      const flat = R.flat();
+      return flat.every((v) => v === -1 || v === 0 || v === 1)
+        ? flat.map((v) => ROTATION_SYMBOLS[v + 1]).join('')
+        : flat.map(fileDigits);
+    }),
+    a: a.slice(0, count),
+  };
+  const cellDirs = encodeDirections(rec.cell.dirs, rec.cell.su);
+  if (cellDirs) out.d = cellDirs;
+  const written = Object.entries(offsets).filter(([i]) => Number(i) < count);
+  if (written.length) out.o = Object.fromEntries(written);
+  if (Array.isArray(rec.toCif)) out.T = rec.toCif.flat().map(fileDigits);
+  return out;
+}
+
+/**
+ * The errors back from encodeCifErrors, in serializeCifErrors' shape (what
+ * ShareModule's restoreCifErrors takes), or null. Untrusted: every number
+ * finite, every s.u. non-negative, every index in range, one entry per atom.
+ * @param {any} e
+ * @param {number} n atoms in the expanded structure
+ * @param {number[] | null} mult the link's supercell multipliers
+ */
+function decodeCifErrors(e, n, mult) {
+  if (e == null) return null;
+  assert(isPlainObject(e), 'bad CIF errors');
+  const numbers = (v, length, label) => {
+    assert(Array.isArray(v) && v.length === length && v.every(isFiniteNumber), `bad CIF errors ${label}`);
+    return v;
+  };
+  const directions = (list, size) => {
+    if (list == null) return null;
+    assert(Array.isArray(list) && list.length <= size, 'bad CIF errors directions');
+    return list.map((row) => {
+      numbers(row, size + 1, 'direction');
+      assert(row[size] >= 0, 'bad CIF errors direction');
+      return { d: row.slice(0, size), su: row[size] };
+    });
+  };
+
+  const c = numbers(e.c, 18, 'cell');
+  assert(c.slice(6).every((v) => v >= 0), 'bad CIF errors cell');
+  /** @type {Record<string, any>} */
+  const cell = { values: c.slice(0, 6), su: c.slice(6, 12), resolution: c.slice(12, 18) };
+  const cellDirs = directions(e.d, 6);
+  if (cellDirs) cell.dirs = cellDirs;
+
+  assert(Array.isArray(e.s) && e.s.length > 0 && e.s.length <= MAX_ATOMS, 'bad CIF errors sites');
+  const sites = e.s.map((row) => {
+    assert(Array.isArray(row) && (row.length === 7 || row.length === 8)
+      && typeof row[0] === 'string' && row[0].length <= MAX_STRING
+      && row.slice(1, 7).every((v) => isFiniteNumber(v) && v >= 0), 'bad CIF errors site');
+    /** @type {Record<string, any>} */
+    const site = { label: row[0], su: row.slice(1, 4), resolution: row.slice(4, 7) };
+    const siteDirs = directions(row[7], 3);
+    if (siteDirs) site.dirs = siteDirs;
+    return site;
+  });
+
+  assert(Array.isArray(e.R) && e.R.length > 0 && e.R.length <= n, 'bad CIF errors rotations');
+  const rotations = e.R.map((r) => {
+    const flat = typeof r === 'string' && /^[-0+]{9}$/.test(r)
+      ? [...r].map((symbol) => ROTATION_SYMBOLS.indexOf(symbol) - 1)
+      : numbers(r, 9, 'rotation');
+    return [flat.slice(0, 3), flat.slice(3, 6), flat.slice(6, 9)];
+  });
+
+  const a = e.a;
+  const product = mult ? mult[0] * mult[1] * mult[2] : 1;
+  assert(Array.isArray(a) && (a.length === n || (product > 1 && a.length * product === n)),
+    'CIF errors do not fit the structure');
+  const top = sites.length * rotations.length;
+  assert(a.every((v) => Number.isInteger(v) && v >= 0 && v <= top), 'bad CIF errors atom');
+  const offsets = new Map();
+  if (e.o != null) {
+    assert(isPlainObject(e.o), 'bad CIF errors offsets');
+    for (const [k, v] of Object.entries(e.o)) {
+      const i = Number(k);
+      assert(Number.isInteger(i) && i >= 0 && i < a.length && a[i] > 0, 'bad CIF errors offset');
+      offsets.set(i, numbers(v, 3, 'offset'));
+    }
+  }
+  const nR = rotations.length;
+  const atoms = [];
+  for (let i = 0; i < n; i++) {
+    const j = i % a.length; // a tiled supercell repeats its base cell's entries
+    if (!a[j]) { atoms.push(null); continue; }
+    const entry = [Math.floor((a[j] - 1) / nR), (a[j] - 1) % nR];
+    if (offsets.has(j)) entry.push(...offsets.get(j));
+    atoms.push(entry);
+  }
+  if (!atoms.some(Boolean)) return null;
+
+  /** @type {Record<string, any>} */
+  const out = { cell, sites, rotations, atoms };
+  if (e.T != null) {
+    const T = numbers(e.T, 9, 'cell transformation');
+    out.toCif = [T.slice(0, 3), T.slice(3, 6), T.slice(6, 9)];
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -541,6 +723,10 @@ export function encodeCompact(state, { supercell = null, reference = null, basel
   if (fv) out.fv = fv;
   const nv = encodeArrows(state.structure.spins, true);
   if (nv) out.nv = nv;
+
+  // --- CIF errors (index-aligned to the full structure, like the arrows) ---
+  const er = encodeCifErrors(state.cifErrors, n, tiled ? tiled.mult : null);
+  if (er) out.er = er;
 
   // --- per-structure style stores (sparse already) ---
   const t = {};
@@ -850,6 +1036,7 @@ export function expandCompact(obj, { referenceStructure = null } = {}) {
   // --- force / spin arrows ---
   const forces = perAtomOk ? decodeArrows(obj.fv, n, false, 'forces') : null;
   const spins = perAtomOk ? decodeArrows(obj.nv, n, true, 'spins') : null;
+  const cifErrors = perAtomOk ? decodeCifErrors(obj.er, n, mult) : null;
 
   const state = {
     version: STATE_VERSION,
@@ -865,6 +1052,8 @@ export function expandCompact(obj, { referenceStructure = null } = {}) {
     camera: decodeCamera(obj.c),
     measurements: referenceChanged ? [] : decodeMeasurements(obj.m, structure),
   };
+  // Aligned with structure's atoms; ShareModule puts them back on them.
+  if (cifErrors) state.cifErrors = cifErrors;
   if (warnings.length) state.shareWarnings = warnings;
   return state;
 }

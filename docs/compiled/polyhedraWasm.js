@@ -27,7 +27,8 @@ await init({ module_or_path: new URL('./periodic_wasm_bg.wasm', import.meta.url)
  *
  * @param {{
  *   positions: number[][], elements: string[], lattice: number[][], maxCutoff: number,
- *   useChemicalFilter: boolean, detectCages: boolean, cageBounds?: number[][] | null,
+ *   useChemicalFilter: boolean, detectCages: boolean, simple?: boolean,
+ *   cageBounds?: number[][] | null,
  *   displayCenters: Array<{cart:{x:number,y:number,z:number}, src:number, shift:[number,number,number]}>,
  *   centerImageKeys: Set<string>, seedVisible: Uint8Array, cutPlaneImmune: Uint8Array,
  *   cutPlaneData: number[][], getBondCutoff:(a:string,b:string)=>number,
@@ -37,7 +38,7 @@ await init({ module_or_path: new URL('./periodic_wasm_bg.wasm', import.meta.url)
 export function marshalPolyhedraInputs(prep) {
   const {
     positions, elements, lattice, maxCutoff,
-    useChemicalFilter, detectCages, cageBounds = null,
+    useChemicalFilter, detectCages, simple = false, cageBounds = null,
     displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData, getBondCutoff,
   } = prep;
 
@@ -128,6 +129,8 @@ export function marshalPolyhedraInputs(prep) {
       fracFlat, elemIdx, latticeFlat, cutoffMatrix, nElem,
       electroneg, anionFormer, radii, maxCutoff: +maxCutoff,
       useChemicalFilter: !!useChemicalFilter, detectCages: !!detectCages,
+      // Fast mode: hull of the bonded ligands only (no Voronoi selection, no cages).
+      simple: !!simple,
       centerSrc, centerShift, centerCart, centerKeys, seedVisible,
       cutPlaneImmune, cutPlanesFlat, cutPlaneCount: cutPlaneData.length, cageBoundsFlat,
       nCenters: nC, nAtoms,
@@ -186,7 +189,7 @@ export function computePolyhedraWasm(prep) {
   const { idxToElem, inputs: I } = marshalPolyhedraInputs(prep);
   const result = compute_polyhedra(
     I.fracFlat, I.elemIdx, I.latticeFlat, I.cutoffMatrix, I.nElem,
-    I.electroneg, I.anionFormer, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages,
+    I.electroneg, I.anionFormer, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages, I.simple,
     I.centerSrc, I.centerShift, I.centerCart, I.centerKeys, I.seedVisible,
     I.cutPlaneImmune, I.cutPlanesFlat, I.cutPlaneCount, I.cageBoundsFlat,
   );

@@ -499,12 +499,18 @@ d00e1e400fdd10c6b756815256aae4162ec9a15e9a9d59de28eb73e5a7fc23f7  index.browser.
 2981f287c783a97ca0640618d7e2812e1560b080068044840e76f9993f51598a  index.d.ts
 951880c4c0fc05699dcfc33ac9054f6b84195ff505b5021a29503633c39dc97f  LICENSE
 fde397177eaf3056619a7ea60ec7e97459c4f4e520d70a5a48d1b8260ca38b11  cpu/mlipcpp_wasm.js
-e0544fa5b7d838109a912dba07355975075ab3844743725dc7499ee95b5ab938  cpu/mlipcpp_wasm.wasm
+958c033484284c01dbb35bbbc3f1d3e082322567d70341eb4317b871bb0bd8af  cpu/mlipcpp_wasm.wasm
 b7d2f11dd29e054d73fb0c0d5d17b41b65a424b23ee2772fac5c89448a3843c3  cpu-mt/mlipcpp_wasm.js
-462226172cc70cd32b6e9f09e8b2261c5d22cdfc7e2671aea4c539b8917950ee  cpu-mt/mlipcpp_wasm.wasm
+90874276f750dc44cae3a4b283458e6bdd48b90a0bc5f8523503ee06f5896c80  cpu-mt/mlipcpp_wasm.wasm
 3ac0b78cd02592a2b244c3d8b55a161c3c76cfa441bdc5e8adf5b97d2ce6e319  gpu/mlipcpp_wasm.js
-fd6d637dbb05a2223781f47ad9d4b2501f336f4dad6bf01caecaf27221d57233  gpu/mlipcpp_wasm.wasm
+ac79f890874b39b2dc2f4d54fd1d71631a201f89a9b223563b47a84763a78d76  gpu/mlipcpp_wasm.wasm
 ```
+
+The three `.wasm` files had the build workspace path in their source-file
+names (ggml assertion messages) overwritten after the build with
+`/mlip-build/./././…` of the same length; nothing else changed. `rebuild.sh`
+now maps the workspace to `/mlip-build` itself (`-ffile-prefix-map`) and stops
+if a path is left.
 
 Sizes: `cpu/mlipcpp_wasm.js` 105111 B, `cpu/mlipcpp_wasm.wasm` 1321309 B,
 `cpu-mt/mlipcpp_wasm.js` 121962 B, `cpu-mt/mlipcpp_wasm.wasm` 1337971 B,

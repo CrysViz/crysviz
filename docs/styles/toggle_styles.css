@@ -169,6 +169,156 @@ body.cv-busy * {
   transform: translateX(22px);
 }
 
+/* Label-left / control-right rows with muted text below: the Polyhedra
+   window's Bond breaking tolerance (ui/BondBreakToleranceControl.js). */
+.cv-poly-search-row {
+  margin-top: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+/* Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced
+   (ui/PolyhedraSearchControl.js, panels/defaultPanels.js): the toggle row and
+   the three-way control share one line, the control right-aligned like a
+   toggle row's control side. Both children carry the toggle row's top margin,
+   so align-items centres them on each other. When the window is too narrow
+   for both (phones narrower than about 380px), the control wraps onto its
+   own line, still right-aligned. No
+   label or status line: what runs now is in the tooltip. The buttons borrow
+   .segmented-control's look (controlPanel.css) without its class, which the
+   feature search treats as a tab row. */
+.cv-poly-toggle-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--sp-2);
+}
+
+.cv-poly-toggle-line > .toggle_row {
+  flex: 0 1 auto;
+}
+
+/* A little narrower than .cv-seg3's default so the toggle, its label and
+   the control share one line down to a 390px phone (wraps at 360px). */
+.cv-poly-toggle-line .cv-seg3 button {
+  padding-left: var(--sp-2);
+  padding-right: var(--sp-2);
+}
+
+.cv-poly-search-row.cv-poly-search-sub {
+  margin-top: var(--sp-5);
+  margin-left: auto;
+  align-items: flex-end;
+}
+
+.cv-poly-search-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3-5);
+}
+
+.cv-seg3 {
+  display: inline-flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  background: var(--chrome-1);
+  border-radius: var(--radius-md);
+}
+
+.cv-seg3 button {
+  border: none;
+  background: none;
+  color: var(--fg-75);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cv-seg3 button:hover {
+  background: var(--border-color);
+}
+
+.cv-seg3 button.is-active {
+  background: var(--accent-color);
+  color: var(--fg-1);
+}
+
+.cv-poly-search-status {
+  align-self: flex-end;
+  color: var(--fg-2);
+  font-size: var(--fs-xs);
+}
+
+/* Polyhedra ▸ Bond breaking tolerance (ui/BondBreakToleranceControl.js):
+   the .cv-poly-search-row layout, a short percent input on the right and
+   the help text below, wrapping. */
+.cv-tol-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cv-tol-input {
+  width: 4em;
+  font-size: var(--fs-sm);
+  font-family: inherit;
+}
+
+.cv-tol-unit {
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+}
+
+.cv-tol-help {
+  align-self: stretch;
+  text-align: left;
+}
+
+/* Polyhedra window: the rows only the advanced search reads, while the fast
+   search runs (PolyhedraPanel.js syncPolyhedraModeRows). */
+.toggle_row.is-mode-inactive {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggle_row.is-mode-inactive input,
+.toggle_row.is-mode-inactive .toggle_slider {
+  cursor: not-allowed;
+}
+
+.cv-polyhedra-mode-note {
+  margin-top: var(--sp-2);
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+}
+
+/* Polyhedra ▸ Colour ▸ Tilt axes: Matrix. Column (a, b, c) and row
+   (Axis 1..3) headings, and the computed third axis. */
+.cv-polyhedra-matrix-head {
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+  font-weight: normal;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.cv-polyhedra-matrix-computed {
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+  text-align: center;
+  font-style: italic;
+}
+
+.cv-polyhedra-matrix-warn {
+  color: var(--warn);
+}
+
 /* camera */
 
 .camera_section {

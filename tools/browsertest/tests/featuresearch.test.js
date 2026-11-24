@@ -12,6 +12,7 @@
 //   - a control in a sidebar window: Visual ▸ Atom Size is scrolled to,
 //     flashed and focused — unfolding the sidebar first when it is hidden
 //   - a popup-menu item (Files ▸ Download ▸ CASTEP cell) opens its menu
+//   - Reset UI is filed under Settings ▸ Reset, not ▸ Text
 //   - a Structure-window tab control (Bonds ▸ Reset Bond Lengths) opens the
 //     formula box on the Bonds tab
 //   - View / Measure / Structure keep their folded title bar
@@ -121,6 +122,10 @@ async function choose(page, query, pick) {
   list = await results(page, 'castep');
   H.check('popup-menu items are searchable ("castep" -> Download › CASTEP cell)',
     list[0]?.label === 'CASTEP cell' && /Download/.test(list[0]?.path), JSON.stringify(list.slice(0, 2)));
+  list = await results(page, 'reset ui');
+  const resetUi = list.find((r) => r.label === 'Reset UI');
+  H.check('Reset UI is listed under Settings › Reset (it was filed under Text)',
+    !!resetUi && /^Settings\b/.test(resetUi.path) && /\bReset$/.test(resetUi.path), JSON.stringify(resetUi));
 
   // ---- the search vocabulary (search/concepts.js) ------------------------------
   // What people call a feature when they don't know its CrysViz name; word

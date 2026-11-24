@@ -10,7 +10,7 @@ import { colorHexToCss, createPieDot, updatePieDot } from '../utils/ColorModule.
 import { createColorPicker } from './ColorPickerModule.js';
 import {
   groupPolyhedraByCategory, updatePolyhedraColors, resolvePolyhedronStyle,
-  updatePolyhedra, polyhedronFaceColor,
+  updatePolyhedra, polyhedronFaceColor, polyhedraElementKeyOf,
 } from '../render/index.js';
 import { createIndividualPolyhedronRow } from './StructureInfoPanel/components/IndividualPolyhedronRow.js';
 import { fillRows, rememberedPage } from './StructureInfoPanel/components/PagedRows.js';
@@ -44,7 +44,17 @@ function textColorForBg(cssHex) {
  *  General.js). Pure data — no mesh/render calls — so it's safe to re-run
  *  against off-screen trajectory frames too. */
 function resetAllPolyhedraColors(structure) {
-  for (const store of [structure.polyhedraCategoryStyles, structure.polyhedraUserStyles]) {
+  resetPolyhedraColorsIn(structure.polyhedraCategoryStyles, structure.polyhedraElementStyles);
+  resetUserPolyhedraColors(structure);
+}
+
+/** The individual polyhedron colours of one frame (per-frame overrides). */
+function resetUserPolyhedraColors(structure) {
+  resetPolyhedraColorsIn(structure.polyhedraUserStyles);
+}
+
+function resetPolyhedraColorsIn(...stores) {
+  for (const store of stores) {
     if (!store) continue;
     for (const [key, entry] of Object.entries(store)) {
       delete entry.color;
@@ -79,7 +89,26 @@ function rerenderPreservingExpansion(panelId = 'infoPolyControls') {
   const expanded = [...panel.querySelectorAll('.poly-control')]
     .filter((c) => !/** @type {HTMLElement} */ (c.querySelector('.individual-polyhedra'))?.hidden)
     .map((c) => /** @type {HTMLElement} */ (c).dataset.catKey);
+  const groupsOpen = capturePolyGroupExpansion(panel);
+  // Editors open at the time (an element row's or a category's colour editor)
+  // come back open: a rebuild fired by the colour edit itself (Complete
+  // Polyhedra recomputes, a frame rebuild) must not close what is being used.
+  const openGroupEditors = [...panel.querySelectorAll('.phl-group[data-group-key]')]
+    .filter((g) => /** @type {HTMLElement} */ (g.querySelector('.phl-group-editor'))?.style.display === 'block')
+    .map((g) => /** @type {HTMLElement} */ (g).dataset.groupKey);
+  const openCatEditors = [...panel.querySelectorAll('.poly-control[data-cat-key]')]
+    .filter((c) => { const e = /** @type {HTMLElement} */ (c.querySelector('.poly-cat-editor')); return e && !e.hidden; })
+    .map((c) => /** @type {HTMLElement} */ (c).dataset.catKey);
   createPolyhedraListControls(panelId);
+  restorePolyGroupExpansion(panel, groupsOpen);
+  for (const groupKey of openGroupEditors) {
+    const e = /** @type {HTMLElement} */ (panel.querySelector(`.phl-group[data-group-key="${CSS.escape(groupKey)}"] .phl-group-editor`));
+    if (e) e.style.display = 'block';
+  }
+  for (const catKey of openCatEditors) {
+    const e = /** @type {HTMLElement} */ (panel.querySelector(`.poly-control[data-cat-key="${CSS.escape(catKey)}"] .poly-cat-editor`));
+    if (e) e.hidden = false;
+  }
   for (const catKey of expanded) {
     const control = panel.querySelector(`.poly-control[data-cat-key="${catKey}"]`);
     if (!control) continue; // category vanished in the rebuild
@@ -90,6 +119,31 @@ function rerenderPreservingExpansion(panelId = 'infoPolyControls') {
     if (icon) icon.classList.add('is-expanded');
   }
 }
+
+/** Which element groups (Ca, Ti, Cages) of the Poly tab are open:
+ *  { groupKey: true|false }, for every group shown. */
+export function capturePolyGroupExpansion(root) {
+  const out = {};
+  root?.querySelectorAll('.phl-group[data-group-key]').forEach((g) => {
+    out[/** @type {HTMLElement} */ (g).dataset.groupKey] =
+      /** @type {HTMLElement} */ (g.querySelector('.phl-group-body'))?.style.display !== 'none';
+  });
+  return out;
+}
+
+/** Re-open/close the element groups as capturePolyGroupExpansion saw them
+ *  (a group not in `state` keeps its default). */
+export function restorePolyGroupExpansion(root, state) {
+  for (const [groupKey, open] of Object.entries(state ?? {})) {
+    const g = root?.querySelector(`.phl-group[data-group-key="${CSS.escape(groupKey)}"]`);
+    /** @type {any} */ (g)?._setExpanded?.(open);
+  }
+}
+
+/** The element group of a category key: the centre element for a centred
+ *  polyhedron ("c:Ca:O8" -> "Ca"), 'cage' for every cage category — also
+ *  its key in structure.polyhedraElementStyles. */
+const polyGroupKeyOf = polyhedraElementKeyOf;
 
 // The polyhedra group was swapped or cleared (async) — refresh the panel.
 document.addEventListener('crysviz:polyhedra-rebuilt', () => {
@@ -102,8 +156,11 @@ document.addEventListener('crysviz:polyhedra-rebuilt', () => {
 // the Bonds tab's did. Keyed by catKey so re-creating a category overwrites
 // its own entry instead of accumulating stale closures.
 const polyCategorySwatchUpdateFunctions = {};
+// The element group rows' swatch + eye (derived from their categories), by group key.
+const polyGroupUpdateFunctions = {};
 document.addEventListener('crysviz:colors-changed', () => {
   Object.values(polyCategorySwatchUpdateFunctions).forEach((updateFn) => updateFn());
+  Object.values(polyGroupUpdateFunctions).forEach((updateFn) => updateFn());
 });
 
 export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
@@ -148,7 +205,26 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
 
   const categories = groupPolyhedraByCategory(structure);
 
+  // One group row per centre element (and one for the cages), in the order
+  // the categories come; its controls act on all of its categories.
+  for (const key of Object.keys(polyGroupUpdateFunctions)) delete polyGroupUpdateFunctions[key];
+  /** @type {Map<string, {body: HTMLElement, catKeys: string[], syncCategories: (() => void)[]}>} */
+  const groupsByKey = new Map();
+  for (const catKey of categories.keys()) {
+    const groupKey = polyGroupKeyOf(catKey);
+    let group = groupsByKey.get(groupKey);
+    if (!group) {
+      group = { body: null, catKeys: [], syncCategories: [] };
+      groupsByKey.set(groupKey, group);
+    }
+    group.catKeys.push(catKey);
+  }
+  for (const [groupKey, group] of groupsByKey) {
+    group.body = createPolyGroupRow(polyControls, structure, model, categories, groupKey, group);
+  }
+
   categories.forEach((entry, catKey) => {
+    const group = groupsByKey.get(polyGroupKeyOf(catKey));
     const div = document.createElement('div');
     div.className = 'poly-control bond-control'; // bond-control reuses the row styling
     div.dataset.catKey = catKey;
@@ -156,16 +232,25 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     function catStyle() {
       return structure.polyhedraCategoryStyles[catKey] ??= {};
     }
+    // The element row's entry (a layer under this category's own style).
+    const elStyle = () => structure.polyhedraElementStyles?.[polyGroupKeyOf(catKey)] ?? {};
+    const shownNow = () => (structure.polyhedraCategoryStyles[catKey]?.visible ?? elStyle().visible) !== false;
 
     // --- Header row: visibility toggle, swatch, label, caret ---
     const headerDiv = document.createElement('div');
     headerDiv.className = 'bond-checkbox';
 
     const { wrapper: checkboxSwitch, input: checkbox } = createMiniToggleSwitch(`Show/hide all ${entry.label} polyhedra`);
-    checkbox.checked = structure.polyhedraCategoryStyles[catKey]?.visible !== false;
+    checkbox.checked = shownNow();
+    // Shows what the polyhedra do (this category's own setting, else its
+    // element row's). A click that differs from the element row sets this
+    // category's own override (so one category can be shown while its
+    // element is off, or hidden while it is on); one that agrees drops it.
     checkbox.onchange = (e) => {
-      catStyle().visible = /** @type {any} */ (e.target).checked;
-      updatePolyhedraColors();
+      const on = /** @type {any} */ (e.target).checked;
+      if (on === (elStyle().visible !== false)) delete catStyle().visible;
+      else catStyle().visible = on;
+      updatePolyhedraColors(); // also refreshes the element group's eye
     };
 
     const label = document.createElement('label');
@@ -237,7 +322,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       refreshExpandedPolyhedraLists(polyControls);
     });
 
-    const currentCatAlpha = clampOpacity(structure.polyhedraCategoryStyles[catKey]?.alpha ?? 0.5);
+    const currentCatAlpha = clampOpacity(structure.polyhedraCategoryStyles[catKey]?.alpha ?? elStyle().alpha ?? 0.5);
     const alphaRow = document.createElement('div');
     alphaRow.className = 'phl-slider-row';
     const alphaLabel = document.createElement('span');
@@ -284,8 +369,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       updatePolyhedraColors();
     });
 
-    const currentEdgeAlpha = clampOpacity(
-      structure.polyhedraCategoryStyles[catKey]?.edgeAlpha ?? resolvedEdge.edgeOpacity);
+    const currentEdgeAlpha = clampOpacity(resolvedEdge.edgeOpacity);
     const edgeAlphaRow = document.createElement('div');
     edgeAlphaRow.className = 'phl-slider-row';
     const edgeAlphaLabel = document.createElement('span');
@@ -321,7 +405,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     const catResetBtn = document.createElement('button');
     catResetBtn.textContent = 'Reset';
     catResetBtn.className = 'btn-mini phl-cat-square-btn';
-    catResetBtn.title = `Reset this whole category: removes the group style AND every individual ${entry.label} override.\nClick: this frame. Press and hold: whole trajectory.`;
+    catResetBtn.title = `Reset this category: removes the group style (whole trajectory) and every individual ${entry.label} override on this frame.\nPress and hold: also clears the individual overrides on every frame.`;
     // Preview the category's default (pre-override) face color, same idea as
     // the element editor's Reset swatch.
     const representative = model.polyhedra[entry.indices[0]];
@@ -331,8 +415,15 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       catResetBtn.style.background = defColor;
       catResetBtn.style.color = textColorForBg(defColor);
     }
+    // The group style is one for the whole trajectory (the trajectory's
+    // shared styles, model/materializeFrame.js SHARED_STYLE_DICTS): one
+    // delete on the shown frame resets it everywhere. Individual overrides
+    // are per frame.
     function resetCategoryOnFrame(frame) {
       delete frame.polyhedraCategoryStyles?.[catKey];
+      resetMembersOnFrame(frame);
+    }
+    function resetMembersOnFrame(frame) {
       // A frame that's never been displayed has no polyhedra model yet (and
       // therefore no overrides to clear); use its OWN grouping/keys rather
       // than this frame's, since indices are per-structure.
@@ -355,7 +446,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
       onConfirm: (e) => {
         e.stopPropagation();
         resetCategoryOnFrame(structure);
-        applyToOtherTrajectoryFrames(structure, resetCategoryOnFrame);
+        applyToOtherTrajectoryFrames(structure, resetMembersOnFrame);
         updatePolyhedraColors();
         rerenderPreservingExpansion(targetPanel); // refresh swatches everywhere
       },
@@ -364,22 +455,12 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     const catApplyBtn = document.createElement('button');
     catApplyBtn.textContent = 'Apply';
     catApplyBtn.className = 'btn-mini highlight phl-cat-square-btn';
-    catApplyBtn.title = `Click: close. Press and hold: copy this ${entry.label} category's color/alpha to every trajectory frame.`;
-    wirePressHoldPopup(catApplyBtn, {
-      holdLabel: 'Apply to Trajectory',
-      onPress: (e) => {
-        e.stopPropagation();
-        catEditor.hidden = true;
-      },
-      onConfirm: (e) => {
-        e.stopPropagation();
-        const style = { ...structure.polyhedraCategoryStyles[catKey] };
-        applyToOtherTrajectoryFrames(structure, (frame) => {
-          frame.polyhedraCategoryStyles ??= {};
-          frame.polyhedraCategoryStyles[catKey] = { ...style };
-        });
-      },
-    });
+    // A category style already applies to every frame of a trajectory.
+    catApplyBtn.title = 'Close. The group style applies to every trajectory frame.';
+    catApplyBtn.onclick = (e) => {
+      e.stopPropagation();
+      catEditor.hidden = true;
+    };
 
     const catButtonRow = document.createElement('div');
     catButtonRow.className = 'phl-cat-button-row';
@@ -488,8 +569,23 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     expandIcon.onclick = togglePolyList;
     label.onclick = togglePolyList;
 
+    // The element group row wrote this category's style: show it here.
+    group.syncCategories.push(() => {
+      const st = structure.polyhedraCategoryStyles[catKey] ?? {};
+      checkbox.checked = shownNow();
+      // (Its colour pickers are left alone: setHex would write back through
+      // their onChange, once per category.)
+      const a = clampOpacity(st.alpha ?? elStyle().alpha ?? 0.5);
+      alphaSlider.value = String(a);
+      alphaValue.value = a.toFixed(2);
+      const ea = clampOpacity(resolvePolyhedronStyle(
+        structure, null, catKey, p0.type, p0.centerIndex, p0.colorElem).edgeOpacity);
+      edgeAlphaSlider.value = String(ea);
+      edgeAlphaValue.value = ea.toFixed(2);
+    });
+
     div.appendChild(listContainer);
-    polyControls.appendChild(div);
+    group.body.appendChild(div);
   });
 
   // Below every individual polyhedra category — same placement as the Atoms
@@ -501,7 +597,7 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
   resetPolyColorsBtn.id = 'resetPolyColorsBtn';
   resetPolyColorsBtn.textContent = 'Reset Colors';
   resetPolyColorsBtn.className = 'reset-btn phl-reset-colors-btn';
-  resetPolyColorsBtn.title = 'Reset every polyhedra color customization (category and individual) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
+  resetPolyColorsBtn.title = 'Reset every polyhedra color customization to element defaults: category colors (whole trajectory) and individual colors on this frame.\nPress and hold: also clears the individual colors on every frame.';
   wirePressHoldPopup(resetPolyColorsBtn, {
     holdLabel: 'Reset Trajectory',
     onPress: () => {
@@ -511,11 +607,173 @@ export function createPolyhedraListControls(targetPanel = 'infoPolyControls') {
     },
     onConfirm: () => {
       resetAllPolyhedraColors(structure);
-      applyToOtherTrajectoryFrames(structure, resetAllPolyhedraColors);
+      applyToOtherTrajectoryFrames(structure, resetUserPolyhedraColors);
       updatePolyhedraColors();
       rerenderPreservingExpansion(targetPanel);
     },
   });
   resetColorsRow.appendChild(resetPolyColorsBtn);
   polyControls.appendChild(resetColorsRow);
+}
+
+/** One alpha row (label, slider, number field) of a group editor. */
+function createAlphaRow(text, labelClass, initial, onValue) {
+  const row = document.createElement('div');
+  row.className = 'phl-slider-row';
+  const label = document.createElement('span');
+  label.textContent = text;
+  label.className = labelClass;
+  const slider = document.createElement('input');
+  Object.assign(slider, { type: 'range', min: '0', max: '1', step: '0.01', className: 'phl-alpha-slider' });
+  const field = document.createElement('input');
+  Object.assign(field, { type: 'number', min: '0', max: '1', step: '0.01', className: 'phl-alpha-value-input' });
+  const show = (v) => { slider.value = String(v); field.value = v.toFixed(2); };
+  show(initial);
+  const apply = (raw) => { const v = clampOpacity(raw); show(v); onValue(v); };
+  slider.oninput = () => apply(slider.value);
+  field.oninput = () => apply(field.value);
+  row.append(label, slider, field);
+  return row;
+}
+
+/**
+ * The group row of one centre element (or of the cages): caret, eye, swatch
+ * (opening a colour/alpha/edge editor), symbol and counts. Its controls write
+ * the element's entry in structure.polyhedraElementStyles (whole trajectory,
+ * a layer under the category styles — so it also reaches categories that
+ * appear later, at a full rebuild of another frame) and drop the same field
+ * from its categories' own entries, so that the element setting is what all
+ * of them show. Returns the body the category rows go into.
+ */
+function createPolyGroupRow(polyControls, structure, model, categories, groupKey, group) {
+  const { catKeys } = group;
+  const title = groupKey === 'cage' ? 'Cages' : groupKey;
+  const indicesOf = () => catKeys.flatMap((k) => categories.get(k)?.indices ?? []);
+  const nPolys = indicesOf().length;
+  structure.polyhedraElementStyles ??= {};
+  const elStyle = () => (structure.polyhedraElementStyles[groupKey] ??= {});
+  // Every category of this element in the (trajectory-wide) store, also the
+  // ones not on this frame.
+  const ownCatKeys = () => Object.keys(structure.polyhedraCategoryStyles)
+    .filter((k) => polyGroupKeyOf(k) === groupKey);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'phl-group';
+  wrap.dataset.groupKey = groupKey;
+
+  const header = document.createElement('div');
+  header.className = 'bond-checkbox phl-group-header';
+
+  const { wrapper: eyeSwitch, input: eye } = createMiniToggleSwitch(`Show/hide all ${title} polyhedra`);
+  eye.classList.add('phl-group-eye');
+
+  const dot = createPieDot(['#808080'], 20);
+  dot.classList.add('dot', 'phl-cat-dot', 'phl-group-dot');
+  dot.title = `Customize color/alpha for all ${title} polyhedra`;
+
+  const label = document.createElement('label');
+  label.className = 'phl-cat-label phl-group-label';
+  label.textContent = title;
+
+  const caret = document.createElement('span');
+  caret.textContent = '▶';
+  caret.className = 'phl-expand-icon phl-group-expand-icon';
+
+  const count = document.createElement('span');
+  count.className = 'phl-count-label phl-group-count';
+  count.textContent = `${nPolys} ${nPolys === 1 ? 'polyhedron' : 'polyhedra'}, ${catKeys.length} ${catKeys.length === 1 ? 'type' : 'types'}`;
+
+  header.append(eyeSwitch, dot, label, caret, count);
+  wrap.appendChild(header);
+
+  // The eye: on when the element is shown and none of its categories
+  // overrides that to hidden, off when it is hidden and none overrides to
+  // shown, half-way otherwise. The swatch is a pie of the members' colours.
+  function refresh() {
+    const elShown = structure.polyhedraElementStyles[groupKey]?.visible !== false;
+    const overridden = catKeys.some((k) => {
+      const v = structure.polyhedraCategoryStyles[k]?.visible;
+      return v != null && v !== elShown;
+    });
+    eye.checked = elShown && !overridden;
+    eye.indeterminate = overridden;
+    updatePieDot(dot, indicesOf().map((i) => resolvedColorOf(structure, model.polyhedra[i])));
+  }
+  polyGroupUpdateFunctions[groupKey] = refresh;
+
+  function writeElement(field, value) {
+    elStyle()[field] = value;
+    for (const k of ownCatKeys()) delete structure.polyhedraCategoryStyles[k][field];
+    group.syncCategories.forEach((fn) => fn());
+    updatePolyhedraColors(); // fires colors-changed: swatches and this row refresh
+  }
+  eye.onchange = () => writeElement('visible', eye.checked);
+
+  // --- Group editor: colour, alpha, edge colour, edge alpha, Reset ---
+  const editor = document.createElement('div');
+  editor.className = 'phl-cat-editor phl-group-editor';
+  editor.style.display = 'none';
+  const firstCat = categories.get(catKeys[0]);
+  const p0 = model.polyhedra[firstCat.indices[0]];
+  const st0 = structure.polyhedraElementStyles[groupKey] ?? {};
+  const resolved0 = resolvePolyhedronStyle(structure, null, catKeys[0], p0.type, p0.centerIndex, p0.colorElem);
+  const picker = createColorPicker(safeColor(st0.color ?? resolved0.color), (hex) => {
+    writeElement('color', hex);
+    refreshExpandedPolyhedraLists(polyControls);
+  });
+  const alphaRow = createAlphaRow('Alpha', 'phl-alpha-label',
+    clampOpacity(st0.alpha ?? resolved0.opacity), (v) => writeElement('alpha', v));
+  const edgeHeader = document.createElement('div');
+  edgeHeader.textContent = 'Edge';
+  edgeHeader.className = 'phl-edge-header';
+  const edgePicker = createColorPicker(safeColor(st0.edgeColor ?? resolved0.edgeColor), (hex) => writeElement('edgeColor', hex));
+  const edgeAlphaRow = createAlphaRow('Edge alpha', 'phl-edge-alpha-label',
+    clampOpacity(st0.edgeAlpha ?? resolved0.edgeOpacity), (v) => writeElement('edgeAlpha', v));
+  const buttonRow = document.createElement('div');
+  buttonRow.className = 'phl-cat-button-row';
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = 'Reset';
+  resetBtn.className = 'btn-mini phl-cat-square-btn phl-group-reset';
+  resetBtn.title = `Reset every ${title} polyhedra style: the ${title} row's and its categories' (whole trajectory). Individual polyhedra keep theirs.`;
+  resetBtn.onclick = (e) => {
+    e.stopPropagation();
+    delete structure.polyhedraElementStyles[groupKey];
+    for (const k of ownCatKeys()) delete structure.polyhedraCategoryStyles[k];
+    updatePolyhedraColors();
+    rerenderPreservingExpansion(polyControls.id);
+  };
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = 'Apply';
+  closeBtn.className = 'btn-mini highlight phl-cat-square-btn';
+  closeBtn.title = `Close. The style applies to every ${title} category, also ones found later, on every trajectory frame.`;
+  closeBtn.onclick = (e) => { e.stopPropagation(); editor.style.display = 'none'; };
+  buttonRow.append(resetBtn, closeBtn);
+  editor.append(picker.element, alphaRow, edgeHeader, edgePicker.element, edgeAlphaRow, buttonRow);
+  wrap.appendChild(editor);
+  dot.onclick = (e) => {
+    e.stopPropagation();
+    editor.style.display = editor.style.display === 'none' ? 'block' : 'none';
+  };
+
+  // --- Body: the category rows. Open by default when there is one category.
+  const body = document.createElement('div');
+  body.className = 'phl-group-body';
+  wrap.appendChild(body);
+  function setExpanded(open) {
+    body.style.display = open ? 'block' : 'none';
+    caret.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
+  }
+  /** @type {any} */ (wrap)._setExpanded = setExpanded;
+  setExpanded(catKeys.length === 1);
+  const toggle = (e) => {
+    e.stopPropagation();
+    setExpanded(body.style.display === 'none');
+    editor.style.display = 'none';
+  };
+  caret.onclick = toggle;
+  label.onclick = toggle;
+
+  refresh();
+  polyControls.appendChild(wrap);
+  return body;
 }

@@ -19,6 +19,9 @@ DEST="$(cd "$(dirname "$0")" && pwd)"
 WORK=${WORK:-$(mktemp -d)}
 
 command -v emcmake >/dev/null || { echo "emcmake not found — source emsdk_env.sh first"; exit 1; }
+# Source paths end up in the wasm (ggml's assertion messages use __FILE__):
+# write them relative to /mlip-build, not to this machine's workspace.
+export EMCC_CFLAGS="${EMCC_CFLAGS:+$EMCC_CFLAGS }-ffile-prefix-map=$WORK=/mlip-build"
 
 echo "== workspace: $WORK"
 [ -d "$WORK/mlip.cpp" ] || git clone --depth 1 --branch "$REF" \
@@ -218,6 +221,10 @@ chmod 644 "$DEST/cpu-mt/mlipcpp_wasm.wasm"
 cp "$DIST/index.browser.js" "$DEST/index.browser.js.upstream"
 # index.d.ts has local doc additions — dropped next to it for manual merge.
 cp "$DIST/index.d.ts" "$DEST/index.d.ts.upstream"
+
+if grep -a -l -F "$WORK" "$DEST"/cpu/mlipcpp_wasm.wasm "$DEST"/cpu-mt/mlipcpp_wasm.wasm "$DEST"/gpu/mlipcpp_wasm.wasm; then
+    echo "!! the wasm above still holds workspace paths ($WORK)"; exit 1
+fi
 
 echo "== sha256 (paste into README.md):"
 (cd "$DEST" && sha256sum index.browser.js index.browser.d.ts index.d.ts LICENSE \

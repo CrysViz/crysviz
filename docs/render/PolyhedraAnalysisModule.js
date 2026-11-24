@@ -6,8 +6,10 @@
 // see computePolyhedraConnectivity). Pure data: no rendering. Consumed by
 // ui/AnalysisPanels/Polyhedra*Histogram.js and PolyhedronInspector.js.
 
-import * as THREE from '../external/three/three.module.js';
-import { ConvexGeometry } from '../external/three/ConvexGeometry.js';
+import {
+  centerAngleDeg, bondLengthDistortion, convexHullVolume as hullVolumeFlat,
+  TETRAHEDRAL_IDEAL_DEG, OCTAHEDRAL_IDEAL_DEG,
+} from '../model/polyhedraProperties.js';
 import { invert3x3, transpose3x3, fracToCartPoint, cartToFrac } from '../math/index.js';
 import { groupPolyhedraByCategory, resolvePolyhedronStyle } from './PolyhedraModule.js';
 import { atomicRadii } from '../defaults/radii_defaults.js';
@@ -98,43 +100,24 @@ export function renderedBondLookup(structure) {
   };
 }
 
+/** Angle p–centre–q in degrees (0 for a degenerate arm). The maths lives in
+ *  model/polyhedraProperties.js, shared with the per-frame property colouring. */
 export function angleAtCenterDeg(center, p, q) {
-  const v1 = [p[0] - center[0], p[1] - center[1], p[2] - center[2]];
-  const v2 = [q[0] - center[0], q[1] - center[1], q[2] - center[2]];
-  const dot = v1[0] * v2[0] + v1[1] * v2[1] + v1[2] * v2[2];
-  const n1 = Math.hypot(...v1), n2 = Math.hypot(...v2);
-  if (n1 < 1e-9 || n2 < 1e-9) return 0;
-  const cos = Math.max(-1, Math.min(1, dot / (n1 * n2)));
-  return Math.acos(cos) * (180 / Math.PI);
+  return centerAngleDeg(center[0], center[1], center[2], p[0], p[1], p[2], q[0], q[1], q[2]);
 }
 
 /** Volume (Å³) of the convex hull of a polyhedron's vertex positions — the
- *  standard coordination-polyhedron volume. Triangulates the hull (reusing the
- *  same ConvexGeometry the inspector's mini render draws) and sums the signed
- *  tetrahedra each hull triangle forms with the origin: for a closed surface
- *  that total is the enclosed volume regardless of where the origin sits, so no
- *  centring is needed. Returns null for fewer than 4 points or a degenerate
- *  (coplanar/collinear) set that has no hull.
+ *  standard coordination-polyhedron volume. Delegates to the shared double-
+ *  precision hull in model/polyhedraProperties.js (the per-frame colouring
+ *  uses the same one). It used to triangulate with three.js ConvexGeometry,
+ *  whose Float32 positions made the inspector's finite-difference CIF error of
+ *  the volume wrong by tens of percent far from the origin. Returns null for
+ *  fewer than 4 points or a degenerate (coplanar/collinear) set.
  *  @param {number[][]} vertexPositions cartesian [x,y,z] per vertex */
 export function convexHullVolume(vertexPositions) {
   if (!vertexPositions || vertexPositions.length < 4) return null;
-  let geom;
-  try {
-    geom = /** @type {any} */ (new ConvexGeometry(vertexPositions.map((p) => new THREE.Vector3(p[0], p[1], p[2]))));
-  } catch {
-    return null; // degenerate / coplanar point set — no hull
-  }
-  const pos = geom.getAttribute('position');
-  if (!pos) { geom.dispose(); return null; }
-  let v6 = 0;
-  for (let i = 0; i < pos.count; i += 3) {
-    const ax = pos.getX(i), ay = pos.getY(i), az = pos.getZ(i);
-    const bx = pos.getX(i + 1), by = pos.getY(i + 1), bz = pos.getZ(i + 1);
-    const cx = pos.getX(i + 2), cy = pos.getY(i + 2), cz = pos.getZ(i + 2);
-    v6 += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
-  }
-  geom.dispose();
-  return Math.abs(v6) / 6;
+  const v = hullVolumeFlat(Float64Array.from(vertexPositions.flat()), 0, vertexPositions.length);
+  return Number.isFinite(v) ? v : null;
 }
 
 /** Exact Cartesian position of a centered polyhedron's centre ATOM for this
@@ -151,9 +134,6 @@ function polyhedronCenterCart(structure, poly, lattice, latInv) {
   const centerFrac = [0, 1, 2].map((k) => atomFrac[k] + Math.round(centroidFrac[k] - atomFrac[k]));
   return fracToCartPoint(centerFrac, lattice);
 }
-
-const TETRAHEDRAL_IDEAL_DEG = 109.4712206;
-const OCTAHEDRAL_IDEAL_DEG = 90;
 
 function sampleVariance(values, ideal) {
   if (values.length < 2) return null;
@@ -175,9 +155,9 @@ function sampleVariance(values, ideal) {
  */
 export function polyhedronDistortion(center, vertices, anglePairs) {
   const cn = vertices.length;
-  const dists = vertices.map((v) => Math.hypot(v[0] - center[0], v[1] - center[1], v[2] - center[2]));
-  const avg = dists.reduce((a, b) => a + b, 0) / dists.length;
-  const bld = avg > 1e-9 ? dists.reduce((acc, d) => acc + Math.abs(d - avg), 0) / dists.length / avg : null;
+  // Baur index from the shared kernel (same operation order as before).
+  const d = bondLengthDistortion(center[0], center[1], center[2], Float64Array.from(vertices.flat()), 0, cn);
+  const bld = Number.isFinite(d) ? d : null;
   const at = (a) => angleAtCenterDeg(center, vertices[a.i], vertices[a.j]);
   let angleVariance = null;
   if (cn === 4) angleVariance = sampleVariance(anglePairs.map(at), TETRAHEDRAL_IDEAL_DEG);

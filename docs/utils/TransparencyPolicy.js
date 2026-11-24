@@ -20,7 +20,9 @@
 //                       'plane' | 'planeBorder' | 'measureGhost' | 'arrows'
 //   opacity:            the uniform material opacity the module set (0..1)
 //   needsTransparency:  atoms/bonds — true when the base opacity or any
-//                       per-instance opacity is below 1
+//                       per-instance opacity is below 1; polyhedra faces/edges
+//                       — the see-through half of the one polyhedra mesh
+//                       (per-vertex alpha below 1, material opacity 1)
 //   perInstanceOpacity: true for meshes whose shader reads an instanceOpacity
 //                       attribute (main atoms/bonds)
 //   mesh:               the mesh owning the material, when available — lets a

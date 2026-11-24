@@ -144,6 +144,8 @@ impl PolyhedraResult {
 
 /// Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
 /// argument contract; the JS wrapper (`polyhedraWasm.js`) packs these arrays.
+/// `simple` is the fast mode: the hull of the bonded ligands, no Voronoi
+/// selection and no cages (see the fast block in `polyhedra::build_candidates`).
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
 pub fn compute_polyhedra(
@@ -158,6 +160,7 @@ pub fn compute_polyhedra(
     max_cutoff: f64,
     use_chem_filter: bool,
     detect_cages: bool,
+    simple: bool,
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
@@ -180,6 +183,7 @@ pub fn compute_polyhedra(
         max_cutoff,
         use_chem_filter,
         detect_cages,
+        simple,
         center_src,
         center_shift,
         center_cart,
@@ -280,6 +284,7 @@ pub fn compute_candidates(
     max_cutoff: f64,
     use_chem_filter: bool,
     detect_cages: bool,
+    simple: bool,
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
@@ -296,7 +301,7 @@ pub fn compute_candidates(
 ) -> CandidateResult {
     let (cands, _timing) = polyhedra::build_candidates(
         frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff,
-        use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys,
+        use_chem_filter, detect_cages, simple, center_src, center_shift, center_cart, center_keys,
         seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds,
         center_start, center_end, seed_start, seed_end,
     );

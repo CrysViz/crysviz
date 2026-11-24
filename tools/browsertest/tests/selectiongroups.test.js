@@ -45,7 +45,7 @@ const H = require('../harness');
     }
     const ids = [best.i, ...best.partners];
     selectAtomsByInstances(ids, { reason: 'test' });
-    const polyCount = (groups.polyhedraGroup?.children ?? []).filter((m) => m.userData?.type === 'polyhedron').length;
+    const polyCount = (await import('./render/index.js')).polyhedraDrawnCount();
     return { ids, nBonds: best.partners.length, polyCount, src: ids.map((i) => w.srcIndex[i]) };
   });
   H.check('selected a Cu atom with its O neighbours', picked.ids.length >= 3 && picked.polyCount > 0, JSON.stringify(picked));
@@ -61,14 +61,14 @@ const H = require('../harness');
     const glowB = groups.bondsMesh?.geometry.attributes.instanceEmissiveIntensity;
     let glowingBondHalves = 0;
     if (glowB) for (let i = 0; i < groups.bondsMesh.count; i++) if (glowB.getX(i) > 0) glowingBondHalves++;
-    const glowingPolys = (groups.polyhedraGroup?.children ?? []).filter((m) => m.userData?.type === 'polyhedron' && m.material.emissive.getHex() !== 0).length;
+    const glowingPolys = (await import('./render/index.js')).polyhedraInfo().filter((m) => m.glow).length; // glow bit per table row (one polyhedra mesh)
     const barEl = document.getElementById('selectionActionBar');
     return {
       shown: !!barEl && !barEl.hidden,
       tabs, view: getSelectionView(), bonds: sets.bonds.length, polyhedra: sets.polyhedra.length,
       selected: getSelectedAtoms().length,
       glowingAtoms, glowingBondHalves, glowingPolys,
-      overlayPolys: highlightHover.currentlyHighlightedPolyMeshes?.length ?? 0,
+      overlayPolys: highlightHover.currentlyHighlightedPolyIndices?.length ?? 0,
       summary: barEl?.querySelector('.si-selbar-summary')?.textContent ?? null,
       groups: [...(document.getElementById('selectionGroupsSelect')?.options ?? [])].map((o) => o.textContent),
     };
@@ -364,13 +364,13 @@ const H = require('../harness');
   const directPolys = await page.evaluate(async () => {
     const { groups, highlightHover } = await import('./state/store.js');
     const { selectPolyhedraDirect, getDirectSelection, getSelectedAtoms, getSelectionView, clearAllHighlights } = await import('./ui/SelectAndHighlightModule.js');
-    const keys = (groups.polyhedraGroup?.children ?? []).filter((m) => m.userData?.type === 'polyhedron').map((m) => m.userData.key);
+    const keys = (await import('./render/index.js')).polyhedraInfo().map((m) => m.key);
     selectPolyhedraDirect([keys[0]], { mode: 'replace' });
     const one = { kind: getDirectSelection().kind, n: getDirectSelection().polyKeys.length, single: highlightHover.currentlyHighlightedPolyhedron?.key ?? null };
     const other = keys.find((k) => !getDirectSelection().polyKeys.includes(k));
     if (other) selectPolyhedraDirect([other], { mode: 'add' });
-    const glowing = (groups.polyhedraGroup?.children ?? []).filter((m) => m.userData?.type === 'polyhedron' && m.material.emissive.getHex() !== 0).length;
-    const set = { kind: getDirectSelection().kind, n: getDirectSelection().polyKeys.length, single: highlightHover.currentlyHighlightedPolyhedron, glowing, overlay: highlightHover.currentlyHighlightedPolyMeshes?.length ?? 0, view: getSelectionView(), atoms: getSelectedAtoms().length, other: !!other };
+    const glowing = (await import('./render/index.js')).polyhedraInfo().filter((m) => m.glow).length;
+    const set = { kind: getDirectSelection().kind, n: getDirectSelection().polyKeys.length, single: highlightHover.currentlyHighlightedPolyhedron, glowing, overlay: highlightHover.currentlyHighlightedPolyIndices?.length ?? 0, view: getSelectionView(), atoms: getSelectedAtoms().length, other: !!other };
     const summary = document.getElementById('selectionActionBar')?.querySelector('.si-selbar-summary')?.textContent ?? null;
     clearAllHighlights({ reason: 'test' });
     return { one, set, summary, after: getDirectSelection().kind };

@@ -54,6 +54,13 @@
   top: 71px;
 }
 
+/* The fast-polyhedra note (ui/PolyhedraFastNotice.js) has no fixed slot: like
+   the confirmation below, its top is set from JS under whichever warnings are
+   on screen. */
+.cv-polyhedra-fast-notice {
+  top: 5px;
+}
+
 /* The green confirmation after an action from the feature search
    (ui/ConfirmBanner.js: "✓ Bonds switched off"): the same shell, on the menu
    background with the ok-green text and border. Its top is set from JS,

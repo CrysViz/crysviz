@@ -94,6 +94,8 @@ export const CONCEPTS = [
   { to: { control: 'recenterEachStep' }, phrases: ['recentre structure', 'recenter structure', 'follow structure', 'remove drift', 'drift correction'] },
   { to: { control: 'combineTrajectoriesButton' }, phrases: [
     'combine trajectories', 'merge trajectories', 'concatenate trajectories', 'join frames', 'make trajectory from files',
+    'average structure', 'mean structure', 'time averaged structure', 'average positions', 'average over frames',
+    'average trajectory',
   ] },
   { to: { panel: 'latticeAnalysis' }, phrases: [
     'lattice parameters vs pressure', 'cell parameters over time', 'cell evolution', 'volume vs step', 'volume over time',
@@ -168,6 +170,10 @@ export const CONCEPTS = [
   { to: { control: 'showPolyhedra' }, phrases: ['hide polyhedra', 'toggle polyhedra'] },
   { to: { control: 'completePolyhedraToggle' }, phrases: ['whole polyhedra', 'polyhedra across boundary'] },
   { to: { control: 'polyEdgeWidth' }, phrases: ['polyhedra edges', 'polyhedron outline'] },
+  { to: { control: 'polyhedraColorBy' }, phrases: [
+    'colour polyhedra', 'color polyhedra by', 'polyhedra distortion colour', 'distortion index', 'bond length distortion',
+    'octahedral tilt colour', 'tilt angle', 'tilt axes', 'pseudo-cubic axes', 'octahedral rotation', 'total rotation', 'bond angle variance',
+    'quadratic elongation', 'polyhedron volume colour', 'glazer tilt'] },
   { to: { panel: 'focusRegions' }, phrases: [
     'highlight defect', 'focus on molecule', 'focus on defect', 'fade surroundings', 'dim the rest',
     'transparent surroundings', 'region of interest', 'local environment', 'dopant', 'impurity', 'adsorbate',
@@ -278,6 +284,12 @@ export const CONCEPTS = [
     'cel shading', 'cartoon look', 'toon shading', 'metallic look', 'matte look', 'glossy', 'shiny atoms', 'outlines',
   ] },
   { to: { control: 'atomDetailMenu' }, phrases: ['sphere resolution', 'level of detail', 'smoother spheres', 'faster rendering', 'large structures slow'] },
+  { to: { control: 'polyhedraSearchFast' }, phrases: ['polyhedra slow', 'faster polyhedra', 'polyhedra large structure', 'polyhedra molecular dynamics', 'bonded neighbours polyhedra'] },
+  { to: { control: 'polyhedraSearchAdvanced' }, phrases: ['voronoi polyhedra', 'cage search', 'accurate polyhedra'] },
+  { to: { control: 'bondBreakTolerance' }, phrases: [
+    'hysteresis', 'bond breaking', 'bond flicker', 'flickering bonds', 'vibration', 'thermal vibration',
+    'polyhedra flicker', 'bonds blinking',
+  ] },
   { to: { control: 'depthPeelLayersSlider' }, phrases: ['transparency quality', 'depth peeling', 'order independent transparency'] },
   { to: { control: 'rtGroundToggle' }, phrases: ['ground shadow', 'floor', 'shadow plane'] },
   { to: { control: 'resetRenderingBtn' }, phrases: ['default rendering'] },

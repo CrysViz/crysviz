@@ -742,7 +742,7 @@ export const SETTING_KEYS = deepFreeze([
 export const STRUCTURE_DERIVED_KEYS = deepFreeze([
   'colors.atomColors', 'colors.elementColors', 'colors.atomOpacities', 'colors.atomRadiusScales',
   'colors.atomImageStyles', 'colors.bondUserStyles', 'colors.bondCategoryStyles',
-  'colors.polyhedraUserStyles', 'colors.polyhedraCategoryStyles', 'colors.atomMaterials',
+  'colors.polyhedraUserStyles', 'colors.polyhedraCategoryStyles', 'colors.polyhedraElementStyles', 'colors.atomMaterials',
   'colors.atomUserMaterials', 'colors.spinCategoryStyles', 'colors.forceCategoryStyles',
   'colors.fieldMaterial',
   'display.bondLengths', 'display.bondVisibility', 'display.atomVisibility',

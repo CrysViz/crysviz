@@ -184,23 +184,23 @@ const H = require('../harness');
   const poly = await page.evaluate(async () => {
     const { groups, highlightHover } = await import('./state/store.js');
     const { polyhedronGroupKey } = await import('./render/index.js');
-    const { selectPolyhedronFromMesh } = await import('./ui/SelectAndHighlightModule.js');
+    const { polyhedraInfo } = await import('./render/index.js');
+    const { selectPolyhedronFromIndex } = await import('./ui/SelectAndHighlightModule.js');
     /** @type {HTMLElement} */ (document.querySelector('#atomBondControlSwitch button[data-mode="polyhedra"]')).click();
-    const meshes = groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
+    const meshes = polyhedraInfo(); // one row per drawn polyhedron (one mesh for all)
     const counts = new Map();
-    meshes.forEach((m) => counts.set(polyhedronGroupKey(m.userData.key), (counts.get(polyhedronGroupKey(m.userData.key)) ?? 0) + 1));
+    meshes.forEach((m) => counts.set(polyhedronGroupKey(m.key), (counts.get(polyhedronGroupKey(m.key)) ?? 0) + 1));
     // YBCO's two polyhedra have no copies in the cell; the group is the one.
     const mesh = meshes[0];
-    selectPolyhedronFromMesh(mesh, { scrollToSelection: false });
-    return { key: mesh.userData.key, copies: counts.get(polyhedronGroupKey(mesh.userData.key)), sel: highlightHover.currentlyHighlightedPolyhedron?.key ?? null };
+    selectPolyhedronFromIndex(mesh.index, { scrollToSelection: false });
+    return { key: mesh.key, copies: counts.get(polyhedronGroupKey(mesh.key)), sel: highlightHover.currentlyHighlightedPolyhedron?.key ?? null };
   });
   await H.clickById(page, 'linkPeriodicCopiesToggle');
   await page.waitForTimeout(400);
   const polyAfter = await page.evaluate(async () => {
     const { groups, highlightHover, general } = await import('./state/store.js');
     const cur = highlightHover.currentlyHighlightedPolyhedron;
-    const glowing = groups.polyhedraGroup.children
-      .filter((m) => m.userData?.type === 'polyhedron' && m.material?.emissiveIntensity === 1 && m.material.emissive.getHex() === 0xff8c00);
+    const glowing = (await import('./render/index.js')).polyhedraInfo().filter((m) => m.glow);
     const row = [...document.querySelectorAll('#infoPolyControls .individual-polyhedron-row')]
       .find((r) => /** @type {HTMLElement} */ (r).classList.contains('is-highlighted'));
     return { linked: general.linkPeriodicCopies, key: cur?.key ?? null, groupKey: cur?.groupKey ?? null,

@@ -1,9 +1,11 @@
 import {groups,highlightHover,fileBrowser,atomSelection,general} from '../state/store.js';
 import {collapseAllAtomExpansions} from './WindowAndSceneControls.js';
 import {setStructurePanelOpen} from './StructureInfoPanel/General.js';
+import {scrollRowIntoView} from './StructureInfoPanel/components/PagedRows.js';
 import * as THREE from '../external/three/three.module.js';
 import {updateAtoms} from '../render/index.js';
 import {updateBonds, bondKey, bondGroupKey, polyhedronGroupKey, isTracerPipelineActive} from '../render/index.js';
+import {polyhedraTable, polyhedronIndexOfKey, polyhedronIndicesOfGroup, setPolyhedraGlow} from '../render/index.js';
 import {updateForces, updateSpins} from '../render/index.js';
 import {onAtomsRebuilt} from '../render/atomsRebuildHook.js';
 
@@ -461,6 +463,19 @@ export function clearBondSelection() {
   if (directSelection.kind === 'bonds') resetDirectSelection();
 }
 
+/** The Bonds tab's row list of an element pair (kept open by
+ *  collapseAllAtomExpansions when a pick reveals a row in it), or null. */
+function bondListOf(pair) {
+  return document.getElementById('composition')
+    ?.querySelector(`.bond-control[data-pair="${pair}"] .individual-bonds`) ?? null;
+}
+
+/** The Poly tab's row list of a category, as bondListOf. */
+function polyListOf(catKey) {
+  return document.getElementById('composition')
+    ?.querySelector(`.poly-control[data-cat-key="${catKey}"] .individual-polyhedra`) ?? null;
+}
+
 /** Locate (and if needed lazily build + expand) the Bonds-tab row for a bond
  *  (its group row when a groupKey is given — linked mode). */
 function findBondRow(pair, key, groupKey = null) {
@@ -547,7 +562,7 @@ function selectBondByIndex(bondIndex, options = {}) {
 
   let row = options.row ?? null;
   if (!row && options.openPanel) {
-    collapseAllAtomExpansions();
+    collapseAllAtomExpansions(bondListOf(highlightHover.currentlyHighlightedBond.pair));
     row = findBondRow(
       highlightHover.currentlyHighlightedBond.pair,
       highlightHover.currentlyHighlightedBond.key,
@@ -557,7 +572,7 @@ function selectBondByIndex(bondIndex, options = {}) {
   if (row) {
     highlightAtomRow(row);
     if (options.scrollToSelection) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrollRowIntoView(row);
     }
   }
 }
@@ -582,15 +597,30 @@ export function selectBondFromRow(bondIndex, rowEl, linkedBondIndexes = null) {
 // POLYHEDRON SELECTION (single-select)
 // =============================================
 
-function findPolyhedronMesh(key) {
-  return groups.polyhedraGroup?.children?.find((m) => m.userData?.key === key) ?? null;
+// The polyhedra are one mesh (render/PolyhedraMesh.js); a polyhedron is a row
+// of its table — the same index as in structure.polyhedra.polyhedra. Sets of
+// polyhedra are kept as row lists; a stale list after a rebuild is harmless
+// (notifyPolyhedraRebuilt drops the selection, glow writes skip bad rows).
+
+/** Table row of a drawn polyhedron by stable key, or -1. */
+function findPolyhedronIndex(key) {
+  return polyhedronIndexOfKey(key);
 }
 
-/** All meshes belonging to a periodic-copy group of polyhedra. */
-function findPolyhedronGroupMeshes(groupKey) {
-  return (groups.polyhedraGroup?.children ?? []).filter((m) =>
-    m.userData?.type === 'polyhedron'
-    && (m.userData.groupKey ?? polyhedronGroupKey(m.userData.key ?? '')) === groupKey);
+/** Rows of a periodic-copy group of drawn polyhedra. */
+function findPolyhedronGroupIndices(groupKey) {
+  return polyhedronIndicesOfGroup(groupKey).slice();
+}
+
+/** Rows a polyhedron selection unit covers: its copies when linking. */
+function polyhedronUnitIndices(key, linking = general.linkPeriodicCopies !== false) {
+  if (linking) return findPolyhedronGroupIndices(polyhedronGroupKey(key));
+  const i = findPolyhedronIndex(key);
+  return i >= 0 ? [i] : [];
+}
+
+function polyKeyAt(i) {
+  return polyhedraTable()?.key?.[i] ?? null;
 }
 
 /** Notifies listeners (currently just AnalysisPanels/PolyhedronInspector.js)
@@ -602,18 +632,9 @@ function dispatchPolyhedronSelectionEvent(detail) {
 
 export function clearPolyhedronSelection() {
   const sel = highlightHover.currentlyHighlightedPolyhedron;
-  if (sel) {
-    // The meshes may already be gone after an async polyhedra rebuild — fine.
-    const targets = sel.groupKey
-      ? findPolyhedronGroupMeshes(sel.groupKey)
-      : [findPolyhedronMesh(sel.key)].filter(Boolean);
-    for (const mesh of targets) {
-      if (mesh?.material?.emissive) {
-        mesh.material.emissive.set(0x000000);
-        mesh.material.emissiveIntensity = 1;
-      }
-    }
-  }
+  // The rows may belong to a table already replaced by an async rebuild —
+  // fine, the new table starts without glow.
+  if (sel?.indices) setPolyhedraGlow(sel.indices, false);
   clearUIHighlight();
   highlightHover.currentlyHighlightedPolyhedron = null;
   if (sel) dispatchPolyhedronSelectionEvent(null);
@@ -632,6 +653,9 @@ function findPolyhedronRow(catKey, key, groupKey = null) {
 
   const listContainer = /** @type {HTMLElement} */ (control.querySelector('.individual-polyhedra'));
   if (!listContainer) return null;
+  // The category row sits in its centre element's group (Ca, Ti, Cages),
+  // which may be collapsed: open it too.
+  /** @type {any} */ (control.closest('.phl-group'))?._setExpanded?.(true);
 
   // Rows are populated lazily on first expand (see PolyhedraListPanel.js); a
   // long list shows the page holding this polyhedron.
@@ -656,7 +680,7 @@ function findPolyhedronRow(catKey, key, groupKey = null) {
 }
 
 /**
- * Select a polyhedron by its stable key: orange emissive glow on its mesh +
+ * Select a polyhedron by its stable key: orange emissive glow on its faces +
  * amber panel-row highlight. Selecting the already-selected one deselects.
  */
 function selectPolyhedronByKey(key, catKey, options = {}) {
@@ -670,49 +694,50 @@ function selectPolyhedronByKey(key, catKey, options = {}) {
     clearPolyhedronSelection();
     return;
   }
-  const meshes = linking
-    ? findPolyhedronGroupMeshes(groupKey)
-    : [findPolyhedronMesh(key)].filter(Boolean);
-  if (!meshes.length || !meshes[0]?.material?.emissive) return;
+  const rows = polyhedronUnitIndices(key, linking);
+  if (!rows.length) return;
 
   clearSelectedAtoms({ reason: 'polyhedron-select' });
   clearBondSelection();
   clearPolyhedronSelection(); // restores any previous polyhedron glow
-  if (!directApplying) directSelection = { kind: 'polyhedra', bonds: [], polyKeys: linking ? meshes.map((m) => m.userData.key) : [key] };
+  if (!directApplying) directSelection = { kind: 'polyhedra', bonds: [], polyKeys: linking ? rows.map(polyKeyAt) : [key] };
 
-  for (const mesh of meshes) {
-    mesh.material.emissive.set(0xFF8C00);
-    mesh.material.emissiveIntensity = 1.0;
-  }
-  highlightHover.currentlyHighlightedPolyhedron = { key, catKey, groupKey };
+  setPolyhedraGlow(rows, true);
+  // indices: the glowing table rows (the ghost overlay and the tracers read them)
+  highlightHover.currentlyHighlightedPolyhedron = { key, catKey, groupKey, indices: rows };
   dispatchPolyhedronSelectionEvent({ key, catKey, groupKey });
 
   let row = options.row ?? null;
   if (!row && options.openPanel) {
-    collapseAllAtomExpansions();
+    collapseAllAtomExpansions(polyListOf(catKey));
     row = findPolyhedronRow(catKey, key, groupKey);
   }
   if (row) {
     highlightAtomRow(row);
     if (options.scrollToSelection) {
-      row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrollRowIntoView(row);
     }
   }
 }
 
-/** 3D→panel: select the polyhedron owning a picked face mesh. */
-export function selectPolyhedronFromMesh(mesh, options = {}) {
-  const ud = mesh?.userData;
-  if (ud?.type !== 'polyhedron' || !ud.key) return;
-  selectPolyhedronByKey(ud.key, ud.catKey, {
+/** 3D→panel: select a drawn polyhedron by its table row (a pick's polyIndex). */
+export function selectPolyhedronFromIndex(polyIndex, options = {}) {
+  const table = polyhedraTable();
+  if (!table || !(polyIndex >= 0 && polyIndex < table.n) || !table.faceCount[polyIndex]) return;
+  selectPolyhedronByKey(table.key[polyIndex], table.catKey[polyIndex], {
     openPanel: true,
     scrollToSelection: options.scrollToSelection !== false,
   });
 }
 
+function catKeyOf(key) {
+  const i = findPolyhedronIndex(key);
+  return i >= 0 ? polyhedraTable().catKey[i] : undefined;
+}
+
 /** Panel→3D: select a polyhedron from a click on its own row in the Poly tab. */
 export function selectPolyhedronFromRow(key, rowEl) {
-  const catKey = rowEl?.dataset?.catKey ?? findPolyhedronMesh(key)?.userData?.catKey;
+  const catKey = rowEl?.dataset?.catKey ?? catKeyOf(key);
   selectPolyhedronByKey(key, catKey, { row: rowEl });
 }
 
@@ -728,7 +753,7 @@ export function highlightPolyhedronByKey(key, catKey = null) {
   const alreadySelected = cur
     && (linking ? cur.groupKey === polyhedronGroupKey(key) : cur.key === key);
   if (alreadySelected) return;
-  const resolvedCat = catKey ?? findPolyhedronMesh(key)?.userData?.catKey;
+  const resolvedCat = catKey ?? catKeyOf(key);
   selectPolyhedronByKey(key, resolvedCat, {});
 }
 
@@ -749,8 +774,8 @@ export function highlightPolyhedronByKey(key, catKey = null) {
 // view never changes the atom selection, so Atoms brings the atom glow back.
 let selectionViewTab = 'atoms';
 let viewBondIndexes = [];   // structure.bonds indexes glowing in the bonds view
-let viewPolyMeshes = [];    // polyhedron meshes glowing in the polyhedra view
-let viewExplicit = null;    // { bonds: number[], polyhedra: mesh[] } from a restored group
+let viewPolyIndices = [];   // polyhedra table rows glowing in the polyhedra view
+let viewExplicit = null;    // { bonds: number[], polyhedra: rows } from a restored group
 
 export const SELECTION_VIEW_CHANGED = 'crysviz:selection-view-changed';
 
@@ -761,8 +786,9 @@ export function getSelectionView() {
 }
 
 /** The three sets of the selection: atoms (instance ids), bonds
- *  (structure.bonds indexes) and polyhedra (meshes) — the active kind's own
- *  set and the two derived from it. */
+ *  (structure.bonds indexes) and polyhedra (rows of the polyhedra table,
+ *  render/PolyhedraModule.js polyhedraTable()) — the active kind's own set
+ *  and the two derived from it. */
 export function getSelectionViewSets() {
   if (directSelection.kind) {
     const atoms = directAtomInstances();
@@ -770,13 +796,13 @@ export function getSelectionViewSets() {
     return {
       atoms,
       bonds: directSelection.kind === 'bonds' ? directSelection.bonds.slice() : bondsAmongSelection(selected),
-      polyhedra: directSelection.kind === 'polyhedra' ? directPolyMeshes() : polyhedraAmongSelection(selected),
+      polyhedra: directSelection.kind === 'polyhedra' ? directPolyIndices() : polyhedraAmongSelection(selected),
     };
   }
   return {
     atoms: atomSelection.selectedAtoms.flatMap((atom) => instancesForSelectedAtom(atom)),
     bonds: selectionViewTab === 'bonds' ? viewBondIndexes.slice() : (viewExplicit?.bonds ?? bondsAmongSelection()),
-    polyhedra: selectionViewTab === 'polyhedra' ? viewPolyMeshes.slice() : (viewExplicit?.polyhedra ?? polyhedraAmongSelection()),
+    polyhedra: selectionViewTab === 'polyhedra' ? viewPolyIndices.slice() : (viewExplicit?.polyhedra ?? polyhedraAmongSelection()),
   };
 }
 
@@ -795,34 +821,36 @@ export function bondsAmongSelection(selected = atomSelection.selectedAtoms) {
   return out;
 }
 
-/** The drawn polyhedron meshes centred on a selected atom, plus the cages
- *  whose corners are all selected. */
+/** The shown polyhedra (table rows) centred on a selected atom, plus the
+ *  cages whose corners are all selected. */
 export function polyhedraAmongSelection(selected = atomSelection.selectedAtoms) {
   const structure = fileBrowser.selectedStructure;
-  const meshes = groups.polyhedraGroup?.children ?? [];
-  if (!selected.length || !meshes.length) return [];
+  const table = polyhedraTable();
+  if (!selected.length || !table) return [];
   const sources = new Set(selected.map((atom) => atom.sourceIndex));
   const out = [];
-  for (const mesh of meshes) {
-    const ud = mesh.userData;
-    if (ud?.type !== 'polyhedron' || !mesh.visible || !mesh.material?.emissive) continue;
-    if (Number.isInteger(ud.centerSrcIndex) && sources.has(ud.centerSrcIndex)) { out.push(mesh); continue; }
-    const poly = structure?.polyhedra?.polyhedra?.[ud.polyIndex];
-    const corners = poly?.vertexSrcList;
-    if (corners?.length && corners.every((src) => sources.has(src))) out.push(mesh);
+  for (let i = 0; i < table.n; i++) {
+    if (!table.faceCount[i] || !table.visible[i]) continue;
+    const centre = table.centerIndex[i];
+    if (centre >= 0 && sources.has(centre)) { out.push(i); continue; }
+    const corners = structure?.polyhedra?.polyhedra?.[i]?.vertexSrcList;
+    if (corners?.length && corners.every((src) => sources.has(src))) out.push(i);
   }
   return out;
 }
 
 function clearViewPolyhedraGlow() {
-  for (const mesh of viewPolyMeshes) {
-    if (mesh?.material?.emissive) {
-      mesh.material.emissive.set(0x000000);
-      mesh.material.emissiveIntensity = 1;
-    }
-  }
-  viewPolyMeshes = [];
-  highlightHover.currentlyHighlightedPolyMeshes = [];
+  setPolyhedraGlow(viewPolyIndices, false);
+  viewPolyIndices = [];
+  highlightHover.currentlyHighlightedPolyIndices = [];
+}
+
+/** Glow a set of rows as the view's set (the tracers / raster ghost overlay
+ *  read it from the store). */
+function glowViewPolyhedra(rows) {
+  viewPolyIndices = rows;
+  setPolyhedraGlow(rows, true);
+  highlightHover.currentlyHighlightedPolyIndices = rows.slice();
 }
 
 /** Glow the active view's set (the atoms' own glow is off in the other two). */
@@ -837,13 +865,9 @@ function paintSelectionView() {
     const ids = viewBondIndexes.flatMap((i) => structure.bonds[i].instanceIds ?? []);
     if (ids.length && groups.bondsMesh) highlightBondIn3D(ids);
   } else {
-    viewPolyMeshes = (viewExplicit?.polyhedra ?? polyhedraAmongSelection()).filter((m) => m?.material?.emissive);
-    for (const mesh of viewPolyMeshes) {
-      mesh.material.emissive.set(0xFF8C00);
-      mesh.material.emissiveIntensity = 1.0;
-    }
-    // the tracers / raster ghost overlay read the meshes from here
-    highlightHover.currentlyHighlightedPolyMeshes = viewPolyMeshes.slice();
+    const table = polyhedraTable();
+    glowViewPolyhedra((viewExplicit?.polyhedra ?? polyhedraAmongSelection())
+      .filter((i) => table && i >= 0 && i < table.n && table.faceCount[i]));
   }
 }
 
@@ -860,7 +884,7 @@ function resetSelectionView() {
 
 /**
  * Switch the selection's view. `explicit` (a restored group's own sets:
- * { bonds: structure.bonds indexes, polyhedra: meshes }) replaces the derived
+ * { bonds: structure.bonds indexes, polyhedra: table rows }) replaces the derived
  * sets until the atom selection changes.
  * @param {'atoms'|'bonds'|'polyhedra'} tab
  */
@@ -873,7 +897,7 @@ export function setSelectionView(tab, { explicit = null } = {}) {
     const sets = getSelectionViewSets();
     if (tab === 'atoms') selectAtomsByInstances(sets.atoms, { reason: 'selection-tab' });
     else if (tab === 'bonds') selectBondsDirect(sets.bonds, { mode: 'replace', keepEmpty: true });
-    else selectPolyhedraDirect(sets.polyhedra.map((m) => m.userData?.key).filter(Boolean), { mode: 'replace', keepEmpty: true });
+    else selectPolyhedraDirect(sets.polyhedra.map(polyKeyAt).filter(Boolean), { mode: 'replace', keepEmpty: true });
     return;
   }
   const changed = tab !== selectionViewTab;
@@ -935,12 +959,12 @@ function bondMembers(structure, bondIndex) {
 }
 
 function polyMemberKeys(key) {
-  if (general.linkPeriodicCopies === false) return findPolyhedronMesh(key) ? [key] : [];
-  return findPolyhedronGroupMeshes(polyhedronGroupKey(key)).map((m) => m.userData.key);
+  if (general.linkPeriodicCopies === false) return findPolyhedronIndex(key) >= 0 ? [key] : [];
+  return findPolyhedronGroupIndices(polyhedronGroupKey(key)).map(polyKeyAt);
 }
 
-function directPolyMeshes() {
-  return directSelection.polyKeys.map((k) => findPolyhedronMesh(k)).filter((m) => m?.material?.emissive);
+function directPolyIndices() {
+  return directSelection.polyKeys.map((k) => findPolyhedronIndex(k)).filter((i) => i >= 0);
 }
 
 /** Atom instances of the picked set: the bonds' two ends, or each
@@ -960,10 +984,10 @@ function directAtomInstances() {
       if (!images?.length) return;
       if (linked) images.forEach((i) => out.add(i)); else out.add(images[0]);
     };
-    for (const mesh of directPolyMeshes()) {
-      const ud = mesh.userData;
-      if (Number.isInteger(ud.centerSrcIndex)) addSource(ud.centerSrcIndex);
-      for (const src of structure?.polyhedra?.polyhedra?.[ud.polyIndex]?.vertexSrcList ?? []) addSource(src);
+    const table = polyhedraTable();
+    for (const i of directPolyIndices()) {
+      if (table.centerIndex[i] >= 0) addSource(table.centerIndex[i]);
+      for (const src of structure?.polyhedra?.polyhedra?.[i]?.vertexSrcList ?? []) addSource(src);
     }
   }
   return [...out].filter((i) => Number.isInteger(i));
@@ -989,12 +1013,7 @@ function paintDirectSelection() {
     if (ids.length && groups.bondsMesh) highlightBondIn3D(ids);
   } else if (directSelection.kind === 'polyhedra') {
     clearViewPolyhedraGlow();
-    viewPolyMeshes = directPolyMeshes();
-    for (const mesh of viewPolyMeshes) {
-      mesh.material.emissive.set(0xFF8C00);
-      mesh.material.emissiveIntensity = 1.0;
-    }
-    highlightHover.currentlyHighlightedPolyMeshes = viewPolyMeshes.slice();
+    glowViewPolyhedra(directPolyIndices());
   }
 }
 
@@ -1034,12 +1053,12 @@ export function selectBondsDirect(bondIndexes, { mode = 'replace', scrollToSelec
       bondIndex: next[0], key: bondKey(bond.indices), pair: bondPairKeyOf(bond), instanceIds,
       groupKey: linking ? bondGroupKey(structure, bond) : null, bondIndexes: linking ? next.slice() : null,
     };
-    collapseAllAtomExpansions();
+    collapseAllAtomExpansions(bondListOf(highlightHover.currentlyHighlightedBond.pair));
     const row = findBondRow(highlightHover.currentlyHighlightedBond.pair, highlightHover.currentlyHighlightedBond.key,
       highlightHover.currentlyHighlightedBond.groupKey);
     if (row) {
       highlightAtomRow(row);
-      if (scrollToSelection) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (scrollToSelection) scrollRowIntoView(row);
     }
   } else {
     paintDirectSelection();
@@ -1078,9 +1097,8 @@ export function selectPolyhedraDirect(keys, { mode = 'replace', scrollToSelectio
   const oneGroup = next.length === polyMemberKeys(next[0]).length && next.every((k) => polyMemberKeys(next[0]).includes(k));
   if (oneGroup) {
     // the classic single selection: its row, the Polyhedron Inspector's event
-    const mesh = findPolyhedronMesh(next[0]);
     directApplying = true;
-    selectPolyhedronByKey(next[0], mesh?.userData?.catKey, { openPanel: true, scrollToSelection });
+    selectPolyhedronByKey(next[0], catKeyOf(next[0]), { openPanel: true, scrollToSelection });
     directApplying = false;
     if (!highlightHover.currentlyHighlightedPolyhedron) directSelection = { kind: null, bonds: [], polyKeys: [] };
   } else {
@@ -1093,16 +1111,11 @@ export function selectPolyhedraDirect(keys, { mode = 'replace', scrollToSelectio
 // Kept separate from the single-select currentlyHighlightedPolyhedron above:
 // this glows an arbitrary SET of polyhedra with no panel-row / selection
 // semantics, the polyhedra analogue of highlightAtomsIn3D / highlightBondIn3D.
-let highlightedPolyhedraMeshes = [];
+let highlightedPolyhedraIndices = [];
 
 function clearPolyhedraMultiHighlight() {
-  for (const mesh of highlightedPolyhedraMeshes) {
-    if (mesh?.material?.emissive) {
-      mesh.material.emissive.set(0x000000);
-      mesh.material.emissiveIntensity = 1;
-    }
-  }
-  highlightedPolyhedraMeshes = [];
+  setPolyhedraGlow(highlightedPolyhedraIndices, false);
+  highlightedPolyhedraIndices = [];
 }
 
 /**
@@ -1119,17 +1132,13 @@ export function highlightPolyhedraIn3D(keys) {
   const linking = general.linkPeriodicCopies !== false;
   const seen = new Set();
   for (const key of keys ?? []) {
-    const meshes = linking
-      ? findPolyhedronGroupMeshes(polyhedronGroupKey(key))
-      : [findPolyhedronMesh(key)].filter(Boolean);
-    for (const mesh of meshes) {
-      if (!mesh || seen.has(mesh) || !mesh.material?.emissive) continue;
-      seen.add(mesh);
-      mesh.material.emissive.set(0xFF8C00);
-      mesh.material.emissiveIntensity = 1.0;
-      highlightedPolyhedraMeshes.push(mesh);
+    for (const i of polyhedronUnitIndices(key, linking)) {
+      if (seen.has(i)) continue;
+      seen.add(i);
+      highlightedPolyhedraIndices.push(i);
     }
   }
+  setPolyhedraGlow(highlightedPolyhedraIndices, true);
 }
 
 function getTargetAtomDetails(sourceIndex) {
@@ -1231,7 +1240,7 @@ export function highlightAtomInStructurePanel(element, sourceIndex) {
   const row = findAtomRow(element, sourceIndex);
   if (!row) return;
   highlightAtomRow(row, 1);
-  row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  scrollRowIntoView(row);
 }
 
 export function highlightAtomRow(row, selectionOrder = null) {
@@ -1263,7 +1272,7 @@ function syncSelectedAtomRows(options = {}) {
   });
 
   if (options.scrollToLast && lastRow) {
-    lastRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    scrollRowIntoView(lastRow);
   }
 }
 

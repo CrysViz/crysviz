@@ -1046,16 +1046,21 @@ export function recenterCamera() {
 
 
 
-// Function to collapse all individual atom (and bond/polyhedron) expansions
-export function collapseAllAtomExpansions() {
+// Function to collapse all individual atom (and bond/polyhedron) expansions.
+// `keep`: one list to leave open, with its caret — a 3D pick collapses the
+// others and reveals its row in this one, and collapsing a list only to open
+// it again made the browser restyle all of its (up to 1000) rows.
+export function collapseAllAtomExpansions(keep = null) {
   const atomsContainers = document.querySelectorAll('.individual-atoms, .individual-bonds, .individual-polyhedra');
   const expandIcons = document.querySelectorAll('.comp-expand-icon, .bond-expand-icon, .poly-expand-icon');
+  const keepIcon = keep?.closest('.comp-container, .bond-control, .poly-control')
+    ?.querySelector('.comp-expand-icon, .bond-expand-icon, .poly-expand-icon') ?? null;
 
   atomsContainers.forEach(container => {
-    container.hidden = true;
+    if (container !== keep) container.hidden = true;
   });
 
   expandIcons.forEach(icon => {
-    icon.classList.remove('is-expanded');
+    if (icon !== keepIcon) icon.classList.remove('is-expanded');
   });
 }

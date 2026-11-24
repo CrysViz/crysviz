@@ -14,8 +14,11 @@
  *
  * What a record captures (only when it deviates): per-atom style fields and
  * positions, per-arrow user overrides (userColor/userMaterial/hidden), the
- * per-structure style dicts, the lattice, polyhedra settings, and REFERENCES
+ * per-item style dicts (FRAME_STYLE_DICTS), the lattice, and REFERENCES
  * to attached state (volumetric fields, planes, symmetry, velocities).
+ * Category-level styles and the polyhedra settings apply to the whole
+ * trajectory instead: one shared record (extractSharedStyles /
+ * applySharedStyles, SHARED_STYLE_DICTS).
  * Deliberately NOT captured, because rendering recomputes them on every
  * display and recording them would bloat the records on plain playback:
  * bonds, the computed polyhedra model, colormap-driven spin/force `.color`
@@ -266,22 +269,115 @@ export function peekAtoms(structure) {
 
 const nearlyEqual = (a, b) => a === b || Math.abs(a - b) < 1e-12;
 
-/** The per-structure style dicts (mirrors StructureContainer's flush list). */
-const STYLE_DICTS = ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles',
-  'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials',
-  'spinCategoryStyles', 'forceCategoryStyles', 'atomImageStyles'];
+/**
+ * The per-structure style dicts (mirrors StructureContainer's flush list),
+ * split by how far an edit reaches in a trajectory.
+ *
+ * SHARED: category-level styles (per bond pair, polyhedron type, arrow
+ * category, element) apply to the WHOLE trajectory. They live in ONE record
+ * on the container (TrajectoryContainer._sharedStyles), taken from the live
+ * frame when it moves on and put on every frame, together with the
+ * polyhedra settings (useChemicalFilter, detectCages).
+ *
+ * PER FRAME: individual edits (one bond, one polyhedron, one atom's
+ * material, one periodic image) stay on the frame they were made on, in
+ * that frame's sparse record.
+ *
+ * Moving a dict between the two lists is the whole switch.
+ */
+export const SHARED_STYLE_DICTS = /** @type {const} */ (['bondCategoryStyles',
+  'polyhedraCategoryStyles', 'polyhedraElementStyles', 'spinCategoryStyles', 'forceCategoryStyles', 'atomMaterials']);
+export const FRAME_STYLE_DICTS = /** @type {const} */ (['bondUserStyles',
+  'polyhedraUserStyles', 'atomUserMaterials', 'atomImageStyles']);
+
+/** The polyhedra settings nobody changed. */
+const DEFAULT_POLYHEDRA_SETTINGS = Object.freeze({ useChemicalFilter: true, detectCages: true });
+
+/**
+ * The styles of a trajectory that apply to every frame (SHARED_STYLE_DICTS
+ * and the polyhedra settings). Absent members mean "at default".
+ * @typedef {{
+ *   dicts?: Record<string, object>,
+ *   polyhedraSettings?: {useChemicalFilter: boolean, detectCages: boolean},
+ * }} SharedStyleRecord
+ */
+
+/**
+ * The trajectory-wide styles a Structure carries, by reference (O(number of
+ * dicts): cheap enough for every frame switch); null when all are at default.
+ * @param {Structure} frame
+ * @returns {SharedStyleRecord | null}
+ */
+export function extractSharedStyles(frame) {
+  /** @type {SharedStyleRecord} */
+  const rec = {};
+  for (const k of SHARED_STYLE_DICTS) {
+    const dict = /** @type {any} */ (frame)[k];
+    if (dict && Object.keys(dict).length) (rec.dicts ??= {})[k] = dict;
+  }
+  const ps = frame.polyhedraSettings;
+  if (ps && (ps.useChemicalFilter !== true || ps.detectCages !== true)) {
+    rec.polyhedraSettings = {
+      useChemicalFilter: ps.useChemicalFilter !== false,
+      detectCages: ps.detectCages !== false,
+    };
+  }
+  return rec.dicts || rec.polyhedraSettings ? rec : null;
+}
+
+/**
+ * Put the trajectory-wide styles on a Structure (null: all at default).
+ * `copy` deep-copies the dicts — for a Structure that leaves the trajectory
+ * (an overlay, a copied row) or is thrown away after an edit, so that it
+ * never shares dict objects with the live frame.
+ * @param {Structure} frame
+ * @param {SharedStyleRecord | null} shared
+ * @param {{copy?: boolean}} [opts]
+ */
+export function applySharedStyles(frame, shared, { copy = false } = {}) {
+  const f = /** @type {any} */ (frame);
+  for (const k of SHARED_STYLE_DICTS) {
+    const dict = /** @type {any} */ (shared?.dicts)?.[k];
+    f[k] = dict ? (copy ? structuredClone(dict) : dict) : {};
+  }
+  f.polyhedraSettings = { ...(shared?.polyhedraSettings ?? DEFAULT_POLYHEDRA_SETTINGS) };
+}
+
+/**
+ * Fold `incoming` into `base`, keeping what `base` already has: a dict (or
+ * the polyhedra settings) is taken from `incoming` only where `base` has
+ * none — "first occurrence wins" when several frames each carry their own.
+ * Copies what it takes. Returns the merged record (null when empty).
+ * @param {SharedStyleRecord | null} base
+ * @param {SharedStyleRecord | null} incoming
+ * @returns {SharedStyleRecord | null}
+ */
+export function mergeSharedStyles(base, incoming) {
+  if (!incoming) return base;
+  /** @type {SharedStyleRecord} */
+  const out = { ...(base ?? {}) };
+  if (base?.dicts) out.dicts = { ...base.dicts };
+  for (const [k, dict] of Object.entries(incoming.dicts ?? {})) {
+    if (!out.dicts?.[k]) (out.dicts ??= {})[k] = structuredClone(dict);
+  }
+  if (!out.polyhedraSettings && incoming.polyhedraSettings) {
+    out.polyhedraSettings = { ...incoming.polyhedraSettings };
+  }
+  return out.dicts || out.polyhedraSettings ? out : null;
+}
 
 /**
  * The sparse record of one frame's deviations from its as-loaded state.
  * Absent members mean "at default"; a frame with no deviations at all is
- * represented by no record (extract returns null).
+ * represented by no record (extract returns null). The trajectory-wide
+ * styles (SHARED_STYLE_DICTS, polyhedra settings) are not part of it: see
+ * extractSharedStyles.
  * @typedef {{
  *   atoms?: Map<number, object>,
  *   spins?: Map<number, object>,
  *   forces?: Map<number, object>,
  *   dicts?: Record<string, object>,
  *   lattice?: number[][],
- *   polyhedraSettings?: {useChemicalFilter: boolean, detectCages: boolean},
  *   attached?: {volumetricFields?: object, symmetry?: object,
  *               planes?: object[], velocities?: number[][]},
  * }} FrameStyleRecord
@@ -357,8 +453,8 @@ export function extractFrameStyles(frame, ph) {
   const forces = arrows(frame.forces);
   if (forces) rec.forces = forces;
 
-  for (const k of STYLE_DICTS) {
-    const dict = frame[k];
+  for (const k of FRAME_STYLE_DICTS) {
+    const dict = /** @type {any} */ (frame)[k];
     if (dict && Object.keys(dict).length) {
       (rec.dicts ??= {})[k] = dict;
     }
@@ -372,11 +468,6 @@ export function extractFrameStyles(frame, ph) {
         break outer;
       }
     }
-  }
-
-  const ps = frame.polyhedraSettings;
-  if (ps && (ps.useChemicalFilter !== true || ps.detectCages !== true)) {
-    rec.polyhedraSettings = { ...ps };
   }
 
   // Attached state travels by reference — it belongs to the frame, and
@@ -394,9 +485,12 @@ export function extractFrameStyles(frame, ph) {
 }
 
 /**
- * Reset a Structure's style state to as-loaded defaults, then reproduce the
- * frame's stored deviations. Always resets — the live Structure may carry
- * the previous frame's styles, and "no record" must mean "pristine".
+ * Reset a Structure's per-frame style state to as-loaded defaults, then
+ * reproduce the frame's stored deviations. Always resets — the live
+ * Structure may carry the previous frame's styles, and "no record" must
+ * mean "pristine". The trajectory-wide styles are left as they are (the live
+ * Structure keeps them from frame to frame); applySharedStyles puts them on
+ * a fresh Structure.
  *
  * @param {Structure} frame
  * @param {FrameStyleRecord | null} rec
@@ -438,13 +532,10 @@ export function applyFrameStyles(frame, rec) {
   applyArrows(backing?.spins ?? frame.spins, rec?.spins ?? null);
   applyArrows(backing?.forces ?? frame.forces, rec?.forces ?? null);
 
-  for (const k of STYLE_DICTS) {
-    frame[k] = rec?.dicts?.[k] ?? {};
+  for (const k of FRAME_STYLE_DICTS) {
+    /** @type {any} */ (frame)[k] = rec?.dicts?.[k] ?? {};
   }
   if (rec?.lattice) frame.lattice = rec.lattice.map(row => [...row]);
-  frame.polyhedraSettings = rec?.polyhedraSettings
-    ? { ...rec.polyhedraSettings }
-    : { useChemicalFilter: true, detectCages: true };
 
   frame.volumetricFields = rec?.attached?.volumetricFields ?? null;
   frame.symmetry = rec?.attached?.symmetry ?? null;

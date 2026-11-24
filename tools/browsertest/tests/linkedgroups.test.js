@@ -218,9 +218,14 @@ const H = require('../harness');
   if (polyGroups.multiGroupKey) {
     const polyEditSel = await page.evaluate(async ({ multiGroupKey, multiMembers }) => {
       const { fileBrowser, groups, highlightHover } = await import('./state/store.js');
-      const { selectPolyhedronFromMesh } = await import('./ui/SelectAndHighlightModule.js');
+      const { selectPolyhedronFromIndex } = await import('./ui/SelectAndHighlightModule.js');
       const s = fileBrowser.selectedStructure;
       const memberKeys = multiMembers.map((i) => s.polyhedra.polyhedra[i].key);
+      // all polyhedra are one mesh: a polyhedron is a row of its table, its
+      // glow the polyState glow bit of its vertex range
+      const table = groups.polyhedraGroup.userData.polyTable;
+      const state = table.faceGeometry.getAttribute('polyState');
+      const glowOf = (i) => (state.array[table.faceStart[i] * 3] & 1 ? 0xFF8C00 : 0x000000);
       const row = /** @type {HTMLElement} */ (
         document.querySelector(`#infoPolyControls .individual-polyhedron-row[data-poly-group-key="${multiGroupKey}"]`));
       /** @type {HTMLElement} */ (row.querySelector('button[data-editor-button="color"]')).click();
@@ -228,19 +233,20 @@ const H = require('../harness');
         row.querySelector('.poly-color-editor input[type="range"]'));
       alphaSlider.value = '0.3';
       alphaSlider.dispatchEvent(new Event('input', { bubbles: true }));
-      const memberMeshes = groups.polyhedraGroup.children.filter(
-        (m) => m.userData?.type === 'polyhedron' && m.userData.groupKey === multiGroupKey);
+      const memberRows = [...Array(table.n).keys()].filter(
+        (i) => table.faceCount[i] && table.groupKey[i] === multiGroupKey);
       const storeAlphas = memberKeys.map((k) => s.polyhedraUserStyles[k]?.alpha);
-      const meshOpacities = memberMeshes.map((m) => m.material.opacity);
-      // Group selection via row click; toggle off from another member's mesh.
+      const meshOpacities = memberRows.map((i) => table.opacity[i]);
+      // Group selection via row click; toggle off from another member.
       row.click();
-      const glows = memberMeshes.map((m) => m.material.emissive.getHex());
-      const state = { ...highlightHover.currentlyHighlightedPolyhedron };
-      const otherMesh = memberMeshes.find((m) => m.userData.key !== state.key);
-      selectPolyhedronFromMesh(otherMesh, { scrollToSelection: false });
-      const glowsAfter = memberMeshes.map((m) => m.material.emissive.getHex());
+      const glows = memberRows.map(glowOf);
+      const sel = highlightHover.currentlyHighlightedPolyhedron;
+      const selState = { key: sel?.key, catKey: sel?.catKey, groupKey: sel?.groupKey };
+      const other = memberRows.find((i) => table.key[i] !== selState.key);
+      selectPolyhedronFromIndex(other, { scrollToSelection: false });
+      const glowsAfter = memberRows.map(glowOf);
       return {
-        storeAlphas, meshOpacities, glows, state,
+        storeAlphas, meshOpacities, glows, state: selState,
         deselected: highlightHover.currentlyHighlightedPolyhedron === null,
         glowsAfter,
       };

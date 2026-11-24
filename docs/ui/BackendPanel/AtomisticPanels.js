@@ -1969,8 +1969,10 @@ function renderActiveBody() {
 export function selectPotential(potential) {
   const shell = getShellBindings();
   general.atomisticPotential = potential;
+  // resultEl is the hint line itself (source-state): updatePotentialUI
+  // replaces an earlier run's result with the new potential's hint (empty
+  // for NEP). Clearing it afterwards wiped the ASE and PET-MAD hints.
   updatePotentialUI(shell);
-  if (shell.resultEl) shell.resultEl.textContent = '';
   renderActiveBody();
   notifyPotentialChange();
 }

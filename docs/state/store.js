@@ -47,9 +47,10 @@ export const highlightHover ={
    // without a full mesh rebuild (which would restart the accumulation).
    currentlyHighlightedAtomInstances:[],
    currentlyHighlightedBondInstances:[],
-   // Polyhedron meshes glowing for the selection bar's Polyhedra view
-   // (SelectAndHighlightModule setSelectionView); the ghost overlays read them.
-   currentlyHighlightedPolyMeshes:[]
+   // Polyhedra table rows (render/PolyhedraMesh.js) glowing for the selection
+   // bar's Polyhedra view (SelectAndHighlightModule setSelectionView); the
+   // ghost overlays read them. Emptied when the polyhedra are rebuilt.
+   currentlyHighlightedPolyIndices:[]
 };
 
 export const atomSelection = {
@@ -542,6 +543,56 @@ export const general = {
   useWasmPolyhedra:true, // Use compiled WASM for computePolyhedra (false = pure JS fallback)
   useWasmBonds:true, // Use compiled WASM (cell list) for neighbour-bond pair finding (false = JS O(n²))
   serialPolyhedraAlgorithm:false, // true = single-threaded WASM; false = parallel over Web Workers
+  // Polyhedra search (Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced). 'advanced': radical-Voronoi
+  // coordination, bridged-cation test and cage search (~0.24 ms per centre).
+  // 'fast': the hull of each centre's bonded ligands
+  // them — linear in the atom count, no cages; meant for large MD cells.
+  // 'auto': fast when the structure has at least polyhedraFastMin atoms.
+  // "Atoms" is structure.atoms.length — the cell's own atoms, not periodic
+  // images or completing atoms: it is fixed per structure (the mode does not
+  // flip while images are toggled) and is the number the Files window shows.
+  // Both persist in this browser (savePolyhedraSearchPrefs below); they are
+  // not part of share links or .crysviz sessions.
+  polyhedraMode:'auto', // 'auto' | 'fast' | 'advanced'
+  polyhedraFastMin:2000,
+  // Polyhedra ▸ Bond breaking tolerance (render/BondBreakTolerance.js): during MD /
+  // trajectory playback a bond — and the polyhedron corner with it — that
+  // exists keeps existing until its length exceeds cutoff × (1 + this), and
+  // one that does not exist forms within the plain cutoff, so thermal
+  // vibration about a cutoff does not make it flicker. A fraction, 0–0.3;
+  // 0 = strict. Persists in this browser (saveBondBreakPrefs below), not in
+  // share links or sessions.
+  bondBreakTolerance:0.10,
+  // Polyhedra window ▸ Colour by (render/PolyhedraFrameModule.js): 'style'
+  // (the category colours) or a model/polyhedraProperties.js id — 'bld',
+  // 'angleVariance', 'quadraticElongation', 'volume', 'tiltA', 'tiltB',
+  // 'tiltC', 'rotation' — recomputed after every rebuild and MD frame.
+  // Tilt axes: 'auto' (per type, the mean orientation of its polyhedra in the
+  // frame), 'cell' (the cell axes) or 'matrix' (polyhedraTiltMatrix: the
+  // pseudo-cubic axes as rows in terms of a, b, c). polyhedraColorMap 'auto'
+  // picks a diverging map for the signed tilts, a sequential one otherwise.
+  // Range null = fit to the data on the next colouring (over the frames of a
+  // trajectory, then kept, so MD frames stay comparable). GreyOthers: the
+  // polyhedra the property does not apply to are drawn grey (else in their
+  // style colour). Edges of the coloured polyhedra: 'grey' | 'property' (the
+  // face's colour) | 'style'. Colour by, axes, matrix, map, grey and edges
+  // persist in this browser (savePolyhedraColorPrefs below), not in share
+  // links or sessions.
+  polyhedraColor:'style',
+  polyhedraTiltFrame:'auto', // 'auto' | 'cell' | 'matrix'
+  polyhedraTiltMatrix:[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  polyhedraColorMap:'auto',
+  polyhedraColorGreyOthers:true,
+  polyhedraColorEdges:'grey', // 'grey' | 'property' | 'style'
+  polyhedraColorMin:null,
+  polyhedraColorMax:null,
+  // The Colour by bar's layout, kept across window rebuilds (as the Atoms bar's).
+  polyColorBarFloating:false,
+  polyColorBarFloatPos:null,
+  polyColorBarOrientation:'horizontal',
+  polyColorBarFlipSide:false,
+  polyColorBarLocked:false,
+  polyColorLegendText:null,
   backendViewerUpdateStride:1, // Update the viewer every N backend/NEP steps during relax/MD
   backendTrajectorySaveStride:4, // Save a trajectory snapshot every N steps during relax/MD
   // Console profile of the MD/relax loop: when true, runMDSimulation prints a
@@ -663,6 +714,89 @@ export function saveLockPrefs() {
     localStorage.setItem(LOCK_PREFS_KEY, JSON.stringify({
       cameraLocked: app.cameraLocked,
       featuresLocked: general.featuresLocked,
+    }));
+  } catch { /* storage unavailable */ }
+}
+
+// ---- polyhedra search persistence (Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced) — the same
+// convention as the lock prefs above: own key, explicit named values, read
+// here at import so the first computePolyhedra already sees them, saved
+// immediately on change.
+const POLY_SEARCH_PREFS_KEY = 'crysvizPolyhedraSearch';
+const POLY_SEARCH_MODES = ['auto', 'fast', 'advanced'];
+try {
+  const raw = localStorage.getItem(POLY_SEARCH_PREFS_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (POLY_SEARCH_MODES.includes(parsed?.mode)) general.polyhedraMode = parsed.mode;
+    if (Number.isFinite(parsed?.fastMin) && parsed.fastMin >= 0) general.polyhedraFastMin = parsed.fastMin;
+  }
+} catch { /* corrupted/missing -> defaults */ }
+
+/** Called after general.polyhedraMode / polyhedraFastMin change, so the
+ *  choice survives a reload. */
+export function savePolyhedraSearchPrefs() {
+  try {
+    localStorage.setItem(POLY_SEARCH_PREFS_KEY, JSON.stringify({
+      mode: general.polyhedraMode,
+      fastMin: general.polyhedraFastMin,
+    }));
+  } catch { /* storage unavailable */ }
+}
+
+// ---- bond breaking tolerance persistence (Features ▸ Bond breaking
+// tolerance) — the same convention as the search prefs above.
+const BOND_BREAK_PREFS_KEY = 'crysvizBondBreak';
+/** Upper bound of general.bondBreakTolerance (a fraction). */
+export const BOND_BREAK_TOLERANCE_MAX = 0.3;
+try {
+  const raw = localStorage.getItem(BOND_BREAK_PREFS_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    const tol = Number(parsed?.tolerance);
+    if (Number.isFinite(tol)) general.bondBreakTolerance = Math.max(0, Math.min(BOND_BREAK_TOLERANCE_MAX, tol));
+  }
+} catch { /* corrupted/missing -> defaults */ }
+
+/** Called after general.bondBreakTolerance changes, so it survives a reload. */
+export function saveBondBreakPrefs() {
+  try {
+    localStorage.setItem(BOND_BREAK_PREFS_KEY, JSON.stringify({ tolerance: general.bondBreakTolerance }));
+  } catch { /* storage unavailable */ }
+}
+
+// ---- polyhedra colouring persistence (Polyhedra window ▸ Colour by) — the
+// same convention as the search prefs above.
+const POLY_COLOR_PREFS_KEY = 'crysvizPolyhedraColor';
+const POLY_COLOR_IDS = ['style', 'bld', 'angleVariance', 'quadraticElongation', 'volume', 'tiltA', 'tiltB', 'tiltC', 'rotation'];
+const POLY_TILT_FRAMES = ['auto', 'cell', 'matrix'];
+const POLY_EDGE_MODES = ['grey', 'property', 'style'];
+try {
+  const raw = localStorage.getItem(POLY_COLOR_PREFS_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (POLY_COLOR_IDS.includes(parsed?.color)) general.polyhedraColor = parsed.color;
+    if (POLY_TILT_FRAMES.includes(parsed?.tiltFrame)) general.polyhedraTiltFrame = parsed.tiltFrame;
+    if (Array.isArray(parsed?.tiltMatrix) && parsed.tiltMatrix.length === 3
+        && parsed.tiltMatrix.every((row) => Array.isArray(row) && row.length === 3 && row.every(Number.isFinite))) {
+      general.polyhedraTiltMatrix = parsed.tiltMatrix;
+    }
+    if (typeof parsed?.colorMap === 'string') general.polyhedraColorMap = parsed.colorMap;
+    if (typeof parsed?.greyOthers === 'boolean') general.polyhedraColorGreyOthers = parsed.greyOthers;
+    if (POLY_EDGE_MODES.includes(parsed?.edges)) general.polyhedraColorEdges = parsed.edges;
+  }
+} catch { /* corrupted/missing -> defaults */ }
+
+/** Called after the Colour by settings change, so they survive a reload. */
+export function savePolyhedraColorPrefs() {
+  try {
+    localStorage.setItem(POLY_COLOR_PREFS_KEY, JSON.stringify({
+      color: general.polyhedraColor,
+      tiltFrame: general.polyhedraTiltFrame,
+      tiltMatrix: general.polyhedraTiltMatrix,
+      colorMap: general.polyhedraColorMap,
+      greyOthers: general.polyhedraColorGreyOthers,
+      edges: general.polyhedraColorEdges,
     }));
   } catch { /* storage unavailable */ }
 }

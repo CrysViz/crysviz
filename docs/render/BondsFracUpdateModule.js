@@ -26,7 +26,8 @@ import {refreshBondLengthHistogram, isBondLengthHistogramOpen} from '../ui/Analy
 import {refreshCoordinationHistogram, isCoordinationHistogramOpen} from '../ui/AnalysisPanels/CoordinationHistogram.js'
 import { hasCifErrors, distanceSu } from '../model/cifErrors.js'
 import { writeBondMatrices, writeHiddenBondHalf } from './bondMatrix.js';
-import { peekAtoms } from '../model/materializeFrame.js';
+import { peekAtoms, pendingFramePositions } from '../model/materializeFrame.js';
+import { heldBondKeys, toleranceFactorSq, sourceFracReader, instancePairKey } from './BondBreakTolerance.js';
 import {computeBondPairsWasm} from '../compiled/bondsWasm.js'
 //import {getBondCutoff} from './BondsModule.js'
 //
@@ -376,6 +377,16 @@ export function buildBondObjects(structure){
 
   const { uniqueElems, atomElemIdx, nu, cutoffSqFlat, minCutoffSqFlat, maxCutoff } = bondElementTables(wrappedElements);
 
+  // Bond breaking tolerance (render/BondBreakTolerance.js): during playback a
+  // bond drawn in the last frame is kept up to cutoff × (1 + tol), so the
+  // search runs with the widened cutoffs and the pairs beyond the strict
+  // cutoff are kept only when they were drawn (filtered below). Without a
+  // memory (fresh load, tolerance 0) the search is the strict one.
+  const held = heldBondKeys(structure);
+  const holdSq = held ? toleranceFactorSq() : 1;
+  const searchCutoffSqFlat = held ? cutoffSqFlat.map((c) => c * holdSq) : cutoffSqFlat;
+  const searchMaxCutoff = held ? maxCutoff * Math.sqrt(holdSq) : maxCutoff;
+
   const _tSetup = performance.now();
 
   // ---- Find bonding pairs (i<j): WASM cell list (O(n)) with JS O(n²) fallback ----
@@ -392,8 +403,8 @@ export function buildBondObjects(structure){
       const elemIdxU32 = new Uint32Array(n);
       for (let i = 0; i < n; i++) elemIdxU32[i] = atomElemIdx[i];
       const { i: pi, j: pj } = computeBondPairsWasm({
-        cartFlat, elemIdx: elemIdxU32, cutoffSqFlat, minCutoffSqFlat,
-        nElem: nu, minDistSq, maxCutoff,
+        cartFlat, elemIdx: elemIdxU32, cutoffSqFlat: searchCutoffSqFlat, minCutoffSqFlat,
+        nElem: nu, minDistSq, maxCutoff: searchMaxCutoff,
       });
       pairI = pi; pairJ = pj;
       bondPath = 'wasm';
@@ -411,7 +422,7 @@ export function buildBondObjects(structure){
       const cutBase = ai * nu;
       for (let j = i + 1; j < n; j++) {
         const bj = atomElemIdx[j];
-        const cutSq = cutoffSqFlat[cutBase + bj];
+        const cutSq = searchCutoffSqFlat[cutBase + bj];
         if (cutSq <= 0.0001) continue;
         const pj = wrappedCart[j];
         const dx = xi - pj[0], dy = yi - pj[1], dz = zi - pj[2];
@@ -422,6 +433,8 @@ export function buildBondObjects(structure){
     }
     pairI = ii; pairJ = jj;
   }
+
+  if (held) ({ pairI, pairJ } = keepHeldPairs(structure, wrapped, pairI, pairJ, held, atomElemIdx, nu, cutoffSqFlat));
 
   const _tPairs = performance.now();
 
@@ -471,6 +484,31 @@ export function buildBondObjects(structure){
   }
 
   applyBondStyleOverrides(structure, structure.bonds);
+}
+
+/**
+ * Of the pairs found with the widened cutoffs, keep every pair within its
+ * strict cutoff and, beyond it, those the bond breaking tolerance holds: drawn
+ * in the last playback frame (`held`, render/BondBreakTolerance.js). The
+ * search already bounded them by cutoff × (1 + tol).
+ */
+function keepHeldPairs(structure, wrapped, pairI, pairJ, held, atomElemIdx, nu, cutoffSqFlat) {
+  const col = pendingFramePositions(structure);
+  const atoms = col ? null : peekAtoms(structure);
+  const nSrc = col ? col.length / 3 : (atoms?.length ?? 0);
+  const pos = sourceFracReader(col, atoms);
+  const cart = wrapped.cart;
+  const ii = [], jj = [];
+  for (let k = 0; k < pairI.length; k++) {
+    const i = pairI[k], j = pairJ[k];
+    const pi = cart[i], pj = cart[j];
+    const dx = pi[0] - pj[0], dy = pi[1] - pj[1], dz = pi[2] - pj[2];
+    const distSq = dx * dx + dy * dy + dz * dz;
+    if (distSq > cutoffSqFlat[atomElemIdx[i] * nu + atomElemIdx[j]]
+        && !held.has(instancePairKey(nSrc, wrapped, pos, i, j))) continue;
+    ii.push(i); jj.push(j);
+  }
+  return { pairI: ii, pairJ: jj };
 }
 
 /**

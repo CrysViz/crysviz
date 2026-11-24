@@ -519,6 +519,10 @@ body.panel-hidden #axesLegend {
   box-shadow: none;
 }
 
+/* The secondary actions: Forget region (shown once an area is remembered)
+   and Cancel. Forget region had no rule and drew as the browser's own
+   light-grey button. */
+.png-export-modal .paste-modal-actions #pngForgetRegionBtn,
 .png-export-modal .paste-modal-actions #pngCancelBtn {
   margin-top: var(--sp-1);
   padding: var(--sp-4) var(--sp-5);
@@ -1627,6 +1631,82 @@ body.panel-hidden #axesLegend {
   color: var(--fg-2);
 }
 
+/* Average Structure's warning (ui/AverageMovesModal.js): the CIF dialog's
+ * overlay and .lock-confirm-modal card, but the card sits at the left, over
+ * the sidebar, on a light scrim, so the atom a row shows in the 3D view stays
+ * in sight. The overlay's padding keeps the card's own
+ * min(440px, 100vw - 32px) width inside a phone screen. */
+#averageMovesModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-confirm);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: var(--sp-5);
+  background: var(--overlay-20);
+}
+
+#averageMovesModal[hidden] {
+  display: none;
+}
+
+/* The atoms that move far, one button each: name, largest move, where. */
+.avg-moves-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 40vh;
+  margin: 0 0 var(--sp-3-5) 0;
+  overflow-y: auto;
+}
+
+.avg-moves-row {
+  display: grid;
+  grid-template-columns: minmax(3.5em, auto) auto minmax(0, 1fr) auto;
+  gap: var(--sp-3);
+  align-items: baseline;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--wash-1);
+  color: var(--fg-1);
+  border: none;
+  border-radius: var(--radius);
+  font-size: var(--fs-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.avg-moves-row:hover {
+  background: var(--hover-color);
+}
+
+/* The row whose atom is shown now. */
+.avg-moves-row.is-shown {
+  box-shadow: inset 0 0 0 1px var(--highlight-color);
+}
+
+.avg-moves-name {
+  font-weight: var(--fw-bold);
+}
+
+.avg-moves-where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-2);
+}
+
+.avg-moves-show {
+  color: var(--accent-fg);
+}
+
+.avg-moves-more {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+}
+
 /* Small Main-dock triggers, positioned immediately left of .theme-switch
  * (ui/KeyboardShortcuts.js; the About trigger is the left sibling of the
  * keyboard-shortcuts trigger). */
@@ -2197,6 +2277,20 @@ input[type="checkbox"] {
   cursor: pointer;
   line-height: var(--lh-tight);
   padding: var(--sp-1);
+}
+
+/* The About text (README, licence, citation) must be selectable and copyable
+   although `body` switches text selection off for the whole app. */
+#aboutModal,
+#aboutModal * {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+}
+
+#aboutClose {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #aboutClose:hover {
@@ -3354,6 +3448,14 @@ body > #structureInfoContent {
   padding:var(--sp-2) 9px; border-radius: var(--radius-md); font-size: var(--fs-lg); font-weight:700;
   color:var(--fg-1); background:var(--label-bg); border:1px solid var(--line-2);
   backdrop-filter: blur(6px); white-space:nowrap;
+}
+
+/* The "choose 2nd atom" / "select vertex" prompt while a measurement is being
+ * picked sits centred on the last atom picked, and has no remove button: let
+ * clicks through, or clicking that atom again (which drops it from the
+ * measurement) would land on the prompt instead. */
+.measure-label.measure-label-preview {
+  pointer-events: none;
 }
 
 /* The picking previews (render/MeasurementModule.js drawMeasureGraphics):

@@ -478,10 +478,17 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     const fontPx = scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT);
     // The field's own font stack (the canvas falls back to a narrower face
     // otherwise, and "0.00005" came out ~15px short).
-    const family = getComputedStyle(input).fontFamily || "'CrysViz Sans', sans-serif";
+    const cs = getComputedStyle(input);
+    const family = cs.fontFamily || "'CrysViz Sans', sans-serif";
     measureCtx.font = `${fontPx}px ${family}`;
     const textWidth = measureCtx.measureText(input.value || '').width;
-    return `${Math.max(floating ? MINMAX_WIDTH * fontScale() : MINMAX_WIDTH, Math.ceil(textWidth) + 14)}px`;
+    // The field's own padding and border (the app-wide number-input rules
+    // give it some), read from the cascade: unlike scrollWidth this is
+    // known while the window is still hidden, where fitInputToText cannot
+    // correct the estimate. +4 for the caret.
+    const px = (v) => parseFloat(v) || 0;
+    const chrome = px(cs.paddingLeft) + px(cs.paddingRight) + px(cs.borderLeftWidth) + px(cs.borderRightWidth);
+    return `${Math.max(floating ? MINMAX_WIDTH * fontScale() : MINMAX_WIDTH, Math.ceil(textWidth + chrome) + 4)}px`;
   }
 
   // Once laid out, widen a field whose text still scrolls (the canvas
@@ -869,6 +876,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
 
   // The ticks drawn last (after ticksClearOfFields), for image export.
   let shownTicks = [];
+  // The bar length those ticks were cleared against (see barResize below).
+  let ticksLength = -1;
 
   function renderTicks() {
     shownTicks = [];
@@ -892,6 +901,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // Bar length on screen: a docked horizontal bar stretches to its row
     // (0 while the panel is still hidden — then nothing is dropped).
     const length = horizontal ? (barOuter.clientWidth || 0) : (barOuter.clientHeight || barLength);
+    ticksLength = length;
     measureCtx.font = `${tickFontPx}px 'CrysViz Sans', sans-serif`;
     const geom = {
       length,
@@ -1273,6 +1283,21 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   render(colormap);
   updateMenuState();
 
+  // Tick labels sit at a fraction of the bar, the Min/Max fields keep their
+  // pixel width: when the bar's length changes on screen (a docked bar
+  // stretches with its window: drag-resizing the dock, or a window first laid
+  // out after the bar was built), the end ticks slide under the fields.
+  // Re-clear the ticks against the new length (ticksClearOfFields). A
+  // floating bar's length only changes through setSize, which re-renders
+  // anyway, so it looks the same as before.
+  const barResize = typeof ResizeObserver === 'function'
+    ? new ResizeObserver(() => {
+      const length = orientation === 'horizontal' ? barOuter.clientWidth : barOuter.clientHeight;
+      if (length > 0 && length !== ticksLength) renderTicks();
+    })
+    : null;
+  barResize?.observe(barOuter);
+
   return {
     update(cmap, scale) { render(cmap, scale); },
     remove() {
@@ -1282,6 +1307,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       document.removeEventListener("keydown", onMenuKeyDown);
       abortResizePointer?.();
       stopContrastSync();
+      barResize?.disconnect();
       dragCtl?.destroy();
       wrapper.remove();
     },

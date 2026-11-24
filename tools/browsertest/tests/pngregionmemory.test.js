@@ -74,6 +74,17 @@ const forgetVisible = (page) => page.evaluate(() => {
   // Reopened: Choose region starts from the exported area.
   await openDialog(page);
   H.check('"Forget region" appears once an area is remembered', await forgetVisible(page));
+  // It had no rule and drew as the browser's light-grey default button in
+  // the dark dialog: it is a secondary action, painted as Cancel is.
+  const looks = await page.evaluate(() => {
+    const pick = (id) => {
+      const s = getComputedStyle(document.getElementById(id));
+      return [s.backgroundColor, s.color, s.borderTopStyle, s.borderTopLeftRadius, s.fontSize, s.paddingTop].join(' | ');
+    };
+    return { forget: pick('pngForgetRegionBtn'), cancel: pick('pngCancelBtn') };
+  });
+  H.check('"Forget region" is styled as the dialog\'s Cancel button, not the browser default',
+    looks.forget === looks.cancel, JSON.stringify(looks));
   await chooseRegion(page);
   const again = await cropRect(page);
   H.check('Choose region starts from the last area',

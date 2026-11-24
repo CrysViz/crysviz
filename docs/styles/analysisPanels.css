@@ -2108,6 +2108,47 @@
   padding: var(--sp-1) 0;
 }
 
+/* Element group rows (one per centre element, plus Cages): a parent row in
+   the category rows' look, its categories indented beneath it. Its editor
+   reuses .phl-cat-editor; .phl-group-body's display is set from JS
+   (_setExpanded), like the lists above. */
+.phl-group {
+  margin: var(--sp-4) 0;
+}
+
+.phl-group-header {
+  margin-bottom: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--wash-1);
+  border-radius: var(--radius);
+  border-left: 3px solid var(--highlight-color);
+}
+
+.phl-group-label {
+  font-weight: var(--fw-medium);
+}
+
+.phl-group-editor {
+  margin-left: var(--sp-4);
+}
+
+.phl-group-body {
+  margin-left: var(--sp-4); /* the categories hang under their element */
+}
+
+.phl-group-body > .poly-control {
+  margin: var(--sp-2) 0;
+}
+
+/* Some categories of the group shown, some hidden: knob half way. */
+.toggle_switch input:indeterminate + .toggle_slider {
+  background-color: color-mix(in srgb, var(--highlight-color) 50%, var(--switch-off));
+}
+
+.toggle_switch.toggle_switch--sm input:indeterminate + .toggle_slider::before {
+  transform: translateX(7px);
+}
+
 .phl-reset-colors-row {
   display: flex;
   justify-content: center;

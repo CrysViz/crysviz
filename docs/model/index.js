@@ -30,6 +30,8 @@ export { FieldCatalog, FieldCatalogNode, NodeKind } from './FieldCatalog.js';
 export { TrajectoryFrameStore } from './TrajectoryFrameStore.js';
 export { TrajectoryContainer } from './TrajectoryContainer.js';
 export { materializeFrame } from './materializeFrame.js';
+// The mean of several frames (Files window ▸ ≡ ▸ Average Structure):
+export { FrameAverage, averageFrames, compositionMismatch, LARGE_DISPLACEMENT } from './averageFrames.js';
 // Where a structure's energy, forces and stress came from ("VASP", "PET-MAD xs"):
 export { cleanDataSource, formatDataSource, aseCalculatorSource, dataSourceOf, hasComputedData } from './dataSource.js';
 

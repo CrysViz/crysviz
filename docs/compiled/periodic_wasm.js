@@ -472,6 +472,7 @@ export function compute_bond_pairs(cart, elem_idx, cutoff_sq, min_cutoff_sq, n_e
  * @param {number} max_cutoff
  * @param {boolean} use_chem_filter
  * @param {boolean} detect_cages
+ * @param {boolean} simple
  * @param {Uint32Array} center_src
  * @param {Int32Array} center_shift
  * @param {Float64Array} center_cart
@@ -487,7 +488,7 @@ export function compute_bond_pairs(cart, elem_idx, cutoff_sq, min_cutoff_sq, n_e
  * @param {number} seed_end
  * @returns {CandidateResult}
  */
-export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff, use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys, seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds, center_start, center_end, seed_start, seed_end) {
+export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff, use_chem_filter, detect_cages, simple, center_src, center_shift, center_cart, center_keys, seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds, center_start, center_end, seed_start, seed_end) {
     const ptr0 = passArrayF64ToWasm0(frac, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(elem_idx, wasm.__wbindgen_malloc);
@@ -518,13 +519,15 @@ export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, 
     const len13 = WASM_VECTOR_LEN;
     const ptr14 = passArrayF64ToWasm0(cage_bounds, wasm.__wbindgen_malloc);
     const len14 = WASM_VECTOR_LEN;
-    const ret = wasm.compute_candidates(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, ptr6, len6, max_cutoff, use_chem_filter, detect_cages, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, cut_plane_count, ptr14, len14, center_start, center_end, seed_start, seed_end);
+    const ret = wasm.compute_candidates(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, ptr6, len6, max_cutoff, use_chem_filter, detect_cages, simple, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, cut_plane_count, ptr14, len14, center_start, center_end, seed_start, seed_end);
     return CandidateResult.__wrap(ret);
 }
 
 /**
  * Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
  * argument contract; the JS wrapper (`polyhedraWasm.js`) packs these arrays.
+ * `simple` is the fast mode: the hull of the bonded ligands, no Voronoi
+ * selection and no cages (see the fast block in `polyhedra::build_candidates`).
  * @param {Float64Array} frac
  * @param {Uint32Array} elem_idx
  * @param {Float64Array} lattice_flat
@@ -536,6 +539,7 @@ export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, 
  * @param {number} max_cutoff
  * @param {boolean} use_chem_filter
  * @param {boolean} detect_cages
+ * @param {boolean} simple
  * @param {Uint32Array} center_src
  * @param {Int32Array} center_shift
  * @param {Float64Array} center_cart
@@ -547,7 +551,7 @@ export function compute_candidates(frac, elem_idx, lattice_flat, cutoff_matrix, 
  * @param {Float64Array} cage_bounds
  * @returns {PolyhedraResult}
  */
-export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff, use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys, seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds) {
+export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff, use_chem_filter, detect_cages, simple, center_src, center_shift, center_cart, center_keys, seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds) {
     const ptr0 = passArrayF64ToWasm0(frac, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passArray32ToWasm0(elem_idx, wasm.__wbindgen_malloc);
@@ -578,7 +582,7 @@ export function compute_polyhedra(frac, elem_idx, lattice_flat, cutoff_matrix, n
     const len13 = WASM_VECTOR_LEN;
     const ptr14 = passArrayF64ToWasm0(cage_bounds, wasm.__wbindgen_malloc);
     const len14 = WASM_VECTOR_LEN;
-    const ret = wasm.compute_polyhedra(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, ptr6, len6, max_cutoff, use_chem_filter, detect_cages, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, cut_plane_count, ptr14, len14);
+    const ret = wasm.compute_polyhedra(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, n_elem, ptr4, len4, ptr5, len5, ptr6, len6, max_cutoff, use_chem_filter, detect_cages, simple, ptr7, len7, ptr8, len8, ptr9, len9, ptr10, len10, ptr11, len11, ptr12, len12, ptr13, len13, cut_plane_count, ptr14, len14);
     return PolyhedraResult.__wrap(ret);
 }
 

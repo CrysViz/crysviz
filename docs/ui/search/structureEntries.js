@@ -133,8 +133,12 @@ export function structureEntries({ revealStructure, land }) {
       path: ['Structure › Poly', text(control.querySelector('.poly-count'))].filter(Boolean).join(' · '),
       keywords: [],
       pathSearchable: false,
-      run: go('polyhedra', () => /** @type {HTMLElement|null} */ (
-        document.querySelector(`.poly-control[data-cat-key="${CSS.escape(key)}"]`))),
+      run: go('polyhedra', () => {
+        const row = /** @type {HTMLElement|null} */ (
+          document.querySelector(`.poly-control[data-cat-key="${CSS.escape(key)}"]`));
+        /** @type {any} */ (row?.closest('.phl-group'))?._setExpanded?.(true); // its element group
+        return row;
+      }),
     });
   }
 
