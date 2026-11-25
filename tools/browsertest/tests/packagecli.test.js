@@ -43,10 +43,10 @@ function commandAvailable(command) {
     await page.goto(url, { waitUntil: 'load', timeout: 90000 });
     const state = await H.waitFor(page, async () => {
       if (!window.crysvizHost) return null;
-      const result = await window.crysvizHost.dispatch({ command: 'list_structures' });
-      if (!result.ok || result.result.length !== 1) return null;
+      const result = await window.crysvizHost.dispatch({ command: 'get_state', args: { include: ['structures'] } });
+      if (!result.ok || result.result.structures.length !== 1) return null;
       const { getActiveStructure } = await import('./state/structures.js');
-      return getActiveStructure() ? { ready: true, count: result.result.length } : null;
+      return getActiveStructure() ? { ready: true, count: result.result.structures.length } : null;
     }, { timeout: 90000, interval: 100 });
     H.check('installed crysviz --browser --no-open starts the viewer',
       state?.ready && state.count === 1, stderr);

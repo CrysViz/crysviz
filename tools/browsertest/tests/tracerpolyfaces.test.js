@@ -7,8 +7,9 @@
 //
 // A deterministic synthetic 24-point fibonacci-sphere polyhedron (~44 unique
 // hull planes) is injected through the REAL model + mesh + encoder path (a
-// Polyhedron pushed onto structure.polyhedra.polyhedra + a ConvexGeometry mesh
-// in groups.polyhedraGroup), so it exercises the exact production pipeline. The
+// Polyhedron pushed onto structure.polyhedra.polyhedra, then the one polyhedra
+// mesh and its table rebuilt by renderPolyhedra), so it exercises the exact
+// production pipeline. The
 // standard YBCO coordination polyhedra (<= 20 faces) stay in the scene as the
 // regression guard, and the synthetic poly's glass variant exercises the
 // origin-inside / exit-normal branch that closed-shape refraction depends on.
@@ -45,24 +46,32 @@ function changedPixelCount(fileA, fileB) {
       general.rtRasterPreview = false;
     });
 
-    // Enable the real YBCO coordination polyhedra (the <= 20-face regression set).
+    // Enable the real YBCO coordination polyhedra (the <= 20-face regression
+    // set) and wait for them to be computed: the computation is asynchronous,
+    // and a polyhedron that appears after the synthetic one is injected (or
+    // not, depending on the machine's load) changed what the checks below saw.
     await H.clickById(page, 'showPolyhedra');
-    await page.waitForTimeout(2500);
+    await page.evaluate(async () => (await import('./render/PolyhedraModule.js')).updatePolyhedra());
+    await page.waitForTimeout(500);
 
     await H.setSelect(page, 'renderPipelineMenu', 'raytrace');
-    await page.waitForTimeout(3500);
+    await H.waitFor(page, async () => (await import('./state/store.js')).app.pipeline?._shaderState === 'ready',
+      { timeout: 300000, interval: 2000 });
 
     // --- Regression guard: the ordinary (<= 20-plane) YBCO polyhedra still trace
     const realPolys = await page.evaluate(async () => {
       const { app, groups } = await import('./state/store.js');
       const enc = app.pipeline._encoder;
       enc.encode(); // deterministic re-encode
+      // one mesh for all polyhedra: the plane cache lives on its table
+      const table = groups.polyhedraGroup.userData.polyTable;
       let maxPlanes = 0, unsupported = 0, meshes = 0;
-      for (const m of groups.polyhedraGroup.children) {
-        if (m.userData?.type !== 'polyhedron') continue;
+      for (let i = 0; i < table.n; i++) {
+        if (!table.faceCount[i]) continue;
         meshes++;
-        if (m.userData.rtPlanesUnsupported) unsupported++;
-        else if (m.userData.rtPlanes) maxPlanes = Math.max(maxPlanes, m.userData.rtPlanes.length);
+        const cached = table.rtPlanes?.[i];
+        if (cached === false) unsupported++;
+        else if (cached) maxPlanes = Math.max(maxPlanes, cached.planes.length);
       }
       return { polyCount: enc.polyCount, meshes, unsupported, maxPlanes };
     });
@@ -72,11 +81,15 @@ function changedPixelCount(fileA, fileB) {
       JSON.stringify(realPolys));
 
     // --- Inject a synthetic >20-plane polyhedron through the real model+mesh path
+    // (pushed into the model, then the polyhedra table and mesh are rebuilt
+    // from it by renderPolyhedra)
     const inject = await page.evaluate(async () => {
       const THREE = await import('./external/three/three.module.js');
-      const { ConvexGeometry } = await import('./external/three/ConvexGeometry.js');
       const { Polyhedron } = await import('./model/Polyhedron.js');
-      const { fileBrowser, groups } = await import('./state/store.js');
+      const { renderPolyhedra } = await import('./render/PolyhedraModule.js');
+      const { uploadPolyStyles } = await import('./render/PolyhedraMesh.js');
+      const { disposeGroup } = await import('./ui/WindowAndSceneControls.js');
+      const { app, fileBrowser, groups } = await import('./state/store.js');
       const structure = fileBrowser.selectedStructure;
       if (!structure.polyhedra) {
         const { Polyhedra } = await import('./model/Polyhedra.js');
@@ -89,7 +102,7 @@ function changedPixelCount(fileA, fileB) {
       const cz = 0.5 * (L[0][2] + L[1][2] + L[2][2]);
       // 24-point fibonacci sphere (radius 1.5 A) -> ~44 unique triangular planes
       const N = 24, radius = 1.5, ga = Math.PI * (3 - Math.sqrt(5));
-      const vertices = [], points = [];
+      const vertices = [];
       for (let i = 0; i < N; i++) {
         const y = 1 - (i / (N - 1)) * 2;
         const r = Math.sqrt(Math.max(0, 1 - y * y));
@@ -98,22 +111,31 @@ function changedPixelCount(fileA, fileB) {
         const yy = cy + radius * y;
         const z = cz + radius * Math.sin(th) * r;
         vertices.push([x, yy, z]);
-        points.push(new THREE.Vector3(x, yy, z));
       }
       const poly = new Polyhedron({ vertices, name: 'synthTest' });
       poly.key = 'synthTest'; // stamped so the glass style store can target it
+      poly.groupKey = 'synthTest';
+      poly.catKey = 'synthTest';
       const idx = structure.polyhedra.polyhedra.length;
       structure.polyhedra.polyhedra.push(poly);
-
-      const material = new THREE.MeshBasicMaterial({ color: 0xff2020 });
-      const mesh = new THREE.Mesh(new ConvexGeometry(points), material);
-      mesh.userData.type = 'polyhedron';
-      mesh.userData.polyIndex = idx;
-      mesh.visible = true;
-      groups.polyhedraGroup.add(mesh);
-      structure.__synthMeshId = mesh.id;
+      disposeGroup(groups.polyhedraGroup);
+      groups.polyhedraGroup = new THREE.Group();
+      app.scene.add(groups.polyhedraGroup);
+      renderPolyhedra(structure);
+      const table = groups.polyhedraGroup.userData.polyTable;
+      // A real polyhedron around the cell centre (YBCO's Y site) would wrap the
+      // synthetic one in its see-through faces and hide what the checks below
+      // compare: take it out of the scene.
+      const centre = new THREE.Vector3(cx, cy, cz);
+      let hidden = 0;
+      for (let i = 0; i < table.n; i++) {
+        if (i === idx || !table.faceCount[i] || !table.visible[i]) continue;
+        const c = new THREE.Vector3(table.center[3 * i], table.center[3 * i + 1], table.center[3 * i + 2]);
+        if (c.distanceTo(centre) < table.radius[i]) { table.visible[i] = 0; hidden++; }
+      }
+      uploadPolyStyles(table);
       structure.__synthIdx = idx;
-      return { idx, verts: vertices.length, center: [cx, cy, cz] };
+      return { idx, verts: vertices.length, center: [cx, cy, cz], hidden, drawn: table.faceCount[idx] > 0 };
     });
 
     // Force a deterministic re-encode and read back the encoded plane count.
@@ -122,27 +144,25 @@ function changedPixelCount(fileA, fileB) {
       const enc = app.pipeline._encoder;
       enc.encode();
       const structure = fileBrowser.selectedStructure;
-      const mesh = groups.polyhedraGroup.children.find((m) => m.id === structure.__synthMeshId);
-      // encoded index of the synthetic poly among the passing meshes (group order)
+      // encoded index of the synthetic poly among the passing rows (table order)
+      const table = groups.polyhedraGroup.userData.polyTable;
       let p = 0;
-      for (const m of groups.polyhedraGroup.children) {
-        if (m.userData?.type !== 'polyhedron' || !m.visible || !m.userData.rtPlanes) continue;
-        if (m.id === structure.__synthMeshId) break;
-        p++;
+      for (let i = 0; i < structure.__synthIdx; i++) {
+        if (table.visible[i] && table.faceCount[i] && table.rtPlanes?.[i]) p++;
       }
       const data = enc.polyTexture.image.data;
       const headerPlaneCount = data[p * 16 + 1];
       const headerMatCode = data[p * 16 + 2];
       return {
         polyCount: enc.polyCount,
-        rtPlanes: mesh.userData.rtPlanes ? mesh.userData.rtPlanes.length : 0,
-        unsupported: mesh.userData.rtPlanesUnsupported === true,
+        rtPlanes: table.rtPlanes?.[structure.__synthIdx] ? table.rtPlanes[structure.__synthIdx].planes.length : 0,
+        unsupported: table.rtPlanes?.[structure.__synthIdx] === false,
         headerPlaneCount, headerMatCode, p,
       };
     });
     // CHECK 1: encoder includes it, no skip warning fired, > 20 planes
     H.check('synthetic >20-face poly encoded (not skipped), rtPlanes > 20',
-      !encoded.unsupported && encoded.rtPlanes > 20 && encoded.polyCount === realPolys.polyCount + 1,
+      !encoded.unsupported && encoded.rtPlanes > 20 && encoded.polyCount === realPolys.polyCount - inject.hidden + 1,
       JSON.stringify(encoded));
     // CHECK 2: header texel's planeCount > 20
     H.check('encoded header texel planeCount > 20',
@@ -160,7 +180,10 @@ function changedPixelCount(fileA, fileB) {
       const { app, groups, fileBrowser } = await import('./state/store.js');
       const { requestRender } = await import('./render/index.js');
       const structure = fileBrowser.selectedStructure;
-      groups.polyhedraGroup.children.find((m) => m.id === structure.__synthMeshId).visible = false;
+      const { uploadPolyStyles } = await import('./render/PolyhedraMesh.js');
+      const table = groups.polyhedraGroup.userData.polyTable;
+      table.visible[structure.__synthIdx] = 0;
+      uploadPolyStyles(table);
       app.pipeline._encoder.encode();
       requestRender();
     });
@@ -175,7 +198,10 @@ function changedPixelCount(fileA, fileB) {
       const { app, groups, fileBrowser } = await import('./state/store.js');
       const { requestRender } = await import('./render/index.js');
       const structure = fileBrowser.selectedStructure;
-      groups.polyhedraGroup.children.find((m) => m.id === structure.__synthMeshId).visible = true;
+      const { uploadPolyStyles } = await import('./render/PolyhedraMesh.js');
+      const table = groups.polyhedraGroup.userData.polyTable;
+      table.visible[structure.__synthIdx] = 1;
+      uploadPolyStyles(table);
       app.pipeline._encoder.encode();
       requestRender();
     });
@@ -191,11 +217,10 @@ function changedPixelCount(fileA, fileB) {
       const enc = app.pipeline._encoder;
       enc.encode();
       // find the synthetic poly's encoded matCode texel
+      const table = groups.polyhedraGroup.userData.polyTable;
       let p = 0;
-      for (const m of groups.polyhedraGroup.children) {
-        if (m.userData?.type !== 'polyhedron' || !m.visible || !m.userData.rtPlanes) continue;
-        if (m.id === structure.__synthMeshId) break;
-        p++;
+      for (let i = 0; i < structure.__synthIdx; i++) {
+        if (table.visible[i] && table.faceCount[i] && table.rtPlanes?.[i]) p++;
       }
       requestRender();
       return { matCode: enc.polyTexture.image.data[p * 16 + 2] };

@@ -83,12 +83,12 @@ function captureFields(structure) {
       label: f.label,
       nx: f.nx, ny: f.ny, nz: f.nz,
       origin: f.origin, voxel: f.voxel,
+      periodic: f.periodic,
       component: f.component,
       isoValue: f.isoValue,
       useAbsoluteIsoValue: f.useAbsoluteIsoValue,
       isVisible: f.isVisible,
       valueUnit: f.valueUnit ?? null,
-      periodic: f.periodic !== false,
       minValue: f.minValue, maxValue: f.maxValue,
       absMinValue: f.absMinValue, absMaxValue: f.absMaxValue,
       values: f.values ? float32ToBase64(f.values) : null,
@@ -96,30 +96,265 @@ function captureFields(structure) {
   };
 }
 import * as THREE from '../external/three/three.module.js';
-import { parsePOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
+import { initializeWithPOSCAR, initializeUIOnLoad } from './StructureInputModule.js';
 import { readPOSCAR } from '../io/ReadPOSCARModule.js';
 import {
-  StructureContainer, TrajectoryContainer, Field, FieldContainer, Force, Spin,
-  getIsosurfaceMaterialSettings, setIsosurfaceMaterialSettings,
+  StructureContainer, TrajectoryContainer, Field, FieldContainer, Force, Spin, Stress,
+  cleanDataSource, dataSourceOf, getIsosurfaceMaterialSettings, setIsosurfaceMaterialSettings,
   applyMaterialSettingsToStoredIsosurfaces,
 } from '../model/index.js';
 import { updateAtoms } from '../render/index.js';
-import { rebuildBonds, updatePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField, updateForces, updateSpins, removeForces, removeSpins, setCelOutlineColor } from '../render/index.js';
+import { rebuildBonds, updatePolyhedra, holdPolyhedra, releasePolyhedra, setActivePipeline, updateGroundPlane, setActiveField, updateField, updateForces, updateSpins, removeForces, removeSpins, setCelOutlineColor } from '../render/index.js';
 import { showTrajectoryFrame } from './TrajectoryPanel.js';
+import { cleanGroundDirection } from '../render/groundDirection.js';
 import { fieldBrowser } from './FieldPanel.js';
 import { addDistanceMeasurement, addAngleMeasurement, serializeMeasurementRef } from '../render/MeasurementModule.js';
+import { serializeCifErrors, restoreCifErrors } from '../model/cifErrors.js';
+import { siteSpeciesRecord, restoreSiteSpecies } from '../model/siteSpecies.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
 import { rebuildRenderPipelineMenu } from './ColorPanel.js';
-import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE } from './ControlsWiring.js';
-import { revealFeaturePanels, refreshPanelAvailability } from './panels/PanelManager.js';
+import { sizeValueToSlider, ATOM_SIZE_RANGE, BOND_RADIUS_RANGE, GROUND_OFFSET_RANGE, GROUND_SIZE_RANGE, dofApertureToSlider, DOF_DEPTH_RANGE } from './ControlsWiring.js';
+import { revealFeaturePanels, refreshPanelAvailability, openPanel } from './panels/PanelManager.js';
 import { fracToCart, cartToFractional, normalizeFractional } from '../math/index.js';
 import { updateAxesGizmoWidth, switchCameraType, resizeRenderer, applyCameraSnapshot } from './WindowAndSceneControls.js';
 import { getContrastingBorder } from './BackgroundPicker.js';
+import { syncSceneTone } from './SceneTone.js';
 import { showShareLink, promptSharePassword } from './ShareLinkModal.js';
+import {
+  bytesToB64URL, b64URLToBytes, bytesToBase32, base32ToBytes,
+  CODEC_FULL_JSON, CODEC_COMPACT_V3, sealEnvelope, openEnvelope, openLegacyEncrypted,
+  inflateRaw, cryptoAvailable,
+} from '../io/share/shareEnvelope.js';
+import { encodeCompact, expandCompact, compactReference } from '../io/share/shareCodec.js';
+import { fetchAlexandriaStructure, fetchOptimadeStructure } from '../io/OptimadeModule.js';
+import { wasLaunchedByHost } from '../host/BrowserHost.js';
+import { setLoadStep, finishLoadProgress, nextPaint, isLoadProgressShown } from './BootProgress.js';
+import { listActiveColorBars } from './ColorBarRegistry.js';
+import { captureStructurePrefField, restoreStructurePrefField } from '../state/structurePrefs.js';
+import { getContainerForStructure } from '../state/structures.js';
 
-const URL_WARN_CHARS = 4000;
-const URL_HARD_CHARS = 10000;
+// Share links carry their payload in the URL fragment, which browsers never
+// send to the server — so there is no server URL limit (crysviz.org answers 414
+// above ~8 190 query characters) and no structure lands in server logs. What
+// remains are the limits of chat apps and browsers: note long links, and ask
+// before handing out one that Safari (~80 000 characters) may refuse.
+const URL_NOTE_CHARS = 8000;
+const URL_CONFIRM_CHARS = 64000;
 let lastRestorePromise = Promise.resolve();
+
+// ---------------------------------------------------------------------------
+// Colour bars (ColorBarWidget.js): Forces, Spins, the Atoms (by force) /
+// Bonds (by length) bars of the Colors window, and the Planes bar.
+// ---------------------------------------------------------------------------
+//
+// Each keeps its layout in `general` (store.js: <id>ColorBarOrientation,
+// …FlipSide, …Floating, …FloatPos — an anchor —, …Locked, <id>LegendText, and
+// the shared colorBarSize), which its window writes only when the bar is torn
+// down, so a capture reads the live bar first. Shared and saved as flat
+// display settings, as the share codec takes plain values and number maps
+// only: the floating position as {x, y, r, b}, offsets from #view's left or
+// right (r: 1) and top or bottom (b: 1) edge. A legend left at its default
+// text is saved as null. The Planes bar's legend, colour map and range belong
+// to each plane and travel with the planes (display.planes), so only its
+// layout is here (legend: false) — and, like the planes, only in .crysviz
+// sessions, not in share links.
+//
+// Restoring them never fails a load: a bar that cannot take the settings (a
+// stale cached widget, an older build) is skipped and logged.
+
+const COLOR_BARS = [
+  { id: 'force', legend: 'Force (eV/Å)' },
+  { id: 'spin', legend: 'Spin (\u03bcB)' },
+  { id: 'atom', legend: 'Atom Force (eV/Å)' },
+  { id: 'bond', legend: 'Bond Length (Å)' },
+  { id: 'plane', legend: false },
+];
+const MAX_LEGEND = 256;
+const MAX_ANCHOR_OFFSET = 20000;
+
+/** A bar's floating anchor (ColorBarDrag.js) as a number map, or null. */
+function anchorToShare(a) {
+  if (!a || !Number.isFinite(a.offsetX) || !Number.isFinite(a.offsetY)) return null;
+  return {
+    x: Math.round(a.offsetX), y: Math.round(a.offsetY),
+    r: a.edgeX === 'right' ? 1 : 0, b: a.edgeY === 'bottom' ? 1 : 0,
+  };
+}
+
+/** …and back (untrusted: bounded), or null. */
+function anchorFromShare(p) {
+  if (!p || typeof p !== 'object' || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+  const clamp = (v) => Math.min(Math.max(v, -MAX_ANCHOR_OFFSET), MAX_ANCHOR_OFFSET);
+  return { edgeX: p.r ? 'right' : 'left', offsetX: clamp(p.x), edgeY: p.b ? 'bottom' : 'top', offsetY: clamp(p.y) };
+}
+
+/** The colour bars' display settings, for captureState(); the Planes bar
+ *  only for a .crysviz session (`planes`). */
+function captureColorBars({ planes = false } = {}) {
+  const live = new Map(listActiveColorBars().map((b) => [b.id, b.instance]));
+  /** @type {Record<string, any>} */
+  const out = {};
+  for (const { id, legend } of COLOR_BARS) {
+    if (id === 'plane' && !planes) continue;
+    const bar = live.get(id);
+    const s = bar?.getSettings();
+    const anchor = bar
+      ? (bar.isFloating() ? bar.getAnchor() : null)
+      : (general[`${id}ColorBarFloating`] ? general[`${id}ColorBarFloatPos`] : null);
+    const text = s ? s.legend : general[`${id}LegendText`];
+    out[`${id}ColorBarOrientation`] = (s ? s.orientation : general[`${id}ColorBarOrientation`]) === 'vertical' ? 'vertical' : 'horizontal';
+    out[`${id}ColorBarFlipSide`] = !!(s ? s.flipSide : general[`${id}ColorBarFlipSide`]);
+    if (legend !== false) out[`${id}LegendText`] = text == null || text === legend ? null : String(text).slice(0, MAX_LEGEND);
+    out[`${id}ColorBarFloatAt`] = anchorToShare(anchor);
+    out[`${id}ColorBarFloating`] = out[`${id}ColorBarFloatAt`] !== null;
+    out[`${id}ColorBarLocked`] = !!general[`${id}ColorBarLocked`];
+  }
+  // Resizing any bar resizes all; null until one was resized.
+  out.colorBarSize = Number.isFinite(general.colorBarSize) ? Math.round(general.colorBarSize) : null;
+  return out;
+}
+
+/** Put saved colour-bar settings back: into `general` for bars built later,
+ *  and onto any bar on screen now. Absent keys (older files) change nothing. */
+function applyColorBars(display) {
+  const has = (key) => display[key] !== undefined;
+  if (has('colorBarSize')) {
+    const size = display.colorBarSize;
+    general.colorBarSize = Number.isFinite(size) && size > 0 ? size : null;
+  }
+  const live = new Map(listActiveColorBars().map((b) => [b.id, b.instance]));
+  for (const { id, legend } of COLOR_BARS) {
+    const keys = [`${id}ColorBarOrientation`, `${id}ColorBarFlipSide`,
+      `${id}ColorBarFloating`, `${id}ColorBarFloatAt`, `${id}ColorBarLocked`];
+    if (legend !== false) keys.push(`${id}LegendText`);
+    if (!keys.some(has)) continue;
+    const orientation = display[`${id}ColorBarOrientation`] === 'vertical' ? 'vertical' : 'horizontal';
+    const flipSide = display[`${id}ColorBarFlipSide`] === true;
+    const rawText = display[`${id}LegendText`];
+    const text = typeof rawText === 'string' ? rawText.slice(0, MAX_LEGEND) : null;
+    const anchor = display[`${id}ColorBarFloating`] === true ? anchorFromShare(display[`${id}ColorBarFloatAt`]) : null;
+    general[`${id}ColorBarOrientation`] = orientation;
+    general[`${id}ColorBarFlipSide`] = flipSide;
+    if (legend !== false) general[`${id}LegendText`] = text;
+    general[`${id}ColorBarFloating`] = anchor !== null;
+    general[`${id}ColorBarFloatPos`] = anchor;
+    general[`${id}ColorBarLocked`] = display[`${id}ColorBarLocked`] === true;
+    const bar = live.get(id);
+    if (typeof bar?.applySettings !== 'function') continue; // built later: it reads general
+    try {
+      bar.applySettings({
+        floating: anchor !== null, anchor, orientation, flipSide,
+        legend: legend === false ? undefined : (text ?? legend), size: general.colorBarSize ?? undefined,
+      });
+    } catch (err) {
+      console.warn(`Restoring the ${id} colour bar failed`, err);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Crystal planes (PlanesPanel.js): kept per structure in this browser through
+// state/structurePrefs.js, and through the same capture/restore saved in
+// .crysviz sessions (not in share links) — with each plane's field colour map,
+// range, scale and legend (the Planes colour bar's content).
+// ---------------------------------------------------------------------------
+
+const MAX_PLANES = 64;
+const PLANE_UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/** Saved planes from a link or file (untrusted): plain records only —
+ *  numbers, booleans, short strings, small arrays and objects — each with
+ *  its params; the Planes window's restorer fills the rest from defaults. */
+function sanitizePlanes(list) {
+  if (!Array.isArray(list)) return null;
+  const clean = (v, depth = 0) => {
+    if (v === null || typeof v === 'boolean') return v;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+    if (typeof v === 'string') return v.length <= 256 ? v : undefined;
+    if (depth >= 3) return undefined;
+    if (Array.isArray(v)) {
+      if (v.length > 64) return undefined;
+      const a = v.map((x) => clean(x, depth + 1));
+      return a.every((x) => x !== undefined) ? a : undefined;
+    }
+    if (typeof v === 'object') {
+      const out = {};
+      for (const [k, x] of Object.entries(v).slice(0, 32)) {
+        if (PLANE_UNSAFE_KEYS.has(k) || k.length > 64) continue;
+        const c = clean(x, depth + 1);
+        if (c !== undefined) out[k] = c;
+      }
+      return out;
+    }
+    return undefined;
+  };
+  return list.slice(0, MAX_PLANES).map((p) => clean(p))
+    .filter((p) => p && typeof p === 'object' && !Array.isArray(p)
+      && p.params && typeof p.params === 'object' && !Array.isArray(p.params));
+}
+
+/**
+ * A link or session that shows forces or spins, or a session with a plane
+ * coloured by a field, opens those windows: they hold the colour bars (and the
+ * controls), which a recipient whose sidebar lacks them would otherwise never
+ * see — arrows with no scale. The Planes window opens on that plane.
+ */
+function revealWindowsForSharedData(structure) {
+  const open = (id) => {
+    try { openPanel(id); } catch (err) { console.warn(`Opening the ${id} window failed`, err); }
+  };
+  if (general.forcesActive && structure?.forces?.length) open('forces');
+  if (general.spinsActive && structure?.spins?.length) open('spins');
+  if ((structure?.planes ?? []).some((p) => p?.visualization === 'Field' && p.field)) {
+    open('planes');
+    import('./PlanesPanel.js').then((m) => m.selectFirstFieldPlane()).catch((err) => console.warn('Selecting the field plane failed', err));
+  }
+}
+
+/** The Atoms (by force) and Bonds (by length) colour scales: range, scale,
+ *  colour map. The Forces/Spins ones are shared already (forceMin, …). */
+function captureColorScales() {
+  return {
+    atomColorMin: general.ForceMin,
+    atomColorMax: general.ForceMax,
+    atomColorScale: general.atomColorScale,
+    atomColorMap: general.atomColorMap ?? null,
+    bondColorMin: general.BondMin,
+    bondColorMax: general.BondMax,
+    bondColorScale: general.bondColorScale,
+    bondColorMap: general.bondsColorMap ?? null,
+  };
+}
+
+function applyColorScales(display) {
+  const num = (v) => (Number.isFinite(v) ? v : null);
+  const scale = (v) => (v === 'log' || v === 'linear' ? v : null);
+  const cmap = (v) => (typeof v === 'string' && /^[A-Za-z][A-Za-z0-9_-]{0,31}$/.test(v) ? v : undefined);
+  const set = (key, v) => { if (v != null) general[key] = v; };
+  set('ForceMin', num(display.atomColorMin));
+  set('ForceMax', num(display.atomColorMax));
+  set('atomColorScale', scale(display.atomColorScale));
+  if (display.atomColorMap === null) general.atomColorMap = null;
+  else set('atomColorMap', cmap(display.atomColorMap));
+  set('BondMin', num(display.bondColorMin));
+  set('BondMax', num(display.bondColorMax));
+  set('bondColorScale', scale(display.bondColorScale));
+  if (display.bondColorMap === null) general.bondsColorMap = null;
+  else set('bondsColorMap', cmap(display.bondColorMap));
+  const live = new Map(listActiveColorBars().map((b) => [b.id, b.instance]));
+  for (const [id, min, max, map, sc] of [
+    ['atom', general.ForceMin, general.ForceMax, general.atomColorMap, general.atomColorScale],
+    ['bond', general.BondMin, general.BondMax, general.bondsColorMap, general.bondColorScale],
+  ]) {
+    const bar = live.get(id);
+    try {
+      if (typeof bar?.setRange === 'function') bar.setRange(min, max);
+      if (typeof bar?.update === 'function') bar.update(map ?? 'heatmap', sc);
+    } catch (err) {
+      console.warn(`Restoring the ${id} colour scale failed`, err);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Capture
@@ -197,6 +432,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
   // frame (issue #53), and `selectedFrameIndex` records which one is on screen.
   let frames;
   let selectedFrameIndex;
+  let containerSource = null;
   if (includeFrames) {
     const activeContainer = structureShip.container?.[fileBrowser.selectedRowIndex];
     // Through the container seam: a store-backed trajectory serves frame
@@ -214,20 +450,46 @@ export function captureState({ includeFrames = false, includeFields = false } = 
         positions: structure.atoms.map(a => [...a.position]),
         forces: structure.forces?.length ? structure.forces : null,
         spins: structure.spins?.length ? structure.spins : null,
+        species: siteSpeciesRecord(structure.atoms.map(a => a.species)),
+        energy: structure.energy,
+        stress: structure.stress?.tensor ?? null,
+        dataSource: dataSourceOf(structure),
       }];
     frames = entries.map(frame => ({
       elements: frame.elements,
       lattice: frame.lattice,
       positions: frame.positions,
+      // Mixed / partially occupied sites (model/siteSpecies.js): sparse,
+      // only when the frame has any.
+      ...(frame.species ? { species: frame.species } : {}),
       ...(frame.forces?.length ? { forces: serializeArrows(frame.forces) } : {}),
       ...(frame.spins?.length ? { spins: serializeArrows(frame.spins, true) } : {}),
+      // The frame's energy (eV) and stress (eV/Å³, compression positive,
+      // model/Stress.js — the pressure is its trace/3), when it has them, and
+      // the frame's own source when a computation in the app gave them
+      // (the file's is `dataSource` below).
+      ...(Number.isFinite(frame.energy) ? { energy: frame.energy } : {}),
+      ...(isStressTensor(frame.stress) ? { stress: frame.stress.map(r => [...r]) } : {}),
+      ...(cleanDataSource(frame.dataSource) ? { dataSource: cleanDataSource(frame.dataSource) } : {}),
     }));
     selectedFrameIndex = Math.max(0, activeContainer ? activeContainer.frameIndexOf(structure) : 0);
+    // Where the file's energies, forces and stress came from ("VASP").
+    containerSource = cleanDataSource(activeContainer?.dataSource);
   }
+
+  // The errors read from a CIF (model/cifErrors.js), for the viewed
+  // structure, aligned with its atoms (`frames[selectedFrameIndex]` or
+  // `structure`). Sparse: only when there are any.
+  const cifErrors = serializeCifErrors(structure);
+  // Site occupancies of the viewed structure for the frame-less capture (the
+  // frames carry their own).
+  const viewedSpecies = frames ? null : siteSpeciesRecord(structure.atoms.map(a => a.species));
 
   return {
     version: '2.16',
     ...(frames ? { frames, selectedFrameIndex } : {}),
+    ...(containerSource ? { dataSource: containerSource } : {}),
+    ...(cifErrors ? { cifErrors } : {}),
     ...(fields ? { fields } : {}),
     // The viewed frame lives in `frames[selectedFrameIndex]` when frames are
     // present (the .crysviz file save); only the share-URL / frame-less capture
@@ -237,6 +499,12 @@ export function captureState({ includeFrames = false, includeFields = false } = 
         elements: [...structure.elements],
         lattice: structure.lattice.map(r => [...r]),
         positions: structure.atoms.map(a => [...a.position]),
+        ...(viewedSpecies ? { species: viewedSpecies } : {}),
+        // The force and spin arrows on screen, as each .crysviz frame carries
+        // them: a share link opens with them drawn (it had only their display
+        // settings, so it showed none).
+        ...(structure.forces?.length ? { forces: serializeArrows(structure.forces) } : {}),
+        ...(structure.spins?.length ? { spins: serializeArrows(structure.spins, true) } : {}),
       },
     }),
     colors: {
@@ -253,6 +521,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       bondCategoryStyles: nonEmptyDeepCopy(structure.bondCategoryStyles),
       polyhedraUserStyles: nonEmptyDeepCopy(structure.polyhedraUserStyles),
       polyhedraCategoryStyles: nonEmptyDeepCopy(structure.polyhedraCategoryStyles),
+      polyhedraElementStyles: nonEmptyDeepCopy(structure.polyhedraElementStyles),
       // Ray/path-tracing materials: per-species + per-atom overrides (bond/
       // poly materials ride in their user/category stores above).
       atomMaterials: nonEmptyDeepCopy(structure.atomMaterials),
@@ -267,12 +536,16 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       showAtoms: general.showAtoms,
       showBonds: general.showBonds,
       showCharges: general.showCharges,
+      showCifErrors: general.showCifErrors,
       showLattice: general.showLattice,
       showPeriodic: general.showPeriodic,
       linkPeriodicCopies: general.linkPeriodicCopies,
       periodicFaceTol: general.periodicFaceTol,
       periodicBounds: general.periodicBounds,
       showPBCBonds: general.showPBCBonds,
+      completeFragments: general.completeFragments,
+      fragmentIgnoreMetalBonds: general.fragmentIgnoreMetalBonds,
+      fragmentMaxRing: general.fragmentMaxRing,
       showAxes: general.showAxes,
       showPolyhedra: general.showPolyhedra,
       completePolyhedra: general.completePolyhedra,
@@ -282,6 +555,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       bondVisibility: { ...general.bondVisibility },
       atomVisibility: { ...general.atomVisibility },
       focusRegions: nonEmptyDeepCopy(structure.focusRegions),
+      selectionGroups: nonEmptyDeepCopy(structure.selectionGroups), // saved selections (StructureInfoPanel/SelectionGroups.js)
       bondCutImmunity: { ...general.bondCutImmunity },
       // Force / spin arrow display (issue #53). Only the values ForceModule/
       // SpinModule read to draw the arrows are persisted — not panel widget
@@ -304,11 +578,18 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       spinLengthLogScale: general.spinLengthLogScale,
       spinColorMap: general.spinColorMap,
       spinSpeciesVisibility: nonEmptyDeepCopy(general.speciesVisibility),
+      // The colour bars' layout and legends, and the Atoms/Bonds colour scales.
+      ...captureColorBars({ planes: includeFrames }),
+      ...captureColorScales(),
+      // The crystal planes (with their colour maps and legends), when any —
+      // in a .crysviz session only (includeFrames), not in a share link.
+      ...(includeFrames ? { planes: nonEmptyDeepCopy(captureStructurePrefField('planes', structure)) } : {}),
     },
     style: {
       renderStyle: general.renderStyle,
       renderPipeline: general.renderPipeline,
       depthPeelLayers: general.depthPeelLayers,
+      depthPeelMotionLayers: general.depthPeelMotionLayers,
       rtResolutionScale: general.rtResolutionScale,
       rtTiledRender: general.rtTiledRender,
       rtRasterPreview: general.rtRasterPreview,
@@ -319,6 +600,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       ptLightSoftness: general.ptLightSoftness,
       rtDofAperture: general.rtDofAperture,
       rtDofFocus: general.rtDofFocus,
+      rtDofDepth: general.rtDofDepth,
       rtGroundPlane: general.rtGroundPlane,
       rtGroundPattern: general.rtGroundPattern,
       rtGroundColor1: general.rtGroundColor1,
@@ -327,6 +609,7 @@ export function captureState({ includeFrames = false, includeFields = false } = 
       rtGroundOffset: general.rtGroundOffset,
       rtGroundSize: general.rtGroundSize,
       rtGroundReflect: general.rtGroundReflect,
+      rtGroundDirection: general.rtGroundDirection,
       rtLightIntensity: general.rtLightIntensity,
       rtAmbient: general.rtAmbient,
       rtSaturation: general.rtSaturation,
@@ -404,129 +687,150 @@ function buildPOSCAR(state) {
 // Share (capture → encode → clipboard)
 // ---------------------------------------------------------------------------
 
-// Share URLs carry the state as JSON -> raw deflate -> base64url. Uncompressed
-// it runs ~3.7 KB for a plain structure, past the ~2.9 KB a QR code can hold at
-// ALL; deflate brings a typical state to well under a kilobyte, which is what
-// makes the share dialog's QR useful rather than a permanent "too long" note.
+// A share link is https://<base>/#z=<base64url(envelope)>; the QR code carries
+// the same envelope as #q=<base32> so it fits QR alphanumeric mode. The
+// envelope (io/share/shareEnvelope.js) is a codec byte + deflate-raw(JSON),
+// optionally AES-GCM encrypted under a password.
 //
-// Compressed payloads travel as ?z=, uncompressed as ?state=. Old links keep
-// working, and a browser without CompressionStream simply emits the old form.
-const STATE_PARAM = 'state';
-const PACKED_PARAM = 'z';
-// Password-encrypted payloads travel as ?e= (salt || iv || AES-GCM ciphertext,
-// see encryptBytes). Distinct param so the loader knows to ask for a password.
-const ENC_PARAM = 'e';
+// Links made before issue #144 put the payload in the query instead: ?z=
+// (deflated JSON), ?state= (plain JSON) and ?e= (encrypted). They are still
+// read, forever; they are just no longer written.
+const LEGACY_PARAMS = ['state', 'z', 'e'];
+// A desktop-app session is served from 127.0.0.1, which a recipient can't
+// reach, so its links name the public site; the decoder ignores the domain.
+const PUBLIC_BASE = 'https://crysviz.org/';
 
-// AES-256-GCM with a PBKDF2-derived key. All standard Web Crypto, no deps.
-const PBKDF2_ITERS = 250000; // ~a few hundred ms on a phone; a real brute-force cost
-const SALT_BYTES = 16;
-const IV_BYTES = 12;  // 96-bit nonce, the size AES-GCM is defined for
+// Database references (a link that names the database entry instead of carrying
+// the coordinates) are only written for, and only fetched from, these hosts —
+// https only. A crafted link therefore cannot make a recipient's browser
+// contact an arbitrary server.
+export const SHARE_REFERENCE_HOSTS = Object.freeze([
+  'alexandria.icams.rub.de',
+  'optimade.materialsproject.org',
+]);
 
-function bytesToB64URL(bytes) {
-  // Chunked so a large payload can't blow the argument limit of String.fromCharCode.
-  let binary = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  }
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-}
-
-/** Raw-deflate `bytes`, or null when the browser has no CompressionStream. */
-async function deflateRaw(bytes) {
-  if (typeof CompressionStream === 'undefined') return null;
+/** Whether a database provenance record may be shared (and fetched) by reference. */
+function referenceAllowed(ref) {
+  if (ref?.kind === 'alexandria') return typeof ref.id === 'string';
+  if (ref?.kind !== 'optimade' || typeof ref.url !== 'string') return false;
   try {
-    const stream = new Blob([bytes]).stream().pipeThrough(new CompressionStream('deflate-raw'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
+    const url = new URL(ref.url);
+    return url.protocol === 'https:' && SHARE_REFERENCE_HOSTS.includes(url.hostname);
   } catch {
-    return null; // unsupported format string on older engines
+    return false;
   }
 }
 
-async function inflateRaw(bytes) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+/** Human name of a reference's source, for the dialog and error messages. */
+function referenceSource(ref) {
+  return ref.kind === 'alexandria' ? 'Alexandria' : 'the OPTIMADE provider';
 }
 
-/** Whether the Web Crypto API is usable — false on insecure (plain http)
- *  origins, where crypto.subtle is undefined. localhost and https are fine. */
-function cryptoAvailable() {
-  return typeof crypto !== 'undefined' && !!crypto.subtle;
+/** The database provenance of the selected structure's file row (set by the
+ *  Paste Text box when a structure is fetched from OPTIMADE or Alexandria), or
+ *  null. The codec decides whether the structure still matches it. */
+function selectedProvenance() {
+  const container = structureShip.container?.[fileBrowser.selectedRowIndex];
+  const ref = container?.provenance;
+  return referenceAllowed(ref) ? ref : null;
 }
 
-/** PBKDF2(password, salt) -> a 256-bit AES-GCM key. */
-async function deriveKey(password, salt) {
-  const base = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
-  return crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt, iterations: PBKDF2_ITERS, hash: 'SHA-256' },
-    base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+/**
+ * Payload of a share link for `state`. The one place that picks the codec.
+ * @returns {Promise<{ codec: number, jsonBytes: Uint8Array, reference: any }>}
+ *   reference: the database reference the link uses instead of coordinates,
+ *   or null when the structure is embedded.
+ */
+async function buildSharePayload(state) {
+  const sc = fileBrowser.selectedStructure?.supercell;
+  const supercell = sc && (sc.nx || 1) * (sc.ny || 1) * (sc.nz || 1) > 1
+    ? { nx: sc.nx || 1, ny: sc.ny || 1, nz: sc.nz || 1 }
+    : null;
+  const provenance = selectedProvenance();
+  const compact = encodeCompact(state, { supercell, reference: provenance });
+  return {
+    codec: CODEC_COMPACT_V3,
+    jsonBytes: new TextEncoder().encode(JSON.stringify(compact)),
+    reference: compact.r ? provenance : null,
+  };
 }
 
-/** Encrypt `bytes` under `password`, returning salt || iv || ciphertext. The
- *  salt and IV are non-secret and fresh per call, so they ride in front of the
- *  ciphertext; GCM's auth tag is appended by subtle.encrypt itself. */
-async function encryptBytes(bytes, password) {
-  const salt = crypto.getRandomValues(new Uint8Array(SALT_BYTES));
-  const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
-  const key = await deriveKey(password, salt);
-  const ct = new Uint8Array(
-    await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
-  const out = new Uint8Array(SALT_BYTES + IV_BYTES + ct.length);
-  out.set(salt, 0);
-  out.set(iv, SALT_BYTES);
-  out.set(ct, SALT_BYTES + IV_BYTES);
-  return out;
+/** Fetch the database structure a compact link refers to, as plain arrays. */
+async function fetchReferenceStructure(ref) {
+  if (!referenceAllowed(ref)) {
+    throw new Error('This link refers to a structure database CrysViz does not load share links from.');
+  }
+  const label = ref.kind === 'alexandria' ? ref.id : ref.url;
+  let result;
+  try {
+    result = ref.kind === 'alexandria'
+      ? await fetchAlexandriaStructure(ref.id)
+      : await fetchOptimadeStructure(ref.url);
+  } catch (error) {
+    throw new Error(`Could not load ${label} from ${referenceSource(ref)}: ${error.message}`);
+  }
+  const structure = readPOSCAR(result.content, result.fileName);
+  return {
+    elements: [...structure.elements],
+    lattice: structure.lattice.map((row) => [...row]),
+    positions: structure.atoms.map((atom) => [...atom.position]),
+  };
 }
 
-/** Reverse encryptBytes. Throws on the wrong password: GCM authentication
- *  fails and subtle.decrypt rejects, which is exactly the wrong-password
- *  signal the loader loops on — no separate integrity check needed. */
-async function decryptBytes(bytes, password) {
-  const salt = bytes.subarray(0, SALT_BYTES);
-  const iv = bytes.subarray(SALT_BYTES, SALT_BYTES + IV_BYTES);
-  const ct = bytes.subarray(SALT_BYTES + IV_BYTES);
-  const key = await deriveKey(password, salt);
-  return new Uint8Array(
-    await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct));
+/** Inverse of buildSharePayload: a decoded payload object -> a full state for
+ *  applySharedState. Compact links that name a database entry fetch it first. */
+async function expandSharePayload(codec, obj) {
+  if (codec === CODEC_FULL_JSON) return obj;
+  if (codec === CODEC_COMPACT_V3) {
+    const ref = compactReference(obj);
+    if (!ref) return expandCompact(obj);
+    setShareStatus(`Loading ${ref.kind === 'alexandria' ? ref.id : 'the structure'} from ${referenceSource(ref)}...`);
+    return expandCompact(obj, { referenceStructure: await fetchReferenceStructure(ref) });
+  }
+  throw new Error(`Share format ${codec} is not supported by this version of CrysViz.`);
+}
+
+/** Write to the app's status line (#status), if present. */
+function setShareStatus(text) {
+  const el = document.getElementById('status');
+  if (el) el.textContent = text;
+}
+
+/** The URL a share link is built on: this page without share/debug params,
+ *  fragment or trailing index.html — or the public site for desktop sessions. */
+function shareBaseURL() {
+  if (wasLaunchedByHost()) return new URL(PUBLIC_BASE);
+  const url = new URL(window.location.href);
+  for (const p of LEGACY_PARAMS) url.searchParams.delete(p);
+  // A debugging session's ?debug (debug/debugMode.js) and ?experimental
+  // (debug/experimentalMode.js) are this tab's, not the recipient's.
+  url.searchParams.delete('debug');
+  url.searchParams.delete('experimental');
+  url.hash = '';
+  url.pathname = url.pathname.replace(/index\.html$/, '');
+  return url;
+}
+
+/** Copy link and QR parts for an envelope. */
+function shareURLs(envelope) {
+  const base = shareBaseURL().toString();
+  const text = `${base}#z=${bytesToB64URL(envelope)}`;
+  return { text, qr: { prefix: `${base}#q=`, payload: bytesToBase32(envelope) } };
 }
 
 export async function shareStructure() {
   const state = captureState();
   if (!state) { alert('No structure loaded to share.'); return; }
 
-  const jsonBytes = new TextEncoder().encode(JSON.stringify(state));
-  const packed = await deflateRaw(jsonBytes);
-  // The bytes that go on the wire, and whether they are deflated. The encrypted
-  // form carries this same payload behind a 1-byte "compressed?" flag (below),
-  // so an ?e= link is self-describing regardless of which browser opens it.
-  const payload = packed ?? jsonBytes;
-  const plainParam = packed ? PACKED_PARAM : STATE_PARAM;
+  const { codec, jsonBytes, reference } = await buildSharePayload(state);
+  const plain = shareURLs(await sealEnvelope(jsonBytes, { codec }));
 
-  // Build a share URL for `bytes` under `param`, replacing any state param the
-  // current location already carries (so re-sharing a shared link is clean).
-  const buildURL = (bytes, param) => {
-    const b64 = bytesToB64URL(bytes);
-    const url = new URL(window.location.href);
-    for (const p of [STATE_PARAM, PACKED_PARAM, ENC_PARAM]) url.searchParams.delete(p);
-    // A debugging session's ?debug (debug/debugMode.js) is this tab's, not
-    // the recipient's.
-    url.searchParams.delete('debug');
-    // Same for ?experimental (debug/experimentalMode.js).
-    url.searchParams.delete('experimental');
-    url.searchParams.set(param, b64);
-    return { text: url.toString(), chars: b64.length };
-  };
-
-  const plain = buildURL(payload, plainParam);
-
-  if (plain.chars > URL_HARD_CHARS) {
-    const kb = (plain.chars / 1024).toFixed(1);
+  if (plain.text.length > URL_CONFIRM_CHARS) {
+    const kb = (plain.text.length / 1024).toFixed(1);
     const ok = confirm(
-      `Warning: the share URL is very large (${kb} KB). It may not work in all browsers or messaging platforms. Continue?`
+      `Warning: the share link is very large (${kb} KB). Some browsers (Safari) and messaging apps may not open it. Continue?`
     );
     if (!ok) return;
-  } else if (plain.chars > URL_WARN_CHARS) {
-    console.warn(`Share URL is ${(plain.chars / 1024).toFixed(1)} KB — may be large for some platforms.`);
   }
 
   // A dialog, not the address bar: long URLs are truncated there, and the
@@ -536,19 +840,19 @@ export async function shareStructure() {
   // the path that always works.
   navigator.clipboard?.writeText(plain.text).catch(() => {});
 
-  // Handed to the dialog's optional password field: encrypt the same payload
-  // and hand back the ?e= URL. Null when Web Crypto is unavailable (insecure
-  // origin), which tells the dialog to hide the password field entirely.
+  // Handed to the dialog's optional password field: the same payload,
+  // encrypted, as the same kind of link. Null when Web Crypto is unavailable
+  // (insecure origin), which tells the dialog to hide the password field.
   const encryptURL = cryptoAvailable()
-    ? async (password) => {
-        const flagged = new Uint8Array(1 + payload.length);
-        flagged[0] = packed ? 1 : 0; // reader inflates iff this bit is set
-        flagged.set(payload, 1);
-        return buildURL(await encryptBytes(flagged, password), ENC_PARAM).text;
-      }
+    ? async (password) => shareURLs(await sealEnvelope(jsonBytes, { codec, password }))
     : null;
 
-  showShareLink(plain.text, { encryptURL });
+  const notes = [];
+  if (reference) notes.push(`The structure loads from ${referenceSource(reference)} when the link is opened.`);
+  if (plain.text.length > URL_NOTE_CHARS) {
+    notes.push(`This link is ${plain.text.length.toLocaleString()} characters long; some chat apps shorten or break links this long.`);
+  }
+  showShareLink(plain, { encryptURL, lengthNote: notes.join(' ') });
 }
 
 // ---------------------------------------------------------------------------
@@ -598,6 +902,7 @@ function applyDisplaySettings(display) {
   if (display.showAtoms != null)   { general.showAtoms   = display.showAtoms;   setToggle('showAtoms', display.showAtoms); }
   if (display.showBonds != null)   { general.showBonds   = display.showBonds;   setToggle('showBonds', display.showBonds); }
   if (display.showCharges != null) { general.showCharges = display.showCharges; setToggle('showCharges', display.showCharges); }
+  if (display.showCifErrors != null) { general.showCifErrors = display.showCifErrors; setToggle('showCifErrorsToggle', display.showCifErrors); }
   if (display.showLattice != null) { general.showLattice = display.showLattice; setToggle('showLattice', display.showLattice); }
   if (display.showPeriodic != null){ general.showPeriodic= display.showPeriodic;setToggle('showPeriodic', display.showPeriodic); }
   if (display.periodicFaceTol != null){ general.periodicFaceTol = display.periodicFaceTol; }
@@ -607,6 +912,9 @@ function applyDisplaySettings(display) {
   // The Atoms-tab toggle is rebuilt from `general` on the next renderComposition.
   if (display.linkPeriodicCopies != null){ general.linkPeriodicCopies = display.linkPeriodicCopies; }
   if (display.showPBCBonds != null){ general.showPBCBonds= display.showPBCBonds;setToggle('PBCBondToggle', display.showPBCBonds); }
+  if (display.completeFragments != null){ general.completeFragments = display.completeFragments; setToggle('completeFragmentsToggle', display.completeFragments); }
+  if (display.fragmentIgnoreMetalBonds != null){ general.fragmentIgnoreMetalBonds = display.fragmentIgnoreMetalBonds; }
+  if (display.fragmentMaxRing != null){ general.fragmentMaxRing = display.fragmentMaxRing; }
   if (display.showAxes != null) {
     setToggle('showAxes', display.showAxes);
     // The change handler owns the gizmo/legend visibility (ControlsWiring).
@@ -639,6 +947,9 @@ function applyDisplaySettings(display) {
   setGen('spinLengthLogScale', display.spinLengthLogScale);
   setGen('spinColorMap', display.spinColorMap);
   if (display.spinSpeciesVisibility) general.speciesVisibility = { ...display.spinSpeciesVisibility };
+  // Never fail a load over a colour bar (see COLOR_BARS above).
+  try { applyColorBars(display); } catch (err) { console.warn('Restoring the colour bars failed', err); }
+  try { applyColorScales(display); } catch (err) { console.warn('Restoring the colour scales failed', err); }
   if (display.forcesActive != null) { general.forcesActive = display.forcesActive; setToggle('showForcesToggle', display.forcesActive); }
   if (display.spinsActive != null) { general.spinsActive = display.spinsActive; setToggle('showSpinsToggle', display.spinsActive); }
 }
@@ -663,6 +974,10 @@ function applyStyleSettings(style) {
   if (style.depthPeelLayers != null) {
     general.depthPeelLayers = style.depthPeelLayers;
     setSelect('depthPeelLayersSlider', style.depthPeelLayers);
+  }
+  if (style.depthPeelMotionLayers != null) {
+    general.depthPeelMotionLayers = style.depthPeelMotionLayers;
+    setSelect('depthPeelMotionLayersSlider', style.depthPeelMotionLayers);
   }
   if (style.rtResolutionScale != null) {
     general.rtResolutionScale = style.rtResolutionScale;
@@ -707,13 +1022,19 @@ function applyStyleSettings(style) {
     general.ptLightSoftness = style.ptLightSoftness;
     setSelect('ptLightSoftness', style.ptLightSoftness);
   }
+  // DoF aperture (quadratic in the lens radius) and focus depth are mapped
+  // sliders: the ELEMENT holds a [0,1] position (see ColorPanel makeTracerSliderRow).
   if (style.rtDofAperture != null) {
     general.rtDofAperture = style.rtDofAperture;
-    setSelect('rtDofAperture', style.rtDofAperture);
+    setSelect('rtDofAperture', dofApertureToSlider(style.rtDofAperture));
   }
   if (style.rtDofFocus != null) {
     general.rtDofFocus = style.rtDofFocus;
     setSelect('rtDofFocus', style.rtDofFocus);
+  }
+  if (style.rtDofDepth != null) {
+    general.rtDofDepth = style.rtDofDepth;
+    setSelect('rtDofDepth', sizeValueToSlider(style.rtDofDepth, DOF_DEPTH_RANGE));
   }
   if (style.rtGroundPlane != null) {
     general.rtGroundPlane = style.rtGroundPlane;
@@ -724,6 +1045,12 @@ function applyStyleSettings(style) {
     }
   }
   if (style.rtGroundPattern != null) { general.rtGroundPattern = style.rtGroundPattern; setSelect('rtGroundPattern', style.rtGroundPattern); }
+  // Which side the ground lies on (render/groundDirection.js); older links and
+  // sessions have none and keep today's.
+  if (style.rtGroundDirection != null) {
+    general.rtGroundDirection = cleanGroundDirection(style.rtGroundDirection);
+    setSelect('rtGroundDirection', general.rtGroundDirection);
+  }
   if (style.rtGroundColor1 !== undefined) {
     general.rtGroundColor1 = style.rtGroundColor1;
     if (style.rtGroundColor1) setSelect('rtGroundColor1', style.rtGroundColor1);
@@ -760,7 +1087,7 @@ function applyStyleSettings(style) {
     setSelect('celOutlineColorMenu', style.celOutlineColorMode);
     const customBlock = /** @type {any} */ (document.getElementById('celOutlineCustomColorBlock'));
     if (customBlock) {
-      customBlock.style.display = style.celOutlineColorMode === 'custom' ? 'block' : 'none';
+      customBlock.hidden = style.celOutlineColorMode !== 'custom';
       // Sync the inline picker's swatch/inputs to the restored custom color.
       if (style.celOutlineColor) customBlock.setHex?.(style.celOutlineColor);
     }
@@ -776,6 +1103,7 @@ function applyStyleSettings(style) {
     // Keep the lattice readable against the restored background, like the
     // background picker does (the lattice is built after this runs).
     general.currentLatticeColor = getContrastingBorder(style.background);
+    syncSceneTone();
   }
   // Refresh any existing hull outline materials for the restored color mode /
   // background ('auto' depends on the background just applied above).
@@ -839,7 +1167,7 @@ function applyAtomColors(colors, structure) {
   // (see applySharedState), so the wrapped-index bondUserStyles keys match the
   // corrected atom order when the caller's rebuildBonds() re-applies them;
   // stale keys are silently ignored by the stores' element/geometry checks.
-  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials', 'spinCategoryStyles', 'forceCategoryStyles', 'fieldMaterial']) {
+  for (const k of ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles', 'polyhedraCategoryStyles', 'polyhedraElementStyles', 'atomMaterials', 'atomUserMaterials', 'spinCategoryStyles', 'forceCategoryStyles', 'fieldMaterial']) {
     if (colors[k]) structure[k] = JSON.parse(JSON.stringify(colors[k]));
   }
 }
@@ -854,8 +1182,21 @@ function atomKey(element, position) {
   ].join('|');
 }
 
+/** Put the saved site occupancies (model/siteSpecies.js) back on a freshly
+ *  read structure. The record is aligned with the saved atoms; each atom is
+ *  matched by element and position first, so an atom the POSCAR round trip
+ *  moved or reordered is left alone rather than given another site's species. */
+function applySiteSpecies(saved, structure) {
+  if (!saved?.species || !structure?.atoms?.length) return;
+  restoreSiteSpecies(structure.atoms, saved.species, (i) => (
+    Array.isArray(saved.positions?.[i]) && structure.elements[i] === saved.elements?.[i]
+    && atomKey(structure.elements[i], structure.atoms[i].position) === atomKey(saved.elements[i], saved.positions[i])));
+}
+
+/** Put the loaded atoms in the saved order; false when it could not (the
+ *  per-atom state that relies on the order is then best left alone). */
 function restoreAtomOrder(savedStructure, loadedStructure) {
-  if (!savedStructure || !loadedStructure?.atoms?.length) return;
+  if (!savedStructure || !loadedStructure?.atoms?.length) return false;
 
   const buckets = new Map();
   loadedStructure.atoms.forEach((atom, i) => {
@@ -875,7 +1216,7 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
     const bucket = buckets.get(key);
     if (!bucket?.length) {
       console.warn('Failed to restore original atom order for shared structure at index', i, key);
-      return;
+      return false;
     }
 
     const match = bucket.shift();
@@ -886,6 +1227,7 @@ function restoreAtomOrder(savedStructure, loadedStructure) {
   loadedStructure.atoms = reorderedAtoms;
   loadedStructure.elements = reorderedElements;
   loadedStructure.uniqueElements = [...new Set(reorderedElements)];
+  return true;
 }
 
 /** Rebuild the Force/Spin arrow objects saved in a .crysviz frame and attach
@@ -933,13 +1275,14 @@ function restoreFields(fieldState, structure) {
     label: f.label,
     nx: f.nx, ny: f.ny, nz: f.nz,
     origin: f.origin, voxel: f.voxel,
+    // Share payloads are untrusted: only a literal false restores a block.
+    periodic: f.periodic === false ? false : true,
     component: f.component,
     isoValue: f.isoValue,
     useAbsoluteIsoValue: f.useAbsoluteIsoValue,
     isVisible: f.isVisible,
-    // Absent in files saved before these existed: unknown unit, periodic grid.
+    // Absent in files saved before it existed: unknown unit.
     valueUnit: f.valueUnit ?? null,
-    periodic: f.periodic !== false,
     minValue: f.minValue, maxValue: f.maxValue,
     absMinValue: f.absMinValue, absMaxValue: f.absMaxValue,
     values: f.values ? base64ToFloat32(f.values) : null,
@@ -1152,75 +1495,152 @@ function makeAtomProxy(wrapped, ref) {
 // Load from URL
 // ---------------------------------------------------------------------------
 
-export async function loadSharedStructure() {
-  const params = new URLSearchParams(window.location.search);
-  // ?z= is the deflated payload written since the QR code landed; ?state= is the
-  // plain form, still emitted where CompressionStream is missing and still
-  // present in every link shared before that.
-  const encParam = params.get(ENC_PARAM);
-  const packedParam = params.get(PACKED_PARAM);
-  const stateParam = encParam ?? packedParam ?? params.get(STATE_PARAM);
-  if (!stateParam) return false;
+/**
+ * Where a share payload sits in `urlString`, whatever its domain: the fragment
+ * (#z= base64url, #q= base32) or a legacy query param. Null for anything else,
+ * including #load-file= and plain URLs.
+ * @param {string} urlString
+ * @returns {{ kind: 'z'|'q'|'state'|'legacy-z'|'e', value: string } | null}
+ */
+export function findSharePayload(urlString) {
+  let url;
+  try { url = new URL(String(urlString).trim()); } catch { return null; }
+  const fragment = new URLSearchParams(url.hash.replace(/^#/, ''));
+  if (fragment.get('z')) return { kind: 'z', value: fragment.get('z') };
+  if (fragment.get('q')) return { kind: 'q', value: fragment.get('q') };
+  if (url.searchParams.get('e')) return { kind: 'e', value: url.searchParams.get('e') };
+  if (url.searchParams.get('z')) return { kind: 'legacy-z', value: url.searchParams.get('z') };
+  if (url.searchParams.get('state')) return { kind: 'state', value: url.searchParams.get('state') };
+  return null;
+}
 
-  let state;
+/** Decode a payload found by findSharePayload to a full state, or null when
+ *  the user cancelled the password prompt. */
+async function decodeSharePayload({ kind, value }) {
+  const normalized = value.trim().replace(/\s+/g, '');
+  if (normalized.includes('...')) {
+    throw new Error('Shared URL appears truncated (contains "..."). Copy the full link from the share dialog.');
+  }
+  const parse = (bytes) => JSON.parse(new TextDecoder().decode(bytes));
+  if (kind === 'z' || kind === 'q') {
+    const bytes = kind === 'z' ? b64URLToBytes(normalized) : base32ToBytes(normalized);
+    const opened = await openEnvelope(bytes, { requestPassword: promptSharePassword });
+    if (!opened) return null;
+    return expandSharePayload(opened.codec, parse(opened.json));
+  }
+  // Legacy query forms. URLSearchParams turned any '+' of old standard-base64
+  // links into spaces; b64URLToBytes maps them back.
+  const bytes = b64URLToBytes(value);
+  if (kind === 'e') {
+    const json = await openLegacyEncrypted(bytes, { requestPassword: promptSharePassword });
+    return json ? parse(json) : null;
+  }
+  if (kind === 'legacy-z') return parse(await inflateRaw(bytes));
+  return parse(bytes);
+}
+
+/**
+ * Open a share link in this session: decode its payload (any domain — the
+ * link may name crysviz.org, a local server or the desktop app) and apply it.
+ * Used at boot for the page's own URL and by the Paste Text box.
+ * @param {string} urlString
+ * @returns {Promise<boolean>} false when there is no payload or the password
+ *   prompt was cancelled; throws when the payload can't be decoded or applied
+ */
+export async function openShareLink(urlString) {
+  const found = findSharePayload(urlString);
+  if (!found) return false;
+
+  // Progress over the 3D view for every step (ui/BootProgress.js): a large
+  // styled link spends seconds building the structure, polyhedra and
+  // measurements on the main thread, so each step is painted before it runs.
+  // At start-up the bar is already most of the way (ui/BootProgress.js).
+  const progress = shareProgressScale();
+  setLoadStep('Opening the shared structure…', { fraction: progress(0.15) });
+  await nextPaint();
   try {
-    const normalized = stateParam.trim().replace(/\s+/g, '');
-    if (normalized.includes('...')) {
-      throw new Error('Shared URL appears truncated (contains "..."). Copy the full link from the share dialog.');
+    let state;
+    try {
+      state = await decodeSharePayload(found);
+    } catch (e) {
+      const invalidChars = [...found.value].filter(c => !/[A-Za-z0-9\-_+/= ]/.test(c));
+      console.error('Failed to decode shared state:', e,
+        'kind:', found.kind, 'length:', found.value.length,
+        'invalid chars:', invalidChars.slice(0, 10));
+      throw new Error(`Failed to decode shared state: ${e.message}`);
     }
+    if (state === null) return false; // password prompt cancelled
 
-    // Accept both current base64url and older plain base64 forms.
-    const padded = normalized
-      .replace(/ /g, '+')
-      .replace(/-/g, '+')
-      .replace(/_/g, '/');
-    const pad = padded.length % 4;
-    const b64 = pad ? padded + '='.repeat(4 - pad) : padded;
-    const binary = atob(b64);
-    let bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    if (encParam) {
-      if (!cryptoAvailable()) {
-        throw new Error('This share link is password-encrypted, which needs a secure (https) context. Open the link over https and try again.');
-      }
-      // Ask, decrypt, repeat until the password is right or the user cancels.
-      // A wrong password makes AES-GCM's auth check fail (decryptBytes throws),
-      // so it never reaches the outer catch — we just re-prompt.
-      let plain = null;
-      for (let attempt = 0; ; attempt++) {
-        const password = await promptSharePassword({ retry: attempt > 0 });
-        if (password === null) return false; // cancelled: fall back to default load
-        try { plain = await decryptBytes(bytes, password); break; }
-        catch { /* wrong password — loop */ }
-      }
-      const raw = plain[0] === 1 ? await inflateRaw(plain.subarray(1)) : plain.subarray(1);
-      state = JSON.parse(new TextDecoder().decode(raw));
-    } else {
-      if (packedParam) bytes = await inflateRaw(bytes);
-      state = JSON.parse(new TextDecoder().decode(bytes));
+    const warnings = Array.isArray(state.shareWarnings) ? state.shareWarnings : [];
+    await applySharedStateWithProgress(state, 'shared.vasp', 'Shared state could not be applied.', progress);
+    general.sharedStructureLoaded = true;
+    if (warnings.length) {
+      console.warn('Share link:', warnings.join(' '));
+      setShareStatus(warnings.join(' '));
     }
-  } catch (e) {
-    const invalidChars = [...stateParam].filter(c => !/[A-Za-z0-9\-_]/.test(c));
-    console.error('Failed to decode shared state:', e,
-      'param length:', stateParam.length,
-      'invalid chars:', invalidChars.slice(0, 10));
-    throw new Error(`Failed to decode shared state: ${e.message}`);
+    return true;
+  } finally {
+    finishLoadProgress();
   }
+}
 
-  if (!applySharedState(state, 'shared.vasp')) {
-    throw new Error('Shared state could not be applied.');
-  }
+/** Map a share load's own progress (0–1) onto the bar: the whole bar when it
+ *  opens on its own (Paste Text, a .crysviz file), its last stretch when it is
+ *  the last step of start-up. */
+function shareProgressScale() {
+  const base = isLoadProgressShown() ? 0.8 : 0;
+  return (f) => base + (1 - base) * f;
+}
+
+/** applySharedState + waitForStateRestoration, each step shown on the
+ *  progress overlay first. Throws `failMessage` when the state cannot be
+ *  applied. */
+async function applySharedStateWithProgress(state, fileName, failMessage, progress = shareProgressScale()) {
+  const viewed = state.structure ?? (Array.isArray(state.frames) ? state.frames[state.selectedFrameIndex ?? 0] : null);
+  const atoms = viewed?.elements?.length ?? 0;
+  setLoadStep(`Building the structure${atoms ? ` (${atoms.toLocaleString('en-US')} atoms)` : ''}…`, { fraction: progress(0.45) });
+  await nextPaint();
+  if (!applySharedState(state, fileName)) throw new Error(failMessage);
+  const extras = [
+    (general.showPolyhedra || general.completePolyhedra) && 'polyhedra',
+    state.measurements?.length && 'measurements',
+  ].filter(Boolean);
+  setLoadStep(extras.length ? `Drawing the ${extras.join(' and ')}…` : 'Drawing…', { fraction: progress(0.8) });
+  await nextPaint();
   await waitForStateRestoration();
+}
 
-  general.sharedStructureLoaded = true;
+/** Boot-time loader for a share link in the page's own URL. */
+export async function loadSharedStructure() {
+  const loaded = await openShareLink(window.location.href);
+  if (!loaded) return false;
 
-  // Clean URL
+  // Clean URL: drop the payload so a reload or bookmark doesn't re-apply it.
   const newUrl = new URL(window.location.href);
-  newUrl.searchParams.delete(STATE_PARAM);
-  newUrl.searchParams.delete(PACKED_PARAM);
-  newUrl.searchParams.delete(ENC_PARAM);
+  for (const p of LEGACY_PARAMS) newUrl.searchParams.delete(p);
+  if (/^#(z|q)=/.test(newUrl.hash)) newUrl.hash = '';
   window.history.replaceState({}, document.title, newUrl.toString());
   return true;
+}
+
+/** A 3×3 tensor of finite numbers (a stored stress, model/Stress.js). */
+function isStressTensor(t) {
+  return Array.isArray(t) && t.length === 3
+    && t.every((row) => Array.isArray(row) && row.length === 3 && row.every((v) => Number.isFinite(v)));
+}
+
+/**
+ * A saved frame's energy, stress and source onto its rebuilt structure
+ * (.crysviz sessions; older ones and links carry none, which leaves the
+ * structure without them as before).
+ * @param {any} frame the saved frame
+ * @param {import('../model/Structure.js').Structure} structure
+ * @param {unknown} [fallbackSource] the session's file-wide source
+ */
+function applyFrameScalars(frame, structure, fallbackSource = null) {
+  structure.energy = Number.isFinite(frame?.energy) ? frame.energy : null;
+  structure.stress = isStressTensor(frame?.stress) ? new Stress({ tensor: frame.stress.map((r) => [...r]) }) : null;
+  structure.dataSource = cleanDataSource(frame?.dataSource) ?? cleanDataSource(fallbackSource);
 }
 
 /**
@@ -1230,6 +1650,20 @@ export async function loadSharedStructure() {
  * @returns {boolean} whether the state was applied
  */
 export function applySharedState(state, fileName = 'shared.vasp') {
+  // Polyhedra wait for the restored atom order and styles (one compute, not
+  // two: render/PolyhedraModule.js holdPolyhedra). On a failed restore any
+  // held request still runs, so the view is not left with stale polyhedra.
+  holdPolyhedra();
+  let applied = false;
+  try {
+    applied = applySharedStateHeld(state, fileName);
+    return applied;
+  } finally {
+    if (releasePolyhedra() && !applied) updatePolyhedra();
+  }
+}
+
+function applySharedStateHeld(state, fileName) {
   if (!state?.version?.startsWith('2')) {
     console.warn('State version not supported:', state?.version);
     return false;
@@ -1254,6 +1688,9 @@ export function applySharedState(state, fileName = 'shared.vasp') {
     return false;
   }
   let trajectoryContainer = null;
+  // Whether the viewed frame's atoms are back in the saved order (the CIF
+  // errors below are aligned with it).
+  let viewedOrdered = false;
 
   // Load structure (synchronous — triggers updateVisualization internally)
   try {
@@ -1261,9 +1698,12 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       // Rebuild each frame's Structure, restoring its native atom order (buildPOSCAR
       // groups by element) so per-atom indices stay stable across the trajectory,
       // then re-attach that frame's force/spin arrows (index-aligned to atoms).
-      const structures = frames.map((f) => {
+      const structures = frames.map((f, i) => {
         const s = readPOSCAR(buildPOSCAR({ structure: f }), fileName);
-        restoreAtomOrder(f, s);
+        applySiteSpecies(f, s);
+        applyFrameScalars(f, s);
+        const ordered = restoreAtomOrder(f, s);
+        if (i === selectedFrameIndex) viewedOrdered = ordered;
         applyArrows(f, s);
         return s;
       });
@@ -1272,6 +1712,7 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       trajectoryContainer = structures.length > 1
         ? TrajectoryContainer.fromStructures(fileName, structures)
         : new StructureContainer({ fileName, structures });
+      trajectoryContainer.dataSource = cleanDataSource(state.dataSource);
       // Optional per-frame cell-kind labels (altermagnets DB precomputes
       // loaded/conventional/primitive as frames). Order-aligned with `frames`;
       // stashed for widget mode to read. Ignored everywhere else. Validate
@@ -1287,7 +1728,15 @@ export function applySharedState(state, fileName = 'shared.vasp') {
       // updateForces/updateSpins in updateStructureFromFrame).
       showTrajectoryFrame(selectedFrameIndex, trajectoryContainer);
     } else {
-      parsePOSCAR(buildPOSCAR({ structure: viewed }), fileName, { restoreStoredPrefs: false });
+      // The occupancies go on before the first render, so the composition,
+      // the wedges and the disorder warnings see the mixed sites from the start.
+      const s = readPOSCAR(buildPOSCAR({ structure: viewed }), fileName);
+      applySiteSpecies(viewed, s);
+      // Energy, stress and source before the first render (the Parameters
+      // section shows them); the session's file-wide source goes on the
+      // structure here, as there is no trajectory to hold it.
+      applyFrameScalars(viewed, s, state.dataSource);
+      initializeWithPOSCAR(s, fileName, { restoreStoredPrefs: false });
     }
   } catch (e) {
     console.error('Failed to load structure from state:', e);
@@ -1300,15 +1749,30 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   if (Array.isArray(state.display?.focusRegions)) {
     structure.focusRegions = JSON.parse(JSON.stringify(state.display.focusRegions));
   }
+  if (Array.isArray(state.display?.selectionGroups)) {
+    structure.selectionGroups = state.display.selectionGroups
+      .filter((g) => g && typeof g === 'object' && Array.isArray(g.atoms))
+      .map((g) => ({
+        name: String(g.name ?? 'Selection').slice(0, 60),
+        tab: ['atoms', 'bonds', 'polyhedra'].includes(g.tab) ? g.tab : 'atoms',
+        atoms: g.atoms.filter((a) => Array.isArray(a) && Number.isInteger(a[0]) && Number.isInteger(a[1])).map((a) => [a[0], a[1]]),
+        bonds: Array.isArray(g.bonds) ? g.bonds.filter((k) => typeof k === 'string') : [],
+        polyhedra: Array.isArray(g.polyhedra) ? g.polyhedra.filter((k) => typeof k === 'string') : [],
+      }));
+  }
 
   // Single-frame: buildPOSCAR() groups atoms by element, so restore the saved
   // atom ordering before applying any per-atom state that relies on stable
   // indices, then re-attach the arrows. (Multi-frame frames were already
   // restored above.)
   if (!multiFrame) {
-    restoreAtomOrder(viewed, structure);
+    viewedOrdered = restoreAtomOrder(viewed, structure);
     applyArrows(viewed, structure);
   }
+
+  // The errors read from a CIF, back on their atoms before the measurements
+  // below are rebuilt (their labels carry them).
+  if (state.cifErrors && viewedOrdered) restoreCifErrors(structure, state.cifErrors);
 
   revealFeaturePanels();
   // A share-URL boot restores through here instead of loadStructure(), so the
@@ -1330,6 +1794,12 @@ export function applySharedState(state, fileName = 'shared.vasp') {
   // (that sets structure.fieldMaterial, consumed per-primitive by the tracer
   // SceneEncoder), so the two compose on the next trace.
   if (state.fields) restoreFields(state.fields, structure);
+
+  // Crystal planes (.crysviz sessions), after the fields (a plane shows a field
+  // by its label; one whose field comes later binds to it then: PlanesPanel.js
+  // resolvePendingPlaneFields). Links and older files have none.
+  const planes = sanitizePlanes(state.display?.planes);
+  if (planes?.length) restoreStructurePrefField('planes', getContainerForStructure(structure), planes, structure);
 
   // Rebuild bonds to reflect any bondLength / bondVisibility changes
   rebuildBonds();
@@ -1354,12 +1824,13 @@ export function applySharedState(state, fileName = 'shared.vasp') {
     else removeSpins();
   }
 
-  // parsePOSCAR's updateVisualization kicked off the (async) polyhedra compute
-  // BEFORE restoreAtomOrder and the style-store restore above; re-run it so
-  // keys derive from the corrected atom order and restored styles render.
-  // (updatePolyhedra coalesces with any in-flight compute.)
+  revealWindowsForSharedData(structure);
+
+  // Polyhedra, once: requests made while the structure was being built were
+  // held (applySharedState) until the atom order and styles above are restored.
   const restorationTasks = [restoreCamera(state.camera), restoreMeasurements(state.measurements)];
-  if (general.showPolyhedra || general.completePolyhedra) restorationTasks.push(updatePolyhedra());
+  const heldPolyhedra = releasePolyhedra();
+  if (heldPolyhedra || general.showPolyhedra || general.completePolyhedra) restorationTasks.push(updatePolyhedra());
   lastRestorePromise = Promise.all(restorationTasks).then(() => undefined);
   // Legacy synchronous callers still receive the boolean below; the async
   // loaders await this same promise. Mark the rejection handled here so a
@@ -1406,10 +1877,12 @@ export async function loadCrysvizFile(content, fileName = 'file.crysviz') {
   if (state?.format !== 'crysviz') {
     throw new Error(`${fileName} is not a CrysViz state file.`);
   }
-  if (!applySharedState(state, fileName)) {
-    throw new Error(`Could not apply the state in ${fileName} (unsupported version?).`);
+  try {
+    await applySharedStateWithProgress(state, fileName,
+      `Could not apply the state in ${fileName} (unsupported version?).`);
+  } finally {
+    finishLoadProgress();
   }
-  await waitForStateRestoration();
   const container = structureShip.container.length > initialContainerCount
     ? structureShip.container.at(-1)
     : null;
@@ -1462,7 +1935,7 @@ export function createShareButton() {
   // so a failure surfaces in the console rather than as an unhandled rejection.
   shareBtn.onclick = () => { shareStructure().catch(e => console.error('Share failed:', e)); };
 
-  // The Share button joins the Upload / Paste Text / Download action row in
+  // The Share button joins the Open / Paste Text / Download action row in
   // the Files window (#uploadSection exists from startup, so this works even
   // before the panel windows are built).
   const container =

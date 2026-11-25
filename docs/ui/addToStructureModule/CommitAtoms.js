@@ -14,6 +14,9 @@ import { generateID } from '../../utils/index.js';
 import { recenterCamera } from '../WindowAndSceneControls.js';
 import { mergeCoLocatedAtoms, sameSite, SITE_TOLERANCE } from '../../io/cif/site_grouping.js';
 import { getElementDefaultColor } from '../../defaults/color_texture_defaults.js';
+import { createBondLengthControls } from '../BondLengthPanel.js';
+import { updateVisualization } from '../../core/crystal-viewer.js';
+import { clearHighlightAtom, clearSelectedAtoms } from '../SelectAndHighlightModule.js';
 
 // Parse a "#rrggbb" string to a numeric color, or undefined (=> element default).
 export function parseColorHexToInt(hex) {
@@ -58,25 +61,161 @@ export function addAtomsToExistingStructure(structure, atomsToAdd) {
   structure._hasFractionalOccupancy = undefined;
 }
 
-// Undo one addAtomsToExistingStructure() addition, looked up by the uuid
-// recorded in structure._sessionAddedAtoms. Returns false (no-op) if that
-// uuid isn't a real atom right now — e.g. it was already removed, or merged
-// into a sibling site by mergeCoLocatedAtoms and no longer has its own
-// entry — so the caller can skip its re-render.
-export function removeSessionAddedAtom(structure, uuid) {
-  const index = structure.atoms.findIndex((a) => a.uuid === uuid);
-  if (index === -1) return false;
-  structure.atoms.splice(index, 1);
-  structure.elements.splice(index, 1);
+// Add atoms to the loaded structure and show them: the commit behind Add Atom,
+// Add Vacuum and the host's add_atoms command.
+export function commitAddedAtoms(structure, atoms) {
+  addAtomsToExistingStructure(structure, atoms);
+  createBondLengthControls();
+  // reRenderComposition: "open" — the Structure Info panel otherwise
+  // doesn't rebuild its composition/atom list at all (its default is
+  // false), so newly-added atoms/elements wouldn't show up there until
+  // some unrelated action happened to trigger a rebuild.
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: "open" });
+}
+
+/**
+ * Apply one round of atom-table edits (applyStructureEdits) and show them:
+ * the Modify Structure editor's live apply and the host's set_element,
+ * move_atoms and set_lattice.
+ * `afterApply(change)` runs after the arrays change, `afterRender(change)`
+ * after the re-render and before "crysviz:atoms-changed" is announced.
+ * @param {any} structure
+ * @param {{atoms: Array<any>, lattice?: number[][]}} edits
+ * @param {{afterApply?: (change: any) => void, afterRender?: (change: any) => void}} [hooks]
+ */
+export function commitStructureEdits(structure, edits, { afterApply, afterRender } = {}) {
+  // An add or remove renumbers atom indices, so a kept selection would point
+  // at the wrong (or a now-missing) atom. Drop it BEFORE the arrays change,
+  // while the selection's indices still match the live mesh - clearing it
+  // afterwards would index past the shrunk array inside updateAtoms. A pure
+  // coordinate/colour edit leaves the set intact and keeps the selection.
+  const tableUuids = new Set(edits.atoms.map((a) => a.uuid));
+  const setChanges = tableUuids.size !== structure.atoms.length
+    || structure.atoms.some((a) => !tableUuids.has(a.uuid));
+  if (setChanges) clearSelectedAtoms();
+
+  const uniqueBefore = structure.uniqueElements.join(',');
+  const change = applyStructureEdits(structure, edits);
+  afterApply?.(change);
+
+  // Bond controls only need rebuilding when the element set actually changed.
+  if (structure.uniqueElements.join(',') !== uniqueBefore) createBondLengthControls();
+
+  // Re-render only what this edit can have touched. Atoms always (an
+  // occupancy edit re-slices the wedges) and the composition always (the
+  // formula); bonds, polyhedra, measurements and the cell only when the
+  // geometry, the representative elements or the colours actually changed —
+  // a pure occupancy edit on a large structure was paying for all of them.
+  const geometry = Boolean(change.added || change.removed || change.reordered
+    || change.positionsChanged || change.latticeChanged);
+  const appearance = change.elementsChanged || change.colorsChanged;
+  updateVisualization({
+    reRenderAtoms: true,
+    reRenderBonds: geometry || appearance,
+    reRenderLattice: geometry,
+    reRenderOther: geometry,
+    reRenderPolyhedra: geometry || appearance,
+    reRenderComposition: 'open',
+  });
+  afterRender?.(change);
+  // An element/count/occupancy edit changes the composition — announce it the
+  // same way a coordinate edit does (applyAtomCoordinates), so panels that
+  // aren't part of the composition rebuild (e.g. Order Structure's size
+  // options) can react instead of showing stale numbers.
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+  return change;
+}
+
+/**
+ * The editor's own rows (structureToTableAtoms(structure)) with each site's
+ * exact position, or `positions[i]` for atom i when given, and its exact
+ * occupancies in place of the table's rounded ones: what a host edit commits.
+ * @param {any} structure
+ * @param {Array<any>} rows
+ * @param {number[][]} [positions] fractional, one per atom
+ */
+function exactRows(structure, rows, positions) {
+  const indexOf = new Map(structure.atoms.map((atom, i) => [atom.uuid, i]));
+  return rows.map((row) => {
+    const base = typeof row.uuid === 'string' ? row.uuid.split('#')[0] : row.uuid;
+    const i = indexOf.get(base);
+    const atom = structure.atoms[i];
+    const k = row.uuid === base ? 0 : Number(String(row.uuid).split('#')[1]);
+    const [x, y, z] = positions?.[i] ?? atom.position;
+    return { ...row, x, y, z, occupancy: atom.species?.[k]?.occupancy ?? row.occupancy };
+  });
+}
+
+/**
+ * Change these atoms' element in place: same index, position and uuid, as an
+ * element edit in the structure editor does. A custom colour is kept; an atom
+ * still at its element's default colour takes the new element's default.
+ * Ordered sites only. `rows` is structureToTableAtoms(structure) (the editor's
+ * own rows).
+ * @param {any} structure
+ * @param {number[]} indices
+ * @param {string} element
+ * @param {Array<any>} rows
+ */
+export function setAtomElements(structure, indices, element, rows) {
+  const targets = new Set(indices.map((i) => structure.atoms[i].uuid));
+  const edited = exactRows(structure, rows).map((row) => {
+    if (!targets.has(String(row.uuid).split('#')[0])) return row;
+    return { ...row, element, ...(row.autoColor ? { color: undefined } : {}) };
+  });
+  return commitStructureEdits(structure, { atoms: edited });
+}
+
+/**
+ * Move atoms and/or set the cell, as a coordinate or lattice edit in the
+ * structure editor does: the host's move_atoms and set_lattice. `positions`
+ * (fractional, one per atom) replaces every atom's position; a `lattice`
+ * keeps the fractional positions. `rows` is structureToTableAtoms(structure).
+ * @param {any} structure
+ * @param {Array<any>} rows
+ * @param {{positions?: number[][], lattice?: number[][]}} edit
+ */
+export function setAtomGeometry(structure, rows, { positions, lattice }) {
+  return commitStructureEdits(structure, { atoms: exactRows(structure, rows, positions), lattice });
+}
+
+// Remove the atoms with these uuids from `structure` (no re-render; see
+// commitRemovedAtoms). Returns how many were removed: 0 when none of them is a
+// real atom right now — e.g. already removed, or merged into a sibling site by
+// mergeCoLocatedAtoms — so the caller can skip its re-render.
+export function removeAtomsByUuid(structure, uuids) {
+  const gone = new Set(uuids);
+  const keep = structure.atoms.map((a) => !gone.has(a.uuid));
+  const removed = keep.filter((k) => !k).length;
+  if (!removed) return 0;
+  structure.atoms = structure.atoms.filter((_, i) => keep[i]);
+  structure.elements = structure.elements.filter((_, i) => keep[i]);
   structure.uniqueElements = [...new Set(structure.elements)];
   structure._hasFractionalOccupancy = undefined;
   if (structure._sessionAddedAtoms) {
-    structure._sessionAddedAtoms = structure._sessionAddedAtoms.filter((e) => e.uuid !== uuid);
+    structure._sessionAddedAtoms = structure._sessionAddedAtoms.filter((e) => !gone.has(e.uuid));
   }
   // Same reasoning as applyStructureEdits below: a Wyckoff lock's
   // orbitGroups store raw atom indices, meaningless once an atom is removed.
   if (structure.symmetry?.mode === 'wyckoff') structure.symmetry = null;
-  return true;
+  return removed;
+}
+
+// Remove atoms and show the result: the Add Atom window's per-atom undo and the
+// host's remove_atoms. The highlight and selection go first: both index the
+// current mesh, and clearing them after the arrays shrink reads past them.
+export function commitRemovedAtoms(structure, uuids) {
+  clearHighlightAtom();
+  clearSelectedAtoms();
+  const removed = removeAtomsByUuid(structure, uuids);
+  if (!removed) return 0;
+  createBondLengthControls();
+  // As the structure editor re-renders a removal (StructureEditorPanel liveApply).
+  updateVisualization({
+    reRenderAtoms: true, reRenderBonds: true, reRenderOther: true, reRenderPolyhedra: true, reRenderComposition: 'open',
+  });
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+  return removed;
 }
 
 // Apply one round of edits from the Modify Structure panel's atom table.
@@ -91,13 +230,22 @@ export function removeSessionAddedAtom(structure, uuid) {
 //
 // Caller re-renders (createBondLengthControls() + updateVisualization({
 // reRenderAtoms:true, reRenderBonds:true, reRenderComposition:"open" })).
-// Returns { added, removed } counts.
+// Returns { added, removed } counts plus what kind of change this was, so the
+// live editor can skip re-rendering what an edit cannot have touched (an
+// occupancy edit moves nothing, so bonds, measurements and the cell stay):
+//   reordered        - same atoms, different order (index-keyed state moves)
+//   positionsChanged - some kept atom moved
+//   latticeChanged   - the cell changed
+//   elementsChanged  - structure.elements (each site's representative) changed
+//   colorsChanged    - some atom's or species' colour changed
 /**
  * @param {any} structure
  * @param {{atoms: Array<{uuid: string|null, element: string, x: number, y: number, z: number, occupancy?: number, color?: string}>, lattice?: number[][]}} edits
  */
 export function applyStructureEdits(structure, { atoms, lattice }) {
   const byUuid = new Map(structure.atoms.map((atom) => [atom.uuid, atom]));
+  let positionsChanged = false;
+  let colorsChanged = false;
 
   // The table carries one row per SPECIES, so several rows can describe one
   // site (a half-Na/half-K site is two rows sharing a position). Rows of a site
@@ -124,17 +272,40 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
   // would have been, and must become one site rather than a coincident
   // atom-plus-implicit-vacancy pair. Mirrors mergeCoLocatedAtoms's rule for
   // the Add Atom panel: merge only while it would not over-fill the site.
+  //
+  // Clusters are bucketed on a periodic SITE_TOLERANCE grid so each row only
+  // looks at clusters in the neighbouring buckets — a plain scan over every
+  // cluster made each keystroke O(N²). Same rule as that scan: the earliest
+  // cluster that is the same site and has room wins.
   const clusters = [];
+  const binsPerAxis = Math.max(1, Math.floor(1 / SITE_TOLERANCE));
+  const binOf = (v) => {
+    const w = v - Math.floor(v);
+    return Math.min(binsPerAxis - 1, Math.floor(w * binsPerAxis));
+  };
+  const wrapBin = (b) => ((b % binsPerAxis) + binsPerAxis) % binsPerAxis;
+  /** @type {Map<string, number[]>} */
+  const buckets = new Map();
   for (const group of uuidGroups) {
     const first = group.entries[0];
     const pos = [first.x, first.y, first.z];
     const occ = group.entries.reduce((sum, e) => sum + (e.occupancy ?? 1), 0);
-    const host = clusters.find((c) =>
-      sameSite(c.position, pos, SITE_TOLERANCE) && (c.occupancy + occ) <= 1 + 1e-3);
-    if (host) {
-      host.occupancy += occ;
-      host.groups.push(group);
+    const [bx, by, bz] = pos.map(binOf);
+    let hostIndex = -1;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      for (const index of buckets.get(`${wrapBin(bx + dx)},${wrapBin(by + dy)},${wrapBin(bz + dz)}`) ?? []) {
+        if (hostIndex !== -1 && index >= hostIndex) continue;
+        const c = clusters[index];
+        if (sameSite(c.position, pos, SITE_TOLERANCE) && (c.occupancy + occ) <= 1 + 1e-3) hostIndex = index;
+      }
+    }
+    if (hostIndex !== -1) {
+      clusters[hostIndex].occupancy += occ;
+      clusters[hostIndex].groups.push(group);
     } else {
+      const key = `${bx},${by},${bz}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(clusters.length);
       clusters.push({ position: pos, occupancy: occ, groups: [group] });
     }
   }
@@ -172,33 +343,46 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
       return { element: e.element, occupancy: e.occupancy ?? 1, oxidationState, color };
     });
 
-    // Colour and charge deliberately excluded here: a colour/charge-only
-    // change must still reuse the existing atom (below) rather than
+    // Occupancy, colour and charge deliberately excluded here: an edit to
+    // any of them must still reuse the existing atom (below) rather than
     // reconstruct a new one, so opacity/radius/immunity survive it the same
-    // as any other edit.
+    // as any other edit — and so an occupancy edit stays cheap.
     const sameSpeciesShape = existing
       && existing.species.length === species.length
-      && existing.species.every((s, i) =>
-        s.element === species[i].element
-        && Math.abs(s.occupancy - species[i].occupancy) < 1e-6);
+      && existing.species.every((s, i) => s.element === species[i].element);
 
     let atom;
     if (existing && sameSpeciesShape) {
       atom = existing;
-      // Species identity/occupancy are already right; sync just the colour
-      // and charge, since this branch never gets `species` (the freshly
-      // resolved copy) applied any other way.
+      // Ordered <-> disordered changes which colour bonds and polyhedra use
+      // (Atom.getRepresentativeColor), so it counts as a colour change.
+      const wasDisordered = atom.isDisordered();
+      // Species identity is already right; sync occupancy, colour and charge,
+      // since this branch never gets `species` (the freshly resolved copy)
+      // applied any other way.
       species.forEach((sp, i) => {
+        if (atom.species[i].color !== sp.color) colorsChanged = true;
+        atom.species[i].occupancy = sp.occupancy;
         atom.species[i].color = sp.color;
         atom.species[i].oxidationState = sp.oxidationState;
       });
+      if (atom.isDisordered() !== wasDisordered) colorsChanged = true;
     } else if (existing) {
+      // A different element (or a species added/removed): the colour
+      // defaults belong to the new element, so the atom is rebuilt — but the
+      // per-atom styling that has nothing to do with the element carries over.
       atom = new Atom({
         position: existing.position,
         element: species[0].element,
         species,
         uuid: existing.uuid,
+        opacity: existing.opacity,
+        elementOpacity: existing.elementOpacity,
+        radiusScale: existing.radiusScale,
+        cutPlaneImmune: existing.cutPlaneImmune,
       });
+      atom.hidden = existing.hidden;
+      colorsChanged = true;
     } else {
       atom = new Atom({
         position: [first.x, first.y, first.z],
@@ -213,6 +397,7 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
       });
     }
 
+    if (existing && existing.position.some((v, i) => v !== [first.x, first.y, first.z][i])) positionsChanged = true;
     atom.position = [first.x, first.y, first.z];
     // Only write the colour when the user actually picked a different one,
     // and only for an ORDERED site (one species, no ambiguity about which
@@ -230,6 +415,7 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
     if (species.length === 1 && first.color && first.color.toLowerCase() !== colorToHex(atom.getColor()).toLowerCase()) {
       atom.userColor = first.color;
       atom.setColor(first.color);
+      colorsChanged = true;
     }
 
     // Every uuid this cluster consumed is accounted for, even one merged into
@@ -247,6 +433,14 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
   // site is a modification, not an addition.
   const added = clusters.filter((c) => !c.groups.some((g) => g.base && byUuid.has(g.base))).length;
 
+  const previousAtoms = structure.atoms;
+  const reordered = !added && !removed
+    && nextAtoms.some((atom, i) => atom.uuid !== previousAtoms[i]?.uuid);
+  const elementsChanged = nextElements.length !== structure.elements.length
+    || nextElements.some((element, i) => element !== structure.elements[i]);
+  const latticeChanged = Boolean(lattice)
+    && lattice.some((row, i) => row.some((v, j) => v !== structure.lattice?.[i]?.[j]));
+
   structure.atoms = nextAtoms;
   structure.elements = nextElements;
   structure.uniqueElements = [...new Set(structure.elements)];
@@ -259,7 +453,7 @@ export function applyStructureEdits(structure, { atoms, lattice }) {
   // letting the composition panel index past the end of structure.atoms.
   if ((added || removed) && structure.symmetry?.mode === 'wyckoff') structure.symmetry = null;
 
-  return { added, removed };
+  return { added, removed, reordered, positionsChanged, latticeChanged, elementsChanged, colorsChanged };
 }
 
 // Restore a structure to its as-loaded state (Structure.original, the frozen
@@ -285,6 +479,24 @@ export function revertStructureToOriginal(structure) {
   structure.lattice = orig.lattice.map((row) => [...row]);
   // Atom-index-based locks are meaningless against the rebuilt array.
   if (structure.symmetry) structure.symmetry = null;
+}
+
+// Revert to the as-loaded structure and show it: the Modify Structure window's
+// "Revert Changes" (after its confirm) and the host's revert_structure. The
+// selection and highlight go first, while they still match the live mesh: the
+// revert rebuilds structure.atoms, and updateVisualization re-sizes the mesh
+// only afterwards. Returns false when the structure has no as-loaded snapshot.
+export function commitRevertToOriginal(structure) {
+  if (!structure?.original) return false;
+  clearSelectedAtoms();
+  clearHighlightAtom();
+  revertStructureToOriginal(structure);
+  delete structure._modify;        // held indices into the old array
+  delete structure._wyckoffModify;
+  createBondLengthControls();
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true, reRenderOther: true, reRenderComposition: 'open' });
+  document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+  return true;
 }
 
 // Restore only the cell to its as-loaded value - the lattice section's own

@@ -2,10 +2,10 @@ import { Structure } from "../model/index.js";
 import { Atom } from "../model/index.js";
 import { Force } from "../model/index.js";
 import { Spin } from "../model/index.js";
-import { Stress } from "../model/index.js";
+import { Stress, KBAR_TO_EV_PER_A3 } from "../model/index.js";
 import { StructureContainer, TrajectoryContainer } from "../model/index.js";
 import { cartToFractional } from "../math/index.js";
-import { generateID } from '../utils/index.js'
+import { generateID, releaseIDs } from '../utils/index.js'
 
 const BOHR_TO_ANG = 0.52917721092;
 const RY_TO_EV = 13.605693;
@@ -185,9 +185,15 @@ export function parsePWSCFout(content, fileName) {
   // Multi-frame relax/vc-relax outputs become store-backed trajectories
   // (physics packed per frame, one live Structure for rendering); single
   // frames stay eager.
-  return structures.length > 1
-    ? TrajectoryContainer.fromStructures(fileName, structures)
-    : new StructureContainer({ fileName, structures });
+  if (structures.length > 1) {
+    const container = TrajectoryContainer.fromStructures(fileName, structures);
+    // The store keeps the packed physics and mints its own unregistered atom
+    // ids (model/materializeFrame.js); the parsed frames are dropped, so their
+    // registered ids go back too instead of growing usedIDs by atoms x frames.
+    for (const s of structures) releaseIDs(s.atoms);
+    return container;
+  }
+  return new StructureContainer({ fileName, structures });
 }
 
 // "crystal axes: (cart. coord. in units of alat)" followed by a(1)..a(3).
@@ -304,14 +310,16 @@ function readForces(lines, idx, n) {
 }
 
 // The "total stress" header line is followed by three rows holding the tensor
-// twice: Ry/bohr**3 in columns 1-3, kbar in columns 4-6.
+// twice: Ry/bohr**3 in columns 1-3, kbar in columns 4-6. QE prints it
+// compression-positive (its P= is the plain trace/3) — the app's own sign — so
+// only the unit changes: kbar -> eV/Å³ (model/Stress.js).
 function readStress(lines, idx, n) {
   const tensor = [];
   for (let r = 1; r <= 3; r++) {
     if (idx + r >= n) return null;
     const parts = lines[idx + r].trim().split(/\s+/).map(Number);
     if (parts.length < 6 || parts.some(v => !Number.isFinite(v))) return null;
-    tensor.push(parts.slice(3, 6).map(v => v * 0.1)); // kbar -> GPa
+    tensor.push(parts.slice(3, 6).map(v => v * KBAR_TO_EV_PER_A3));
   }
   return tensor;
 }

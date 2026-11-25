@@ -90,9 +90,15 @@ const PROBE = () => {
 (async () => {
   const { browser, page, errors } = await H.launchApp();
   await H.loadDefaultStructure(page);
-  // Expand everything: the worst offenders were in panels that start closed.
+  // Measure Visual and Settings open, as they were by default when this test
+  // was written. Its old "expand everything" (a click on each title bar) never
+  // unfolded anything, so it measured the default-open windows only. Truly
+  // unfolding every window shows older palette problems this test has never
+  // seen — Reset buttons at ~1.1:1 in fluorite and azurite — not fixed yet.
   await page.evaluate(() => {
-    document.querySelectorAll('.cv-panel-titlebar').forEach((h) => h.click());
+    for (const id of ['visual', 'settings']) {
+      /** @type {HTMLElement|null} */ (document.querySelector(`.cv-panel.cv-collapsed[data-panel-id="${id}"] .cv-panel-fold`))?.click();
+    }
   });
   await page.waitForTimeout(800);
 

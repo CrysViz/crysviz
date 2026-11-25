@@ -89,9 +89,9 @@ export function addPhononPlotsPanel(target = 'cvPanelBody-phononPlots') {
         <div id="${BAND_PLOT_ID}" class="split-item-body"></div>
         <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
         <div class="split-item-actions">
-          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="${BAND_PLOT_ID}" title="Toggle light/dark">🌓︎</button>
-          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="${BAND_PLOT_ID}" title="Export PNG">📥</button>
-          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="${BAND_PLOT_ID}" title="Expand">⛶</button>
+          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="${BAND_PLOT_ID}" title="Toggle light/dark"></button>
+          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="${BAND_PLOT_ID}" title="Export PNG"></button>
+          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="${BAND_PLOT_ID}" title="Expand"></button>
         </div>
       </div>
       ${isExperimentalMode() ? `
@@ -101,9 +101,9 @@ export function addPhononPlotsPanel(target = 'cvPanelBody-phononPlots') {
         <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
         <button type="button" class="ph-card-hide" data-split-action="hide-modemap" title="Put this card away (a new scan or Show plots brings it back)">✕</button>
         <div class="split-item-actions">
-          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="${MODEMAP_PLOT_ID}" title="Toggle light/dark">🌓︎</button>
-          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="${MODEMAP_PLOT_ID}" title="Export PNG">📥</button>
-          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="${MODEMAP_PLOT_ID}" title="Expand">⛶</button>
+          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="${MODEMAP_PLOT_ID}" title="Toggle light/dark"></button>
+          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="${MODEMAP_PLOT_ID}" title="Export PNG"></button>
+          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="${MODEMAP_PLOT_ID}" title="Expand"></button>
         </div>
       </div>
       ` : ''}

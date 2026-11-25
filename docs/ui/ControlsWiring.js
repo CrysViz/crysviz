@@ -8,10 +8,12 @@
 
 import { general, groups, fileBrowser } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updatePolyhedra, updateSingleAtomDiameter, updateSingleBondDiameter, updateLattice, getAtomImageStyle, scheduleBondRebuild, rebuildChargeBadges, updateChargeBadges, requestRender } from '../render/index.js';
+import { updatePolyhedra, updateSingleAtomDiameter, applyBondRadius, updateLattice, getAtomImageStyle, scheduleBondRebuild, rebuildChargeBadges, updateChargeBadges, requestRender, updateAsuAtomHighlight } from '../render/index.js';
 import { bondKey } from '../render/BondsFracUpdateModule.js';
 import { updateMeasurementMarkers } from '../render/MeasurementModule.js';
 import { updateAxesGizmoWidth } from './WindowAndSceneControls.js';
+import { runHeavyRebuild } from './HeavyRebuild.js';
+import { scheduleAtomSizeSave, scheduleBondRadiusSave } from './SizePrefs.js';
 
 // ---- size-slider mapping ---------------------------------------------------
 // The Atom Size / Bond Diameter sliders are continuous [0,1] positions with a
@@ -25,6 +27,27 @@ export const BOND_RADIUS_RANGE = { min: 0.005, max: 1.0 };
 // analytic disc share these), same quadratic mapping:
 export const GROUND_OFFSET_RANGE = { min: 0, max: 50 }; // structure->plane distance (A)
 export const GROUND_SIZE_RANGE = { min: 0.5, max: 30 }; // disc radius in structure radii
+// Depth of field: the stored aperture is the lens radius SQUARED (the
+// tracers' uApertureSize). The slider is quadratic in the RADIUS (radius =
+// DOF_APERTURE_MAX_RADIUS · pos², stored = radius²): the blur a tenth of an
+// ångström of lens radius gives is already strong at the usual distances, so
+// most of the slider's travel is spent below half an ångström.
+// DOF_DEPTH_RANGE is the hidden sharp slab's range (share restore).
+export const DOF_APERTURE_MAX_RADIUS = 2; // Å, at the slider's top
+export const DOF_DEPTH_RANGE = { min: 0, max: 60 };
+
+/** Slider position [0,1] -> stored aperture (radius²). */
+export function dofSliderToAperture(pos) {
+  const p = Math.min(1, Math.max(0, pos));
+  const radius = DOF_APERTURE_MAX_RADIUS * p * p;
+  return radius * radius;
+}
+
+/** Stored aperture (radius²) -> slider position [0,1] (inverse). */
+export function dofApertureToSlider(value) {
+  const radius = Math.sqrt(Math.max(0, value));
+  return Math.sqrt(Math.min(1, radius / DOF_APERTURE_MAX_RADIUS));
+}
 
 /** Slider position [0,1] -> value (quadratic). */
 export function sizeSliderToValue(pos, range) {
@@ -43,15 +66,19 @@ export function setupControlsWiring() {
   document.getElementById('showAtoms').onchange = (e) => {
     general.showAtoms = e.target.checked;
     if (groups.atomsMesh) groups.atomsMesh.visible = general.showAtoms;
+    updateAsuAtomHighlight();
   };
 
   // Control handlers
   document.getElementById('showBonds').onchange = (e) => {
-    general.showBonds = e.target.checked;
-    updateVisualization({
-      reRenderAtoms: !!general.showPBCBonds,
-      reRenderBonds: true,
-      bondsUpdate: false
+    const on = e.target.checked;
+    runHeavyRebuild(() => {
+      general.showBonds = on;
+      updateVisualization({
+        reRenderAtoms: !!general.showPBCBonds,
+        reRenderBonds: true,
+        bondsUpdate: false
+      });
     });
   };
 
@@ -66,17 +93,23 @@ export function setupControlsWiring() {
 
     // Control handlers
   document.getElementById('showPolyhedra').onchange = (e) => {
-    general.showPolyhedra = e.target.checked;
-    updatePolyhedra();
+    const on = e.target.checked;
+    runHeavyRebuild(() => {
+      general.showPolyhedra = on;
+      updatePolyhedra();
+    });
   };
 
   const completePolyToggle = document.getElementById('completePolyhedraToggle');
   if (completePolyToggle) {
     completePolyToggle.onchange = (e) => {
-      general.completePolyhedra = e.target.checked;
+      const on = e.target.checked;
       // The displayed atom set changes (completing atoms added/removed), so rebuild atoms +
       // bonds; updateVisualization also runs updatePolyhedra, which appends the atoms.
-      updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+      runHeavyRebuild(() => {
+        general.completePolyhedra = on;
+        updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+      });
     };
   }
 
@@ -86,14 +119,15 @@ export function setupControlsWiring() {
   };
 
   // Show / hide the a,b,c cell-vector gizmo (#axesGizmo) and its legend
-  // (#axesLegend) together. Uses inline display so it overrides any theme CSS.
+  // (#axesLegend) together, with the hidden attribute (neither has a display
+  // rule of its own; widget mode hides the legend with !important).
   const applyAxesVisibility = (visible) => {
     const gizmo = document.getElementById('axesGizmo');
     const legend = document.getElementById('axesLegend');
-    if (gizmo) gizmo.style.display = visible ? '' : 'none';
+    if (gizmo) gizmo.hidden = !visible;
     // The legend box stays hidden when labels are integrated onto the arrows
     // instead (general.gizmoLabelsOnArrows, see ui/GizmoDrag.js), even while axes are shown.
-    if (legend) legend.style.display = (visible && !general.gizmoLabelsOnArrows) ? '' : 'none';
+    if (legend) legend.hidden = !(visible && !general.gizmoLabelsOnArrows);
   };
   const showAxesToggle = document.getElementById('showAxes');
   if (showAxesToggle) {
@@ -108,16 +142,37 @@ export function setupControlsWiring() {
   const PBCBondToggle = document.getElementById('PBCBondToggle');
   if (PBCBondToggle) {
       PBCBondToggle.onchange = (e) => {
-      general.showPBCBonds = e.target.checked;
-      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
+      const on = e.target.checked;
+      runHeavyRebuild(() => {
+        general.showPBCBonds = on;
+        updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
+      });
     };
   }
 
   const showPeriodicToggle = document.getElementById('showPeriodic');
   if (showPeriodicToggle) {
     showPeriodicToggle.onchange = (e) => {
-      general.showPeriodic = e.target.checked;
-      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
+      const on = e.target.checked;
+      runHeavyRebuild(() => {
+        general.showPeriodic = on;
+        updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true});
+      });
+    };
+  }
+
+  const completeFragmentsToggle = document.getElementById('completeFragmentsToggle');
+  if (completeFragmentsToggle) {
+    completeFragmentsToggle.onchange = (e) => {
+      general.completeFragments = e.target.checked;
+      // The completing atoms are periodic images, which only exist while
+      // periodic images are shown — turn those on rather than do nothing.
+      if (general.completeFragments && !general.showPeriodic) {
+        general.showPeriodic = true;
+        if (showPeriodicToggle) showPeriodicToggle.checked = true;
+      }
+      // reRenderComposition: the Bonds tab shows the option's settings while it is on.
+      updateVisualization({reRenderAtoms:true, reRenderBonds:true, reRenderPeriodic:true, reRenderComposition:"open"});
     };
   }
 
@@ -136,6 +191,7 @@ export function setupControlsWiring() {
     updateMeasurementMarkers(); // Update ring markers when atom size changes
     // Bond visible lengths bake the atom radii in — refresh once settled.
     scheduleBondRebuild();
+    scheduleAtomSizeSave(); // per-structure pref (ui/SizePrefs.js)
   };
 
 
@@ -151,20 +207,18 @@ export function setupControlsWiring() {
       // Update BOTH the Bond objects and the mesh instances: everything that
       // repaints later (double-click atom expansion, updateBonds, …) re-derives
       // matrices from bond.radius — instance-only updates would be reverted.
-      // Per-bond/per-pair size scales stay respected.
+      // Per-bond/per-pair size scales stay respected. applyBondRadius also
+      // re-clips the bond length, which depends on the radius.
       const structure = fileBrowser.selectedStructure;
       for (const bond of structure?.bonds ?? []) {
         const [e1, e2] = bond.elements;
         const scale = structure.bondUserStyles?.[bondKey(bond.indices)]?.radiusScale
           ?? structure.bondCategoryStyles?.[e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`]?.radiusScale
           ?? 1;
-        bond.radius = general.bondRadius * scale;
-        if (bond.instanceIds && groups.bondsMesh) {
-          updateSingleBondDiameter(bond.instanceIds[0], bond.radius);
-          updateSingleBondDiameter(bond.instanceIds[1], bond.radius);
-        }
+        applyBondRadius(bond, general.bondRadius * scale);
       }
       if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+      scheduleBondRadiusSave(); // per-structure pref (ui/SizePrefs.js)
     };
   }
   // Unit-cell outline line width control (rebuilds the 12 outline cylinders)
@@ -196,6 +250,9 @@ export function setupControlsWiring() {
 
     let checkbox_completePolyhedra = document.getElementById("completePolyhedraToggle");
       if (checkbox_completePolyhedra) checkbox_completePolyhedra.checked = general.completePolyhedra;
+
+    let checkbox_completeFragments = document.getElementById("completeFragmentsToggle");
+      if (checkbox_completeFragments) checkbox_completeFragments.checked = general.completeFragments;
 
  //     let checkbox_showComparisonInfo = document.getElementById("showComparisonInfo");
  //     checkbox_showComparisonInfo.checked = false; // explicitly untick

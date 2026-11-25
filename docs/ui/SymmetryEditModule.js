@@ -3,10 +3,12 @@ import init, { analyze_cell } from '../external/moyo-test/moyo_wasm.js';
 import { fileBrowser, general, structureShip } from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { PT_INVERTED } from './BackendPanel/MoyoWASM.js';
+import { HALL_SYMBOLS } from './BackendPanel/hallSymbols.js';
 import { cartToFrac, fracToCart, invert3x3, transpose3x3, latticeFromCell, latticeParameters } from '../math/index.js';
 import { clearSelectedAtoms } from './SelectAndHighlightModule.js';
 import { Atom } from '../model/index.js';
 import { generateID } from '../utils/index.js';
+import { SYMMETRY_MODE_CHANGED } from './AnalysisPanels/wyckoffSites.js';
 
 let moyoReady = null;
 
@@ -268,8 +270,105 @@ export function describeMoyoFailure(error, tolerance) {
   return `Symmetry analysis failed ${at}: ${raw}`;
 }
 
-function buildWyckoffSymmetryState(structure, dataset, tolerance = defaultSymprec()) {
+// Core lock assembler, shared by the Moyo path (buildWyckoffSymmetryState) and
+// the CIF path (buildCifWyckoffSymmetryState). Both hand it operations already
+// in the row-major convention applyOperation reads, a per-atom orbit id, and
+// per-atom Wyckoff/site-symmetry labels; everything else (orbit grouping,
+// per-orbit freedom, atom->operation mappings) is identical between the two.
+function assembleWyckoffSymmetryState(structure, {
+  operations, orbitIds, wyckoffs, siteSymbols, spaceGroup, number, tolerance, conventionalCellRatio,
+  // Fractional distance within which an operation image counts as landing on
+  // an atom when the atom->operation mappings are built.
+  matchTolerance = 1e-4,
+  // Hall number (index into BackendPanel/hallSymbols.js) when the setting is
+  // known, so the Parameters block can link the space group; null otherwise.
+  hallNumber = null,
+}) {
   const positions = structure.atoms.map((atom) => [...atom.position]);
+  // A lock is built at a tolerance (Å): the structure need only be that close to
+  // symmetric. Atoms are matched to the operations within it, in Å, and each
+  // site's representative is idealised onto its site before its freedom is read.
+  // Matched at a fixed 1e-4 (fractional) instead, a slightly distorted cell got
+  // the wrong site freedom and identity mappings that put a whole orbit on one
+  // point, and the relaxer and MD then pulled it apart.
+  const lattice = structure.lattice;
+  const angstrom = (d) => Math.hypot(
+    d[0] * lattice[0][0] + d[1] * lattice[1][0] + d[2] * lattice[2][0],
+    d[0] * lattice[0][1] + d[1] * lattice[1][1] + d[2] * lattice[2][1],
+    d[0] * lattice[0][2] + d[1] * lattice[1][2] + d[2] * lattice[2][2],
+  );
+  const reach = Math.max(Number(tolerance) || 0, 1e-6);
+  const idealise = (x) => {
+    // The mean of x's images under its own site group: the nearest point the site allows.
+    const deltas = operations.map((op) => fracDelta(applyOperation(x, op), x)).filter((d) => angstrom(d) <= reach);
+    if (!deltas.length) return [...x];
+    const mean = deltas.reduce((acc, d) => add(acc, d), [0, 0, 0]).map((v) => v / deltas.length);
+    return wrapFrac(add(x, mean));
+  };
+  const closestOperation = (from, target) => {
+    let best = 0;
+    let bestDistance = Infinity;
+    operations.forEach((op, i) => {
+      const distance = angstrom(fracDelta(applyOperation(from, op), target));
+      if (distance < bestDistance - 1e-12) { best = i; bestDistance = distance; }
+    });
+    return bestDistance <= Math.max(reach, matchTolerance) ? best : findMatchingOperation(from, target, operations, matchTolerance);
+  };
+
+  const grouped = new Map();
+  orbitIds.forEach((orbitId, atomIndex) => {
+    if (!grouped.has(orbitId)) grouped.set(orbitId, []);
+    grouped.get(orbitId).push(atomIndex);
+  });
+
+  const orbitGroups = Array.from(grouped.entries()).map(([orbitId, atomIndices]) => {
+    const representativeIndex = atomIndices[0];
+    const anchor = idealise(positions[representativeIndex]);
+    const freedom = computeOrbitFreedom(anchor, operations);
+    const mappings = atomIndices.map((atomIndex) => ({
+      atomIndex,
+      operationIndex: closestOperation(anchor, positions[atomIndex]),
+    }));
+    return {
+      orbitId,
+      representativeIndex,
+      atomIndices,
+      element: structure.elements[representativeIndex],
+      wyckoff: wyckoffs[representativeIndex] ?? '?',
+      siteSymmetry: siteSymbols[representativeIndex] ?? '',
+      multiplicity: atomIndices.length,
+      ...freedom,
+      // A point on the representative's site (the idealised representative): the
+      // symmetrizers project onto the site through it, not through where the atom is.
+      anchor,
+      mappings,
+    };
+  });
+
+  return {
+    mode: 'wyckoff',
+    spaceGroup,
+    number,
+    hallNumber,
+    // symprec this lock was built at — orbit moves stay far enough apart to
+    // keep the cell analysable at exactly this tolerance.
+    tolerance,
+    // How many times larger the CONVENTIONAL cell is than the one analysed:
+    // 4 for a primitive face-centred cell, 1 when the input already is the
+    // conventional cell, 1/8 for a 2x2x2 supercell. Tabulated Wyckoff
+    // multiplicities are quoted for the conventional cell, so this is what
+    // relates them to the orbit sizes in `orbitGroups`. Captured here because it
+    // is a property of the lock — dividing by a live structure.atoms.length
+    // would drift the moment an orbit is added or removed.
+    conventionalCellRatio,
+    operations,
+    orbitGroups,
+    representativeAtomIndices: orbitGroups.map((group) => group.representativeIndex),
+  };
+}
+
+function buildWyckoffSymmetryState(structure, dataset, tolerance = defaultSymprec()) {
+  const atomCount = structure.atoms.length;
   // moyo serializes matrices COLUMN-major (nalgebra's memory order), while
   // applyOperation reads `rotation` row-major — so every operation has to be
   // transposed on the way in. Without this only groups whose rotations are
@@ -281,58 +380,225 @@ function buildWyckoffSymmetryState(structure, dataset, tolerance = defaultSympre
     rotation: transpose3(op.rotation),
     translation: [...op.translation],
   }));
-  const orbitIds = dataset.orbits ?? positions.map((_, index) => index);
-  const wyckoffs = dataset.wyckoffs ?? positions.map(() => '?');
-  const siteSymbols = dataset.site_symmetry_symbols ?? positions.map(() => '');
 
-  const grouped = new Map();
-  orbitIds.forEach((orbitId, atomIndex) => {
-    if (!grouped.has(orbitId)) grouped.set(orbitId, []);
-    grouped.get(orbitId).push(atomIndex);
-  });
-
-  const orbitGroups = Array.from(grouped.entries()).map(([orbitId, atomIndices]) => {
-    const representativeIndex = atomIndices[0];
-    const representativePosition = positions[representativeIndex];
-    const freedom = computeOrbitFreedom(representativePosition, operations);
-    const mappings = atomIndices.map((atomIndex) => ({
-      atomIndex,
-      operationIndex: findMatchingOperation(representativePosition, positions[atomIndex], operations),
-    }));
-    return {
-      orbitId,
-      representativeIndex,
-      atomIndices,
-      element: structure.elements[representativeIndex],
-      wyckoff: wyckoffs[representativeIndex] ?? '?',
-      siteSymmetry: siteSymbols[representativeIndex] ?? '',
-      multiplicity: atomIndices.length,
-      ...freedom,
-      mappings,
-    };
-  });
-
-  return {
-    mode: 'wyckoff',
+  return assembleWyckoffSymmetryState(structure, {
+    operations,
+    orbitIds: dataset.orbits ?? Array.from({ length: atomCount }, (_, index) => index),
+    wyckoffs: dataset.wyckoffs ?? Array.from({ length: atomCount }, () => '?'),
+    siteSymbols: dataset.site_symmetry_symbols ?? Array.from({ length: atomCount }, () => ''),
     spaceGroup: dataset.hm_symbol,
     number: dataset.number,
-    // symprec this lock was built at — orbit moves stay far enough apart to
-    // keep the cell analysable at exactly this tolerance.
+    hallNumber: Number.isInteger(dataset.hall_number) ? dataset.hall_number : null,
     tolerance,
-    // How many times larger the CONVENTIONAL cell is than the one analysed:
-    // 4 for a primitive face-centred cell, 1 when the input already is the
-    // conventional cell, 1/8 for a 2x2x2 supercell. Tabulated Wyckoff
-    // multiplicities are quoted for the conventional cell, so this is what
-    // relates them to the orbit sizes in `orbitGroups`. Captured here because it
-    // is a property of the lock — dividing by a live structure.atoms.length
-    // would drift the moment an orbit is added or removed.
     conventionalCellRatio: dataset.std_cell?.numbers?.length
-      ? dataset.std_cell.numbers.length / positions.length
+      ? dataset.std_cell.numbers.length / atomCount
       : 1,
-    operations,
-    orbitGroups,
-    representativeAtomIndices: orbitGroups.map((group) => group.representativeIndex),
+  });
+}
+
+// A CIF stores each space-group operation as fractional x,y,z; io/cif parses
+// them to [R, t] with R a 3x3 of rows and t a length-3 — the same row-major
+// convention applyOperation reads, so (unlike moyo) NO transpose is applied.
+// Entries may be Fraction objects (io/cif keeps exact fractions), so each is
+// coerced to a number here.
+function cifOpValue(value) {
+  return value && typeof value === 'object' && typeof value.toNumber === 'function'
+    ? value.toNumber()
+    : Number(value);
+}
+
+function cifOperationsToRowMajor(symops = []) {
+  return symops
+    .filter((op) => Array.isArray(op) && op.length === 2)
+    .map(([R, t]) => ({
+      rotation: [
+        cifOpValue(R[0][0]), cifOpValue(R[0][1]), cifOpValue(R[0][2]),
+        cifOpValue(R[1][0]), cifOpValue(R[1][1]), cifOpValue(R[1][2]),
+        cifOpValue(R[2][0]), cifOpValue(R[2][1]), cifOpValue(R[2][2]),
+      ],
+      translation: [cifOpValue(t[0]), cifOpValue(t[1]), cifOpValue(t[2])],
+    }));
+}
+
+// Fractional distance for matching a CIF operation image onto a loaded atom.
+// The expanded cell was generated by these very operations, so images coincide
+// to float noise — but CIF coordinates are quoted to a few decimals (0.3333 for
+// 1/3), and a special position can then miss its own image by ~1e-4, so this
+// is looser than the Moyo path's 1e-4 while staying far below any interatomic
+// distance.
+const CIF_MATCH_TOLERANCE = 1e-3;
+
+// Periodic spatial hash over fractional positions, so "which atoms sit within
+// `tolerance` of this point?" costs a 27-cell lookup instead of a scan over
+// every atom — the CIF closure and orbit passes below run once per atom per
+// operation, which for a big cell with 192 operations must not be quadratic.
+// Cells are `tolerance` wide, so a point and any atom within `tolerance` of it
+// share a cell or an adjacent one (wrapping at the cell boundary).
+function buildFracIndex(positions, tolerance) {
+  const cells = Math.max(1, Math.round(1 / tolerance));
+  const keyOf = (position) => {
+    let key = '';
+    for (let axis = 0; axis < 3; axis += 1) {
+      const wrapped = position[axis] - Math.floor(position[axis]);
+      key += `${Math.floor(wrapped * cells) % cells},`;
+    }
+    return key;
   };
+  /** @type {Map<string, number[]>} */
+  const buckets = new Map();
+  positions.forEach((position, index) => {
+    const key = keyOf(position);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(index);
+  });
+  const cellOf = (value) => {
+    const wrapped = value - Math.floor(value);
+    return Math.floor(wrapped * cells) % cells;
+  };
+  /** Indices of atoms within `tolerance` of `position` (periodic). */
+  const near = (position) => {
+    const base = [cellOf(position[0]), cellOf(position[1]), cellOf(position[2])];
+    const found = [];
+    for (let dx = -1; dx <= 1; dx += 1) {
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dz = -1; dz <= 1; dz += 1) {
+          const key = `${(base[0] + dx + cells) % cells},${(base[1] + dy + cells) % cells},${(base[2] + dz + cells) % cells},`;
+          const bucket = buckets.get(key);
+          if (!bucket) continue;
+          for (const index of bucket) {
+            if (fracDistance(position, positions[index]) <= tolerance) found.push(index);
+          }
+        }
+      }
+    }
+    return found;
+  };
+  return { near };
+}
+
+// True when the operations close on the structure: every image of every atom
+// lands on an atom of the same element. This is what makes a CIF's declared
+// operations usable as a lock — an orbit that is not closed under the group
+// would silently map atoms to the identity (findMatchingOperation's fallback)
+// and later collapse them onto their representative when symmetrised.
+function operationsCloseOnStructure(structure, operations, tolerance) {
+  const positions = structure.atoms.map((atom) => atom.position);
+  const elements = structure.elements;
+  const index = buildFracIndex(positions, tolerance);
+  for (let i = 0; i < positions.length; i += 1) {
+    for (const operation of operations) {
+      const mapped = applyOperation(positions[i], operation);
+      if (!index.near(mapped).some((j) => elements[j] === elements[i])) return false;
+    }
+  }
+  return true;
+}
+
+// Group atoms into crystallographic orbits under a set of operations, when no
+// orbit list is supplied (a CIF gives operations, not orbit ids). Every image
+// of an atom under the operations is one orbit; only atoms of the same element
+// can share an orbit (a space-group operation maps like onto like), which also
+// guards against an accidental coincidence between two species.
+function computeOrbitIdsFromOperations(structure, operations, tolerance = CIF_MATCH_TOLERANCE) {
+  const positions = structure.atoms.map((atom) => atom.position);
+  const elements = structure.elements;
+  const count = positions.length;
+  const index = buildFracIndex(positions, tolerance);
+  const orbitOf = new Array(count).fill(-1);
+  let nextId = 0;
+
+  for (let i = 0; i < count; i += 1) {
+    if (orbitOf[i] !== -1) continue;
+    const id = nextId;
+    nextId += 1;
+    orbitOf[i] = id;
+    for (const operation of operations) {
+      const mapped = applyOperation(positions[i], operation);
+      for (const j of index.near(mapped)) {
+        if (orbitOf[j] === -1 && elements[j] === elements[i]) orbitOf[j] = id;
+      }
+    }
+  }
+  return orbitOf;
+}
+
+// Index (1-based, as Moyo's hall_number) of a Hall symbol in the tables, or
+// null when the symbol is missing or not tabulated. Whitespace is collapsed so
+// "-F 4 2 3" and "-F 4 2 3 " compare equal; case is significant in Hall symbols.
+function hallNumberForSymbol(hallSymbol) {
+  if (!hallSymbol) return null;
+  const wanted = String(hallSymbol).trim().replace(/\s+/g, ' ');
+  if (!wanted) return null;
+  const index = HALL_SYMBOLS.findIndex((row) => row[0] === wanted);
+  return index >= 0 ? index + 1 : null;
+}
+
+// Whether a CIF's declared operations can be kept as a lock for this structure:
+// at least one operation beyond the identity, and all of them close on the
+// loaded atoms (see operationsCloseOnStructure). False for P1 / name-only
+// files and for files whose atom list contradicts their own operations.
+export function cifSymmetryIsUsable(structure, cifSymmetry = structure?.cifSymmetry) {
+  const operations = cifOperationsToRowMajor(cifSymmetry?.symops ?? []);
+  if (operations.length < 2) return false;
+  return operationsCloseOnStructure(structure, operations, CIF_MATCH_TOLERANCE);
+}
+
+// Build the Wyckoff lock from the symmetry the CIF itself declared, preserving
+// the file's setting and operation set — used when the CIF's declared space
+// group agrees with the one Moyo detects, so the user's cell is kept exactly as
+// authored rather than re-standardised. Returns null when the CIF carried no
+// usable operations (P1 / name-only files, or operations that do not close on
+// the atoms), so callers can fall back to Moyo.
+//
+// A CIF names its operations but not its Wyckoff letters. When a Moyo
+// `dataset` for the same atoms is supplied AND it found the same space group,
+// its per-atom letters and site symmetries are taken over (they are a property
+// of each site in the standard setting, which is how the tables quote them
+// whatever setting the file uses); otherwise the letters stay '?'.
+export function buildCifWyckoffSymmetryState(structure, cifSymmetry, tolerance = defaultSymprec(), { dataset = null } = {}) {
+  const operations = cifOperationsToRowMajor(cifSymmetry?.symops ?? []);
+  if (operations.length < 2) return null;
+  if (!operationsCloseOnStructure(structure, operations, CIF_MATCH_TOLERANCE)) return null;
+
+  const atomCount = structure.atoms.length;
+  const number = Number.isInteger(cifSymmetry?.number) ? cifSymmetry.number : null;
+  const spaceGroup = cifSymmetry?.hmName
+    ? String(cifSymmetry.hmName).replace(/\s+/g, '')
+    : '';
+  const sameGroup = !!dataset && number != null && dataset.number === number
+    && Array.isArray(dataset.wyckoffs) && dataset.wyckoffs.length === atomCount;
+  const wyckoffs = sameGroup
+    ? dataset.wyckoffs.map((letter) => letter ?? '?')
+    : Array.from({ length: atomCount }, () => '?');
+  const siteSymbols = sameGroup && Array.isArray(dataset.site_symmetry_symbols)
+    ? dataset.site_symmetry_symbols.map((symbol) => symbol ?? '')
+    : Array.from({ length: atomCount }, () => '');
+  // The file's own Hall symbol names its setting exactly; Moyo's Hall number
+  // (its standard setting) is the fallback when the two agree on the group.
+  const hallNumber = hallNumberForSymbol(cifSymmetry?.hall)
+    ?? (sameGroup && Number.isInteger(dataset.hall_number) ? dataset.hall_number : null);
+
+  return assembleWyckoffSymmetryState(structure, {
+    operations,
+    orbitIds: computeOrbitIdsFromOperations(structure, operations),
+    wyckoffs,
+    siteSymbols,
+    spaceGroup,
+    number,
+    hallNumber,
+    tolerance,
+    // The CIF cell is taken as given; the multiplicities shown are the orbit
+    // sizes in that cell (no separate conventional cell to relate them to).
+    conventionalCellRatio: 1,
+    matchTolerance: CIF_MATCH_TOLERANCE,
+  });
+}
+
+// Tells windows that group by Wyckoff site (the Bond Length and Force
+// histograms) that the lock came or went, so they can regroup and enable or
+// disable their "Group by Wyckoff" toggle.
+function announceSymmetryModeChange() {
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent(SYMMETRY_MODE_CHANGED));
 }
 
 export async function activateWyckoffMode(structure = fileBrowser.selectedStructure, tolerance = defaultSymprec()) {
@@ -340,12 +606,28 @@ export async function activateWyckoffMode(structure = fileBrowser.selectedStruct
   const dataset = await analyzeStructureSymmetry(structure, tolerance);
   structure.symmetry = buildWyckoffSymmetryState(structure, dataset, tolerance);
   general.structurePanelMode = 'wyckoff';
+  announceSymmetryModeChange();
   return structure.symmetry;
+}
+
+// Lock the structure into Wyckoff mode using the CIF's OWN declared symmetry,
+// without moving atoms or re-standardising the cell. Falls back to null if the
+// CIF carried no usable operations, so the caller can decide what to do (Moyo,
+// or load plain).
+export function activateWyckoffModeFromCif(structure = fileBrowser.selectedStructure, cifSymmetry = structure?.cifSymmetry, tolerance = defaultSymprec(), { dataset = null } = {}) {
+  if (!structure) throw new Error('No structure selected');
+  const state = buildCifWyckoffSymmetryState(structure, cifSymmetry, tolerance, { dataset });
+  if (!state) return null;
+  structure.symmetry = state;
+  general.structurePanelMode = 'wyckoff';
+  announceSymmetryModeChange();
+  return state;
 }
 
 export function deactivateWyckoffMode(structure = fileBrowser.selectedStructure) {
   if (structure?.symmetry?.mode === 'wyckoff') {
     structure.symmetry = null;
+    announceSymmetryModeChange();
   }
   general.structurePanelMode = 'atoms';
 }
@@ -355,7 +637,8 @@ export function getWyckoffOrbitGroups(structure = fileBrowser.selectedStructure)
 }
 
 function projectRepresentativePosition(orbit, targetRepresentative, structure = fileBrowser.selectedStructure) {
-  const currentRepresentative = structure.atoms[orbit.representativeIndex].position;
+  // Through the site's own point (locks saved before anchors existed: the atom).
+  const currentRepresentative = orbit.anchor ?? structure.atoms[orbit.representativeIndex].position;
   const delta = fracDelta(wrapFrac(targetRepresentative), currentRepresentative);
   const projectedDelta = projectDeltaToBasis(delta, orbit.basis);
   return wrapFrac(add(currentRepresentative, projectedDelta));
@@ -830,7 +1113,7 @@ export function symmetrizeFractionalPositions(fracPositions, structure = fileBro
   const out = fracPositions.map((position) => wrapFrac(position));
   structure.symmetry.orbitGroups.forEach((orbit) => {
     const representative = orbit.isFixed
-      ? [...structure.atoms[orbit.representativeIndex].position]
+      ? [...(orbit.anchor ?? structure.atoms[orbit.representativeIndex].position)]
       : projectRepresentativePosition(orbit, out[orbit.representativeIndex], structure);
 
     orbit.mappings.forEach(({ atomIndex, operationIndex }) => {

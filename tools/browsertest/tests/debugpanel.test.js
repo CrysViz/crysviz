@@ -322,7 +322,7 @@ export default Plotly;
 
   // What the plot factory handed Plotly: per-container memory traces aligned
   // to the shared time axis (NaN before the file existed), the playback plot's
-  // two axes, and the markers as shapes + annotations.
+  // two rows, and the markers as shapes + annotations.
   const plots = await page.evaluate(async () => {
     await new Promise((r) => setTimeout(r, 600)); // let the rAF relayout land
     const mem = document.getElementById('debugMemoryPlot');
@@ -332,7 +332,9 @@ export default Plotly;
     return {
       mem: traces(mem), play: traces(play),
       memShapes: (mem.layout.shapes || []).length, memAnnotations: (mem.layout.annotations || []).map((a) => a.text),
-      memXTitle: mem.layout.xaxis?.title?.text, playYTitles: [mem.layout.yaxis?.title?.text, play.layout.yaxis?.title?.text, play.layout.yaxis2?.title?.text],
+      // Each row of a plot is labelled by an annotation above it (row labels
+      // first, then the markers' labels), not by a y-axis title.
+      memXTitle: mem.layout.xaxis?.title?.text, playYTitles: [mem.layout.annotations?.[0]?.text, play.layout.annotations?.[0]?.text, play.layout.annotations?.[1]?.text],
       extends: mem.__extends || 0, reacts: mem.__reacts || 0,
     };
   });
@@ -342,14 +344,14 @@ export default Plotly;
   H.check('memory plot: one trace per structure plus total, app state and scene buffers', memNames.includes('total (accounted)') && memNames.includes('app state') && memNames.includes('scene buffers') && memNames.includes('oP28-C3N4') && memNames.includes('OUTCAR.play'), JSON.stringify(memNames));
   H.check('memory plot: every trace is 1:1 with the time axis', plots.mem.every((t) => t.n === t.nx && t.n === plots.mem[0].n), JSON.stringify(plots.mem));
   H.check('memory plot: the later-loaded file starts with NaN gaps, then real values', late && late.leadingNaN > 0 && late.lastFinite && first && first.leadingNaN === 0, JSON.stringify({ late, first }));
-  H.check('memory plot: time axis and MB axis titled', plots.memXTitle === 'Time (s)' && plots.playYTitles[0] === 'MB', JSON.stringify([plots.memXTitle, plots.playYTitles]));
+  H.check('memory plot: time axis titled, its row labelled MB', plots.memXTitle === 'Time (s)' && plots.playYTitles[0] === 'MB', JSON.stringify([plots.memXTitle, plots.playYTitles]));
   H.check('memory plot: markers drawn as shapes with labels', plots.memShapes >= 4 && plots.memAnnotations.some((t) => t.startsWith('play')) && plots.memAnnotations.includes('pause'), JSON.stringify(plots.memAnnotations));
   H.check('memory plot: streamed via extendTraces after the first draw', plots.extends > 0, JSON.stringify({ extends: plots.extends, reacts: plots.reacts }));
   const renderPlot = await page.evaluate(() => {
     const div = document.getElementById('debugRendererPlot');
-    return { names: (div.data || []).map((t) => t.name), axes: (div.data || []).map((t) => t.yaxis), y2: div.layout.yaxis2?.title?.text };
+    return { names: (div.data || []).map((t) => t.name), axes: (div.data || []).map((t) => t.yaxis), y2: div.layout.annotations?.[1]?.text };
   });
-  H.check('renderer plot: counts on the left axis, ids on the right', renderPlot.names.includes('GL geometries') && renderPlot.names.includes('ids registered') && renderPlot.axes[renderPlot.names.indexOf('ids registered')] === 'y2' && renderPlot.y2 === 'ids', JSON.stringify(renderPlot));
+  H.check('renderer plot: counts in the first row, ids in the second', renderPlot.names.includes('GL geometries') && renderPlot.names.includes('ids registered') && renderPlot.axes[renderPlot.names.indexOf('ids registered')] === 'y2' && renderPlot.y2 === 'ids', JSON.stringify(renderPlot));
 
   // Clear drops the history and empties the plots; sampling continues.
   const cleared = await page.evaluate(async () => {
@@ -364,7 +366,7 @@ export default Plotly;
   H.check('Clear empties the history and the plots, sampling goes on', cleared.right === 0 && cleared.later >= 1 && cleared.later <= 5 && cleared.running && cleared.maxPts <= 5, JSON.stringify(cleared));
 
   const playByName = Object.fromEntries(plots.play.map((t) => [t.name, t.yaxis]));
-  H.check('playback plot: rates on the left axis, frame index on the right', playByName['shown f/s'] === 'y' && playByName['render f/s'] === 'y' && playByName['frame'] === 'y2' && plots.playYTitles[1] === 'frames / s' && plots.playYTitles[2] === 'frame #', JSON.stringify([playByName, plots.playYTitles]));
+  H.check('playback plot: rates in the first row, frame index in the second', playByName['shown f/s'] === 'y' && playByName['render f/s'] === 'y' && playByName['frame'] === 'y2' && plots.playYTitles[1] === 'frames / s' && plots.playYTitles[2] === 'frame #', JSON.stringify([playByName, plots.playYTitles]));
   H.check('Mark button records a user marker with its label', misc.userMarker === true);
 
   const share = await page.evaluate(async () => {

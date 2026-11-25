@@ -49,3 +49,73 @@ Vertical markers record loads, removals, play/pause, proper frame loads, GC hint
 **Mark** entries. **Clear** drops the recorded history and empties the plots; sampling goes on. **GC hint** calls `gc()` where the browser exposes it (Chromium started with
 `--js-flags=--expose-gc`) and evicts unpinned volumetric-field caches. **CSV** downloads the whole
 recorded history. Sampling keeps running while this window is closed.
+
+## Benchmark tab
+
+Measures how fast in-browser MD runs **on this machine**, with the browser's own GPU for drawing and
+(where the browser has it) WebGPU for PET-MAD. Pick potentials, cells and viewer options and press
+**Run**: each combination loads the default cell (or an n×n×n supercell of it) as an extra row,
+runs a short MD simulation through the MD panel and removes the rows again. PET-MAD models are
+downloaded on first use (`models` can point at a local folder such as `./bench-models/`).
+
+- **Potentials** — NEP89; PET-MAD-XS and -S on the CPU (in their worker), with **WebGPU** (where the
+  browser offers it), and XS on the main thread (what PET-MAD did before it moved to a worker; this
+  one freezes the page while it runs).
+- **PET-MAD CPU threads** — each PET-MAD CPU row runs once per ticked thread count: **auto** (per
+  cell size the fastest of all cores, one and half, as the MD panel does), 1, 2, 4, … up to all
+  cores. More than one thread needs a cross-origin isolated page: the line above the form says
+  whether this page is, and **Enable multi-threading** turns it on. The page reloads, losing loaded
+  structures, runs still going and results not downloaded, so CrysViz asks first; open Debug →
+  Benchmark again afterwards. It is the same switch as "multi-threaded" in the PET-MAD controls.
+- **PET-MAD CPU matrix kernel** — how the CPU multiplies matrices: the **blocked GEMM** (the
+  default) or ggml's **dot products** (what earlier builds did). Tick both for an A/B comparison;
+  they give the same forces to float precision.
+- **PET-MAD WebGPU readback** — how WebGPU results come back: through a **canvas snapshot** (the
+  default, used where the browser returns it exact) or with **mapAsync** (what earlier builds did;
+  Firefox answers it only every ~100 ms). Tick both for an A/B comparison; the CSV column
+  `gpuReadback` says which one actually ran.
+- **PET-MAD WebGPU matrix kernel** — the GPU kernel for the matrix products, most of a WebGPU
+  step: **vec4 tiles** (the default) or the **register tiles** of earlier builds, which Firefox
+  and Safari run several times slower. Tick both for an A/B comparison; the CSV column
+  `gpuMatmul` says which one ran.
+- **Viewer** — a ladder: atoms only, + bonds, + periodic images (boundary images and bonded
+  neighbours across the cell), + a force colour map (which recolours every atom and bond every frame).
+- **Results** — steps per second; per step, the time spent waiting for the potential and updating
+  the 3D view; the longest page freeze; the CPU threads PET-MAD used. The chart plots steps per
+  second against atoms for one viewer option (dot-product and mapAsync runs drawn faded with hollow
+  points).
+  **JSON** downloads everything for `tools/bench/plot_potential_perf.py` (the combined figures),
+  **CSV** the table; both record the thread count asked for and used, and the matrix kernel, and
+  for PET-MAD where one evaluation spends its time: inside the wasm the neighbour list and inputs,
+  graph build, allocation, graph compute (on WebGPU split into encoding + submitting and waiting
+  for the GPU) and reading the results, and outside it the worker round trip.
+- **WebGPU round trip** — where WebGPU works, the line above the form also shows how long one wait
+  for the GPU takes (a tiny copy read back), on the page and in a worker. Every PET-MAD WebGPU step
+  waits once, so this is its floor. The JSON keeps both, with the GPU adapter. After it, **canvas
+  readback** times the same wait through a WebGPU canvas snapshot (2D `drawImage` +
+  `getImageData`, and `VideoFrame.copyTo`) and says whether the bytes came back exact. Snapshots
+  are synchronous, so they may avoid a slow round trip. **Kernel launch** times 512 tiny GPU
+  kernels in one pass, the way PET-MAD's WebGPU build issues its ~560 per step (each with its own
+  bind group), and once reusing a single bind group: microseconds per kernel.
+
+Close other heavy tabs while it runs: PET-MAD on all threads competes with everything else for the
+CPU.
+
+## Tracer tab
+
+Compares the tracers' noise, old and new, on the current view with the active tracer (Visual ▸
+Render: **Ray tracing** or **Path tracing**), rendered in this browser on its GPU. Old: a ray passed a
+surface with opacity below 1 at random, and the ray tracer aimed its soft-shadow rays (**Light
+softness**), glass frost and metal roughness with plain random numbers — grainy at the 64 samples a
+render (and each PNG-export tile) stops at. New: each see-through surface is blended exactly with what
+lies behind it and a shadow ray keeps 1 − opacity of the light (up to four layers; deeper ones, and in
+path tracing those met after a bounce, still pass at random), and those directions come from a
+stratified sequence that covers the light evenly over the samples. Both converge to the same picture.
+
+See-through polyhedra or atoms, the ground plane and a soft light show the difference best; then
+**Render old / new**: both at the chosen number of **samples**, side by side;
+click one for full size (or to save it). With **error against 8× samples**, a reference is rendered
+the new way at eight times the samples, and each image shows its mean difference to it (0–255) over
+the pixels that are not plain background: lower is less noise. Each image also gives its render time: the exact
+way traces every see-through layer per sample, so a sample costs more, but far fewer are needed.
+Keep the view still while it renders.

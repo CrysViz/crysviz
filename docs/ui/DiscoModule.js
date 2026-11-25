@@ -4,7 +4,8 @@ import {groups,fileBrowser} from '../state/store.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { setDiscoWarningVisible } from './DiscoWarningBanner.js';
 import { showDiscoBall, hideDiscoBall } from './DiscoBallModule.js';
-import { updatePolyhedraColors } from '../render/PolyhedraModule.js';
+import { updatePolyhedraColors, paintPolyhedraColors } from '../render/PolyhedraModule.js';
+import { setPolyPaintOverride } from '../render/PolyhedraMesh.js';
 
 
 function getRandomColor() {
@@ -42,21 +43,12 @@ export function updateRandomColors() {
   groups.atomsMesh.instanceColor.needsUpdate = true;
   groups.bondsMesh.instanceColor.needsUpdate = true;
 
-  // Polyhedra faces/edges are plain THREE.Mesh materials, not instanced —
-  // recolor directly (mesh.material.color), same reversible approach as
-  // atoms/bonds: never touches structure.polyhedraUserStyles/
-  // polyhedraCategoryStyles, so stopDisco()'s updatePolyhedraColors() call
-  // restores the correct per-polyhedron style from those untouched models.
-  const polyGroup = groups.polyhedraGroup;
-  if (polyGroup) {
-    for (const mesh of polyGroup.children) {
-      if (mesh.userData?.type !== 'polyhedron' || !mesh.material?.color) continue;
-      const hex = getRandomColor();
-      mesh.material.color.set(hex);
-      const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
-      if (edge?.material) edge.material.color.set(hex);
-    }
-  }
+  // Polyhedra: their faces' and edges' colour ranges in the one polyhedra
+  // mesh are painted directly, same reversible approach as atoms/bonds:
+  // never touches structure.polyhedraUserStyles/polyhedraCategoryStyles, so
+  // stopDisco()'s updatePolyhedraColors() call restores the correct
+  // per-polyhedron style from those untouched models.
+  paintPolyhedraColors(() => getRandomColor());
 }
 
 // Snapshot of every atom's color/userColor from just before disco mode
@@ -74,6 +66,11 @@ export function startDisco() {
   if (!structure) return;
   snapshotStructure = structure;
   colorSnapshot = structure.atoms.map((atom) => ({ color: atom.color, userColor: atom.userColor }));
+  // Polyhedra rebuilt or restyled while disco runs (every playback frame
+  // takes the full path once the atoms carry colours) are repainted by the
+  // style writers through this override, so the paint does not vanish
+  // between ticks (render/PolyhedraMesh.js).
+  setPolyPaintOverride(() => getRandomColor());
   setDiscoWarningVisible(true);
   showDiscoBall();
 }
@@ -81,6 +78,7 @@ export function startDisco() {
 /** Call once when disco mode is exited (Ctrl+D released). Idempotent. */
 export function stopDisco() {
   if (!colorSnapshot) return; // wasn't running
+  setPolyPaintOverride(null);
   setDiscoWarningVisible(false);
   hideDiscoBall();
   // The selected structure may have changed while disco was running (e.g. the
@@ -100,7 +98,7 @@ export function stopDisco() {
     // effect (see General.js's renderComposition(panelState)), which disco
     // mode has no business doing.
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
-    // Polyhedra colors were painted directly onto mesh materials (never
+    // Polyhedra colors were painted directly into the mesh (never
     // touching the model), so restyle in place from the untouched
     // structure.polyhedraUserStyles/polyhedraCategoryStyles + centre-atom
     // colors instead of needing a full polyhedra recompute.

@@ -3,6 +3,7 @@ import { getElementDefaultColor } from '../../../defaults/color_texture_defaults
 import { updateForces, updateSpins, requestRender } from '../../../render/index.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { createMaterialEditor, MATERIAL_TYPES } from './MaterialEditor.js';
+import { saveArrowStyle, scheduleArrowStyleSave } from '../../ArrowStylePrefs.js';
 
 function safeColor(value) {
   if (value?.isColor) return `#${value.getHexString()}`;
@@ -20,7 +21,7 @@ export function createSpinForceCategoryEditor(elements) {
   const categoryElementSet = new Set(categoryElements);
   const editor = document.createElement('div');
   editor.className = 'spin-force-category-editor';
-  editor.style.display = 'none';
+  editor.hidden = true;
 
   let mode = 'spin';
   const switchRow = document.createElement('div');
@@ -61,6 +62,8 @@ export function createSpinForceCategoryEditor(elements) {
         }
       }
       requestRender();
+      // Per-structure persistence (ui/ArrowStylePrefs.js); sliders fire per move.
+      scheduleArrowStyleSave(mode, ['categoryStyles'], structure);
     }, {
       types: MATERIAL_TYPES.filter((type) => type.value !== 'glass'),
     });
@@ -117,6 +120,7 @@ export function createSpinForceCategoryEditor(elements) {
         style.color = hex;
       }
       refreshArrows();
+      scheduleArrowStyleSave(mode, ['categoryStyles'], structure);
     });
     pickerMount.appendChild(picker.element);
   }
@@ -144,6 +148,7 @@ export function createSpinForceCategoryEditor(elements) {
     for (const element of categoryElements) delete structure[storeName]?.[element];
     restoreDefaultArrowColors();
     refreshArrows();
+    saveArrowStyle(mode, ['categoryStyles'], structure);
     mountPicker();
     materialEditor.syncFromStore?.();
   });

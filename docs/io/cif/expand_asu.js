@@ -183,7 +183,8 @@ export function asu_data_to_numbers_by_labels(asu_data) {
  *   apply_op_moment_fn?: Function|null,
  *   spin_basis?: string|null,
  *   basis?: any|null,
- *   mag_grid_dens?: number
+ *   mag_grid_dens?: number,
+ *   with_op_index?: boolean
  * }=} opts
  * @returns {any}
  */
@@ -217,6 +218,12 @@ export function expand_asu(
   const seen_by_pos = new Map(); // keyStr -> true
   const pos_full = [];
   const species_full = [];
+  // Which operation produced each expanded atom (index into `ops`) and from
+  // which seed, returned only when asked for (opts.with_op_index): the
+  // optional CIF errors need them to carry a site's coordinate uncertainties
+  // onto its symmetry copies.
+  const op_full = [];
+  const seed_full = [];
 
   // For mag
   const mom_full = [];
@@ -324,6 +331,7 @@ export function expand_asu(
         seen_by_pos.set(_keyToStr(k), true);
         pos_full.push(g);
         species_full.push(specie);
+        op_full.push(ops_idx);
         continue;
       }
 
@@ -409,6 +417,8 @@ export function expand_asu(
       seen_by_pos_mag.set(_keyToStr(k), [m, mclass]);
       pos_full.push(g);
       species_full.push(specie);
+      op_full.push(ops_idx);
+      seed_full.push(seed_idx);
       mom_full.push(spin_basis !== "collinear" ? [m[0], m[1], m[2]] : m);
       mom_classes.push(mclass);
     }
@@ -430,6 +440,7 @@ export function expand_asu(
   const sp_sorted = order.map((i) => species_full[i]);
 
   if (momentsIn == null) {
+    if (opts.with_op_index) return [pos_sorted, sp_sorted, order.map((i) => op_full[i])];
     return [pos_sorted, sp_sorted];
   }
 
@@ -441,6 +452,10 @@ export function expand_asu(
       .sort((a, b) => a[0] - b[0])
   );
 
+  if (opts.with_op_index) {
+    return [pos_sorted, sp_sorted, mom_sorted, cls_sorted, symops_classes,
+      order.map((i) => op_full[i]), order.map((i) => seed_full[i])];
+  }
   return [pos_sorted, sp_sorted, mom_sorted, cls_sorted, symops_classes];
 }
 
@@ -660,11 +675,11 @@ export async function cif_to_struct(stream, opts = {}) {
   // now knows which site it came from, which is what lets per-site data
   // (species list, occupancy, oxidation state, labels) survive the expansion
   // without a second pass.
-  const [positions_full, site_index_full] = expand_asu(
+  const [positions_full, site_index_full, op_index_full] = expand_asu(
     sites.positions,
     sites.positions.map((_, i) => i),
     asu_data.symops,
-    { grid_dens, tol }
+    { grid_dens, tol, with_op_index: true }
   );
 
   // structure.elements carries one string per atom, so a disordered site is
@@ -704,6 +719,9 @@ export async function cif_to_struct(stream, opts = {}) {
   asu_data.site_index_full = site_index_full;
   asu_data.site_species_full = site_index_full.map((i) => sites.species[i]);
   asu_data.labels_full = site_index_full.map((i) => sites.labels[i]);
+  // The operation that made each expanded atom from its site (the optional
+  // CIF errors, io/cif/cif_errors.js).
+  asu_data.op_index_full = op_index_full;
 
   return asu_data;
 }
@@ -732,6 +750,9 @@ export async function mcif_to_magstruct(stream, opts = {}) {
   const grid_dens = (res != null && res !== 0.0) ? Math.trunc(1.0 / res) : 16384;
 
   let positions_full, numbers_full, moments_full, momclasses, symops_classes, species_full, numbers_to_species;
+  // Which operation and which atom_site row made each expanded atom, for the
+  // optional CIF errors (io/cif/cif_errors.js).
+  let op_index_full, site_index_full;
 
   if (separate_noneq_atoms) {
     const [asu_numbers, nts] = mag_asu_data_to_numbers(mag_asu_data);
@@ -749,10 +770,11 @@ export async function mcif_to_magstruct(stream, opts = {}) {
         apply_op_moment_fn: apply_op_moment,
         spin_basis: mag_asu_data.spin_basis,
         basis: mag_asu_data.basis,
+        with_op_index: true,
       }
     );
 
-    [positions_full, numbers_full, moments_full, momclasses, symops_classes] = out;
+    [positions_full, numbers_full, moments_full, momclasses, symops_classes, op_index_full, site_index_full] = out;
     species_full = numbers_full.map((i) => numbers_to_species[i]);
   } else {
     const out = expand_asu(
@@ -767,10 +789,11 @@ export async function mcif_to_magstruct(stream, opts = {}) {
         apply_op_moment_fn: apply_op_moment,
         spin_basis: mag_asu_data.spin_basis,
         basis: mag_asu_data.basis,
+        with_op_index: true,
       }
     );
 
-    [positions_full, species_full, moments_full, momclasses, symops_classes] = out;
+    [positions_full, species_full, moments_full, momclasses, symops_classes, op_index_full, site_index_full] = out;
     const [nums, nts] = species_to_numbers(species_full);
     numbers_full = nums;
     numbers_to_species = nts;
@@ -787,6 +810,16 @@ export async function mcif_to_magstruct(stream, opts = {}) {
   mag_asu_data.numbers_full = numbers_full;
   mag_asu_data.moments_full = moments_full;
   mag_asu_data.species_full = species_full;
+
+  // The optional CIF errors (io/cif/cif_errors.js): every atom_site row is
+  // its own site here (no co-located-row grouping on this path).
+  mag_asu_data.sites = {
+    positions: mag_asu_data.positions,
+    labels: mag_asu_data.labels,
+    rowToSite: mag_asu_data.positions.map((_, i) => i),
+  };
+  mag_asu_data.site_index_full = site_index_full;
+  mag_asu_data.op_index_full = op_index_full;
 
   return mag_asu_data;
 }

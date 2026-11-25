@@ -10,11 +10,14 @@ import { fitEOS, fitReferencePV } from '../eos/eosFit.js';
 import { plotEV, plotPV, clearPlot, onEOSPointClick } from '../eos/eosPlots.js';
 import { runEOSScan } from '../eos/eosCompute.js';
 import { setRedrawHandler, setPlotVisible, getShowErrorPlots } from './EOSPlotsPanel.js';
-import { openPanel, closePanel } from './panels/PanelManager.js';
+import { openPanel, closePanel, getPanel } from './panels/PanelManager.js';
 import { ensureActiveCalculator, snapshotCurrentStructure } from './BackendPanel/AtomisticPanels.js';
+import { mountPotentialNotice, potentialLabel, potentialSource } from '../atomistic/potentialNotice.js';
 import { createRow, updateRow, selectStructure } from './FileBrowswerPanel.js';
 import { TrajectoryContainer } from '../model/index.js';
 import { fileBrowser, structureShip, general } from '../state/store.js';
+import { JOBS_CHANGED, cancelJob, runningJob, startJob } from '../host/jobs.js';
+import { eosJobResult } from '../host/commands.js';
 
 const state = {
   originalColumnData: null, // {volumes, energies, pressures, columnInfo} verbatim from file
@@ -35,10 +38,17 @@ const state = {
   computedRow: null,
 };
 
-// Compute-from-potential run state. Module-level (not per-panel-build) so a
-// panel rebuild mid-scan can't spawn a second concurrent run.
-let computeRunning = false;
-let computeStopRequested = false;
+// Compute and Stop follow the job list (host/jobs.js), whoever started the
+// run: a scan is an eos job, as the host's run_eos, so a panel rebuild
+// mid-scan can't start a second one, and Stop cancels the running scan.
+function syncComputeButtons() {
+  const busy = runningJob();
+  const compute = /** @type {HTMLButtonElement|null} */ (document.getElementById('eosComputeBtn'));
+  const stop = /** @type {HTMLButtonElement|null} */ (document.getElementById('eosComputeStopBtn'));
+  if (compute) compute.disabled = !!busy;
+  if (stop) stop.disabled = !(busy?.kind === 'eos' && !busy.cancelled);
+}
+document.addEventListener(JOBS_CHANGED, syncComputeButtons);
 
 function toSI(columnData, units) {
   const hasEnergy = Array.isArray(columnData.energies);
@@ -102,6 +112,11 @@ async function redraw(plotId) {
   }
 }
 
+// A fit statistic; null when SciPy's was not finite (eosFit.js).
+function formatStat(value, unit) {
+  return Number.isFinite(value) ? `${value.toFixed(6)} ${unit}` : 'N/A';
+}
+
 function updateResultsUI(container) {
   const { pvResult, evResult } = state;
   if (!pvResult) return;
@@ -110,8 +125,8 @@ function updateResultsUI(container) {
   q('#eos-pv-V0').textContent = `${formatParam(pvResult.params[0], pvResult.errors?.[0])} Å³`;
   q('#eos-pv-K0').textContent = `${formatParam(pvResult.params[1], pvResult.errors?.[1])} GPa`;
   q('#eos-pv-K0Prime').textContent = formatParam(pvResult.params[2], pvResult.errors?.[2]);
-  q('#eos-pv-rms').textContent = `${pvResult.fitStats.rms.toFixed(6)} GPa`;
-  q('#eos-pv-maxres').textContent = `${pvResult.fitStats.maxRes.toFixed(6)} GPa`;
+  q('#eos-pv-rms').textContent = formatStat(pvResult.fitStats.rms, 'GPa');
+  q('#eos-pv-maxres').textContent = formatStat(pvResult.fitStats.maxRes, 'GPa');
   q('#eos-pv-points').textContent = String(pvResult.fitStats.nPoints);
 
   container.querySelector('.eos-ev-results').hidden = !evResult;
@@ -120,18 +135,46 @@ function updateResultsUI(container) {
     q('#eos-ev-V0').textContent = `${formatParam(evResult.params[1], evResult.errors?.[1])} Å³`;
     q('#eos-ev-K0').textContent = `${formatParam(evResult.params[2], evResult.errors?.[2])} GPa`;
     q('#eos-ev-K0Prime').textContent = formatParam(evResult.params[3], evResult.errors?.[3]);
-    q('#eos-ev-rms').textContent = `${evResult.fitStats.rms.toFixed(6)} eV`;
-    q('#eos-ev-maxres').textContent = `${evResult.fitStats.maxRes.toFixed(6)} eV`;
+    q('#eos-ev-rms').textContent = formatStat(evResult.fitStats.rms, 'eV');
+    q('#eos-ev-maxres').textContent = formatStat(evResult.fitStats.maxRes, 'eV');
     q('#eos-ev-points').textContent = String(evResult.fitStats.nPoints);
   }
 
   container.querySelector('.eos-results').hidden = false;
 }
 
+/** Drop the shown fit: its tables and curves belong to the data it was
+ *  made from, not to a dataset being fitted now or one that failed. */
+async function clearShownFit(container) {
+  state.pvResult = null;
+  state.evResult = null;
+  container.querySelector('.eos-results').hidden = true;
+  await Promise.all([clearPlot('ev-plot'), clearPlot('pv-plot')]);
+}
+
+/** The status line for a fit that ran but did not converge (eosFit.js). */
+function unconvergedStatus(fits) {
+  const sentence = (names, what) => `The ${names.join(' and ')} fit${names.length > 1 ? 's' : ''} did not converge: ${what}`;
+  const named = (reason) => fits.filter(([, r]) => r?.failed === reason).map(([name]) => name);
+  const parts = [];
+  const guesses = named('not-converged');
+  const noErrors = named('no-errors');
+  if (noErrors.length) {
+    parts.push(sentence(noErrors, `${noErrors.length > 1 ? 'their' : 'its'} errors are infinite (too few or degenerate points), so the values shown have none.`));
+  }
+  if (guesses.length) {
+    parts.push(sentence(guesses, `the values shown are ${guesses.length > 1 ? 'their' : 'its'} starting guesses.`));
+  }
+  return parts.join(' ');
+}
+
 async function fitAndDisplay(container) {
   // A dataset is loaded (or re-fit) — open the plots window BEFORE drawing so
   // the plot elements exist and the user sees the result appear.
   ensurePlotsWindowOpen();
+  // The previous file's results must not stay up while this one is fitted,
+  // nor after its fit fails, as if they were this file's.
+  await clearShownFit(container);
   try {
     const si = toSI(state.originalColumnData, state.units);
     const hasEnergy = Array.isArray(si.energies);
@@ -143,6 +186,14 @@ async function fitAndDisplay(container) {
     setStatus(container, 'Fitting with SciPy…');
     const { pvResult, evResult } = await fitEOS(si.volumes, si.energies, si.pressures,
       (text) => setPyodideStatus(container, text));
+    // A fit that could not run shows nothing; one that did not converge shows
+    // its starting guesses, and says so (both used to read "Fit complete.").
+    if ([pvResult, evResult].some((r) => r?.failed === 'error')) {
+      setStatus(container, 'Error: the fit failed (details in the browser console). Check the detected columns and units.');
+      closePanel('eosPlots');
+      return;
+    }
+    const unconverged = unconvergedStatus([['P–V', pvResult], ['E–V', evResult]]);
     state.pvResult = pvResult;
     state.evResult = evResult;
 
@@ -150,11 +201,15 @@ async function fitAndDisplay(container) {
     setPlotVisible('ev-plot', !!evResult);
     if (evResult) await redraw('ev-plot');
     await redraw('pv-plot');
-    setStatus(container, 'Fit complete.');
+    setStatus(container, unconverged || 'Fit complete.');
+    return { pvResult, evResult };
   } catch (error) {
     setStatus(container, `Error: ${error.message}`);
     console.error(error);
+    await clearShownFit(container);
+    closePanel('eosPlots');
   }
+  return null;
 }
 
 async function resetFit(container) {
@@ -229,14 +284,20 @@ function registerScanRow(scan, potential) {
       // structures array in place — a trajectory container's frame count is
       // owned by its store, so array surgery cannot re-seat it.
       const rebuilt = TrajectoryContainer.fromStructures(name, scan.structures);
+      rebuilt.dataSource = potentialSource(potential);
       rebuilt.cameraSnapshot = container.cameraSnapshot;
       rebuilt.featureSnapshot = container.featureSnapshot;
+      // The selected row's own pair is only captured on leaving it, so it may
+      // be stale: null lets the rebuilt container adopt the live sizes.
+      rebuilt.displaySizes = rowIndex === fileBrowser.selectedRowIndex ? null : container.displaySizes;
       structureShip.container[rowIndex] = rebuilt;
       updateRow(row, { name, traj: scan.structures.length, step: 1 });
       return;
     }
   }
   const container = TrajectoryContainer.fromStructures(name, scan.structures);
+  // Every point's energy came from the potential (model/dataSource.js).
+  container.dataSource = potentialSource(potential);
   structureShip.container.push(container);
   const newRow = createRow({ name, traj: scan.structures.length, step: 1 });
   tbody.appendChild(newRow);
@@ -269,9 +330,10 @@ function wireComputedPointClicks() {
  * detectColumns shape so fitAndDisplay runs unchanged, the scan becomes a
  * file-browser row, and plot clicks map points to its frames. Exported
  * separately from the Compute button so tests can drive it with a synthetic
- * scan (no wasm).
+ * scan (no wasm). Resolves to the fit ({ pvResult, evResult }, see fitEOS),
+ * or null when it could not run (the window says why).
  */
-export async function ingestComputedScan(scan, { potential = general.atomisticPotential || 'nep' } = {}) {
+export async function ingestComputedScan(scan, { potential = general.atomisticPotential || 'nep', label = potentialLabel(potential) } = {}) {
   const container = document.getElementById('cvPanelBody-eos');
   if (!container) throw new Error('EOS panel is not built — expand it first.');
   if (!scan || !Array.isArray(scan.volumes) || scan.volumes.length < 3) {
@@ -296,17 +358,40 @@ export async function ingestComputedScan(scan, { potential = general.atomisticPo
 
   const info = container.querySelector('.eos-column-info');
   if (info) {
-    info.textContent = `Computed from potential (${potential}): ${scan.volumes.length} points`
+    info.textContent = `Computed with ${label}: ${scan.volumes.length} points`
       + (state.computedStructures ? ' — click a plot point to view its structure.' : '');
   }
 
   if (state.computedStructures) registerScanRow(scan, potential);
   wireComputedPointClicks();
-  await fitAndDisplay(container);
+  return fitAndDisplay(container);
 }
 
-async function runComputeFromPotential(container) {
-  if (computeRunning) return;
+/**
+ * Compute an EOS scan of the selected structure with the active potential
+ * and fit it in this window, as a loaded file would be: the Compute button
+ * and the host's run_eos job both call this. Scan options as runEOSScan's
+ * (by pressure, or by volume with volumeRangePct). Resolves to
+ * { scan, fit, label, potential }; fit is null with fewer than 3 points.
+ * @param {any} options
+ * @param {{ onProgress?: (text: string) => void, shouldStop?: () => boolean }} [hooks]
+ */
+export async function computeEOS(options, { onProgress = (_text) => {}, shouldStop = () => false } = {}) {
+  if (!fileBrowser.selectedStructure) throw new Error('no structure loaded.');
+  const base = snapshotCurrentStructure();
+  onProgress('Preparing calculator…');
+  const { runner, potential } = await ensureActiveCalculator(onProgress);
+  // The model as it is now: the label is read again for the result line.
+  const label = potentialLabel(potential);
+  const scan = await runEOSScan(runner, base, { ...options, onProgress, shouldStop });
+  if (scan.volumes.length < 3) return { scan, fit: null, label, potential };
+  // The window's body exists while it is folded, but its content is built on first open.
+  if (!getPanel('eos')?.built) openPanel('eos');
+  const fit = await ingestComputedScan(scan, { potential, label });
+  return { scan, fit, label, potential };
+}
+
+function runComputeFromPotential(container) {
   const q = (sel) => container.querySelector(sel);
   const nPoints = Math.max(3, Math.min(21, parseInt(q('#eosComputePoints').value, 10) || 7));
   // `|| default` would turn a typed 0 GPa into the default — check finiteness.
@@ -321,49 +406,35 @@ async function runComputeFromPotential(container) {
     setComputeStatus(container, 'Error: P min must be below P max.');
     return;
   }
-  if (!fileBrowser.selectedStructure) {
-    setComputeStatus(container, 'Error: no structure loaded.');
-    return;
-  }
-
-  computeRunning = true;
-  computeStopRequested = false;
-  /** @type {HTMLButtonElement} */ (q('#eosComputeBtn')).disabled = true;
-  /** @type {HTMLButtonElement} */ (q('#eosComputeStopBtn')).disabled = false;
-
   try {
-    const base = snapshotCurrentStructure();
-    setComputeStatus(container, 'Preparing calculator…');
-    const { runner, potential } = await ensureActiveCalculator((text) => setComputeStatus(container, text));
-    const scan = await runEOSScan(runner, base, {
-      nPoints, pMinGPa, pMaxGPa, fmaxTol, maxSteps,
-      onProgress: (text) => setComputeStatus(container, text),
-      shouldStop: () => computeStopRequested,
+    startJob('eos', async (job) => {
+      let computed;
+      try {
+        computed = await computeEOS({ nPoints, pMinGPa, pMaxGPa, fmaxTol, maxSteps }, {
+          onProgress: (text) => { job.progress = { text }; setComputeStatus(container, text); },
+          shouldStop: () => job.cancelled,
+        });
+      } catch (error) {
+        // Everything the scan can throw (unsupported element, calculator init
+        // failure, …) surfaces here, not just on the console.
+        setComputeStatus(container, `Error: ${error.message || String(error)}`);
+        console.error(error);
+        throw error;
+      }
+      const { scan, fit, potential } = computed;
+      if (scan.volumes.length < 3) {
+        setComputeStatus(container, `Stopped — only ${scan.volumes.length} point(s) computed, need 3 to fit.`);
+      } else {
+        const unconverged = scan.converged.filter((c) => !c).length;
+        const convergedNote = unconverged ? ` (${unconverged} did not converge)` : '';
+        setComputeStatus(container, scan.stopped
+          ? `Stopped — fitted the ${scan.volumes.length} completed points${convergedNote}.`
+          : `Computed ${scan.volumes.length} points${convergedNote}.`);
+      }
+      return eosJobResult(scan, fit, false, potential);
     });
-    if (scan.volumes.length < 3) {
-      setComputeStatus(container, `Stopped — only ${scan.volumes.length} point(s) computed, need 3 to fit.`);
-      return;
-    }
-    await ingestComputedScan(scan, { potential });
-    const unconverged = scan.converged.filter((c) => !c).length;
-    const convergedNote = unconverged ? ` (${unconverged} did not converge)` : '';
-    setComputeStatus(container, scan.stopped
-      ? `Stopped — fitted the ${scan.volumes.length} completed points${convergedNote}.`
-      : `Computed ${scan.volumes.length} points${convergedNote}.`);
   } catch (error) {
-    // Everything the scan can throw (unsupported element, calculator init
-    // failure, …) surfaces here, not just on the console.
     setComputeStatus(container, `Error: ${error.message || String(error)}`);
-    console.error(error);
-  } finally {
-    computeRunning = false;
-    computeStopRequested = false;
-    // The panel may have been rebuilt mid-run — re-query, don't trust `q`.
-    const live = document.getElementById('cvPanelBody-eos');
-    const computeBtn = /** @type {HTMLButtonElement} */ (live?.querySelector('#eosComputeBtn'));
-    const stopBtn = /** @type {HTMLButtonElement} */ (live?.querySelector('#eosComputeStopBtn'));
-    if (computeBtn) computeBtn.disabled = false;
-    if (stopBtn) stopBtn.disabled = true;
   }
 }
 
@@ -610,15 +681,25 @@ export function addEOSPanel(target = 'cvPanelBody-eos') {
   container.querySelector('#eosResetFitBtn').addEventListener('click', () => resetFit(container));
 
   container.querySelector('#eosComputeBtn').addEventListener('click', () => runComputeFromPotential(container));
+  // Which potential the scan runs with, its caveat, and the NEP warning for
+  // the scan's top pressure.
+  const computeBody = container.querySelector('#eosComputePoints')?.closest('.eos-collapsible-body');
+  if (computeBody) {
+    const pMax = /** @type {HTMLInputElement} */ (container.querySelector('#eosComputePMax'));
+    const notice = mountPotentialNotice(computeBody, {
+      before: computeBody.firstElementChild,
+      pressures: () => [{ label: 'P max', gpa: parseFloat(pMax.value) }],
+    });
+    pMax.addEventListener('input', () => notice.update());
+  }
   container.querySelector('#eosComputeStopBtn').addEventListener('click', () => {
-    computeStopRequested = true;
+    const job = runningJob('eos');
+    if (!job) return;
+    cancelJob(job.id);
     setComputeStatus(container, 'Stopping…');
   });
-  // A rebuild mid-scan must not re-enable Compute (the run is module-level).
-  if (computeRunning) {
-    /** @type {HTMLButtonElement} */ (container.querySelector('#eosComputeBtn')).disabled = true;
-    /** @type {HTMLButtonElement} */ (container.querySelector('#eosComputeStopBtn')).disabled = false;
-  }
+  // A rebuild mid-scan must not re-enable Compute.
+  syncComputeButtons();
 
   wireDropZone(
     container.querySelector('#eosRefDropZone'),

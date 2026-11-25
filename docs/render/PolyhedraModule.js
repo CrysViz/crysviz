@@ -6,28 +6,32 @@ import { fracToCart, cartToFrac, invert3x3, transpose3x3 } from '../math/index.j
 // Polyhedra use the length-only cutoff: hiding bonds (per-pair visibility)
 // must not remove polyhedra — they follow the configured bond distances.
 import { getBondLengthCutoff } from '../render/BondsFracUpdateModule.js'
-import { CEL_OUTLINE_LAYER } from './CelOutlinePass.js'
-import { addCelPolyOutline } from './MaterialStyles.js'
+import { findVoidCentres } from './voidSearch.js';
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import { Polyhedra } from '../model/Polyhedra.js'
 import { Polyhedron } from '../model/Polyhedron.js'
 import { getCutPlaneMaskSign } from '../model/Plane.js'
+import { CUT_PLANE_TOLERANCE } from './cutPlaneTolerance.js'
 import { voronoiNeighbours } from '../render/VoronoiNeighbours.js'
 import { atomicRadii } from '../defaults/radii_defaults.js'
-import { electronegativity } from '../defaults/electronegativity_defaults.js'
+import { electronegativity, ANION_FORMERS } from '../defaults/electronegativity_defaults.js'
 import { colorHexToCss } from '../utils/ColorModule.js'
-import { applyTransparency } from '../utils/TransparencyPolicy.js'
 import { getFocusOpacityForPolyhedron } from './FocusRegionModule.js'
-import { LineSegments2 } from '../external/three/LineSegments2.js'
-import { LineSegmentsGeometry } from '../external/three/LineSegmentsGeometry.js'
-import { LineMaterial } from '../external/three/LineMaterial.js'
+import {
+  buildPolyhedraTable, addPolyhedraObjects, setPolyStyle, setPolyFocus, setPolyColorRGB, uploadPolyStyles,
+  setPolyGlow, setPolyEdgeLinewidth, polyColorHex, polyIndexOfKey, polyIndicesOfGroup, polyPaintOverride,
+} from './PolyhedraMesh.js'
 import { computePolyhedraWasm } from '../compiled/polyhedraWasm.js'
 import { computePolyhedraParallel, parallelAvailable } from '../render/polyhedraWorkerPool.js'
 import { rebuildAtoms } from '../render/AtomsFracUpdateModule.js'
 import { rebuildBonds } from '../render/BondsFracUpdateModule.js'
-import { runPeriodicWrapped } from '../render/LatticeModule.js'
+import { runPeriodicWrapped, normalizePeriodicBounds } from '../render/LatticeModule.js'
 import { updatePolyhedraComparisonWarning } from '../ui/PolyhedraComparisonWarningBanner.js'
 import { updateDisorderWarning, structureHasFractionalOccupancy } from '../ui/DisorderWarningBanner.js'
+import { updatePolyhedraFastNotice } from '../ui/PolyhedraFastNotice.js'
+import {
+  captureTopology, applyPolyhedraPropertyColors, mergeToleranceHeldPolyhedra, polyhedraToleranceSignature,
+} from './PolyhedraFrameModule.js'
 
 // Single-flight guard for the async compute. Only one compute runs at a time; any
 // updatePolyhedra() request that arrives while one is in flight sets `polyhedraDirty`
@@ -45,6 +49,7 @@ let polyhedraPromise = null;
 function notifyPolyhedraRebuilt() {
   general.polyhedraBuildCounter = (general.polyhedraBuildCounter || 0) + 1;
   highlightHover.currentlyHighlightedPolyhedron = null;
+  highlightHover.currentlyHighlightedPolyIndices = []; // rows of the old table
   document.dispatchEvent(new CustomEvent('crysviz:polyhedra-rebuilt'));
 }
 
@@ -73,20 +78,25 @@ const FACE_OPACITY = 0.50;
 const EDGE_OPACITY = 1;
 const FACE_FALLBACK_COLOR = 0x00aaff;
 const EDGE_COLOR = 0x000000;
-const EDGE_ANGLE = 18;
-const DOUBLE_SIDE = true;
-// Transparency-related face flags (depthWrite, polygonOffset) moved to the
-// rendering pipeline policy: 'polyhedraFace' in render/pipeline/ForwardPipeline.js.
+// Feature-edge angle (18°), double-sided faces and the face material live with
+// the one-mesh drawing in render/PolyhedraMesh.js. Transparency-related face
+// flags (depthWrite, polygonOffset) are the rendering pipeline's policy:
+// 'polyhedraFace' in render/pipeline/ForwardPipeline.js.
 
 // ---------- BEHAVIOR (compute) ----------
-// Cages (uncentered): **includes N = 20 dodecahedra**
+// Cages (uncentred): empty closed shells of mutually bonded framework atoms —
+// B12 icosahedra and B6 octahedra, clathrate Si20/Si24 cages, C60, cubane,
+// dodecahedrane, P4. Found from the empty space, see findCages() below.
+// Mirrored in periodic_wasm_src (polyhedra.rs, find_cages).
 const ALLOW_CAGES = true;
-const CAGE_TARGET_NS_DESC = [20, 12, 10, 8, 6, 4]; // 20 first for dodecahedron cages
-const CAGE_BFS_DEPTH = 5; // a bit deeper to ensure we hit full N=20 shells
+// Void-grid constants (CAGE_GRID_STEP, CAGE_SPLAT_RADIUS, CAGE_MIN_VOID, ...) live in voidSearch.js.
+const CAGE_SHELL_TOL = 1.35;         // shell: framework atoms within 1.35 × the nearest one…
+const CAGE_SHELL_PAD = 0.6;          // …or within nearest + 0.6 Å, whichever is larger
+const CAGE_SHELL_CAP = 6.5;          // Å, atoms gathered around a void
+const CAGE_REFINE_ITERS = 8;         // re-centring steps before a shell must be stable
+const CAGE_MIN_SURFACE_SHARE = 0.6;  // share of an atom's framework bonds lying in the shell
+const CAGE_MIN_THICKNESS = 0.15;     // anti-flatness of the shell (rings are not cages)
 
-// Distortion tolerance (cages only — see centered note below). Kept loose so
-// genuinely distorted-but-complete shells are not dropped.
-const MAX_EDGE_SPREAD = 1.60;      // max(edge)/min(edge) ≤ 1.60
 const MIN_THICKNESS_RATIO = 0.08;  // very lenient anti-flatness (e_min / e_max)
 const MIN_CENTER_FACE_CLEARANCE_REL = 0.10; // min portion of atomic radius between center and any face (to avoid near-degenerate centered polyhedra)
 
@@ -113,6 +123,48 @@ function isLigandOf(nbrElem, centerElem, filterByElectronegativity = true) {
     return nbrElem !== centerElem;
   }
   return enN > enC + 1e-6;
+}
+
+// Second-shell cations. The electronegativity rule alone lets any LESS
+// electropositive cation in: around Ca (1.00) in diopside that is Si (1.90)
+// and Mg (1.31), both inside the default Ca–Si / Ca–Mg cutoffs, and the Ca
+// polyhedron came out with 17 corners (8 O + 6 Si + 3 Mg) instead of 8 O. So
+// a candidate is dropped when it is bonded to a more electronegative anion
+// former (a nonmetal or metalloid, ANION_FORMERS) that sits clearly nearer to
+// the centre: it is a neighbouring cation seen THROUGH that anion (Ca–O–Si).
+//
+// "Clearly nearer" is d(centre, anion) < BRIDGE_NEARER × d(centre, candidate).
+// Over 313 test structures every cation behind an anion came out at a ratio
+// of 0.882 or less (perovskites, phosphates, chlorates, YBCO, LiNbO3, MgAgAs,
+// K3AsS4), while atoms of one anionic layer sit side by side at 0.92 or more:
+// the B and C of LiBC (1.00) and MgB2C2 are both corners of the Li/Mg between
+// the layers. A partner farther out than the candidate never counts, so Fe–C≡N in
+// Prussian blue, M–C≡O and ferrocene's carbons keep their corners; a metal
+// partner never counts either, since in an alloy every atom touches every
+// other and Ni or Mo would strip the Fe corners off a Cr site.
+//
+// The bond to the anion gets BRIDGE_BOND_SLACK on the default cutoff, which
+// is too short for some cations: Pb–O in PbZrO3 is 2.9 Å against 2.54 Å. Only
+// a bond to an anion that already sits between the two can count, so a
+// contact between two separate ligands (O···Cl ≈ 3 Å vs 1.25 × 2.0) never
+// does. Mirrored in periodic_wasm_src (polyhedra.rs, is_bridged_cation).
+//   cand:   the vertex candidate {elem, pos, d}
+//   cands:  every atom gathered around the centre (same objects)
+const BRIDGE_NEARER = 0.9;
+const BRIDGE_BOND_SLACK = 1.25;
+
+function isBridgedCation(cand, cands) {
+  const enB = electronegativity[cand.elem];
+  if (!enB) return false;
+  for (const x of cands) {
+    if (x === cand || !ANION_FORMERS.has(x.elem)) continue;
+    const enX = electronegativity[x.elem];
+    if (!enX || enX <= enB + 1e-6) continue;
+    if (!(x.d < BRIDGE_NEARER * cand.d)) continue;
+    const cut = getBondLengthCutoff(cand.elem, x.elem);
+    if (cut > 1e-3 && x.pos.distanceTo(cand.pos) <= cut * BRIDGE_BOND_SLACK) return true;
+  }
+  return false;
 }
 
 // ConvexGeometry constructor (vendored addon; fall back to THREE.ConvexGeometry if present)
@@ -194,6 +246,15 @@ function polyhedronIdentity(structure, poly, latInv) {
   };
 }
 
+/** What decides the polyhedra besides the positions and the bond cutoffs:
+ *  the search mode and settings (a bond breaking tolerance memory made under
+ *  others is dropped). */
+function polyhedraSearchSettings(structure) {
+  let settings = '';
+  try { settings = JSON.stringify(structure?.polyhedraSettings ?? null); } catch { /* unserialisable */ }
+  return `${effectivePolyhedraMode(structure)}|${settings}|${general.showPeriodic ? 1 : 0}`;
+}
+
 /** Strip the periodic-image segment from a polyhedron key ("c:5:0,0,1" -> "c:5"). */
 export function polyhedronGroupKey(key) {
   const s = String(key);
@@ -234,37 +295,61 @@ export function groupPolyhedraByCategory(structure) {
   return map;
 }
 
+/** The Poly tab's element-row key of a category: its centre element
+ *  ("c:Ca:O8" -> "Ca"), or 'cage' for every cage category ("g:…"). */
+export function polyhedraElementKeyOf(catKey) {
+  if (!catKey) return null;
+  return catKey.startsWith('c:') ? catKey.split(':')[1] : 'cage';
+}
+
 /**
  * Resolve the effective style for one polyhedron: individual override >
- * category override > default (center-atom/element color, FACE_OPACITY,
- * EDGE_COLOR/EDGE_OPACITY for the edge lines).
- * `visible` is a category-level setting only.
+ * category override > element override (the Poly tab's element row,
+ * structure.polyhedraElementStyles) > default (center-atom/element color,
+ * FACE_OPACITY, EDGE_COLOR/EDGE_OPACITY for the edge lines).
+ * `visible` is a category/element-level setting only.
  * @returns {{color: string|number, opacity: number, visible: boolean,
  *            edgeColor: string|number, edgeOpacity: number}}
  */
 export function resolvePolyhedronStyle(structure, key, catKey, type, centerIndex, colorElem) {
   structure.polyhedraUserStyles ??= {}; // defensive: pre-existing structures
   structure.polyhedraCategoryStyles ??= {};
+  structure.polyhedraElementStyles ??= {}; // files from before the element rows
   const ind = key ? structure.polyhedraUserStyles[key] : null;
   const cat = catKey ? structure.polyhedraCategoryStyles[catKey] : null;
+  const el = catKey ? structure.polyhedraElementStyles[polyhedraElementKeyOf(catKey)] : null;
   return {
-    color: ind?.color ?? cat?.color ?? polyhedronFaceColor(type, centerIndex, colorElem),
-    opacity: clamp01(ind?.alpha ?? cat?.alpha ?? FACE_OPACITY),
-    visible: cat?.visible !== false,
-    edgeColor: ind?.edgeColor ?? cat?.edgeColor ?? EDGE_COLOR,
-    edgeOpacity: clamp01(ind?.edgeAlpha ?? cat?.edgeAlpha ?? EDGE_OPACITY),
+    color: ind?.color ?? cat?.color ?? el?.color ?? polyhedronFaceColor(type, centerIndex, colorElem),
+    opacity: clamp01(ind?.alpha ?? cat?.alpha ?? el?.alpha ?? FACE_OPACITY),
+    visible: (cat?.visible ?? el?.visible) !== false,
+    edgeColor: ind?.edgeColor ?? cat?.edgeColor ?? el?.edgeColor ?? EDGE_COLOR,
+    edgeOpacity: clamp01(ind?.edgeAlpha ?? cat?.edgeAlpha ?? el?.edgeAlpha ?? EDGE_OPACITY),
   };
 }
 
-// Minimal induced degree per cage size (tune as needed)
-function minVertexDegreeForCageSize(N) {
-  if (N === 12) return 5; // B12 icosahedral cage in boron carbide
-  if (N === 20) return 3; // 20-vertex dodecahedron (degree 3)
-  if (N === 10) return 3;
-  if (N === 8)  return 3;
-  if (N === 6)  return 3;
-  if (N === 4)  return 2;
-  return 3;
+// Framework bond for cage detection (chemical filter on). A cage is a shell of
+// atoms bonded to EACH OTHER: Si–Si in a clathrate, B–B, C–C in cubane, P–P,
+// or metal–metal in an intermetallic. Not framework: a metal–nonmetal bond
+// (that is a coordination bond — the nonmetal is the metal's ligand), and a
+// metal–metal contact both of whose atoms bond to one more electronegative
+// anion former (two cations sharing an anion, Ti–O–Ti in rutile, which the
+// default cutoffs also call a bond). Without this, ordinary oxides showed
+// "cages" of Ti2O2 or Al2O2, and those swallowed the real octahedra (ilmenite,
+// LiNbO3) as nested. Mirrored in polyhedra.rs (is_framework_bond).
+//   ei, ej:     element symbols; nbrI: atom i's neighbour images; posJ: j's image
+//   elements:   element symbol per source atom
+function isFrameworkBond(ei, ej, nbrI, posJ, elements) {
+  const afI = ANION_FORMERS.has(ei), afJ = ANION_FORMERS.has(ej);
+  if (afI !== afJ) return false;
+  if (afI) return true;
+  const enMax = Math.max(electronegativity[ei] || 0, electronegativity[ej] || 0);
+  for (const x of nbrI) {
+    const ex = elements[x.srcJ];
+    if (!ANION_FORMERS.has(ex) || !((electronegativity[ex] || 0) > enMax + 1e-6)) continue;
+    const cut = getBondLengthCutoff(ej, ex);
+    if (cut > 1e-3 && x.pos.distanceTo(posJ) <= cut) return false;
+  }
+  return true;
 }
 
 // ---------- Helpers ----------
@@ -298,23 +383,14 @@ function thicknessRatio(points) {
   return eMin / Math.max(1e-12, eMax);
 }
 
-function edgeSpreadOK(geom) {
-  const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-  const pos = egeom.getAttribute('position');
-  let minL = Infinity, maxL = 0;
-  for (let i=0; i<pos.count; i+=2) {
-    const a = new THREE.Vector3().fromBufferAttribute(pos, i);
-    const b = new THREE.Vector3().fromBufferAttribute(pos, i+1);
-    const L = a.distanceTo(b);
-    if (L < minL) minL = L;
-    if (L > maxL) maxL = L;
-  }
-  egeom.dispose();
-  if (!isFinite(minL) || minL <= 1e-9) return false;
-  return (maxL / minL) <= MAX_EDGE_SPREAD;
-}
+// Nesting margin (Å). A point counts as inside a hull only when it is at least
+// this far inside every face. A point ON a face — the Al centre of MnAlCu2 is a
+// corner of the Mn polyhedron — is not nested; with a 1e-6 tolerance rounding
+// decided it, and the JS and WASM paths (which also scaled it differently) kept
+// different polyhedra. Mirrors NEST_MARGIN in polyhedra.rs.
+const NEST_MARGIN = 0.01;
 
-function pointInsideConvexGeometry(p, geom, eps=1e-6) {
+function pointInsideConvexGeometry(p, geom, margin = NEST_MARGIN) {
   const pos = geom.getAttribute('position');
   const idx = geom.getIndex();
   if (!pos) return false;
@@ -331,10 +407,11 @@ function pointInsideConvexGeometry(p, geom, eps=1e-6) {
     const c = new THREE.Vector3().fromBufferAttribute(pos, i2);
     const n = b.clone().sub(a).cross(c.clone().sub(a));
     if (n.lengthSq() < 1e-18) continue;
+    n.normalize();
     const outward = Math.sign(n.dot(a.clone().sub(pc))) || 1;
     n.multiplyScalar(outward);
     const s = n.dot(new THREE.Vector3().subVectors(p, a));
-    if (s > eps) return false;
+    if (s > -margin) return false;
   }
   return true;
 }
@@ -376,7 +453,7 @@ function isPointCutByPlanes(position, cutPlanes) {
     const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
     const maskSign = getCutPlaneMaskSign(plane.side);
     const planeSide = ((position[0] * nx) + (position[1] * ny) + (position[2] * nz) - (Number(plane.r) || 0)) * maskSign;
-    return planeSide > 0;
+    return planeSide > CUT_PLANE_TOLERANCE;
   });
 }
 
@@ -387,50 +464,37 @@ function isAtomImageVisible(position, atom, cutPlanes) {
   return !isPointCutByPlanes(position, cutPlanes);
 }
 
-// Spherical farthest-point sampling: pick N vertices well spread (angle-based)
-function pickSpreadSubset(points, N) {
-  if (points.length < N) return null;
-  let aIdx = 0, bIdx = 1, best = -1;
-  for (let i=0;i<points.length;i++) for (let j=i+1;j<points.length;j++) {
-    const d = points[i].distanceToSquared(points[j]);
-    if (d > best) { best = d; aIdx=i; bIdx=j; }
-  }
-  const chosenIdx = [aIdx, bIdx];
-  while (chosenIdx.length < N) {
-    let bestIdx=-1, bestScore=-Infinity;
-    for (let i=0;i<points.length;i++) {
-      if (chosenIdx.includes(i)) continue;
-      let minD = Infinity;
-      for (const j of chosenIdx) {
-        const d = points[i].distanceToSquared(points[j]);
-        if (d < minD) minD = d;
-      }
-      if (minD > bestScore) { bestScore = minD; bestIdx = i; }
-    }
-    if (bestIdx < 0) break;
-    chosenIdx.push(bestIdx);
-  }
-  if (chosenIdx.length < N) return null;
-  return chosenIdx.map(k => points[k]);
+// ---------- Search mode (Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced) ----------
+
+/**
+ * The search computePolyhedra runs for `structure`: general.polyhedraMode when
+ * it is 'fast' or 'advanced'; for 'auto', fast from general.polyhedraFastMin
+ * atoms on (structure.atoms.length, see the note in state/store.js).
+ * @param {any} [structure]
+ * @returns {'fast' | 'advanced'}
+ */
+export function effectivePolyhedraMode(structure = fileBrowser.selectedStructure) {
+  const setting = general.polyhedraMode;
+  if (setting === 'fast' || setting === 'advanced') return setting;
+  const min = Number(general.polyhedraFastMin);
+  return (structure?.atoms?.length ?? 0) >= (Number.isFinite(min) ? min : 2000) ? 'fast' : 'advanced';
 }
 
-function quantile(sortedArr, q) {
-  if (!sortedArr.length) return 0;
-  const i = (sortedArr.length - 1) * q;
-  const i0 = Math.floor(i), i1 = Math.min(sortedArr.length - 1, i0 + 1);
-  const t = i - i0;
-  return sortedArr[i0] * (1 - t) + sortedArr[i1] * t;
-}
-
-function inducedDegreeOK(adjacency, selSrcs, minDeg) {
-  const set = new Set(selSrcs);
-  for (const u of selSrcs) {
-    const nb = adjacency.get(u) || new Set();
-    let deg = 0;
-    for (const v of nb) if (set.has(v) && v !== u) deg++;
-    if (deg < minDeg) return false;
-  }
-  return true;
+/**
+ * Tell the Features window's status line and the Polyhedra window's greyed
+ * rows which search runs (a DOM event, as notifyPolyhedraRebuilt, to keep
+ * render → ui loose). Sent by computePolyhedra and by every updatePolyhedra,
+ * so a structure switch updates them while polyhedra are off too.
+ * @param {any} [structure]
+ */
+function announcePolyhedraMode(structure = fileBrowser.selectedStructure) {
+  document.dispatchEvent(new CustomEvent('crysviz:polyhedra-mode', {
+    detail: {
+      mode: effectivePolyhedraMode(structure),
+      setting: general.polyhedraMode,
+      atoms: structure?.atoms?.length ?? 0,
+    },
+  }));
 }
 
 /**
@@ -449,8 +513,16 @@ export function computePolyhedra(structure) {
     return new Polyhedra({ polyhedra: [] });
   }
 
+  // Fast mode: hull of the bonded ligands (cutoff + the chemical filter applied
+  // to those neighbours only), no Voronoi selection and no cages; see the fast
+  // block in periodic_wasm_src/src/polyhedra.rs (build_candidates) and
+  // runJsPath below.
+  const polyMode = effectivePolyhedraMode(structure);
+  const simple = polyMode === 'fast';
   const useChemicalFilter = structure?.polyhedraSettings?.useChemicalFilter !== false;
-  const detectCages = structure?.polyhedraSettings?.detectCages !== false;
+  const detectCages = !simple && structure?.polyhedraSettings?.detectCages !== false;
+  updatePolyhedraFastNotice(structure, polyMode);
+  announcePolyhedraMode(structure);
 
   // ---------- Perf timing ----------
   const _t0 = performance.now();
@@ -536,9 +608,17 @@ export function computePolyhedra(structure) {
     const [nx, ny, nz] = normalizeCutPlaneNormal(plane.x, plane.y, plane.z);
     return [nx, ny, nz, Number(plane.r) || 0, getCutPlaneMaskSign(plane.side)];
   });
+  // With periodic images shown, a cage on the cell boundary is drawn at every
+  // image the display bounds hold, by the rule the atoms follow
+  // (render/LatticeModule.js periodicWrapped): [min − tol, max + tol] per axis.
+  // null: one copy, centre in the cell.
+  const faceTol = general.periodicFaceTol ?? 1e-3;
+  const cageBounds = general.showPeriodic
+    ? normalizePeriodicBounds(general.periodicBounds).map(([lo, hi]) => [lo - faceTol, hi + faceTol])
+    : null;
   const prep = {
     positions, elements, lattice, maxCutoff,
-    useChemicalFilter, detectCages,
+    useChemicalFilter, detectCages, simple, cageBounds,
     displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData,
     getBondCutoff: getBondLengthCutoff, // length-only (visibility-independent)
   };
@@ -553,7 +633,7 @@ export function computePolyhedra(structure) {
       `cages=${ms(timing.cages)}(pool=${ms(timing.cagePool)} band=${ms(timing.cageBand)}[built=${timing.bandsBuilt} skip=${timing.bandsSkipped}] nloop=${ms(timing.cageNloop)}) ` +
       `accept=${ms(timing.accept)}) | ` +
       `atoms=${nAtoms} centers=${displayCenters.length} ` +
-      `accepted=${polyhedra.length} detectCages=${detectCages}`
+      `accepted=${polyhedra.length} mode=${polyMode} detectCages=${detectCages}`
     );
     return new Polyhedra({ polyhedra: polyhedra.map(p => new Polyhedron(p)) });
   };
@@ -577,7 +657,8 @@ export function computePolyhedra(structure) {
         const accepted = polys.map(p => new Polyhedron(p));
         console.log(
           `[polyhedra] WASM-parallel total=${(performance.now() - _t0).toFixed(1)}ms ` +
-          `atoms=${nAtoms} centers=${displayCenters.length} accepted=${accepted.length} detectCages=${detectCages}`
+          `atoms=${nAtoms} centers=${displayCenters.length} accepted=${accepted.length} ` +
+          `mode=${polyMode} detectCages=${detectCages}`
         );
         return new Polyhedra({ polyhedra: accepted });
       })
@@ -680,6 +761,40 @@ export function computePolyhedra(structure) {
     return out;
   }
 
+  // All atom images (any species) within `r` of P, the atom AT P included —
+  // gatherWithin with a radius of the caller's choosing (cage shells reach
+  // past the Voronoi search radius: a C60 is 3.5 Å across its middle).
+  /**
+   * @param {THREE.Vector3} P
+   * @param {number} r
+   * @returns {Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>}
+   */
+  function gatherRadius(P, r) {
+    const fp = cartToFrac([P.x, P.y, P.z], lattice, latInv);
+    const hx = Math.floor(r / binWA) + 1, hy = Math.floor(r / binWB) + 1, hz = Math.floor(r / binWC) + 1;
+    // Half a cell of slack on the image window, so how an exact .5 rounds
+    // (differently in JS and Rust) cannot drop an image.
+    const ia = Math.max(1, Math.ceil(r / Math.max(widthA, 1e-6) + 0.5));
+    const ib = Math.max(1, Math.ceil(r / Math.max(widthB, 1e-6) + 0.5));
+    const ic = Math.max(1, Math.ceil(r / Math.max(widthC, 1e-6) + 0.5));
+    const out = [];
+    for (const j of cellCandidates(fp, hx, hy, hz)) {
+      const fj = positions[j];
+      const c0 = Math.round(fp[0] - fj[0]);
+      const c1 = Math.round(fp[1] - fj[1]);
+      const c2 = Math.round(fp[2] - fj[2]);
+      for (let dx = c0 - ia; dx <= c0 + ia; dx++)
+        for (let dy = c1 - ib; dy <= c1 + ib; dy++)
+          for (let dz = c2 - ic; dz <= c2 + ic; dz++) {
+            const q = baseCart[j].clone().addScaledVector(a, dx).addScaledVector(b, dy).addScaledVector(c, dz);
+            const d = q.distanceTo(P);
+            if (d > r) continue;
+            out.push({ srcJ: j, shift: /** @type {[number,number,number]} */ ([dx, dy, dz]), pos: q, d });
+          }
+    }
+    return out;
+  }
+
   // ---------- Spatial cell list (shared neighbour acceleration) ----------
   // Both scans above are O(atoms) per query → O(atoms²) overall, which dominates
   // large structures. Bin every atom by its wrapped fractional cell into a grid,
@@ -751,28 +866,41 @@ export function computePolyhedra(structure) {
     return out;
   }
 
-  // Base-cell neighbour images per source atom + source-level adjacency. Both are
-  // used ONLY by the cage path (the BFS pool and the induced-degree test), and
-  // building them is the O(atoms²) neighbour scan — so skip it entirely when cage
-  // detection is off (this is also the toggle you'd flip for speed).
-  /** @type {Array<Array<{srcJ:number, shift:[number,number,number], pos:THREE.Vector3, d:number}>>} */
-  let baseNeighbors = [];
-  /** @type {Map<number, Set<number>>} */
-  const adjacency = new Map();
+  // Framework graph for the cage search (only built when cages are on): the
+  // framework-bond neighbour images of each base atom, as keys for an O(1)
+  // image-aware bond test, and each atom's framework degree counted over
+  // non-terminal partners (an H on a cubane carbon is no part of the cage).
+  // With the chemical filter on, framework bonds are isFrameworkBond's
+  // (nonmetal–nonmetal, or metal–metal not bridged by an anion); off, every bond.
+  /** @type {Array<Array<{srcJ:number, shift:[number,number,number]}>>} */
+  let fwNbrs = [];
+  /** @type {Array<Set<string>>} */
+  let fwKeys = [];
+  /** @type {Int32Array | null} */
+  let fwDeg = null;
+  // What a shell atom's in-shell bonds are measured against: its framework
+  // degree, except for a metal under the chemical filter, which counts all
+  // its metal–metal contacts — in a carbide most Ti–Ti contacts are bridged
+  // by C (no framework bonds), and a Ti4 hole then passed with 3 of 4.
+  /** @type {Int32Array | null} */
+  let shareDeg = null;
   if (ALLOW_CAGES && detectCages) {
-    // Every periodic image of an atom is just a lattice translation of its base
-    // cell, so its neighbour images are this list shifted by the image's lattice
-    // offset — letting the cage BFS avoid re-scanning all atoms for every node.
-    baseNeighbors = new Array(nAtoms);
-    for (let i = 0; i < nAtoms; i++) baseNeighbors[i] = neighborImages(baseCart[i], elements[i]);
-
-    const addBond = (u, v) => {
-      if (!adjacency.has(u)) adjacency.set(u, new Set());
-      if (!adjacency.has(v)) adjacency.set(v, new Set());
-      adjacency.get(u).add(v); adjacency.get(v).add(u);
-    };
+    fwNbrs = new Array(nAtoms);
+    fwKeys = new Array(nAtoms);
+    shareDeg = new Int32Array(nAtoms);
     for (let i = 0; i < nAtoms; i++) {
-      for (const o of baseNeighbors[i]) addBond(i, o.srcJ);
+      const nbr = neighborImages(baseCart[i], elements[i]);
+      fwNbrs[i] = nbr.filter((o) => !useChemicalFilter
+        || isFrameworkBond(elements[i], elements[o.srcJ], nbr, o.pos, elements));
+      fwKeys[i] = new Set(fwNbrs[i].map((o) => `${o.srcJ}:${o.shift[0]},${o.shift[1]},${o.shift[2]}`));
+      if (useChemicalFilter && !ANION_FORMERS.has(elements[i])) {
+        shareDeg[i] = nbr.filter((o) => !ANION_FORMERS.has(elements[o.srcJ])).length;
+      }
+    }
+    fwDeg = new Int32Array(nAtoms);
+    for (let i = 0; i < nAtoms; i++) {
+      for (const o of fwNbrs[i]) if (fwNbrs[o.srcJ].length >= 2) fwDeg[i]++;
+      if (!(useChemicalFilter && !ANION_FORMERS.has(elements[i]))) shareDeg[i] = fwDeg[i];
     }
   }
   _tSetup = performance.now();
@@ -799,17 +927,46 @@ export function computePolyhedra(structure) {
     const centerPos = dc.cart;
     const centerElem = elements[dc.src];
 
+    // Fast mode: every bonded neighbour that passes the element rule is a
+    // corner, less (with the chemical filter) the cations seen through a
+    // nearer anion among those neighbours (mirrors the fast block of
+    // polyhedra.rs build_candidates).
+    if (simple) {
+      const bonded = neighborImages(centerPos, centerElem)
+        .map((o) => ({ ...o, elem: elements[o.srcJ] }))
+        .filter((o) => isLigandOf(o.elem, centerElem, useChemicalFilter)
+          && isAtomImageVisible(o.pos.toArray(), structure.atoms[o.srcJ], activeCutPlanes));
+      const ligands = useChemicalFilter ? bonded.filter((o) => !isBridgedCation(o, bonded)) : bonded;
+      if (ligands.length < 4) continue;
+      const posList = ligands.map((o) => o.pos);
+      if (thicknessRatio(posList) < MIN_THICKNESS_RATIO) continue;
+      candidates.push({
+        kind: 'centered',
+        colorElem: centerElem,
+        centerSrc: dc.src,
+        centerShift: dc.shift,
+        centerPos: centerPos.clone(),
+        posList,
+        vertexSrcList: ligands.map((o) => o.srcJ),
+        vertexImageList: [],
+        refPoint: centerPos.clone(),
+      });
+      continue;
+    }
+
     // Radical-Voronoi + solid-angle neighbour selection (distance-independent:
     // keeps elongated bonds, rejects shadowed far atoms). Candidates include all
     // species so closer atoms can shadow farther ones; a vertex must additionally
     // be a chemical ligand of the centre and within the visible bond cutoff.
     const cands = gatherWithin(centerPos);
     if (cands.length < 4) continue;
-    const accept = (/** @type {any} */ cand) => {
+    const isLigand = (/** @type {any} */ cand) => {
       if (!isLigandOf(cand.elem, centerElem, useChemicalFilter)) return false;
       const cutoff = getBondLengthCutoff(centerElem, cand.elem);
       return cutoff > 1e-3 && cand.d <= cutoff;
     };
+    const accept = (/** @type {any} */ cand) => isLigand(cand)
+      && !(useChemicalFilter && isBridgedCation(cand, cands));
     const vor = voronoiNeighbours(centerPos, cands, {
       radical: VORONOI_RADICAL,
       relMin: VORONOI_SOLID_ANGLE_REL,
@@ -856,178 +1013,141 @@ export function computePolyhedra(structure) {
 
   _tCentered = performance.now();
 
-  // ---- Cages (uncentered): includes N=20 dodecahedra; largest-first ----
+  // ---- Cages (uncentred): empty shells of mutually bonded framework atoms ----
   if (ALLOW_CAGES && detectCages) {
-    // BFS in image space: each node is a concrete periodic image keyed by
-    // (src, shift), so a boundary-straddling shell stays spatially contiguous
-    // (the old in-cell pool was the main source of partial cages).
-    //
-    // Expanded a single depth-level at a time (frontier BFS) and stopped at the
-    // same depth as before (always ≥3, then deeper until ≥40 cut-visible images or
-    // CAGE_BFS_DEPTH). This visits each image once instead of rebuilding the whole
-    // BFS from scratch for depth 3, then 4, then 5. Hidden-by-plane images may still be
-    // traversed to keep connectivity intact, but only visible images are retained
-    // in the returned pool.
-    //
-    // The neighbour images of a node are its source atom's cached base neighbours
-    // translated by the node's own lattice shift — no per-node atom rescan.
-    function buildPoolForSeed(seedI) {
-      const startKey = `${seedI}:0,0,0`;
-      /** @type {Set<string>} */
-      const visited = new Set();
-      /** @type {Array<{pos:THREE.Vector3, src:number, shift:[number,number,number], depth:number}>} */
-      const visiblePool = [];
-      const start = { pos: baseCart[seedI], src: seedI, shift: /** @type {[number,number,number]} */ ([0, 0, 0]), depth: 0 };
-      visited.add(startKey);
-      visiblePool.push(start);
-      let frontier = [start];
-      let depth = 0;
-      const expand = () => {
-        const next = [];
-        for (const node of frontier) {
-          const sx = node.shift[0], sy = node.shift[1], sz = node.shift[2];
-          for (const o of baseNeighbors[node.src]) {
-            const ndx = o.shift[0] + sx, ndy = o.shift[1] + sy, ndz = o.shift[2] + sz;
-            const k = `${o.srcJ}:${ndx},${ndy},${ndz}`;
-            if (!visited.has(k)) {
-              const pos = baseCart[o.srcJ].clone()
-                .addScaledVector(a, ndx).addScaledVector(b, ndy).addScaledVector(c, ndz);
-              const nn = { pos, src: o.srcJ, shift: /** @type {[number,number,number]} */ ([ndx, ndy, ndz]), depth: depth + 1 };
-              visited.add(k);
-              if (isAtomImageVisible(pos.toArray(), structure.atoms[o.srcJ], activeCutPlanes)) visiblePool.push(nn);
-              next.push(nn);
-            }
-          }
-        }
-        frontier = next;
-        depth++;
-      };
-      while (depth < 3 && frontier.length) expand(); // always reach depth 3
-      while (visiblePool.length < 40 && depth < CAGE_BFS_DEPTH && frontier.length) { // heuristic ≥2×N
-        expand();
+    const _c0 = performance.now();
+    findCages();
+    _cagePoolMs += performance.now() - _c0;
+  }
+
+  /**
+   * Cages from the empty space. A cage is a closed shell of framework atoms
+   * around a void: a B12 icosahedron, a clathrate's Si20 or Si24, a C60. The
+   * old search grew a pool of atoms around each SEED ATOM and cut it into
+   * distance bands about the pool's centroid, which sits near the seed, not
+   * in a cage — so it found none of the real ones and plenty of junk.
+   *
+   *   1. Distance to the nearest atom on a grid over the cell (each atom
+   *      stamps a sphere of CAGE_SPLAT_RADIUS; periodic by index wrap), and
+   *      its local maxima at least CAGE_MIN_VOID from every atom.
+   *   2. Around each, the framework atoms within CAGE_SHELL_TOL × the nearest
+   *      distance (or + CAGE_SHELL_PAD), re-centred on their centroid until the
+   *      shell stops changing.
+   *   3. It is a cage when every shell atom has ≥ 3 framework bonds inside the
+   *      shell and at least CAGE_MIN_SURFACE_SHARE of all its framework bonds
+   *      (a metal: of all its metal–metal contacts, see shareDeg) lie in it (5 of 6 on a B12, 3 of 4 on a clathrate cage, 3 of 3 on a
+   *      C60 — but 3 of 6 around the gap between icosahedra in boron, ≤ 6 of 12
+   *      at a hole in a close-packed metal), the shell is connected and not
+   *      flat, the void lies inside its hull with every shell atom on the hull,
+   *      and no atom at all lies inside (a shell around an atom or a guest is
+   *      that atom's polyhedron — Ba8Si46 keeps its Ba-centred cages).
+   *
+   * Each cage is kept once, translated so its centre lies in the cell (with a
+   * 1e-6 nudge so a centre on a cell face lands the same way on both paths).
+   */
+  function findCages() {
+    if (!fwDeg || !fwDeg.some((d) => d >= 3)) return;
+    // 1. the voids: local maxima of the distance to the nearest atom
+    const { voids } = findVoidCentres(lattice, positions);
+
+    const imgKey = (o) => `${o.srcJ}:${o.shift[0]},${o.shift[1]},${o.shift[2]}`;
+    const byImage = (u, v) => (u.srcJ - v.srcJ) || (u.shift[0] - v.shift[0]) || (u.shift[1] - v.shift[1]) || (u.shift[2] - v.shift[2]);
+    const bonded = (u, v) => fwKeys[u.srcJ].has(`${v.srcJ}:${v.shift[0] - u.shift[0]},${v.shift[1] - u.shift[1]},${v.shift[2] - u.shift[2]}`);
+    /** @type {Set<string>} */
+    const seen = new Set();
+
+    for (const { frac } of voids) {
+      // 2. the shell around this void, re-centred until it is stable
+      let P = new THREE.Vector3().addScaledVector(a, frac[0]).addScaledVector(b, frac[1]).addScaledVector(c, frac[2]);
+      let shell = null;
+      let prevKey = '';
+      let stable = false;
+      for (let it = 0; it < CAGE_REFINE_ITERS; it++) {
+        const near = gatherRadius(P, CAGE_SHELL_CAP);
+        if (!near.length) break;
+        let dmin = Infinity;
+        for (const o of near) if (o.d < dmin) dmin = o.d;
+        const cutR = Math.max(CAGE_SHELL_TOL * dmin, dmin + CAGE_SHELL_PAD);
+        const sh = near.filter((o) => o.d <= cutR && fwNbrs[o.srcJ].length >= 2).sort(byImage);
+        if (sh.length < 4) break;
+        const key = sh.map(imgKey).join('|');
+        if (key === prevKey) { stable = true; shell = sh; break; }
+        prevKey = key;
+        P = sh.reduce((acc, o) => acc.add(o.pos), new THREE.Vector3()).multiplyScalar(1 / sh.length);
       }
-      return visiblePool;
-    }
+      if (!stable || !shell) continue;
 
-    for (let seedI=0; seedI<nAtoms; seedI++) {
-      if (!isAtomImageVisible(baseCart[seedI].toArray(), structure.atoms[seedI], activeCutPlanes)) continue;
-      const seedElem = elements[seedI];
+      // translate so the centre lies in the cell, then keep each cage once
+      const fc = cartToFrac([P.x, P.y, P.z], lattice, latInv);
+      const t = fc.map((x) => Math.floor(x + 1e-6));
+      if (t[0] || t[1] || t[2]) {
+        const off = new THREE.Vector3().addScaledVector(a, t[0]).addScaledVector(b, t[1]).addScaledVector(c, t[2]);
+        P = P.clone().sub(off);
+        shell = shell.map((o) => ({ ...o, pos: o.pos.clone().sub(off),
+          shift: /** @type {[number,number,number]} */ ([o.shift[0] - t[0], o.shift[1] - t[1], o.shift[2] - t[2]]) }));
+      }
+      const cageKey = shell.map(imgKey).join('|');
+      if (seen.has(cageKey)) continue;
+      seen.add(cageKey);
 
-      const _p0 = performance.now();
-      const pool = buildPoolForSeed(seedI);
-      _cagePoolMs += performance.now() - _p0;
-      if (pool.length < 4) continue;
-
-      // reference: centroid of pool (better shell center)
-      const centroid = pool.reduce((acc,o)=>acc.add(o.pos), new THREE.Vector3()).multiplyScalar(1/pool.length);
-      const dists = pool.map(o => o.pos.distanceTo(centroid)).sort((a,b)=>a-b);
-      const q30 = quantile(dists, 0.30), q70 = quantile(dists, 0.70);
-      const q25 = quantile(dists, 0.25), q75 = quantile(dists, 0.75);
-      const q20 = quantile(dists, 0.20), q80 = quantile(dists, 0.80);
-
-      // Per-band hull vertex sets are N-independent: the 3 distance bands are the
-      // same for every target N, and the band hull + its hull→band-entry mapping
-      // depend only on the band, not on N. Build them ONCE per seed (narrow → wide)
-      // instead of rebuilding inside the N loop — this collapses up to 18
-      // ConvexGeometry builds per seed (3 bands × 6 N) down to 3. Only the
-      // reduce-to-N step and acceptance below stay inside the N loop.
-      const bands = [
-        [q30, q70],
-        [q25, q75],
-        [q20, q80],
-      ];
-      const bandHulls = bands.map(([lo, hi]) => {
-        const band = pool.filter(o => {
-          const r = o.pos.distanceTo(centroid);
-          return r >= lo && r <= hi;
-        });
-        if (band.length < 4) return { band, baseVerts: [] };
-        let geomBand;
-        try { geomBand = new ConvexGeomCtor(band.map(o => o.pos)); } catch { geomBand = null; }
-        if (!geomBand) return { band, baseVerts: [] };
-
-        const posAttr = geomBand.getAttribute('position');
-        const hullPts = [];
-        for (let k = 0; k < posAttr.count; k++) hullPts.push(new THREE.Vector3().fromBufferAttribute(posAttr, k));
-        geomBand.dispose();
-
-        // Unique nearest mapping back to band entries
-        const chosenMap = new Map(); // band index -> band entry
-        for (const hp of hullPts) {
-          let bi = -1, best = Infinity;
-          for (let j = 0; j < band.length; j++) {
-            const dd = hp.distanceToSquared(band[j].pos);
-            if (dd < best) { best = dd; bi = j; }
-          }
-          if (bi >= 0 && !chosenMap.has(bi)) chosenMap.set(bi, band[bi]);
+      // 3. is it a cage?
+      let ok = true;
+      for (const u of shell) {
+        let inShell = 0;
+        for (const w of shell) if (w !== u && bonded(u, w)) inShell++;
+        if (inShell < 3 || inShell < CAGE_MIN_SURFACE_SHARE * shareDeg[u.srcJ]) { ok = false; break; }
+      }
+      if (!ok) continue;
+      const reached = new Set([0]);
+      const queue = [0];
+      while (queue.length) {
+        const u = queue.pop();
+        for (let w = 0; w < shell.length; w++) {
+          if (!reached.has(w) && bonded(shell[u], shell[w])) { reached.add(w); queue.push(w); }
         }
-        return { band, baseVerts: Array.from(chosenMap.values()) }; // {pos,src,shift}[]
-      });
+      }
+      if (reached.size !== shell.length) continue;
+      const posList = shell.map((o) => o.pos);
+      if (thicknessRatio(posList) < CAGE_MIN_THICKNESS) continue;
+      let geom;
+      try { geom = new ConvexGeomCtor(posList); } catch { continue; }
+      const inside = (q) => pointInsideConvexGeometry(q, geom);
+      let rMax = 0;
+      for (const o of shell) rMax = Math.max(rMax, o.pos.distanceTo(P));
+      const keys = new Set(shell.map(imgKey));
+      const good = inside(P)
+        && shell.every((o) => !inside(o.pos))
+        && gatherRadius(P, rMax + 0.05).every((o) => keys.has(imgKey(o)) || !inside(o.pos));
+      geom.dispose();
+      if (!good) continue;
 
-      for (const N of CAGE_TARGET_NS_DESC) {
-        let builtThisN = false;
-
-        for (const { band, baseVerts } of bandHulls) {
-          if (band.length < N) continue;
-          if (baseVerts.length < N) continue; // hull too small (or failed to build)
-
-          // Reduce to N by spread when the hull has more than N vertices.
-          let verts = baseVerts;
-          if (verts.length !== N) {
-            const subset = pickSpreadSubset(verts.map(o => o.pos), N);
-            if (!subset) continue;
-            verts = subset.map(p => {
-              let best = null, bestD = Infinity;
-              for (const o of band) {
-                const dd = p.distanceToSquared(o.pos);
-                if (dd < bestD) { bestD = dd; best = o; }
-              }
-              return best;
+      // One candidate per image on show (see cageBounds): the in-cell centre
+      // coordinate w takes every shift n with lo ≤ w + n ≤ hi.
+      const w = [fc[0] - t[0], fc[1] - t[1], fc[2] - t[2]];
+      const range = (/** @type {number} */ k) => (cageBounds
+        ? [Math.ceil(cageBounds[k][0] - w[k]), Math.floor(cageBounds[k][1] - w[k])]
+        : [0, 0]);
+      const [rx, ry, rz] = [range(0), range(1), range(2)];
+      for (let nx = rx[0]; nx <= rx[1]; nx++) {
+        for (let ny = ry[0]; ny <= ry[1]; ny++) {
+          for (let nz = rz[0]; nz <= rz[1]; nz++) {
+            const off = new THREE.Vector3().addScaledVector(a, nx).addScaledVector(b, ny).addScaledVector(c, nz);
+            const img = shell.map((o) => ({ srcJ: o.srcJ, pos: o.pos.clone().add(off),
+              shift: /** @type {[number,number,number]} */ ([o.shift[0] + nx, o.shift[1] + ny, o.shift[2] + nz]) }));
+            if (!img.every((o) => isAtomImageVisible(o.pos.toArray(), structure.atoms[o.srcJ], activeCutPlanes))) continue;
+            candidates.push({
+              kind: 'cage',
+              colorElem: elements[img[0].srcJ],
+              posList: img.map((o) => o.pos),
+              vertexSrcList: img.map((o) => o.srcJ),
+              vertexImageList: img.map((o) => ({ src: o.srcJ, shift: o.shift })),
+              refPoint: P.clone().add(off),
             });
           }
-
-          const posList = verts.map(o=>o.pos);
-          const selSrcs = verts.map(o=>o.src);   // source atom index per selected vertex
-
-          // ---- CAGE acceptance: cheap necessary conditions FIRST, so the
-          // expensive hull / EdgesGeometry is only built for candidates that can
-          // actually be accepted. Both checks are necessary (combined with the
-          // edge-spread test via AND), so ordering them first doesn't change which
-          // cages pass — it just skips the geometry for the common rejections
-          // (e.g. a coordination shell whose ligands aren't bonded to each other).
-
-          // 1) Anti-flatness — operates on the point set, no hull needed.
-          if (thicknessRatio(posList) < 0.08) continue;          // very lenient
-
-          // 2) Induced-degree in the selected vertex set (B12 needs 5) — combinatorial.
-          const minDeg = minVertexDegreeForCageSize(posList.length);
-          if (!inducedDegreeOK(adjacency, selSrcs, minDeg)) continue;
-
-          // 3) Build the candidate hull only now, and run the edge-spread sanity.
-          let geom;
-          try { geom = new ConvexGeomCtor(posList); } catch { geom = null; }
-          if (!geom) continue;
-          geom.computeVertexNormals();
-          if (!edgeSpreadOK(geom)) { geom.dispose(); continue; } // max(edge)/min(edge) ≤ 1.30
-
-          // Accept candidate cage
-          candidates.push({
-            kind: 'cage',
-            colorElem: seedElem,
-            posList,
-            vertexSrcList: selSrcs,
-            vertexImageList: verts.map(o=>({ src:o.src, shift:o.shift })),
-            refPoint: posList.reduce((acc,p)=>acc.add(p), new THREE.Vector3()).multiplyScalar(1/posList.length),
-          });
-
-          geom.dispose();
-          builtThisN = true;
-          break; // move to next N (largest-first, one per band here)
-        } // bands
-        if (builtThisN) continue;
-      } // Ns
-    } // seeds
-  } // cages enabled
+        }
+      }
+    }
+  }
   _tCages = performance.now();
 
   // ---------- Global constraints & accept into model ----------
@@ -1073,7 +1193,7 @@ export function computePolyhedra(structure) {
     // No nesting: reference point not inside any accepted hull
     let inside = false;
     for (const g of acceptedHulls) {
-      if (pointInsideConvexGeometry(cand.refPoint, g, 1e-6)) { inside = true; break; }
+      if (pointInsideConvexGeometry(cand.refPoint, g)) { inside = true; break; }
     }
     if (inside) { geom.dispose(); continue; }
 
@@ -1107,7 +1227,7 @@ export function computePolyhedra(structure) {
     `cages=${ms(_tCages - _tCentered)}(pool=${ms(_cagePoolMs)}) accept=${ms(_tEnd - _tCages)} | ` +
     `atoms=${nAtoms} centers=${displayCenters.length} ` +
     `candidates=${candidates.length} accepted=${accepted.length} ` +
-    `detectCages=${detectCages}`
+    `mode=${polyMode} detectCages=${detectCages}`
   );
 
   return new Polyhedra({ polyhedra: accepted });
@@ -1115,204 +1235,254 @@ export function computePolyhedra(structure) {
 }
 
 /**
- * Build three.js meshes for the polyhedra stored on `structure.polyhedra` and
- * add them to `groups.polyhedraGroup` (which the caller has already reset).
+ * Draw the polyhedra stored on `structure.polyhedra` into
+ * `groups.polyhedraGroup` (which the caller has already reset): one table +
+ * one face geometry + one edge geometry for all of them
+ * (render/PolyhedraMesh.js), styled here from the store.
  *
  * @param {any} structure active Structure with a populated `polyhedra` model
  */
 export function renderPolyhedra(structure) {
   const model = structure.polyhedra;
   if (!model || !model.polyhedra || !model.polyhedra.length) return;
-  if (!ConvexGeomCtor) return;
-
-  // Depth proxy material for the screen-space cel outline pass: the faces are
-  // transparent (no depth write), so an opaque copy on the outline-only layer
-  // provides the polyhedron silhouette there. Invisible in the main render.
-  const sharedDepthProxyMat = new THREE.MeshBasicMaterial();
 
   // Keys are normally stamped in updatePolyhedra right after the compute;
   // stamp defensively for any model that predates that (e.g. restored sessions).
   if (model.polyhedra.some((p) => !p.key)) assignPolyhedraKeys(structure, model);
 
-  let polyIndex = -1;
-  for (const poly of model.polyhedra) {
-    polyIndex++;
-    const posList = poly.vertices.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-    let geom;
-    try { geom = new ConvexGeomCtor(posList); } catch { continue; }
-    geom.computeVertexNormals();
+  const table = buildPolyhedraTable(model, {
+    outlineDirs: general.renderStyle === 'cel' && general.celOutlineMode === 'hull',
+  });
+  writePolyhedraStyles(structure, table);
+  addPolyhedraObjects(table, groups.polyhedraGroup);
+  // What an MD / trajectory fast frame needs to move these polyhedra
+  // (render/PolyhedraFrameModule.js), then the property colours over the
+  // style ones when Colour by is set.
+  captureTopology(table, structure, model, { cutoffOf: getBondLengthCutoff });
+  applyPolyhedraPropertyColors(table, { upload: false, saveStyle: true });
+  repaintOverride(table);
+  uploadPolyStyles(table);
+}
 
+/** Resolve every row's style (and focus factor) into the table — CPU only. */
+function writePolyhedraStyles(structure, table) {
+  // The table's own model: a trajectory frame switch may have dropped
+  // structure.polyhedra while these polyhedra are still the ones drawn.
+  const polys = (table.topo?.model ?? structure.polyhedra)?.polyhedra ?? [];
+  for (let i = 0; i < table.n; i++) {
+    const poly = polys[i];
+    if (!poly) continue;
     const style = resolvePolyhedronStyle(
       structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem);
-    const focus = getFocusOpacityForPolyhedron(poly, structure);
-    const mat = new THREE.MeshStandardMaterial({
-      color: style.color,
-      opacity: style.opacity * focus,
-      metalness: 0.0,
-      roughness: 1.0,
-      side: DOUBLE_SIDE ? THREE.DoubleSide : THREE.FrontSide,
-    });
-    applyTransparency(mat, { kind: 'polyhedraFace', opacity: mat.opacity });
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.visible = style.visible; // category-level show/hide
-    mesh.userData = {
-      type: 'polyhedron',
-      mode: poly.type,
-      cn: posList.length,
-      centerSrcIndex: (poly.type === 'centered') ? poly.centerIndex : undefined,
-      centerElement:  (poly.type === 'centered') ? poly.centerElement : undefined,
-      colorElem: poly.colorElem, // for in-place recolour (updatePolyhedraColors)
-      vertexSrcs: poly.vertexSrcList,
-      key: poly.key,           // stable identity (persistence + selection)
-      groupKey: poly.groupKey, // periodic-copy group ("Link periodic copies")
-      catKey: poly.catKey,     // category (Poly tab grouping)
-      polyIndex,               // index into structure.polyhedra.polyhedra
-      // Authored alpha (style) — focus regions scale it (applyFocusToPolyhedra)
-      // without ever overwriting it, mirroring Atom.opacity.
-      baseOpacity: style.opacity,
-      baseEdgeOpacity: style.edgeOpacity,
-    };
-
-    // Per-polyhedron edge material so edge color/alpha are styleable via the
-    // same store precedence as the faces (disposeGroup disposes it with the rest).
-    // Edges as "fat lines" (LineSegments2) so their thickness is adjustable
-    // (plain LineSegments linewidth is capped at 1px in WebGL). WORLD units
-    // (LineMaterial.worldUnits) so the edges scale with the structure when
-    // zooming, instead of staying N pixels wide (which read as THICKER edges
-    // when zoomed out). polyEdgeWidth 1 = the unit-cell line thickness
-    // (0.03 A diameter), matching the tracers' edge cylinders (0.015 radius).
-    const egeom = new THREE.EdgesGeometry(geom, EDGE_ANGLE);
-    const edgeSegments = Array.from(/** @type {any} */ (egeom.attributes.position).array);
-    const edgeGeom = new LineSegmentsGeometry().setPositions(edgeSegments);
-    egeom.dispose();
-    const edgeMat = new LineMaterial({
-      color: style.edgeColor, opacity: style.edgeOpacity * focus,
-      linewidth: 0.03 * (general.polyEdgeWidth ?? 1),
-      worldUnits: true,
-    });
-    if (app.renderer) {
-      const size = app.renderer.getSize(new THREE.Vector2());
-      edgeMat.resolution.set(size.x, size.y);
-    }
-    applyTransparency(edgeMat, { kind: 'polyhedraEdge', opacity: edgeMat.opacity });
-    const edgeLines = new LineSegments2(edgeGeom, edgeMat);
-    edgeLines.raycast = () => {}; // never intercept picking
-    edgeLines.userData.type = 'polyhedron-edges';
-    // flat [x1,y1,z1,x2,y2,z2,...] world segments — the ray/path-tracing
-    // SceneEncoder re-encodes the edges as thin cylinders from these
-    edgeLines.userData.segments = edgeSegments;
-    edgeLines.visible = (general.polyEdgeWidth ?? 1) > 0; // width 0 = no edges
-    mesh.add(edgeLines);
-
-    const depthProxy = new THREE.Mesh(geom, sharedDepthProxyMat);
-    depthProxy.layers.set(CEL_OUTLINE_LAYER); // outline pass only
-    depthProxy.raycast = () => {};
-    mesh.add(depthProxy);
-
-    if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') {
-      const center = new THREE.Vector3();
-      for (const p of posList) center.add(p);
-      center.multiplyScalar(1 / posList.length);
-      addCelPolyOutline(mesh, center);
-      const hull = mesh.children.find((c) => c.name === 'celOutline');
-      if (hull) hull.visible = general.celHullPolyWidth > 0 && mat.opacity >= 0.999;
-    }
-
-    groups.polyhedraGroup.add(mesh);
+    // Authored alpha (style) — focus regions scale it (applyFocusToPolyhedra)
+    // without ever overwriting it, mirroring Atom.opacity.
+    table.focus[i] = getFocusOpacityForPolyhedron(poly, structure);
+    setPolyStyle(table, i, style.color, style.opacity, style.edgeColor, style.edgeOpacity, style.visible);
   }
 }
 
-/** Write a polyhedron's displayed alpha: authored style alpha × focus factor,
- *  for the faces, the edge lines and the cel hull's opaque-only rule. */
-function applyPolyhedronOpacity(mesh, faceOpacity, edgeOpacity) {
-  mesh.material.opacity = faceOpacity;
-  applyTransparency(mesh.material, { kind: 'polyhedraFace', opacity: faceOpacity, mesh });
-  const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
-  if (edge?.material) {
-    edge.material.opacity = edgeOpacity;
-    applyTransparency(edge.material, { kind: 'polyhedraEdge', opacity: edgeOpacity, mesh: edge });
-  }
-  // Cel hull outlines are suppressed on transparent objects (the opaque
-  // inverted-hull shell would black out the background behind a transparent
-  // polyhedron) — keep the shell's visibility in sync with alpha edits.
-  const hull = mesh.children.find((c) => c.name === 'celOutline');
-  if (hull) hull.visible = general.celHullPolyWidth > 0 && faceOpacity >= 0.999;
+/** The drawn polyhedra's table (render/PolyhedraMesh.js), or null when none
+ *  are drawn. Row i is structure.polyhedra.polyhedra[i]. */
+export function polyhedraTable() {
+  return groups.polyhedraGroup?.userData?.polyTable ?? null;
+}
+
+/** How many polyhedra are drawn (a hull was built), and of those how many
+ *  are shown (category visible). */
+export function polyhedraDrawnCount({ shownOnly = false } = {}) {
+  const table = polyhedraTable();
+  if (!table) return 0;
+  let n = 0;
+  for (let i = 0; i < table.n; i++) if (table.faceCount[i] && (!shownOnly || table.visible[i])) n++;
+  return n;
+}
+
+/** One drawn polyhedron as a plain object (tests, the selection bar):
+ *  identity, displayed and authored alpha, colours, glow. Not for per-frame
+ *  use. */
+export function polyhedronInfo(i) {
+  const table = polyhedraTable();
+  if (!table || !(i >= 0 && i < table.n)) return null;
+  return {
+    index: i,
+    key: table.key[i], groupKey: table.groupKey[i], catKey: table.catKey[i],
+    centerIndex: table.centerIndex[i] >= 0 ? table.centerIndex[i] : null,
+    kind: table.kind[i] ? 'cage' : 'centered', cn: table.cn[i],
+    drawn: table.faceCount[i] > 0, visible: table.visible[i] === 1,
+    opacity: table.opacity[i], baseOpacity: table.baseOpacity[i],
+    edgeOpacity: table.edgeOpacity[i], baseEdgeOpacity: table.baseEdgeOpacity[i],
+    focus: table.focus[i],
+    color: polyColorHex(table, i), edgeColor: polyColorHex(table, i, true),
+    glow: table.glow[i] === 1,
+    faceStart: table.faceStart[i], faceCount: table.faceCount[i],
+    edgeStart: table.edgeStart[i], edgeCount: table.edgeCount[i],
+  };
+}
+
+/** polyhedronInfo() of every drawn polyhedron (tests, debugging). */
+export function polyhedraInfo() {
+  const table = polyhedraTable();
+  const out = [];
+  for (let i = 0; table && i < table.n; i++) if (table.faceCount[i]) out.push(polyhedronInfo(i));
+  return out;
+}
+
+/** Rows of the drawn polyhedra by stable key / periodic-copy group key. */
+export function polyhedronIndexOfKey(key) {
+  return polyIndexOfKey(polyhedraTable(), key);
+}
+export function polyhedronIndicesOfGroup(groupKey) {
+  return polyIndicesOfGroup(polyhedraTable(), groupKey);
+}
+
+/** Selection glow (orange emissive) on/off for table rows. */
+export function setPolyhedraGlow(rows, on) {
+  setPolyGlow(polyhedraTable(), rows, on);
 }
 
 /** Re-scale every drawn polyhedron by its focus-region factor (see
- *  FocusRegionModule.focusOpacityForPolyhedron). Authored alpha is read from
- *  the userData stamp, so repeated calls never compound. */
+ *  FocusRegionModule.focusOpacityForPolyhedron). Authored alpha stays in the
+ *  table (baseOpacity), so repeated calls never compound. */
 export function applyFocusToPolyhedra(structure = fileBrowser.selectedStructure) {
-  const grp = groups.polyhedraGroup;
-  if (!grp || !structure) return;
-  for (const mesh of grp.children) {
-    const ud = mesh.userData;
-    if (ud?.type !== 'polyhedron' || !mesh.material) continue;
-    const poly = structure.polyhedra?.polyhedra?.[ud.polyIndex];
-    const focus = poly ? getFocusOpacityForPolyhedron(poly, structure) : 1;
-    const base = ud.baseOpacity ?? mesh.material.opacity;
-    const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
-    const baseEdge = ud.baseEdgeOpacity ?? edge?.material?.opacity ?? 1;
-    ud.baseOpacity = base;
-    ud.baseEdgeOpacity = baseEdge;
-    applyPolyhedronOpacity(mesh, base * focus, baseEdge * focus);
+  const table = polyhedraTable();
+  if (!table || !structure) return;
+  const polys = structure.polyhedra?.polyhedra ?? [];
+  for (let i = 0; i < table.n; i++) {
+    const poly = polys[i];
+    setPolyFocus(table, i, poly ? getFocusOpacityForPolyhedron(poly, structure) : 1);
   }
+  uploadPolyStyles(table);
 }
 
 /**
- * Restyle the existing polyhedra faces in place — no geometry recompute. Applies
+ * Restyle the existing polyhedra in place — no geometry recompute. Applies
  * the full resolved style (color, opacity, category visibility) with user
  * overrides taking precedence over the default atom/element colours. Use after
  * an element-colour change or a Poly-tab style edit, so the polyhedra match
- * without a full (async) `updatePolyhedra`. Never touches material.emissive —
- * that channel is owned by the selection highlight. No-op when nothing drawn.
+ * without a full (async) `updatePolyhedra`. Never touches the glow — that is
+ * owned by the selection highlight. No-op when nothing drawn.
  */
+/**
+ * Set style fields (color, alpha, ...) on individual polyhedra by key, the
+ * persistent per-polyhedron record (individual > category), and redraw their
+ * colours. Shared by the Polyhedra rows and the host's apply.
+ * @param {any} structure
+ * @param {string[]} keys
+ * @param {Record<string, any>} patch
+ */
+export function setPolyhedronStyles(structure, keys, patch) {
+  structure.polyhedraUserStyles ??= {};
+  for (const k of keys) Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
+  updatePolyhedraColors();
+}
+
 export function updatePolyhedraColors() {
   notifyColorsChanged();
-  const grp = groups.polyhedraGroup;
+  const table = polyhedraTable();
   const structure = fileBrowser.selectedStructure;
-  if (!grp || !structure) return;
-  for (const mesh of grp.children) {
-    const ud = mesh.userData;
-    if (ud?.type !== 'polyhedron' || !mesh.material?.color) continue;
-    const style = resolvePolyhedronStyle(
-      structure, ud.key, ud.catKey, ud.mode, ud.centerSrcIndex, ud.colorElem);
-    mesh.material.color.set(style.color);
-    mesh.visible = style.visible;
-    const edge = mesh.children.find((c) => c.userData?.type === 'polyhedron-edges');
-    if (edge?.material) edge.material.color.set(style.edgeColor);
-    const poly = structure.polyhedra?.polyhedra?.[ud.polyIndex];
-    const focus = poly ? getFocusOpacityForPolyhedron(poly, structure) : 1;
-    ud.baseOpacity = style.opacity;
-    ud.baseEdgeOpacity = style.edgeOpacity;
-    applyPolyhedronOpacity(mesh, style.opacity * focus, style.edgeOpacity * focus);
+  if (!table || !structure) return;
+  writePolyhedraStyles(structure, table);
+  // Colour by a property: its colours stay over the freshly written styles
+  // (an alpha or show/hide edit keeps them); 'style' leaves the styles.
+  applyPolyhedraPropertyColors(table, { upload: false, saveStyle: true });
+  repaintOverride(table);
+  uploadPolyStyles(table);
+  // Complete Polyhedra adds the corner atoms of the DRAWN polyhedra
+  // (syncCompletingAtoms); a show/hide edit changes that set, so recompute —
+  // only then: a colour or alpha edit must not rebuild (the rebuild re-renders
+  // the Poly tab and would close the editor being used).
+  if (general.completePolyhedra && !polyhedraBusy) {
+    const sig = polyhedraVisibilitySignature(structure);
+    if (sig !== structure._completingVisSig) updatePolyhedra();
   }
+}
+
+/** The show/hide state of every polyhedra category and element, as one
+ *  string: what decides which polyhedra Complete Polyhedra completes. */
+function polyhedraVisibilitySignature(structure) {
+  const parts = [];
+  for (const [k, v] of Object.entries(structure.polyhedraCategoryStyles ?? {})) if (v?.visible != null) parts.push(`c:${k}=${v.visible ? 1 : 0}`);
+  for (const [k, v] of Object.entries(structure.polyhedraElementStyles ?? {})) if (v?.visible != null) parts.push(`e:${k}=${v.visible ? 1 : 0}`);
+  for (const [k, v] of Object.entries(structure.polyhedraUserStyles ?? {})) if (v?.visible != null) parts.push(`u:${k}=${v.visible ? 1 : 0}`);
+  return parts.sort().join('|');
+}
+
+/** Disco mode's paint override (render/PolyhedraMesh.js): reapply it over
+ *  freshly written styles, so a rebuild or a restyle keeps the paint. */
+function repaintOverride(table) {
+  const pick = polyPaintOverride();
+  if (!pick) return;
+  for (let i = 0; i < table.n; i++) {
+    if (!table.faceCount[i]) continue;
+    _paint.set(pick(i));
+    setPolyColorRGB(table, i, _paint.r, _paint.g, _paint.b);
+  }
+}
+
+const _paint = new THREE.Color();
+
+/** Paint every drawn polyhedron's faces and edges with `pick(i)` (anything
+ *  THREE.Color.set takes) WITHOUT touching the stored styles — the disco
+ *  ball's reversible paint; updatePolyhedraColors() restores the styles. */
+export function paintPolyhedraColors(pick) {
+  const table = polyhedraTable();
+  if (!table) return;
+  for (let i = 0; i < table.n; i++) {
+    if (!table.faceCount[i]) continue;
+    _paint.set(pick(i));
+    setPolyColorRGB(table, i, _paint.r, _paint.g, _paint.b);
+  }
+  uploadPolyStyles(table);
 }
 
 /** Live-update the polyhedra edge thickness (world units: width 1 = the
  *  unit-cell line thickness; 0 hides the edges entirely). */
 export function setPolyEdgeWidth(width) {
   general.polyEdgeWidth = width;
-  if (groups.polyhedraGroup) {
-    groups.polyhedraGroup.traverse((obj) => {
-      if (obj.userData?.type === 'polyhedron-edges' && obj.material) {
-        obj.material.linewidth = Math.max(0.03 * width, 1e-5); // world units
-        obj.visible = width > 0;
-      }
-    });
-  }
+  setPolyEdgeLinewidth(polyhedraTable(), width);
 }
 
 /**
  * Toggle/refresh entry point. Recomputes `structure.polyhedra` (so the model
  * mirrors the scene and bond-cutoff edits take effect) and renders it.
  */
+// A session restore (ui/ShareModule.js applySharedState) builds the structure
+// first and restores the atom order and polyhedron styles after it: polyhedra
+// computed in between were thrown away and computed again, the slowest part of
+// opening a styled share link. While held, a request is only remembered; the
+// restore makes the one request that counts once its styles are on.
+let holdDepth = 0;
+let heldRequest = false;
+
+/** Hold polyhedra requests until releasePolyhedra(). */
+export function holdPolyhedra() {
+  holdDepth += 1;
+}
+
+/** End holdPolyhedra(); true when a request arrived meanwhile (the caller
+ *  should then run updatePolyhedra() itself). */
+export function releasePolyhedra() {
+  if (!holdDepth) return false;
+  holdDepth -= 1;
+  if (holdDepth) return false;
+  const held = heldRequest;
+  heldRequest = false;
+  return held;
+}
+
 export function updatePolyhedra() {
   // Reflect current showPolyhedra/completePolyhedra + comparison-structure
   // state in the viewport warning banner every time this entry point runs
   // (toggles, comparison enable/disable/step-change all funnel through here).
   updatePolyhedraComparisonWarning();
   updateDisorderWarning();
+  updatePolyhedraFastNotice();
+  announcePolyhedraMode();
+
+  if (holdDepth) {
+    heldRequest = true;
+    return polyhedraPromise || Promise.resolve();
+  }
 
   // A coordination polyhedron's identity comes from the species of its centre
   // and ligands, and a fractionally occupied site has no single answer for
@@ -1320,6 +1490,7 @@ export function updatePolyhedra() {
   // looks authoritative but isn't, the feature is unavailable for such
   // structures; the banner says so.
   if (structureHasFractionalOccupancy()) {
+    updatePolyhedraFastNotice(null);
     clearPolyhedraGroup();
     if (polyhedraBusy) polyhedraDirty = true;
     return;
@@ -1368,9 +1539,14 @@ export function updatePolyhedra() {
       }
 
       const _tc = performance.now();
+      // The cell the corners are computed in: an MD frame's fast path
+      // (render/PolyhedraFrameModule.js) reads the corners back as fractional
+      // positions, and under a barostat the cell may move during the compute.
+      const srcLattice = structure.lattice.map((row) => [...row]);
       // computePolyhedra returns a Polyhedra (serial) or a Promise<Polyhedra> (parallel);
       // awaiting handles both. A newer request during the await sets `polyhedraDirty`.
       const model = await computePolyhedra(structure);
+      model.srcLattice = srcLattice;
 
       // A newer request arrived while computing → this result is stale; loop and recompute.
       if (polyhedraDirty) continue;
@@ -1386,11 +1562,28 @@ export function updatePolyhedra() {
       // Poly tab can list/group polyhedra even before/without faces being drawn.
       assignPolyhedraKeys(structure, model);
 
+      // Bond breaking tolerance (render/BondBreakTolerance.js): during playback
+      // the polyhedra drawn now are the memory — corners and polyhedra the
+      // tolerance still holds join the strict search result, then get their
+      // keys by the same code as searched ones. Nothing on a fresh load,
+      // another structure, tol 0, or after a cutoff / search setting change.
+      model.toleranceSig = polyhedraToleranceSignature(polyhedraSearchSettings(structure));
+      if (!general.completePolyhedra && !getActiveCutPlanes().length) {
+        const latInv = invert3x3(transpose3x3(structure.lattice));
+        const merged = mergeToleranceHeldPolyhedra(structure, model, {
+          cutoffOf: getBondLengthCutoff,
+          keyOf: (poly) => polyhedronIdentity(structure, poly, latInv).key,
+          makePolyhedron: (opts) => new Polyhedron(opts),
+        });
+        if (merged) assignPolyhedraKeys(structure, model);
+      }
+
       // "Complete Polyhedra": append the out-of-cell vertex atoms to the displayed set so
       // every polyhedron has an atom (with bonds) at each vertex. Only re-renders atoms/bonds
       // when the completing set actually changes (see syncCompletingAtoms). When it DID
       // change, the compute inputs changed too — loop for the fixed point (see above).
       if (general.completePolyhedra) {
+        structure._completingVisSig = polyhedraVisibilitySignature(structure);
         const completingChanged = syncCompletingAtoms(structure, model);
         if (completingChanged && ++completingPasses <= 4) polyhedraDirty = true;
       }
@@ -1485,6 +1678,10 @@ function syncCompletingAtoms(structure, model) {
   const seen = new Set();
   const add = { elements: [], frac: [], cart: [], srcIndex: [] };
   for (const poly of (model?.polyhedra ?? [])) {
+    // Only drawn polyhedra are completed: a hidden category or element
+    // (Poly tab switches) would otherwise leave a halo of its corner atoms
+    // around the cell with nothing to attach to.
+    if (poly.key && resolvePolyhedronStyle(structure, poly.key, poly.catKey, poly.type, poly.centerIndex, poly.colorElem).visible === false) continue;
     const verts = poly.vertices || [];
     const srcs = poly.vertexSrcList || [];
     for (let v = 0; v < verts.length; v++) {

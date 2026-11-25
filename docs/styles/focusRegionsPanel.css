@@ -20,18 +20,14 @@
 .focus-regions-list {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
 }
 
+/* Boxed like the other windows' sections (.panel-section, which also spaces
+   the cards apart); only the layout inside is the card's own. */
 .focus-regions-card {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-1-5, 6px);
-  padding: var(--sp-2);
-  border: 1px solid var(--line-1);
-  border-left: 3px solid var(--accent-fg);
-  border-radius: var(--radius-sm);
-  background: var(--group-bg);
+  gap: var(--sp-2);
 }
 
 .focus-regions-card-header {
@@ -74,6 +70,16 @@
   width: 100%;
   padding: var(--sp-1) var(--sp-2);
   font-size: var(--fs-sm);
+  /* No spin buttons: in a narrow window they covered the digits. */
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.focus-regions-center-coordinates input::-webkit-inner-spin-button,
+.focus-regions-center-coordinates input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
 }
 
 .focus-regions-inner-toggle {

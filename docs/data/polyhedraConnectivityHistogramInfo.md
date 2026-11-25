@@ -16,5 +16,6 @@ The bar chart groups connection counts by sharing type and polyhedron-pair categ
 below it shows every individual connection. Click a bar or a list row to highlight the atoms
 involved (centres, vertices, and any bridging atom) — click again to clear.
 
-Also available in the split view beside the 3D scene (see the "Split View" button next to this
-one in the Polyhedra panel).
+Opened with **Open** next to *Connectivity* under **Histograms** in the Polyhedra window. It
+opens in the wide dock on the right of the 3D scene; like any window, it can be dragged out to
+float, or into the left bar.

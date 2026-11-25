@@ -143,3 +143,138 @@
   margin-right: 6px;
   vertical-align: middle;
 }
+
+/* ---- Tabs: Monitor | Benchmark (the potential picker's segmented switch,
+   .backend-potential-toggle in backendPanel.css) ---- */
+.dbgTabs {
+  align-self: flex-start;
+}
+.dbgTabPane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.dbgTabPane[hidden] { display: none; }
+
+/* ---- Benchmark tab (ui/DebugBenchmarkTab.js) ---- */
+.dbgBench {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.dbgBenchIntro,
+.dbgBenchCaps {
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--fg-75);
+  line-height: 1.4;
+}
+.dbgBenchCaps { color: var(--fg-85); }
+.dbgBenchCaps [data-role="isolate"] { margin-left: var(--sp-2); }
+.dbgBenchForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.dbgBenchForm fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+}
+.dbgBenchForm legend {
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  color: var(--fg-85);
+}
+.dbgBenchCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+  color: var(--fg-85);
+}
+.dbgBenchCheck:has(input:disabled) { opacity: 0.5; }
+.dbgBenchNum { width: 4.5em; }
+.dbgBenchText { width: 14em; }
+.dbgBenchProgress {
+  font-size: var(--fs-sm);
+  color: var(--fg-75);
+}
+.dbgBenchChartHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.dbgBenchChart {
+  font-size: var(--fs-sm);
+  color: var(--fg-75);
+}
+.dbgBenchSvg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.dbgBenchGrid {
+  stroke: var(--line-1);
+  stroke-width: 1;
+}
+.dbgBenchAxis {
+  stroke: var(--wash-4);
+  stroke-width: 1;
+}
+.dbgBenchTick,
+.dbgBenchAxisLabel,
+.dbgBenchEndLabel {
+  fill: var(--fg-75);
+  font-size: 10px;
+}
+.dbgBenchEndLabel { fill: var(--fg-85); }
+.dbgBenchDot {
+  stroke: var(--panel-bg);
+  stroke-width: 1.5;
+}
+.dbgBenchLegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+  color: var(--fg-85);
+}
+.dbgBenchLegend li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+/* ---- Tracer tab (ui/DebugTracerTab.js): old / new renders side by side ---- */
+.dbgTracerAB {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--sp-3);
+}
+.dbgTracerShot {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.dbgTracerShot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+}
+.dbgTracerShot figcaption {
+  font-size: var(--fs-sm);
+  color: var(--fg-85);
+}

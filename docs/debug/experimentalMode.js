@@ -5,7 +5,8 @@
 // It gates features that work but are not yet benchmarked against the
 // reference implementations they mirror, so they can ship in the codebase
 // and be exercised by their tests without reaching users by default. Today:
-// the phonon mode map (ui/PhononPanel.js), pending a comparison with ModeMap.
+// the phonon mode map (ui/PhononPanel.js), pending a comparison with ModeMap,
+// and the Spins panel's Comparison Spins section (ui/SpinComparisonSection.js).
 // Read ONCE at module load; share links drop the parameter
 // (ShareModule.buildURL) so the mode is never handed on by accident.
 

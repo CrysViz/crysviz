@@ -1,0 +1,609 @@
+/* Add panels (ui/FeatureStoreModal.js — the feature store's popup) and search
+   (ui/FeatureSearch.js): the sidebar's search trigger and solid store button,
+   the store popup's card list, and the search palette.
+
+   Tokens only (no colour/font literals) per the CSS invariants
+   (agent_guides/STYLE.md); breakpoints live in responsive.css. */
+
+/* ---- sidebar: search trigger -------------------------------------------- */
+
+/* A button dressed as a search field: the palette it opens is the real input. */
+.feature-search-trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 var(--sp-4) 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--input-bg);
+  color: var(--fg-75);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: text;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.feature-search-trigger:hover,
+.feature-search-trigger:focus-visible {
+  border-color: var(--highlight-color);
+  box-shadow: 0 0 4px 1px var(--hover-color);
+}
+
+/* A drawn magnifier (index.html, FeatureSearch.js): the ⌕ glyph was too
+   thin to read at text size. Sized in em, so it follows each field's font. */
+.feature-search-trigger-icon {
+  flex: 0 0 auto;
+  width: 1.3em;
+  height: 1.3em;
+}
+
+.feature-search-trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Shared keycap look: the trigger's shortcut hint, the store note, the
+   palette footer. */
+.feature-search-trigger-key,
+.feature-store-kbd,
+.feature-search-kbd {
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--wash-1);
+  color: var(--fg-75);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+/* ---- sidebar: "Add panels" + "Reset to Essentials", under the search ---- */
+
+.feature-store-actions {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-4) 0;
+}
+
+.feature-store-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  flex: 1 1 auto;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  /* --accent-color is the theme's text-carrying fill (themes/*: "buttons +
+     selected rows — carries --fg-1 text"); the --highlight-color ring makes
+     it the one solid call to action in the sidebar. */
+  background: var(--accent-color);
+  color: var(--fg-1);
+  border: 1px solid var(--highlight-color);
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-bold);
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, filter 0.2s ease;
+}
+
+/* The quieter neighbour: an outline, so "Add panels" stays the one solid
+   call to action. */
+.feature-store-reset-btn {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: transparent;
+  color: var(--fg-75);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.feature-store-reset-btn:hover,
+.feature-store-reset-btn:focus-visible {
+  border-color: var(--highlight-color);
+  color: var(--fg-1);
+}
+
+.feature-store-btn:hover,
+.feature-store-btn:focus-visible {
+  box-shadow: 0 0 6px 2px var(--highlight-color);
+  filter: brightness(1.08);
+}
+
+.feature-store-btn-badge {
+  padding: 1px var(--sp-3);
+  border-radius: var(--radius-9);
+  background: var(--overlay-20);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.feature-store-btn-badge[hidden] {
+  display: none;
+}
+
+/* ---- store popup ------------------------------------------------------- */
+
+#featureStoreModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+#featureStoreModal[hidden] {
+  display: none;
+}
+
+.feature-store-modal {
+  width: min(620px, calc(100vw - 32px));
+  max-height: 86dvh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.feature-store-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.feature-store-head h3 {
+  margin: 0;
+}
+
+.feature-store-close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: var(--wash-2);
+  color: var(--fg-1);
+  border: none;
+  border-radius: 50%;
+  font-size: var(--fs-lg);
+  line-height: var(--lh-tight);
+  cursor: pointer;
+}
+
+.feature-store-close:hover {
+  background: var(--hover-color);
+}
+
+.feature-store-modal > .png-note {
+  margin: var(--sp-3) 0 var(--sp-4) 0;
+}
+
+.feature-store-presets {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+/* Result of a preset, with its Undo. */
+.feature-store-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin: 0 0 var(--sp-4) 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--wash-1);
+  border-left: 3px solid var(--highlight-color);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+}
+
+.feature-store-notice[hidden],
+.feature-store-undo[hidden] {
+  display: none;
+}
+
+.feature-store-undo {
+  margin-left: auto;
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--accent-color);
+  color: var(--fg-1);
+  border: 1px solid var(--highlight-color);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+.feature-store-preset {
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--wash-2);
+  color: var(--fg-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-9);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.feature-store-preset:hover {
+  border-color: var(--highlight-color);
+}
+
+.feature-store-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--sp-2);
+}
+
+.feature-store-category h4 {
+  margin: var(--sp-4) 0 var(--sp-3) 0;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-75);
+}
+
+.feature-store-category:first-child h4 {
+  margin-top: 0;
+}
+
+.feature-store-card {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-3-5) var(--sp-4);
+  background: var(--wash-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+}
+
+.feature-store-card.in-sidebar {
+  border-color: var(--border-color);
+  background: var(--hover-color);
+}
+
+.feature-store-card-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-store-card-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.feature-store-card-blurb {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--fg-75);
+}
+
+.feature-store-tag {
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-9);
+  background: var(--accent-color);
+  color: var(--fg-1);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.feature-store-info {
+  flex: 0 0 auto;
+}
+
+/* Add is the solid call to action; Remove is the quiet one. */
+.feature-store-toggle {
+  flex: 0 0 auto;
+  min-width: 78px;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--accent-color);
+  color: var(--fg-1);
+  border: 1px solid var(--highlight-color);
+  border-radius: var(--radius);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+.feature-store-card.in-sidebar .feature-store-toggle {
+  background: var(--wash-2);
+  border-color: var(--line-1);
+  color: var(--fg-85);
+}
+
+.feature-store-toggle:hover {
+  box-shadow: 0 0 4px 2px var(--highlight-color);
+}
+
+/* Card flash when search sends the user here. */
+.feature-store-card.cv-shortcut-flash {
+  border-color: var(--danger);
+}
+
+/* ---- search palette ---------------------------------------------------- */
+
+#featureSearchOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12dvh;
+  background: var(--overlay);
+}
+
+#featureSearchOverlay[hidden] {
+  display: none;
+}
+
+.feature-search-palette {
+  width: min(640px, calc(100vw - 32px));
+  max-height: 72dvh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--menu-bg);
+  color: var(--panel-fg);
+  border: 1px solid var(--wash-4);
+  border-radius: var(--radius-12);
+  box-shadow: 0 12px 32px var(--overlay);
+  backdrop-filter: blur(10px);
+  overflow: hidden;
+}
+
+.feature-search-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--line-1);
+}
+
+.feature-search-input-row .feature-search-trigger-icon {
+  color: var(--fg-75);
+}
+
+#featureSearchInput {
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-2) 0;
+  background: transparent;
+  color: var(--fg-1);
+  border: none;
+  outline: none;
+  font-size: var(--fs-xl);
+}
+
+.feature-search-results {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--sp-2) 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.feature-search-empty {
+  padding: var(--sp-5);
+  color: var(--fg-75);
+  font-size: var(--fs-md);
+}
+
+.feature-search-result {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  cursor: pointer;
+}
+
+.feature-search-result.active {
+  background: var(--hover-color);
+  box-shadow: inset 3px 0 0 var(--highlight-color);
+}
+
+.feature-search-kind {
+  flex: 0 0 auto;
+  min-width: 64px;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-50);
+}
+
+.feature-search-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-search-label {
+  font-size: var(--fs-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "≈ lattice vibrations": the vocabulary phrase a result matched
+   (search/concepts.js), when none of the typed words is in its label. */
+.feature-search-alias {
+  color: var(--accent-fg);
+  font-style: italic;
+}
+
+.feature-search-label mark {
+  background: none;
+  color: var(--accent-fg);
+  font-weight: var(--fw-bold);
+}
+
+.feature-search-path {
+  margin-top: 1px;
+  font-size: var(--fs-sm);
+  color: var(--fg-50);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Not in sidebar — Enter adds it" / "No data for this structure". */
+.feature-search-badge {
+  flex: 0 0 auto;
+  padding: 1px var(--sp-3);
+  border-radius: var(--radius-9);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.feature-search-badge-store {
+  background: var(--accent-color);
+  color: var(--fg-1);
+}
+
+.feature-search-badge-unavailable {
+  background: var(--wash-2);
+  color: var(--fg-75);
+}
+
+.feature-search-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--line-1);
+  font-size: var(--fs-xs);
+  color: var(--fg-50);
+}
+
+/* ---- release note (ui/ReleaseNote.js) ------------------------------------ */
+
+/* "New: Search everything": beside the sidebar's search field when it is on
+   screen (.release-note-anchored, left/top set from JS), else bottom centre. */
+.release-note {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-6);
+  transform: translateX(-50%);
+  z-index: var(--z-chrome);
+  width: 320px;
+  max-width: calc(100vw - 2 * var(--sp-5));
+  box-sizing: border-box;
+  padding: var(--sp-5);
+  background: var(--menu-bg);
+  color: var(--fg-1);
+  border: 1px solid var(--highlight-color);
+  border-radius: var(--radius);
+  box-shadow: 0 0 6px 2px var(--highlight-color);
+  font-size: var(--fs-sm);
+}
+
+.release-note[hidden] {
+  display: none;
+}
+
+.release-note-anchored {
+  bottom: auto;
+  transform: none;
+}
+
+/* Arrow toward the search field. */
+.release-note-anchored::before {
+  content: '';
+  position: absolute;
+  left: -7px;
+  top: 22px;
+  width: 12px;
+  height: 12px;
+  background: var(--menu-bg);
+  border-left: 1px solid var(--highlight-color);
+  border-bottom: 1px solid var(--highlight-color);
+  transform: rotate(45deg);
+}
+
+.release-note-badge {
+  display: inline-block;
+  margin-bottom: var(--sp-3);
+  padding: 1px var(--sp-3);
+  background: var(--accent-color);
+  color: var(--fg-1);
+  border: 1px solid var(--highlight-color);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+}
+
+.release-note-title {
+  margin: 0 0 var(--sp-3) 0;
+  font-size: var(--fs-md);
+  font-weight: var(--fw-medium);
+}
+
+.release-note-text {
+  margin: 0 0 var(--sp-4) 0;
+  line-height: var(--lh-normal);
+  color: var(--fg-75);
+}
+
+.release-note-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  color: var(--fg-75);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.release-note-check input {
+  margin: 0;
+}
+
+.release-note-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+}
+
+.release-note-close,
+.release-note-try {
+  padding: var(--sp-2) var(--sp-5);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.release-note-close {
+  background: transparent;
+  color: var(--fg-75);
+  border: 1px solid var(--line-2);
+}
+
+.release-note-try {
+  background: var(--accent-color);
+  color: var(--fg-1);
+  border: 1px solid var(--highlight-color);
+  font-weight: var(--fw-medium);
+}

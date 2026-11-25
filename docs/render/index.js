@@ -25,6 +25,7 @@ export {
   atomImageKey, getAtomImageStyle, setAtomImageStyle, clearAtomImageStyle,
   clearAtomImageStylesForAtom, getAtomImageColor, updateSingleAtomImageColor,
   deriveVisibleWrapped, refreshAtomWedgeTexture, setSpeciesColorBulk,
+  refreshAtomColors,
 } from './AtomsFracUpdateModule.js';
 
 export {
@@ -33,8 +34,13 @@ export {
 } from './ChargeBadgeModule.js';
 
 export {
+  rebuildAtomLabels, updateAtomLabels, clearAtomLabelTextureCache, atomLabelTexts, refreshAtomLabelsIfStale,
+  MAX_LABELLED_ATOMS,
+} from './AtomLabelModule.js';
+
+export {
   getBondCutoff, updateBonds, rebuildBonds, buildBondObjects, scheduleBondRebuild,
-  updateSingleBondDiameter, disposeBondsMesh, updateSingleBondColor,
+  updateSingleBondDiameter, applyBondRadius, disposeBondsMesh, updateSingleBondColor,
   updateSingleBondOpacity, bondKey, bondGroupKey, refreshBondColorsForAtoms,
 } from './BondsFracUpdateModule.js';
 
@@ -54,15 +60,17 @@ export {
   hydrogenBondColorFor, applyFocusToHydrogenBonds,
 } from './HydrogenBondModule.js';
 
-export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail } from './FastFrameModule.js';
+export { applyFrameFast, BOND_TOPOLOGY_STRIDE, lastFastFrameBail, isFrameDependentColorMode } from './FastFrameModule.js';
 
 export {
   DEFAULT_FOCUS_REGION, POLYHEDRA_FOCUS_MODES, focusOpacityAt, focusDistanceTo, gradientStartRadius,
   combinedFocusOpacity, focusOpacityForPolyhedron, getFocusOpacityForPolyhedron, getFocusRegions,
-  focusRegionsActive, getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion,
-  removeFocusRegion, clearFocusRegions, applyFocusRegions, setFocusRegionCenterFractional,
+  focusRegionsActive, getFocusOpacityForInstance, prepareFocusRegions, createFocusRegion, createFocusRegionAt,
+  removeFocusRegion, clearFocusRegions, applyFocusRegions, applyFocusRegionEdit, persistFocusRegions,
+  setFocusRegionCenterFractional,
   resetFocusRegionCenter, applyFocusToArrows, applyFocusToField,
 } from './FocusRegionModule.js';
+export { atomLodStats, imposterModeFor, ATOM_DETAIL_MODES } from './AtomLodModule.js';
 
 export { updateGroundPlane } from './GroundPlaneModule.js';
 
@@ -72,10 +80,25 @@ export {
 } from './LatticeModule.js';
 
 export {
-  updatePolyhedra, updatePolyhedraColors, groupPolyhedraByCategory,
-  resolvePolyhedronStyle, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
-  polyhedronFaceColor, applyFocusToPolyhedra,
+  showAsymmetricUnit, hideAsymmetricUnit, updateAsymmetricUnit,
+  isAsymmetricUnitVisible, asymmetricUnitNeedsCellBox, latticesMatch,
+  refreshAsuAppearance, setAsuAtomHighlight, isAsuAtomHighlightOn,
+  asuAtomsInside, updateAsuAtomHighlight, refreshAsymmetricUnitIfStale, asymmetricUnitShift,
+  ASU_DROPPED_EVENT,
+} from './AsymmetricUnitModule.js';
+
+export {
+  updatePolyhedra, updatePolyhedraColors, setPolyhedronStyles, groupPolyhedraByCategory, holdPolyhedra, releasePolyhedra,
+  resolvePolyhedronStyle, polyhedraElementKeyOf, polyhedronGroupKey, setPolyEdgeWidth, notifyColorsChanged,
+  polyhedronFaceColor, applyFocusToPolyhedra, effectivePolyhedraMode,
+  polyhedraTable, polyhedraDrawnCount, polyhedronInfo, polyhedraInfo, polyhedronIndexOfKey,
+  polyhedronIndicesOfGroup, setPolyhedraGlow,
 } from './PolyhedraModule.js';
+
+export {
+  polyhedraFastFrameStats, polyhedraPropertyValues, polyhedraTiltFrameInfo, polyhedraColorMapName,
+  polyhedraPropertyColorActive, polyhedraColorRangeInfo,
+} from './PolyhedraFrameModule.js';
 
 export {
   updateField, applyFieldPeriodicBounds, setActiveField, toggleFieldVisibility, clearField,
@@ -83,7 +106,8 @@ export {
   revealFieldPanelForCurrentStructure, suggestIsoValue,
 } from './Render3DFieldModule.js';
 
-export { removeSpins, updateSpins, deleteSpins, computeSpinColor, autoSpinScale } from './SpinModule.js';
+export { removeSpins, updateSpins, deleteSpins, computeSpinColor, autoSpinScale, SPIN_DRAW_THRESHOLD } from './SpinModule.js';
+export { restyleArrowMaterials, refreshArrowCelOutlines } from './ArrowMaterial.js';
 
 export {
   setupAxisControls, setupAxisLongPress, setAxisStepButtonsMode, applyRotationFromUI,

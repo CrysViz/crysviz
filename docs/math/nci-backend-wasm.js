@@ -1,4 +1,5 @@
 import createNciModule from '../compiled/nci_backend.js';
+import { BOHR_TO_ANGSTROM } from '../io/cubeParse.js';
 
 /**
  * JS adapter for the NCI WASM backend (`docs/compiled/nci_backend.c`).
@@ -26,9 +27,9 @@ import createNciModule from '../compiled/nci_backend.js';
  * docs/compiled/nci_backend.c.
  */
 
-/** Angstrom per bohr. The same constant `io/ReadCubeModule.js` converts cube
+/** Angstrom per bohr. The same constant `io/cubeParse.js` converts cube
  *  files with, so a cube's own bohr grid round-trips exactly. */
-export const ANGSTROM_PER_BOHR = 0.529177249;
+export const ANGSTROM_PER_BOHR = BOHR_TO_ANGSTROM;
 
 /** NCI defaults. Jmol's (NciCalculation.java), except the promolecular
  *  density cut: Jmol uses 0.07, but at 0.07 the promolecular density leaves

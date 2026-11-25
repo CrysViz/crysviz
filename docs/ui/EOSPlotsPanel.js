@@ -50,9 +50,9 @@ export function addEOSPlotsPanel(target = 'cvPanelBody-eosPlots') {
         <div id="ev-plot" class="split-item-body"></div>
         <button type="button" class="split-item-close-btn" data-split-action="close" title="Close expanded view">✕</button>
         <div class="split-item-actions">
-          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="ev-plot" title="Toggle light/dark">🌓︎</button>
-          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="ev-plot" title="Export PNG">📥</button>
-          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="ev-plot" title="Expand">⛶</button>
+          <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="ev-plot" title="Toggle light/dark"></button>
+          <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="ev-plot" title="Export PNG"></button>
+          <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="ev-plot" title="Expand"></button>
         </div>
       </div>
       <div class="split-item" id="pv-plot-wrapper">
@@ -68,9 +68,9 @@ export function addEOSPlotsPanel(target = 'cvPanelBody-eosPlots') {
             <span class="toggle_text">Show Error Plots</span>
           </label>
           <div class="eos-plot-actions-right">
-            <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="pv-plot" title="Toggle light/dark">🌓︎</button>
-            <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="pv-plot" title="Export PNG">📥</button>
-            <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="pv-plot" title="Expand">⛶</button>
+            <button type="button" class="split-item-action-btn" data-split-action="theme" data-split-item="pv-plot" title="Toggle light/dark"></button>
+            <button type="button" class="split-item-action-btn" data-split-action="export" data-split-item="pv-plot" title="Export PNG"></button>
+            <button type="button" class="split-item-action-btn" data-split-action="expand" data-split-item="pv-plot" title="Expand"></button>
           </div>
         </div>
       </div>

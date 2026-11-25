@@ -7,6 +7,11 @@ var MarchingCubesModule = await MarchCubes();
 
 // uncomment for Three.js built-in marching cubes
 import * as ThreeMarchingCubes from './JSMarchingCubes.js';
+import { createMarchingCubesInstance, marchingCubesBudget, resampleGridValues } from './marchingCubesMemory.js';
+
+// Bytes the live WASM instances have preallocated, all in the module's one
+// 4 GiB heap; a new instance is budgeted against what is left.
+let liveWasmBytes = 0;
 
 const MarchingCubesBackend = Object.freeze({
     THREE: 'three',
@@ -77,10 +82,20 @@ class MarchingCubesWrapper {
         //     backend_MC = new GPUMarchCubes.MarchCubes(field, field.nx, field.ny, field.nz);
         //     console.log("Using GPU-based Marching Cubes");
         // } 
+        /** Grid the WASM backend runs on; coarser than the field's when the
+         *  field would not fit the module's memory (model/marchingCubesMemory.js).
+         *  @type {{nx:number, ny:number, nz:number, bytes:number, downsampled:boolean} | null} */
+        this.grid = null;
         if (backend === MarchingCubesBackend.WASM) {
-            backend_MC = new MarchingCubesModule.MarchingCubes(field.nx, field.ny, field.nz);
-            const fieldPtr = backend_MC.getField();
-            MarchingCubesModule.HEAPF32.set(field.values, fieldPtr >> 2);
+            const { instance, grid } = createMarchingCubesInstance(
+                MarchingCubesModule, field, marchingCubesBudget(liveWasmBytes));
+            backend_MC = instance;
+            this.grid = grid;
+            liveWasmBytes += grid.bytes;
+            if (grid.downsampled) {
+                console.warn(`Marching cubes: ${field.nx}x${field.ny}x${field.nz} field resampled to `
+                    + `${grid.nx}x${grid.ny}x${grid.nz} to fit WASM memory`);
+            }
             // Field.maskValue: cubes touching a point at or above it are not
             // meshed (the NCI s field marks points outside its density window
             // this way). The THREE backend has no equivalent and ignores it.
@@ -130,11 +145,19 @@ class MarchingCubesWrapper {
         }
         if (!force && this._colorValues === colorField.values) return true;
         this.marchingCubes.setColorFieldEnabled(true);
+        if (!this.marchingCubes.getColorFieldEnabled()) {
+            // the module could not allocate the colour buffers
+            this._colorValues = null;
+            return false;
+        }
         const ptr = this.marchingCubes.getColorField();
         const size = field.nx * field.ny * field.nz;
-        const src = colorField.values.length === size
+        let src = colorField.values.length === size
             ? colorField.values
             : /** @type {any} */ (colorField.values).subarray(0, size);
+        // A field too large for the module runs on a coarser grid
+        // (this.grid.downsampled); the colour field must follow it there.
+        if (this.grid?.downsampled) src = resampleGridValues(src, field, this.grid);
         MarchingCubesModule.HEAPF32.set(src, ptr >> 2);
         this._colorValues = colorField.values;
         return true;
@@ -168,6 +191,9 @@ class MarchingCubesWrapper {
         const backend = this.backend;
         if (backend === MarchingCubesBackend.WASM) {
             this.marchingCubes.updateVertices(isoValue);
+            if (this.marchingCubes.isTruncated()) {
+                console.warn('Marching cubes: vertex buffer full, isosurface truncated');
+            }
         }
         else if (backend === MarchingCubesBackend.THREE) {
             this.marchingCubes.isolation = isoValue;
@@ -212,7 +238,10 @@ class MarchingCubesWrapper {
         // }
         const backend = this.backend;
         if (backend === MarchingCubesBackend.WASM) {
+            if (!this.marchingCubes) return;
             this.marchingCubes.delete();
+            this.marchingCubes = null;
+            liveWasmBytes = Math.max(0, liveWasmBytes - (this.grid?.bytes ?? 0));
         }
         else if (backend === MarchingCubesBackend.THREE) {
             // Three.js built-in marching cubes does not require explicit deletion
@@ -244,7 +273,7 @@ class MarchingCubesWrapper {
             }
 
             const arrayPtr = MarchingCubesModule.mallocFloatArray(primaryArray.length);
-            MarchingCubesModule.HEAPF32.set(primaryArray, arrayPtr >> 2);
+            MarchingCubesModule.HEAPF32.set(primaryArray, arrayPtr >>> 2);
             const permutationPtr = MarchingCubesModule.mallocUIntArray(triangleCount);
 
             MarchingCubesModule.buildTriangleDistancePermutation(arrayPtr, vertexCount, cameraPosition.x, cameraPosition.y, cameraPosition.z, permutationPtr);
@@ -256,7 +285,7 @@ class MarchingCubesWrapper {
                 if (!Number.isInteger(itemSize) || itemSize < 1 || itemSize > 4) continue;
 
                 const extraArrayPtr = MarchingCubesModule.mallocFloatArray(array.length);
-                MarchingCubesModule.HEAPF32.set(array, extraArrayPtr >> 2);
+                MarchingCubesModule.HEAPF32.set(array, extraArrayPtr >>> 2);
                 MarchingCubesModule.reorderArrayByPermutation(extraArrayPtr, vertexCount, itemSize, permutationPtr);
                 const sortedExtra = new array.constructor(MarchingCubesModule.HEAPF32.buffer, extraArrayPtr, array.length).slice();
                 array.set(sortedExtra);

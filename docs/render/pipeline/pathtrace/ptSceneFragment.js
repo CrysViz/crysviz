@@ -24,12 +24,15 @@
 // key-light direction at
 // uLightPosition with radius uLightRadius (the "Light softness" slider).
 
-import { DATA_TEX_WIDTH } from '../raytrace/sceneFragment.js';
+import { DATA_TEX_WIDTH } from '../raytrace/SceneEncoder.js';
 import { fieldChunk } from '../raytrace/fieldChunk.js';
 import { planeChunk } from '../raytrace/planeChunk.js';
 import { gridChunk } from '../raytrace/gridChunk.js';
 import { convexChunk } from '../raytrace/convexChunk.js';
 import { coneChunk } from '../raytrace/coneChunk.js';
+import * as THREE from '../../../external/three/three.module.js';
+import '../../../external/three-pathtracing/PathTracingCommon.js'; // registers THREE.ShaderChunk['pathtracing_*']
+import { DOF_DECLARATIONS, dofFunctions, patchMainChunkDof } from '../raytrace/dofChunk.js';
 
 export function makePtSceneFragment(pieChunk = '', preMainChunk = '') {
 return /* glsl */`
@@ -38,7 +41,7 @@ precision highp int;
 precision highp sampler2D;
 
 #include <pathtracing_uniforms_and_defines>
-
+${DOF_DECLARATIONS}
 uniform sampler2D uAtomsDataTexture;
 uniform sampler2D uCylindersDataTexture;
 uniform sampler2D uPolyDataTexture;
@@ -53,6 +56,7 @@ uniform vec3 uSceneMax;
 uniform bool uSceneBoundValid; // false = empty scene
 uniform bool uShadowAnyHit;  // any-hit shadow early-out (false when the scene
 //   has emissive objects: they are LIGHTs a light-sample ray must still reach)
+uniform bool uLegacyNoise; // debug A/B only: the old coin flip at see-through surfaces
 uniform bool uLdsEnabled;    // A2 debug flag: use the app low-discrepancy
 //   sampler (ptRand) for the first path decisions; false => byte-identical to
 //   the vendored white-noise rng() stream (PathTracingPipeline._ldsEnabled)
@@ -588,6 +592,18 @@ float SceneIntersect()
 } // end SceneIntersect
 
 //---------------------------------------------------------------------------
+// A see-through continuation resumes as the camera segment it came from (no
+// diffuse bounce yet, no reflection pending) and starts its own segment.
+// (One line: the JS template joins the backslash-ended lines.)
+#define PT_RESUME_PASS_RAY \
+	if (havePassRay == TRUE) { mask = passMask; rayOrigin = passRayOrigin; rayDirection = passRayDirection; isPrimaryRay = passRayIsPrimary; havePassRay = FALSE; bounceIsSpecular = TRUE; sampleLight = FALSE; isReflectionTime = FALSE; isDiffuseBounceTime = FALSE; willNeedReflectionRay = FALSE; willNeedDiffuseBounceRay = FALSE; diffuseCount = 0; segBounces = 0; continue; }
+// See-through layers blended exactly per camera path (deeper ones pass at
+// random), and the classic 8 steps per segment — paths without see-through
+// surfaces trace exactly as before.
+${dofFunctions('SceneIntersect()')}
+#define PT_MAX_PASS_LAYERS 4
+#define PT_SEGMENT_BOUNCES 8
+
 vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float objectID, out float pixelSharpness )
 {
 	vec3 accumCol = vec3(0);
@@ -626,9 +642,30 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 	// TRUE until the ray is redirected; alpha pass-throughs keep it, so the
 	// backdrop behind transparent objects uses the same display-exact color.
 	int isPrimaryRay = TRUE;
+	// See-through continuation (see the alpha test below): what lies behind a
+	// see-through surface met on the camera segment, traced once that
+	// surface's own path (light sample, diffuse bounce, reflection) is done,
+	// with weight (1 - alpha). One slot, filled again layer after layer.
+	int havePassRay = FALSE;
+	int passRayIsPrimary = FALSE;
+	int passLayers = 0;
+	int segBounces = 0;
+	vec3 passRayOrigin = vec3(0);
+	vec3 passRayDirection = vec3(0);
+	vec3 passMask = vec3(0);
 
-	for (int bounces = 0; bounces < 8; bounces++)
+	for (int bounces = 0; bounces < PT_SEGMENT_BOUNCES * (PT_MAX_PASS_LAYERS + 1); bounces++)
 	{
+		// This segment's budget is spent: as before, whatever it still had
+		// pending is dropped; a waiting see-through continuation starts its
+		// own segment.
+		if (segBounces >= PT_SEGMENT_BOUNCES)
+		{
+			PT_RESUME_PASS_RAY
+			break;
+		}
+		segBounces++;
+
 		previousObjectID = hitObjectID;
 
 		gCameraRay = isPrimaryRay;
@@ -642,6 +679,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				// unredirected camera ray: the display-exact background
 				pixelSharpness = 1.0;
 				accumCol += mask * uBackgroundDisplay;
+				PT_RESUME_PASS_RAY
 				break;
 			}
 			// diffuse/reflection rays that miss pick up a soft sky/ambient term
@@ -675,6 +713,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				isPrimaryRay = FALSE;
 				continue;
 			}
+			PT_RESUME_PASS_RAY
 			break;
 		}
 
@@ -694,12 +733,49 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 		}
 
 		// Non-refractive alpha transparency (raster-like "see-through"): any
-		// non-glass surface with alpha < 1 lets the ray (including light-
-		// sample rays) pass STRAIGHT through with probability (1 - alpha).
-		if (hitType != REFR && hitAlpha < 0.999 && ptRand() >= hitAlpha)
+		// non-glass surface with alpha < 1 shows alpha of itself and
+		// (1 - alpha) of what lies behind. It used to be a coin flip (pass
+		// STRAIGHT through with probability 1 - alpha). A light-sample
+		// (shadow) ray now lets (1 - alpha) of the light through, and a camera
+		// ray blends the two exactly: the same converged image without the
+		// coin-flip noise.
+		if (hitType != REFR && hitAlpha < 0.999)
 		{
-			rayOrigin = x + (rayDirection * uEPS_intersect);
-			continue;
+			// The pass-through is free (segBounces is given back): a light
+			// ray crossing a few see-through atoms used to spend its segment
+			// budget on them and was dropped, a full shadow for nearly
+			// invisible objects. The outer loop bound still caps the work.
+			if (sampleLight == TRUE && !uLegacyNoise)
+			{
+				mask *= 1.0 - hitAlpha;
+				rayOrigin = x + (rayDirection * uEPS_intersect);
+				segBounces--;
+				continue;
+			}
+			// On the camera segment (before any diffuse bounce or reflection
+			// slot): shade this surface below with weight alpha, and keep what
+			// lies behind it, weight (1 - alpha), for when this surface's path
+			// is done (PT_RESUME_PASS_RAY) — exact instead of a coin flip, so
+			// see-through polyhedra, atoms and bonds are not grainy.
+			if (sampleLight == FALSE && havePassRay == FALSE && passLayers < PT_MAX_PASS_LAYERS
+				&& diffuseCount == 0 && isReflectionTime == FALSE && isDiffuseBounceTime == FALSE && !uLegacyNoise)
+			{
+				havePassRay = TRUE;
+				passLayers++;
+				passRayOrigin = x + (rayDirection * uEPS_intersect);
+				passRayDirection = rayDirection;
+				passMask = mask * (1.0 - hitAlpha);
+				passRayIsPrimary = isPrimaryRay;
+				mask *= hitAlpha;
+			}
+			// Elsewhere (diffuse bounces, reflections, deeper layers, the debug
+			// comparison): the random pass, as before.
+			else if (ptRand() >= hitAlpha)
+			{
+				rayOrigin = x + (rayDirection * uEPS_intersect);
+				segBounces--; // a pass-through is free (see above)
+				continue;
+			}
 		}
 
 		if (hitType == LIGHT)
@@ -753,6 +829,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				isPrimaryRay = FALSE;
 				continue;
 			}
+			PT_RESUME_PASS_RAY
 			break;
 		} // end LIGHT
 
@@ -786,6 +863,7 @@ vec3 CalculateRadiance( out vec3 objectNormal, out vec3 objectColor, out float o
 				isPrimaryRay = FALSE;
 				continue;
 			}
+			PT_RESUME_PASS_RAY
 			break;
 		}
 
@@ -970,7 +1048,7 @@ void SetupScene(void)
 	lightSphere = Sphere(uLightRadius, uLightPosition, uLightColor * 12.0, vec3(0), LIGHT);
 }
 
-${preMainChunk}#include <pathtracing_main>
+${preMainChunk}${patchMainChunkDof(THREE.ShaderChunk['pathtracing_main'])}
 `;
 }
 

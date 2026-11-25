@@ -7,7 +7,7 @@ potential-energy surface along the mode can be mapped with the built-in interato
 
 ## Files
 
-Drop the files on the 3D view or the Files window (or use Upload) — the format is recognised from the
+Drop the files on the 3D view or the Files window (or use Open) — the format is recognised from the
 content, not the name:
 
 - `band.yaml`, `mesh.yaml`, `qpoints.yaml` — frequencies and eigenvectors. Run phonopy with
@@ -50,8 +50,10 @@ Stop puts them back.
 
 Following ModeMap (J. M. Skelton et al.): the selected mode is frozen into a supercell of its own — by
 default the smallest one in which its q is periodic, or any size you type — at a series of
-amplitudes Q, every structure is evaluated with the active in-browser potential (NEP or PET-MAD, chosen
-in the Atomistic window), and U(Q) is fitted with an even polynomial. Q is the normal-mode coordinate
+amplitudes Q, every structure is evaluated with the potential chosen in the Atomistic window (NEP,
+PET-MAD or a model on an ASE server; the section names it), and U(Q) is fitted with an even polynomial.
+⚠ A machine-learned potential has its own errors, and double wells are sensitive to them: check a well
+that matters against DFT (**Export structures** writes the displaced structures for DFT single points). Q is the normal-mode coordinate
 in amu^½·Å, normalised so that Σ m u² = Q²; a harmonic mode then has U = ½ω²Q², and the frequency
 fitted from the quadratic term is directly comparable with the phonopy value shown next to it (a good
 check of the potential). The Q range is automatic until you type one: for a stable mode it spans a

@@ -1,17 +1,20 @@
 import { saveAtomColors } from '../../utils/ColorModule.js';
+import { saveAtomRadiusScales, saveBondStyles } from '../SizePrefs.js';
+import { saveArrowOverridesFromStructure } from '../ArrowStylePrefs.js';
 import {fileBrowser, general, structureShip} from '../../state/store.js';
 
 
 import {collapseAllAtomExpansions} from '../../ui/WindowAndSceneControls.js'
 import { createCompositionRow, createWyckoffCompositionRow, clearCompositionRowRegistry} from './Species.js'
 import { createBondLengthControls} from '../BondLengthPanel.js'
-import { createPolyhedraListControls } from '../PolyhedraListPanel.js'
-import { clearAllHighlights } from '../SelectAndHighlightModule.js'
+import { createPolyhedraListControls, capturePolyGroupExpansion, restorePolyGroupExpansion } from '../PolyhedraListPanel.js'
+import { captureAnySelection, reapplySelection } from '../SelectAndHighlightModule.js'
 import { getPanel, isCompactViewport } from '../panels/PanelManager.js'
 import { latticeVolume } from '../../math/index.js';
 import { updateVisualization } from '../../core/crystal-viewer.js';
 import { atomForceToColor } from '../ColorPanel.js';
-import { updateForces, updateSpins } from '../../render/index.js';
+import { updateForces, updateSpins, refreshAtomLabelsIfStale } from '../../render/index.js';
+import { createAtomLabelsButton, createChargesButton } from '../AtomLabelsToggle.js';
 import { applyToOtherTrajectoryFrames, wirePressHoldPopup, getSiteSignatureGroups } from './components/utils.js';
 import { toggleCompositionLegend, refreshCompositionLegend } from '../CompositionLegendWidget.js';
 import { createToggleRow } from '../ToggleSwitch.js';
@@ -19,7 +22,7 @@ import { renderSelectionActionBarInto } from './SelectionActionBar.js';
 
 // The per-structure style-override stores (all survive rebuilds; see Structure.js).
 const ALL_STYLE_STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
-                          'polyhedraUserStyles', 'polyhedraCategoryStyles',
+                          'polyhedraUserStyles', 'polyhedraCategoryStyles', 'polyhedraElementStyles',
                           'spinCategoryStyles', 'forceCategoryStyles'];
 
 /** Reset every COLOR customization; alpha/size/visibility overrides survive. */
@@ -64,14 +67,31 @@ function resetAllColorStyling(structure) {
   });
 }
 
+/** Reset Colors for one structure (this frame): every colour customization
+ *  back to element defaults, stored overrides dropped. The button and the
+ *  host's apply reset_color with all: true. */
+export function resetColors(structure) {
+  resetAllColorStyling(structure);
+  saveAtomColors(structure); // drops the stored overrides too
+  saveArrowOverrides(structure);
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  refreshForceSpinArrows();
+}
+
 /** Re-render force/spin arrows (if shown) and any currently-open Structure
  *  Info Spin/Force row editor after a bulk edit to structure.forces/spins —
  *  shared by the Reset Colors and Reset Styling buttons below. */
+/** The stored per-arrow / category arrow styles follow a reset (drops them). */
+function saveArrowOverrides(structure) {
+  saveArrowOverridesFromStructure('spin', structure);
+  saveArrowOverridesFromStructure('force', structure);
+}
+
 function refreshForceSpinArrows() {
   if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
   if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
   document.querySelectorAll('.atom-spin-editor').forEach((el) => {
-    if (el.style.display !== 'none') /** @type {any} */ (el).refresh?.();
+    if (!el.hidden) /** @type {any} */ (el).refresh?.();
   });
 }
 
@@ -232,13 +252,13 @@ function captureCompositionUiState() {
     if (!element) return;
 
     const atomsContainer = container.querySelector('.individual-atoms');
-    if (atomsContainer && atomsContainer.style.display !== 'none') {
+    if (atomsContainer && !atomsContainer.hidden) {
       expandedElements.push(element);
     }
 
     const elementEditor = container.querySelector(
       '.element-color-editor:not(.spin-force-category-editor)');
-    if (elementEditor && elementEditor.style.display !== 'none') {
+    if (elementEditor && !elementEditor.hidden) {
       elementEditorsOpen.push(element);
     }
   });
@@ -246,7 +266,7 @@ function captureCompositionUiState() {
   const spinForceEditorsOpen = [];
   compDiv.querySelectorAll('.comp-container').forEach((container) => {
     const editor = container.querySelector('.spin-force-category-editor');
-    if (editor && editor.style.display !== 'none') {
+    if (editor && !editor.hidden) {
       spinForceEditorsOpen.push({
         key: container.dataset.signature ?? container.dataset.element,
         mode: /** @type {any} */ (editor).getMode?.() ?? 'spin',
@@ -266,7 +286,7 @@ function captureCompositionUiState() {
 
     for (const [type, selector] of editorTypes) {
       const editor = row.querySelector(selector);
-      if (editor && editor.style.display !== 'none') {
+      if (editor && !editor.hidden) {
         atomEditorsOpen.push({ atomIndex, imageIndex: row.dataset.imageIndex ?? null, type });
         break;
       }
@@ -277,7 +297,7 @@ function captureCompositionUiState() {
     const pair = control.dataset.pair;
     if (!pair) return;
     const bondsContainer = control.querySelector('.individual-bonds');
-    if (bondsContainer && bondsContainer.style.display !== 'none') {
+    if (bondsContainer && !bondsContainer.hidden) {
       expandedBondPairs.push(pair);
     }
   });
@@ -286,7 +306,7 @@ function captureCompositionUiState() {
     const bondRowKey = row.dataset.bondKey;
     if (!bondRowKey) return;
     const editor = row.querySelector('.bond-color-editor');
-    if (editor && editor.style.display !== 'none') {
+    if (editor && !editor.hidden) {
       bondEditorsOpen.push(bondRowKey);
     }
   });
@@ -295,11 +315,11 @@ function captureCompositionUiState() {
     const catKey = control.dataset.catKey;
     if (!catKey) return;
     const listContainer = control.querySelector('.individual-polyhedra');
-    if (listContainer && listContainer.style.display !== 'none') {
+    if (listContainer && !listContainer.hidden) {
       expandedPolyCategories.push(catKey);
     }
     const catEditor = control.querySelector('.poly-cat-editor');
-    if (catEditor && catEditor.style.display !== 'none') {
+    if (catEditor && !catEditor.hidden) {
       polyCatEditorsOpen.push(catKey);
     }
   });
@@ -308,7 +328,7 @@ function captureCompositionUiState() {
     const polyKey = row.dataset.polyKey;
     if (!polyKey) return;
     const editor = row.querySelector('.poly-color-editor');
-    if (editor && editor.style.display !== 'none') {
+    if (editor && !editor.hidden) {
       polyEditorsOpen.push(polyKey);
     }
   });
@@ -317,6 +337,7 @@ function captureCompositionUiState() {
     expandedElements, elementEditorsOpen, atomEditorsOpen,
     expandedBondPairs, bondEditorsOpen,
     expandedPolyCategories, polyEditorsOpen, polyCatEditorsOpen,
+    polyGroupsOpen: capturePolyGroupExpansion(compDiv),
     spinForceEditorsOpen,
   };
 }
@@ -337,8 +358,8 @@ function restoreCompositionUiState(state) {
     // first and then rotated 90deg (flipping the pill on its side).
     const expandIcon = container.querySelector('.comp-expand-icon');
     atomsContainer?._populateAtomRows?.();
-    if (atomsContainer) atomsContainer.style.display = 'block';
-    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+    if (atomsContainer) atomsContainer.hidden = false;
+    if (expandIcon) expandIcon.classList.add('is-expanded');
   }
 
   for (const pair of state.expandedBondPairs || []) {
@@ -347,14 +368,21 @@ function restoreCompositionUiState(state) {
     const bondsContainer = control.querySelector('.individual-bonds');
     const expandIcon = control.querySelector('.bond-expand-icon');
     bondsContainer?._populateBondRows?.();
-    if (bondsContainer) bondsContainer.style.display = 'block';
-    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+    if (bondsContainer) bondsContainer.hidden = false;
+    if (expandIcon) expandIcon.classList.add('is-expanded');
   }
 
+  // A row builds its editors on first open (IndividualBondRow.js and the
+  // atom/polyhedron rows): _ensureEditors fills the shell before it is shown.
   for (const bondRowKey of state.bondEditorsOpen || []) {
-    const editor = compDiv.querySelector(`.individual-bond-row[data-bond-key="${bondRowKey}"] .bond-color-editor`);
-    if (editor) editor.style.display = 'block';
+    const row = compDiv.querySelector(`.individual-bond-row[data-bond-key="${bondRowKey}"]`);
+    /** @type {any} */ (row)?._ensureEditors?.();
+    const editor = row?.querySelector('.bond-color-editor');
+    if (editor) editor.hidden = false;
   }
+
+  // The Poly tab's element groups (Ca, Ti, Cages) before their categories.
+  restorePolyGroupExpansion(compDiv, state.polyGroupsOpen);
 
   for (const catKey of state.expandedPolyCategories || []) {
     const control = compDiv.querySelector(`.poly-control[data-cat-key="${catKey}"]`);
@@ -362,18 +390,20 @@ function restoreCompositionUiState(state) {
     const listContainer = control.querySelector('.individual-polyhedra');
     const expandIcon = control.querySelector('.poly-expand-icon');
     listContainer?._populatePolyhedronRows?.();
-    if (listContainer) listContainer.style.display = 'block';
-    if (expandIcon) expandIcon.style.transform = 'rotate(90deg)';
+    if (listContainer) listContainer.hidden = false;
+    if (expandIcon) expandIcon.classList.add('is-expanded');
   }
 
   for (const catKey of state.polyCatEditorsOpen || []) {
     const editor = compDiv.querySelector(`.poly-control[data-cat-key="${catKey}"] .poly-cat-editor`);
-    if (editor) editor.style.display = 'block';
+    if (editor) editor.hidden = false;
   }
 
   for (const polyKey of state.polyEditorsOpen || []) {
-    const editor = compDiv.querySelector(`.individual-polyhedron-row[data-poly-key="${polyKey}"] .poly-color-editor`);
-    if (editor) editor.style.display = 'block';
+    const row = compDiv.querySelector(`.individual-polyhedron-row[data-poly-key="${polyKey}"]`);
+    /** @type {any} */ (row)?._ensureEditors?.();
+    const editor = row?.querySelector('.poly-color-editor');
+    if (editor) editor.hidden = false;
   }
 
   for (const element of state.elementEditorsOpen || []) {
@@ -381,8 +411,7 @@ function restoreCompositionUiState(state) {
     const editor = container?.querySelector(
       '.element-color-editor:not(.spin-force-category-editor)');
     if (!editor) continue;
-    editor.style.display = 'flex';
-    editor.style.flexDirection = 'column';
+    editor.hidden = false;
   }
 
   for (const entry of state.spinForceEditorsOpen || []) {
@@ -394,7 +423,7 @@ function restoreCompositionUiState(state) {
     if (typeof entry !== 'string' && entry.mode) {
       /** @type {any} */ (editor).setMode?.(entry.mode);
     }
-    editor.style.display = 'block';
+    editor.hidden = false;
   }
 
   for (const entry of state.atomEditorsOpen || []) {
@@ -405,6 +434,7 @@ function restoreCompositionUiState(state) {
       : null)
       ?? compDiv.querySelector(`.individual-atom-row[data-atom-index="${entry.atomIndex}"]`);
     if (!row) continue;
+    /** @type {any} */ (row)._ensureEditors?.();
 
     const editors = {
       color: row.querySelector('.atom-color-editor'),
@@ -413,7 +443,7 @@ function restoreCompositionUiState(state) {
     };
 
     Object.values(editors).forEach((editor) => {
-      if (editor) editor.style.display = 'none';
+      if (editor) editor.hidden = true;
     });
 
     // Active/inactive border+glow is plain CSS (.atom-editor-button.active) —
@@ -423,7 +453,7 @@ function restoreCompositionUiState(state) {
     });
 
     const target = editors[entry.type];
-    if (target) target.style.display = 'block';
+    if (target) target.hidden = false;
 
     const activeButton = row.querySelector(`.atom-editor-button[data-editor-button="${entry.type}"]`);
     if (activeButton) activeButton.classList.add('active');
@@ -491,6 +521,14 @@ export function renderComposition(panelState="closed") {
   addButtonsRow.appendChild(legendButton);
   refreshCompositionLegend();
 
+  // Atom labels (Aₓ) on or off: each atom's name, as its row below names it,
+  // drawn on the atom in the main view and in the inspectors. A switch, so it
+  // shows its state (pressed while on); the inspectors offer the same one
+  // (ui/AtomLabelsToggle.js).
+  addButtonsRow.appendChild(createAtomLabelsButton('atomLabelsButton'));
+  // Charges beside it: the oxidation states as badges (Features ▸ Show Charges).
+  addButtonsRow.appendChild(createChargesButton('chargeBadgesButton'));
+
   const title = document.createElement('div');
   const titleWrapper = document.createElement('div');
   titleWrapper.className = 'si-title-row';
@@ -512,16 +550,24 @@ export function renderComposition(panelState="closed") {
     id: 'linkPeriodicCopiesToggle',
     label: 'Link colors of periodic copies',
     checked: general.linkPeriodicCopies !== false,
+    small: true, // the same compact switch as the element rows below
     onChange: (checked) => {
+      // The selection is kept: once the lists are rebuilt it is selected
+      // again under the new setting (its rows are new nodes, and a linked
+      // pick glows every copy while an unlinked one glows only its own).
+      const kept = captureAnySelection();
       general.linkPeriodicCopies = checked;
-      // Selection rows go stale across the list rebuilds.
-      clearAllHighlights({ reason: 'link-copies-toggle' });
       // Rebuilding immediately replaces this very switch with a fresh node
       // already rendered in its new state, so the knob never visibly slid.
       // Let the pill's 0.25s transition play out first. Kept under the 300ms
       // the browser tests wait between clicking this toggle and asserting on
       // the rebuilt rows.
-      setTimeout(() => renderComposition("open"), 260);
+      setTimeout(() => {
+        renderComposition("open");
+        reapplySelection(kept, 'link-copies-toggle');
+        // E.g. the Selection Inspector's note on linked copies.
+        document.dispatchEvent(new CustomEvent('crysviz:link-copies-changed'));
+      }, 260);
     },
   });
   linkCopiesRow.className = 'si-link-copies-row';
@@ -615,15 +661,10 @@ const resetAllColorsBtn = document.createElement('button');
 resetAllColorsBtn.id="resetAllColorsBtn"
 resetAllColorsBtn.textContent = 'Reset Colors';
 resetAllColorsBtn.className = 'reset-btn si-action-btn';
-resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
+resetAllColorsBtn.title = 'Reset every color customization (atoms, per-copy, bond and polyhedra colors, individual force/spin arrow colors) to element defaults. Category colors (bond pairs, polyhedron types, arrow categories) reset on the whole trajectory, individual colors on this frame.\nPress and hold: also resets the individual colors on every frame.';
 wirePressHoldPopup(resetAllColorsBtn, {
   holdLabel: 'Reset Trajectory',
-  onPress: () => {
-    resetAllColorStyling(fileBrowser.selectedStructure);
-    saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
-    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
-    refreshForceSpinArrows();
-  },
+  onPress: () => resetColors(fileBrowser.selectedStructure),
   onConfirm: () => {
     resetAllColorStyling(fileBrowser.selectedStructure);
     // Re-run the very same (pure-data) reset on every other frame of this
@@ -632,6 +673,7 @@ wirePressHoldPopup(resetAllColorsBtn, {
     // colors and alpha/size overrides, which this reset must leave untouched.
     applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllColorStyling);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -642,12 +684,15 @@ const resetAtomsBtn = document.createElement('button');
 resetAtomsBtn.id = "resetAtomsBtn"
 resetAtomsBtn.textContent = 'Reset Styling';
 resetAtomsBtn.className = 'reset-btn si-action-btn';
-resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity) and unhide every individually-hidden force/spin arrow. Bond lengths/visibility keep their own reset in the Bonds tab.\nClick: this frame. Press and hold: whole trajectory.';
+resetAtomsBtn.title = 'Reset all atom/bond/polyhedra styling (colors, transparency, sizes, visibility, cut immunity) and unhide every individually-hidden force/spin arrow. Bond lengths/visibility keep their own reset in the Bonds tab. Category styles and element materials reset on the whole trajectory, individual styling on this frame.\nPress and hold: also resets the individual styling on every frame.';
 wirePressHoldPopup(resetAtomsBtn, {
   holdLabel: 'Reset Trajectory',
   onPress: () => {
     resetAllStyling(fileBrowser.selectedStructure);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveAtomRadiusScales(fileBrowser.selectedStructure); // ... and the stored sizes / bond styles
+    saveBondStyles(fileBrowser.selectedStructure);
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -658,6 +703,9 @@ wirePressHoldPopup(resetAtomsBtn, {
     // the color-only reset there's no per-frame data it could clobber.
     applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, resetAllStyling);
     saveAtomColors(fileBrowser.selectedStructure); // drops the stored overrides too
+    saveAtomRadiusScales(fileBrowser.selectedStructure);
+    saveBondStyles(fileBrowser.selectedStructure);
+    saveArrowOverrides(fileBrowser.selectedStructure);
     updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     refreshForceSpinArrows();
   },
@@ -708,13 +756,13 @@ createPolyhedraListControls("infoPolyControls");
 function showPanel(panelId) {
   // Hide all panels
   document.querySelectorAll('.atomBondClass').forEach(panel => {
-    panel.style.display = 'none';
+    panel.hidden = true;
   });
 
   // Show the selected panel
   const panelToShow = document.getElementById(panelId);
   if (panelToShow) {
-    panelToShow.style.display = 'block';
+    panelToShow.hidden = false;
   }
 }
 
@@ -778,6 +826,11 @@ showPanel(modePanelIds[initialMode] ?? 'atomPanel')
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   const volume = getLatticeVolume(lattice);
   volumeDiv.textContent = `Volume: ${volume} Å³`;
+
+  // The atom labels name atoms as these rows do — orbit names while a Wyckoff
+  // lock is on — and a lock switched on or off re-renders this window without
+  // rebuilding the atoms: bring the labels (and the inspectors') in step.
+  refreshAtomLabelsIfStale();
 
 }
 

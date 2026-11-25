@@ -1,4 +1,4 @@
-import { fileBrowser, app, groups } from '../state/store.js';
+import { fileBrowser, app, groups, general } from '../state/store.js';
 import { updateField, setActiveField, requestRender, suggestIsoValue } from '../render/index.js';
 import {
   getIsosurfaceMaterialSettings,
@@ -12,6 +12,13 @@ import { createFieldCatalogWidget, fieldSelectionInfoDoc } from './FieldCatalogW
 import { createInfoButton } from './InfoPanel.js';
 import { createFieldColorByControl } from './FieldColorByControl.js';
 import { createNciControls } from './NciControls.js';
+import { DEFAULT_ISOSURFACE_MATERIAL } from '../model/Isosurface.js';
+import {
+  readStructurePrefs, saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField,
+  onClearLocalData,
+} from '../state/structurePrefs.js';
+import { getContainerForStructure } from '../state/structures.js';
+import { rebuildPanel } from './panels/PanelManager.js';
 
 export let useLogSliderScale = false; // Global variable to track log scale state for iso slider
 
@@ -27,6 +34,277 @@ let activeCatalogWidget = null;
 // The NCI block under it (ui/NciControls.js), torn down the same way.
 /** @type {{destroy: () => void, refresh: () => void} | null} */
 let activeNciControls = null;
+
+// The live panel's controls (setupFieldControlEvents), so a stored-prefs
+// restore can move the widgets without going through their event handlers.
+/** @type {{syncToSelection: () => void, syncMaterial: () => void} | null} */
+let liveControls = null;
+
+// ---------------------------------------------------------------------------
+// Per-structure field settings that survive a reload (issue #18,
+// state/structurePrefs.js). Two record fields:
+//   fieldIso:      { "<source>|<label>": { isoValue, abs? } }  (only fields the
+//                  user edited; `abs` only when it differs from the automatic
+//                  choice setActiveField makes, i.e. minValue < 0)
+//   fieldMaterial: { positiveColor?, negativeColor?, opacity? } (only keys that
+//                  differ from DEFAULT_ISOSURFACE_MATERIAL)
+//   fieldSelected: { key: "<source>|<label>", node?: "<catalog node id>",
+//                    quantity?: <WaveQuantity> }
+//                  the field last picked in the field list. The node id is
+//                  what tells WAVECAR bands apart (their labels repeat across
+//                  k-points), the quantity which grid of the band it was; a
+//                  band that is not expanded yet is loaded again when its
+//                  file is.
+// Saved ONLY from the panel's user-edit handlers below. Fields arrive after
+// the structure (and a WAVECAR band only when picked), so the restore happens
+// when a field is selected (fieldBrowser.setSelectedField) or, for a file that
+// carries its fields, by the afterSelect restorer registered at the bottom of
+// this file. Both are allowed only for a StructureContainer whose load
+// restored stored prefs (or whose fields the user edited this session), so a
+// share-URL / .crysviz load (restoreStoredPrefs: false) keeps its snapshot.
+// ---------------------------------------------------------------------------
+
+/** StructureContainers whose stored field prefs may be applied. */
+const fieldPrefsEnabled = new WeakSet();
+/** Fields whose stored iso has been looked up once already. */
+const isoRestored = new WeakSet();
+/** FieldContainers whose stored material has been applied once already. */
+const materialRestored = new WeakSet();
+/** StructureContainer -> Map<key, isoEntry> of the fields the user edited
+ *  since the last flush (a snapshot, not the Field: a Field carries its
+ *  whole voxel array and must not be kept alive by this bookkeeping). */
+let editedIsoFields = new WeakMap();
+/** Catalogs whose stored field selection has been looked up once already. */
+const selectionRestored = new WeakSet();
+/** Set while the colour/opacity widgets are moved programmatically. */
+let syncingMaterialWidgets = false;
+
+onClearLocalData(() => { editedIsoFields = new WeakMap(); });
+
+function fieldPrefKey(fieldContainer, field) {
+  return `${fieldContainer?.source ?? ''}|${field?.label ?? ''}`;
+}
+
+/** Every field of a container that currently holds data. */
+function loadedFieldsOf(fieldContainer) {
+  const out = new Set(fieldContainer?.fields ?? []);
+  for (const f of fieldContainer?.catalog?.loadedFields?.() ?? []) out.add(f);
+  return [...out];
+}
+
+/** The selected structure, its StructureContainer and FieldContainer, when
+ *  `field` belongs to it. */
+function selectedFieldOwner(field) {
+  const structure = fileBrowser.selectedStructure;
+  const fieldContainer = structure?.volumetricFields;
+  if (!field || !fieldContainer || !loadedFieldsOf(fieldContainer).includes(field)) return null;
+  const container = getContainerForStructure(structure);
+  return container ? { structure, container, fieldContainer } : null;
+}
+
+function isoEntry(field) {
+  if (!Number.isFinite(field?.isoValue)) return null;
+  const entry = { isoValue: field.isoValue };
+  const autoAbs = Number.isFinite(field.minValue) && field.minValue < 0;
+  if (typeof field.useAbsoluteIsoValue === 'boolean' && field.useAbsoluteIsoValue !== autoAbs) {
+    entry.abs = field.useAbsoluteIsoValue;
+  }
+  return entry;
+}
+
+/**
+ * Set a field's iso level, clamped to the data's own range (a level outside it
+ * has no surface to draw, and the slider could not represent it either);
+ * remember it and rebuild the isosurface when that field is shown. The typed
+ * iso box and the host's set_isosurface. Returns the level applied.
+ */
+export function setFieldIsoValue(field, value) {
+  const lo = Number.isFinite(field.minValue) ? field.minValue : -Infinity;
+  const hi = Number.isFinite(field.maxValue) ? field.maxValue : Infinity;
+  const isoValue = Math.min(Math.max(value, lo), hi);
+  field.isoValue = isoValue;
+  persistFieldIso(field);
+  if (field === fieldBrowser.selectedField && fileBrowser.selectedStructure?.volumetricFields) {
+    updateField(isoValue);
+    requestRender();
+  }
+  return isoValue;
+}
+
+/** User edit of a field's iso value / absolute toggle: debounced save. */
+function persistFieldIso(field) {
+  const owner = selectedFieldOwner(field);
+  if (!owner) return;
+  const { structure, container, fieldContainer } = owner;
+  fieldPrefsEnabled.add(container);
+  let edited = editedIsoFields.get(container);
+  if (!edited) { edited = new Map(); editedIsoFields.set(container, edited); }
+  const entry = isoEntry(field);
+  if (entry) edited.set(fieldPrefKey(fieldContainer, field), entry);
+  scheduleStructurePrefSave(structure, 'fieldIso', () => {
+    const out = { ...(readStructurePrefs(container)?.fieldIso ?? {}) };
+    const pendingEntries = editedIsoFields.get(container);
+    for (const [key, e] of pendingEntries ?? []) out[key] = e;
+    pendingEntries?.clear();
+    return out;
+  });
+}
+
+/** The material keys that differ from the defaults (empty = reset). */
+function collectFieldMaterial() {
+  const s = getIsosurfaceMaterialSettings();
+  const d = DEFAULT_ISOSURFACE_MATERIAL;
+  const out = {};
+  if (String(s.positiveColor).toLowerCase() !== d.positiveColor) out.positiveColor = s.positiveColor;
+  if (String(s.negativeColor).toLowerCase() !== d.negativeColor) out.negativeColor = s.negativeColor;
+  if (Number.isFinite(s.opacity) && Math.abs(s.opacity - d.opacity) > 1e-6) out.opacity = s.opacity;
+  return out;
+}
+
+/** User edit of the isosurface colours / opacity: debounced save. */
+function persistFieldMaterial() {
+  if (syncingMaterialWidgets) return;
+  const structure = fileBrowser.selectedStructure;
+  if (!structure) return;
+  const container = getContainerForStructure(structure);
+  if (container) fieldPrefsEnabled.add(container);
+  scheduleStructurePrefSave(structure, 'fieldMaterial', collectFieldMaterial);
+}
+
+/** User pick in the field list: remember it for the next load of this file. */
+function persistFieldSelection(field) {
+  const owner = selectedFieldOwner(field);
+  if (!owner) return;
+  const { structure, container, fieldContainer } = owner;
+  fieldPrefsEnabled.add(container);
+  // The user has chosen; a stored selection must not override it later.
+  if (fieldContainer.catalog) selectionRestored.add(fieldContainer.catalog);
+  const entry = { key: fieldPrefKey(fieldContainer, field) };
+  const node = fieldContainer.catalog?.nodeForField?.(field);
+  if (node?.id) entry.node = node.id;
+  if (Number.isFinite(field.wavefunction?.quantity)) entry.quantity = field.wavefunction.quantity;
+  saveStructurePref(structure, 'fieldSelected', entry);
+}
+
+/** Make `field` the shown field, as a pick in the list would. */
+function showRestoredField(field) {
+  if (field === fieldBrowser.selectedField) return;
+  if (!fieldBrowser.selectField(field)) return;
+  updateField(field.isoValue || undefined);
+  rebuildPanel('field');
+  requestRender();
+}
+
+/**
+ * Select the field stored for the selected structure, once per catalog: on
+ * the load that brings the structure's fields (the afterSelect restorer
+ * below) and when another field file is attached to it
+ * (render/Render3DFieldModule.js attachFieldCatalog), since a stored WAVECAR
+ * band only exists once its file is back. A stored band that is not expanded
+ * yet is loaded first; it is shown only if nothing else was picked meanwhile.
+ * Never saves.
+ * @param {any} [structure]
+ */
+export function restoreStoredFieldSelection(structure = fileBrowser.selectedStructure) {
+  const fieldContainer = structure?.volumetricFields;
+  const catalog = fieldContainer?.catalog;
+  if (!catalog || structure !== fileBrowser.selectedStructure || fieldBrowser.catalog !== catalog) return;
+  if (selectionRestored.has(catalog)) return;
+  const stored = storedFieldRecord(getContainerForStructure(structure))?.fieldSelected;
+  if (!stored || typeof stored !== 'object') return;
+  selectionRestored.add(catalog);
+
+  const node = typeof stored.node === 'string' ? catalog.findNode(stored.node) : null;
+  // A band is reloaded under the quantity it was shown in (the catalog's one
+  // quantity setting follows, as if the user had switched it back).
+  if (node && catalog.quantityRef && Number.isFinite(stored.quantity) && catalog.quantity !== stored.quantity) {
+    catalog.quantity = stored.quantity;
+  }
+  let field = node?.peek() ?? null;
+  if (!field && typeof stored.key === 'string') {
+    field = loadedFieldsOf(fieldContainer).find((f) => fieldPrefKey(fieldContainer, f) === stored.key) ?? null;
+  }
+  if (field) {
+    showRestoredField(field);
+    return;
+  }
+  if (!node?.loadable) return;
+  const before = fieldBrowser.selectedField;
+  node.ensureLoaded().then((loaded) => {
+    if (fieldBrowser.catalog !== catalog || fieldBrowser.selectedField !== before) return;
+    showRestoredField(loaded);
+  }).catch((error) => console.warn('Field panel: could not load the stored field', error));
+}
+
+function applyStoredIso(fieldContainer, field, rec) {
+  if (isoRestored.has(field)) return false;
+  isoRestored.add(field);
+  const entry = rec?.fieldIso?.[fieldPrefKey(fieldContainer, field)];
+  if (!entry || typeof entry !== 'object') return false;
+  let changed = false;
+  if (Number.isFinite(entry.isoValue)) { field.isoValue = entry.isoValue; changed = true; }
+  if (typeof entry.abs === 'boolean') { field.useAbsoluteIsoValue = entry.abs; changed = true; }
+  return changed;
+}
+
+function applyStoredMaterial(fieldContainer, rec) {
+  if (materialRestored.has(fieldContainer)) return false;
+  materialRestored.add(fieldContainer);
+  const m = rec?.fieldMaterial;
+  if (!m || typeof m !== 'object') return false;
+  const settings = {};
+  const hex = /^#[0-9a-f]{6}$/i;
+  if (hex.test(m.positiveColor)) settings.positiveColor = m.positiveColor;
+  if (hex.test(m.negativeColor)) settings.negativeColor = m.negativeColor;
+  if (Number.isFinite(m.opacity)) settings.opacity = m.opacity;
+  if (Object.keys(settings).length === 0) return false;
+  setIsosurfaceMaterialSettings(settings);
+  applyMaterialSettingsToStoredIsosurfaces(groups.isosurfaceGroup, getIsosurfaceMaterialSettings());
+  liveControls?.syncMaterial();
+  return true;
+}
+
+function storedFieldRecord(container) {
+  if (general.restoreStoredPrefs === false || !container || !fieldPrefsEnabled.has(container)) return null;
+  return readStructurePrefs(container);
+}
+
+/**
+ * Selection hook (fieldBrowser.setSelectedField, before setActiveField): the
+ * first time a field of the selected structure becomes active, apply its
+ * stored iso value and the structure's stored material. The caller's
+ * setActiveField/updateField then draws with them. Never saves.
+ */
+function restoreFieldPrefsOnSelect(field) {
+  const owner = selectedFieldOwner(field);
+  if (!owner) return;
+  const rec = storedFieldRecord(owner.container);
+  if (!rec) return;
+  applyStoredMaterial(owner.fieldContainer, rec);
+  if (applyStoredIso(owner.fieldContainer, field, rec)) liveControls?.syncToSelection();
+}
+
+/**
+ * afterSelect restorer (a file that carried its fields: CHGCAR, cube, ...):
+ * enables stored field prefs for this container and applies them to every
+ * field already attached; the active one is rebuilt. Never saves.
+ */
+export function restoreFieldPrefs(container, structure = fileBrowser.selectedStructure) {
+  if (!container) return;
+  fieldPrefsEnabled.add(container);
+  const fieldContainer = structure?.volumetricFields;
+  const rec = storedFieldRecord(container);
+  if (!fieldContainer || !rec) return;
+  const materialChanged = applyStoredMaterial(fieldContainer, rec);
+  let activeChanged = false;
+  for (const field of loadedFieldsOf(fieldContainer)) {
+    if (applyStoredIso(fieldContainer, field, rec) && field === groups.activeField) activeChanged = true;
+  }
+  if (activeChanged && groups.isosurfaceGroup) updateField(groups.activeField.isoValue);
+  if (activeChanged) liveControls?.syncToSelection();
+  if (activeChanged || materialChanged) requestRender();
+  restoreStoredFieldSelection(structure);
+}
 
 /**
  * Convert an isoSlider value (0-100) to an iso value based on the selected field's range.
@@ -130,6 +408,9 @@ export const fieldBrowser = {
   catalog: null,
   selectedField: null,
   selectedFieldIndex: 0,
+  /** catalog -> the field last selected in it, so switching rows in the file
+   *  browser and back keeps the field instead of falling back to the first. */
+  _lastSelected: new WeakMap(),
 
   /** @returns {import('../model/Field.js').Field[]} fields that actually hold data */
   get availableFields() {
@@ -142,8 +423,13 @@ export const fieldBrowser = {
       const previous = this.selectedField;
       this.selectedFieldIndex = fieldIndex;
       this.selectedField = fields[fieldIndex];
+      if (this.catalog) this._lastSelected.set(this.catalog, this.selectedField);
       this._repin(previous, this.selectedField);
+      restoreFieldPrefsOnSelect(this.selectedField); // stored iso/material (issue #18)
       setActiveField(this.selectedField); // Update the active field in the Render3DFieldModule
+      // Lets ui/PlanesPanel.js bind restored planes that name a field by label
+      // to it once the field is loaded (resolvePendingPlaneFields).
+      if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('crysviz:fields-changed'));
       return true;
     }
     return false;
@@ -189,7 +475,10 @@ export const fieldBrowser = {
     this.catalog = catalog || null;
     this.selectedField = null;
     this.selectedFieldIndex = -1;
-    if (this.availableFields.length > 0) this.setSelectedField(0);
+    const fields = this.availableFields;
+    const last = catalog ? this._lastSelected.get(catalog) : null;
+    const index = last ? fields.indexOf(last) : -1;
+    if (fields.length > 0) this.setSelectedField(index >= 0 ? index : 0);
   },
 
   /**
@@ -260,7 +549,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
 
   container.innerHTML = `
     <div class="field-info">
-      <p><strong>Source:</strong> ${structure.volumetricFields.source}${summary}</p>
+      <p><strong>Source:</strong> ${catalog.combined ? catalog.source : structure.volumetricFields.source}${summary}</p>
     </div>
     ${mismatch ? `
     <div class="field-cell-mismatch">
@@ -350,6 +639,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
   // Wire up the isovalue slider, colour pickers and material editor first, so
   // the widget's onSelect callback can drive them.
   const controls = setupFieldControlEvents(container);
+  liveControls = controls;
 
   // What the entries in the list mean depends entirely on the file behind them,
   // so the button resolves its document from the live catalog rather than being
@@ -372,6 +662,7 @@ export function addFieldPanel(target = "cvPanelBody-field") {
       selectedField: fieldBrowser.selectedField,
       onSelect: (field) => {
         if (!fieldBrowser.selectField(field)) return;
+        persistFieldSelection(field);
         controls.syncToSelection();
         updateField(field.isoValue || undefined);
         // Rendering is on demand (render/AnimateModule.js). Picking an
@@ -452,6 +743,7 @@ export function removeFieldPanel(target = "cvPanelBody-field") {
     activeColorByControl.destroy();
     activeColorByControl = null;
   }
+  liveControls = null;
 
   if (fieldControlsGroup) {
     // NOTE: this used to walk every field disposing `__fieldMesh` /
@@ -472,7 +764,7 @@ export function removeFieldPanel(target = "cvPanelBody-field") {
  * which calls back into `syncToSelection()` (returned below) so the slider
  * follows whichever field is now active.
  *
- * @returns {{syncToSelection: () => void}}
+ * @returns {{syncToSelection: () => void, syncMaterial: () => void}}
  */
 function setupFieldControlEvents(container) {
   const slider = document.getElementById('isoSlider');
@@ -555,6 +847,9 @@ function setupFieldControlEvents(container) {
   }
 
   function applyFieldMaterialControls() {
+    // A restore moving the pickers one at a time must not push the other,
+    // not-yet-synced picker's stale colour back into the settings.
+    if (syncingMaterialWidgets) return;
     const settings = {
       positiveColor: posPicker.getHex(),
       negativeColor: negPicker.getHex(),
@@ -572,6 +867,22 @@ function setupFieldControlEvents(container) {
       // Render through the pipeline on the next rAF tick instead of an
       // out-of-band renderer.render() that would bypass it.
       requestRender();
+    }
+    // Only the pickers and the opacity slider call this (user edits).
+    persistFieldMaterial();
+  }
+
+  /** Move the colour/opacity widgets to the live settings without saving. */
+  function syncMaterial() {
+    const s = getIsosurfaceMaterialSettings();
+    syncingMaterialWidgets = true;
+    try {
+      posPicker.setHex(s.positiveColor);
+      negPicker.setHex(s.negativeColor);
+      if (opacitySlider) opacitySlider.value = String(s.opacity);
+      if (opacityValue) opacityValue.textContent = s.opacity.toFixed(2);
+    } finally {
+      syncingMaterialWidgets = false;
     }
   }
 
@@ -649,6 +960,7 @@ function setupFieldControlEvents(container) {
 
     // 2. Store the iso value on the selected field for bookkeeping
     fieldBrowser.selectedField.isoValue = isoValue;
+    persistFieldIso(fieldBrowser.selectedField);
 
     // 3. Rebuild the isosurface for the selected field
     const structure = fileBrowser.selectedStructure;
@@ -668,6 +980,7 @@ function setupFieldControlEvents(container) {
     // Update the displayed value
     setIsoReadout(isoValue);
     fieldBrowser.selectedField.isoValue = isoValue; // Update the isoValue on the selected field for memory
+    persistFieldIso(fieldBrowser.selectedField);
     scheduleLiveIsoUpdate();
   });
 
@@ -691,22 +1004,10 @@ function setupFieldControlEvents(container) {
       setIsoReadout(field.isoValue, true); // unparseable: put the live value back
       return;
     }
-    // Clamp to the data's own range — an iso level outside it has no surface
-    // to draw, and the slider could not represent it either.
-    const lo = Number.isFinite(field.minValue) ? field.minValue : -Infinity;
-    const hi = Number.isFinite(field.maxValue) ? field.maxValue : Infinity;
-    const isoValue = Math.min(Math.max(typed, lo), hi);
-
-    field.isoValue = isoValue;
+    const isoValue = setFieldIsoValue(field, typed);
+    lastBuiltIso = isoValue;
     setIsoReadout(isoValue, true);    // echo back canonical formatting + any clamp
     slider.value = String(isoValueToSlider(isoValue, field));
-
-    const structure = fileBrowser.selectedStructure;
-    if (structure && structure.volumetricFields && isoValue !== lastBuiltIso) {
-      lastBuiltIso = isoValue;
-      updateField(isoValue);
-      requestRender();
-    }
   }
 
   // 'change' already covers both commit gestures (blur and Enter) whenever the
@@ -724,6 +1025,7 @@ function setupFieldControlEvents(container) {
     if (!fieldBrowser.selectedField) return;
 
     fieldBrowser.selectedField.useAbsoluteIsoValue = absoluteValueCheckbox.checked;
+    persistFieldIso(fieldBrowser.selectedField);
 
     // Update the slider range and displayed value based on the new setting
     const sliderValue = isoValueToSlider(fieldBrowser.selectedField.isoValue, fieldBrowser.selectedField);
@@ -808,7 +1110,7 @@ function setupFieldControlEvents(container) {
     lastBuiltIso = null; // a different field: force the next rebuild through
   }
 
-  return { syncToSelection };
+  return { syncToSelection, syncMaterial };
 }
 
 export function updateFieldPanel() {
@@ -830,3 +1132,10 @@ export function updateFieldPanel() {
   removeFieldPanel();
   addFieldPanel();
 }
+
+// Stored field prefs of a file that carries its own fields (CHGCAR, cube):
+// applied once the row is selected. Both fields share one restorer, which
+// reads the whole record (state/structurePrefs.js registry).
+registerStructurePrefField('fieldIso', (container, _value, structure) => restoreFieldPrefs(container, structure));
+registerStructurePrefField('fieldMaterial', (container, _value, structure) => restoreFieldPrefs(container, structure));
+registerStructurePrefField('fieldSelected', (container, _value, structure) => restoreFieldPrefs(container, structure));

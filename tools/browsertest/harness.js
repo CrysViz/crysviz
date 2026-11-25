@@ -37,7 +37,75 @@ function check(name, ok, detail = '') {
 
 /** Launch the app. Returns { browser, page, errors } — errors collects
  *  pageerror + console.error text for the "no errors" assertion. */
-async function launchApp({ navigate = true } = {}) {
+// Chromium GPU modes (`gpu` option of launchApp, Chromium only):
+//   false / unset   software GL (SwiftShader), no WebGPU — the default suite
+//   'swiftshader'   + WebGPU emulated on the CPU: checks the WebGPU code path,
+//                   its timings mean nothing
+//   true/'hardware' the machine's real GPU for WebGL and WebGPU (benchmarks
+//                   on a workstation; fails over to software where none exists)
+function chromiumArgs(gpu) {
+  if (gpu === true || gpu === 'hardware') {
+    return ['--enable-unsafe-webgpu', '--enable-features=Vulkan,WebGPU', '--ignore-gpu-blocklist',
+      '--enable-gpu-rasterization', '--no-sandbox'];
+  }
+  const args = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'];
+  if (gpu === 'swiftshader') args.push('--enable-unsafe-webgpu', '--use-webgpu-adapter=swiftshader', '--enable-features=Vulkan');
+  return args;
+}
+
+// A marker on the Chromium command line so a test can find its own browser's
+// process tree in /proc (processMemory below).
+let launchCounter = 0;
+
+/**
+ * Memory of a Chromium launched by launchApp, from /proc: the browser
+ * process found by its marker plus all descendants (renderer, GPU, utility).
+ * PSS splits shared pages between processes, so the sum is not inflated.
+ * Linux only; returns null elsewhere or for Firefox.
+ * @param {string} marker
+ * @returns {{ pssMB: number, rssMB: number, processes: {pid: number, type: string, pssMB: number}[] } | null}
+ */
+function processMemory(marker) {
+  if (process.platform !== 'linux' || !marker) return null;
+  const procs = [];
+  for (const d of fs.readdirSync('/proc')) {
+    if (!/^\d+$/.test(d)) continue;
+    try {
+      const cmd = fs.readFileSync(`/proc/${d}/cmdline`, 'utf8').split('\0');
+      const stat = fs.readFileSync(`/proc/${d}/stat`, 'utf8');
+      const ppid = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[1]);
+      procs.push({ pid: Number(d), ppid, cmd });
+    } catch { /* process went away */ }
+  }
+  const root = procs.find((p) => p.cmd.includes(`--crysviz-run=${marker}`) && !p.cmd.some((a) => a.startsWith('--type=')));
+  if (!root) return null;
+  const tree = new Set([root.pid]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const p of procs) {
+      if (!tree.has(p.pid) && tree.has(p.ppid)) { tree.add(p.pid); grew = true; }
+    }
+  }
+  const out = [];
+  let pss = 0;
+  let rss = 0;
+  for (const p of procs.filter((x) => tree.has(x.pid))) {
+    try {
+      const roll = fs.readFileSync(`/proc/${p.pid}/smaps_rollup`, 'utf8');
+      const kb = (k) => Number((roll.match(new RegExp(`^${k}:\\s+(\\d+) kB`, 'm')) || [])[1] || 0);
+      const type = (p.cmd.find((a) => a.startsWith('--type=')) || '--type=browser').slice(7);
+      out.push({ pid: p.pid, type, pssMB: kb('Pss') / 1024 });
+      pss += kb('Pss');
+      rss += kb('Rss');
+    } catch { /* gone */ }
+  }
+  return { pssMB: pss / 1024, rssMB: rss / 1024, processes: out };
+}
+
+async function launchApp({ navigate = true, gpu = process.env.CRYSVIZ_GPU || false, extraArgs = [], firstRunFeatures = false } = {}) {
+  launchCounter += 1;
+  const marker = `${process.pid}-${launchCounter}`;
   fs.mkdirSync(ARTIFACTS, { recursive: true });
   // headless FF has no WebGL. Stale modules are handled at the server
   // (tools/devserver.py sends Cache-Control: no-store), not with browser prefs
@@ -46,10 +114,32 @@ async function launchApp({ navigate = true } = {}) {
     ? await chromium.launch({
       headless: true,
       executablePath: process.env.CRYSVIZ_CHROMIUM || undefined,
-      args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
+      args: [...chromiumArgs(gpu), `--crysviz-run=${marker}`, ...extraArgs],
     })
     : await firefox.launch({ headless: false });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  // Offline runs: with CRYSVIZ_PLOTLY_ESM set to a local ES-module build of
+  // plotly.js-dist-min@2.27.0 (the version utils/plotlyLoader.js imports from
+  // esm.sh), the page gets that file instead, so the chart tests run where
+  // esm.sh is unreachable. Make one from the npm package:
+  //   npm pack plotly.js-dist-min@2.27.0 && tar xzf plotly.js-dist-min-2.27.0.tgz
+  //   (printf 'var module = { exports: {} }; var exports = module.exports;\n';
+  //    cat package/plotly.min.js; printf '\nexport default module.exports;\n') > plotly-esm.js
+  if (process.env.CRYSVIZ_PLOTLY_ESM) await page.route('https://esm.sh/plotly.js-dist-min*', (route) => route.fulfill({ path: process.env.CRYSVIZ_PLOTLY_ESM, contentType: 'application/javascript', headers: { 'Access-Control-Allow-Origin': '*' } }));
+  // Likewise CRYSVIZ_PYODIDE_DIR, the unpacked full Pyodide 0.25.0 release
+  // (pyodide-0.25.0.tar.bz2 from its GitHub releases, the `pyodide/` folder
+  // in it): served for the jsdelivr URL eos/eosFit.js loads the EOS fit's
+  // SciPy from.
+  if (process.env.CRYSVIZ_PYODIDE_DIR) {
+    const MIME = { '.mjs': 'application/javascript', '.js': 'application/javascript', '.wasm': 'application/wasm', '.json': 'application/json' };
+    await page.route('https://cdn.jsdelivr.net/pyodide/v0.25.0/full/**', (route) => {
+      const rel = decodeURIComponent(new globalThis.URL(route.request().url()).pathname.replace('/pyodide/v0.25.0/full/', ''));
+      const file = path.join(process.env.CRYSVIZ_PYODIDE_DIR, rel);
+      const headers = { 'Access-Control-Allow-Origin': '*' };
+      if (!fs.existsSync(file)) return route.fulfill({ status: 404, body: 'not found', headers });
+      return route.fulfill({ path: file, contentType: MIME[path.extname(file)] || 'application/octet-stream', headers });
+    });
+  }
   // Pre-dismiss the ray/path-tracing performance-warning modal: shotCanvas is a
   // page screenshot (DOM overlays included), so the modal backdrop would dim
   // every capture taken after a dropdown switch into a tracer. Tests that TEST
@@ -58,9 +148,30 @@ async function launchApp({ navigate = true } = {}) {
     try {
       const prefs = JSON.parse(localStorage.getItem('panelPrefs') || '{}');
       prefs.hideRaytraceWarning = true;
+      // The reload guard (ui/LeaveGuard.js) would stop every test's
+      // page.reload() once a structure is loaded; leaveguard.test.js clears it.
+      if (!('hideLeaveWarning' in prefs)) prefs.hideLeaveWarning = true;
+      // The release-note card (ui/ReleaseNote.js) would sit over screenshots:
+      // '9999' is later than any note's date id. releasenote.test.js clears it.
+      if (!('releaseNoteSeen' in prefs)) prefs.releaseNoteSeen = '9999';
       localStorage.setItem('panelPrefs', JSON.stringify(prefs));
     } catch { /* storage unavailable */ }
   });
+  // Feature store (docs/ui/panels/featureStore.js): a fresh profile would
+  // start with only the essential windows in the sidebar. The suite was
+  // written against the full sidebar, so every store window starts in it —
+  // the same default a pre-store browser gets. Seeded only when absent, so a
+  // test's own choices survive its reloads. Store tests opt out with
+  // launchApp({ firstRunFeatures: true }) to see the real first-run sidebar.
+  if (!firstRunFeatures) {
+    await page.addInitScript(() => {
+      try {
+        if (!localStorage.getItem('featureStore')) {
+          localStorage.setItem('featureStore', JSON.stringify({ version: 1, allByDefault: true, enabled: {} }));
+        }
+      } catch { /* storage unavailable */ }
+    });
+  }
   const errors = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.stack || e.message}`.slice(0, 1200)));
   page.on('console', (m) => {
@@ -70,7 +181,7 @@ async function launchApp({ navigate = true } = {}) {
     await page.goto(URL, { waitUntil: 'load', timeout: 90000 }); // 'networkidle' can hang
     await page.waitForTimeout(5000); // init + default structure load
   }
-  return { browser, page, errors };
+  return { browser, page, errors, marker };
 }
 
 async function webglAvailable(page) {
@@ -195,5 +306,5 @@ function crash(err) {
 module.exports = {
   launchApp, webglAvailable, loadDefaultStructure, setSelect, setSlider,
   clickById, waitFor, shotCanvas, darkFraction, nonUniformFraction,
-  check, finish, crash,
+  check, finish, crash, processMemory, CANVAS_CLIP,
 };

@@ -23,6 +23,7 @@ const H = require('../harness');
 const N = 41;          // grid points per axis (odd: the centre is a grid point)
 const STEP = 0.15;     // bohr
 const SIDE = 3.0;      // bohr, H–H distance
+const TITLE = 'H3 NCI browser-test fixture';
 const DESCRIPTION = 'Electron density from Total SCF Density';
 
 /** H free-atom density, NCIPLOT fit (the H–Ar tables Jmol uses). */
@@ -39,7 +40,7 @@ function buildCube() {
     return [R * Math.cos(a), R * Math.sin(a), 0];
   });
   const lines = [
-    'H3 NCI browser-test fixture',
+    TITLE,
     DESCRIPTION,
     `    3 ${origin.toFixed(6)} ${origin.toFixed(6)} ${origin.toFixed(6)}`,
     `   ${N} ${STEP.toFixed(6)} 0.000000 0.000000`,
@@ -155,8 +156,10 @@ async function pressAndInspect(page, buttonId) {
 
   // --- (2)-(4) SCF-NCI ------------------------------------------------------
   const scf = await pressAndInspect(page, 'nciScfBtn');
-  const scfS = `Reduced density gradient s (SCF-NCI of ${DESCRIPTION})`;
-  const scfC = `sign(λ₂)ρ (SCF-NCI of ${DESCRIPTION})`;
+  // A cube field is labelled with both comment lines (io/ReadCubeModule.js).
+  const densityLabel = `${TITLE} ${DESCRIPTION}`;
+  const scfS = `Reduced density gradient s (SCF-NCI of ${densityLabel})`;
+  const scfC = `sign(λ₂)ρ (SCF-NCI of ${densityLabel})`;
   H.check('SCF-NCI adds the s and sign(λ₂)ρ fields', scf.labels.includes(scfS) && scf.labels.includes(scfC),
     JSON.stringify(scf.labels));
   H.check('SCF-NCI selects the s field at iso 0.5, coloured by sign(λ₂)ρ via bgyor over ±0.04',

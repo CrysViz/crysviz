@@ -10,6 +10,19 @@
   align-items: center;
 }
 
+/* Rebuild-heavy display toggles while a large trajectory plays
+   (ui/HeavyRebuild.js setPlaybackLock; the row's title says "pause first"). */
+.toggle_row.is-playback-locked {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A long display rebuild is running (ui/HeavyRebuild.js runHeavyRebuild). */
+body.cv-busy,
+body.cv-busy * {
+  cursor: progress !important;
+}
+
 /* toggle + text */
 .toggle_container {
    margin: var(--sp-5) 0px 0px 0px;
@@ -154,6 +167,156 @@
 
 .toggle_switch input:checked + .toggle_slider_dual::before {
   transform: translateX(22px);
+}
+
+/* Label-left / control-right rows with muted text below: the Polyhedra
+   window's Bond breaking tolerance (ui/BondBreakToleranceControl.js). */
+.cv-poly-search-row {
+  margin-top: var(--sp-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+/* Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced
+   (ui/PolyhedraSearchControl.js, panels/defaultPanels.js): the toggle row and
+   the three-way control share one line, the control right-aligned like a
+   toggle row's control side. Both children carry the toggle row's top margin,
+   so align-items centres them on each other. When the window is too narrow
+   for both (phones narrower than about 380px), the control wraps onto its
+   own line, still right-aligned. No
+   label or status line: what runs now is in the tooltip. The buttons borrow
+   .segmented-control's look (controlPanel.css) without its class, which the
+   feature search treats as a tab row. */
+.cv-poly-toggle-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--sp-2);
+}
+
+.cv-poly-toggle-line > .toggle_row {
+  flex: 0 1 auto;
+}
+
+/* A little narrower than .cv-seg3's default so the toggle, its label and
+   the control share one line down to a 390px phone (wraps at 360px). */
+.cv-poly-toggle-line .cv-seg3 button {
+  padding-left: var(--sp-2);
+  padding-right: var(--sp-2);
+}
+
+.cv-poly-search-row.cv-poly-search-sub {
+  margin-top: var(--sp-5);
+  margin-left: auto;
+  align-items: flex-end;
+}
+
+.cv-poly-search-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3-5);
+}
+
+.cv-seg3 {
+  display: inline-flex;
+  gap: var(--sp-1);
+  padding: var(--sp-1);
+  background: var(--chrome-1);
+  border-radius: var(--radius-md);
+}
+
+.cv-seg3 button {
+  border: none;
+  background: none;
+  color: var(--fg-75);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cv-seg3 button:hover {
+  background: var(--border-color);
+}
+
+.cv-seg3 button.is-active {
+  background: var(--accent-color);
+  color: var(--fg-1);
+}
+
+.cv-poly-search-status {
+  align-self: flex-end;
+  color: var(--fg-2);
+  font-size: var(--fs-xs);
+}
+
+/* Polyhedra ▸ Bond breaking tolerance (ui/BondBreakToleranceControl.js):
+   the .cv-poly-search-row layout, a short percent input on the right and
+   the help text below, wrapping. */
+.cv-tol-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cv-tol-input {
+  width: 4em;
+  font-size: var(--fs-sm);
+  font-family: inherit;
+}
+
+.cv-tol-unit {
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+}
+
+.cv-tol-help {
+  align-self: stretch;
+  text-align: left;
+}
+
+/* Polyhedra window: the rows only the advanced search reads, while the fast
+   search runs (PolyhedraPanel.js syncPolyhedraModeRows). */
+.toggle_row.is-mode-inactive {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toggle_row.is-mode-inactive input,
+.toggle_row.is-mode-inactive .toggle_slider {
+  cursor: not-allowed;
+}
+
+.cv-polyhedra-mode-note {
+  margin-top: var(--sp-2);
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+}
+
+/* Polyhedra ▸ Colour ▸ Tilt axes: Matrix. Column (a, b, c) and row
+   (Axis 1..3) headings, and the computed third axis. */
+.cv-polyhedra-matrix-head {
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+  font-weight: normal;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.cv-polyhedra-matrix-computed {
+  color: var(--fg-2);
+  font-size: var(--fs-sm);
+  text-align: center;
+  font-style: italic;
+}
+
+.cv-polyhedra-matrix-warn {
+  color: var(--warn);
 }
 
 /* camera */
@@ -305,6 +468,64 @@ margin: var(--sp-5) 0px 5px 0px;
   padding: 3px 5px;
 }
 
+/* Rows and blocks that only apply to some pipelines/modes are folded with
+   the hidden attribute (ui/ColorPanel.js); this beats .control-row's grid. */
+.control-row[hidden] {
+  display: none;
+}
+
+/* A checkbox, colour input or colour swatch as a row's control: its own
+   size at the start of the control column, not stretched across it. */
+.control-row > input.control-row-check {
+  justify-self: start;
+  width: auto;
+}
+
+.control-row > input.control-row-color {
+  justify-self: start;
+  width: 48px;
+  height: 24px;
+  padding: 0;
+}
+
+.control-row > .control-row-swatch {
+  width: 28px;
+  height: 20px;
+  border-radius: var(--radius-4);
+  padding: 0;
+  border: 1px solid var(--line-3);
+  cursor: pointer;
+  flex: none;
+}
+
+/* Visual window blocks under a control: the outline colour swatch and its
+   picker, and the atoms/bonds colour bars and solid-colour picker. */
+.control-sub-block {
+  margin-top: var(--sp-2);
+}
+
+.control-bar-block {
+  margin-top: var(--sp-3);
+}
+
+.control-reset-row {
+  margin: var(--sp-3) 0 var(--sp-1);
+}
+
+/* The atoms/bonds colour-bar "Log Scale" switches: the Force window's
+   .cv-force-check, in primary text (the Visual window's own text is
+   dimmer). */
+.cv-force-check.control-log-check {
+  color: var(--fg-1);
+}
+
+/* By id, to keep the compact size under responsive.css's touch-size
+   .btn-mini rule too, as the inline style it replaces did. */
+#resetRenderingBtn {
+  padding: 3px var(--sp-3-5);
+  font-size: 0.85em;
+}
+
 /* Two adopted rows sharing one line (Scene: show-toggle + width slider). */
 .control-row-pair {
   display: flex;
@@ -324,6 +545,39 @@ margin: var(--sp-5) 0px 5px 0px;
 .control-row-pair > label:last-child input[type="range"] {
   width: 100%;
   min-width: 0;
+}
+
+/* A first row that takes the free width (Visual: the background-picker
+   toggle beside its swatch). */
+.control-row-pair > label.control-row-grow {
+  flex: 1;
+}
+
+/* Settings window: label, a slider taking the free width, and its value
+   (GPU memory, trajectory memory, font scale), then the reset buttons. */
+.toggle_container.cv-pref-slider-row {
+  gap: var(--sp-3);
+}
+
+.cv-pref-slider-row > input[type="range"] {
+  flex: 1;
+}
+
+.cv-pref-slider-value {
+  min-width: 58px;
+  text-align: right;
+}
+
+.cv-pref-btn-row {
+  display: flex;
+  gap: var(--sp-3);
+}
+
+/* Visual ▸ cel outline settings: the "Outline arrows" switch sits between two
+   dropdown/slider rows; give it the same room below as above so it doesn't
+   read as part of the width slider under it. */
+.cv-outline-arrows-row {
+  margin: var(--sp-5) 0;
 }
 
 /* Small explanatory note under a control group. */
@@ -379,6 +633,7 @@ margin: var(--sp-5) 0px 5px 0px;
    every bar that simply has no legend right now. */
 .cv-colorbar-legend-empty {
   opacity: 0;
+  font-style: italic;
   transition: opacity 0.15s ease;
 }
 
@@ -392,11 +647,16 @@ margin: var(--sp-5) 0px 5px 0px;
    compensating margin needed: positionLegend()'s centering (translateX/Y
    against the element's OWN size, see its comments) re-centers automatically
    as the box grows from the added padding/border, in every orientation. */
-.cv-colorbar-legend-editing {
+/* The text takes the field's own colour while editing: the legend otherwise
+   follows the scene (dark on a light background), which on --input-bg (dark
+   chrome in Default light) was dark on dark. Two classes, to beat
+   .cv-colorbar-legend's color: currentColor (sceneWidgets.css loads later). */
+.cv-colorbar-legend.cv-colorbar-legend-editing {
   padding: 1px 5px;
   border: 1px solid var(--accent-color, var(--info-bright));
   border-radius: var(--radius-4);
   background: var(--input-bg);
+  color: var(--fg-1);
   caret-color: var(--fg-1);
 }
 

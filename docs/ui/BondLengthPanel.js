@@ -11,19 +11,22 @@ import { openDoublePeriodicTable } from './PeriodicTableSelectTwoPanel.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import { createMaterialEditor } from './StructureInfoPanel/components/MaterialEditor.js';
 import { createIndividualBondRow } from './StructureInfoPanel/components/IndividualBondRow.js';
+import { fillRows, rememberedPage } from './StructureInfoPanel/components/PagedRows.js';
 import { createTinyToggle } from './StructureInfoPanel/components/Immunity.js';
 import {
   clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup, createMiniToggleSwitch,
 } from './StructureInfoPanel/components/utils.js';
 import {
   bondGroupKey, bondKey, updateSingleBondColor, updateSingleBondOpacity,
-  updateSingleBondDiameter,
+  applyBondRadius,
 } from '../render/index.js';
 import {
   updateHydrogenBonds, initHydrogenBondPairs, hydrogenBondAcceptorOf,
   resetHydrogenBondLengths, hydrogenBondColorFor,
 } from '../render/index.js';
 import { showInfoPanel } from './InfoPanel.js';
+import { saveBondLengths, scheduleBondLengthSave, saveBondStyles, scheduleBondStyleSave } from './SizePrefs.js';
+import { createToggleRow } from './ToggleSwitch.js';
 
 // The slider container is fluid (flex:1, see .bond-range-slider in
 // styles/bondLengthHistogram.css) so it shrinks to fit the Structure Info
@@ -81,7 +84,7 @@ function createHydrogenBondControl(pair) {
   // pattern as the covalent category dot's editor above.
   const colorEditor = document.createElement('div');
   colorEditor.className = 'hbond-color-editor';
-  colorEditor.style.display = 'none';
+  colorEditor.hidden = true;
   const colorPicker = createColorPicker(hydrogenBondColorFor(pair), (hex) => {
     general.hydrogenBondColors[pair] = hex;
     updatePieDot(dot, [hex]);
@@ -95,7 +98,7 @@ function createHydrogenBondControl(pair) {
   dot.title = `Choose the ${pair} hydrogen-bond colour`;
   dot.onclick = (e) => {
     e.stopPropagation();
-    colorEditor.style.display = colorEditor.style.display === 'none' ? 'block' : 'none';
+    colorEditor.hidden = !colorEditor.hidden;
   };
 
   const label = document.createElement('span');
@@ -187,7 +190,7 @@ function createHydrogenBondControl(pair) {
 
   function applyEnabled(on) {
     general.hydrogenBondVisibility[pair] = on;
-    sliderContainer.style.opacity = on ? '' : '0.4';
+    sliderContainer.classList.toggle('is-off', !on);
     minSlider.disabled = !on;
     maxSlider.disabled = !on;
     updateHydrogenBonds(fileBrowser.selectedStructure);
@@ -229,7 +232,7 @@ function textColorForBg(cssHex) {
 // lazily on next expand via general.bondsBuildCounter.
 function refreshExpandedBondLists(panelRoot) {
   panelRoot.querySelectorAll('.individual-bonds').forEach((container) => {
-    if (/** @type {HTMLElement} */ (container).style.display !== 'none') {
+    if (!/** @type {HTMLElement} */ (container).hidden) {
       /** @type {any} */ (container)._populateBondRows?.();
     }
   });
@@ -243,6 +246,36 @@ function refreshBondHeaders(panelRoot) {
   });
 }
 
+// Bonds grouped by element pair, computed once per bonds array (a pair's
+// members only change when the bonds are rebuilt, which replaces the array).
+// Every pair header used to filter ALL bonds on each refresh — pairs x bonds
+// per recolor, most of a second at 10^5 bonds. Weak, so a replaced bonds
+// array is not kept alive (and walked by the collector) through the rebuild.
+/** @type {WeakMap<any[], {length: number, map: Map<string, any[]>}>} */
+const pairGroups = new WeakMap();
+const pairOfBond = (b) => (b.elements[0] < b.elements[1]
+  ? `${b.elements[0]}-${b.elements[1]}` : `${b.elements[1]}-${b.elements[0]}`);
+function bondsOfPair(bonds, pair) {
+  if (!Array.isArray(bonds)) return [];
+  let groups = pairGroups.get(bonds);
+  if (!groups || groups.length !== bonds.length) {
+    const map = new Map();
+    // Bonds of one element pair share their elements array (bond builder):
+    // one key string per array, not per bond.
+    const keyOf = new Map();
+    for (const b of bonds) {
+      let key = keyOf.get(b.elements);
+      if (key === undefined) { key = pairOfBond(b); keyOf.set(b.elements, key); }
+      let list = map.get(key);
+      if (!list) { list = []; map.set(key, list); }
+      list.push(b);
+    }
+    groups = { length: bonds.length, map };
+    pairGroups.set(bonds, groups);
+  }
+  return groups.map.get(pair) ?? [];
+}
+
 // A global recolor (Bonds color-map dropdown, mode switch, color-bar limits,
 // individual/category bond edits elsewhere) doesn't go through any of the
 // three refreshBondHeaders() call sites above (those only fire on
@@ -253,6 +286,30 @@ const bondCategorySwatchUpdateFunctions = {};
 document.addEventListener('crysviz:colors-changed', () => {
   Object.values(bondCategorySwatchUpdateFunctions).forEach((updateFn) => updateFn());
 });
+
+/**
+ * Colour every bond of an element pair ("Ti-O", sorted): the pair's category
+ * colour, fanned out live to its bonds except those with their own colour
+ * (individual > category). Shared by the Bonds window and the host's apply.
+ * @param {any} structure
+ * @param {string} pair
+ * @param {string} hex '#rrggbb'
+ */
+export function setBondPairColor(structure, pair, hex) {
+  ((structure.bondCategoryStyles ??= {})[pair] ??= {}).color = hex;
+  for (const b of bondsOfPair(structure.bonds, pair)) {
+    if (structure.bondUserStyles?.[bondKey(b.indices)]?.color != null) continue;
+    b.color = [hex, hex];
+    b.userColor = [hex, hex];
+    if (b.instanceIds && groups.bondsMesh) {
+      updateSingleBondColor(b.instanceIds[0], hex, true);
+      updateSingleBondColor(b.instanceIds[1], hex, true);
+    }
+  }
+  if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+  bondCategorySwatchUpdateFunctions[pair]?.();
+  scheduleBondStyleSave(structure);
+}
 
 export function resetBondLengths() {
   for (const pair in general.defaultBondLengths) {
@@ -274,9 +331,10 @@ export function resetBondLengths() {
   // the 3D bond SET (which pairs qualify at the just-reset min/max) actually
   // recomputes — bondsUpdate (the default) only repaints existing bonds, it
   // doesn't re-filter by length range. reRenderAtoms recomputes the periodic
-  // neighbour (PBC-ghost) atom set when Neighbour Bonds is on, since the reset
-  // cutoffs change which cross-cell neighbours exist.
-  updateVisualization({ reRenderAtoms: !!general.showPBCBonds, reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  // neighbour (PBC-ghost) atom set when Neighbour Bonds or Complete Rings & Fragments
+  // is on, since the reset cutoffs change which cross-cell neighbours exist.
+  updateVisualization({ reRenderAtoms: !!(general.showPBCBonds || general.completeFragments), reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
+  saveBondLengths(); // drops the per-structure ranges (ui/SizePrefs.js)
 }
 
 /** Reset every bond COLOR customization (category + individual) on one
@@ -285,7 +343,17 @@ export function resetBondLengths() {
  *  data — no mesh/render calls — so it's safe to re-run against off-screen
  *  trajectory frames too. */
 function resetAllBondColors(structure) {
-  for (const store of [structure.bondCategoryStyles, structure.bondUserStyles]) {
+  resetBondColorsIn(structure.bondCategoryStyles);
+  resetUserBondColors(structure);
+}
+
+/** The individual bond colours of one frame (per-frame overrides). */
+function resetUserBondColors(structure) {
+  resetBondColorsIn(structure.bondUserStyles);
+}
+
+function resetBondColorsIn(...stores) {
+  for (const store of stores) {
     if (!store) continue;
     for (const [key, entry] of Object.entries(store)) {
       delete entry.color;
@@ -294,6 +362,49 @@ function resetAllBondColors(structure) {
       }
     }
   }
+}
+
+// "Complete Rings & Fragments" settings (Features window toggle). They decide which of
+// the bonds above hold a fragment together, so they sit with them — and only
+// while the option is on, which is when they do anything.
+function createFragmentSettings() {
+  const group = document.createElement('div');
+  group.className = 'blp-fragments';
+  const head = document.createElement('div');
+  head.className = 'blp-fragments-head';
+  head.textContent = 'Complete Rings & Fragments';
+  group.appendChild(head);
+
+  const refresh = () => updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderOther: false });
+
+  group.appendChild(createToggleRow({
+    id: 'fragmentIgnoreMetalBonds',
+    label: 'Ignore bonds to metals',
+    checked: general.fragmentIgnoreMetalBonds !== false,
+    small: true,
+    onChange: (on) => { general.fragmentIgnoreMetalBonds = on; refresh(); },
+  }).row);
+
+  const ringRow = document.createElement('label');
+  ringRow.className = 'blp-fragments-row';
+  const ringText = document.createElement('span');
+  ringText.textContent = 'Close rings in networks up to';
+  const ringSelect = document.createElement('select');
+  ringSelect.id = 'fragmentMaxRing';
+  for (const size of [0, 3, 4, 5, 6, 7, 8]) {
+    const option = document.createElement('option');
+    option.value = String(size);
+    option.textContent = size ? `${size} atoms` : 'off';
+    ringSelect.appendChild(option);
+  }
+  ringSelect.value = String(general.fragmentMaxRing ?? 6);
+  ringSelect.addEventListener('change', () => {
+    general.fragmentMaxRing = Number(ringSelect.value);
+    refresh();
+  });
+  ringRow.append(ringText, ringSelect);
+  group.appendChild(ringRow);
+  return group;
 }
 
 export function createBondLengthControls(targetPanel='bondControls') {
@@ -351,8 +462,9 @@ export function createBondLengthControls(targetPanel='bondControls') {
       // freshly emptied container). Go through reRenderComposition instead.
       updateVisualization({
         // A new pair cutoff can pull in periodic neighbour (PBC-ghost) atoms,
-        // so recompute the atom set when Neighbour Bonds is on.
-        reRenderAtoms: !!general.showPBCBonds,
+        // so recompute the atom set when Neighbour Bonds or Complete Rings &
+        // Fragments is on.
+        reRenderAtoms: !!(general.showPBCBonds || general.completeFragments),
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: "open",
@@ -402,11 +514,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
     checkbox.onchange = (e) => {
       general.bondVisibility[pair] = /** @type {any} */ (e.target).checked;
       updateVisualization({
-        // With "Neighbour Bonds" on, the periodic neighbour (PBC-ghost) atom
-        // set depends on which pairs are visible, so it must be recomputed
+        // With "Neighbour Bonds" or "Complete Rings & Fragments" on, the periodic
+        // image set depends on which pairs are visible, so it must be recomputed
         // (rebuildAtoms → runPeriodicWrapped) — reRenderBonds alone rebuilds
         // bonds against a stale ghost set.
-        reRenderAtoms: !!general.showPBCBonds,
+        reRenderAtoms: !!(general.showPBCBonds || general.completeFragments),
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: false,
@@ -433,9 +545,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
     // --- Live header: pie dot (opens the category editor) + count(pct%) ---
     const structure = () => fileBrowser.selectedStructure;
-    const pairOf = (b) => (b.elements[0] < b.elements[1]
-      ? `${b.elements[0]}-${b.elements[1]}` : `${b.elements[1]}-${b.elements[0]}`);
-    const memberBonds = () => (structure()?.bonds ?? []).filter((b) => pairOf(b) === pair);
+    const memberBonds = () => bondsOfPair(structure()?.bonds, pair);
     const catStyle = () => (structure().bondCategoryStyles ??= {})[pair] ??= {};
 
     /** @type {HTMLElement} */
@@ -465,7 +575,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       dot.title = `Customize color/alpha/size for all ${pair} bonds`;
       dot.onclick = (e) => {
         e.stopPropagation();
-        catEditor.style.display = catEditor.style.display === 'none' ? 'block' : 'none';
+        catEditor.hidden = !catEditor.hidden;
       };
       dotEl.replaceWith(dot);
       dotEl = dot;
@@ -496,12 +606,9 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // --- Category style editor (color + alpha + size for the whole pair) ---
     const catEditor = document.createElement('div');
     catEditor.className = 'bond-cat-editor';
-    // Explicit inline default alongside the CSS class's own `display: none`:
-    // this codebase reads `.style.display` back in several places (this
-    // file, StructureInfoPanel/General.js's expand-state capture) as the
-    // source of truth for open/closed — the CSS class alone would make
-    // those reads see '' instead of 'none' before the first toggle.
-    catEditor.style.display = 'none';
+    // Closed until opened: .hidden is the open/closed state read back here
+    // and by StructureInfoPanel/General.js's expand-state capture.
+    catEditor.hidden = true;
 
     // Live edits fan out to every bond of the pair, but SKIP members that have
     // a per-copy override for the same field so individual > category holds
@@ -511,18 +618,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
     const currentCatColor = safeColor(
       structure()?.bondCategoryStyles?.[pair]?.color ?? structure()?.getDefaultElementColor(pair.split('-')[0]));
     const catPicker = createColorPicker(currentCatColor, (hex) => {
-      catStyle().color = hex;
-      for (const b of memberBonds()) {
-        if (structure().bondUserStyles?.[bondKey(b.indices)]?.color != null) continue;
-        b.color = [hex, hex];
-        b.userColor = [hex, hex];
-        if (b.instanceIds && groups.bondsMesh) {
-          updateSingleBondColor(b.instanceIds[0], hex, true);
-          updateSingleBondColor(b.instanceIds[1], hex, true);
-        }
-      }
-      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
-      refreshHeader();
+      setBondPairColor(structure(), pair, hex);
       refreshExpandedBondLists(bondControls);
     });
 
@@ -534,13 +630,13 @@ export function createBondLengthControls(targetPanel='bondControls') {
     catAlphaLabel.className = 'bond-cat-row-label';
     const catAlphaSlider = document.createElement('input');
     catAlphaSlider.type = 'range';
-    catAlphaSlider.min = '0.05';
+    catAlphaSlider.min = '0';
     catAlphaSlider.max = '1';
     catAlphaSlider.step = '0.01';
     catAlphaSlider.value = String(currentCatAlpha);
     const catAlphaValue = document.createElement('input');
     catAlphaValue.type = 'number';
-    catAlphaValue.min = '0.05';
+    catAlphaValue.min = '0';
     catAlphaValue.max = '1';
     catAlphaValue.step = '0.01';
     catAlphaValue.value = currentCatAlpha.toFixed(2);
@@ -550,6 +646,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       catAlphaSlider.value = String(value);
       catAlphaValue.value = value.toFixed(2);
       catStyle().alpha = value;
+      scheduleBondStyleSave(structure());
       for (const b of memberBonds()) {
         if (structure().bondUserStyles?.[bondKey(b.indices)]?.alpha != null) continue;
         b.alpha = value;
@@ -589,13 +686,10 @@ export function createBondLengthControls(targetPanel='bondControls') {
       catSizeSlider.value = String(value);
       catSizeValue.value = value.toFixed(2);
       catStyle().radiusScale = value;
+      scheduleBondStyleSave(structure());
       for (const b of memberBonds()) {
         if (structure().bondUserStyles?.[bondKey(b.indices)]?.radiusScale != null) continue;
-        b.radius = general.bondRadius * value;
-        if (b.instanceIds && groups.bondsMesh) {
-          updateSingleBondDiameter(b.instanceIds[0], b.radius);
-          updateSingleBondDiameter(b.instanceIds[1], b.radius);
-        }
+        applyBondRadius(b, general.bondRadius * value);
       }
     }
     catSizeSlider.oninput = (e) => applyCatSize(/** @type {any} */ (e.target).value);
@@ -607,20 +701,26 @@ export function createBondLengthControls(targetPanel='bondControls') {
     const catResetBtn = document.createElement('button');
     catResetBtn.textContent = 'Reset';
     catResetBtn.className = 'btn-mini bond-cat-btn';
-    catResetBtn.title = `Reset ${pair} bonds: removes the group style AND every individual override.\nClick: this frame. Press and hold: whole trajectory.`;
+    catResetBtn.title = `Reset ${pair} bonds: removes the group style (whole trajectory) and every individual override on this frame.\nPress and hold: also clears the individual overrides on every frame.`;
     // Preview the two elements' default (pre-override) half-colors, same idea
     // as the element editor's Reset swatch — each bond half is colored by its
     // own endpoint element by default.
     const [defColor1, defColor2] = (memberBonds()[0]?.defaultColor ?? []).map(safeColor);
     if (defColor1 && defColor2) {
+      catResetBtn.classList.add('is-swatch'); // dark hairline + glyph shadow (styles.css)
       catResetBtn.style.background = `linear-gradient(90deg, ${defColor1} 50%, ${defColor2} 50%)`;
-      catResetBtn.style.borderColor = 'rgba(0,0,0,0.2)';
       catResetBtn.style.color = textColorForBg(defColor1);
-      catResetBtn.style.textShadow = '0 0 3px rgba(0,0,0,0.6)';
     }
+    // The group style is one for the whole trajectory (the trajectory's
+    // shared styles, model/materializeFrame.js SHARED_STYLE_DICTS): one
+    // delete on the shown frame resets it everywhere. Individual overrides
+    // are per frame.
     function resetPairOnFrame(frame) {
       delete frame.bondCategoryStyles?.[pair];
-      (frame.bonds ?? []).filter((b) => pairOf(b) === pair)
+      resetPairMembersOnFrame(frame);
+    }
+    function resetPairMembersOnFrame(frame) {
+      (frame.bonds ?? []).filter((b) => pairOfBond(b) === pair)
         .forEach((b) => delete frame.bondUserStyles?.[bondKey(b.indices)]);
     }
     wirePressHoldPopup(catResetBtn, {
@@ -628,6 +728,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       onPress: (e) => {
         e.stopPropagation();
         resetPairOnFrame(structure());
+        saveBondStyles(structure());
         updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
         refreshExpandedBondLists(bondControls);
         refreshBondHeaders(bondControls);
@@ -635,10 +736,11 @@ export function createBondLengthControls(targetPanel='bondControls') {
       onConfirm: (e) => {
         e.stopPropagation();
         resetPairOnFrame(structure());
-        // Clear this same pair's category + member overrides on every other
-        // frame too, using each frame's OWN bond list/keys (not a copy of
-        // this frame's), since wrapped-index bond keys can drift frame to frame.
-        applyToOtherTrajectoryFrames(structure(), resetPairOnFrame);
+        // Clear this same pair's member overrides on every other frame too,
+        // using each frame's OWN bond list/keys (not a copy of this frame's),
+        // since wrapped-index bond keys can drift frame to frame.
+        applyToOtherTrajectoryFrames(structure(), resetPairMembersOnFrame);
+        saveBondStyles(structure());
         updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: false });
         refreshExpandedBondLists(bondControls);
         refreshBondHeaders(bondControls);
@@ -648,22 +750,12 @@ export function createBondLengthControls(targetPanel='bondControls') {
     const catApplyBtn = document.createElement('button');
     catApplyBtn.textContent = 'Apply';
     catApplyBtn.className = 'btn-mini highlight bond-cat-btn';
-    catApplyBtn.title = `Click: close. Press and hold: copy ${pair} bonds' group color/alpha/size to every trajectory frame.`;
-    wirePressHoldPopup(catApplyBtn, {
-      holdLabel: 'Apply to Trajectory',
-      onPress: (e) => {
-        e.stopPropagation();
-        catEditor.style.display = 'none';
-      },
-      onConfirm: (e) => {
-        e.stopPropagation();
-        const style = { ...structure().bondCategoryStyles[pair] };
-        applyToOtherTrajectoryFrames(structure(), (frame) => {
-          frame.bondCategoryStyles ??= {};
-          frame.bondCategoryStyles[pair] = { ...style };
-        });
-      },
-    });
+    // A group style already applies to every frame of a trajectory.
+    catApplyBtn.title = 'Close. The group style applies to every trajectory frame.';
+    catApplyBtn.onclick = (e) => {
+      e.stopPropagation();
+      catEditor.hidden = true;
+    };
 
     const catButtonRow = document.createElement('div');
     catButtonRow.className = 'bond-cat-btn-row';
@@ -676,6 +768,7 @@ export function createBondLengthControls(targetPanel='bondControls') {
       (material) => {
         if (material) catStyle().material = material;
         else delete catStyle().material;
+        saveBondStyles(structure());
       });
 
     catEditor.appendChild(catPicker.element);
@@ -696,17 +789,21 @@ export function createBondLengthControls(targetPanel='bondControls') {
     // --- Individual bond list (expandable, lazily built) ---
     const bondsContainer = document.createElement('div');
     bondsContainer.className = 'individual-bonds';
-    // See the matching comment on catEditor.style.display above.
-    bondsContainer.style.display = 'none';
+    // See the matching comment on catEditor.hidden above.
+    bondsContainer.hidden = true;
 
     // One row per bond is expensive and hidden until expanded, so build lazily
     // on first expand (mirrors the Atoms tab). structure.bonds is recreated by
     // every bonds rebuild, so cached rows are refreshed whenever
     // general.bondsBuildCounter has moved on. Exposed on the container so code
     // that expands programmatically (highlight/scroll to a bond) can ensure
-    // the rows exist first.
+    // the rows exist first. A long list shows one page of rows
+    // (components/PagedRows.js); _showBondRow brings up a bond's page.
     let builtForBuildId = -1;
-    function populateBondRows() {
+    let bondRows = null;
+    let bondEntries = [];
+    // isFocus: a test for the entry whose page to open on.
+    function populateBondRows(isFocus = null) {
       if (builtForBuildId === general.bondsBuildCounter) return;
       builtForBuildId = general.bondsBuildCounter;
       bondsContainer.innerHTML = '';
@@ -716,12 +813,13 @@ export function createBondLengthControls(targetPanel='bondControls') {
       // copies grouped by bondGroupKey, edits/selection fan out to all copies.
       const linking = general.linkPeriodicCopies !== false;
       const groupsMap = linking ? new Map() : null; // groupKey -> member indices (insertion order)
+      const entries = []; // [bondIndex] unlinked, [representative, members, groupKey] linked
       bonds.forEach((bond, bondIndex) => {
         const [e1, e2] = bond.elements;
         const bondPair = e1 < e2 ? `${e1}-${e2}` : `${e2}-${e1}`;
         if (bondPair !== pair) return;
         if (!linking) {
-          bondsContainer.appendChild(createIndividualBondRow(bond, bondIndex));
+          entries.push([bondIndex]);
           return;
         }
         const gk = bondGroupKey(structure, bond);
@@ -730,27 +828,43 @@ export function createBondLengthControls(targetPanel='bondControls') {
         members.push(bondIndex);
       });
       if (linking) {
-        for (const [gk, members] of groupsMap) {
-          bondsContainer.appendChild(createIndividualBondRow(
-            bonds[members[0]], members[0], { linkedBondIndexes: members, groupKey: gk }));
-        }
+        for (const [gk, members] of groupsMap) entries.push([members[0], members, gk]);
       }
-      if (!bondsContainer.children.length) {
+      bondEntries = entries;
+      bondRows = fillRows(bondsContainer, entries.length, (k) => {
+        const [bondIndex, members, gk] = entries[k];
+        return members
+          ? createIndividualBondRow(bonds[bondIndex], bondIndex, { linkedBondIndexes: members, groupKey: gk })
+          : createIndividualBondRow(bonds[bondIndex], bondIndex);
+      }, {
+        noun: 'bonds',
+        ...rememberedPage(structure, `bonds:${pair}`),
+        focus: isFocus ? entries.findIndex(isFocus) : -1,
+      });
+      if (!entries.length) {
         const empty = document.createElement('div');
         empty.className = 'bond-empty-note';
         empty.textContent = 'No bonds in the current length range';
         bondsContainer.appendChild(empty);
       }
     }
+    /** @type {any} */ (bondsContainer)._showBondRow = (key, groupKey = null) => {
+      const bonds = fileBrowser.selectedStructure?.bonds ?? [];
+      const isFocus = ([bondIndex, , gk]) => (groupKey
+        ? gk === groupKey
+        : bonds[bondIndex] && bondKey(bonds[bondIndex].indices) === key);
+      if (builtForBuildId !== general.bondsBuildCounter) populateBondRows(isFocus);
+      else bondRows.showItem(bondEntries.findIndex(isFocus));
+    };
     /** @type {any} */ (bondsContainer)._populateBondRows = populateBondRows;
 
     function toggleBondList(e) {
       e.stopPropagation();
-      const isExpanded = bondsContainer.style.display !== 'none';
+      const isExpanded = !bondsContainer.hidden;
       if (!isExpanded) populateBondRows(); // build rows lazily on first expand
-      bondsContainer.style.display = isExpanded ? 'none' : 'block';
-      expandIcon.style.transform = isExpanded ? 'rotate(0deg)' : 'rotate(90deg)';
-      catEditor.style.display = 'none'; // expanding/collapsing closes the category color editor
+      bondsContainer.hidden = isExpanded;
+      expandIcon.classList.toggle('is-expanded', !isExpanded);
+      catEditor.hidden = true; // expanding/collapsing closes the category color editor
     }
     expandIcon.onclick = toggleBondList;
     checkboxLabel.onclick = toggleBondList;
@@ -854,13 +968,14 @@ export function createBondLengthControls(targetPanel='bondControls') {
 
       general.bondLengths[pair].min = minVal;
       general.bondLengths[pair].max = maxVal;
+      scheduleBondLengthSave(fileBrowser.selectedStructure);
 
       updateVisualization({
-        // Neighbour Bonds on: the cutoff drives which periodic neighbour
-        // (PBC-ghost) atoms exist, so recompute the atom set on the fly rather
+        // Neighbour Bonds / Complete Rings & Fragments on: the cutoff drives which
+        // periodic image atoms exist, so recompute the atom set on the fly rather
         // than rebuilding bonds against a stale one (see the visibility toggle
         // above for the same reasoning).
-        reRenderAtoms: !!general.showPBCBonds,
+        reRenderAtoms: !!(general.showPBCBonds || general.completeFragments),
         reRenderBonds: true,
         reRenderOther: false,
         reRenderComposition: false,
@@ -892,6 +1007,8 @@ export function createBondLengthControls(targetPanel='bondControls') {
     bondControls.appendChild(div);
   });
 
+  if (general.completeFragments) bondControls.appendChild(createFragmentSettings());
+
   // Below every individual bond category — same placement as the Atoms tab's
   // Reset Colors/Reset Styling row below the composition list.
   const resetColorsRow = document.createElement('div');
@@ -911,17 +1028,19 @@ export function createBondLengthControls(targetPanel='bondControls') {
   resetBondColorsBtn.id = 'resetBondColorsBtn';
   resetBondColorsBtn.textContent = 'Reset Colors';
   resetBondColorsBtn.className = 'reset-btn blp-reset-btn';
-  resetBondColorsBtn.title = 'Reset every bond color customization (category and individual) to element defaults.\nClick: this frame. Press and hold: whole trajectory.';
+  resetBondColorsBtn.title = 'Reset every bond color customization to element defaults: pair colors (whole trajectory) and individual colors on this frame.\nPress and hold: also clears the individual colors on every frame.';
   wirePressHoldPopup(resetBondColorsBtn, {
     holdLabel: 'Reset Trajectory',
     onPress: () => {
       resetAllBondColors(fileBrowser.selectedStructure);
+      saveBondStyles(fileBrowser.selectedStructure);
       updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     },
     onConfirm: () => {
       const structure = fileBrowser.selectedStructure;
       resetAllBondColors(structure);
-      applyToOtherTrajectoryFrames(structure, resetAllBondColors);
+      applyToOtherTrajectoryFrames(structure, resetUserBondColors);
+      saveBondStyles(structure);
       updateVisualization({ reRenderBonds: true, reRenderOther: false, reRenderComposition: "open" });
     },
   });

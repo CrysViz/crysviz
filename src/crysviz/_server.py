@@ -27,6 +27,16 @@ _SECURITY_HEADERS = {
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "Cross-Origin-Resource-Policy": "same-origin",
+    # Cross-origin isolation: unlocks SharedArrayBuffer, which the threaded
+    # PET-MAD wasm (docs/external/mlip_wasm/cpu-mt) needs to run ggml on more
+    # than one core. GitHub Pages cannot send these, so the web app uses an
+    # opt-in service worker instead (docs/coi-serviceworker.js); the desktop
+    # host can simply set them. COEP is `credentialless` rather than
+    # `require-corp` so the few cross-origin resources the app pulls without
+    # CORS (Plotly from its CDN) still load; engines without credentialless
+    # ignore the header and stay un-isolated, which only costs the threads.
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Embedder-Policy": "credentialless",
 }
 _CHUNK_SIZE = 64 * 1024
 _MAX_COMPLETION_BODY = 16 * 1024
@@ -58,7 +68,8 @@ class _LaunchState:
         self.manifest_capability = _new_capability(self.used)
         self.input_capabilities = [_new_capability(self.used) for _ in sources]
         self.one_use_capabilities: set[str] = set()
-        self.output_pending: set[str] = set()
+        # capability -> the one Content-Type its upload may carry
+        self.output_pending: dict[str, str] = {}
         self.output_claimed: dict[str, tempfile.SpooledTemporaryFile] = {}
         self.output_completed: dict[str, tempfile.SpooledTemporaryFile] = {}
         self.bridge_capability = bridge_capability
@@ -74,8 +85,6 @@ class _LaunchState:
             }
             if source.format is not None:
                 item["format"] = source.format
-            if source.binary:
-                item["binary"] = True
             inputs.append(item)
         manifest: dict[str, object] = {"version": 1, "inputs": inputs}
         if self.bridge_capability is not None:
@@ -148,22 +157,23 @@ class _LaunchState:
                 self.one_use_capabilities.remove(capability)
             return source, consume and one_use
 
-    def reserve_output(self, base_url: str) -> str:
+    def reserve_output(self, base_url: str, content_type: str = "image/png") -> str:
         with self.lock:
             if not self.active:
                 raise RuntimeError("server is closed")
             capability = _new_capability(self.used)
-            self.output_pending.add(capability)
+            self.output_pending[capability] = content_type
             return f"{base_url}/_crysviz/output/{capability}"
 
-    def claim_output_post(self, capability: str) -> tempfile.SpooledTemporaryFile | None:
+    def claim_output_post(self, capability: str) -> tuple[tempfile.SpooledTemporaryFile, str] | None:
+        """Claim an upload: its spool stream and the Content-Type it was reserved for."""
         with self.lock:
             if capability not in self.output_pending or not self.active:
                 return None
-            self.output_pending.remove(capability)
+            content_type = self.output_pending.pop(capability)
             stream = tempfile.SpooledTemporaryFile(max_size=SPOOL_THRESHOLD, mode="w+b")
             self.output_claimed[capability] = stream
-            return stream
+            return stream, content_type
 
     def complete_output_upload(self, capability: str) -> bool:
         with self.lock:
@@ -179,7 +189,7 @@ class _LaunchState:
 
     def discard_output(self, capability: str) -> None:
         with self.lock:
-            self.output_pending.discard(capability)
+            self.output_pending.pop(capability, None)
             stream = self.output_claimed.pop(capability, None)
             completed = self.output_completed.pop(capability, None)
         for item in (stream, completed):
@@ -390,9 +400,9 @@ class _RequestHandler(BaseHTTPRequestHandler):
         try:
             stream = source.open()
             size = self._stream_length(stream)
-            content_type = "application/octet-stream" if source.binary else "text/plain; charset=utf-8"
+            # The browser reads every input as a Blob, as its detected format needs.
             self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", str(size))
             for key, value in _SECURITY_HEADERS.items():
                 self.send_header(key, value)
@@ -510,44 +520,45 @@ class _RequestHandler(BaseHTTPRequestHandler):
         content_type = self.headers.get("Content-Type", "")
         lengths = self.headers.get_all("Content-Length", [])
         transfers = self.headers.get_all("Transfer-Encoding", [])
-        stream = self.state.claim_output_post(capability)
-        if stream is None:
+        claimed = self.state.claim_output_post(capability)
+        if claimed is None:
             self._error(HTTPStatus.NOT_FOUND, "NOT_FOUND", "Resource not found")
             return
-        if content_type.strip().lower() != "image/png" or len(lengths) != 1 or transfers:
+        stream, expected_type = claimed
+        if content_type.strip().lower() != expected_type or len(lengths) != 1 or transfers:
             self.state.discard_output(capability)
-            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid PNG upload")
+            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid output upload")
             return
         raw_length = lengths[0]
         if raw_length is None or not re.fullmatch(r"[0-9]+", raw_length.strip()):
             self.state.discard_output(capability)
-            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid PNG upload")
+            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid output upload")
             return
         length = int(raw_length)
         if length == 0:
             self.state.discard_output(capability)
-            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid PNG upload")
+            self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid output upload")
             return
         if length > MAX_BLOB_BYTES:
             self.state.discard_output(capability)
-            self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "OUTPUT_TOO_LARGE", "PNG upload is too large")
+            self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "OUTPUT_TOO_LARGE", "Output upload is too large")
             return
         try:
             remaining = length
             while remaining:
                 block = self.rfile.read(min(_CHUNK_SIZE, remaining))
                 if not block:
-                    raise OSError("PNG upload ended before its advertised length")
+                    raise OSError("Output upload ended before its advertised length")
                 stream.write(block)
                 remaining -= len(block)
             stream.seek(0)
             if not self.state.complete_output_upload(capability):
-                raise OSError("PNG upload capability was revoked")
+                raise OSError("Output upload capability was revoked")
             self._send(HTTPStatus.OK, "application/json", 2, b"{}")
         except (OSError, ConnectionError):
             self.state.discard_output(capability)
             try:
-                self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid PNG upload")
+                self._error(HTTPStatus.BAD_REQUEST, "INVALID_OUTPUT", "Invalid output upload")
             except OSError:
                 self.close_connection = True
 
@@ -644,11 +655,11 @@ class CrysVizServer:
         capability = self._httpd.state.add_source(source)
         return f"http://{self._httpd.expected_host}/_crysviz/input/{capability}"
 
-    def reserve_output(self) -> str:
-        """Reserve a one-use PNG upload URL for the managed browser."""
+    def reserve_output(self, content_type: str = "image/png") -> str:
+        """Reserve a one-use upload URL for the managed browser, accepting only ``content_type``."""
         if self._httpd is None:
             raise RuntimeError("server has not started")
-        return self._httpd.state.reserve_output(f"http://{self._httpd.expected_host}")
+        return self._httpd.state.reserve_output(f"http://{self._httpd.expected_host}", content_type)
 
     def _output_capability(self, url: str) -> str | None:
         if self._httpd is None or not isinstance(url, str):

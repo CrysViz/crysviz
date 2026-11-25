@@ -14,8 +14,11 @@
  *
  * What a record captures (only when it deviates): per-atom style fields and
  * positions, per-arrow user overrides (userColor/userMaterial/hidden), the
- * per-structure style dicts, the lattice, polyhedra settings, and REFERENCES
+ * per-item style dicts (FRAME_STYLE_DICTS), the lattice, and REFERENCES
  * to attached state (volumetric fields, planes, symmetry, velocities).
+ * Category-level styles and the polyhedra settings apply to the whole
+ * trajectory instead: one shared record (extractSharedStyles /
+ * applySharedStyles, SHARED_STYLE_DICTS).
  * Deliberately NOT captured, because rendering recomputes them on every
  * display and recording them would bloat the records on plain playback:
  * bonds, the computed polyhedra model, colormap-driven spin/force `.color`
@@ -24,6 +27,7 @@
  * reprojections (recomputed from the raw file-frame moments).
  */
 
+import { general } from '../state/store.js';
 import { Structure } from './Structure.js';
 import { Atom } from './Atom.js';
 import { Spin } from './Spin.js';
@@ -94,6 +98,7 @@ export function materializeFrame(store, ph) {
     forces,
     energy: ph.energy,
     stress: ph.stress ? new Stress({ tensor: ph.stress.map(row => [...row]) }) : null,
+    dataSource: ph.dataSource ?? null,
   });
 }
 
@@ -110,47 +115,269 @@ export function materializeFrame(store, ph) {
  * @param {FramePhysics} ph
  */
 export function applyFramePhysics(live, ph) {
-  const n = live.atoms.length;
+  applyPerAtomPhysics(live.atoms, live.spins, live.forces, ph);
+  applyFrameScalars(live, ph);
+}
+
+/** The per-atom part of applyFramePhysics: O(N) fresh arrays. */
+function applyPerAtomPhysics(atoms, spins, forces, ph) {
+  const n = atoms.length;
   for (let i = 0; i < n; i++) {
-    live.atoms[i].position = [
+    atoms[i].position = [
       ph.positions[i * 3], ph.positions[i * 3 + 1], ph.positions[i * 3 + 2],
     ];
   }
-  if (ph.spinRaw && live.spins.length === n) {
+  if (ph.spinRaw && spins.length === n) {
     for (let i = 0; i < n; i++) {
-      const s = live.spins[i];
+      const s = spins[i];
       s.vector = [ph.spinVectors[i * 3], ph.spinVectors[i * 3 + 1], ph.spinVectors[i * 3 + 2]];
       s.rawVector = [ph.spinRaw[i * 3], ph.spinRaw[i * 3 + 1], ph.spinRaw[i * 3 + 2]];
     }
   }
-  if (ph.forces && live.forces.length === n) {
+  if (ph.forces && forces.length === n) {
     for (let i = 0; i < n; i++) {
-      live.forces[i].vector = [ph.forces[i * 3], ph.forces[i * 3 + 1], ph.forces[i * 3 + 2]];
+      forces[i].vector = [ph.forces[i * 3], ph.forces[i * 3 + 1], ph.forces[i * 3 + 2]];
     }
   }
+}
+
+/** The per-structure part of applyFramePhysics: O(1). */
+function applyFrameScalars(live, ph) {
   live.lattice = ph.lattice.map(row => [...row]);
   live.energy = ph.energy;
   live.stress = ph.stress ? new Stress({ tensor: ph.stress.map(row => [...row]) }) : null;
+  // The frame's own source, else the file's (a computed result on the last
+  // frame must not label this one).
+  live.dataSource = ph.dataSource ?? null;
+}
+
+// ── Deferred per-atom physics (columnar playback) ────────────────────────────
+//
+// Writing a frame's positions into the live Structure is O(N) fresh arrays
+// (they cannot be written in place, see above): ~20 ms per frame at 20k atoms,
+// most of a playback frame once the meshes are moved straight from the frame's
+// position column (render/FastFrameModule.js). So the switch is deferred: the
+// cell, energy and stress are written at once, the per-atom part only when
+// something reads `atoms`, `spins` or `forces` — those become accessors on the
+// live Structure that apply the pending frame first. Every reader therefore
+// sees the shown frame, exactly as before; a playback frame that nobody reads
+// per atom simply never builds them. The same Atom/Spin/Force objects are kept
+// (identity unchanged), only their arrays are replaced, as before.
+
+const PENDING = Symbol('pendingFramePhysics');
+/** Deferred frames applied so far (tests / Debug: stays flat during fast playback). */
+let flushCount = 0;
+export function deferredFlushCount() { return flushCount; }
+const BACKING = Symbol('framePhysicsBacking');
+const DEFERRED_FIELDS = /** @type {const} */ (['atoms', 'spins', 'forces']);
+
+/** Turn atoms/spins/forces of `live` into flushing accessors (once). */
+function installDeferredAccessors(live) {
+  if (live[BACKING]) return;
+  /** @type {Record<string, any[]>} */
+  const backing = { atoms: live.atoms, spins: live.spins, forces: live.forces };
+  live[BACKING] = backing;
+  for (const name of DEFERRED_FIELDS) {
+    Object.defineProperty(live, name, {
+      configurable: true,
+      enumerable: true,
+      get() {
+        if (this[PENDING]) flushFramePhysics(this);
+        return backing[name];
+      },
+      set(value) {
+        if (this[PENDING]) flushFramePhysics(this);
+        backing[name] = value;
+      },
+    });
+  }
+}
+
+/**
+ * applyFramePhysics, with the per-atom part deferred until first read.
+ * @param {Structure} live @param {FramePhysics} ph
+ */
+export function deferFramePhysics(live, ph) {
+  installDeferredAccessors(live);
+  /** @type {any} */ (live)[PENDING] = ph;
+  applyFrameScalars(live, ph);
+}
+
+/**
+ * Apply a pending deferred frame now (no-op when none is pending).
+ * @param {Structure} live
+ */
+export function flushFramePhysics(live) {
+  const l = /** @type {any} */ (live);
+  const ph = l?.[PENDING];
+  if (!ph) return;
+  l[PENDING] = null;
+  flushCount += 1;
+  const b = l[BACKING];
+  applyPerAtomPhysics(b.atoms, b.spins, b.forces, ph);
+}
+
+/**
+ * The fractional position column (Float64Array, 3 per atom) of a frame whose
+ * per-atom physics is still pending on `structure`, else null — for readers
+ * that need positions only and must not materialise them (the playback fast
+ * path).
+ * @param {any} structure
+ * @returns {Float64Array | null}
+ */
+export function pendingFramePositions(structure) {
+  return structure?.[PENDING]?.positions ?? null;
+}
+
+/**
+ * The force column (Float64Array, 3 per atom; null when the frame has no
+ * forces) of a frame whose per-atom physics is still pending on `structure`;
+ * undefined when none is pending. For the playback fast path's force colours.
+ * @param {any} structure
+ * @returns {Float64Array | null | undefined}
+ */
+export function pendingFrameForces(structure) {
+  const ph = structure?.[PENDING];
+  return ph ? (ph.forces ?? null) : undefined;
+}
+
+/**
+ * The forces array WITHOUT applying a pending frame (its length and objects;
+ * the vectors may be the previous frame's).
+ * @param {any} structure
+ * @returns {any[]}
+ */
+export function peekForces(structure) {
+  return structure?.[BACKING]?.forces ?? structure?.forces;
+}
+
+/** Is a deferred frame pending on `structure`? */
+export function hasPendingFramePhysics(structure) {
+  return !!structure?.[PENDING];
+}
+
+/**
+ * The atoms array WITHOUT applying a pending frame: for reads of
+ * non-positional per-atom state (hidden, opacity, element), which a frame
+ * switch never changes. Their positions may be the previous frame's.
+ * @param {any} structure
+ * @returns {any[]}
+ */
+export function peekAtoms(structure) {
+  return structure?.[BACKING]?.atoms ?? structure?.atoms;
 }
 
 const nearlyEqual = (a, b) => a === b || Math.abs(a - b) < 1e-12;
 
-/** The per-structure style dicts (mirrors StructureContainer's flush list). */
-const STYLE_DICTS = ['bondUserStyles', 'bondCategoryStyles', 'polyhedraUserStyles',
-  'polyhedraCategoryStyles', 'atomMaterials', 'atomUserMaterials',
-  'spinCategoryStyles', 'forceCategoryStyles', 'atomImageStyles'];
+/**
+ * The per-structure style dicts (mirrors StructureContainer's flush list),
+ * split by how far an edit reaches in a trajectory.
+ *
+ * SHARED: category-level styles (per bond pair, polyhedron type, arrow
+ * category, element) apply to the WHOLE trajectory. They live in ONE record
+ * on the container (TrajectoryContainer._sharedStyles), taken from the live
+ * frame when it moves on and put on every frame, together with the
+ * polyhedra settings (useChemicalFilter, detectCages).
+ *
+ * PER FRAME: individual edits (one bond, one polyhedron, one atom's
+ * material, one periodic image) stay on the frame they were made on, in
+ * that frame's sparse record.
+ *
+ * Moving a dict between the two lists is the whole switch.
+ */
+export const SHARED_STYLE_DICTS = /** @type {const} */ (['bondCategoryStyles',
+  'polyhedraCategoryStyles', 'polyhedraElementStyles', 'spinCategoryStyles', 'forceCategoryStyles', 'atomMaterials']);
+export const FRAME_STYLE_DICTS = /** @type {const} */ (['bondUserStyles',
+  'polyhedraUserStyles', 'atomUserMaterials', 'atomImageStyles']);
+
+/** The polyhedra settings nobody changed. */
+const DEFAULT_POLYHEDRA_SETTINGS = Object.freeze({ useChemicalFilter: true, detectCages: true });
+
+/**
+ * The styles of a trajectory that apply to every frame (SHARED_STYLE_DICTS
+ * and the polyhedra settings). Absent members mean "at default".
+ * @typedef {{
+ *   dicts?: Record<string, object>,
+ *   polyhedraSettings?: {useChemicalFilter: boolean, detectCages: boolean},
+ * }} SharedStyleRecord
+ */
+
+/**
+ * The trajectory-wide styles a Structure carries, by reference (O(number of
+ * dicts): cheap enough for every frame switch); null when all are at default.
+ * @param {Structure} frame
+ * @returns {SharedStyleRecord | null}
+ */
+export function extractSharedStyles(frame) {
+  /** @type {SharedStyleRecord} */
+  const rec = {};
+  for (const k of SHARED_STYLE_DICTS) {
+    const dict = /** @type {any} */ (frame)[k];
+    if (dict && Object.keys(dict).length) (rec.dicts ??= {})[k] = dict;
+  }
+  const ps = frame.polyhedraSettings;
+  if (ps && (ps.useChemicalFilter !== true || ps.detectCages !== true)) {
+    rec.polyhedraSettings = {
+      useChemicalFilter: ps.useChemicalFilter !== false,
+      detectCages: ps.detectCages !== false,
+    };
+  }
+  return rec.dicts || rec.polyhedraSettings ? rec : null;
+}
+
+/**
+ * Put the trajectory-wide styles on a Structure (null: all at default).
+ * `copy` deep-copies the dicts — for a Structure that leaves the trajectory
+ * (an overlay, a copied row) or is thrown away after an edit, so that it
+ * never shares dict objects with the live frame.
+ * @param {Structure} frame
+ * @param {SharedStyleRecord | null} shared
+ * @param {{copy?: boolean}} [opts]
+ */
+export function applySharedStyles(frame, shared, { copy = false } = {}) {
+  const f = /** @type {any} */ (frame);
+  for (const k of SHARED_STYLE_DICTS) {
+    const dict = /** @type {any} */ (shared?.dicts)?.[k];
+    f[k] = dict ? (copy ? structuredClone(dict) : dict) : {};
+  }
+  f.polyhedraSettings = { ...(shared?.polyhedraSettings ?? DEFAULT_POLYHEDRA_SETTINGS) };
+}
+
+/**
+ * Fold `incoming` into `base`, keeping what `base` already has: a dict (or
+ * the polyhedra settings) is taken from `incoming` only where `base` has
+ * none — "first occurrence wins" when several frames each carry their own.
+ * Copies what it takes. Returns the merged record (null when empty).
+ * @param {SharedStyleRecord | null} base
+ * @param {SharedStyleRecord | null} incoming
+ * @returns {SharedStyleRecord | null}
+ */
+export function mergeSharedStyles(base, incoming) {
+  if (!incoming) return base;
+  /** @type {SharedStyleRecord} */
+  const out = { ...(base ?? {}) };
+  if (base?.dicts) out.dicts = { ...base.dicts };
+  for (const [k, dict] of Object.entries(incoming.dicts ?? {})) {
+    if (!out.dicts?.[k]) (out.dicts ??= {})[k] = structuredClone(dict);
+  }
+  if (!out.polyhedraSettings && incoming.polyhedraSettings) {
+    out.polyhedraSettings = { ...incoming.polyhedraSettings };
+  }
+  return out.dicts || out.polyhedraSettings ? out : null;
+}
 
 /**
  * The sparse record of one frame's deviations from its as-loaded state.
  * Absent members mean "at default"; a frame with no deviations at all is
- * represented by no record (extract returns null).
+ * represented by no record (extract returns null). The trajectory-wide
+ * styles (SHARED_STYLE_DICTS, polyhedra settings) are not part of it: see
+ * extractSharedStyles.
  * @typedef {{
  *   atoms?: Map<number, object>,
  *   spins?: Map<number, object>,
  *   forces?: Map<number, object>,
  *   dicts?: Record<string, object>,
  *   lattice?: number[][],
- *   polyhedraSettings?: {useChemicalFilter: boolean, detectCages: boolean},
  *   attached?: {volumetricFields?: object, symmetry?: object,
  *               planes?: object[], velocities?: number[][]},
  * }} FrameStyleRecord
@@ -170,6 +397,16 @@ export function extractFrameStyles(frame, ph) {
   /** @type {any} */
   const rec = {};
 
+  // Atoms coloured by force carry a per-frame DERIVED colour in a.color (the
+  // force magnitude mapped through the colour bar). It is recomputed for every
+  // frame from that frame's forces on display (ColorPanel.reapplyAtomForceColors,
+  // via crystal-viewer.updateVisualization and the fast/live paths), so it must
+  // NOT be captured as a per-frame style deviation — same reason materializeFrame
+  // deliberately never records colormap-driven spin/force ARROW colours. Recording
+  // it would bloat every parked frame with a full atom-colour map and, worse,
+  // freeze stale force colours onto frames if the user later leaves force mode. A
+  // user's explicit per-atom pick still lands in userColor, which IS captured.
+  const colorByForce = general.atomsColor === 'force';
   /** @type {Map<number, object>} */
   const atoms = new Map();
   frame.atoms.forEach((a, i) => {
@@ -178,7 +415,7 @@ export function extractFrameStyles(frame, ph) {
     if (a.userColor !== null) d.userColor = a.userColor;
     if (a.hidden) d.hidden = true;
     if (a.cutPlaneImmune) d.cutPlaneImmune = true;
-    if (a.color !== a.defaultColor) d.color = a.color;
+    if (!colorByForce && a.color !== a.defaultColor) d.color = a.color;
     if (a.elementColor !== a.defaultColor) d.elementColor = a.elementColor;
     if (a.opacity !== 1) d.opacity = a.opacity;
     if (a.elementOpacity !== 1) d.elementOpacity = a.elementOpacity;
@@ -216,8 +453,8 @@ export function extractFrameStyles(frame, ph) {
   const forces = arrows(frame.forces);
   if (forces) rec.forces = forces;
 
-  for (const k of STYLE_DICTS) {
-    const dict = frame[k];
+  for (const k of FRAME_STYLE_DICTS) {
+    const dict = /** @type {any} */ (frame)[k];
     if (dict && Object.keys(dict).length) {
       (rec.dicts ??= {})[k] = dict;
     }
@@ -231,11 +468,6 @@ export function extractFrameStyles(frame, ph) {
         break outer;
       }
     }
-  }
-
-  const ps = frame.polyhedraSettings;
-  if (ps && (ps.useChemicalFilter !== true || ps.detectCages !== true)) {
-    rec.polyhedraSettings = { ...ps };
   }
 
   // Attached state travels by reference — it belongs to the frame, and
@@ -253,15 +485,25 @@ export function extractFrameStyles(frame, ph) {
 }
 
 /**
- * Reset a Structure's style state to as-loaded defaults, then reproduce the
- * frame's stored deviations. Always resets — the live Structure may carry
- * the previous frame's styles, and "no record" must mean "pristine".
+ * Reset a Structure's per-frame style state to as-loaded defaults, then
+ * reproduce the frame's stored deviations. Always resets — the live
+ * Structure may carry the previous frame's styles, and "no record" must
+ * mean "pristine". The trajectory-wide styles are left as they are (the live
+ * Structure keeps them from frame to frame); applySharedStyles puts them on
+ * a fresh Structure.
  *
  * @param {Structure} frame
  * @param {FrameStyleRecord | null} rec
  */
 export function applyFrameStyles(frame, rec) {
-  frame.atoms.forEach((a, i) => {
+  // Styles are not positions: reset them on the atoms without applying a
+  // frame whose per-atom physics is still pending (deferFramePhysics) —
+  // force-coloured playback resets every frame — unless the record carries
+  // position edits, which must land after the frame's positions.
+  const positional = !!rec?.atoms && [...rec.atoms.values()].some((d) => d?.position);
+  const backing = positional ? null : /** @type {any} */ (frame)[BACKING];
+  const atoms = backing?.atoms ?? frame.atoms;
+  atoms.forEach((a, i) => {
     const d = /** @type {any} */ (rec?.atoms?.get(i));
     a.userColor = d?.userColor ?? null;
     a.hidden = d?.hidden ?? false;
@@ -287,16 +529,13 @@ export function applyFrameStyles(frame, rec) {
       x.hidden = d?.hidden ?? false;
     });
   };
-  applyArrows(frame.spins, rec?.spins ?? null);
-  applyArrows(frame.forces, rec?.forces ?? null);
+  applyArrows(backing?.spins ?? frame.spins, rec?.spins ?? null);
+  applyArrows(backing?.forces ?? frame.forces, rec?.forces ?? null);
 
-  for (const k of STYLE_DICTS) {
-    frame[k] = rec?.dicts?.[k] ?? {};
+  for (const k of FRAME_STYLE_DICTS) {
+    /** @type {any} */ (frame)[k] = rec?.dicts?.[k] ?? {};
   }
   if (rec?.lattice) frame.lattice = rec.lattice.map(row => [...row]);
-  frame.polyhedraSettings = rec?.polyhedraSettings
-    ? { ...rec.polyhedraSettings }
-    : { useChemicalFilter: true, detectCages: true };
 
   frame.volumetricFields = rec?.attached?.volumetricFields ?? null;
   frame.symmetry = rec?.attached?.symmetry ?? null;

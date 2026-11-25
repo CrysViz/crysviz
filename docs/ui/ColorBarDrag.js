@@ -4,11 +4,20 @@
 // or send back to the panel. Mirrors the drag mechanics of
 // ui/panels/PanelWindow.js (pointer capture on the drag handle, threshold
 // before a press becomes a drag, viewport/scene clamping).
+//
+// makeDraggableWithin gives a widget that lives over a smaller view (the
+// Selection Inspector's comparison legend) the same grip and gesture, kept
+// inside that view instead of the 3D scene.
 
 import { listActiveColorBars } from './ColorBarRegistry.js';
 import { wireLockedWidgetForwarding } from './GizmoPointerForward.js';
 
 const DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
+// Controls inside a widget keep their own pointer behaviour (typing, clicking,
+// a colour key, the menu): a press on one never starts a drag.
+const WIDGET_CONTROL_SELECTOR = 'button, input, select, textarea, [contenteditable]:not([contenteditable="false"]), .cv-colorbar-menu';
+// Gap kept between a dragged widget and the edge of what it floats over.
+const EDGE_INSET = 4;
 const OVERLAY_Z = 950; // above the canvas, below panel windows (which start at 1200)
 const SNAP_THRESHOLD = 10; // px: how close two bars' centers must get before snapping
 
@@ -33,10 +42,10 @@ function isOverScene(x, y) {
 function clampToScene(left, top, width, height) {
   const rect = viewRect();
   if (!rect) return { left, top };
-  const minLeft = rect.left + 4;
-  const maxLeft = Math.max(minLeft, rect.right - width - 4);
-  const minTop = rect.top + 4;
-  const maxTop = Math.max(minTop, rect.bottom - height - 4);
+  const minLeft = rect.left + EDGE_INSET;
+  const maxLeft = Math.max(minLeft, rect.right - width - EDGE_INSET);
+  const minTop = rect.top + EDGE_INSET;
+  const maxTop = Math.max(minTop, rect.bottom - height - EDGE_INSET);
   return {
     left: Math.min(Math.max(left, minLeft), maxLeft),
     top: Math.min(Math.max(top, minTop), maxTop),
@@ -97,13 +106,7 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     return { left: snappedLeft, top: snappedTop };
   }
 
-  const grip = gripParent ? document.createElement('span') : null;
-  if (grip) {
-    grip.className = 'cv-colorbar-grip';
-    grip.textContent = '⦀';
-    grip.title = 'Drag into the 3D scene';
-    gripParent.insertBefore(grip, gripParent.firstChild);
-  }
+  const grip = gripParent ? createGrip(gripParent, 'Drag into the 3D scene') : null;
 
   let floating = false;
   let homeParent = wrapper.parentElement;
@@ -248,7 +251,7 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
     if (handle === wrapper && e.target !== wrapper) {
       const target = e.target instanceof Element ? e.target : null;
       if (target && extraHandles.some((extra) => extra !== wrapper && extra.contains(target))) return;
-      if (target?.closest('button, input, select, textarea, [contenteditable]:not([contenteditable="false"]), .cv-colorbar-menu')) return;
+      if (target?.closest(WIDGET_CONTROL_SELECTOR)) return;
     }
     e.preventDefault();
 
@@ -429,4 +432,100 @@ export function makeColorBarDraggable(wrapper, floatingId, opts = {}) {
       resizeObserver?.disconnect();
     },
   };
+}
+
+/** The ⦀ drag grip every draggable widget shows, first in `parent`. */
+function createGrip(parent, title) {
+  const grip = document.createElement('span');
+  grip.className = 'cv-colorbar-grip';
+  grip.textContent = '⦀';
+  grip.title = title;
+  parent.insertBefore(grip, parent.firstChild);
+  return grip;
+}
+
+/**
+ * The colour bars' drag gesture for a widget that floats over a smaller area
+ * than the 3D scene and never leaves it — the Selection Inspector's legend
+ * over its own view. Same grip, same handles (the grip, and the widget's own
+ * background), same threshold before a press becomes a drag, same pointer
+ * capture — so mouse, touch and pen all work — and the same rule that the
+ * widget's controls keep their own behaviour. The widget stays a child of
+ * `area` (position:absolute, so it moves with it — a window being dragged,
+ * a panel scrolling) and is kept inside it. Its place is remembered the
+ * colour bars' way: as an offset from the nearest edge of `area` on each
+ * axis, so resizing the area keeps it in its corner.
+ * @param {HTMLElement} wrapper the widget, absolutely positioned in `area`
+ * @param {HTMLElement} area the positioned element it floats over
+ * @param {{ gripTitle?: string, anchor?: WidgetAnchor|null, onAnchor?: (a: WidgetAnchor) => void }} [opts]
+ *   anchor: a place to start at (from an earlier onAnchor); onAnchor: after
+ *   every drag, with the new place to remember.
+ * @returns {{ grip: HTMLElement, reapply: (anchor?: WidgetAnchor|null) => void }}
+ *   reapply: put the widget back at its anchor (after it or `area` changed size).
+ * @typedef {{ edgeX: 'left'|'right', offsetX: number, edgeY: 'top'|'bottom', offsetY: number }} WidgetAnchor
+ */
+export function makeDraggableWithin(wrapper, area, { gripTitle = 'Drag to move', anchor = null, onAnchor } = {}) {
+  const grip = createGrip(wrapper, gripTitle);
+  let current = anchor;
+
+  const place = (left, top) => {
+    const maxLeft = Math.max(EDGE_INSET, area.clientWidth - wrapper.offsetWidth - EDGE_INSET);
+    const maxTop = Math.max(EDGE_INSET, area.clientHeight - wrapper.offsetHeight - EDGE_INSET);
+    wrapper.style.left = `${Math.min(Math.max(left, EDGE_INSET), maxLeft)}px`;
+    wrapper.style.top = `${Math.min(Math.max(top, EDGE_INSET), maxTop)}px`;
+  };
+  const captureAnchor = () => {
+    const left = wrapper.offsetLeft, top = wrapper.offsetTop;
+    const right = area.clientWidth - left - wrapper.offsetWidth;
+    const bottom = area.clientHeight - top - wrapper.offsetHeight;
+    current = {
+      edgeX: left <= right ? 'left' : 'right', offsetX: Math.min(left, right),
+      edgeY: top <= bottom ? 'top' : 'bottom', offsetY: Math.min(top, bottom),
+    };
+    onAnchor?.(current);
+  };
+  const reapply = (next = current) => {
+    current = next;
+    if (!current || !wrapper.offsetParent) return; // hidden: placed when shown
+    place(current.edgeX === 'left' ? current.offsetX : area.clientWidth - wrapper.offsetWidth - current.offsetX,
+      current.edgeY === 'top' ? current.offsetY : area.clientHeight - wrapper.offsetHeight - current.offsetY);
+  };
+
+  const onPointerDown = (handle, e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (handle === wrapper && target !== wrapper && target?.closest(WIDGET_CONTROL_SELECTOR)) return;
+    e.preventDefault();
+    e.stopPropagation(); // the grip is inside the wrapper: one gesture, not two
+    const startX = e.clientX, startY = e.clientY;
+    const grabX = startX - wrapper.getBoundingClientRect().left;
+    const grabY = startY - wrapper.getBoundingClientRect().top;
+    try { handle.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
+    let dragging = false;
+    const onMove = (mv) => {
+      if (!dragging) {
+        if (Math.hypot(mv.clientX - startX, mv.clientY - startY) < DRAG_THRESHOLD) return;
+        dragging = true;
+        wrapper.classList.add('cv-colorbar-dragging');
+      }
+      const box = area.getBoundingClientRect();
+      place(mv.clientX - grabX - box.left - area.clientLeft, mv.clientY - grabY - box.top - area.clientTop);
+    };
+    const onUp = () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      try { handle.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+      if (!dragging) return; // a plain tap: nothing moved
+      wrapper.classList.remove('cv-colorbar-dragging');
+      captureAnchor();
+    };
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  };
+  grip.addEventListener('pointerdown', (e) => onPointerDown(grip, e));
+  wrapper.addEventListener('pointerdown', (e) => onPointerDown(wrapper, e));
+  reapply();
+  return { grip, reapply };
 }

@@ -1,0 +1,183 @@
+diff --git a/src/core/neighbor_list.cpp b/src/core/neighbor_list.cpp
+index 087611f..7b9350a 100644
+--- a/src/core/neighbor_list.cpp
++++ b/src/core/neighbor_list.cpp
+@@ -185,16 +185,23 @@ NeighborListBuilder::build_periodic(const AtomicSystem &system) const {
+     grid.insert_atom(i, positions[i]);
+   }
+ 
++  // Each atom's bin and its position relative to that bin, computed once:
++  // the pair loop below meets every atom as a candidate from 27 or more bins.
++  std::vector<std::array<int, 3>> bin_raw(n_atoms);
++  std::vector<Vec3> rel(n_atoms);
+   for (int i = 0; i < n_atoms; ++i) {
+-    auto bin_i_raw = grid.position_to_bin(positions[i]);
+-    std::array<int, 3> bin_i;
++    bin_raw[i] = grid.position_to_bin(positions[i]);
++    std::array<int, 3> bin;
+     for (int d = 0; d < 3; ++d) {
+-      bin_i[d] = grid.pbc[d]
+-                     ? bin_i_raw[d]
+-                     : grid.wrap_bin(bin_i_raw[d], grid.n_bins[d], false);
++      bin[d] = grid.pbc[d] ? bin_raw[i][d]
++                           : grid.wrap_bin(bin_raw[i][d], grid.n_bins[d], false);
+     }
++    rel[i] = grid.relative_position(positions[i], bin);
++  }
+ 
+-    Vec3 rel_i = grid.relative_position(positions[i], bin_i);
++  for (int i = 0; i < n_atoms; ++i) {
++    const std::array<int, 3> &bin_i_raw = bin_raw[i];
++    const Vec3 &rel_i = rel[i];
+ 
+     std::array<int, 3> bin_i_wrapped;
+     for (int d = 0; d < 3; ++d) {
+@@ -236,16 +243,8 @@ NeighborListBuilder::build_periodic(const AtomicSystem &system) const {
+           while (j >= 0) {
+             bool same_image = (dx == 0 && dy == 0 && dz == 0);
+             if (i != j || !same_image) {
+-              auto bin_j_raw = grid.position_to_bin(positions[j]);
+-              std::array<int, 3> bin_j;
+-              for (int d = 0; d < 3; ++d) {
+-                bin_j[d] = grid.pbc[d] ? bin_j_raw[d]
+-                                       : grid.wrap_bin(bin_j_raw[d],
+-                                                       grid.n_bins[d], false);
+-              }
+-
+-              Vec3 rel_j = grid.relative_position(positions[j], bin_j);
+-              Vec3 dr = rel_j - rel_i + offset;
++              const std::array<int, 3> &bin_j_raw = bin_raw[j];
++              Vec3 dr = rel[j] - rel_i + offset;
+               double dist_sq = dr.norm_sq();
+ 
+               if (dist_sq < cutoff_sq) {
+diff --git a/src/runtime/graph_model.cpp b/src/runtime/graph_model.cpp
+index bef818f..423045b 100644
+--- a/src/runtime/graph_model.cpp
++++ b/src/runtime/graph_model.cpp
+@@ -174,12 +174,28 @@ double bump_derivative(float distance, float cutoff, float width) {
+   double s = std::sin(pi_x);
+   double c = std::cos(pi_x);
+   double t = c / s;                  // 1/tan(pi*x)
+-  double sech2 = 1.0 - std::tanh(t) * std::tanh(t);
++  double th = std::tanh(t);
++  double sech2 = 1.0 - th * th;
+   // dt/dx = -pi/sin^2(pi*x) ; dx/d(distance) = 1/width
+   double dt_dx = -M_PI / (s * s);
+   return 0.5 * sech2 * dt_dx / static_cast<double>(width);
+ }
+ 
++// The probes [lo, hi) are the only ones at which an edge of length d has its
++// bump (cutoff_func_bump(d, probe, width), bump_derivative) strictly between
++// the plateaus: below lo the probes are under d and the bump is 0, from hi on
++// they are past d + width and it is 1 (derivative 0). Probes are width / 4
++// apart; the window keeps one probe of margin on each side against rounding.
++void bump_window(const std::vector<float> &probes, float d, float width,
++                 int &lo, int &hi) {
++  lo = static_cast<int>(std::lower_bound(probes.begin(), probes.end(), d) -
++                        probes.begin()) - 1;
++  hi = static_cast<int>(std::upper_bound(probes.begin(), probes.end(), d + width) -
++                        probes.begin()) + 1;
++  lo = std::max(lo, 0);
++  hi = std::min(hi, static_cast<int>(probes.size()));
++}
++
+ // Same as compute_adaptive_cutoffs but stashes the intermediate state
+ // (eff_nn, diff, width, softmax weights, the diff-Jacobian X) needed by the
+ // stress chain-rule correction.
+@@ -205,14 +221,31 @@ void compute_adaptive_cutoffs_with_state(
+ 
+   // diff[a*n_probes + p] starts as effective_num_neighbors, then we subtract
+   // target and add baseline (kept as in compute_adaptive_cutoffs).
++  // Each edge adds its bump at every probe to its centre's row: 0, then a
++  // smooth step over a few probes, then 1. Only the step is evaluated (see
++  // bump_window); the ones are counted where they start and added by a
++  // running sum along the row. Evaluating every probe for every edge of the
++  // full list (56 probes x ~130 edges per atom for PET-MAD's 7.5 Å cutoff
++  // and 0.5 Å width) took longer than the rest of the inputs together.
+   out.diff.assign(static_cast<size_t>(n_atoms) * n_probes, 0.0);
++  std::vector<int32_t> ones_from(static_cast<size_t>(n_atoms) * n_probes, 0);
+   const size_t n_edges = distances.size();
+-  for (int p = 0; p < n_probes; p++) {
+-    const float pc = out.probes[p];
+-    for (size_t e = 0; e < n_edges; e++) {
+-      const int a = centers[e];
+-      out.diff[static_cast<size_t>(a) * n_probes + p] +=
+-          static_cast<double>(cutoff_func_bump(distances[e], pc, effective_width));
++  for (size_t e = 0; e < n_edges; e++) {
++    const size_t row = static_cast<size_t>(centers[e]) * n_probes;
++    int lo, hi;
++    bump_window(out.probes, distances[e], effective_width, lo, hi);
++    for (int p = lo; p < hi; p++) {
++      out.diff[row + p] += static_cast<double>(
++          cutoff_func_bump(distances[e], out.probes[p], effective_width));
++    }
++    if (hi < n_probes) ones_from[row + hi]++;
++  }
++  for (int a = 0; a < n_atoms; a++) {
++    const size_t row = static_cast<size_t>(a) * n_probes;
++    int32_t ones = 0;
++    for (int p = 0; p < n_probes; p++) {
++      ones += ones_from[row + p];
++      out.diff[row + p] += static_cast<double>(ones);
+     }
+   }
+   for (int a = 0; a < n_atoms; a++) {
+@@ -1068,6 +1101,32 @@ ModelResult GraphModel::predict_single(
+     ggml_backend_tensor_get_async(compute_backend_, cv_grad, cv_grad_data.data(), 0,
+                                   ggml_nbytes(cv_grad));
+   }
++
++  // J[e] = ∂atomic_cutoffs[k]/∂d_e for every edge e of the full list (k its
++  // centre), for the adaptive-cutoff chain rule below: Σ_p X[k, p] *
++  // bump_derivative(d_e, probes[p]), 0 outside the edge's bump window. It
++  // depends on the inputs only, so it is computed here, while a GPU backend
++  // runs the graph.
++  std::vector<double> adaptive_J;
++  if (!grad_data.empty() && !cv_grad_data.empty()) {
++    const int n_probes = adapt_cache.n_probes;
++    const auto &probes = adapt_cache.probes;
++    const auto &X = adapt_cache.diff_jacobian;
++    const float ew = adapt_cache.effective_width;
++    adaptive_J.assign(full_nlist.num_pairs(), 0.0);
++    for (int e = 0; e < full_nlist.num_pairs(); e++) {
++      const float d = full_nlist.distances[e];
++      if (static_cast<double>(d) <= 0.0) continue;
++      const double *Xk = &X[static_cast<size_t>(full_nlist.centers[e]) * n_probes];
++      int lo, hi;
++      bump_window(probes, d, ew, lo, hi);
++      double J = 0.0;
++      for (int p = lo; p < hi; p++) {
++        J += Xk[p] * bump_derivative(d, probes[p], ew);
++      }
++      adaptive_J[e] = J;
++    }
++  }
+   ggml_backend_synchronize(compute_backend_);
+ 
+   // Sum and scale
+@@ -1145,23 +1204,12 @@ ModelResult GraphModel::predict_single(
+             }
+           }
+ 
+-          const int n_probes = adapt_cache.n_probes;
+-          const auto &probes = adapt_cache.probes;
+-          const auto &X = adapt_cache.diff_jacobian;
+-          const float ew = adapt_cache.effective_width;
+-
+           adaptive_coef.assign(full_nlist.num_pairs(), 0.0);
+           for (int e = 0; e < full_nlist.num_pairs(); e++) {
+             int k = full_nlist.centers[e];
+             double d = static_cast<double>(full_nlist.distances[e]);
+             if (d <= 0.0) continue;
+-            // J[e] = Σ_p X[k, p] * bump_derivative(d, probes[p], ew)
+-            double J = 0.0;
+-            const double *Xk = &X[static_cast<size_t>(k) * n_probes];
+-            for (int p = 0; p < n_probes; p++) {
+-              J += Xk[p] * bump_derivative(static_cast<float>(d),
+-                                           probes[p], ew);
+-            }
++            const double J = adaptive_J[e];  // computed before the sync
+             if (J == 0.0) continue;
+             const double coef = 0.5 * J * S[k] / d;
+             adaptive_coef[e] = coef;

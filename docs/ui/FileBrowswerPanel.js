@@ -1,20 +1,25 @@
 import {app, general, structureShip, fileBrowser} from '../state/store.js';
 import {updateVisualization} from '../core/crystal-viewer.js';
-import { refreshActivePanels, refreshPanelAvailability, rebuildPanel } from './panels/PanelManager.js';
+import { refreshActivePanels, refreshPanelAvailability, rebuildPanel, getPanelPref, setPanelPref } from './panels/PanelManager.js';
+import { swallowClickAfterDrag } from './panels/PanelWindow.js';
 import {createBondLengthControls} from './BondLengthPanel.js';
 import {updateSpins} from '../render/index.js';
 import {updateForces} from '../render/index.js';
+import { ensureArrowRanges } from './ArrowRange.js';
 import {fieldBrowser} from './FieldPanel.js';
-import { setActiveField, updateField, deleteField, disposeOverlayMeshes} from '../render/index.js';
+import { setActiveField, updateField, deleteField, disposeOverlayMeshes, atomLabelTexts} from '../render/index.js';
 import {updateLatticeComparisonPanel, removeLatticeComparisonPopup} from './LatticeComparisonPanel.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
-import {StructureContainer, TrajectoryContainer} from '../model/index.js';
+import {Atom, Structure, StructureContainer, TrajectoryContainer, FrameAverage, compositionMismatch, LARGE_DISPLACEMENT} from '../model/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
 import { recenterCamera, captureCameraSnapshot, applyCameraSnapshot, fitCameraToCurrentStructure } from './WindowAndSceneControls.js';
 import { notifyActiveStructureChange } from '../state/structures.js';
 import { count as traceCount } from '../debug/debugTrace.js';
-import { generateID } from '../utils/index.js';
+import { generateID, releaseIDs } from '../utils/index.js';
 import { snapshotFeatureToggles, applyFeatureToggles, applyDefaultFeatureToggles } from './FeatureLockModule.js';
+import { captureContainerSizes, applyContainerSizes } from './SizePrefs.js';
+import { captureSelectionSnapshot, restoreSelectionSnapshot, highlightAtomsIn3D } from './SelectAndHighlightModule.js';
+import { promptAverageMoves } from './AverageMovesModal.js';
 
 const rowObjects = new WeakMap();
 
@@ -24,8 +29,8 @@ export function getRowObject(row) {
 
 export function showError(message) {
   errorPanel.textContent = message;
-  errorPanel.style.display = "block";
-  setTimeout(() => (errorPanel.style.display = "none"), 2000);
+  errorPanel.hidden = false;
+  setTimeout(() => { errorPanel.hidden = true; }, 2000);
 }
 
 export function countChecked() {
@@ -33,15 +38,30 @@ export function countChecked() {
     .filter((cb) => cb.checked).length;
 }
 
-/** Enable the combine button only when there's something to combine. */
-export function updateCombineButtonState() {
-  const btn = document.getElementById('combineTrajectoriesButton');
-  if (!btn) return;
-  btn.disabled = countChecked() < 2;
+/** Selection changed. The ≡ selection menu is always openable and each of
+ *  its items derives its own enabled state from the live selection when the
+ *  menu is built, so there's nothing to toggle on the button itself. Kept as
+ *  a stable hook for the many callers that fire on selection changes. */
+export function updateCombineButtonState() {}
+
+/** Check or uncheck every row, then re-derive the dependent UI (overlay /
+ *  comparison) from the new selection. */
+function setAllRowsChecked(checked) {
+  document
+    .querySelectorAll('#objectTable tbody input[type="checkbox"]')
+    .forEach((cb) => { /** @type {HTMLInputElement} */ (cb).checked = checked; });
+  updateCombineButtonState();
+  syncOverlayFromCheckboxes();
 }
 
-/** Small centered modal asking for a name; calls onConfirm(name) if confirmed. */
-function openCombineNamePopup(onConfirm) {
+/** Default names of the rows the ≡ menu creates. */
+const COMBINE_DEFAULT_NAME = 'Combined Trajectory';
+const AVERAGE_DEFAULT_NAME = 'Average Structure';
+
+/** Small centered modal asking for a name; calls onConfirm(name) if
+ *  confirmed, else onCancel(). `prompt` labels the field, `defaultName`
+ *  fills it and `confirmLabel` names the confirm button. */
+function openNamePopup({ prompt, defaultName, confirmLabel, onCancel = () => {} }, onConfirm) {
   const overlay = document.createElement('div');
   overlay.className = 'combine-name-popup-overlay';
 
@@ -49,19 +69,19 @@ function openCombineNamePopup(onConfirm) {
   popup.className = 'cv-fb-popup cv-fb-popup--modal';
 
   const label = document.createElement('div');
-  label.textContent = 'Name for the combined trajectory:';
+  label.textContent = prompt;
   label.className = 'cv-fb-popup-label';
 
   const input = document.createElement('input');
   input.type = 'text';
   input.className = 'combine-name-input cv-fb-popup-input';
-  input.value = 'Combined Trajectory';
+  input.value = defaultName;
 
   const buttonRow = document.createElement('div');
   buttonRow.className = 'cv-fb-popup-btn-row';
 
   const confirmButton = document.createElement('button');
-  confirmButton.textContent = 'Combine';
+  confirmButton.textContent = confirmLabel;
   confirmButton.className = 'cv-fb-popup-btn';
 
   const cancelButton = document.createElement('button');
@@ -80,51 +100,36 @@ function openCombineNamePopup(onConfirm) {
   input.select();
 
   const close = () => overlay.remove();
-  cancelButton.onclick = close;
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  const cancel = () => { close(); onCancel(); };
+  cancelButton.onclick = cancel;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) cancel(); });
   const confirm = () => { onConfirm(input.value); close(); };
   confirmButton.onclick = confirm;
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') confirm();
-    if (e.key === 'Escape') close();
+    if (e.key === 'Escape') cancel();
   });
 }
 
-/**
- * Concatenate every checked row's frames (in table order) into one new
- * store-backed trajectory row, appended after the existing rows (originals
- * are kept). Frames may differ in composition between the sources — the
- * per-frame store supports that.
- */
-async function combineCheckedRows(name) {
+/** The checked rows, in table order, and their containers — what the ≡
+ *  menu's Make Trajectory and Average Structure act on. */
+function checkedRowsAndContainers() {
   const tbody = document.querySelector('#objectTable tbody');
   const rows = tbody ? Array.from(tbody.querySelectorAll('tr')) : [];
   const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
-  if (checkedRows.length < 2) return;
+  const containers = checkedRows.map((r) => structureShip.container[rows.indexOf(r)]).filter(Boolean);
+  return { tbody, checkedRows, containers };
+}
 
-  const combinedStructures = [];
-  for (const r of checkedRows) {
-    const idx = rows.indexOf(r);
-    const container = structureShip.container[idx];
-    if (!container) continue;
-    // framesSlice materialises store-backed trajectories (and may resolve
-    // asynchronously when frames come from disk). The combined trajectory is
-    // rebuilt from these frames below, so no cloning is needed — and unlike
-    // the old cloneStructure (which shared Atom objects between copies!),
-    // frames of the combined row are fully independent of their sources.
-    const frames = await Promise.resolve(container.framesSlice());
-    combinedStructures.push(...frames);
-  }
-  if (!combinedStructures.length) return;
-
-  const combinedName = (name && name.trim()) ? name.trim() : 'Combined Trajectory';
-  const newRow = createRow({ name: combinedName, traj: combinedStructures.length, step: 1 });
+/** Append `container` as a new row after the existing rows (the sources are
+ *  kept), uncheck the source rows, re-sync the UI derived from the checked
+ *  rows (overlay / comparison) and select the new row. */
+function appendResultRow(tbody, checkedRows, name, container) {
+  const newRow = createRow({ name, traj: container.frameCount, step: 1 });
   tbody.appendChild(newRow);
   structureShip.len += 1;
-  structureShip.container.push(TrajectoryContainer.fromStructures(combinedName, combinedStructures));
+  structureShip.container.push(container);
 
-  // Selected rows have been combined — uncheck them and re-sync the derived
-  // UI state (combine button enablement, comparison structure).
   checkedRows.forEach((r) => {
     const cb = r.querySelector('input[type="checkbox"]');
     if (cb) cb.checked = false;
@@ -135,23 +140,328 @@ async function combineCheckedRows(name) {
   selectRow(newRow);
 }
 
-/** Wire the static combine button (index.html) once at startup. */
+/** Classic Comparison mode expects exactly one checked row; acting on 3+
+ *  rows while it's on would also trip its own "only one" error. Overlay mode
+ *  has no such limit, so this only guards Comparison. True (and says why)
+ *  when the action must not run. */
+function blockedByComparison(hint) {
+  if (countChecked() > 2 && general.compareModeOn) {
+    showError(`Comparison only supports one structure — turn off Comparison, or ${hint}.`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Concatenate every checked row's frames (in table order) into one new
+ * store-backed trajectory row, appended after the existing rows (originals
+ * are kept). Frames may differ in composition between the sources — the
+ * per-frame store supports that.
+ */
+async function combineCheckedRows(name) {
+  const { tbody, checkedRows, containers } = checkedRowsAndContainers();
+  if (checkedRows.length < 2) return;
+
+  const combinedStructures = [];
+  for (const container of containers) {
+    // framesSlice materialises store-backed trajectories (and may resolve
+    // asynchronously when frames come from disk). The combined trajectory is
+    // rebuilt from these frames below, so no cloning is needed — and unlike
+    // the old cloneStructure (which shared Atom objects between copies!),
+    // frames of the combined row are fully independent of their sources.
+    const frames = await Promise.resolve(container.framesSlice());
+    combinedStructures.push(...frames);
+  }
+  if (!combinedStructures.length) return;
+
+  const combinedName = (name && name.trim()) ? name.trim() : COMBINE_DEFAULT_NAME;
+  appendResultRow(tbody, checkedRows, combinedName,
+    TrajectoryContainer.fromStructures(combinedName, combinedStructures));
+}
+
+/** Prompt for a name and combine the checked rows into one trajectory. */
+function makeTrajectoryFromChecked() {
+  if (countChecked() < 2) return; // guarded by the menu item's disabled state anyway
+  if (blockedByComparison('check only two rows to combine')) return;
+  openNamePopup({
+    prompt: 'Name for the combined trajectory:',
+    defaultName: COMBINE_DEFAULT_NAME,
+    confirmLabel: 'Combine',
+  }, (name) => combineCheckedRows(name));
+}
+
+/** Frame `i`'s per-atom elements when they are known without waiting, else
+ *  undefined (a frame source that reads from disk; averageCheckedRows then
+ *  checks it when it reads the frame). */
+function frameElementsNow(container, i) {
+  const store = container.store;
+  if (store && typeof store.getFramePhysics === 'function') {
+    const ph = store.getFramePhysics(i);
+    return ph && typeof ph.then !== 'function' ? ph.elements : undefined;
+  }
+  return container.structures[i]?.elements;
+}
+
+/**
+ * Whether the checked rows can be averaged: every frame of every checked row
+ * is pooled, so a single trajectory row is enough; it takes two frames or
+ * more, all with the same atoms in the same order (atoms are matched by
+ * index). Cheap: frames of one file share their elements array.
+ * @returns {{ frames: number, reason: string | null }} reason: why not, or null
+ */
+function averageAvailability(containers) {
+  let frames = 0;
+  let ref = null;
+  for (const container of containers) {
+    for (let i = 0; i < container.frameCount; i++) {
+      const elements = frameElementsNow(container, i);
+      if (!elements) continue;
+      if (!ref) ref = elements;
+      const why = compositionMismatch(ref, elements);
+      if (why) return { frames, reason: why };
+    }
+    frames += container.frameCount;
+  }
+  if (frames < 2) {
+    return { frames, reason: 'Check a trajectory, or two or more structures with the same atoms, to average them.' };
+  }
+  return { frames, reason: null };
+}
+
+/** A new Structure from a FrameAverage result: the mean positions and cell,
+ *  with the first frame's site occupancies. No forces, spins, energy or
+ *  stress — their mean is not the averaged structure's own. */
+function averagedStructure(mean) {
+  const atoms = mean.elements.map((element, i) => new Atom({
+    element,
+    position: mean.positions[i],
+    uuid: generateID([element]),
+    species: mean.species?.[i] ?? null,
+  }));
+  return new Structure({
+    elements: mean.elements,
+    uniqueElements: [...new Set(mean.elements)],
+    lattice: mean.lattice,
+    atoms,
+    periodic: { hash: 'None', wrapped: {} },
+    volumetricFields: null,
+  });
+}
+
+/**
+ * One pass over every frame of every checked row (in table order): the mean
+ * (fractional positions and cell, each position taken at its nearest
+ * periodic image of the first frame's, so an atom crossing a cell face is
+ * averaged about its site) and each atom's largest move, tagged with the row
+ * and step it happens in (model/averageFrames.js). Null, after saying why,
+ * when the frames cannot be averaged.
+ */
+async function averageOfChecked() {
+  const { tbody, checkedRows, containers } = checkedRowsAndContainers();
+  const average = new FrameAverage();
+  for (const container of containers) {
+    // Plain per-frame elements, cell and positions (an atom the user moved
+    // in a frame included) without building a Structure per frame; one row
+    // at a time, so the peak is one row's frames, not all of them.
+    const frames = await Promise.resolve(container.framePhysicsList());
+    for (let step = 0; step < frames.length; step++) {
+      const error = average.add(frames[step], { container, step });
+      if (error) {
+        showError(error);
+        return null;
+      }
+    }
+  }
+  const mean = average.result();
+  if (!mean || mean.frameCount < 2) {
+    // The menu item is greyed out for this; frames that could not be read
+    // when the menu opened end up here.
+    showError('Average Structure needs two frames or more: check a trajectory, or two or more structures.');
+    return null;
+  }
+  return { tbody, checkedRows, mean };
+}
+
+/** How many atoms the large-move warning names; the rest are counted. */
+const MOVES_LISTED = 20;
+
+/** "traj.xyz, frame 3" — a move's row (by its name now) and frame. */
+function describeMoveFrame(where) {
+  const container = where?.container;
+  if (!container) return '';
+  return container.frameCount > 1 ? `${container.fileName}, frame ${where.step + 1}` : container.fileName;
+}
+
+/**
+ * Some atoms move more than LARGE_DISPLACEMENT of a cell axis between frames:
+ * list them (ui/AverageMovesModal.js) and let the user look at each — its row
+ * shown at the frame where it is farthest, the atom glowing as a click on its
+ * row in the Structure window makes it glow. Closing the warning puts back
+ * the row, steps and camera that were shown before.
+ * @param {any} mean a FrameAverage result
+ * @param {string[]} names the atoms' names, as the Structure window gives them
+ * @returns {Promise<boolean>} true: average anyway
+ */
+function confirmLargeMoves(mean, names) {
+  const rowAt = (i) => document.querySelectorAll('#objectTable tbody tr')[i];
+  const stepBox = (row) => /** @type {HTMLInputElement | null} */ (row?.querySelector('input[type="number"]'));
+  /** What to put back: the row shown, the camera, and every row's step box touched. */
+  let before = null;
+  const show = (index) => {
+    const move = mean.moves[index];
+    const rowIndex = structureShip.container.indexOf(move.where?.container);
+    if (rowIndex < 0) return;
+    if (!before) {
+      before = { rowIndex: fileBrowser.selectedRowIndex, camera: captureCameraSnapshot(), steps: new Map() };
+      const shown = rowAt(before.rowIndex);
+      if (shown) before.steps.set(shown, stepBox(shown)?.value);
+    }
+    const row = rowAt(rowIndex);
+    if (row && !before.steps.has(row)) before.steps.set(row, stepBox(row)?.value);
+    selectStructure(rowIndex, move.where.step);
+    recenterCamera();
+    refreshActivePanels();
+    highlightAtomsIn3D([move.atom]);
+  };
+  const restore = () => {
+    if (!before) return;
+    const { rowIndex, camera, steps } = before;
+    before = null;
+    for (const [row, value] of steps) {
+      const box = stepBox(row);
+      if (box && value != null) box.value = value;
+    }
+    const shown = rowAt(rowIndex);
+    if (shown) selectStructure(rowIndex, (parseInt(stepBox(shown)?.value ?? '1', 10) || 1) - 1);
+    if (camera) applyCameraSnapshot(camera);
+    refreshActivePanels();
+  };
+  const items = mean.moves.map((move) => ({
+    name: names[move.atom] ?? `atom ${move.atom + 1}`,
+    distance: move.distance,
+    fraction: move.fraction,
+    axis: move.axis,
+    where: describeMoveFrame(move.where),
+  }));
+  return promptAverageMoves({
+    frameCount: mean.frameCount, threshold: LARGE_DISPLACEMENT, items, listed: MOVES_LISTED,
+    onShow: show, onClose: restore,
+  });
+}
+
+/**
+ * ≡ ▸ Average Structure: average every frame of every checked row into one
+ * new single-structure row, appended after the existing rows (originals are
+ * kept). Atoms that move far between frames are shown first and the user
+ * decides (confirmLargeMoves); then the name prompt, as for Make Trajectory.
+ */
+async function averageStructureFromChecked() {
+  if (blockedByComparison('check at most two rows to average')) return;
+  const computed = await averageOfChecked();
+  if (!computed) return;
+  const { tbody, checkedRows, mean } = computed;
+  const structure = averagedStructure(mean);
+  const discard = () => releaseIDs(structure.atoms);
+  if (mean.moves.length && !(await confirmLargeMoves(mean, atomLabelTexts(structure)))) {
+    discard();
+    return;
+  }
+  openNamePopup({
+    prompt: `Name for the average of ${mean.frameCount} frames:`,
+    defaultName: AVERAGE_DEFAULT_NAME,
+    confirmLabel: 'Average',
+    onCancel: discard,
+  }, (name) => {
+    const averageName = (name && name.trim()) ? name.trim() : AVERAGE_DEFAULT_NAME;
+    appendResultRow(tbody, checkedRows, averageName,
+      new StructureContainer({ fileName: averageName, structures: [structure] }));
+  });
+}
+
+/** The currently open ≡ selection dropdown's close fn, or null. Lets a second
+ *  click on the ≡ button toggle the menu shut instead of stacking a new one. */
+let closeSelectionMenu = null;
+
+/** Build and show the ≡ selection dropdown anchored under `btn`. Same chrome
+ *  as the window ≡ menu (panelWindow.css .cv-panel-menu*): portaled to
+ *  <body> (position:fixed) so #ui's scroll container can't clip it, closed on
+ *  outside click or Escape. Rebuilt on every open so item enable-state and
+ *  the checked count are always live. */
+function openSelectionMenu(btn) {
+  const VIEWPORT_MARGIN = 8;
+  const checked = countChecked();
+  const menu = document.createElement('div');
+  menu.className = 'cv-panel-menu';
+
+  const close = () => {
+    menu.remove();
+    closeSelectionMenu = null;
+    document.removeEventListener('pointerdown', onOutside, true);
+    document.removeEventListener('keydown', onKey, true);
+  };
+  closeSelectionMenu = close;
+  const onOutside = (ev) => {
+    const t = /** @type {Node} */ (ev.target);
+    if (menu.contains(t) || btn.contains(t)) return;
+    close();
+  };
+  const onKey = (ev) => { if (ev.key === 'Escape') close(); };
+
+  const addItem = (label, disabled, onSelect, title = '') => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'cv-panel-menu-item';
+    item.textContent = label;
+    item.disabled = disabled;
+    if (title) item.title = title;
+    if (!disabled) {
+      item.addEventListener('click', () => { close(); onSelect(); });
+    }
+    menu.appendChild(item);
+  };
+  const addSep = () => {
+    const sep = document.createElement('div');
+    sep.className = 'cv-panel-menu-sep';
+    menu.appendChild(sep);
+  };
+
+  addItem('Deselect', checked === 0, () => setAllRowsChecked(false));
+  addItem('Select all', false, () => setAllRowsChecked(true));
+  addSep();
+  addItem('Make Trajectory', checked < 2, makeTrajectoryFromChecked);
+  // Greyed out with the reason as its tooltip: fewer than two frames, or
+  // frames whose atoms differ (count or species order).
+  const average = averageAvailability(checkedRowsAndContainers().containers);
+  addItem('Average Structure', average.reason !== null, averageStructureFromChecked,
+    average.reason ?? `Mean atom positions and cell over the ${average.frames} frames of the checked rows`);
+
+  document.body.appendChild(menu);
+  // Anchor under the ≡ button, kept inside the viewport (measure after append).
+  const r = btn.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const mh = menu.offsetHeight;
+  menu.style.left = `${Math.max(VIEWPORT_MARGIN, Math.min(r.left, window.innerWidth - mw - VIEWPORT_MARGIN))}px`;
+  menu.style.top = r.bottom + 4 + mh > window.innerHeight - VIEWPORT_MARGIN
+    ? `${Math.max(VIEWPORT_MARGIN, r.top - 4 - mh)}px`
+    : `${r.bottom + 4}px`;
+
+  // Capture-phase so a click some panel handler swallows still closes the
+  // menu; registered after this click finished bubbling.
+  document.addEventListener('pointerdown', onOutside, true);
+  document.addEventListener('keydown', onKey, true);
+}
+
+/** Wire the static ≡ selection button (index.html) once at startup. */
 export function initCombineTrajectoriesButton() {
   const btn = document.getElementById('combineTrajectoriesButton');
   if (!btn) return;
   btn.addEventListener('click', () => {
-    const count = countChecked();
-    if (count < 2) return; // guarded by the disabled state anyway
-    // Classic Comparison mode expects exactly one checked row; combining 3+
-    // rows while it's on would also trip its own "only one" error. Overlay
-    // mode has no such limit, so this only guards Comparison.
-    if (count > 2 && general.compareModeOn) {
-      showError('Comparison only supports one structure — turn off Comparison, or check only two rows to combine.');
-      return;
-    }
-    openCombineNamePopup((name) => combineCheckedRows(name));
+    // A second click on the ≡ button toggles the open menu shut. (The
+    // outside-click handler ignores the button itself, so without this the
+    // click would just stack a fresh menu on top.)
+    if (closeSelectionMenu) closeSelectionMenu();
+    else openSelectionMenu(btn);
   });
-  updateCombineButtonState();
 }
 
 /** copy_<n>_<source>, n one past the highest copy of that source in the table. */
@@ -304,6 +614,9 @@ export function createRow(obj) {
     recenterCamera(); // keep the user's rotation/zoom; only re-center on the new structure
     refreshActivePanels();
   });
+
+  // Drag the row up or down to reorder the list (see onRowPointerDown).
+  row.addEventListener('pointerdown', (e) => onRowPointerDown(row, e));
 
 
 // Duplicate (copy) logic
@@ -483,9 +796,14 @@ row.querySelector(".copy").addEventListener("click", (e) => {
     e.stopPropagation();
     const rowIndex = Array.from(row.parentElement.children).indexOf(row);
     structureShip.len = structureShip.len - 1;
-    structureShip.container.splice(rowIndex, 1);
+    const [removed] = structureShip.container.splice(rowIndex, 1);
+    releaseContainerIDs(removed);
     row.remove();
     selectLastAddedRow();
+    // Rebuild the open panels for the new selection, as a row click does: the
+    // Trajectory panel's transport handlers close over the shown container, so
+    // left alone they kept driving (and kept alive) the deleted trajectory.
+    refreshActivePanels();
     // The removed row may have been checked — re-derive combine/comparison state.
     updateCombineButtonState();
     syncOverlayFromCheckboxes();
@@ -493,6 +811,21 @@ row.querySelector(".copy").addEventListener("click", (e) => {
 
   rowObjects.set(row, obj);
   return row;
+}
+
+/** Give a deleted row's registered atom and bond ids back to the global
+ *  usedIDs registry, which otherwise keeps every id ever minted. A store-backed
+ *  trajectory's frames are mostly unmaterialized holes; its live frame's atoms
+ *  carry unregistered ids (a no-op here) but its bonds are registered. */
+function releaseContainerIDs(container) {
+  if (!container) return;
+  const structures = [...(container.structures || [])];
+  if (container._live) structures.push(container._live);
+  for (const s of structures) {
+    if (!s) continue;
+    releaseIDs(s.atoms);
+    releaseIDs(s.bonds);
+  }
 }
 
 /** Select a specific row element (its current position in the table decides
@@ -524,6 +857,149 @@ export function selectLastAddedRow() {
   updateStructureFromRowAndStep(rowIndex);
 }
 
+/** Select the row of `container`, wherever it sits in the table now (the
+ *  user may have dragged rows while a run was filling it). Returns false
+ *  when the container is not in the list. */
+export function selectContainer(container) {
+  const index = structureShip.container.indexOf(container);
+  const row = document.querySelectorAll('#objectTable tbody tr')[index];
+  if (index < 0 || !row) return false;
+  selectRow(row);
+  return true;
+}
+
+// ---- drag a row to reorder ---------------------------------------------------
+//
+// The table rows and structureShip.container are parallel lists: a row's
+// position IS its container's index everywhere else in the app. A drag moves
+// the row live and, on release, moves the container to the same place, then
+// re-derives the selected row's cached index. Mouse and pen only: a finger on
+// the list scrolls it.
+
+const ROW_DRAG_THRESHOLD = 4; // px of movement before a press becomes a drag
+const ROW_DRAG_EDGE_PX = 24; // autoscroll band at the list's top/bottom edge
+const rowOrderListeners = new Set();
+
+/** Run fn() after the user reorders the Files table. */
+export function onRowOrderChange(fn) {
+  rowOrderListeners.add(fn);
+  return () => rowOrderListeners.delete(fn);
+}
+
+function onRowPointerDown(row, e) {
+  if (e.pointerType === 'touch' || e.button !== 0) return;
+  const target = /** @type {HTMLElement} */ (e.target);
+  if (target.closest('input, button, .icon')) return;
+  const tbody = row.parentElement;
+  const scroller = document.getElementById('structureTablePanel');
+  const from = Array.from(tbody.children).indexOf(row);
+  const startX = e.clientX;
+  const startY = e.clientY;
+  let dragging = false;
+
+  const onMove = (mv) => {
+    if (!dragging) {
+      if (Math.abs(mv.clientX - startX) < ROW_DRAG_THRESHOLD
+          && Math.abs(mv.clientY - startY) < ROW_DRAG_THRESHOLD) return;
+      dragging = true;
+      row.classList.add('cv-fb-row-dragging');
+      tbody.classList.add('cv-fb-reordering');
+      window.getSelection()?.removeAllRanges();
+      // The row moves under the pointer: its release must not click the row
+      // it lands on (that would select it).
+      swallowClickAfterDrag();
+    }
+    if (scroller) {
+      const r = scroller.getBoundingClientRect();
+      if (mv.clientY < r.top + ROW_DRAG_EDGE_PX) scroller.scrollTop -= 8;
+      else if (mv.clientY > r.bottom - ROW_DRAG_EDGE_PX) scroller.scrollTop += 8;
+    }
+    // Before the first row whose midpoint is below the pointer.
+    let before = null;
+    for (const sib of tbody.children) {
+      if (sib === row) continue;
+      const r = sib.getBoundingClientRect();
+      if (mv.clientY < r.top + r.height / 2) { before = sib; break; }
+    }
+    if (row.nextElementSibling !== before) tbody.insertBefore(row, before);
+  };
+
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+    if (!dragging) return;
+    row.classList.remove('cv-fb-row-dragging');
+    tbody.classList.remove('cv-fb-reordering');
+    const to = Array.from(tbody.children).indexOf(row);
+    if (to === from) return;
+    const [moved] = structureShip.container.splice(from, 1);
+    structureShip.container.splice(to, 0, moved);
+    const selected = fileBrowser.selectedRow;
+    const selectedIndex = selected ? Array.from(tbody.children).indexOf(selected) : -1;
+    if (selectedIndex >= 0) {
+      fileBrowser.selectedRowIndex = selectedIndex;
+      selected.dataset.index = String(selectedIndex);
+    }
+    for (const fn of rowOrderListeners) {
+      try { fn(); } catch (err) { console.warn('row order listener failed', err); }
+    }
+  };
+
+  // On window, not pointer capture: moving the row in the DOM drops capture.
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp);
+  window.addEventListener('pointercancel', onUp);
+}
+
+// ---- list height ---------------------------------------------------------------
+//
+// The list grows with its rows up to a height the user sets by dragging the
+// bar along its bottom edge (double-click: back to the default), then
+// scrolls. Remembered in the panel prefs.
+
+const LIST_MIN_PX = 80; // the header and about one row
+const LIST_DEFAULT_PX = 240;
+
+function applyFileListMaxHeight(px) {
+  const list = document.getElementById('structureTablePanel');
+  if (list) list.style.setProperty('--cv-fb-list-max', `${Math.round(px)}px`);
+}
+
+/** Wire the list's resize bar and apply the remembered height. Called once
+ *  the Files window adopts the list (panels/defaultPanels.js). */
+export function initFileListResize() {
+  const list = document.getElementById('structureTablePanel');
+  const bar = list?.querySelector('.cv-fb-list-resize');
+  if (!list || !bar) return;
+  applyFileListMaxHeight(getPanelPref('fileListMaxHeight') || LIST_DEFAULT_PX);
+  bar.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = list.getBoundingClientRect().height;
+    try { bar.setPointerCapture(e.pointerId); } catch { /* synthetic event */ }
+    let px = startH;
+    const onMove = (mv) => {
+      px = Math.min(Math.max(startH + (mv.clientY - startY), LIST_MIN_PX), window.innerHeight * 0.9);
+      applyFileListMaxHeight(px);
+    };
+    const onUp = () => {
+      bar.removeEventListener('pointermove', onMove);
+      bar.removeEventListener('pointerup', onUp);
+      bar.removeEventListener('pointercancel', onUp);
+      if (px !== startH) setPanelPref('fileListMaxHeight', Math.round(px));
+    };
+    bar.addEventListener('pointermove', onMove);
+    bar.addEventListener('pointerup', onUp);
+    bar.addEventListener('pointercancel', onUp);
+  });
+  bar.addEventListener('dblclick', () => {
+    applyFileListMaxHeight(LIST_DEFAULT_PX);
+    setPanelPref('fileListMaxHeight', 0);
+  });
+}
+
 // Checkboxes in the file browser are a plain multi-select (needed so several
 // rows can be picked for "combine into one trajectory"). They drive
 // fileBrowser.overlayEntries only when one of two mutually-exclusive modes is
@@ -541,6 +1017,37 @@ const DEFAULT_OVERLAY_OPACITY = 0.6; // Multi-Structure Overlay: translucent by 
  *  lattice-overlay plots — the row's display name in the Files list. */
 export function overlayEntryLabel(entry) {
   return entry.row?.querySelector('.name-inner')?.textContent || 'Structure';
+}
+
+/**
+ * The rows ticked in the Files list (their checkboxes), whatever the
+ * Comparison/Overlay mode — for views with their own comparison, like the
+ * Selection Inspector's Compare. `step` is the row's shown step (0-based).
+ * @returns {Array<{row: HTMLElement, rowIndex: number, name: string, step: number, steps: number}>}
+ */
+export function tickedStructureRows() {
+  const rows = /** @type {HTMLElement[]} */ ([...document.querySelectorAll('#objectTable tbody tr')]);
+  return rows.map((row, rowIndex) => ({ row, rowIndex }))
+    .filter(({ row }) => /** @type {HTMLInputElement|null} */ (row.querySelector('input[type="checkbox"]'))?.checked)
+    .map(({ row, rowIndex }) => ({
+      row,
+      rowIndex,
+      name: row.querySelector('.name-inner')?.textContent || 'Structure',
+      step: Math.max(0, (parseInt(/** @type {HTMLInputElement|null} */ (row.querySelector('input[type="number"]'))?.value ?? '1', 10) || 1) - 1),
+      steps: structureShip.container[rowIndex]?.structures.length ?? 0,
+    }));
+}
+
+/** The structure container behind a Files row (its frames: frameAtDetached). */
+export function rowContainer(rowIndex) {
+  return structureShip.container[rowIndex] ?? null;
+}
+
+/** The compared/overlaid structures changed (ticked, unticked, a frame
+ *  arrived or was stepped) — for views that measure against them, like the
+ *  Selection Inspector's comparison. */
+function notifyComparisonChanged() {
+  document.dispatchEvent(new CustomEvent('crysviz:comparison-changed'));
 }
 
 /** Drop every overlay entry's meshes and empty fileBrowser.overlayEntries. */
@@ -573,7 +1080,7 @@ function setErrorText(elementId, text) {
   const el = document.getElementById(elementId);
   if (!el) return;
   el.textContent = text || '';
-  el.style.display = text ? 'block' : 'none';
+  el.hidden = !text;
 }
 
 /** Push the main structure's lattice + every overlay entry's lattice into the
@@ -620,6 +1127,7 @@ function addOverlayEntryForRow(row, defaultOpacity) {
       // always starts with bonds shown (each row has its own toggle to turn off).
       showBonds: general.compareModeOn ? general.showSecondBond : true,
     });
+    notifyComparisonChanged();
     if (rerenderNow) {
       updateVisualization({
         atomsUpdate: false,
@@ -652,6 +1160,7 @@ function addOverlayEntryForRow(row, defaultOpacity) {
       const applyFrame = (structure) => {
         if (!structure) return;
         entry.structure = structure;
+        notifyComparisonChanged();
         updateVisualization({
           atomsUpdate: false,
           bondsUpdate: false,
@@ -700,6 +1209,7 @@ export function syncOverlayFromCheckboxes() {
   const checkedRows = rows.filter((r) => r.querySelector('input[type="checkbox"]')?.checked);
 
   const finish = () => {
+    notifyComparisonChanged();
     refreshPanelAvailability();
     // Single unified panel now (both tabs live in the same DOM subtree) — see
     // ui/ComparisonOverlayPanel.js.
@@ -857,6 +1367,10 @@ function updateStructureFromRowAndStep(rowIndex) {
   if (rowChanged) {
     if (!app.cameraLocked) lastActiveContainer.cameraSnapshot = captureCameraSnapshot();
     if (general.featuresLocked === false) lastActiveContainer.featureSnapshot = snapshotFeatureToggles();
+    captureContainerSizes(lastActiveContainer); // sizes are per-structure, no lock
+    // The atom selection is per structure too: its instance numbers mean
+    // other atoms in another structure. Kept here, restored on the way back.
+    lastActiveContainer.selectionSnapshot = captureSelectionSnapshot();
   }
 
   // The frame may need materialising (store-backed trajectory) and can even
@@ -886,12 +1400,15 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
   void step;
   traceCount('frameApplied'); // Debug panel's playback counter (proper loads)
   fileBrowser.selectedStructure = structure;
+  // Atom Size / Bond Diameter of the structure being entered (ui/SizePrefs.js),
+  // before anything below rebuilds atoms or bonds with them.
+  if (container !== lastActiveContainer) applyContainerSizes(container);
   syncPlanesForSelectedStructure();
   refreshBackendTheme();
-  let spins = fileBrowser.selectedStructure.spins?.map(spin => spin.vector ?? null) ?? null;
-  if (spins != null && general.spinsActive) updateSpins();
-  let forces = fileBrowser.selectedStructure.forces?.map(forces => forces.vector ?? null) ?? null;
-  if (forces != null && general.forcesActive) updateForces();
+  // The colour ranges belong to this structure before anything is coloured
+  // (ui/ArrowRange.js): its stored range, else its Auto Range — not
+  // whatever the previous structure (or the default 0 .. 2) left behind.
+  ensureArrowRanges(structure);
   // Point the field browser at the newly selected structure's catalog. Going
   // through the catalog rather than the flat `fields` array matters for proxy
   // formats: a WAVECAR's `fields` is empty until a band is expanded, but the
@@ -922,6 +1439,11 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
   rebuildPanel('polyhedra');
   refreshOverlayLatticePlots(); // only updates if the lattice-overlay popup is on
   updateVisualization({reRenderAtoms: true, reRenderBonds: true, reRenderField: true, reRenderComposition: true});
+  // Arrows after updateVisualization, which computes this frame's atom
+  // positions (periodic.visibleWrapped): drawn before it, they sat where the
+  // atoms were in the previously shown step.
+  if (structure.spins?.length && general.spinsActive) updateSpins();
+  if (structure.forces?.length && general.forcesActive) updateForces();
 
   if (rowChanged) {
     if (!app.cameraLocked) {
@@ -943,6 +1465,9 @@ function finishFrameSwitch(container, step, structure, rowChanged) {
       if (container.featureSnapshot) applyFeatureToggles(container.featureSnapshot);
       else applyDefaultFeatureToggles();
     }
+    // This structure's own selection (none, the first time), now that its
+    // atoms are drawn.
+    restoreSelectionSnapshot(container.selectionSnapshot);
   }
   lastActiveContainer = container;
 

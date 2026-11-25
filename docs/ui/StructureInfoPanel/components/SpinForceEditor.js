@@ -4,6 +4,7 @@ import { updateSpins, updateForces, computeSpinColor, computeForceColor, request
 import { createColorPicker } from '../../ColorPickerModule.js';
 import { getLuminance } from '../../BackgroundPicker.js';
 import { createMaterialEditor, MATERIAL_TYPES } from './MaterialEditor.js';
+import { saveArrowOverride, scheduleArrowOverrideSave } from '../../ArrowStylePrefs.js';
 
 // Same lum>0.5 threshold BackgroundPicker.js's getContrastingBorder() uses,
 // applied to text instead of a border — a swatch's background can land
@@ -26,12 +27,18 @@ function contrastTextColor(hex) {
 /**
  * @param {number} atomIndex
  * @param {HTMLElement} element
- * @param {{ onModeChange?: (mode: string) => void }} [opts]
+ * @param {{ onModeChange?: (mode: string) => void, host?: HTMLElement }} [opts]
+ *   host: an empty `.atom-spin-editor` element to fill instead of a new one —
+ *   the atom row builds its editors on first open into shells it made with
+ *   the row (IndividualAtomRow.js), and the shell must stay the element
+ *   others find, so the methods below land on it.
  */
-export function createSpinForceEditor(atomIndex, element, { onModeChange = () => {} } = {}) {
-  const spinEditor = document.createElement('div');
-  spinEditor.className = 'atom-spin-editor';
-  spinEditor.style.display = 'none'; // read back via .style.display elsewhere (see IndividualAtomRow.js)
+export function createSpinForceEditor(atomIndex, element, { onModeChange = () => {}, host = null } = {}) {
+  const spinEditor = host ?? document.createElement('div');
+  if (!host) {
+    spinEditor.className = 'atom-spin-editor';
+    spinEditor.hidden = true; // read back via .hidden elsewhere (see IndividualAtomRow.js)
+  }
 
   const switchWrapper = document.createElement('div');
   switchWrapper.className = 'spin-mode-switch';
@@ -110,7 +117,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   // currently showing, since the picker itself has no "reinitialize" API.
   const colorPickerSection = document.createElement('div');
   colorPickerSection.className = 'spin-color-picker-section';
-  colorPickerSection.style.display = 'none'; // read back via .style.display in spinColorBtn.onclick below
+  colorPickerSection.hidden = true; // read back via .hidden in spinColorBtn.onclick below
   spinEditor.appendChild(colorPickerSection);
 
   // --- Mode (Spin/Force tab) state ---
@@ -174,11 +181,11 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     const obj = currentObj();
     const hasData = Boolean(obj?.vector);
 
-    noDataMsg.style.display = hasData ? 'none' : 'block';
+    noDataMsg.hidden = hasData;
     noDataMsg.textContent = `No ${mode} data for this atom`;
-    vectorInputsRow.style.display = hasData ? 'flex' : 'none';
-    hideLabel.style.display = hasData ? 'flex' : 'none';
-    spinButtonsRow.style.display = hasData ? 'flex' : 'none';
+    vectorInputsRow.hidden = !hasData;
+    hideLabel.hidden = !hasData;
+    spinButtonsRow.hidden = !hasData;
 
     if (!hasData) return;
 
@@ -191,7 +198,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     xInput.disabled = !editable;
     yInput.disabled = !editable;
     zInput.disabled = !editable;
-    spinApplyBtn.style.display = editable ? '' : 'none';
+    spinApplyBtn.hidden = !editable;
 
     hideCheckbox.checked = Boolean(obj.hidden);
     applySwatch(effectiveCurrentColor(obj));
@@ -205,7 +212,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   }
 
   function closeColorPicker() {
-    colorPickerSection.style.display = 'none';
+    colorPickerSection.hidden = true;
     colorPickerSection.innerHTML = '';
   }
 
@@ -234,6 +241,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     if (!obj) return;
     obj.hidden = hideCheckbox.checked;
     refreshView();
+    saveArrowOverride(mode, atomIndex);
   };
 
   spinApplyBtn.onclick = () => {
@@ -256,7 +264,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
   spinColorBtn.onclick = () => {
     const obj = currentObj();
     if (!obj) return;
-    if (colorPickerSection.style.display !== 'none') {
+    if (!colorPickerSection.hidden) {
       closeColorPicker();
       return;
     }
@@ -266,9 +274,11 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
       obj.userColor = new THREE.Color(hex);
       applySwatch(obj.userColor);
       refreshView();
+      // Per-structure persistence (ui/ArrowStylePrefs.js), once per drag.
+      scheduleArrowOverrideSave(mode, atomIndex);
     });
     colorPickerSection.appendChild(picker.element);
-    colorPickerSection.style.display = 'flex';
+    colorPickerSection.hidden = false;
   };
 
   spinResetBtn.onclick = () => {
@@ -284,6 +294,7 @@ export function createSpinForceEditor(atomIndex, element, { onModeChange = () =>
     refreshView();
     requestRender();
     refreshInputs();
+    saveArrowOverride(mode, atomIndex);
   };
 
   refreshInputs();

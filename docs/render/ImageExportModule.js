@@ -37,7 +37,7 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general, groups, measurements } from '../state/store.js';
-import { latticeDirsNorm } from './LatticeModule.js';
+import { latticeDirsNorm, syncLatticeLineWidth } from './LatticeModule.js';
 import { markerColorFor } from './MeasurementModule.js';
 import { requestRender } from './AnimateModule.js';
 import { colorsFor, computeTicks, formatTick, currentContrastColor } from '../ui/ColorBarWidget.js';
@@ -60,6 +60,43 @@ function renderMemoryBudgetBytes() {
 /** @returns {HTMLElement} the #view container */
 function getViewEl() {
   return /** @type {HTMLElement} */ (document.getElementById('view'));
+}
+
+/**
+ * What an export renders: the main 3D view by default, or another view that
+ * passes itself as opts.source — the Selection Inspector's mini view
+ * (ui/AnalysisPanels/PolyhedronMiniRenderer.js getExportSource). Everything
+ * below reads the renderer, scene, camera, render pipeline and view box from
+ * the source, so a second view gets the same sizing, tiling, margin,
+ * transparency and PNG/SVG handling.
+ * @typedef {object} ExportSource
+ * @property {any} renderer a THREE.WebGLRenderer
+ * @property {any} scene
+ * @property {any} camera
+ * @property {any} pipeline what renders a frame: {render({renderer, scene,
+ *   camera}), setSize?(w, h), isConverged?, …} — app.pipeline for the main view
+ * @property {HTMLElement} viewEl the element whose box is "the view"
+ * @property {boolean} isMain the main view: its gizmo, colour bars,
+ *   composition legend, animate-loop hold and tracer settings apply
+ * @property {() => string} background CSS colour behind an opaque export
+ * @property {(painter: any, ex: object, opts: object) => void} [overlays]
+ *   drawn over the structure instead of the main view's overlay stack
+ * @property {() => void} [begin] take the view's rendering over (stop its loop)
+ * @property {() => void} [end] give it back
+ * @property {string} [title] file title for the SVG
+ */
+
+/** @returns {ExportSource} */
+export function mainExportSource() {
+  return {
+    renderer: app.renderer, scene: app.scene, camera: app.camera, pipeline: app.pipeline,
+    viewEl: getViewEl(), isMain: true, background: () => colorToCss(app.scene?.background),
+  };
+}
+
+/** @returns {ExportSource} */
+function sourceOf(opts) {
+  return opts?.source ?? mainExportSource();
 }
 
 /** One animation-frame yield (paces the export so the browser stays responsive
@@ -209,22 +246,22 @@ function tilePositions(total, tile, ov) {
   return pos;
 }
 
-async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win, composeTile) {
+async function renderMainTiled(src, srcW, srcH, tileW, tileH, onProgress, signal, win, composeTile) {
   const w0 = isIdentityWindow(win) ? 0 : win.x0;
   const h0 = isIdentityWindow(win) ? 0 : win.y0;
   const wW = isIdentityWindow(win) ? 1 : win.x1 - win.x0;
   const wH = isIdentityWindow(win) ? 1 : win.y1 - win.y0;
-  app.renderer.setSize(tileW, tileH, false);
-  const gl = app.renderer.getContext();
+  src.renderer.setSize(tileW, tileH, false);
+  const gl = src.renderer.getContext();
   throwIfContextLost(gl);
   if (gl.drawingBufferWidth < tileW || gl.drawingBufferHeight < tileH) {
     throw new Error(`WebGL could not allocate a ${tileW}×${tileH} render surface `
       + `(got ${gl.drawingBufferWidth}×${gl.drawingBufferHeight}). `
       + 'Reduce the export resolution and try again.');
   }
-  app.pipeline?.setSize(tileW, tileH);
+  src.pipeline?.setSize?.(tileW, tileH);
   sawGlOutOfMemory(gl); // drain stale errors so the post-frame check is honest
-  const isTracer = !!app.pipeline?.isConverged;
+  const isTracer = !!src.pipeline?.isConverged;
   // Guard overlap so the compositor's smoothing filter never reads past a
   // tile's own pixels at an interior seam (see tilePositions/composeTile).
   const OV = 8;
@@ -235,7 +272,7 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win
   const cutsY = [0, ...posY.slice(1).map((p) => p + OV), srcH];
   const nx = posX.length;
   const ny = posY.length;
-  const perTileTarget = app.pipeline?._cfg?.targetSamples ?? 0;
+  const perTileTarget = src.pipeline?._cfg?.targetSamples ?? 0;
   let firstFrameChecked = false;
   const checkFirstFrame = () => {
     if (firstFrameChecked) return;
@@ -252,32 +289,34 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win
       const ty = posY[j];
       // Tile rect composed through the render window, all in fractions of
       // the live camera's own frame (makeTileCamera is ratio-based).
-      const tile = makeTileCamera(app.camera, 1, 1,
+      const tile = makeTileCamera(src.camera, 1, 1,
         w0 + (tx / srcW) * wW, h0 + (ty / srcH) * wH,
         (tileW / srcW) * wW, (tileH / srcH) * wH, isTracer);
-      const renderCtx = { renderer: app.renderer, scene: app.scene, camera: tile.camera };
+      const renderCtx = { renderer: src.renderer, scene: src.scene, camera: tile.camera };
       try {
         if (isTracer) {
-          app.pipeline.resetAccumulation?.();
+          src.pipeline.resetAccumulation?.();
           const base = (j * nx + i) * perTileTarget;
           const reportTile = () => {
             if (typeof onProgress !== 'function' || !(perTileTarget > 0)) return;
-            const current = app.pipeline?._uniforms?.uSampleCounter?.value ?? 0;
+            const current = src.pipeline?._uniforms?.uSampleCounter?.value ?? 0;
             onProgress({ current: base + current, target: perTileTarget * nx * ny });
           };
           reportTile();
-          while (!app.pipeline.isConverged()) {
+          while (!src.pipeline.isConverged()) {
             throwIfAborted(signal);
             await nextFrame();
             throwIfAborted(signal);
             throwIfContextLost(gl);
-            app.pipeline.render(renderCtx);
+            syncLatticeLineWidth(renderCtx.camera, src.renderer);
+            src.pipeline.render(renderCtx);
             checkFirstFrame();
             reportTile();
           }
           reportTile();
         } else {
-          app.pipeline?.render(renderCtx);
+          syncLatticeLineWidth(renderCtx.camera, src.renderer);
+          src.pipeline?.render(renderCtx);
           checkFirstFrame();
         }
         throwIfContextLost(gl); // a lost context reads back as an empty image
@@ -289,7 +328,7 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win
       // srcW x srcH intermediate would be the one remaining allocation that
       // grows with export size (a ~300 MB canvas at 7000x7000 outputs, on
       // top of the output itself: exactly the Firefox-killing spike).
-      composeTile(app.renderer.domElement, tx, ty,
+      composeTile(src.renderer.domElement, tx, ty,
         cutsX[i], cutsX[i + 1], cutsY[j], cutsY[j + 1]);
     }
   }
@@ -300,20 +339,20 @@ async function renderMainTiled(srcW, srcH, tileW, tileH, onProgress, signal, win
 // on-screen progress bar (render/TracerProgressModule.js, driven from
 // pipeline.render()) stays live — until the pipeline reports convergence.
 // Non-tracer pipelines (no isConverged) capture after the single frame.
-async function renderMainToCanvasConverged(w, h, onProgress, signal, win) {
-  app.renderer.setSize(w, h, false);
+async function renderMainToCanvasConverged(src, w, h, onProgress, signal, win) {
+  src.renderer.setSize(w, h, false);
   // The WebGL spec allows the drawing buffer to come up SMALLER than asked
   // for when the allocation fails — no exception, no context loss, just a
   // shrunken (or dead) surface that would export as a blank/garbled image.
   // Refuse loudly instead.
-  const gl = app.renderer.getContext();
+  const gl = src.renderer.getContext();
   throwIfContextLost(gl);
   if (gl.drawingBufferWidth < w || gl.drawingBufferHeight < h) {
     throw new Error(`WebGL could not allocate a ${w}×${h} render surface `
       + `(got ${gl.drawingBufferWidth}×${gl.drawingBufferHeight}). `
       + 'Reduce the export resolution and try again.');
   }
-  app.pipeline?.setSize(w, h);
+  src.pipeline?.setSize?.(w, h);
   sawGlOutOfMemory(gl); // drain stale errors so the post-frame check is honest
   let checkFirstFrame = true;
   const checkAfterFrame = () => {
@@ -327,24 +366,24 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal, win) {
   // A non-identity window (scene-border margin, or a crop reaching outside
   // the view) renders through a widened/offset camera; identity keeps the
   // live camera untouched.
-  const isTracer = !!app.pipeline?.isConverged;
+  const isTracer = !!src.pipeline?.isConverged;
   const cam = isIdentityWindow(win)
-    ? { camera: app.camera, restore: () => {} }
-    : makeTileCamera(app.camera, 1, 1, win.x0, win.y0, win.x1 - win.x0, win.y1 - win.y0, isTracer);
-  const renderCtx = { renderer: app.renderer, scene: app.scene, camera: cam.camera };
+    ? { camera: src.camera, restore: () => {} }
+    : makeTileCamera(src.camera, 1, 1, win.x0, win.y0, win.x1 - win.x0, win.y1 - win.y0, isTracer);
+  const renderCtx = { renderer: src.renderer, scene: src.scene, camera: cam.camera };
   // Report accumulation progress on the export button (tracer pipelines only).
   // Reads the same counters the on-screen progress strip uses; guarded so raster
   // pipelines (no uSampleCounter / targetSamples) never emit a bogus 0/0.
   const reportProgress = () => {
     if (typeof onProgress !== 'function') return;
-    const current = app.pipeline?._uniforms?.uSampleCounter?.value ?? 0;
-    const target = app.pipeline?._cfg?.targetSamples ?? 0;
+    const current = src.pipeline?._uniforms?.uSampleCounter?.value ?? 0;
+    const target = src.pipeline?._cfg?.targetSamples ?? 0;
     if (Number.isFinite(current) && Number.isFinite(target) && target > 0) {
       onProgress({ current, target });
     }
   };
   try {
-    if (app.pipeline?.isConverged) {
+    if (src.pipeline?.isConverged) {
       // The live view's accumulation belongs to the on-screen size and RT
       // resolution scale, so it cannot be carried into the export: render()'s own
       // resize reset would zero it on the very first paced frame, after the
@@ -353,9 +392,9 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal, win) {
       // already reached the target would satisfy isConverged() before a single
       // export frame was traced, capturing a canvas that was resized but never
       // rendered into. Start the export from a known-empty accumulation instead.
-      app.pipeline.resetAccumulation?.();
+      src.pipeline.resetAccumulation?.();
       reportProgress(); // show the starting count before the first paced frame
-      while (!app.pipeline.isConverged()) {
+      while (!src.pipeline.isConverged()) {
         throwIfAborted(signal);
         await nextFrame();          // yield first: the button/progress repaints
         throwIfAborted(signal);
@@ -363,20 +402,25 @@ async function renderMainToCanvasConverged(w, h, onProgress, signal, win) {
         // this check the convergence loop would spin forever ("Rendering…"
         // stuck) instead of reporting what actually happened.
         throwIfContextLost(gl);
-        app.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
+        syncLatticeLineWidth(renderCtx.camera, src.renderer);
+        src.pipeline.render(renderCtx); // one paced sample (one tile when tiling)
         checkAfterFrame();
         reportProgress();
       }
       reportProgress(); // final (converged) count
     } else {
-      app.pipeline?.render(renderCtx); // raster: single frame, capture immediately
+      // The cell lines' minimum pixel width is per frame (AnimateModule.js
+      // does it for the live view): compute it for the export's camera and
+      // size, not whatever the last screen frame left.
+      syncLatticeLineWidth(renderCtx.camera, src.renderer);
+      src.pipeline?.render(renderCtx); // raster: single frame, capture immediately
       checkAfterFrame();
     }
     throwIfContextLost(gl); // a lost context reads back as an empty image
 
     const { canvas, ctx } = createVerifiedCanvas(w, h, 'render capture');
     // No await between the last render and this read (no preserveDrawingBuffer).
-    ctx.drawImage(app.renderer.domElement, 0, 0, w, h);
+    ctx.drawImage(src.renderer.domElement, 0, 0, w, h);
     return canvas;
   } finally {
     cam.restore();
@@ -512,7 +556,7 @@ export function gizmoOutputRect(width, height, crop, viewRect) {
   const gizmoDiv = document.getElementById('axesGizmo');
   if (!app.gizmoRenderer || !app.gizmoScene || !app.gizmoCamera || !gizmoDiv) return null;
   if (!general.showAxes) return null;
-  if (gizmoDiv.style.display === 'none') return null;
+  if (gizmoDiv.hidden) return null;
   return cropToOutputRect(viewFraction(gizmoDiv.getBoundingClientRect(), viewRect),
     crop, width, height);
 }
@@ -522,7 +566,7 @@ export function gizmoOutputRect(width, height, crop, viewRect) {
 export function axesLegendOutputRect(width, height, crop, viewRect) {
   if (general.gizmoLabelsOnArrows) return null;
   const legendDiv = document.getElementById('axesLegend');
-  if (!legendDiv || legendDiv.style.display === 'none') return null;
+  if (!legendDiv || legendDiv.hidden) return null;
   return cropToOutputRect(viewFraction(legendDiv.getBoundingClientRect(), viewRect),
     crop, width, height);
 }
@@ -570,6 +614,9 @@ export function drawAxesLegend(painter, rect) {
 // default (non-flipped) layout.
 function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, inputFont, pxScale = 1) {
   const { colormap, min, max, minText, maxText, scale, legend, flipSide } = settings;
+  // Where the user dragged the legend text (ColorBarWidget.js), screen px.
+  const legendDx = (Number(settings.legendOffset?.x) || 0) * pxScale;
+  const legendDy = (Number(settings.legendOffset?.y) || 0) * pxScale;
   const horizontal = w >= h;
   // The live bar shows Min/Max as the exact text in those input fields, not
   // formatTick(min)/formatTick(max) — the same rounding its OWN inner ticks
@@ -599,7 +646,10 @@ function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, input
   });
 
   const validRange = isFinite(min) && isFinite(max) && min < max;
-  const ticks = validRange ? computeTicks(min, max, scale) : [];
+  // The live bar's own tick set when it has one: it leaves out ticks that
+  // would touch the Min/Max fields or each other, which computeTicks alone
+  // can't know about (the export used to print every one of them).
+  const ticks = !validRange ? [] : (Array.isArray(settings.ticks) ? settings.ticks : computeTicks(min, max, scale));
 
   // Same text color the live floating widget itself uses (ColorBarWidget.js's
   // tickContrast/currentContrastColor) — no outline or shadow, just the
@@ -640,8 +690,10 @@ function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, input
   if (horizontal) {
     const tickY = flipSide ? y - tickGap : y + h + tickGap;
     const tickBaseline = flipSide ? 'bottom' : 'top';
-    drawText(inputFont, validRange ? minLabel : '', x, tickY, 'left', tickBaseline);
-    drawText(inputFont, validRange ? maxLabel : '', x + w, tickY, 'right', tickBaseline);
+    // Centred on the bar's ends, where the live bar's Min/Max fields sit
+    // (they used to be pulled inside the bar, onto the first and last ticks).
+    drawText(inputFont, validRange ? minLabel : '', x, tickY, 'center', tickBaseline);
+    drawText(inputFont, validRange ? maxLabel : '', x + w, tickY, 'center', tickBaseline);
     for (const t of ticks) drawText(tickFont, t.label, x + t.frac * w, tickY, 'center', tickBaseline);
     if (legend) {
       const legendY = flipSide
@@ -650,21 +702,22 @@ function drawColorBar(painter, settings, x, y, w, h, tickFont, legendFont, input
       // Rich-text draw (bold/italic/sup/sub via utils/LegendRichText.js), not
       // drawText's plain single run — matches whatever formatting the live
       // widget's legend (click-to-edit, ColorBarWidget.js) is showing.
-      painter.richText(legend, x + w / 2, legendY,
+      painter.richText(legend, x + w / 2 + legendDx, legendY + legendDy,
         { fontPx: legendFont, align: 'center', baseline: tickBaseline, fill: inkColor });
     }
   } else {
     const tickX = flipSide ? x - tickGap : x + w + tickGap;
     const tickAlign = flipSide ? 'right' : 'left';
-    drawText(inputFont, validRange ? maxLabel : '', tickX, y, tickAlign, 'top');
-    drawText(inputFont, validRange ? minLabel : '', tickX, y + h, tickAlign, 'bottom');
+    // Centred on the ends like the live fields (and the ticks between them).
+    drawText(inputFont, validRange ? maxLabel : '', tickX, y, tickAlign, 'middle');
+    drawText(inputFont, validRange ? minLabel : '', tickX, y + h, tickAlign, 'middle');
     for (const t of ticks) drawText(tickFont, t.label, tickX, y + h - t.frac * h, tickAlign, 'middle');
     if (legend) {
       const verticalLegendOffset = tickSpanV() + legendGap + legendHalfHeight();
       painter.richText(
         legend,
-        flipSide ? tickX - verticalLegendOffset : tickX + verticalLegendOffset,
-        y + h / 2,
+        (flipSide ? tickX - verticalLegendOffset : tickX + verticalLegendOffset) + legendDx,
+        y + h / 2 + legendDy,
         { fontPx: legendFont, align: 'center', baseline: 'middle', fill: inkColor, rotateDeg: -90 },
       );
     }
@@ -816,7 +869,7 @@ export function computeContentScreenBox({ structureOnly = false } = {}) {
     groups.polyhedraGroup, groups.latticeGroup,
     groups.forcesShaftMesh, groups.forcesTipMesh,
     groups.spinShaftMesh, groups.spinTipMesh,
-    groups.fieldGroup, groups.isosurfaceGroup,
+    groups.fieldGroup, groups.isosurfaceGroup, groups.asuGroup,
   ];
   for (const entry of groups.overlayMeshes.values()) {
     objects.push(entry?.atomsMesh, entry?.bondsMesh);
@@ -896,7 +949,7 @@ export function isPngCaptureInProgress() {
  *   structureOnly?: boolean,
  *   crop?: {x0:number, y0:number, x1:number, y1:number},
  *   onProgress?:(p:{current:number, target:number})=>void,
- *   signal?:AbortSignal}} opts
+ *   signal?:AbortSignal, source?:ExportSource}} opts
  *   structureOnly: omit the axes gizmo/legend, floating color bars, and the
  *   composition legend from the capture — just the structure (measurement
  *   labels stay).
@@ -915,9 +968,10 @@ export function isPngCaptureInProgress() {
  * @returns {Promise<Blob>}
  */
 export async function captureSceneToPng(opts) {
+  const src = sourceOf(opts);
   const margin = Math.max(0, Math.round(opts.margin || 0));
-  const perspectiveTracer = !!app.pipeline?.isConverged
-    && app.camera?.isOrthographicCamera !== true;
+  const perspectiveTracer = !!src.pipeline?.isConverged
+    && src.camera?.isOrthographicCamera !== true;
   if (margin > 0 && perspectiveTracer) {
     // The tracers build rays from symmetric extents a view offset can't
     // reach (see makeTileCamera), and only an orthographic camera can be
@@ -936,7 +990,7 @@ export async function captureSceneToPng(opts) {
       async (inner) => {
         const { canvas, ctx } = createVerifiedCanvas(width, height, 'output image');
         if (!opts.transparent) {
-          ctx.fillStyle = colorToCss(app.scene.background);
+          ctx.fillStyle = src.background();
           ctx.fillRect(0, 0, width, height);
         }
         ctx.drawImage(inner, margin, margin);
@@ -967,7 +1021,7 @@ function encodePng(canvas) {
 
 /** Everything about the requested output that depends only on the options and
  *  the live #view box — no renderer state, no GL limits. */
-function computeExportLayout(opts) {
+function computeExportLayout(opts, src = sourceOf(opts)) {
   const width = Math.max(1, Math.round(opts.width));
   const height = Math.max(1, Math.round(opts.height));
   // crop is optional: omitting it (a direct/programmatic capture, no
@@ -999,7 +1053,7 @@ function computeExportLayout(opts) {
     ? { x0: crop.x0, y0: crop.y0, x1: crop.x1, y1: crop.y1 }
     : { x0: 0, y0: 0, x1: 1, y1: 1 };
 
-  const viewEl = getViewEl();
+  const viewEl = src.viewEl;
   const viewRect = viewEl.getBoundingClientRect();
   const vw = Math.max(1, viewEl.clientWidth || window.innerWidth);
   const vh = Math.max(1, viewEl.clientHeight || window.innerHeight);
@@ -1075,7 +1129,7 @@ export function computeExportViewMapping(opts) {
  * @param {object} opts same shape as captureSceneToPng's
  * @param {(ex: {canvas:HTMLCanvasElement, ctx:CanvasRenderingContext2D,
  *   map:object, crop:object, viewRect:DOMRect, width:number, height:number,
- *   transparent:boolean, bgCss:string, noteGizmoResized:()=>void})
+ *   transparent:boolean, bgCss:string, source:ExportSource, noteGizmoResized:()=>void})
  *   => Promise<Blob>} consume
  * @returns {Promise<Blob>}
  */
@@ -1091,14 +1145,15 @@ export async function renderStructureForExport(opts, consume) {
 }
 
 async function renderStructureForExportImpl(opts, consume) {
-  if (!app.renderer || !app.scene || !app.camera) {
+  const src = sourceOf(opts);
+  if (!src.renderer || !src.scene || !src.camera) {
     throw new Error('Scene is not ready.');
   }
-  const layout = computeExportLayout(opts);
+  const layout = computeExportLayout(opts, src);
   const { width, height, crop, win, viewRect, cropFracW, cropFracH, srcAspect } = layout;
   const transparent = !!opts.transparent;
-  if (!isIdentityWindow(win) && app.pipeline?.isConverged
-      && app.camera?.isOrthographicCamera !== true) {
+  if (!isIdentityWindow(win) && src.pipeline?.isConverged
+      && src.camera?.isOrthographicCamera !== true) {
     throw new Error('A perspective-camera ray-traced export cannot capture outside the visible view.');
   }
 
@@ -1110,28 +1165,29 @@ async function renderStructureForExportImpl(opts, consume) {
 
   // Save live-view state so we can restore exactly (camera projection is never
   // touched: every internal render keeps the #view aspect).
-  const prevPixelRatio = app.renderer.getPixelRatio();
-  const prevBackground = app.scene.background;
-  const prevClearAlpha = app.renderer.getClearAlpha();
-  const bgCss = colorToCss(prevBackground);
+  const prevPixelRatio = src.renderer.getPixelRatio();
+  const prevBackground = src.scene.background;
+  const prevClearAlpha = src.renderer.getClearAlpha();
+  const bgCss = src.background();
 
-  const prevGizmoPR = app.gizmoRenderer ? app.gizmoRenderer.getPixelRatio() : null;
+  const prevGizmoPR = src.isMain && app.gizmoRenderer ? app.gizmoRenderer.getPixelRatio() : null;
   let gizmoResized = false;
   // Exports always trace at 100% internal resolution regardless of the
   // interactive "RT resolution" setting.
   const prevRtScale = general.rtResolutionScale;
-  const prevPaced = app.pipeline?._pacedExternally;
+  const prevPaced = src.pipeline?._pacedExternally;
   const signal = opts.signal;
 
   try {
     // Take over rendering: hold the animate loop off the renderer (single
     // driver) and put tracer pipelines in externally-paced mode (one sample /
     // one tile per render call — no synchronous multi-sample resize freeze).
-    app.offscreenRenderHold = true;
-    app.pipeline?.beginPacedRender?.();
-    app.renderer.setPixelRatio(1);
-    app.scene.background = null;
-    app.renderer.setClearAlpha(0);
+    if (src.isMain) app.offscreenRenderHold = true;
+    src.begin?.();
+    src.pipeline?.beginPacedRender?.();
+    src.renderer.setPixelRatio(1);
+    src.scene.background = null;
+    src.renderer.setClearAlpha(0);
     general.rtResolutionScale = 1;
 
     const innerW = width;
@@ -1150,7 +1206,7 @@ async function renderStructureForExportImpl(opts, consume) {
     //     fallback (full view, output aspect unconstrained) it avoids
     //     under-sizing one axis. Tracers skip the supersample: their AA comes
     //     from the accumulation jitter.
-    const SS = app.pipeline?.isConverged ? 1.0 : 1.25;
+    const SS = src.pipeline?.isConverged ? 1.0 : 1.25;
     const scaleToFillW = innerW / Math.max(cropFracW, 1e-3);
     const scaleToFillH = innerH / Math.max(cropFracH, 1e-3);
     let srcW = Math.ceil(Math.max(scaleToFillW, scaleToFillH * srcAspect) * SS);
@@ -1178,13 +1234,13 @@ async function renderStructureForExportImpl(opts, consume) {
     // RGBA32F targets (the display snapshot is shrunk for the export —
     // RayTracingPipeline's beginPacedRender) plus the drawing buffer;
     // raster pipelines just the buffer.
-    const gl = app.renderer.getContext();
+    const gl = src.renderer.getContext();
     const glMaxDim = Math.min(
       gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || 4096,
       gl.getParameter(gl.MAX_TEXTURE_SIZE) || 4096,
       8192,
     );
-    const isTracer = !!app.pipeline?.isConverged;
+    const isTracer = !!src.pipeline?.isConverged;
     const bytesPerPixel = isTracer ? 48 : 16;
     const maxPixels = renderMemoryBudgetBytes() / bytesPerPixel;
 
@@ -1193,7 +1249,7 @@ async function renderStructureForExportImpl(opts, consume) {
     // perspective-camera tracer, which instead caps the source and upscales
     // (see makeTileCamera).
     const single = srcW <= glMaxDim && srcH <= glMaxDim && srcW * srcH <= maxPixels;
-    const canTile = !isTracer || app.camera.isOrthographicCamera === true;
+    const canTile = !isTracer || src.camera.isOrthographicCamera === true;
     if (!single && !canTile) {
       const capDim = Math.min(glMaxDim, Math.floor(Math.sqrt(maxPixels)));
       const k = Math.min(1, capDim / Math.max(srcW, srcH),
@@ -1224,7 +1280,7 @@ async function renderStructureForExportImpl(opts, consume) {
     //     double-composites) while the whole tile is available to the
     //     smoothing filter (the guard overlap prevents seams). ---
     if (single || !canTile) {
-      const srcCanvas = await renderMainToCanvasConverged(srcW, srcH, opts.onProgress, signal, win);
+      const srcCanvas = await renderMainToCanvasConverged(src, srcW, srcH, opts.onProgress, signal, win);
       throwIfAborted(signal);
       octx.drawImage(srcCanvas, cropPxX, cropPxY, cropPxW, cropPxH, dx, dy, drawW, drawH);
     } else {
@@ -1252,7 +1308,7 @@ async function renderStructureForExportImpl(opts, consume) {
           tileW * scale, tileH * scale);
         octx.restore();
       };
-      await renderMainTiled(srcW, srcH, tileW, tileH, opts.onProgress, signal, win, composeTile);
+      await renderMainTiled(src, srcW, srcH, tileW, tileH, opts.onProgress, signal, win, composeTile);
       throwIfAborted(signal);
     }
 
@@ -1266,23 +1322,25 @@ async function renderStructureForExportImpl(opts, consume) {
       height,
       transparent,
       bgCss,
+      source: src,
       noteGizmoResized: () => { gizmoResized = true; },
     });
   } finally {
     // Restore the live view. Camera projection was never changed. Runs on
     // normal completion AND on abort, so the view is always intact afterwards.
-    app.pipeline?.endPacedRender?.();
-    if (prevPaced) app.pipeline?.beginPacedRender?.();
-    app.offscreenRenderHold = false;
+    src.pipeline?.endPacedRender?.();
+    if (prevPaced) src.pipeline?.beginPacedRender?.();
+    if (src.isMain) app.offscreenRenderHold = false;
     general.rtResolutionScale = prevRtScale;
-    app.scene.background = prevBackground;
-    app.renderer.setClearAlpha(prevClearAlpha);
-    app.renderer.setPixelRatio(prevPixelRatio);
-    const currentView = getViewEl();
+    src.scene.background = prevBackground;
+    src.renderer.setClearAlpha(prevClearAlpha);
+    src.renderer.setPixelRatio(prevPixelRatio);
+    const currentView = src.viewEl;
     const currentW = Math.max(1, currentView.clientWidth || window.innerWidth);
     const currentH = Math.max(1, currentView.clientHeight || window.innerHeight);
-    app.renderer.setSize(currentW, currentH, false);
-    app.pipeline?.setSize(currentW, currentH);
+    src.renderer.setSize(currentW, currentH, false);
+    src.pipeline?.setSize?.(currentW, currentH);
+    src.end?.();
 
     const gizmoDiv = document.getElementById('axesGizmo');
     if (app.gizmoRenderer && prevGizmoPR != null && gizmoResized) {
@@ -1294,7 +1352,7 @@ async function renderStructureForExportImpl(opts, consume) {
         configureGizmoCameraProjection(app.gizmoCamera, gw / gh);
       }
     }
-    requestRender();
+    if (src.isMain) requestRender();
   }
 }
 
@@ -1326,7 +1384,8 @@ export function drawExportOverlays(painter, ex, opts) {
 // margin fallback pads first.
 function captureSceneToPngImpl(opts, finish = encodePng) {
   return renderStructureForExport(opts, async (ex) => {
-    drawExportOverlays(new CanvasPainter(ex.ctx), ex, opts);
+    const draw = ex.source.overlays ?? drawExportOverlays;
+    draw(new CanvasPainter(ex.ctx), ex, opts);
     return finish(ex.canvas);
   });
 }

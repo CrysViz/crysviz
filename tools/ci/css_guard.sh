@@ -6,7 +6,13 @@
 #   2. no literal font-family stack outside docs/themes/ (var(--font-*) or `inherit` is fine)
 #   3. no @media rule outside docs/styles/responsive.css
 #   4. no CSS-in-JS (element.style.cssText =, createElement('style'),
-#      adoptedStyleSheets, insertRule) under docs/
+#      adoptedStyleSheets, insertRule) under docs/, and no chrome colour set
+#      inline: a colour literal assigned to a colour property from JS
+#      (el.style.color = '#fff', style.setProperty('border-color', 'red')) or
+#      written into a style="..." attribute (JS strings, docs/index.html).
+#      Chrome colours come from tokens through classes; a colour computed
+#      from data (an element colour, a user pick) is a variable, not a
+#      literal, and passes.
 #
 # Scope:
 #   - docs/styles/*.css and docs/themes/*/theme.css are what invariants 1-3 scan.
@@ -225,6 +231,9 @@ js_glob_args=(--glob '*.js' --glob '!docs/external/**' --glob '!docs/compiled/**
 
 check_js_pattern() {
     local label="$1" pattern="$2"
+    shift 2
+    local globs=("${js_glob_args[@]}")
+    [[ $# -gt 0 ]] && globs=("$@")
     while IFS=: read -r path lineno content; do
         [[ -z "$path" ]] && continue
         local rel="$path"
@@ -235,13 +244,28 @@ check_js_pattern() {
         fi
         printf '%s:%s: [%s]\n    %s\n' "$rel" "$lineno" "$label" "$trimmed"
         violations=$((violations + 1))
-    done < <(rg -n --no-heading "${js_glob_args[@]}" -e "$pattern" docs || true)
+    done < <(rg -n --no-heading "${globs[@]}" -e "$pattern" docs || true)
 }
 
 check_js_pattern "css-in-js" '\.style\.cssText\s*='
 check_js_pattern "css-in-js" "createElement\\(['\"]style['\"]\\)"
 check_js_pattern "css-in-js" 'adoptedStyleSheets'
 check_js_pattern "css-in-js" '\.insertRule\('
+
+# Inline chrome colours. A "colour literal" here is what invariant 1 means by
+# one: a hex, an rgb()/hsl() with a literal first component, or a named
+# colour keyword as a whole quoted string ('white', not a variable named
+# white). The right-hand side is read to the end of the statement, so a
+# ternary between two literals is caught as well as a plain assignment.
+js_color_literal="(#[0-9a-fA-F]{3,8}\\b|\\b(rgba?|hsla?)\\(\\s*[0-9]|['\"\`](?i:${color_keywords})['\"\`])"
+js_color_props='(color|background|backgroundColor|backgroundImage|border|border[A-Z][A-Za-z]*|outline|outline[A-Z][A-Za-z]*|boxShadow|textShadow|fill|stroke|caretColor|accentColor)'
+css_color_props='(color|background(-color|-image)?|border(-[a-z]+)*|outline(-[a-z]+)*|box-shadow|text-shadow|fill|stroke|caret-color|accent-color)'
+check_js_pattern "inline-colour" "\\.style\\.${js_color_props}\\s*=[^=][^;]*${js_color_literal}"
+check_js_pattern "inline-colour" "setProperty\\(\\s*['\"]${css_color_props}['\"]\\s*,[^)]*${js_color_literal}"
+# style="..." in a JS template/string, and in the page itself.
+style_attr_color="style=\\\\?[\"'][^\"']*(#[0-9a-fA-F]{3,8}\\b|\\b(rgba?|hsla?)\\(\\s*[0-9]|:\\s*(?i:${color_keywords})\\b)"
+check_js_pattern "inline-colour" "$style_attr_color"
+check_js_pattern "inline-colour" "$style_attr_color" --glob 'docs/index.html'
 
 # ---------------------------------------------------------------------------
 

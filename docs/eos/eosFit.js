@@ -64,10 +64,35 @@ def estimate_k0(volumes, pressures):
             sum_num += pressures[i] * dV
             sum_den += dV * dV
     return v0, (-v0 * (sum_num / sum_den) if sum_den != 0 else 300.0)
+
+# JSON has no Infinity or NaN: json.dumps writes them anyway and JSON.parse
+# then rejects the whole result, so non-finite numbers cross as null.
+def finite_or_none(x):
+    x = float(x)
+    return x if np.isfinite(x) else None
+
+# curve_fit returns an infinite covariance when it cannot estimate one (no
+# more points than parameters, or degenerate data): the fit has no errors,
+# and is reported as not converged ('no-errors') with its values.
+def fit_errors(pcov, n):
+    if pcov is None:
+        return [None] * n
+    with np.errstate(invalid='ignore'):
+        return [finite_or_none(x) for x in np.sqrt(np.diag(pcov))]
+
+def fit_failed(params, errors):
+    if any(p is None for p in params):
+        return 'error'
+    return 'no-errors' if any(e is None for e in errors) else None
 `;
 
+/** What a fit that could not run at all returns; `failed` lets the panel say
+ *  so instead of "Fit complete." over zeros. A fit that ran has `failed`
+ *  null, 'not-converged' (params are the starting guesses) or 'no-errors'
+ *  (fitted params, errors null: the covariance was infinite). Any number
+ *  that was not finite arrives as null. */
 function nullResult(nParams) {
-  return { params: Array(nParams).fill(0), errors: Array(nParams).fill(undefined), fitStats: { rms: 0, maxRes: 0, nPoints: 0 } };
+  return { params: Array(nParams).fill(0), errors: Array(nParams).fill(undefined), fitStats: { rms: 0, maxRes: 0, nPoints: 0 }, failed: 'error' };
 }
 
 /** Fit just the Birch-Murnaghan P-V curve. Shared by the energy-less primary
@@ -88,18 +113,22 @@ try:
         birch_murnaghan_pressure, volumes, pressures,
         p0=[v0_initial, k0_estimate, 4.0], maxfev=5000
     )
-    errors = [float(x) for x in np.sqrt(np.diag(pcov))] if pcov is not None else [None, None, None]
+    errors = fit_errors(pcov, 3)
     res = pressures - birch_murnaghan_pressure(volumes, *popt)
-    rms = float(np.sqrt(np.mean(res ** 2)))
-    max_res = float(np.max(np.abs(res)))
+    rms = finite_or_none(np.sqrt(np.mean(res ** 2)))
+    max_res = finite_or_none(np.max(np.abs(res)))
+    params = [finite_or_none(x) for x in popt]
+    failed = fit_failed(params, errors)
 except Exception:
-    popt = [v0_initial, k0_estimate, 4.0]
+    params = [finite_or_none(x) for x in (v0_initial, k0_estimate, 4.0)]
     errors = [None, None, None]
     rms = 0.0
     max_res = 0.0
+    failed = 'not-converged'
 
-json.dumps({'params': [float(x) for x in popt], 'errors': errors,
-            'fitStats': {'rms': rms, 'maxRes': max_res, 'nPoints': int(len(pressures))}})
+json.dumps({'params': params, 'errors': errors, 'failed': failed,
+            'fitStats': {'rms': rms, 'maxRes': max_res, 'nPoints': int(len(pressures))}},
+           allow_nan=False)
 `;
 
   try {
@@ -155,15 +184,17 @@ try:
         birch_murnaghan_pressure, volumes, pressures,
         p0=[pvV0_initial, pvK0_estimate, 4.0], maxfev=5000
     )
-    pv_errors = [float(x) for x in np.sqrt(np.diag(pv_pcov))] if pv_pcov is not None else [None, None, None]
+    pv_errors = fit_errors(pv_pcov, 3)
     pv_res = pressures - birch_murnaghan_pressure(volumes, *pv_popt)
-    pv_rms = float(np.sqrt(np.mean(pv_res ** 2)))
-    pv_max_res = float(np.max(np.abs(pv_res)))
+    pv_rms = finite_or_none(np.sqrt(np.mean(pv_res ** 2)))
+    pv_max_res = finite_or_none(np.max(np.abs(pv_res)))
+    pv_failed = fit_failed([finite_or_none(x) for x in pv_popt], pv_errors)
 except Exception:
     pv_popt = [pvV0_initial, pvK0_estimate, 4.0]
     pv_errors = [None, None, None]
     pv_rms = 0.0
     pv_max_res = 0.0
+    pv_failed = 'not-converged'
 
 min_energy = float(np.min(energies))
 try:
@@ -172,22 +203,24 @@ try:
         volumes, energies,
         p0=[0.0, float(pv_popt[0]), float(pv_popt[1]), float(pv_popt[2])], maxfev=5000
     )
-    ev_errors = [float(x) for x in np.sqrt(np.diag(ev_pcov))] if ev_pcov is not None else [None, None, None, None]
+    ev_errors = fit_errors(ev_pcov, 4)
     ev_res = energies - (birch_murnaghan_energy(volumes, *ev_popt) + min_energy)
-    ev_rms = float(np.sqrt(np.mean(ev_res ** 2)))
-    ev_max_res = float(np.max(np.abs(ev_res)))
+    ev_rms = finite_or_none(np.sqrt(np.mean(ev_res ** 2)))
+    ev_max_res = finite_or_none(np.max(np.abs(ev_res)))
+    ev_failed = fit_failed([finite_or_none(x) for x in ev_popt], ev_errors)
 except Exception:
     ev_popt = [0.0, float(pv_popt[0]), float(pv_popt[1]), float(pv_popt[2])]
     ev_errors = [None, None, None, None]
     ev_rms = 0.0
     ev_max_res = 0.0
+    ev_failed = 'not-converged'
 
 result_json = json.dumps([
-    {'params': [float(x) for x in pv_popt], 'errors': pv_errors,
+    {'params': [finite_or_none(x) for x in pv_popt], 'errors': pv_errors, 'failed': pv_failed,
      'fitStats': {'rms': pv_rms, 'maxRes': pv_max_res, 'nPoints': int(len(pressures))}},
-    {'params': [float(x) for x in ev_popt], 'errors': ev_errors,
+    {'params': [finite_or_none(x) for x in ev_popt], 'errors': ev_errors, 'failed': ev_failed,
      'fitStats': {'rms': ev_rms, 'maxRes': ev_max_res, 'nPoints': int(len(energies))}},
-])
+], allow_nan=False)
 result_json
 `;
 
@@ -195,7 +228,7 @@ result_json
     const resultJson = await pyodide.runPythonAsync(pythonCode);
     const [pvResult, evResult] = JSON.parse(resultJson);
     const minEnergy = Math.min(...energies);
-    evResult.params[0] = (evResult.params[0] || 0) + minEnergy;
+    if (evResult.params[0] != null) evResult.params[0] += minEnergy;
     return { pvResult, evResult };
   } catch (error) {
     console.error('EOS SciPy fitting failed:', error);

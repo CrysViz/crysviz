@@ -99,13 +99,15 @@ export function compute_bond_pairs(cart: Float64Array, elem_idx: Uint32Array, cu
  * Parallel entry, part 1: generate the candidates for centre range
  * `[center_start,center_end)` and seed range `[seed_start,seed_end)`. Runs in a worker.
  */
-export function compute_candidates(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, center_keys: Int32Array, seed_visible: Uint8Array, cut_plane_immune: Uint8Array, cut_planes: Float64Array, cut_plane_count: number, center_start: number, center_end: number, seed_start: number, seed_end: number): CandidateResult;
+export function compute_candidates(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, anion_former: Uint8Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, simple: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, center_keys: Int32Array, seed_visible: Uint8Array, cut_plane_immune: Uint8Array, cut_planes: Float64Array, cut_plane_count: number, cage_bounds: Float64Array, center_start: number, center_end: number, seed_start: number, seed_end: number): CandidateResult;
 
 /**
  * Compute coordination polyhedra. See `polyhedra::compute_polyhedra` for the
  * argument contract; the JS wrapper (`polyhedraWasm.js`) packs these arrays.
+ * `simple` is the fast mode: the hull of the bonded ligands, no Voronoi
+ * selection and no cages (see the fast block in `polyhedra::build_candidates`).
  */
-export function compute_polyhedra(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, center_keys: Int32Array, seed_visible: Uint8Array, cut_plane_immune: Uint8Array, cut_planes: Float64Array, cut_plane_count: number): PolyhedraResult;
+export function compute_polyhedra(frac: Float64Array, elem_idx: Uint32Array, lattice_flat: Float64Array, cutoff_matrix: Float64Array, n_elem: number, electroneg: Float64Array, anion_former: Uint8Array, radii: Float64Array, max_cutoff: number, use_chem_filter: boolean, detect_cages: boolean, simple: boolean, center_src: Uint32Array, center_shift: Int32Array, center_cart: Float64Array, center_keys: Int32Array, seed_visible: Uint8Array, cut_plane_immune: Uint8Array, cut_planes: Float64Array, cut_plane_count: number, cage_bounds: Float64Array): PolyhedraResult;
 
 /**
  * Rust implementation of `periodicWrapped`.
@@ -124,8 +126,12 @@ export function compute_polyhedra(frac: Float64Array, elem_idx: Uint32Array, lat
  * * `bounds`      – VESTA-style fractional display bounds, packed as
  *   `[xmin,xmax,ymin,ymax,zmin,zmax]`. Defaults to `[0,1]` per axis (classic
  *   face-mirror behaviour). An empty/short slice falls back to `[0,1]`.
+ * * `fragment_table` – "Complete Rings & Fragments": the `n_elem × n_elem` cutoff table of
+ *   the bonds that define fragments (the bond table with bonds to metals zeroed when
+ *   the caller filters them). Empty = off. See `fragments.rs`.
+ * * `max_ring`    – largest ring (atoms) completed in extended networks; 0 = none.
  */
-export function periodic_wrapped(show_periodic: boolean, show_pbc_bonds: boolean, elements_in: Uint32Array, frac_in: Float64Array, lattice_flat: Float64Array, bond_table: Float64Array, n_elem: number, face_tol: number, bounds: Float64Array): PeriodicResult;
+export function periodic_wrapped(show_periodic: boolean, show_pbc_bonds: boolean, elements_in: Uint32Array, frac_in: Float64Array, lattice_flat: Float64Array, bond_table: Float64Array, n_elem: number, face_tol: number, bounds: Float64Array, fragment_table: Float64Array, max_ring: number): PeriodicResult;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
@@ -151,9 +157,9 @@ export interface InitOutput {
     readonly candidateresult_vertex_srcs: (a: number) => [number, number];
     readonly candidateresult_vertices: (a: number) => [number, number];
     readonly compute_bond_pairs: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => number;
-    readonly compute_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number) => number;
-    readonly compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number) => number;
-    readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => number;
+    readonly compute_candidates: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number, k1: number, l1: number, m1: number, n1: number) => number;
+    readonly compute_polyhedra: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number, s: number, t: number, u: number, v: number, w: number, x: number, y: number, z: number, a1: number, b1: number, c1: number, d1: number, e1: number, f1: number, g1: number, h1: number, i1: number, j1: number) => number;
+    readonly periodic_wrapped: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number) => number;
     readonly periodicresult_cart: (a: number) => [number, number];
     readonly periodicresult_elements: (a: number) => [number, number];
     readonly periodicresult_frac: (a: number) => [number, number];

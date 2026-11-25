@@ -7,12 +7,17 @@ export { StructureContainer } from './StructureContainer.js';
 export { StructureShip } from './StructureShip.js';
 export { Spin } from './Spin.js';
 export { Force } from './Force.js';
-export { Stress } from './Stress.js';
+export {
+  Stress, EV_PER_A3_TO_GPA, KBAR_TO_EV_PER_A3, HARTREE_PER_BOHR3_TO_EV_PER_A3,
+  pressureEvA3, pressureGPa, tensorGPa, fromTensionPositive,
+} from './Stress.js';
 export { Polyhedra } from './Polyhedra.js';
 export { Polyhedron } from './Polyhedron.js';
 export { Symmetry } from './Symmetry.js';
 export { Wyckoff } from './Wyckoff.js';
 export { Field } from './Field.js';
+// Grid -> world mapping shared by the isosurface, the cut planes and the tracer:
+export { gridToWorld, worldToGridFraction, blockCellRange, imageOffsets } from './fieldGeometry.js';
 export { Plane, getCutPlaneMaskSign } from './Plane.js';
 export { FieldContainer } from './FieldContainer.js';
 
@@ -25,6 +30,10 @@ export { FieldCatalog, FieldCatalogNode, NodeKind } from './FieldCatalog.js';
 export { TrajectoryFrameStore } from './TrajectoryFrameStore.js';
 export { TrajectoryContainer } from './TrajectoryContainer.js';
 export { materializeFrame } from './materializeFrame.js';
+// The mean of several frames (Files window ▸ ≡ ▸ Average Structure):
+export { FrameAverage, averageFrames, compositionMismatch, LARGE_DISPLACEMENT } from './averageFrames.js';
+// Where a structure's energy, forces and stress came from ("VASP", "PET-MAD xs"):
+export { cleanDataSource, formatDataSource, aseCalculatorSource, dataSourceOf, hasComputedData } from './dataSource.js';
 
 // Lazily-read plane-wave wavefunctions (WAVECAR) and the byte-budgeted cache
 // that keeps them inside the browser's memory limits:

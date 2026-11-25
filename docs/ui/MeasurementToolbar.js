@@ -12,12 +12,14 @@
 // The mode toggle + clear logic is exposed as setMeasureMode / clearAllMeasureMode
 // so other UI (e.g. keyboard shortcuts) can reuse the exact same behavior.
 
-import { mode, measurements, fileBrowser, general } from '../state/store.js';
-import { clearHighlightAtom } from './SelectAndHighlightModule.js';
+import { mode, measurements, fileBrowser } from '../state/store.js';
+import {
+  clearHighlightAtom, pauseSelectionGlowForMeasure, resumeSelectionGlowAfterMeasure,
+} from './SelectAndHighlightModule.js';
 import { clearMeasureGraphics, clearAllMeasurements, clearMeasure } from '../render/MeasurementModule.js';
 import { disposeGhostAtoms } from '../render/GhostAtomsModule.js';
+import { commitHideRestore } from './SceneInteraction.js';
 import { updateVisualization } from '../core/crystal-viewer.js';
-import { updateForces, updateSpins } from '../render/index.js';
 
 function isGhostMode(m) {
   return m === 'hide' || m === 'restore';
@@ -91,10 +93,7 @@ function hideRestorePopover() {
 function restoreAllAtoms() {
   const structure = fileBrowser.selectedStructure;
   if (!structure) return;
-  structure.atoms.forEach((atom) => { atom.hidden = false; });
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderComposition: true });
-  if (general.forcesActive) updateForces(general.forceScale ?? 1.0, general.forceColorMap ?? 'heatmap');
-  if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, false, [], general.spinColorMap ?? 'none');
+  commitHideRestore([], structure.atoms.map((_, i) => i));
 }
 
 // Toggle a measurement mode ('distance' | 'angle' | 'hide' | 'restore').
@@ -123,6 +122,12 @@ export function setMeasureMode(targetMode, button) {
     if (button) button.classList.add('active');
   }
 
+  // The selection's glow is off while any tool is on, and back when the
+  // tools are off again (switching between tools leaves it off): the atoms a
+  // measurement picks glow on their own, and the selection is kept.
+  if (previousMode === 'none' && mode.measureMode !== 'none') pauseSelectionGlowForMeasure();
+  else if (previousMode !== 'none' && mode.measureMode === 'none') resumeSelectionGlowAfterMeasure();
+
   const enteringGhostMode = isGhostMode(mode.measureMode) && !isGhostMode(previousMode);
   const leavingGhostMode = isGhostMode(previousMode) && !isGhostMode(mode.measureMode);
   if (enteringGhostMode) {
@@ -142,6 +147,7 @@ export function clearAllMeasureMode() {
   clearActiveMeasureButtons();
   mode.measureMode = 'none';
   clearMeasure();
+  resumeSelectionGlowAfterMeasure(); // a no-op unless a tool was on
   if (wasGhostMode) {
     disposeGhostAtoms();
     updateVisualization({});
@@ -166,6 +172,10 @@ function setupLongPressRestoreAll(btn) {
     clear();
     timer = setTimeout(() => {
       fired = true;
+      // The long press is a press on Restore too: switch to Restore mode
+      // (highlighted, ghosts clickable) unless it already is, then offer
+      // Restore All. It used to leave Hide mode on, with Restore unlit.
+      if (mode.measureMode !== 'restore') setMeasureMode('restore', btn);
       showRestorePopover(btn);
     }, LONG_PRESS_MS);
   });

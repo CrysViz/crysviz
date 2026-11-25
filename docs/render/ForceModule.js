@@ -1,7 +1,8 @@
 import * as THREE from '../external/three/three.module.js';
+import { fileMagnitudeExtent, logArrowLength } from './ArrowLength.js';
 import { app, fileBrowser, groups, general } from '../state/store.js';
 import { getColorFromMap, getElementDefaultColor } from '../defaults/color_texture_defaults.js';
-import { createArrowMaterial, addArrowEmissiveAttributes } from './ArrowMaterial.js';
+import { createArrowMaterial, addArrowEmissiveAttributes, applyArrowCelOutline } from './ArrowMaterial.js';
 import { refreshForceHistogram } from '../ui/AnalysisPanels/ForceHistogram.js';
 import { requestRender } from './AnimateModule.js';
 import { applyFocusToArrows } from './FocusRegionModule.js';
@@ -12,12 +13,6 @@ const TIP_LENGTH = 0.8;
 const TIP_RADIUS = 0.3;
 const UP = new THREE.Vector3(0, 1, 0);
 const LOG_EPS = 1e-6;
-// Rendered arrow length range (Å-ish scene units) that a force's normalized
-// [0,1] magnitude (color's own log/linear mapping, reused for length) is
-// spread across — see the arrow-length comment below for why this replaced
-// raw-magnitude-as-length.
-const ARROW_LEN_MIN = 0.3;
-const ARROW_LEN_MAX = 2.0;
 
 function disposeForceMeshes() {
   for (const key of ['forcesShaftMesh', 'forcesTipMesh']) {
@@ -124,6 +119,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
   // two only ever disagree in the direction of length being linear while
   // color is log.
   const useLogLength = general.forceLengthLogScale === true;
+  const lengthExtent = useLogLength ? fileMagnitudeExtent('force', structure) : null;
 
   // Normalizes a force's true magnitude (species scaling included, but NOT
   // forceFactor — the "Global Scaling" slider is a pure display convenience,
@@ -214,7 +210,6 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     const element = checkbox.id.replace('force-species-', '');
     speciesVisibility[element] = /** @type {HTMLInputElement} */ (checkbox).checked;
   });
-  const hasToggles = checkboxes.length > 0;
 
   for (let i = 0; i < wrapped.cart.length; i++) {
     const srcIdx = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
@@ -227,28 +222,25 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     if (!force?.vector) continue;
     if (force.hidden) continue; // that atom's own row "Hide" checkbox
 
+    // Hidden only by an unticked species box: an element the boxes don't
+    // list yet (a structure just loaded, its window not rebuilt) still shows.
     const element = structure.elements[srcIdx];
-    if (hasToggles && !speciesVisibility[element]) continue;
+    if (speciesVisibility[element] === false) continue;
 
     const v = force.vector;
     const mag = Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
     if (mag <= 0) continue; // a zero vector has no direction to draw
 
-    // Length follows the same normalizeMag() shape color does (log or
-    // linear, against forceMin/forceMax — though "log length" can pick log
-    // independently of the color scale) instead of raw magnitude — a tiny
-    // residual force used to shrink to a near-invisible sliver (or get
-    // skipped below a hardcoded 0.05 cutoff entirely, copied over from
-    // SpinModule.js where "too small to show" means "no spin", which isn't
-    // true of forces: every atom in a real calculation has SOME force on
-    // it, and it should always be shown). Mapping through normalizeMag()
-    // into [ARROW_LEN_MIN, ARROW_LEN_MAX] instead keeps every nonzero force
-    // clearly visible while still reading larger forces as visibly longer.
-    // forceFactor (Global Scaling) is applied after, as a pure display
-    // multiplier — unlike colorMag above, it never feeds normalizeMag()
-    // itself, so it can't shift the length mapping the way it used to.
+    // Length comes from the force alone, never the colour bar's range (it
+    // used to: Auto Range or a typed limit rescaled every arrow): |F|
+    // (species scaling included) × forceFactor (Global Scaling) Å per eV/Å,
+    // or on "log length" its log against the file's own extent
+    // (render/ArrowLength.js) — 0.3 Å at the file's smallest force, 2 Å at
+    // its largest — × Global Scaling.
     const colorMag = mag * (force.scaling ?? 1.0);
-    const totalLen = (ARROW_LEN_MIN + normalizeMag(colorMag, useLogLength) * (ARROW_LEN_MAX - ARROW_LEN_MIN)) * forceFactor;
+    const totalLen = useLogLength
+      ? logArrowLength(colorMag, lengthExtent) * forceFactor
+      : colorMag * forceFactor;
 
     arrows.push({
       srcIdx,
@@ -285,6 +277,8 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     // the stale sphere.
     groups.forcesShaftMesh.frustumCulled = false;
     addArrowEmissiveAttributes(groups.forcesShaftMesh, count * 2);
+    // Cel outlines: hides the lines behind it, outlined itself unless switched off.
+    applyArrowCelOutline(groups.forcesShaftMesh);
     app.scene.add(groups.forcesShaftMesh);
 
     const tipGeo = new THREE.ConeGeometry(1, 1, TIP_SEGS);
@@ -295,6 +289,7 @@ export function updateForces(forceFactor = general.forceScale ?? 1.0, colorMap =
     groups.forcesTipMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     groups.forcesTipMesh.frustumCulled = false; // see forcesShaftMesh above
     addArrowEmissiveAttributes(groups.forcesTipMesh, count);
+    applyArrowCelOutline(groups.forcesTipMesh);
     app.scene.add(groups.forcesTipMesh);
   }
 

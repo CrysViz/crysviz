@@ -39,7 +39,7 @@ const DEFAULT_LONG_EDGE = 3840; // 4K on the long edge by default
 const VECTOR_SHAPE_WARN = 20000;
 
 const PNG_NOTE = 'Save exports the whole view; Choose region lets you drag a crop area '
-  + 'over the 3D view first.';
+  + 'over the 3D view first (the last area is remembered for this browser session).';
 const SVG_NOTE = 'Labels, axes and colour bars are editable Inkscape layers; the structure '
   + 'is an embedded image unless you pick Vector shapes.';
 
@@ -58,8 +58,53 @@ function savePrefs(prefs) {
   catch { /* storage unavailable */ }
 }
 
+// The last area chosen with "Choose region", as fractions of the 3D view
+// (what the crop overlay reports), remembered for this browser session
+// only: it belongs to the view and camera of the moment, so it is kept
+// through a reload of this tab but not across sessions or in the .crysviz
+// file. The next "Choose region" starts from it instead of the automatic
+// content box; "Forget region" in the dialog drops it.
+const REGION_KEY = 'crysviz.pngExportRegion.v1';
+
+function loadRegion() {
+  try {
+    const r = JSON.parse(sessionStorage.getItem(REGION_KEY));
+    const ok = r && [r.x0, r.y0, r.x1, r.y1].every((v) => Number.isFinite(v)) && r.x1 > r.x0 && r.y1 > r.y0;
+    return ok ? r : null;
+  } catch { return null; }
+}
+
+function saveRegion(crop) {
+  try {
+    sessionStorage.setItem(REGION_KEY, JSON.stringify({ x0: crop.x0, y0: crop.y0, x1: crop.x1, y1: crop.y1, aspect: crop.aspect }));
+  } catch { /* storage unavailable */ }
+}
+
+function clearRegion() {
+  try { sessionStorage.removeItem(REGION_KEY); }
+  catch { /* storage unavailable */ }
+}
+
+// Another view exporting through this dialog (openImageExportDialog — the
+// Selection Inspector): its render/ImageExportModule.js ExportSource, file
+// base name and title. Null for the main 3D view.
+let activeSource = null;
+let activeBaseName = null;
+let openDialogImpl = null;
+
+/**
+ * Open the image dialog for another view than the main one: same sizes,
+ * aspect presets, margin, transparency and PNG/SVG formats, rendered from
+ * `source`. What only makes sense for the main view — choosing a region over
+ * it, framing only the structure, vector shapes — is not offered.
+ * @param {{source: import('../render/ImageExportModule.js').ExportSource, baseName?: string}} opts
+ */
+export function openImageExportDialog({ source, baseName } = /** @type {any} */ ({})) {
+  openDialogImpl?.({ source, baseName });
+}
+
 function viewAspect() {
-  const v = document.getElementById('view');
+  const v = activeSource?.viewEl ?? document.getElementById('view');
   const w = (v && v.clientWidth) || 16;
   const h = (v && v.clientHeight) || 9;
   return w / h;
@@ -122,6 +167,7 @@ export function initImageExportPanel() {
       <div class="paste-modal-actions">
         <button type="button" id="pngSaveBtn" class="png-primary">Save</button>
         <button type="button" id="pngDownloadBtn" class="png-primary">Choose region…</button>
+        <button type="button" id="pngForgetRegionBtn" title="Choose region starts from the automatic framing again">Forget region</button>
         <button type="button" id="pngCancelBtn">Cancel</button>
       </div>
     </div>
@@ -141,6 +187,7 @@ export function initImageExportPanel() {
   const noteEl = document.getElementById('imgExportNote');
   const saveBtn = document.getElementById('pngSaveBtn');
   const downloadBtn = document.getElementById('pngDownloadBtn');
+  const forgetRegionBtn = document.getElementById('pngForgetRegionBtn');
   const cancelBtn = document.getElementById('pngCancelBtn');
 
   // aspectRatio is the enforced ratio while an explicit preset/view is chosen;
@@ -210,12 +257,22 @@ export function initImageExportPanel() {
 
   /** The capture for the selected format. */
   function captureImage(opts) {
-    if (!isSvg()) return captureSceneToPng(opts);
-    return captureSceneToSvg({ ...opts, structure: svgStructureSelect.value });
+    const source = activeSource ?? undefined;
+    if (!isSvg()) return captureSceneToPng({ ...opts, source });
+    return captureSceneToSvg({ ...opts, source, structure: source ? 'raster' : svgStructureSelect.value });
   }
 
   function outputFileName() {
-    return currentBaseName() + (isSvg() ? '.svg' : '.png');
+    return (activeBaseName ?? currentBaseName()) + (isSvg() ? '.svg' : '.png');
+  }
+
+  // The main-view-only controls, hidden while another view exports.
+  const structureOnlyRow = structureOnlyInput.closest('.png-row');
+  function syncSourceControls() {
+    const other = !!activeSource;
+    structureOnlyRow.hidden = other;
+    downloadBtn.hidden = other;
+    if (other) svgStructureRow.hidden = true;
   }
 
   function openModal() {
@@ -236,6 +293,7 @@ export function initImageExportPanel() {
     marginInput.value = String(p.margin != null ? p.margin : 0);
     transparentInput.checked = !!p.transparent;
     structureOnlyInput.checked = !!p.structureOnly;
+    syncSourceControls();
 
     const longEdge = Math.max(Number(p.width) || 0, Number(p.height) || 0) || DEFAULT_LONG_EDGE;
     if (aspectSelect.value === 'free') {
@@ -248,15 +306,23 @@ export function initImageExportPanel() {
       aspectRatio = PRESET_ASPECTS[aspectSelect.value] || 1;
       fillFromAspect(longEdge);
     }
+    forgetRegionBtn.hidden = !loadRegion();
     modal.hidden = false;
   }
 
   function closeModal() {
     savePrefs(currentPrefs());
     modal.hidden = true;
+    activeSource = null;
+    activeBaseName = null;
   }
 
-  formatSelect.addEventListener('change', syncFormat);
+  forgetRegionBtn.addEventListener('click', () => {
+    clearRegion();
+    forgetRegionBtn.hidden = true;
+  });
+
+  formatSelect.addEventListener('change', () => { syncFormat(); syncSourceControls(); });
   svgStructureSelect.addEventListener('change', syncFormat);
 
   aspectSelect.addEventListener('change', () => {
@@ -323,7 +389,7 @@ export function initImageExportPanel() {
       const blob = await captureImage({
         width: dims.width, height: dims.height, margin,
         transparent: transparentInput.checked,
-        structureOnly: structureOnlyInput.checked, signal: activeAbort.signal,
+        structureOnly: !activeSource && structureOnlyInput.checked, signal: activeAbort.signal,
         onProgress: ({ current, target }) => {
           saveBtn.textContent = `Rendering… ${current} / ${target}`;
         },
@@ -369,6 +435,18 @@ export function initImageExportPanel() {
     return { left, top, width: bw, height: bh };
   }
 
+  // The remembered area (this browser session) in #view CSS px, or null when
+  // there is none or it is too small for the overlay's rect.
+  function rememberedInitialRect() {
+    const r = loadRegion();
+    if (!r) return null;
+    const view = document.getElementById('view');
+    const vw = (view && view.clientWidth) || 0;
+    const vh = (view && view.clientHeight) || 0;
+    const rect = { left: r.x0 * vw, top: r.y0 * vh, width: (r.x1 - r.x0) * vw, height: (r.y1 - r.y0) * vh };
+    return rect.width >= 40 && rect.height >= 40 ? rect : null;
+  }
+
   async function chooseArea() {
     const dims = readDims();
     if (!dims) return;
@@ -410,7 +488,8 @@ export function initImageExportPanel() {
       // height's LARGER edge becomes the output's long edge with the other
       // edge derived from the shape actually drawn (see below).
       aspect: free ? null : width / height,
-      initial: autoInitialRect(lockInput.checked && !free ? width / height : null),
+      // The last area chosen this session, else the automatic content box.
+      initial: rememberedInitialRect() ?? autoInitialRect(lockInput.checked && !free ? width / height : null),
       locked: lockInput.checked,
       onLockChange: (locked) => savePrefs({ ...loadPrefs(), lock: locked }),
       // Tracer pipelines render to full convergence inside captureSceneToPng
@@ -420,6 +499,7 @@ export function initImageExportPanel() {
       // text (ui/CropOverlay.js owns that UI; the settings modal is already
       // closed by the time this runs).
       onConfirm: async (crop, { signal, onProgress }) => {
+        saveRegion(crop);
         let outWidth = width;
         let outHeight = height;
         // A crop drawn at a different shape than width x height — Free mode,
@@ -448,7 +528,12 @@ export function initImageExportPanel() {
     });
   }
 
-  trigger.addEventListener('click', () => openModal());
+  openDialogImpl = ({ source = null, baseName = null } = {}) => {
+    activeSource = source;
+    activeBaseName = baseName;
+    openModal();
+  };
+  trigger.addEventListener('click', () => openDialogImpl());
   cancelBtn.addEventListener('click', () => {
     // While a Save capture runs, Cancel is "Abort": cancel it, stay open.
     if (activeAbort) { activeAbort.abort(); return; }

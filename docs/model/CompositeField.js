@@ -196,6 +196,7 @@ export function combineFields(terms, options = {}) {
         `combineFields: grid mismatch — "${field.label}" is ${field.nx}×${field.ny}×${field.nz}, `
         + `expected ${nx}×${ny}×${nz}`);
     }
+    assertSameFrame('combineFields', field, first);
     if (!field.values) {
       throw new Error(`combineFields: "${field.label}" has no values loaded`);
     }
@@ -222,6 +223,7 @@ export function combineFields(terms, options = {}) {
     nz,
     origin: first.origin,
     voxel: first.voxel,
+    periodic: first.periodic,
     values,
     component: options.component ?? 0,
     label: options.label || describeCombination(usable),
@@ -275,6 +277,7 @@ export function magnitudeField(fields, options = {}) {
         `magnitudeField: grid mismatch — "${field.label}" is ${field.nx}×${field.ny}×${field.nz}, `
         + `expected ${nx}×${ny}×${nz}`);
     }
+    assertSameFrame('magnitudeField', field, first);
     if (!field.values || field.values.length < expected) {
       throw new Error(`magnitudeField: "${field.label}" does not hold ${expected} values`);
     }
@@ -301,6 +304,7 @@ export function magnitudeField(fields, options = {}) {
     nz,
     origin: first.origin,
     voxel: first.voxel,
+    periodic: first.periodic,
     values,
     component: options.component ?? 0,
     label: options.label || `|${usable.map((f) => f.label || 'field').join(', ')}|`,
@@ -376,6 +380,33 @@ function sharedGridTraits(fields) {
     valueUnit: fields.every((f) => (f.valueUnit ?? null) === unit) ? unit : null,
     periodic: fields.every((f) => f.periodic !== false),
   };
+}
+
+/**
+ * Refuse to combine fields that do not share a frame: a periodic field with a
+ * finite block, or two blocks at different origins. The grids may match point
+ * for point and still describe different regions of space, and the sum would
+ * be drawn at the first field's place with the other's values — silently
+ * wrong rather than approximate, so it is an error, not a warning like the
+ * voxel check.
+ *
+ * @param {string} caller name for the message
+ * @param {Field} field
+ * @param {Field} first
+ */
+function assertSameFrame(caller, field, first) {
+  const periodic = (f) => f.periodic !== false;
+  if (periodic(field) !== periodic(first)) {
+    const kind = (f) => (periodic(f) ? 'periodic' : 'a finite block');
+    throw new Error(`${caller}: periodic mismatch — "${field.label}" is ${kind(field)}, `
+      + `but "${first.label}" is ${kind(first)}`);
+  }
+  const origin = (f) => [0, 1, 2].map((k) => f.origin?.[k] ?? 0);
+  const [a, b] = [origin(field), origin(first)];
+  if (a.some((v, k) => Math.abs(v - b[k]) > 1e-9)) {
+    throw new Error(`${caller}: origin mismatch — "${field.label}" starts at [${a.join(', ')}], `
+      + `expected [${b.join(', ')}]`);
+  }
 }
 
 /** True when two 3×3 voxel matrices agree to within float noise. */

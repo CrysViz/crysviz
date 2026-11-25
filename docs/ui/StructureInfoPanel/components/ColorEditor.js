@@ -1,5 +1,6 @@
 import { fileBrowser, groups, general, structureShip, mode } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor, setAtomColor, saveAtomColors, scheduleAtomColorSave } from '../../../utils/ColorModule.js';
+import { scheduleAtomRadiusScaleSave } from '../../SizePrefs.js';
 import { clampOpacity, clampRadiusScale, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { updateSingleAtomColor, updateSingleAtomOpacity, updateSingleAtomDiameter, clearAtomImageStylesForAtom, refreshAtomWedgeTexture } from '../../../render/AtomsFracUpdateModule.js';
 import { isVacancy } from '../../../render/VacancyMarkerModule.js';
@@ -29,7 +30,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
 
   const editor = document.createElement('div');
   editor.className = 'element-color-editor';
-  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  editor.hidden = true; // read back via .hidden in General.js's UI-state capture
 
   const picker = createColorPicker(currentAtomColors[0], (hex) => {
     const structure = fileBrowser.selectedStructure;
@@ -102,13 +103,13 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
   alphaLabel.className = 'si-row-label';
   const alphaSlider = document.createElement('input');
   alphaSlider.type = 'range';
-  alphaSlider.min = '0.05';
+  alphaSlider.min = '0';
   alphaSlider.max = '1';
   alphaSlider.step = '0.01';
   alphaSlider.value = String(currentOpacity);
   const alphaValue = document.createElement('input');
   alphaValue.type = 'number';
-  alphaValue.min = '0.05';
+  alphaValue.min = '0';
   alphaValue.max = '1';
   alphaValue.step = '0.01';
   alphaValue.value = currentOpacity.toFixed(2);
@@ -206,6 +207,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     updateMeasurementMarkers();
     // Bond visible lengths bake the atom radii in — refresh once settled.
     scheduleBondRebuild();
+    scheduleAtomRadiusScaleSave(structure); // per-structure pref (ui/SizePrefs.js)
   }
 
   sizeSlider.oninput = (e) => applyElementRadiusScale(/** @type {any} */ (e.target).value);
@@ -250,7 +252,7 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     if (structure.atomMaterials) delete structure.atomMaterials[el];
   }
 
-  resetBtn.title = 'Click: this frame. Press and hold: whole trajectory.';
+  resetBtn.title = 'Click: the atom colors, alpha and size on this frame (the element material: whole trajectory). Press and hold: every frame.';
   function doResetThisFrame() {
     const structure = fileBrowser.selectedStructure;
     const currentMode = general.atomsColor; // current color mode
@@ -305,6 +307,10 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
     holdLabel: 'Apply to Trajectory',
     onPress: () => {
       updatePieDotCallback(); // Update the pie dot
+      // Close BEFORE the panel re-renders: the re-render rebuilds this row and
+      // reopens the editors that were open, so hiding this (old) editor
+      // afterwards left the new one open.
+      editor.hidden = true;
       updateVisualization({
         bondsUpdate: false,
         reRenderAtoms: false,
@@ -313,7 +319,6 @@ export function createElementColorEditor(el, updatePieDotCallback, atomIndices) 
         reRenderOther: false,
         reRenderComposition: "open",
       });
-      editor.style.display = 'none';
     },
     onConfirm: () => {
       // A deliberate broadcast (unlike Reset, it's meant to overwrite every

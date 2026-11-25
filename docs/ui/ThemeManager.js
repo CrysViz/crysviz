@@ -32,8 +32,11 @@
 
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
-import { updateLattice, requestRender, setCelOutlineColor } from '../render/index.js';
+import {
+  updateLattice, requestRender, setCelOutlineColor, refreshAsuAppearance,
+} from '../render/index.js';
 import { refreshBackendTheme } from './BackendPanel/BackendTheme.js';
+import { syncSceneTone } from './SceneTone.js';
 
 const THEMES_DIR = './themes/';
 // The mode key is the historical 'theme' key: every value it ever held
@@ -99,6 +102,7 @@ export function applySceneFromCSS() {
   const root = getComputedStyle(document.documentElement);
   const sceneBg = root.getPropertyValue('--scene-bg').trim();
   const latticeColor = root.getPropertyValue('--lattice-color').trim();
+  const asuColor = root.getPropertyValue('--asu-color').trim();
 
   if (sceneBg && app?.scene) {
     app.scene.background = new THREE.Color(sceneBg);
@@ -108,12 +112,23 @@ export function applySceneFromCSS() {
     if (swatch) swatch.style.background = '#' + app.scene.background.getHexString();
     // An 'auto' cel outline (hull mode) contrasts against the theme background.
     setCelOutlineColor();
+    syncSceneTone();
   }
   if (latticeColor) {
     general.currentLatticeColor = latticeColor;
     const dot = document.getElementById('backgroundDot');
     if (dot) dot.style.border = `2px solid ${latticeColor}`;
     updateLattice();
+  }
+  // A hand-picked wedge colour outranks the palette's: the user chose it
+  // against this scene, and a theme switch retinting it under them would look
+  // like the picker had failed. The picker's Reset clears the flag and hands
+  // control back here.
+  if (asuColor && !general.asuColorUserSet) {
+    general.asuColor = asuColor;
+    // No-op unless the asymmetric-unit wedge is currently drawn, in which case
+    // it repaints in the new palette's colour.
+    refreshAsuAppearance();
   }
   // Theme CSS loads async, so this can run after the triggering click's frame.
   requestRender();

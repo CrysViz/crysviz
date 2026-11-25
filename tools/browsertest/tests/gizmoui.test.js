@@ -71,10 +71,25 @@ const countDrawnGizmoPixels = async (page) => {
 
   const axesReady = await page.evaluate(() => {
     const gizmo = document.getElementById('axesGizmo');
-    if (gizmo) gizmo.style.display = '';
+    if (gizmo) gizmo.hidden = false;
     return !!gizmo && getComputedStyle(gizmo).pointerEvents === 'auto';
   });
   H.check('axes gizmo is interaction-opaque', axesReady);
+
+  // Default layout: the gizmo, its a/b/c legend and the collapsed Structure
+  // bar share one centre line (they used to share only a bottom edge, which
+  // left the gizmo riding high).
+  const midlines = await page.evaluate(() => {
+    const mid = (el) => { const r = el.getBoundingClientRect(); return (r.top + r.bottom) / 2; };
+    return {
+      gizmo: mid(document.getElementById('axesGizmo')),
+      legend: mid(document.getElementById('axesLegend')),
+      bar: mid(document.getElementById('cvPanelBody-info')),
+    };
+  });
+  H.check('gizmo, legend and Structure bar share one centre line',
+    Math.abs(midlines.gizmo - midlines.legend) <= 1 && Math.abs(midlines.gizmo - midlines.bar) <= 1,
+    JSON.stringify(midlines));
   H.check('axes and floating strip elements are absent from the DOM', await page.evaluate(() =>
     !document.querySelector('.cv-gizmo-controls')
       && !document.querySelector('.cv-colorbar-floating .cv-colorbar-controls')

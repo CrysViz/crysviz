@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from typing import BinaryIO, Iterable
 
 PROTOCOL_VERSION = 1
+# Events the browser host sends; the host process and Viewer accept exactly these.
+VIEWER_EVENTS = frozenset({
+    "ready", "structure_loaded", "active_structure_changed", "error", "closed", "user_changed",
+})
 MAX_CONTROL_BYTES = 1024 * 1024
 MAX_CHUNK_BYTES = 1024 * 1024
 MAX_BLOB_BYTES = 2 * 1024 * 1024 * 1024

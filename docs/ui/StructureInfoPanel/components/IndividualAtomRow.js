@@ -1,5 +1,6 @@
 import { fileBrowser, groups, general, mode } from '../../../state/store.js';
 import { colorHexToCss, getAtomColor, hexToRgba, setAtomColor, createPieDot, updatePieDot, saveAtomColors, scheduleAtomColorSave } from '../../../utils/ColorModule.js';
+import { saveAtomRadiusScales, scheduleAtomRadiusScaleSave } from '../../SizePrefs.js';
 import { refreshGhostAtoms } from '../../../render/GhostAtomsModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
 import {
@@ -162,13 +163,6 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   if (perImage) row.dataset.imageIndex = String(imageIndex);
   row.dataset.element = element;
 
-  const imageStyle = perImage ? getAtomImageStyle(fileBrowser.selectedStructure, imageIndex) : null;
-  const currentColor = perImage
-    ? safeColor(getAtomImageColor(fileBrowser.selectedStructure, imageIndex))
-    : safeColor(getAtomColor(atomIndex));
-  const currentOpacity = imageStyle?.alpha ?? fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? fileBrowser.selectedStructure.atoms[atomIndex].opacity ?? 1;
-  const currentRadiusScale = imageStyle?.radiusScale ?? fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1;
-
   // Atom name and coordinates container
   const nameContainer = document.createElement('div');
   nameContainer.className = 'iar-name-container';
@@ -198,7 +192,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
 
   // Per-image rows show the copy's own (wrapped) coords; the Position editor
   // below still edits the source atom's coords.
-  const coords = options.displayCoords ?? fileBrowser.selectedStructure.atoms.map(a => a.position)[atomIndex];
+  const coords = options.displayCoords ?? fileBrowser.selectedStructure.atoms[atomIndex].position;
   const coordsDisplay = document.createElement('span');
   coordsDisplay.className = 'iar-coords';
   coordsDisplay.textContent = `(${coords[0].toFixed(3)}, ${coords[1].toFixed(3)}, ${coords[2].toFixed(3)})`;
@@ -258,7 +252,11 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // the keep-toggle, or the inside of an opened editor) highlights this atom
   // in the 3D view — the mirror of double-clicking the atom in 3D
   // highlighting this row.
-  nameContainer.title = `Highlight ${element}${displayNumber} in the 3D view`;
+  // A Wyckoff orbit row selects its whole orbit (SelectAndHighlightModule.js
+  // selectAtomFromRow), so its tooltip says so.
+  nameContainer.title = !perImage && linkedAtomIndices.length > 1
+    ? `Select all ${linkedAtomIndices.length} atoms of this orbit in the 3D view`
+    : `Highlight ${element}${displayNumber} in the 3D view`;
   row.addEventListener('click', (e) => {
     const target = /** @type {Element} */ (e.target);
     if (target.closest('button, label, input, select, textarea, .atom-color-editor, .atom-coord-editor, .atom-spin-editor')) return;
@@ -266,9 +264,9 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     selectAtomFromRow(atomIndex, e, perImage ? imageIndex : null);
   });
   // Hover tint is plain CSS (:hover, structureInfoPanel.css) — a selected row
-  // gets its amber highlight from an inline style (SelectAndHighlightModule.js
-  // highlightAtomRow), which as an inline style always outranks the :hover
-  // rule, so hovering a selected row never overwrites its highlight.
+  // gets its amber highlight from .is-highlighted (SelectAndHighlightModule.js
+  // highlightAtomRow), declared after the :hover rule at the same
+  // specificity, so hovering a selected row never overwrites its highlight.
 
   // Button container
   const buttonContainer = document.createElement('div');
@@ -299,11 +297,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
       const colors = speciesPieColors(rowAtom);
       if (pieCanvas) { updatePieDot(pieCanvas, colors); return; }
       pieCanvas = createPieDot(colors, 24);
-      pieCanvas.className = 'iar-pie-canvas';
-      // createPieDot() always sets its own inline `border: 1px solid #666`
-      // (utils/ColorModule.js) — an inline style beats any class rule, so
-      // this has to override it the same way, not through CSS.
-      pieCanvas.style.border = 'none';
+      pieCanvas.classList.add('iar-pie-canvas');
       colorBtn.style.background = 'transparent';
       colorBtn.appendChild(pieCanvas);
       return;
@@ -327,8 +321,8 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // composition group's own per-element dot in CompositionRow.js) left them
   // showing whatever colour they were built with until the whole row got
   // rebuilt. Hoisted (function declaration, not const) so the registration
-  // above can reference it despite speciesSwatchButtons/speciesColorRow
-  // being declared later in this same function.
+  // above can reference it despite speciesSwatchButtons being declared later
+  // in this same function.
   function refreshSpeciesSwatches() {
     rowAtom?.species?.forEach((sp, speciesIndex) => {
       const hex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
@@ -369,324 +363,45 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   row.appendChild(keepToggle.wrapper);
 
   // --- Editors ---
+  // The three editors (Color, Position, Spin/Force) are built on the first
+  // click on one of their buttons (ensureEditors below), not with the row: a
+  // pick in the 3D view reveals its row, which builds the whole list (up to
+  // 1000 rows, or a page of a longer one), and a canvas colour picker, a
+  // material editor and the spin/force editor per row made that pick take
+  // seconds on a 5000-atom cell. Their empty shells are there from the start,
+  // so everything reading their .hidden (General.js's UI-state capture,
+  // SpinPanel.js, closeSpinForceEditorDom) sees closed editors as before.
   const editor = document.createElement('div');
   editor.className = 'atom-color-editor';
-  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
-
-  // A disordered site is genuinely more than one thing sharing a position, so
-  // its colour editor is N small square boxes (one per species) instead of
-  // the single big inline picker below — each independently pickable, wired
-  // straight to that species' own colour (never atom.userColor/color, which
-  // the wedge shader does not read at all: setting it here would visibly do
-  // nothing to the sphere, only to bonds, which was the actual bug report).
-  // Keyed by speciesIndex, same reasoning as speciesLineSwatches above — lets
-  // doResetAtomThisFrame() repaint these big editable boxes after a Reset,
-  // the same way each swatch's own onReset callback already repaints itself.
-  const speciesSwatchButtons = new Map();
-  const speciesColorRow = rowAtom?.isDisordered?.() ? document.createElement('div') : null;
-  if (speciesColorRow) {
-    speciesColorRow.className = 'iar-species-color-row';
-    rowAtom.species.forEach((sp, speciesIndex) => {
-      if (sp.occupancy <= 1e-3) return;
-      const box = document.createElement('div');
-      box.className = 'iar-species-swatch-box';
-
-      const swatchHex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
-      const swatchBtn = document.createElement('button');
-      speciesSwatchButtons.set(speciesIndex, swatchBtn);
-      swatchBtn.type = 'button';
-      swatchBtn.title = `Colour for ${sp.element} on this site`;
-      swatchBtn.className = 'iar-species-swatch-btn';
-      swatchBtn.style.background = swatchHex;
-      swatchBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openSwatchColorPicker(swatchBtn, swatchHex, (hex) => {
-          setSpeciesColorBulk([{ atomIndex, speciesIndex }], hex);
-          // The small display-only dot next to "<element> <occupancy>%" above
-          // shows this same species' colour — openSwatchColorPicker already
-          // repaints swatchBtn itself, but nothing else was keeping this one
-          // in sync, so it stayed stuck at whatever it was built with.
-          speciesLineSwatches.get(speciesIndex)?.style.setProperty('background', hex);
-          updateColorBtnSwatch();
-          // A representative-species edit changes what colour the bonds
-          // touching this site should show. This fires on every pointer-move
-          // while dragging in the picker, so it has to be the cheap targeted
-          // repaint (no topology recompute) — scheduleBondRebuild's 200ms
-          // debounce would just keep getting reset by the next move and never
-          // actually run until the drag stopped, which read as "not live."
-          refreshBondColorsForAtoms([atomIndex]);
-          onColorChange(); // the parent composition row's own pie dot follows too
-        }, { onReset: () => {
-          setSpeciesColorBulk([{ atomIndex, speciesIndex }], null);
-          const defaultHex = colorHexToCss(getElementDefaultColor(sp.element));
-          swatchBtn.style.background = defaultHex;
-          speciesLineSwatches.get(speciesIndex)?.style.setProperty('background', defaultHex);
-          updateColorBtnSwatch();
-          refreshBondColorsForAtoms([atomIndex]);
-          onColorChange();
-        } });
-      });
-
-      const label = document.createElement('span');
-      label.textContent = sp.element;
-      label.className = 'iar-species-swatch-label';
-
-      box.appendChild(swatchBtn);
-      box.appendChild(label);
-      speciesColorRow.appendChild(box);
-    });
-  }
-
-  const mom_color = currentColor;
-  const picker = createColorPicker(mom_color, (hex) => {
-    let structure = fileBrowser.selectedStructure;
-    if (perImage) {
-      // Only this on-screen copy: persist in the per-image store and paint the
-      // one instance — never mutate the shared source atom.
-      setAtomImageStyle(structure, imageIndex, { color: hex });
-      updateSingleAtomImageColor(imageIndex, hex);
-      syncBondHalvesToImageColor(structure, imageIndex, hex);
-    } else {
-      linkedAtomIndices.forEach((linkedAtomIndex) => {
-        const linkedAtom = structure.atoms[linkedAtomIndex];
-        // Authoritative color state, set unconditionally: an atom with zero
-        // periodic images right now (e.g. currently hidden) never runs the
-        // per-image loop below, so without this its userColor/color would
-        // silently keep the old value forever, surviving even a later restore.
-        linkedAtom.userColor = hex;
-        setAtomColor(linkedAtom, hex);
-        // Newest edit wins: a linked recolor overrides earlier per-copy colors.
-        clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'color');
-        structure.atomImages[linkedAtomIndex]?.forEach(imgIndex => {
-          syncBondHalvesToImageColor(structure, imgIndex, hex);
-          updateSingleAtomColor(linkedAtomIndex, imgIndex, structure.elements[linkedAtomIndex], hex, hex);
-        });
-      });
-      // Keep the overrides for the next session (debounced — the picker
-      // fires on every pointer move). Per-image copies above are styles,
-      // not atom colours, and are not persisted.
-      scheduleAtomColorSave(structure);
-    }
-    groups.atomsMesh.instanceColor.needsUpdate = true;
-    if (groups.bondsMesh) {
-      groups.bondsMesh.instanceColor.needsUpdate = true;
-    }
-    updateColorBtnSwatch();
-    onColorChange(); // Notify parent to update pie dot
-    // A centered polyhedron is coloured by its centre atom, so recolour in place (cheap, no
-    // geometry recompute) — the polyhedron of the edited atom matches its new colour.
-    updatePolyhedraColors();
-    // This callback updates the real-atom mesh directly rather than going
-    // through updateVisualization, so it's one of the color-edit paths that
-    // doesn't get updateVisualization's own ghost-refresh hook.
-    if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
-  });
-
-  const AtomColorApplyBtn = document.createElement('button');
-  AtomColorApplyBtn.textContent = 'Apply';
-  AtomColorApplyBtn.className = 'btn-mini highlight si-action-btn-narrow';
-
-  const AtomColorResetBtn = document.createElement('button');
-  AtomColorResetBtn.textContent = 'Reset';
-  AtomColorResetBtn.className = 'btn-mini si-action-btn-narrow';
-
-  // Get the default color for this element
-  const defaultColor = safeColor(fileBrowser.selectedStructure.getDefaultElementColor(element));
-  AtomColorResetBtn.style.background = hexToRgba(defaultColor, 0.8);
-
-  const topRowIndiv = document.createElement('div');
-  topRowIndiv.className = 'iar-top-row';
-  // A disordered site shows its per-species boxes instead of the single whole-
-  // atom picker — that picker still exists (Reset/Apply below still operate on
-  // alpha/size, which stay whole-site properties) but is not the colour control
-  // for a mixed site.
-  topRowIndiv.appendChild(speciesColorRow ?? picker.element);
-
-  const buttonRowIndiv = document.createElement('div');
-  buttonRowIndiv.className = 'iar-button-row';
-  buttonRowIndiv.appendChild(AtomColorResetBtn);
-  buttonRowIndiv.appendChild(AtomColorApplyBtn);
-
-  const atomAlphaRow = document.createElement('div');
-  atomAlphaRow.className = 'si-row';
-  const atomAlphaLabel = document.createElement('span');
-  atomAlphaLabel.textContent = 'Alpha';
-  atomAlphaLabel.className = 'si-row-label';
-  const atomAlphaSlider = document.createElement('input');
-  atomAlphaSlider.type = 'range';
-  atomAlphaSlider.min = '0.05';
-  atomAlphaSlider.max = '1';
-  atomAlphaSlider.step = '0.01';
-  atomAlphaSlider.value = String(currentOpacity);
-  const atomAlphaValue = document.createElement('input');
-  atomAlphaValue.type = 'number';
-  atomAlphaValue.min = '0.05';
-  atomAlphaValue.max = '1';
-  atomAlphaValue.step = '0.01';
-  atomAlphaValue.value = currentOpacity.toFixed(2);
-  atomAlphaRow.appendChild(atomAlphaLabel);
-  atomAlphaRow.appendChild(atomAlphaSlider);
-  atomAlphaRow.appendChild(atomAlphaValue);
-
-  // Size (per-atom radius multiplier), same row layout as Alpha.
-  const atomSizeRow = document.createElement('div');
-  atomSizeRow.className = 'si-row';
-  const atomSizeLabel = document.createElement('span');
-  atomSizeLabel.textContent = 'Size';
-  atomSizeLabel.className = 'si-row-label';
-  const atomSizeSlider = document.createElement('input');
-  atomSizeSlider.type = 'range';
-  atomSizeSlider.min = '0.2';
-  atomSizeSlider.max = '3';
-  atomSizeSlider.step = '0.05';
-  atomSizeSlider.value = String(currentRadiusScale);
-  const atomSizeValue = document.createElement('input');
-  atomSizeValue.type = 'number';
-  atomSizeValue.min = '0.2';
-  atomSizeValue.max = '3';
-  atomSizeValue.step = '0.05';
-  atomSizeValue.value = currentRadiusScale.toFixed(2);
-  atomSizeRow.appendChild(atomSizeLabel);
-  atomSizeRow.appendChild(atomSizeSlider);
-  atomSizeRow.appendChild(atomSizeValue);
-
-  // Per-atom ray/path-tracing material override (wins over the species
-  // entry). Follows the row's linking mode like Color/Alpha/Size: with "Link
-  // periodic copies" OFF the row is one on-screen copy and the material goes
-  // into its atomImageStyles entry ONLY; linked edits fan out to every linked
-  // atom and drop stale per-copy overrides (newest edit wins).
-  const materialEditor = createMaterialEditor(
-    () => {
-      const structure = fileBrowser.selectedStructure;
-      if (perImage) return getAtomImageStyle(structure, imageIndex)?.material;
-      return structure?.atomUserMaterials?.[atomIndex];
-    },
-    (material) => {
-      const structure = fileBrowser.selectedStructure;
-      if (!structure) return;
-      if (perImage) {
-        setAtomImageStyle(structure, imageIndex, { material: material ?? undefined });
-        return;
-      }
-      structure.atomUserMaterials = structure.atomUserMaterials ?? {};
-      linkedAtomIndices.forEach((linkedAtomIndex) => {
-        if (material) structure.atomUserMaterials[linkedAtomIndex] = material;
-        else delete structure.atomUserMaterials[linkedAtomIndex];
-        clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'material');
-      });
-    },
-    // a cleared per-atom entry falls back to the effective SPECIES material:
-    // the manual species entry, else the Element-Materials-Map preset
-    { getDefault: () => {
-      const structure = fileBrowser.selectedStructure;
-      const el = structure?.elements?.[atomIndex];
-      if (!el) return null;
-      return structure.atomMaterials?.[el] ?? structure.getDefaultElementMaterial?.(el);
-    } });
-
-  editor.appendChild(topRowIndiv);
-  editor.appendChild(atomAlphaRow);
-  editor.appendChild(atomSizeRow);
-  editor.appendChild(materialEditor);
-  editor.appendChild(buttonRowIndiv);
-
-  // Coordinate editor
+  editor.hidden = true; // read back via .hidden in General.js's UI-state capture
   const coordEditor = document.createElement('div');
   coordEditor.className = 'atom-coord-editor';
-  coordEditor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
+  coordEditor.hidden = true; // read back via .hidden in General.js's UI-state capture
+  const spinEditor = document.createElement('div');
+  spinEditor.className = 'atom-spin-editor';
+  spinEditor.hidden = true; // read back via .hidden elsewhere (General.js, SpinPanel.js)
 
-  const coordTitle = document.createElement('div');
-  coordTitle.className = 'coord-editor-title';
-  const coordTitleText = document.createElement('span');
-  coordTitleText.textContent = 'Fractional Coordinates';
-  coordTitle.appendChild(coordTitleText);
-  if (options.freedomNote) {
-    const note = document.createElement('span');
-    note.className = 'coord-editor-note';
-    note.textContent = options.freedomNote;
-    coordTitle.appendChild(note);
+  // A disordered site's per-species colour boxes (built with the Color
+  // editor). Keyed by speciesIndex, same reasoning as speciesLineSwatches
+  // above — lets doResetAtomThisFrame() and refreshSpeciesSwatches repaint
+  // these big editable boxes after a Reset or a colour change elsewhere.
+  const speciesSwatchButtons = new Map();
+
+  // Set once the editors are built: pulls Alpha/Size back from the model (see
+  // atomRowStyleUpdateFunctions); an unbuilt row has nothing to refresh.
+  /** @type {(() => void) | null} */
+  let syncAlphaSizeControlsFromModel = null;
+  atomRowStyleUpdateFunctions[`${atomIndex}:${imageIndex ?? 'all'}`] = () => syncAlphaSizeControlsFromModel?.();
+
+  let editorsBuilt = false;
+  function ensureEditors() {
+    if (editorsBuilt) return;
+    editorsBuilt = true;
+    buildEditors();
   }
-
-  // One stacked row per axis: label, slider, number box. Axes the symmetry
-  // freezes (axisFreedom[axis] false) are greyed out and disabled — dragging
-  // them could only ever be undone by the projection anyway.
-  const axisNames = ['x', 'y', 'z'];
-  const coordInputsRow = document.createElement('div');
-  coordInputsRow.className = 'coord-axis-rows';
-
-  const axisSliders = [];
-  const axisInputs = [];
-
-  axisNames.forEach((axisName, axis) => {
-    const free = positionEditable && axisFreedom[axis];
-
-    const axisRow = document.createElement('div');
-    axisRow.className = 'coord-axis-row';
-    axisRow.dataset.axis = axisName;
-    axisRow.dataset.free = String(free); // also drives the greyed-out look, see [data-free="false"] in CSS
-
-    const axisLabel = document.createElement('span');
-    axisLabel.textContent = axisName;
-    axisLabel.className = 'coord-axis-row-label';
-
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.className = 'coord-axis-slider';
-    slider.min = '0';
-    slider.max = '1';
-    slider.step = '0.0001';
-    slider.value = String(coords[axis]);
-    slider.disabled = !free;
-    slider.title = free
-      ? `Drag to move ${axisName} (fractional)`
-      : `${axisName} is fixed by the site symmetry`;
-
-    const input = document.createElement('input');
-    input.type = 'number';
-    input.className = 'coord-num-input';
-    input.value = coords[axis].toFixed(6);
-    input.step = '0.000001';
-    input.placeholder = axisName;
-    input.disabled = !free;
-    input.title = slider.title;
-
-    axisRow.appendChild(axisLabel);
-    axisRow.appendChild(slider);
-    axisRow.appendChild(input);
-    coordInputsRow.appendChild(axisRow);
-    axisSliders.push(slider);
-    axisInputs.push(input);
-  });
-
-
-  const coordApplyBtn = document.createElement('button');
-  coordApplyBtn.textContent = 'Apply';
-  coordApplyBtn.className = 'btn-mini highlight si-action-btn-wide';
-  coordApplyBtn.disabled = !positionEditable;
-
-  const coordResetBtn = document.createElement('button');
-  coordResetBtn.textContent = 'Reset';
-  coordResetBtn.className = 'btn-mini si-action-btn-wide si-action-btn-wide--gap';
-  coordResetBtn.disabled = !positionEditable;
-
-  const coordButtonsRow = document.createElement('div');
-  coordButtonsRow.className = 'coord-buttons-row';
-  coordButtonsRow.appendChild(coordResetBtn);
-  coordButtonsRow.appendChild(coordApplyBtn);
-
-  coordEditor.appendChild(coordTitle);
-  coordEditor.appendChild(coordInputsRow);
-  coordEditor.appendChild(coordButtonsRow);
-
-  // Spin/Force editor
-  const spinEditor = createSpinForceEditor(atomIndex, element, {
-    // Only retarget the 3D highlight if this editor is the one currently
-    // open — a mode switch inside a closed/hidden editor (state restore,
-    // e.g.) shouldn't touch the highlight.
-    onModeChange: (mode) => {
-      if (spinEditor.style.display !== 'none') setArrowHighlightOverride(atomIndex, mode);
-    },
-  });
+  // General.js's UI-state restore reopens an editor that was open before a
+  // panel rebuild: it builds the contents through this first.
+  /** @type {any} */ (row)._ensureEditors = ensureEditors;
 
   // --- Event Handlers ---
   // Active/inactive border+glow is plain CSS (.atom-editor-button.active).
@@ -710,7 +425,7 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // The 3D selection glow overwrites the atom's real color — hide it while
     // the color editor is open so a live color change is actually visible,
     // and bring it back once the editor closes (or another editor opens).
-    const wasColorOpen = editor.style.display !== 'none';
+    const wasColorOpen = !editor.hidden;
     if (editorType === 'color') suppressSelectionHighlightFor3D();
     else if (wasColorOpen) restoreSelectionHighlight();
 
@@ -718,12 +433,12 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     // targets its arrow (whichever tab — spin or force — is active) instead
     // of the atom sphere; closing it (or switching to another editor)
     // reverts to the normal atom-sphere highlight.
-    const wasSpinOpen = spinEditor.style.display !== 'none';
+    const wasSpinOpen = !spinEditor.hidden;
     if (editorType === 'spin') setArrowHighlightOverride(atomIndex, /** @type {any} */ (spinEditor).getMode());
     else if (wasSpinOpen) clearArrowHighlightOverride();
 
     Object.entries(editorMap).forEach(([type, panel]) => {
-      panel.style.display = type === editorType ? 'block' : 'none';
+      panel.hidden = type !== editorType;
     });
 
     Object.entries(buttonMap).forEach(([type, button]) => {
@@ -731,397 +446,29 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
     });
   }
 
-  function applyIndividualOpacity(rawValue) {
-    const value = clampOpacity(rawValue);
-    atomAlphaSlider.value = String(value);
-    atomAlphaValue.value = value.toFixed(2);
-    if (perImage) {
-      setAtomImageStyle(fileBrowser.selectedStructure, imageIndex, { alpha: value });
-      updateSingleAtomOpacity(imageIndex, value);
-      return;
-    }
-    linkedAtomIndices.forEach((linkedAtomIndex) => {
-      const atom = fileBrowser.selectedStructure.atoms[linkedAtomIndex];
-      atom.setOpacity(value);
-      clearAtomImageStylesForAtom(fileBrowser.selectedStructure, linkedAtomIndex, 'alpha');
-      fileBrowser.selectedStructure.atomImages[linkedAtomIndex]?.forEach((imgIndex) => {
-        updateSingleAtomOpacity(imgIndex, value);
-      });
-    });
-  }
-
-  atomAlphaSlider.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
-  atomAlphaValue.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
-
-  function applyIndividualRadiusScale(rawValue) {
-    const value = clampRadiusScale(rawValue);
-    atomSizeSlider.value = String(value);
-    atomSizeValue.value = value.toFixed(2);
-    const structure = fileBrowser.selectedStructure;
-    if (perImage) {
-      setAtomImageStyle(structure, imageIndex, { radiusScale: value });
-      updateSingleAtomDiameter(imageIndex, element, value);
-    } else {
-      linkedAtomIndices.forEach((linkedAtomIndex) => {
-        structure.atoms[linkedAtomIndex].setRadiusScale(value);
-        clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'radiusScale');
-        structure.atomImages[linkedAtomIndex]?.forEach((imgIndex) => {
-          updateSingleAtomDiameter(imgIndex, structure.elements[linkedAtomIndex], value);
-        });
-      });
-    }
-    groups.atomsMesh.instanceMatrix.needsUpdate = true;
-    updateMeasurementMarkers();
-    // Bond visible lengths bake the atom radii in — refresh once settled.
-    scheduleBondRebuild();
-  }
-
-  atomSizeSlider.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
-  atomSizeValue.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
-
-  // Re-read Alpha/Size straight from the model onto this row's controls, so a
-  // bulk edit elsewhere (the selection bar) that changed this atom is reflected
-  // here. Reads the same per-image vs source-atom values the row was built with.
-  function syncAlphaSizeControlsFromModel() {
-    const structure = fileBrowser.selectedStructure;
-    const atom = structure?.atoms?.[atomIndex];
-    if (!atom) return;
-    const style = perImage ? getAtomImageStyle(structure, imageIndex) : null;
-    const opacity = clampOpacity(style?.alpha ?? atom.getOpacity?.() ?? atom.opacity ?? 1);
-    const scale = clampRadiusScale(style?.radiusScale ?? atom.getRadiusScale?.() ?? 1);
-    atomAlphaSlider.value = String(opacity);
-    atomAlphaValue.value = opacity.toFixed(2);
-    atomSizeSlider.value = String(scale);
-    atomSizeValue.value = scale.toFixed(2);
-  }
-  atomRowStyleUpdateFunctions[`${atomIndex}:${imageIndex ?? 'all'}`] = syncAlphaSizeControlsFromModel;
-
   colorBtn.onclick = (e) => {
     e.stopPropagation();
-    const shouldOpen = editor.style.display === 'none';
+    ensureEditors();
+    const shouldOpen = editor.hidden;
     setActiveEditor(shouldOpen ? 'color' : null);
   };
 
   coordBtn.onclick = (e) => {
     if (!positionEditable) return;
     e.stopPropagation();
-    const shouldOpen = coordEditor.style.display === 'none';
+    ensureEditors();
+    const shouldOpen = coordEditor.hidden;
     setActiveEditor(shouldOpen ? 'coord' : null);
   };
 
   spinBtn.onclick = (e) => {
     e.stopPropagation();
-    const shouldOpen = spinEditor.style.display === 'none';
+    ensureEditors();
+    const shouldOpen = spinEditor.hidden;
     if (shouldOpen) /** @type {any} */ (spinEditor).refresh?.();
     setActiveEditor(shouldOpen ? 'spin' : null);
   };
 
-  // Read the atom's real position back into the three axis rows. A Wyckoff
-  // edit is projected onto the site's freedom subspace and can move axes the
-  // user didn't touch (coupled sites like (x, x, z)), so what landed is the
-  // only thing worth showing.
-  function syncAxisControlsFromStructure() {
-    const position = fileBrowser.selectedStructure?.atoms?.[atomIndex]?.position;
-    if (!position) return;
-    position.forEach((value, axis) => {
-      axisSliders[axis].value = String(value);
-      axisInputs[axis].value = value.toFixed(6);
-    });
-    coordsDisplay.textContent = `(${position[0].toFixed(3)}, ${position[1].toFixed(3)}, ${position[2].toFixed(3)})`;
-  }
-
-  function readAxisInputs() {
-    const values = axisInputs.map((input) => parseFloat(input.value));
-    return values.some((value) => isNaN(value)) ? null : values;
-  }
-
-  // Slider drags apply live but coalesce to one update per frame — each apply
-  // re-lays-out atoms and bonds.
-  // A Wyckoff move that would put symmetry-equivalent atoms on top of each
-  // other is refused (returns false) — say so and snap the controls back to
-  // where the atom actually is.
-  function reportRefusedMove(applied) {
-    const note = coordEditor.querySelector('.coord-editor-note');
-    if (applied !== false) {
-      if (note && note.dataset.refused) {
-        note.textContent = note.dataset.original ?? '';
-        note.classList.remove('refused');
-        delete note.dataset.refused;
-      }
-      return;
-    }
-    if (note && !note.dataset.refused) {
-      note.dataset.original = note.textContent;
-      note.dataset.refused = '1';
-      note.classList.add('refused');
-    }
-    if (note) note.textContent = 'atoms would overlap';
-    syncAxisControlsFromStructure();
-  }
-
-  let pendingFrame = null;
-  function applyLive() {
-    if (pendingFrame != null) return;
-    pendingFrame = requestAnimationFrame(() => {
-      pendingFrame = null;
-      const coordsNow = readAxisInputs();
-      if (!coordsNow) return;
-      reportRefusedMove(livePositionUpdater(coordsNow));
-      syncAxisControlsFromStructure();
-    });
-  }
-
-  axisSliders.forEach((slider, axis) => {
-    slider.oninput = () => {
-      axisInputs[axis].value = parseFloat(slider.value).toFixed(6);
-      applyLive();
-    };
-    // Releasing the slider is not a "commit": it stays on the live path so the
-    // editor survives the drag. Apply does the full update (composition panel
-    // included, which rebuilds and closes this row's editor).
-    slider.onchange = () => {
-      const coordsNow = readAxisInputs();
-      if (!coordsNow) return;
-      reportRefusedMove(livePositionUpdater(coordsNow));
-      syncAxisControlsFromStructure();
-    };
-  });
-
-  axisInputs.forEach((input, axis) => {
-    input.oninput = () => {
-      const value = parseFloat(input.value);
-      if (!isNaN(value)) axisSliders[axis].value = String(value);
-    };
-  });
-
-  coordApplyBtn.onclick = () => {
-    const newCoords = readAxisInputs();
-    if (!newCoords) return;
-    if (positionUpdater(newCoords) === false) {
-      reportRefusedMove(false);
-      return;
-    }
-    coordsDisplay.textContent = `(${newCoords[0].toFixed(3)}, ${newCoords[1].toFixed(3)}, ${newCoords[2].toFixed(3)})`;
-  };
-
-  coordResetBtn.onclick = () => {
-    const originalCoords = resetCoordsProvider();
-    if (originalCoords) {
-      originalCoords.forEach((value, axis) => {
-        axisSliders[axis].value = String(value);
-        axisInputs[axis].value = value.toFixed(6);
-      });
-      positionUpdater([...originalCoords]);
-      coordsDisplay.textContent = `(${originalCoords[0].toFixed(3)}, ${originalCoords[1].toFixed(3)}, ${originalCoords[2].toFixed(3)})`;
-      setActiveEditor(null);
-    }
-  };
-
-  // Pure-data push of this row's current color/opacity/radius/material for
-  // linkedAtomIndices onto another (off-screen) frame — no mesh/render calls,
-  // since only the currently-displayed frame has a live mesh to update.
-  // Per-copy (perImage) rows have no trajectory equivalent (an "image index"
-  // is a render-time concept for the current frame only), so this is only
-  // used from the non-perImage branch below.
-  function pushLinkedAtomsDataToFrame(frame) {
-    const src = fileBrowser.selectedStructure;
-    linkedAtomIndices.forEach((linkedAtomIndex) => {
-      const srcAtom = src.atoms[linkedAtomIndex];
-      const atom = frame.atoms[linkedAtomIndex];
-      if (!atom) return;
-      atom.color = srcAtom.color;
-      atom.userColor = srcAtom.userColor;
-      atom.elementColor = srcAtom.elementColor;
-      atom.elementOpacity = srcAtom.elementOpacity;
-      atom.opacity = srcAtom.opacity;
-      atom.radiusScale = srcAtom.radiusScale ?? 1;
-      if (src.atomUserMaterials?.[linkedAtomIndex] !== undefined) {
-        frame.atomUserMaterials ??= {};
-        frame.atomUserMaterials[linkedAtomIndex] = src.atomUserMaterials[linkedAtomIndex];
-      } else if (frame.atomUserMaterials) {
-        delete frame.atomUserMaterials[linkedAtomIndex];
-      }
-    });
-  }
-
-  function closeAtomColorEditor() {
-    updateColorBtnSwatch();
-    setActiveEditor(null);
-    onColorChange(); // Notify parent to update pie dot
-    updateVisualization({
-      bondsUpdate: false,
-      reRenderAtoms: false,
-      reRenderBonds: false,
-      reRenderLattice: false,
-      reRenderOther: false,
-      reRenderComposition: "open",
-    });
-  }
-  AtomColorApplyBtn.title = 'Click: close. Press and hold: copy this color/alpha/size to every trajectory frame.';
-  wirePressHoldPopup(AtomColorApplyBtn, {
-    holdLabel: 'Apply to Trajectory',
-    onPress: closeAtomColorEditor,
-    onConfirm: () => {
-      if (perImage) {
-        // atomImageKey is srcIndex + integer periodic offset — stable across
-        // frames of a fixed-topology trajectory (same key format the Bonds/
-        // Polyhedra rows already transplant directly), unlike the raw
-        // instanceId, which is only a this-frame render detail.
-        const structure = fileBrowser.selectedStructure;
-        const key = atomImageKey(structure, imageIndex);
-        if (!key) return;
-        const style = { ...structure.atomImageStyles?.[key] };
-        applyToOtherTrajectoryFrames(structure, (frame) => {
-          frame.atomImageStyles ??= {};
-          frame.atomImageStyles[key] = { ...style };
-        });
-      } else {
-        applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, pushLinkedAtomsDataToFrame);
-      }
-    },
-  });
-
-  // Pure-data reset of the linked-atom-indices branch below, reusable against
-  // off-screen trajectory frames (see resetBtn's press-and-hold wiring).
-  function resetLinkedAtomsColorData(structure, currentMode) {
-    linkedAtomIndices.forEach((linkedAtomIndex) => {
-      clearAtomImageStylesForAtom(structure, linkedAtomIndex);
-      if (structure.atomUserMaterials) delete structure.atomUserMaterials[linkedAtomIndex];
-      const atom = structure.atoms[linkedAtomIndex];
-      const element = structure.elements[linkedAtomIndex];
-
-      if (atom.userColor !== undefined) delete atom.userColor;
-      if (atom.forceColor !== undefined) delete atom.forceColor;
-      // A disordered site's wedges each render their OWN species' colour
-      // (species[i].color, set via the swatches above), never atom.color/
-      // userColor at all — clearing only those left a mixed site's Reset
-      // looking like it did nothing. Pure data here (this also runs against
-      // off-screen trajectory frames, see the press-and-hold caller below);
-      // the wedge-texture repaint for the visible frame happens in
-      // doResetAtomThisFrame, which knows which frame is actually on screen.
-      atom.species?.forEach((s) => { s.color = null; });
-
-      if (currentMode === "force") {
-        const forceObj = structure.forces?.[linkedAtomIndex];
-        if (forceObj?.vector?.length >= 3) {
-          const magnitude = Math.sqrt(
-            forceObj.vector[0] ** 2 +
-            forceObj.vector[1] ** 2 +
-            forceObj.vector[2] ** 2
-          );
-          atom.color = atomForceToColor(magnitude, general.ForceMin, general.ForceMax);
-        } else {
-          atom.color = structure.getDefaultElementColor(element);
-        }
-      } else {
-        atom.color = structure.getDefaultElementColor(element);
-      }
-
-      atom.resetToElementOpacity();
-      atom.resetRadiusScale?.();
-    });
-  }
-
-  function doResetAtomThisFrame() {
-    const structure = fileBrowser.selectedStructure;
-    const currentMode = general.atomsColor; // current color mode
-
-    if (perImage) {
-      // Reset only this copy: drop its style entry and repaint from the source
-      // atom's model values (the hex==null repaint path resolves them now that
-      // the override is gone).
-      const atom = structure.atoms[atomIndex];
-      clearAtomImageStyle(structure, imageIndex);
-      updateSingleAtomColor(atomIndex, imageIndex, element);
-      updateSingleAtomOpacity(imageIndex, atom.getOpacity?.() ?? atom.opacity ?? 1);
-      updateSingleAtomDiameter(imageIndex, element, atom.getRadiusScale?.() ?? 1);
-      groups.atomsMesh.instanceMatrix.needsUpdate = true;
-      syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
-      if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
-      // Sync the editor controls without re-writing the store.
-      const srcOpacity = clampOpacity(atom.getOpacity?.() ?? atom.opacity ?? 1);
-      atomAlphaSlider.value = String(srcOpacity);
-      atomAlphaValue.value = srcOpacity.toFixed(2);
-      const srcScale = clampRadiusScale(atom.getRadiusScale?.() ?? 1);
-      atomSizeSlider.value = String(srcScale);
-      atomSizeValue.value = srcScale.toFixed(2);
-      updateColorBtnSwatch();
-      updateMeasurementMarkers();
-      onColorChange();
-      updatePolyhedraColors();
-      setActiveEditor(null);
-      return { structure, currentMode };
-    }
-
-    resetLinkedAtomsColorData(structure, currentMode);
-    saveAtomColors(structure); // drops the cleared overrides from storage too
-
-    linkedAtomIndices.forEach((linkedAtomIndex) => {
-      const atom = structure.atoms[linkedAtomIndex];
-      structure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
-        syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
-        updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex]);
-        updateSingleAtomOpacity(imageIndex, atom.getOpacity());
-      });
-    });
-
-    // Wedge sphere colours (per species) are a separate GPU texture from the
-    // plain per-instance colour updateSingleAtomColor() just repainted above
-    // — resetLinkedAtomsColorData() already cleared species[i].color as data,
-    // this is the one wedge-texture refresh + render request that actually
-    // makes it visible, scoped to the frame on screen right now (species
-    // colours have no per-image concept, so this is keyed by atomIndex only).
-    const speciesResetTargets = [];
-    linkedAtomIndices.forEach((linkedAtomIndex) => {
-      structure.atoms[linkedAtomIndex]?.species?.forEach((_, speciesIndex) => {
-        speciesResetTargets.push({ atomIndex: linkedAtomIndex, speciesIndex });
-      });
-    });
-    // setSpeciesColorBulk now broadcasts crysviz:colors-changed (dispatched
-    // synchronously, so this row's own registered listener has already run
-    // by the time the call below returns), which repaints this row's swatch
-    // boxes/dots via refreshSpeciesSwatches — no need to do it again here.
-    if (speciesResetTargets.length) setSpeciesColorBulk(speciesResetTargets, null);
-
-    // resetLinkedAtomsColorData() above already wrote the reset colour (force-
-    // derived or element-default) onto atom.color; updateColorBtnSwatch()
-    // reads that back — via the same isDisordered() branch as everywhere else
-    // — rather than recomputing it a second time here and risking the two
-    // falling out of sync (as a flat recompute did for a disordered atom,
-    // wiping its pie dot back to a single colour on every Reset).
-    updateColorBtnSwatch();
-
-    applyIndividualOpacity(fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? 1);
-    applyIndividualRadiusScale(fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1);
-    onColorChange();
-    // A centered polyhedron is coloured by its centre atom, so recolour in place
-    // (cheap, no geometry recompute) — matches the perImage reset branch above.
-    updatePolyhedraColors();
-    updateVisualization({
-      bondsUpdate: false,
-      reRenderAtoms: false,
-      reRenderBonds: false,
-      reRenderLattice: false,
-      reRenderOther: false,
-      reRenderComposition: "open",
-    });
-    setActiveEditor(null);
-    return { structure, currentMode };
-  }
-  AtomColorResetBtn.title = 'Click: this frame. Press and hold: whole trajectory.';
-  wirePressHoldPopup(AtomColorResetBtn, {
-    holdLabel: 'Reset Trajectory',
-    onPress: () => { doResetAtomThisFrame(); },
-    onConfirm: () => {
-      const { structure, currentMode } = doResetAtomThisFrame();
-      if (perImage) {
-        const key = atomImageKey(structure, imageIndex);
-        if (key) applyToOtherTrajectoryFrames(structure, (frame) => { delete frame.atomImageStyles?.[key]; });
-      } else {
-        applyToOtherTrajectoryFrames(structure, (frame) => resetLinkedAtomsColorData(frame, currentMode));
-      }
-    },
-  });
   row.appendChild(editor);
   // Image rows have no Position/Spin buttons, so their editors are unreachable
   // — don't add them to the DOM.
@@ -1133,4 +480,702 @@ export function createIndividualAtomRow(element, atomIndex, displayNumber = atom
   // means nothing, so they claim a whole flex line instead — handled by
   // .individual-atom-row.stacked-header in structureInfoPanel.css.
   return row;
+
+  function buildEditors() {
+    // Read when the editors open, not when the row was built: a recolour or a
+    // bulk alpha/size edit made since then found no controls here to update.
+    const imageStyle = perImage ? getAtomImageStyle(fileBrowser.selectedStructure, imageIndex) : null;
+    const currentColor = perImage
+      ? safeColor(getAtomImageColor(fileBrowser.selectedStructure, imageIndex))
+      : safeColor(getAtomColor(atomIndex));
+    const currentOpacity = imageStyle?.alpha ?? fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? fileBrowser.selectedStructure.atoms[atomIndex].opacity ?? 1;
+    const currentRadiusScale = imageStyle?.radiusScale ?? fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1;
+
+    // A disordered site is genuinely more than one thing sharing a position, so
+    // its colour editor is N small square boxes (one per species) instead of
+    // the single big inline picker below — each independently pickable, wired
+    // straight to that species' own colour (never atom.userColor/color, which
+    // the wedge shader does not read at all: setting it here would visibly do
+    // nothing to the sphere, only to bonds, which was the actual bug report).
+    // The boxes go into speciesSwatchButtons (declared with the row).
+    const speciesColorRow = rowAtom?.isDisordered?.() ? document.createElement('div') : null;
+    if (speciesColorRow) {
+      speciesColorRow.className = 'iar-species-color-row';
+      rowAtom.species.forEach((sp, speciesIndex) => {
+        if (sp.occupancy <= 1e-3) return;
+        const box = document.createElement('div');
+        box.className = 'iar-species-swatch-box';
+
+        const swatchHex = colorHexToCss(sp.color ?? getElementDefaultColor(sp.element));
+        const swatchBtn = document.createElement('button');
+        speciesSwatchButtons.set(speciesIndex, swatchBtn);
+        swatchBtn.type = 'button';
+        swatchBtn.title = `Colour for ${sp.element} on this site`;
+        swatchBtn.className = 'iar-species-swatch-btn';
+        swatchBtn.style.background = swatchHex;
+        swatchBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          openSwatchColorPicker(swatchBtn, swatchHex, (hex) => {
+            setSpeciesColorBulk([{ atomIndex, speciesIndex }], hex);
+            // The small display-only dot next to "<element> <occupancy>%" above
+            // shows this same species' colour — openSwatchColorPicker already
+            // repaints swatchBtn itself, but nothing else was keeping this one
+            // in sync, so it stayed stuck at whatever it was built with.
+            speciesLineSwatches.get(speciesIndex)?.style.setProperty('background', hex);
+            updateColorBtnSwatch();
+            // A representative-species edit changes what colour the bonds
+            // touching this site should show. This fires on every pointer-move
+            // while dragging in the picker, so it has to be the cheap targeted
+            // repaint (no topology recompute) — scheduleBondRebuild's 200ms
+            // debounce would just keep getting reset by the next move and never
+            // actually run until the drag stopped, which read as "not live."
+            refreshBondColorsForAtoms([atomIndex]);
+            onColorChange(); // the parent composition row's own pie dot follows too
+          }, { onReset: () => {
+            setSpeciesColorBulk([{ atomIndex, speciesIndex }], null);
+            const defaultHex = colorHexToCss(getElementDefaultColor(sp.element));
+            swatchBtn.style.background = defaultHex;
+            speciesLineSwatches.get(speciesIndex)?.style.setProperty('background', defaultHex);
+            updateColorBtnSwatch();
+            refreshBondColorsForAtoms([atomIndex]);
+            onColorChange();
+          } });
+        });
+
+        const label = document.createElement('span');
+        label.textContent = sp.element;
+        label.className = 'iar-species-swatch-label';
+
+        box.appendChild(swatchBtn);
+        box.appendChild(label);
+        speciesColorRow.appendChild(box);
+      });
+    }
+
+    const mom_color = currentColor;
+    const picker = createColorPicker(mom_color, (hex) => {
+      let structure = fileBrowser.selectedStructure;
+      if (perImage) {
+        // Only this on-screen copy: persist in the per-image store and paint the
+        // one instance — never mutate the shared source atom.
+        setAtomImageStyle(structure, imageIndex, { color: hex });
+        updateSingleAtomImageColor(imageIndex, hex);
+        syncBondHalvesToImageColor(structure, imageIndex, hex);
+      } else {
+        linkedAtomIndices.forEach((linkedAtomIndex) => {
+          const linkedAtom = structure.atoms[linkedAtomIndex];
+          // Authoritative color state, set unconditionally: an atom with zero
+          // periodic images right now (e.g. currently hidden) never runs the
+          // per-image loop below, so without this its userColor/color would
+          // silently keep the old value forever, surviving even a later restore.
+          linkedAtom.userColor = hex;
+          setAtomColor(linkedAtom, hex);
+          // Newest edit wins: a linked recolor overrides earlier per-copy colors.
+          clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'color');
+          structure.atomImages[linkedAtomIndex]?.forEach(imgIndex => {
+            syncBondHalvesToImageColor(structure, imgIndex, hex);
+            updateSingleAtomColor(linkedAtomIndex, imgIndex, structure.elements[linkedAtomIndex], hex, hex);
+          });
+        });
+        // Keep the overrides for the next session (debounced — the picker
+        // fires on every pointer move). Per-image copies above are styles,
+        // not atom colours, and are not persisted.
+        scheduleAtomColorSave(structure);
+      }
+      groups.atomsMesh.instanceColor.needsUpdate = true;
+      if (groups.bondsMesh) {
+        groups.bondsMesh.instanceColor.needsUpdate = true;
+      }
+      updateColorBtnSwatch();
+      onColorChange(); // Notify parent to update pie dot
+      // A centered polyhedron is coloured by its centre atom, so recolour in place (cheap, no
+      // geometry recompute) — the polyhedron of the edited atom matches its new colour.
+      updatePolyhedraColors();
+      // This callback updates the real-atom mesh directly rather than going
+      // through updateVisualization, so it's one of the color-edit paths that
+      // doesn't get updateVisualization's own ghost-refresh hook.
+      if (mode.measureMode === 'hide' || mode.measureMode === 'restore') refreshGhostAtoms();
+    });
+
+    const AtomColorApplyBtn = document.createElement('button');
+    AtomColorApplyBtn.textContent = 'Apply';
+    AtomColorApplyBtn.className = 'btn-mini highlight si-action-btn-narrow';
+
+    const AtomColorResetBtn = document.createElement('button');
+    AtomColorResetBtn.textContent = 'Reset';
+    AtomColorResetBtn.className = 'btn-mini si-action-btn-narrow';
+
+    // Get the default color for this element
+    const defaultColor = safeColor(fileBrowser.selectedStructure.getDefaultElementColor(element));
+    AtomColorResetBtn.style.background = hexToRgba(defaultColor, 0.8);
+
+    const topRowIndiv = document.createElement('div');
+    topRowIndiv.className = 'iar-top-row';
+    // A disordered site shows its per-species boxes instead of the single whole-
+    // atom picker — that picker still exists (Reset/Apply below still operate on
+    // alpha/size, which stay whole-site properties) but is not the colour control
+    // for a mixed site.
+    topRowIndiv.appendChild(speciesColorRow ?? picker.element);
+
+    const buttonRowIndiv = document.createElement('div');
+    buttonRowIndiv.className = 'iar-button-row';
+    buttonRowIndiv.appendChild(AtomColorResetBtn);
+    buttonRowIndiv.appendChild(AtomColorApplyBtn);
+
+    const atomAlphaRow = document.createElement('div');
+    atomAlphaRow.className = 'si-row';
+    const atomAlphaLabel = document.createElement('span');
+    atomAlphaLabel.textContent = 'Alpha';
+    atomAlphaLabel.className = 'si-row-label';
+    const atomAlphaSlider = document.createElement('input');
+    atomAlphaSlider.type = 'range';
+    atomAlphaSlider.min = '0';
+    atomAlphaSlider.max = '1';
+    atomAlphaSlider.step = '0.01';
+    atomAlphaSlider.value = String(currentOpacity);
+    const atomAlphaValue = document.createElement('input');
+    atomAlphaValue.type = 'number';
+    atomAlphaValue.min = '0';
+    atomAlphaValue.max = '1';
+    atomAlphaValue.step = '0.01';
+    atomAlphaValue.value = currentOpacity.toFixed(2);
+    atomAlphaRow.appendChild(atomAlphaLabel);
+    atomAlphaRow.appendChild(atomAlphaSlider);
+    atomAlphaRow.appendChild(atomAlphaValue);
+
+    // Size (per-atom radius multiplier), same row layout as Alpha.
+    const atomSizeRow = document.createElement('div');
+    atomSizeRow.className = 'si-row';
+    const atomSizeLabel = document.createElement('span');
+    atomSizeLabel.textContent = 'Size';
+    atomSizeLabel.className = 'si-row-label';
+    const atomSizeSlider = document.createElement('input');
+    atomSizeSlider.type = 'range';
+    atomSizeSlider.min = '0.2';
+    atomSizeSlider.max = '3';
+    atomSizeSlider.step = '0.05';
+    atomSizeSlider.value = String(currentRadiusScale);
+    const atomSizeValue = document.createElement('input');
+    atomSizeValue.type = 'number';
+    atomSizeValue.min = '0.2';
+    atomSizeValue.max = '3';
+    atomSizeValue.step = '0.05';
+    atomSizeValue.value = currentRadiusScale.toFixed(2);
+    atomSizeRow.appendChild(atomSizeLabel);
+    atomSizeRow.appendChild(atomSizeSlider);
+    atomSizeRow.appendChild(atomSizeValue);
+
+    // Per-atom ray/path-tracing material override (wins over the species
+    // entry). Follows the row's linking mode like Color/Alpha/Size: with "Link
+    // periodic copies" OFF the row is one on-screen copy and the material goes
+    // into its atomImageStyles entry ONLY; linked edits fan out to every linked
+    // atom and drop stale per-copy overrides (newest edit wins).
+    const materialEditor = createMaterialEditor(
+      () => {
+        const structure = fileBrowser.selectedStructure;
+        if (perImage) return getAtomImageStyle(structure, imageIndex)?.material;
+        return structure?.atomUserMaterials?.[atomIndex];
+      },
+      (material) => {
+        const structure = fileBrowser.selectedStructure;
+        if (!structure) return;
+        if (perImage) {
+          setAtomImageStyle(structure, imageIndex, { material: material ?? undefined });
+          return;
+        }
+        structure.atomUserMaterials = structure.atomUserMaterials ?? {};
+        linkedAtomIndices.forEach((linkedAtomIndex) => {
+          if (material) structure.atomUserMaterials[linkedAtomIndex] = material;
+          else delete structure.atomUserMaterials[linkedAtomIndex];
+          clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'material');
+        });
+      },
+      // a cleared per-atom entry falls back to the effective SPECIES material:
+      // the manual species entry, else the Element-Materials-Map preset
+      { getDefault: () => {
+        const structure = fileBrowser.selectedStructure;
+        const el = structure?.elements?.[atomIndex];
+        if (!el) return null;
+        return structure.atomMaterials?.[el] ?? structure.getDefaultElementMaterial?.(el);
+      } });
+
+    editor.appendChild(topRowIndiv);
+    editor.appendChild(atomAlphaRow);
+    editor.appendChild(atomSizeRow);
+    editor.appendChild(materialEditor);
+    editor.appendChild(buttonRowIndiv);
+
+    // Coordinate editor
+    const coordTitle = document.createElement('div');
+    coordTitle.className = 'coord-editor-title';
+    const coordTitleText = document.createElement('span');
+    coordTitleText.textContent = 'Fractional Coordinates';
+    coordTitle.appendChild(coordTitleText);
+    if (options.freedomNote) {
+      const note = document.createElement('span');
+      note.className = 'coord-editor-note';
+      note.textContent = options.freedomNote;
+      coordTitle.appendChild(note);
+    }
+
+    // One stacked row per axis: label, slider, number box. Axes the symmetry
+    // freezes (axisFreedom[axis] false) are greyed out and disabled — dragging
+    // them could only ever be undone by the projection anyway.
+    const axisNames = ['x', 'y', 'z'];
+    const coordInputsRow = document.createElement('div');
+    coordInputsRow.className = 'coord-axis-rows';
+
+    const axisSliders = [];
+    const axisInputs = [];
+
+    axisNames.forEach((axisName, axis) => {
+      const free = positionEditable && axisFreedom[axis];
+
+      const axisRow = document.createElement('div');
+      axisRow.className = 'coord-axis-row';
+      axisRow.dataset.axis = axisName;
+      axisRow.dataset.free = String(free); // also drives the greyed-out look, see [data-free="false"] in CSS
+
+      const axisLabel = document.createElement('span');
+      axisLabel.textContent = axisName;
+      axisLabel.className = 'coord-axis-row-label';
+
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.className = 'coord-axis-slider';
+      slider.min = '0';
+      slider.max = '1';
+      slider.step = '0.0001';
+      slider.value = String(coords[axis]);
+      slider.disabled = !free;
+      slider.title = free
+        ? `Drag to move ${axisName} (fractional)`
+        : `${axisName} is fixed by the site symmetry`;
+
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'coord-num-input';
+      input.value = coords[axis].toFixed(6);
+      input.step = '0.000001';
+      input.placeholder = axisName;
+      input.disabled = !free;
+      input.title = slider.title;
+
+      axisRow.appendChild(axisLabel);
+      axisRow.appendChild(slider);
+      axisRow.appendChild(input);
+      coordInputsRow.appendChild(axisRow);
+      axisSliders.push(slider);
+      axisInputs.push(input);
+    });
+
+
+    const coordApplyBtn = document.createElement('button');
+    coordApplyBtn.textContent = 'Apply';
+    coordApplyBtn.className = 'btn-mini highlight si-action-btn-wide';
+    coordApplyBtn.disabled = !positionEditable;
+
+    const coordResetBtn = document.createElement('button');
+    coordResetBtn.textContent = 'Reset';
+    coordResetBtn.className = 'btn-mini si-action-btn-wide si-action-btn-wide--gap';
+    coordResetBtn.disabled = !positionEditable;
+
+    const coordButtonsRow = document.createElement('div');
+    coordButtonsRow.className = 'coord-buttons-row';
+    coordButtonsRow.appendChild(coordResetBtn);
+    coordButtonsRow.appendChild(coordApplyBtn);
+
+    coordEditor.appendChild(coordTitle);
+    coordEditor.appendChild(coordInputsRow);
+    coordEditor.appendChild(coordButtonsRow);
+
+    // Spin/Force editor: fills the row's .atom-spin-editor shell in place,
+    // so the element General.js and SpinPanel.js find keeps its methods.
+    createSpinForceEditor(atomIndex, element, {
+      // Only retarget the 3D highlight if this editor is the one currently
+      // open — a mode switch inside a closed/hidden editor (state restore,
+      // e.g.) shouldn't touch the highlight.
+      onModeChange: (mode) => {
+        if (!spinEditor.hidden) setArrowHighlightOverride(atomIndex, mode);
+      },
+      host: spinEditor,
+    });
+
+    function applyIndividualOpacity(rawValue) {
+      const value = clampOpacity(rawValue);
+      atomAlphaSlider.value = String(value);
+      atomAlphaValue.value = value.toFixed(2);
+      if (perImage) {
+        setAtomImageStyle(fileBrowser.selectedStructure, imageIndex, { alpha: value });
+        updateSingleAtomOpacity(imageIndex, value);
+        return;
+      }
+      linkedAtomIndices.forEach((linkedAtomIndex) => {
+        const atom = fileBrowser.selectedStructure.atoms[linkedAtomIndex];
+        atom.setOpacity(value);
+        clearAtomImageStylesForAtom(fileBrowser.selectedStructure, linkedAtomIndex, 'alpha');
+        fileBrowser.selectedStructure.atomImages[linkedAtomIndex]?.forEach((imgIndex) => {
+          updateSingleAtomOpacity(imgIndex, value);
+        });
+      });
+    }
+
+    atomAlphaSlider.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
+    atomAlphaValue.oninput = (e) => applyIndividualOpacity(/** @type {any} */ (e.target).value);
+
+    function applyIndividualRadiusScale(rawValue) {
+      const value = clampRadiusScale(rawValue);
+      atomSizeSlider.value = String(value);
+      atomSizeValue.value = value.toFixed(2);
+      const structure = fileBrowser.selectedStructure;
+      if (perImage) {
+        setAtomImageStyle(structure, imageIndex, { radiusScale: value });
+        updateSingleAtomDiameter(imageIndex, element, value);
+      } else {
+        linkedAtomIndices.forEach((linkedAtomIndex) => {
+          structure.atoms[linkedAtomIndex].setRadiusScale(value);
+          clearAtomImageStylesForAtom(structure, linkedAtomIndex, 'radiusScale');
+          structure.atomImages[linkedAtomIndex]?.forEach((imgIndex) => {
+            updateSingleAtomDiameter(imgIndex, structure.elements[linkedAtomIndex], value);
+          });
+        });
+      }
+      groups.atomsMesh.instanceMatrix.needsUpdate = true;
+      updateMeasurementMarkers();
+      // Bond visible lengths bake the atom radii in — refresh once settled.
+      scheduleBondRebuild();
+      if (!perImage) scheduleAtomRadiusScaleSave(structure); // per-structure pref (ui/SizePrefs.js)
+    }
+
+    atomSizeSlider.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
+    atomSizeValue.oninput = (e) => applyIndividualRadiusScale(/** @type {any} */ (e.target).value);
+
+    // Re-read Alpha/Size straight from the model onto this row's controls, so a
+    // bulk edit elsewhere (the selection bar) that changed this atom is reflected
+    // here. Reads the same per-image vs source-atom values the row was built with.
+    syncAlphaSizeControlsFromModel = () => {
+      const structure = fileBrowser.selectedStructure;
+      const atom = structure?.atoms?.[atomIndex];
+      if (!atom) return;
+      const style = perImage ? getAtomImageStyle(structure, imageIndex) : null;
+      const opacity = clampOpacity(style?.alpha ?? atom.getOpacity?.() ?? atom.opacity ?? 1);
+      const scale = clampRadiusScale(style?.radiusScale ?? atom.getRadiusScale?.() ?? 1);
+      atomAlphaSlider.value = String(opacity);
+      atomAlphaValue.value = opacity.toFixed(2);
+      atomSizeSlider.value = String(scale);
+      atomSizeValue.value = scale.toFixed(2);
+    };
+
+    // Read the atom's real position back into the three axis rows. A Wyckoff
+    // edit is projected onto the site's freedom subspace and can move axes the
+    // user didn't touch (coupled sites like (x, x, z)), so what landed is the
+    // only thing worth showing.
+    function syncAxisControlsFromStructure() {
+      const position = fileBrowser.selectedStructure?.atoms?.[atomIndex]?.position;
+      if (!position) return;
+      position.forEach((value, axis) => {
+        axisSliders[axis].value = String(value);
+        axisInputs[axis].value = value.toFixed(6);
+      });
+      coordsDisplay.textContent = `(${position[0].toFixed(3)}, ${position[1].toFixed(3)}, ${position[2].toFixed(3)})`;
+    }
+
+    function readAxisInputs() {
+      const values = axisInputs.map((input) => parseFloat(input.value));
+      return values.some((value) => isNaN(value)) ? null : values;
+    }
+
+    // Slider drags apply live but coalesce to one update per frame — each apply
+    // re-lays-out atoms and bonds.
+    // A Wyckoff move that would put symmetry-equivalent atoms on top of each
+    // other is refused (returns false) — say so and snap the controls back to
+    // where the atom actually is.
+    function reportRefusedMove(applied) {
+      const note = coordEditor.querySelector('.coord-editor-note');
+      if (applied !== false) {
+        if (note && note.dataset.refused) {
+          note.textContent = note.dataset.original ?? '';
+          note.classList.remove('refused');
+          delete note.dataset.refused;
+        }
+        return;
+      }
+      if (note && !note.dataset.refused) {
+        note.dataset.original = note.textContent;
+        note.dataset.refused = '1';
+        note.classList.add('refused');
+      }
+      if (note) note.textContent = 'atoms would overlap';
+      syncAxisControlsFromStructure();
+    }
+
+    let pendingFrame = null;
+    function applyLive() {
+      if (pendingFrame != null) return;
+      pendingFrame = requestAnimationFrame(() => {
+        pendingFrame = null;
+        const coordsNow = readAxisInputs();
+        if (!coordsNow) return;
+        reportRefusedMove(livePositionUpdater(coordsNow));
+        syncAxisControlsFromStructure();
+      });
+    }
+
+    axisSliders.forEach((slider, axis) => {
+      slider.oninput = () => {
+        axisInputs[axis].value = parseFloat(slider.value).toFixed(6);
+        applyLive();
+      };
+      // Releasing the slider is not a "commit": it stays on the live path so the
+      // editor survives the drag. Apply does the full update (composition panel
+      // included, which rebuilds and closes this row's editor).
+      slider.onchange = () => {
+        const coordsNow = readAxisInputs();
+        if (!coordsNow) return;
+        reportRefusedMove(livePositionUpdater(coordsNow));
+        syncAxisControlsFromStructure();
+      };
+    });
+
+    axisInputs.forEach((input, axis) => {
+      input.oninput = () => {
+        const value = parseFloat(input.value);
+        if (!isNaN(value)) axisSliders[axis].value = String(value);
+      };
+    });
+
+    coordApplyBtn.onclick = () => {
+      const newCoords = readAxisInputs();
+      if (!newCoords) return;
+      if (positionUpdater(newCoords) === false) {
+        reportRefusedMove(false);
+        return;
+      }
+      coordsDisplay.textContent = `(${newCoords[0].toFixed(3)}, ${newCoords[1].toFixed(3)}, ${newCoords[2].toFixed(3)})`;
+    };
+
+    coordResetBtn.onclick = () => {
+      const originalCoords = resetCoordsProvider();
+      if (originalCoords) {
+        originalCoords.forEach((value, axis) => {
+          axisSliders[axis].value = String(value);
+          axisInputs[axis].value = value.toFixed(6);
+        });
+        positionUpdater([...originalCoords]);
+        coordsDisplay.textContent = `(${originalCoords[0].toFixed(3)}, ${originalCoords[1].toFixed(3)}, ${originalCoords[2].toFixed(3)})`;
+        setActiveEditor(null);
+      }
+    };
+
+    // Pure-data push of this row's current color/opacity/radius/material for
+    // linkedAtomIndices onto another (off-screen) frame — no mesh/render calls,
+    // since only the currently-displayed frame has a live mesh to update.
+    // Per-copy (perImage) rows have no trajectory equivalent (an "image index"
+    // is a render-time concept for the current frame only), so this is only
+    // used from the non-perImage branch below.
+    function pushLinkedAtomsDataToFrame(frame) {
+      const src = fileBrowser.selectedStructure;
+      linkedAtomIndices.forEach((linkedAtomIndex) => {
+        const srcAtom = src.atoms[linkedAtomIndex];
+        const atom = frame.atoms[linkedAtomIndex];
+        if (!atom) return;
+        atom.color = srcAtom.color;
+        atom.userColor = srcAtom.userColor;
+        atom.elementColor = srcAtom.elementColor;
+        atom.elementOpacity = srcAtom.elementOpacity;
+        atom.opacity = srcAtom.opacity;
+        atom.radiusScale = srcAtom.radiusScale ?? 1;
+        if (src.atomUserMaterials?.[linkedAtomIndex] !== undefined) {
+          frame.atomUserMaterials ??= {};
+          frame.atomUserMaterials[linkedAtomIndex] = src.atomUserMaterials[linkedAtomIndex];
+        } else if (frame.atomUserMaterials) {
+          delete frame.atomUserMaterials[linkedAtomIndex];
+        }
+      });
+    }
+
+    function closeAtomColorEditor() {
+      updateColorBtnSwatch();
+      setActiveEditor(null);
+      onColorChange(); // Notify parent to update pie dot
+      updateVisualization({
+        bondsUpdate: false,
+        reRenderAtoms: false,
+        reRenderBonds: false,
+        reRenderLattice: false,
+        reRenderOther: false,
+        reRenderComposition: "open",
+      });
+    }
+    AtomColorApplyBtn.title = 'Click: close. Press and hold: copy this color/alpha/size to every trajectory frame.';
+    wirePressHoldPopup(AtomColorApplyBtn, {
+      holdLabel: 'Apply to Trajectory',
+      onPress: closeAtomColorEditor,
+      onConfirm: () => {
+        if (perImage) {
+          // atomImageKey is srcIndex + integer periodic offset — stable across
+          // frames of a fixed-topology trajectory (same key format the Bonds/
+          // Polyhedra rows already transplant directly), unlike the raw
+          // instanceId, which is only a this-frame render detail.
+          const structure = fileBrowser.selectedStructure;
+          const key = atomImageKey(structure, imageIndex);
+          if (!key) return;
+          const style = { ...structure.atomImageStyles?.[key] };
+          applyToOtherTrajectoryFrames(structure, (frame) => {
+            frame.atomImageStyles ??= {};
+            frame.atomImageStyles[key] = { ...style };
+          });
+        } else {
+          applyToOtherTrajectoryFrames(fileBrowser.selectedStructure, pushLinkedAtomsDataToFrame);
+        }
+      },
+    });
+
+    // Pure-data reset of the linked-atom-indices branch below, reusable against
+    // off-screen trajectory frames (see resetBtn's press-and-hold wiring).
+    function resetLinkedAtomsColorData(structure, currentMode) {
+      linkedAtomIndices.forEach((linkedAtomIndex) => {
+        clearAtomImageStylesForAtom(structure, linkedAtomIndex);
+        if (structure.atomUserMaterials) delete structure.atomUserMaterials[linkedAtomIndex];
+        const atom = structure.atoms[linkedAtomIndex];
+        const element = structure.elements[linkedAtomIndex];
+
+        if (atom.userColor !== undefined) delete atom.userColor;
+        if (atom.forceColor !== undefined) delete atom.forceColor;
+        // A disordered site's wedges each render their OWN species' colour
+        // (species[i].color, set via the swatches above), never atom.color/
+        // userColor at all — clearing only those left a mixed site's Reset
+        // looking like it did nothing. Pure data here (this also runs against
+        // off-screen trajectory frames, see the press-and-hold caller below);
+        // the wedge-texture repaint for the visible frame happens in
+        // doResetAtomThisFrame, which knows which frame is actually on screen.
+        atom.species?.forEach((s) => { s.color = null; });
+
+        if (currentMode === "force") {
+          const forceObj = structure.forces?.[linkedAtomIndex];
+          if (forceObj?.vector?.length >= 3) {
+            const magnitude = Math.sqrt(
+              forceObj.vector[0] ** 2 +
+              forceObj.vector[1] ** 2 +
+              forceObj.vector[2] ** 2
+            );
+            atom.color = atomForceToColor(magnitude, general.ForceMin, general.ForceMax);
+          } else {
+            atom.color = structure.getDefaultElementColor(element);
+          }
+        } else {
+          atom.color = structure.getDefaultElementColor(element);
+        }
+
+        atom.resetToElementOpacity();
+        atom.resetRadiusScale?.();
+      });
+    }
+
+    function doResetAtomThisFrame() {
+      const structure = fileBrowser.selectedStructure;
+      const currentMode = general.atomsColor; // current color mode
+
+      if (perImage) {
+        // Reset only this copy: drop its style entry and repaint from the source
+        // atom's model values (the hex==null repaint path resolves them now that
+        // the override is gone).
+        const atom = structure.atoms[atomIndex];
+        clearAtomImageStyle(structure, imageIndex);
+        updateSingleAtomColor(atomIndex, imageIndex, element);
+        updateSingleAtomOpacity(imageIndex, atom.getOpacity?.() ?? atom.opacity ?? 1);
+        updateSingleAtomDiameter(imageIndex, element, atom.getRadiusScale?.() ?? 1);
+        groups.atomsMesh.instanceMatrix.needsUpdate = true;
+        syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
+        if (groups.bondsMesh) groups.bondsMesh.instanceColor.needsUpdate = true;
+        // Sync the editor controls without re-writing the store.
+        const srcOpacity = clampOpacity(atom.getOpacity?.() ?? atom.opacity ?? 1);
+        atomAlphaSlider.value = String(srcOpacity);
+        atomAlphaValue.value = srcOpacity.toFixed(2);
+        const srcScale = clampRadiusScale(atom.getRadiusScale?.() ?? 1);
+        atomSizeSlider.value = String(srcScale);
+        atomSizeValue.value = srcScale.toFixed(2);
+        updateColorBtnSwatch();
+        updateMeasurementMarkers();
+        onColorChange();
+        updatePolyhedraColors();
+        setActiveEditor(null);
+        return { structure, currentMode };
+      }
+
+      resetLinkedAtomsColorData(structure, currentMode);
+      saveAtomColors(structure); // drops the cleared overrides from storage too
+      saveAtomRadiusScales(structure);
+
+      linkedAtomIndices.forEach((linkedAtomIndex) => {
+        const atom = structure.atoms[linkedAtomIndex];
+        structure.atomImages[linkedAtomIndex]?.forEach((imageIndex) => {
+          syncBondHalvesToImageColor(structure, imageIndex, safeColor(atom.getColor()));
+          updateSingleAtomColor(linkedAtomIndex, imageIndex, structure.elements[linkedAtomIndex]);
+          updateSingleAtomOpacity(imageIndex, atom.getOpacity());
+        });
+      });
+
+      // Wedge sphere colours (per species) are a separate GPU texture from the
+      // plain per-instance colour updateSingleAtomColor() just repainted above
+      // — resetLinkedAtomsColorData() already cleared species[i].color as data,
+      // this is the one wedge-texture refresh + render request that actually
+      // makes it visible, scoped to the frame on screen right now (species
+      // colours have no per-image concept, so this is keyed by atomIndex only).
+      const speciesResetTargets = [];
+      linkedAtomIndices.forEach((linkedAtomIndex) => {
+        structure.atoms[linkedAtomIndex]?.species?.forEach((_, speciesIndex) => {
+          speciesResetTargets.push({ atomIndex: linkedAtomIndex, speciesIndex });
+        });
+      });
+      // setSpeciesColorBulk now broadcasts crysviz:colors-changed (dispatched
+      // synchronously, so this row's own registered listener has already run
+      // by the time the call below returns), which repaints this row's swatch
+      // boxes/dots via refreshSpeciesSwatches — no need to do it again here.
+      if (speciesResetTargets.length) setSpeciesColorBulk(speciesResetTargets, null);
+
+      // resetLinkedAtomsColorData() above already wrote the reset colour (force-
+      // derived or element-default) onto atom.color; updateColorBtnSwatch()
+      // reads that back — via the same isDisordered() branch as everywhere else
+      // — rather than recomputing it a second time here and risking the two
+      // falling out of sync (as a flat recompute did for a disordered atom,
+      // wiping its pie dot back to a single colour on every Reset).
+      updateColorBtnSwatch();
+
+      applyIndividualOpacity(fileBrowser.selectedStructure.atoms[atomIndex].getOpacity?.() ?? 1);
+      applyIndividualRadiusScale(fileBrowser.selectedStructure.atoms[atomIndex].getRadiusScale?.() ?? 1);
+      onColorChange();
+      // A centered polyhedron is coloured by its centre atom, so recolour in place
+      // (cheap, no geometry recompute) — matches the perImage reset branch above.
+      updatePolyhedraColors();
+      // Close the editor BEFORE the panel re-renders: the re-render rebuilds this
+      // row and reopens whichever editors were open, so closing afterwards hit
+      // the old, detached row and left the new one open (with the selection's
+      // glow back on, over the colour it was meant to show).
+      setActiveEditor(null);
+      updateVisualization({
+        bondsUpdate: false,
+        reRenderAtoms: false,
+        reRenderBonds: false,
+        reRenderLattice: false,
+        reRenderOther: false,
+        reRenderComposition: "open",
+      });
+      return { structure, currentMode };
+    }
+    AtomColorResetBtn.title = 'Click: this frame. Press and hold: whole trajectory.';
+    wirePressHoldPopup(AtomColorResetBtn, {
+      holdLabel: 'Reset Trajectory',
+      onPress: () => { doResetAtomThisFrame(); },
+      onConfirm: () => {
+        const { structure, currentMode } = doResetAtomThisFrame();
+        if (perImage) {
+          const key = atomImageKey(structure, imageIndex);
+          if (key) applyToOtherTrajectoryFrames(structure, (frame) => { delete frame.atomImageStyles?.[key]; });
+        } else {
+          applyToOtherTrajectoryFrames(structure, (frame) => resetLinkedAtomsColorData(frame, currentMode));
+        }
+      },
+    });
+  }
 }

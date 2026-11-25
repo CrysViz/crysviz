@@ -4,7 +4,11 @@ import { fileBrowser, general } from '../state/store.js';
 import { Spin } from '../model/index.js'; // Update path
 import { createColorBar } from './ColorBarWidget.js';
 import { registerColorBarSource } from './ColorBarRegistry.js';
-import { computeAutoRange, applySpinFrame, parseSaxis } from '../utils/index.js';
+import { logScaleFloor, applySpinFrame, parseSaxis } from '../utils/index.js';
+import { arrowMagnitudes, autoArrowRange, ensureArrowRanges } from './ArrowRange.js';
+import { isExperimentalMode } from '../debug/experimentalMode.js';
+import { buildSpinComparisonSection, removeSpinComparisonSection } from './SpinComparisonSection.js';
+import { saveArrowStyle, scheduleArrowStyleSave } from './ArrowStylePrefs.js';
 
 const SPIN_COLORBAR_FLOATING_ID = 'spinColorBarFloating';
 
@@ -39,6 +43,7 @@ function captureSpinColorBarState() {
   general.colorBarSize = settings.size;
   general.spinColorScale = settings.scale;
   general.spinLegendText = settings.legend;
+  general.spinLegendOffset = settings.legendOffset;
   general.spinColorBarFloating = spinColorBarInstance.isFloating();
   if (general.spinColorBarFloating) {
     // The anchor (offset from #view's edges), not raw left/top: a file
@@ -57,6 +62,7 @@ export function removeSpinPanel() {
   captureSpinColorBarState();
   spinColorBarInstance?.remove();
   spinColorBarInstance = null;
+  removeSpinComparisonSection();
   // Defensive fallback: covers a floating node somehow left behind without a
   // live spinColorBarInstance to reach it (shouldn't normally happen).
   document.getElementById(SPIN_COLORBAR_FLOATING_ID)?.remove();
@@ -95,7 +101,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   // --- No-spins note ---
   const noSpinsNote = document.createElement("div");
   noSpinsNote.className = "control-note cv-force-hidden";
-  noSpinsNote.textContent = "No spin data available for this structure. Upload a file that includes spin information (e.g. an OUTCAR) or add spins manually.";
+  noSpinsNote.textContent = "No spin data available for this structure. Upload a file that includes spin information (e.g. an OUTCAR), load an INCAR with MAGMOM onto this structure, or add spins manually.";
   content.appendChild(noSpinsNote);
 
   // --- Global Scaling slider ---
@@ -149,6 +155,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   lengthValue.textContent = (general.spinScale ?? 1.0).toFixed(2);
 
   const lengthSlider = /** @type {any} */ (document.createElement("input"));
+  lengthSlider.id = "spinLengthSlider";
   lengthSlider.type = "range";
   lengthSlider.min = 0.1;
   lengthSlider.max = 10;
@@ -172,6 +179,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   sizeValue.textContent = (general.spinRadius ?? 0.1).toFixed(2);
 
   const sizeSlider = /** @type {any} */ (document.createElement("input"));
+  sizeSlider.id = "spinSizeSlider";
   sizeSlider.type = "range";
   sizeSlider.min = 0.01;
   sizeSlider.max = 0.15;
@@ -207,6 +215,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
     tipValue.textContent = val.toFixed(2);
     general.spinTipLength = val;
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+    scheduleArrowStyleSave('spin', ['tipLength']);
   });
 
   // --- Show spins on periodic copies -----------------------------------
@@ -360,7 +369,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   // calls; those only run at event time, when everything exists.)
   function reprojectSpins() {
     const structure = fileBrowser.selectedStructure;
-    if (!structure?.spins?.length) return;
+    if (!structure?.spins?.length && !structure?.spins2?.length) return;
     applySpinFrame(structure, {
       mode: general.spinFrameMode ?? "file",
       customSaxis: general.spinCustomSaxis ?? [0, 0, 1],
@@ -470,6 +479,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   colorMapLabel.className = "cv-force-label-block";
 
   const colorMapSelect = document.createElement("select");
+  colorMapSelect.id = "spinColorMapSelect";
   colorMapSelect.className = "cv-scene-select cv-scene-select--block cv-spin-colormap-select";
 
   const noneOption = document.createElement("option");
@@ -637,6 +647,23 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
   buttonWrapper.appendChild(restoreBtn);
   content.appendChild(buttonWrapper);
 
+  // --- Comparison spins (experimental) ---
+  // A second spin set from a vector file (structure.spins2), drawn alongside
+  // the primary one — see ui/SpinComparisonSection.js.
+  if (isExperimentalMode()) {
+    const compareSection = makeCollapsible("Comparison Spins (experimental)");
+    compareSection.details.id = "spinComparisonSection";
+    compareSection.details.classList.add("cv-spin-compare-section");
+    buildSpinComparisonSection(compareSection.body, {
+      colorMapOptions: colorMapSelect,
+      redraw: () => {
+        if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+      },
+      reproject: () => reprojectSpins(),
+    });
+    content.appendChild(compareSection.details);
+  }
+
   // --- Build hierarchy ---
   panel.appendChild(content);
   group.appendChild(panel);
@@ -704,7 +731,10 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
       const color = spin.color instanceof THREE.Color ?
         `#${spin.color.getHexString()}` :
         spin.color;
-      return `${spin.vector.join(" ")} ${scale} ${color}`;
+      // 12 significant digits: the float noise of a parsed or scaled value
+      // (1.8699999999999999) goes, the value itself stays.
+      const tidy = (v) => String(Number(Number(v).toPrecision(12)));
+      return `${spin.vector.map(tidy).join(" ")} ${tidy(scale)} ${color}`;
     });
     currentSpinsList.value = spinLines.join("\n");
   } else {
@@ -718,6 +748,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
     lengthValue.textContent = val.toFixed(2);
     general.spinScale = val;
     if (general.spinsActive) updateSpins(val, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+    scheduleArrowStyleSave('spin', ['scale']);
   });
 
   // Auto length-scale (shared render/SpinModule.autoSpinScale — same result the
@@ -733,6 +764,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
     lengthSlider.value = String(clamped);
     lengthValue.textContent = clamped.toFixed(2);
     if (general.spinsActive) updateSpins(clamped, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+    saveArrowStyle('spin', ['scale']);
   });
 
   sizeSlider.addEventListener("input", () => {
@@ -740,6 +772,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
     sizeValue.textContent = val.toFixed(2);
     general.spinRadius = val;
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+    scheduleArrowStyleSave('spin', ['radius']);
   });
 
   logLengthCheckbox.addEventListener("change", () => {
@@ -750,6 +783,7 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
       updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
     }
     syncLogScaleLock();
+    saveArrowStyle('spin', ['lengthLogScale', 'colorScale']);
   });
 
   sourceSelect.addEventListener("change", () => {
@@ -757,15 +791,6 @@ export function addSpinPanel(target = "cvPanelBody-spins") {
     if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
   });
 
-// Only the very first scalar colormap pick for this panel instance should
-// derive the range from the structure's spin lengths; every switch after
-// that (including bouncing through "none"/direction/plusminus, which don't
-// show a range at all) should keep whatever range is already set instead of
-// recomputing it out from under the user. Local (not module-scope), so a
-// full panel rebuild (file change, collapse/reopen) recomputes fresh for
-// the new structure's spin magnitudes — mirroring ForcePanel's
-// preserveRange=false default for its own initial build.
-let spinRangeInitialized = false;
 
 // Builds (or tears down/hides) the color bar to match colorMapSelect's
 // current value. Shared between the colormap dropdown's change handler and
@@ -791,55 +816,19 @@ function refreshColorBarVisibility() {
 
     let minValue = general.spinMin;
     let maxValue = general.spinMax;
-    const haveUsableRange = spinRangeInitialized && isFinite(minValue) && isFinite(maxValue) && minValue < maxValue;
+    const haveUsableRange = isFinite(minValue) && isFinite(maxValue) && minValue < maxValue;
 
     if (!haveUsableRange) {
-      minValue = 0;
-      maxValue = 2;
-
-      const structure = fileBrowser.selectedStructure;
-      if (structure?.spins) {
-        // Calculate lengths for all spins
-        const lengths = structure.spins
-          .map(spin => {
-            if (!spin.vector) return 0;
-            const mag = Math.sqrt(
-              spin.vector[0] ** 2 +
-              spin.vector[1] ** 2 +
-              spin.vector[2] ** 2
-            );
-            return mag * (spin.scaling ?? 1.0);
-          })
-          .filter(len => len > 0.1); // Only consider lengths > 0.1
-
-        if (lengths.length > 0) {
-          minValue = Math.min(...lengths);
-          maxValue = Math.max(...lengths);
-
-          // Round up to 1 decimal place
-          minValue = Math.ceil(minValue * 10) / 10;
-          maxValue = Math.ceil(maxValue * 10) / 10;
-
-          // Add a small buffer to max value (also rounded up)
-          maxValue = Math.ceil(maxValue * 1.05 * 10) / 10;
-
-          // Ensure min is less than max
-          if (minValue >= maxValue) {
-            minValue = Math.floor(maxValue * 0.9 * 10) / 10;
-          }
-        }
-      }
-
-      // Set default values if no valid spins found
-      if (minValue >= maxValue) {
-        minValue = 0;
-        maxValue = 2;
-      }
+      // What Auto Range gives (ui/ArrowRange.js normally set it when the
+      // structure was entered; this covers a range left unusable).
+      const isLog = general.spinColorScale === "log";
+      const range = autoArrowRange(spinMagnitudes(), isLog);
+      minValue = range?.min ?? (isLog ? 0.01 : 0);
+      maxValue = range?.max ?? 2;
 
       // Update general values
       general.spinMin = minValue;
       general.spinMax = maxValue;
-      spinRangeInitialized = true;
     }
 
     // Show the color bar with calculated values
@@ -848,6 +837,8 @@ function refreshColorBarVisibility() {
       fallbackMin: minValue,
       fallbackMax: maxValue,
       legend: general.spinLegendText ?? "Spin (μB)",
+      legendOffset: general.spinLegendOffset,
+      onLegendOffsetChange: (offset) => { general.spinLegendOffset = offset; },
       scale: general.spinColorScale,
       orientation: general.spinColorBarOrientation,
       flipSide: general.spinColorBarFlipSide,
@@ -858,9 +849,14 @@ function refreshColorBarVisibility() {
         general.spinMin = min;
         general.spinMax = max;
         if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), cmap);
+        saveArrowStyle('spin', ['min', 'max']);
       },
-      onScaleChange: (scale) => applyLogScale(scale === "log"),
-      onAutoRange: () => applyAutoRange(),
+      onScaleChange: (scale) => applyLogScale(scale === "log", true),
+      onAutoRange: () => applyAutoRange(true),
+      onLegendChange: (legend) => {
+        general.spinLegendText = legend;
+        saveArrowStyle('spin', ['legendText']);
+      },
       isScaleLocked: () => logLengthCheckbox.checked,
     });
     if (general.spinColorBarFloating && general.spinColorBarFloatPos) {
@@ -894,28 +890,32 @@ colorMapSelect.addEventListener("change", () => {
 
   // Always update spins when changing color map (if they're shown at all)
   if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), cmap);
+  saveArrowStyle('spin', ['colorMap']);
 });
 
 // Shared by the side-panel checkbox and the floating color bar's own
 // layout-menu "Log Scale" item (ColorBarWidget.js's onScaleChange) — either
 // one can flip it, and both stay in sync since this is the only place that
 // actually applies the change. Mirrors ForcePanel.js's applyLogScale.
-function applyLogScale(isLog) {
+// `save`: a user edit (checkbox, colour-bar menu) persists it per structure
+// (ui/ArrowStylePrefs.js); the internal "log length" call saves itself.
+function applyLogScale(isLog, save = false) {
   general.spinColorScale = isLog ? "log" : "linear";
   // log10(0) is -Infinity, so a min of 0 breaks the log color mapping and
-  // the tick math — floor it to a small positive value the moment log
-  // scale turns on, same as ForcePanel.js.
+  // the tick math — floor it where the log Auto Range would start the
+  // moment log scale turns on, same as ForcePanel.js.
   if (isLog && general.spinMin <= 0) {
-    general.spinMin = 0.01;
+    general.spinMin = logScaleFloor(general.spinMax, spinMagnitudes());
     spinColorBarInstance?.setRange(general.spinMin, general.spinMax);
   }
   logCheckbox.checked = isLog;
   spinColorBarInstance?.update(colorMapSelect.value, general.spinColorScale);
   if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+  if (save) saveArrowStyle('spin', ['colorScale']);
 }
 
 logCheckbox.addEventListener("change", () => {
-  applyLogScale(logCheckbox.checked);
+  applyLogScale(logCheckbox.checked, true);
 });
 
 function updateNoSpinsNote() {
@@ -927,24 +927,24 @@ function updateNoSpinsNote() {
 // showing right now (manual list or the structure's own), padded 20% of
 // the data's own span on each side (computeAutoRange) — mirrors
 // ForcePanel.js's applyAutoRange.
-function applyAutoRange() {
-  const spins = sourceSelect.value === "manual" ? parseManualSpins() : fileBrowser.selectedStructure?.spins;
-  if (!spins?.length) return;
-  const magnitudes = spins.map((spin) => {
-    if (!spin?.vector) return NaN;
-    const mag = Math.sqrt(spin.vector[0] ** 2 + spin.vector[1] ** 2 + spin.vector[2] ** 2);
-    return mag * (spin.scaling ?? 1.0);
-  });
-  const range = computeAutoRange(magnitudes, 0.2, { clampMinAtZero: true });
+// The moments the colour bar ranges over: only those drawn as arrows
+// (render/SpinModule.js skips |m| under SPIN_DRAW_THRESHOLD), so a
+// non-magnetic atom's 0.0003 μB doesn't stretch a log bar down by decades.
+function spinMagnitudes() {
+  return arrowMagnitudes('spin', sourceSelect.value === "manual" ? parseManualSpins() : fileBrowser.selectedStructure?.spins);
+}
+
+function applyAutoRange(save = false) {
+  const range = autoArrowRange(spinMagnitudes(), general.spinColorScale === "log");
   if (!range) return;
-  let { min, max } = range;
-  if (general.spinColorScale === "log" && min <= 0) min = 0.01;
+  const { min, max } = range;
   general.spinMin = min;
   general.spinMax = max;
   spinColorBarInstance?.setRange(min, max);
   if (general.spinsActive) updateSpins(general.spinScale ?? 1.0, sourceSelect.value === "manual", parseManualSpins(), colorMapSelect.value);
+  if (save) saveArrowStyle('spin', ['min', 'max']);
 }
-autoRangeBtn.addEventListener("click", applyAutoRange);
+autoRangeBtn.addEventListener("click", () => applyAutoRange(true));
 
 
   // Bulk edits here (Overwrite/Restore) replace structure.spins wholesale,
@@ -954,7 +954,7 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
   // showing. Nudge any editor that's currently open.
   function refreshOpenStructureInfoSpinEditors() {
     document.querySelectorAll('.atom-spin-editor').forEach((el) => {
-      if (el.style.display !== 'none') /** @type {any} */ (el).refresh?.();
+      if (!el.hidden) /** @type {any} */ (el).refresh?.();
     });
   }
 
@@ -1143,6 +1143,11 @@ autoRangeBtn.addEventListener("click", applyAutoRange);
   // Initialize species visibility toggles, the color bar (restoring the
   // persisted colormap/orientation/floating position), and current spins list
   createSpeciesVisibilityToggles();
+  // A range the user set (or restored) for this structure wins over one
+  // recomputed from the data (ui/ArrowStylePrefs.js).
+  // The structure's own range (stored, or its Auto Range) — set when it was
+  // entered (ui/ArrowRange.js); the bar shows it rather than computing another.
+  ensureArrowRanges(fileBrowser.selectedStructure);
   refreshColorBarVisibility();
   // Sync the frame controls to persisted state and apply it once, so a
   // restored non-default frame/rotation (or just the file's SAXIS) is reflected

@@ -1,4 +1,5 @@
 import * as THREE from '../external/three/three.module.js';
+import { peekAtoms } from '../model/materializeFrame.js';
 
 import { app, groups,fileBrowser, general, mode} from '../state/store.js';
 import { refreshGhostAtoms } from './GhostAtomsModule.js';
@@ -6,10 +7,13 @@ import {getElementRadius} from '../defaults/radii_defaults.js'
 import {getAtomVisSettings} from '../defaults/color_texture_defaults.js'
 
 import { getCutPlaneMaskSign } from '../model/Plane.js';
-import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression, MAX_CUT_PLANES} from './MaterialStyles.js'
+import { CUT_PLANE_TOLERANCE_GLSL } from './cutPlaneTolerance.js';
+import {createStyledMaterial, addCelOutline, syncCelHullOpacitySuppression, MAX_CUT_PLANES,
+  acquirePersistentMaterial, isPersistentMaterial, packInstanceId} from './MaterialStyles.js'
 import {CEL_OUTLINE_LAYER} from './CelOutlinePass.js'
 import {runPeriodicWrapped} from './LatticeModule.js'
 import {rebuildChargeBadges} from './ChargeBadgeModule.js'
+import {rebuildAtomLabels} from './AtomLabelModule.js'
 import {requestRender} from './AnimateModule.js'
 import {
   buildWedgeTexture, WEDGE_VERTEX_DECL, WEDGE_VERTEX_BODY,
@@ -19,6 +23,12 @@ import {
 import {setAtomColor}  from '../utils/ColorModule.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { getFocusOpacityForInstance, prepareFocusRegions } from './FocusRegionModule.js';
+import { refreshAsuHighlight } from './asuHighlightHook.js';
+import {
+  imposterModeFor, createImposterGeometry, patchImposterShader, imposterRaycast,
+  installNearSpheres, disposeNearSpheres, resetAtomLod,
+} from './AtomLodModule.js';
+import { atomsRebuilt } from './atomsRebuildHook.js';
 
 
 // Module-scope scratch colour reused across the per-atom colour loop in updateAtoms
@@ -54,7 +64,8 @@ function normalizePlaneNormal(x = 1, y = 0, z = 0) {
 // zero allocation, zero behavior change, in the common case.
 export function deriveVisibleWrapped(structure) {
   const wrapped = structure?.periodic?.wrapped;
-  const atoms = structure?.atoms;
+  // Only `hidden` is read: no need to apply a deferred frame switch first.
+  const atoms = peekAtoms(structure);
   if (!structure?.periodic) return;
   if (!wrapped || !atoms) { structure.periodic.visibleWrapped = wrapped; return; }
   const srcIndex = wrapped.srcIndex;
@@ -110,7 +121,10 @@ export function applyWedgeUniforms(material) {
   const shader = material?.userData?.shader;
   const wedge = material?.userData?.wedge;
   if (!shader?.uniforms?.uWedgeTex) return;
-  if (!wedge) {
+  // Imposters never draw wedges: the wedge angle is taken from the sphere
+  // mesh's vertex position, which a ray-cast billboard does not have. The
+  // near-sphere mesh (render/AtomLodModule.js) shows them for large atoms.
+  if (!wedge || material.userData.imposter) {
     shader.uniforms.uWedgeEnabled.value = 0;
     return;
   }
@@ -133,7 +147,31 @@ export function applyWedgeUniforms(material) {
 export function disposeAtomsMaterial(material) {
   if (!material) return;
   material.userData?.wedge?.texture?.dispose?.();
+  if (isPersistentMaterial(material)) {
+    // Reused by the next build (see MaterialStyles.acquirePersistentMaterial):
+    // keep the compiled program, drop only the per-build wedge data.
+    material.userData.wedge = null;
+    applyWedgeUniforms(material);
+    return;
+  }
   material.dispose();
+}
+
+/** Everything createAtomsMaterial's output depends on — a changed value means
+ *  the persistent material must be rebuilt rather than reused. */
+function atomsMaterialSignature() {
+  return JSON.stringify([general.renderStyle, getAtomVisSettings()]);
+}
+
+/**
+ * The material factory that matches an atoms mesh's geometry: a pipeline's
+ * transparent-instance overlay shares the mesh geometry, so an imposter mesh
+ * (quad geometry) needs the imposter shader on its overlay too.
+ * @param {any} mesh
+ * @returns {() => any}
+ */
+export function atomsMaterialFactoryFor(mesh) {
+  return mesh?.userData?.imposter ? () => createAtomsMaterial({ imposter: true }) : createAtomsMaterial;
 }
 
 /**
@@ -159,6 +197,12 @@ export function refreshAtomWedgeTexture() {
   if (overlay) {
     overlay.material.userData.wedge = wedge;
     applyWedgeUniforms(overlay.material);
+  }
+  // Imposter mode: the near-sphere child is what actually shows the wedges.
+  const near = mesh.userData.nearSpheres;
+  if (near) {
+    near.material.userData.wedge = wedge;
+    applyWedgeUniforms(near.material);
   }
   old?.dispose();
 }
@@ -198,6 +242,12 @@ function applyAtomCutPlaneUniforms(material = groups.atomsMesh?.material) {
     if (outline) applyCutPlaneUniformsToShader(outline.material?.userData?.shader);
     const overlay = groups.atomsMesh?.userData?.transparentOverlay;
     if (overlay) applyCutPlaneUniformsToShader(overlay.material?.userData?.shader);
+    // Imposter mode: the near-sphere mesh and its own hull outline.
+    const near = groups.atomsMesh?.userData?.nearSpheres;
+    if (near) {
+      applyCutPlaneUniformsToShader(near.material?.userData?.shader);
+      applyCutPlaneUniformsToShader(near.userData?.celOutline?.material?.userData?.shader);
+    }
   }
 }
 
@@ -254,7 +304,17 @@ export function updateAtomByUUID(mesh, uuid, newPosition, newColor) {
 //-------------------------------------------------------------------------------
 
 
+// The structure the current main atoms mesh was built for (buildAtoms), so a
+// rebuild can tell whether it shows the same structure again.
+let builtFor = null;
+
 export function rebuildAtoms(opacity) {
+  // The old mesh's copies by stable name, for carrying the selection over
+  // (atomsRebuildHook.js) — only meaningful when the same structure is rebuilt.
+  const prevMesh = groups.atomsMesh;
+  const prevImageKeys = prevMesh && builtFor === fileBrowser.selectedStructure
+    ? fileBrowser.selectedStructure.atomImageKeys ?? null
+    : null;
   if (groups.atomsMesh) {
     // A pipeline-owned transparent-instance overlay (userData.transparentOverlay)
     // goes down with the mesh; remove it from its parent (it may be a scene-root
@@ -266,6 +326,12 @@ export function rebuildAtoms(opacity) {
       if (overlay.geometry !== groups.atomsMesh.geometry) overlay.geometry.dispose();
       disposeAtomsMaterial(overlay.material);
     }
+    // Imposter mode's near-sphere child (render/AtomLodModule.js): its own
+    // sphere material, sharing the wedge object (texture dispose is idempotent).
+    const near = groups.atomsMesh.userData.nearSpheres;
+    if (near) disposeAtomsMaterial(near.material);
+    disposeNearSpheres(groups.atomsMesh);
+    resetAtomLod();
     groups.atomsMesh.geometry.dispose();
     disposeAtomsMaterial(groups.atomsMesh.material);
     app.scene.remove(groups.atomsMesh);
@@ -273,18 +339,15 @@ export function rebuildAtoms(opacity) {
   }
   fileBrowser.selectedStructure.atomImages={}
   fileBrowser.selectedStructure.atomImageKeys=[] // rebuilt by finishAtomsMesh
-  console.log("Rebuilding periodic")
   let positions = fileBrowser.selectedStructure.atoms.map(a => a.position);
   let lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
   let elements = [...fileBrowser.selectedStructure.elements];
   let _ = runPeriodicWrapped(fileBrowser.selectedStructure.periodic, positions, elements,lattice)
   deriveVisibleWrapped(fileBrowser.selectedStructure)
 
-  console.log("Building atoms")
   buildAtoms();
-  console.log("updating atoms")
-  let ok = updateAtoms(opacity);
-  console.log("status updateAtoms", ok)
+  updateAtoms(opacity);
+  atomsRebuilt({ prevMesh, prevImageKeys });
  }
 
 // Shared mesh finalization for atom InstancedMeshes (main + overlay structures).
@@ -293,11 +356,15 @@ export function rebuildAtoms(opacity) {
 // instance color / UUID / emissive (+ cut-plane) buffers, adds the mesh to the
 // scene, and stores it at groups[meshKey]. Only meshKey, the structure source,
 // and the two cut-plane-only attributes (gated by `cutPlanes`) differ.
-export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey, cutPlanes = false }) {
+export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey, cutPlanes = false, imposter = false }) {
   const atomCount = wrapped.elements.length;
 
   // Instanced mesh
   const mesh = new THREE.InstancedMesh(geometry, material, atomCount);
+  // Imposter mode (render/AtomLodModule.js): quad geometry + ray-cast sphere
+  // shader; picking must intersect the spheres the shader draws, not the quads.
+  mesh.userData.imposter = !!imposter;
+  if (imposter) mesh.raycast = imposterRaycast;
 
   // rebuildAtoms() always disposes and recreates this mesh, so its lazily
   // auto-computed per-instance bounding sphere (three.js InstancedMesh)
@@ -310,11 +377,16 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   mesh.frustumCulled = false;
 
   // Initialize instance color buffer with a default color (e.g., grey)
-  mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(atomCount * 3), 3, false);
-
-  for (let i = 0; i < atomCount; i++) {
-    mesh.setColorAt(i, new THREE.Color(0x808080)); // Default grey color
+  // Default grey (0x808080, linear 0.2158605) filled in one pass rather than
+  // one THREE.Color per instance — updateAtoms overwrites it right after.
+  const grey = new THREE.Color(0x808080);
+  const colorArray = new Float32Array(atomCount * 3);
+  for (let i = 0; i < atomCount * 3; i += 3) {
+    colorArray[i] = grey.r;
+    colorArray[i + 1] = grey.g;
+    colorArray[i + 2] = grey.b;
   }
+  mesh.instanceColor = new THREE.InstancedBufferAttribute(colorArray, 3, false);
 
   const instanceElementIndices = new THREE.InstancedBufferAttribute(new Float32Array(atomCount), 1);
 
@@ -339,12 +411,23 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
 
   // Encode UUIDs as a vec4 and store them in the geometry
   const uuidAttributeData = new Float32Array(atomCount * 4); // 4 floats per UUID
+  const uuidBytes = new Uint8Array(16);
+  const uuidFloats = new Float32Array(uuidBytes.buffer);
+  // atomImages lists are sized up front (a list grown by push starts at 17
+  // slots; most atoms have one image).
+  let maxSrc = -1;
+  for (let index = 0; index < atomCount; index++) if (wrapped.srcIndex[index] > maxSrc) maxSrc = wrapped.srcIndex[index];
+  const imagesPerAtom = new Int32Array(maxSrc + 1);
+  for (let index = 0; index < atomCount; index++) imagesPerAtom[wrapped.srcIndex[index]]++;
+  const filled = new Int32Array(maxSrc + 1).fill(-1); // -1: a list this pass did not create
   wrapped.elements.forEach((element, index) => {
     let key = wrapped.srcIndex[index]
     if (!structure.atomImages[key]) {
-        structure.atomImages[key] = []; // Initialize with an empty array
+        structure.atomImages[key] = new Array(imagesPerAtom[key]);
+        filled[key] = 0;
     }
-    structure.atomImages[key].push(index)
+    if (filled[key] >= 0) structure.atomImages[key][filled[key]++] = index;
+    else structure.atomImages[key].push(index);
 
     // Stable per-image identity for the per-copy style store: source index +
     // integer periodic image offset (derived from the wrapped fractional coords;
@@ -352,27 +435,19 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
     if (meshKey === 'atomsMesh') {
       const srcPos = atoms[key]?.position;
       const frac = wrapped.frac?.[index];
-      const off = (srcPos && frac)
-        ? [0, 1, 2].map((a) => Math.round(frac[a] - srcPos[a])).join(',')
-        : '0,0,0';
-      (structure.atomImageKeys ??= [])[index] = `${key}:${off}`;
+      (structure.atomImageKeys ??= [])[index] = (srcPos && frac)
+        ? `${key}:${Math.round(frac[0] - srcPos[0])},${Math.round(frac[1] - srcPos[1])},${Math.round(frac[2] - srcPos[2])}`
+        : `${key}:0,0,0`;
     }
 
     const atom = atoms[wrapped.srcIndex[index]];
     const cleanedUUID = atom.uuid.replace(/-/g, '');
 
-    const encoder = new TextEncoder();
-    const encodedUUID = encoder.encode(cleanedUUID);
-
-    if (encodedUUID.length > 16) {
+    if (cleanedUUID.length > 16) {
       console.warn("UUID too long, will be truncated:", atom.uuid);
     }
-
-    const padded = new Uint8Array(16);
-    padded.set(encodedUUID.subarray(0, 16));
-
-    const floatView = new Float32Array(padded.buffer);
-    uuidAttributeData.set(floatView, index * 4);
+    packInstanceId(cleanedUUID, uuidBytes);
+    uuidAttributeData.set(uuidFloats, index * 4);
   });
 
   // Add the UUID attribute to the geometry
@@ -380,7 +455,10 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
 
   mesh.geometry.setAttribute('instanceUUID', instanceUUIDs);
   mesh.geometry.setAttribute('instanceElementIndex', instanceElementIndices);
-  // Feed the wedge texture to the material's shader once it has compiled.
+  // Feed the wedge texture to the material's shader once it has compiled. A
+  // persistent (reused) material may still carry the previous build's texture.
+  const previousWedge = material.userData.wedge?.texture;
+  if (previousWedge && previousWedge !== wedge.texture) previousWedge.dispose();
   material.userData.wedge = wedge;
   applyWedgeUniforms(material);
 
@@ -423,13 +501,20 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
   groups[meshKey] = mesh;
   groups[meshKey].userData.elementNames = wrapped.elements;
 
-  if (general.renderStyle === 'cel' && general.celOutlineMode === 'hull') {
-    // The hull shader compiles lazily on first render; seed its cut-plane
-    // uniforms from the current plane state once it exists.
-    addCelOutline(mesh, {
-      cutPlanes,
-      onCompiled: cutPlanes ? () => applyAtomCutPlaneUniforms() : undefined,
-    });
+  const hullOutline = general.renderStyle === 'cel' && general.celOutlineMode === 'hull';
+  // The hull shader compiles lazily on first render; seed its cut-plane
+  // uniforms from the current plane state once it exists.
+  const hullOptions = { cutPlanes, onCompiled: cutPlanes ? () => applyAtomCutPlaneUniforms() : undefined };
+  if (hullOutline && !imposter) addCelOutline(mesh, hullOptions);
+  if (imposter) {
+    // Atoms large on screen are drawn as real spheres by a small child mesh
+    // (the imposter shader collapses them): the regular sphere material, so
+    // wedge sites and hull outlines look exactly as in sphere mode there.
+    const nearMaterial = acquirePersistentMaterial('atoms', atomsMaterialSignature(), createAtomsMaterial);
+    nearMaterial.userData.wedge = wedge;
+    applyWedgeUniforms(nearMaterial);
+    const near = installNearSpheres(mesh, nearMaterial, new THREE.SphereGeometry(1, 32, 24));
+    if (hullOutline) addCelOutline(near, hullOptions);
   }
   // Honour the "Show Atoms" toggle on (re)build — the toggle only flips visibility on the
   // live mesh, so a rebuild (e.g. Complete Polyhedra appending atoms) would otherwise
@@ -444,13 +529,18 @@ export function finishAtomsMesh({ geometry, material, structure, wrapped, atoms,
 // (single-pass; the forward pipeline never changes it), 1 = opaque instances
 // only, 2 = transparent instances only. Pipelines drive it via
 // setAlphaPass (render/MaterialStyles.js); see render/pipeline/SplitAtomsPipeline.js.
-export function createAtomsMaterial() {
+export function createAtomsMaterial({ imposter = false } = {}) {
   const atomVisSettings = getAtomVisSettings();
   const material = createStyledMaterial({
     ...atomVisSettings,
     transparent: false,
     opacity: 1.0,
   });
+  // The two variants share this function's source text, which is what three
+  // keys compiled programs by — without a distinct key the imposter variant
+  // would silently reuse the sphere program (see MaterialStyles' outline note).
+  material.userData.imposter = !!imposter;
+  material.customProgramCacheKey = () => (imposter ? 'cv-atoms-imposter' : 'cv-atoms');
 
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = `
@@ -466,7 +556,7 @@ export function createAtomsMaterial() {
       varying float vInstanceElementIndex;
       varying float vInstanceOpacity;
       varying float vInstanceCutPlaneImmune;
-      varying vec3 vInstanceWorldCenter;
+      flat varying vec3 vInstanceWorldCenter;
     ` + WEDGE_VERTEX_DECL + shader.vertexShader;
 
     shader.vertexShader = shader.vertexShader.replace(
@@ -495,7 +585,7 @@ export function createAtomsMaterial() {
       varying float vInstanceElementIndex;
       varying float vInstanceOpacity;
       varying float vInstanceCutPlaneImmune;
-      varying vec3 vInstanceWorldCenter;
+      flat varying vec3 vInstanceWorldCenter;
     ` + WEDGE_FRAGMENT_DECL + shader.fragmentShader;
 
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -509,7 +599,7 @@ export function createAtomsMaterial() {
           if (i >= uCutPlaneCount) break;
           vec4 cutPlane = uCutPlanes[i];
           float planeSide = (dot(vInstanceWorldCenter, cutPlane.xyz) - cutPlane.w) * uCutPlaneMaskSide[i];
-          if (planeSide > 0.0) {
+          if (planeSide > ${CUT_PLANE_TOLERANCE_GLSL}) {
             discard;
           }
         }
@@ -542,6 +632,9 @@ export function createAtomsMaterial() {
     shader.uniforms.uWedgeTex = { value: null };
     shader.uniforms.uWedgeTexSize = { value: new THREE.Vector2(1, 1) };
     shader.uniforms.uWedgeEnabled = { value: 0 };
+    // Last, so the imposter's billboard/ray-cast replaces three's projection
+    // and normal handling while keeping every injection above.
+    if (imposter) patchImposterShader(shader, material);
     material.userData.shader = shader;
     applyAtomCutPlaneUniforms(material);
     // The mesh's wedge data is built before the shader compiles, so re-apply it
@@ -554,25 +647,35 @@ export function createAtomsMaterial() {
 export function buildAtoms() {
   let atoms=fileBrowser.selectedStructure.atoms
   let structure = fileBrowser.selectedStructure
+  builtFor = structure;
   //perdic.wrapped
 
   let wrapped = fileBrowser.selectedStructure.periodic.visibleWrapped
 
   const atomCount = wrapped.elements.length;
-  console.log("Building mesh for",atomCount,"atoms")
 
-  // Geometry: unit sphere, scaled per instance
-  const geometry = new THREE.SphereGeometry(1, 32, 24);
+  // Level of detail (render/AtomLodModule.js): tessellated unit spheres
+  // scaled per instance, or — for large structures / by user choice — a quad
+  // per atom drawn as a ray-cast sphere, with a near-sphere child for the
+  // atoms that are large on screen.
+  const imposter = imposterModeFor(atomCount);
+  const geometry = imposter ? createImposterGeometry() : new THREE.SphereGeometry(1, 32, 24);
 
-  // Material: visualization-mode dependent
-  const material = createAtomsMaterial();
+  // Material: visualization-mode dependent; reused across rebuilds while the
+  // style is unchanged so the shader is not recompiled every frame (the
+  // depth-peel/WBOIT patches give every NEW material its own program key).
+  // One persistent material per variant (the imposter one ray-casts spheres).
+  const material = imposter
+    ? acquirePersistentMaterial('atoms-imposter', atomsMaterialSignature(), () => createAtomsMaterial({ imposter: true }))
+    : acquirePersistentMaterial('atoms', atomsMaterialSignature(), createAtomsMaterial);
 
-  finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey: 'atomsMesh', cutPlanes: true });
+  finishAtomsMesh({ geometry, material, structure, wrapped, atoms, meshKey: 'atomsMesh', cutPlanes: true, imposter });
 
   // Badges anchor to the wrapped atom set and scale with atom radius, so they
   // have to be rebuilt whenever that set is rebuilt. No-ops when the flag is
   // off or nothing in the structure carries a charge.
   rebuildChargeBadges();
+  rebuildAtomLabels(); // the same for the atom labels (no-op while off)
 }
 
 
@@ -603,8 +706,16 @@ export function atomImageKey(structure, instanceId) {
   return structure?.atomImageKeys?.[instanceId] ?? null;
 }
 
+/** Whether any per-image style is set: per-atom loops skip the lookups when
+ *  not (the usual case). */
+export function hasAtomImageStyles(structure) {
+  const styles = structure?.atomImageStyles;
+  return !!styles && Object.keys(styles).length > 0;
+}
+
 /** The per-image style entry for an instance, or null (stale keys ignored). */
 export function getAtomImageStyle(structure, instanceId) {
+  if (!structure?.atomImageStyles) return null;
   const key = atomImageKey(structure, instanceId);
   const entry = key ? structure.atomImageStyles?.[key] : null;
   if (!entry) return null;
@@ -710,6 +821,7 @@ export function updateAtomCutPlaneState() {
     updateSingleAtomCutPlaneImmunity(i, atom?.cutPlaneImmune);
   }
   applyAtomCutPlaneUniforms(mesh.material);
+  refreshAsuHighlight();
 }
 
 function syncAtomMaterialTransparency(baseOpacity = 1.0) {
@@ -743,6 +855,33 @@ export function updateSingleAtomDiameter(index, element, scale = 1) {
 }
 
 
+// Colour-only re-push: write each visible instance's colour from its source
+// atom (per-image overrides win, same rule as updateAtoms) without touching
+// positions, radii, opacity or materials. The trajectory fast path and the
+// live-MD stream use this to refresh force-based atom colours as frames advance,
+// where a full updateAtoms would be wasted work and the fast paths otherwise
+// write only instance positions. No-op when the mesh instance count no longer
+// matches the frame — a topology change is the full rebuild's job, not this.
+export function refreshAtomColors(structure = fileBrowser.selectedStructure) {
+  const mesh = groups.atomsMesh;
+  if (!mesh || !mesh.instanceColor || !structure) return;
+  const wrapped = structure.periodic?.visibleWrapped ?? structure.periodic?.wrapped;
+  if (!wrapped) return;
+  const srcIndex = wrapped.srcIndex;
+  const n = srcIndex ? srcIndex.length : structure.atoms.length;
+  if (n !== mesh.count) return;
+  const imageStyles = hasAtomImageStyles(structure);
+  for (let i = 0; i < n; i++) {
+    const originalIndex = srcIndex ? srcIndex[i] : i;
+    const atom = structure.atoms[originalIndex];
+    if (!atom) continue;
+    const imageStyle = imageStyles ? getAtomImageStyle(structure, i) : null;
+    _scratchColor.set(imageStyle?.color ?? atom.getColor(originalIndex));
+    mesh.setColorAt(i, _scratchColor);
+  }
+  mesh.instanceColor.needsUpdate = true;
+}
+
 export function updateAtoms(opacity = 1.0) {
   //console.error("Update main opacity", opacity)
   const atoms = fileBrowser.selectedStructure.atoms;
@@ -770,11 +909,12 @@ export function updateAtoms(opacity = 1.0) {
   const immuneAttr = mesh.geometry.attributes.instanceCutPlaneImmune;
   const structure = fileBrowser.selectedStructure;
   prepareFocusRegions(structure);
+  const imageStyles = hasAtomImageStyles(structure);
 
   for (let i = 0; i < wrappedCart.length; i++) {
     const originalIndex = wrapped.srcIndex ? wrapped.srcIndex[i] : i;
     const atom = atoms[originalIndex];
-    const imageStyle = getAtomImageStyle(structure, i);
+    const imageStyle = imageStyles ? getAtomImageStyle(structure, i) : null;
     updateSingleAtomPosition(i, wrappedCart[i]);
 
     // Per-image overrides win over the source atom model; reuse one THREE.Color

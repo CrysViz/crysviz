@@ -602,6 +602,92 @@ async function loadAnsweringUnitDialog(page, text, name, pick = 1) {
   H.check('displacement arrows are drawn', anim.arrows);
   H.check('stop returns the atoms to equilibrium', anim.maxAfterStop < 1e-12 && anim.selectedIsPhonon, `maxAfterStop=${anim.maxAfterStop}`);
 
+  // ---- 4a. Make trajectory: the window's button and build_phonon_frames ------
+  // One path (phononSession.keepModeFrames): the same row for the same count,
+  // and a bad count refused on the window's own status line.
+  const traj = await page.evaluate(async () => {
+    const { structureShip } = await import('./state/store.js');
+    const host = (command, args) => window.crysvizHost.dispatch({ command, args });
+    const phononRow = (await host('get_state', { include: [] })).result.structure.id;
+    const rows0 = structureShip.container.length;
+    const count = /** @type {HTMLInputElement} */ (document.getElementById('phFramesCount'));
+    count.value = '6';
+    /** @type {HTMLElement} */ (document.getElementById('phFramesBtn')).click();
+    const made = structureShip.container.at(-1);
+    const ui = { rows: structureShip.container.length - rows0, frames: made.structures.length, atoms: made.structures[0].atoms.length, name: String(made.fileName) };
+    await host('select_structure', { structure: phononRow });
+    const built = await host('build_phonon_frames', { count: 6 });
+    await host('select_structure', { structure: phononRow });
+    // The animation was stopped before this section: back on the row, the atoms sit on their sites.
+    const S = await import('./phonon/phononSession.js');
+    const rest = S.phononState.supercell.frac;
+    const restDev = Math.max(...S.phononState.structure.atoms.map((atom, j) =>
+      Math.max(...atom.position.map((x, k) => Math.abs(x - rest[j][k])))));
+    const rows1 = structureShip.container.length;
+    count.value = '1';
+    /** @type {HTMLElement} */ (document.getElementById('phFramesBtn')).click();
+    const refusal = document.getElementById('phFramesStatus').textContent;
+    count.value = '10';
+    return { ui, built, refusal, restDev, rowsAfterRefusal: structureShip.container.length - rows1 };
+  });
+  H.check('Make trajectory adds one 6-frame row of the 8-atom supercell', traj.ui.rows === 1 && traj.ui.frames === 6 && traj.ui.atoms === 8, JSON.stringify(traj.ui));
+  H.check('build_phonon_frames makes the same row', traj.built.ok && traj.built.result.frames === traj.ui.frames
+    && traj.built.result.atomCount === traj.ui.atoms && traj.built.result.name === traj.ui.name, JSON.stringify(traj.built));
+  H.check('a stopped mode stays at rest when its row is shown again', traj.restDev < 1e-9, `restDev=${traj.restDev}`);
+  H.check('a bad frame count is refused inline, with no row', /2 to 200/.test(traj.refusal) && traj.rowsAfterRefusal === 0, JSON.stringify(traj));
+
+  // ---- 4b. focus regions fade the displacement arrows ----------------------
+  // A small region on the first atom: during the animation the arrow on that
+  // atom stays opaque, the others take the outer opacity, like the atoms
+  // themselves. Removing the region restores full opacity.
+  const focusAnim = await page.evaluate(async () => {
+    const S = await import('./phonon/phononSession.js');
+    const focus = await import('./render/FocusRegionModule.js');
+    const { groups } = await import('./state/store.js');
+    const st = S.phononState.structure;
+    const wrapped = st.periodic.visibleWrapped;
+    const region = focus.createFocusRegion([{
+      sourceIndex: wrapped.srcIndex[0], element: wrapped.elements[0], position: wrapped.cart[0],
+    }], st);
+    region.innerRadius = 0.5;
+    region.outerOpacity = 0.1;
+    region.gradientEnabled = false;
+    const iqM = S.phononState.dataset.qpoints.findIndex((qp) => Math.abs(qp.q[0] - 0.5) < 1e-6
+      && Math.abs(qp.q[1] - 0.5) < 1e-6 && Math.abs(qp.q[2]) < 1e-6);
+    S.selectMode(iqM, 0);
+    for (let t = 0; t < 30 && !S.phononState.playing; t++) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 400)); // a few animation ticks
+    // Each arrow must carry its own atom instance's focus opacity (the rule is
+    // periodic, so images of the focus atom one lattice vector away are
+    // inner too).
+    const read = () => {
+      const shaft = groups.phononShaftMesh.geometry.attributes.instanceOpacity;
+      const tip = groups.phononTipMesh.geometry.attributes.instanceOpacity;
+      const atoms = groups.atomsMesh.geometry.attributes.instanceOpacity;
+      let mismatch = 0;
+      const arrows = [];
+      for (let i = 0; i < shaft.count; i++) {
+        const atom = atoms.getX(i);
+        mismatch = Math.max(mismatch, Math.abs(shaft.getX(i) - atom), Math.abs(tip.getX(i) - atom));
+        arrows.push(+shaft.getX(i).toFixed(3));
+      }
+      return { mismatch, focusArrow: shaft.getX(0), minArrow: Math.min(...arrows), maxArrow: Math.max(...arrows),
+        transparent: groups.phononShaftMesh.material.transparent };
+    };
+    const during = read();
+    focus.removeFocusRegion(region.id);
+    await new Promise((r) => setTimeout(r, 300));
+    const removed = read();
+    S.stopAnimation();
+    return { during, removed };
+  });
+  H.check('focus region: each displacement arrow fades with its atom, the focus atom\'s stays opaque',
+    focusAnim.during.mismatch < 1e-6 && Math.abs(focusAnim.during.focusArrow - 1) < 1e-6
+      && Math.abs(focusAnim.during.minArrow - 0.1) < 1e-6 && focusAnim.during.transparent,
+    JSON.stringify(focusAnim));
+  H.check('removing the focus region restores full arrow opacity',
+    focusAnim.removed.minArrow === 1 && !focusAnim.removed.transparent, JSON.stringify(focusAnim.removed));
+
   // ---- 5. displacement maths vs phonopy's MPOSCAR -------------------------
   const mp = await page.evaluate(async (mposcar) => {
     const S = await import('./phonon/phononSession.js');
@@ -796,8 +882,12 @@ async function loadAnsweringUnitDialog(page, text, name, pick = 1) {
       qeUnit: qe.lengthUnit, qeCalc: qe.calculator, vaspUnit: vasp.lengthUnit,
       a0, aBohr, ratio: aBohr / a0, bohr: BOHR_TO_ANGSTROM, shownA, aBack,
       labels: [S.prettyLabel('$\\Gamma$'), S.prettyLabel('$\\mathrm{P}_0$'), S.prettyLabel('X_1'), S.prettyLabel('$\\mathrm{P}_0$', { html: true }), S.prettyLabel('$\\Sigma_{0}$')],
+      notice: document.querySelector('#phPotentialNotice [data-role="potential-notice-line"]')?.textContent ?? null,
+      caveat: document.querySelector('#phPotentialNotice [data-role="potential-notice-caveat"]')?.textContent ?? null,
     };
   });
+  H.check('the mode map names the potential it computes with, with the accuracy caveat',
+    /^Runs with (NEP|PET-MAD|ASE) — /.test(extra.notice || '') && /against DFT/.test(extra.caveat || ''), JSON.stringify([extra.notice, extra.caveat]));
   H.check('scan supercell auto-follows the mode (X needs 2x1x1)', extra.autoOn && JSON.stringify(extra.dimsShown) === '[2,1,1]', JSON.stringify(extra.dimsShown));
   H.check('scan ran in its own 2x1x1 supercell (2 atoms) while 2x2x2 is displayed', extra.scanAtoms === 2 && extra.rowName.endsWith('_2x1x1') && extra.frames === 5 && JSON.stringify(extra.mmDims) === '[2,1,1]', JSON.stringify(extra));
   H.check('QE phonopy.yaml declares Bohr, VASP-style declares Å', extra.qeUnit === 'bohr' && extra.qeCalc === 'qe' && extra.vaspUnit === 'angstrom', JSON.stringify([extra.qeUnit, extra.vaspUnit]));

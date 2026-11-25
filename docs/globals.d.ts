@@ -29,4 +29,9 @@ interface Window {
   clearAtomHighlight: any;
   InstanceMeshManager: any;
   pywebview: any;
+  // File Handling API (Chromium, installed app only): files the OS opened
+  // with CrysViz (manifest.webmanifest file_handlers).
+  launchQueue?: {
+    setConsumer(consumer: (params: { files: ReadonlyArray<FileSystemFileHandle> }) => void): void;
+  };
 }

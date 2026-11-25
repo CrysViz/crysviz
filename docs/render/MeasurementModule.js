@@ -6,6 +6,7 @@ import { fracToCart } from '../math/index.js';
 import { updateAtoms } from './AtomsFracUpdateModule.js';
 import { applyTransparency } from '../utils/TransparencyPolicy.js';
 import { getBondByInstanceId } from './BondsFracUpdateModule.js';
+import { distanceSu, angleSu, formatWithSu } from '../model/cifErrors.js';
 
 // Angle measurements used to render green (atom rings all 0x00ff00-ish,
 // separate from the dashed legs' own orange) — unified to the same orange as
@@ -39,9 +40,29 @@ let nextMeasurementId = 1;
 // leaking every segment's geometry on each clear.
 function disposeMeasureItem(item) {
   item.traverse?.((child) => {
-    if (child.geometry) child.geometry.dispose();
+    if (child.geometry) disposeOwnGeometry(child.geometry);
   });
-  if (item.geometry) item.geometry.dispose();
+  if (item.geometry) disposeOwnGeometry(item.geometry);
+}
+
+/** Dispose a geometry unless it is one of the shared dash cylinders below. */
+function disposeOwnGeometry(geometry) {
+  if (!geometry.userData?.sharedDash) geometry.dispose();
+}
+
+// One unit-length cylinder per line radius, shared by every dash of every
+// measurement line and stretched to each dash's length (mesh.scale.y). Each
+// dash used to build its own geometry: ~10 per line, a few hundred for a
+// share link with twenty measurements, all built while it opened.
+const dashGeometries = new Map();
+function dashGeometry(radius) {
+  let geometry = dashGeometries.get(radius);
+  if (!geometry) {
+    geometry = new THREE.CylinderGeometry(radius, radius, 1, 12);
+    geometry.userData.sharedDash = true;
+    dashGeometries.set(radius, geometry);
+  }
+  return geometry;
 }
 
 /** Removes just one measurement (all its lines/markers/label) by the shared
@@ -60,6 +81,7 @@ export function removeMeasurementById(id) {
     return false;
   });
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 /** Tear down one value label: the sprite itself (its material, whose texture
@@ -151,7 +173,7 @@ const LINE_SPECS = {
  *  carry can't drift apart. */
 function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
   for (const child of group.children.slice()) {
-    child.geometry?.dispose();
+    if (child.geometry) disposeOwnGeometry(child.geometry);
     child.material?.dispose?.();
     group.remove(child);
   }
@@ -184,11 +206,11 @@ function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
   const step = new THREE.Vector3().subVectors(end, start).normalize();
   const origin = start.clone().addScaledVector(step, usableStart);
   const addPiece = (length, centreAlong) => {
-    const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(spec.radius, spec.radius, length, 12), material);
+    const mesh = new THREE.Mesh(dashGeometry(spec.radius), material);
     mesh.position.copy(origin).addScaledVector(step, centreAlong);
     mesh.lookAt(end);
     mesh.rotateX(Math.PI / 2);
+    mesh.scale.y = length;
     group.add(mesh);
   };
 
@@ -196,9 +218,16 @@ function buildMeasureLine(group, start, end, kind, startTrim = 0, endTrim = 0) {
     addPiece(distance, distance / 2);
     return;
   }
+  // Whole dashes at both ends: the count that fits best, with dash and gap
+  // stretched or shrunk together (by under half a period) to fill the line
+  // exactly. Laid from the first atom at the set lengths, the pattern ran out
+  // up to a period short of the second (a ~0.35 Å bare stretch there).
   const segmentLength = spec.dash + spec.gap;
-  const count = Math.floor(distance / segmentLength);
-  for (let i = 0; i < count; i++) addPiece(spec.dash, i * segmentLength + spec.dash / 2);
+  const count = Math.max(1, Math.round((distance + spec.gap) / segmentLength));
+  const scale = distance / (count * spec.dash + (count - 1) * spec.gap);
+  const dash = spec.dash * scale;
+  const period = (spec.dash + spec.gap) * scale;
+  for (let i = 0; i < count; i++) addPiece(dash, i * period + dash / 2);
 }
 
 // How far along the angle bisector the label sits, as a multiple of the arc's
@@ -357,6 +386,8 @@ export function refreshMeasurementStyling() {
   // Rebuilds the lines (via buildMeasureLine), the label textures and, at its
   // end, every atom marker (via updateMeasurementMarkers).
   updateAllMeasurements();
+  // The inspectors draw the same measurements in the same colours and style.
+  notifyMeasurementsChanged();
 }
 
 /** Points along the minor arc between unit directions d1,d2, radius r from
@@ -466,6 +497,43 @@ export function clearAllMeasurements(){
   measurements.measureLabels = [];
   measurements.selectedAtoms = [];
   clearMeasureGraphics();
+  notifyMeasurementsChanged();
+}
+
+/** Tell whoever shows the measurements elsewhere (the inspectors) that one
+ *  was added or removed. */
+function notifyMeasurementsChanged() {
+  document.dispatchEvent(new CustomEvent('crysviz:measurements-changed'));
+}
+
+/**
+ * Every measurement on screen, for a view of its own (the Selection and
+ * Polyhedron Inspectors): its kind, its atoms where they are now (source
+ * atom, Cartesian position of the copy measured; an angle's vertex second),
+ * its value and its CIF error (null without). One entry per value label,
+ * which every measurement has exactly one of.
+ * @returns {Array<{id: number, kind: 'distance'|'angle', atoms: Array<{atomIndex: number, pos: number[]}>, value: number, su: number|null}>}
+ */
+export function measurementsSnapshot() {
+  const out = [];
+  for (const label of measurements.measureLabels) {
+    const u = label.userData ?? {};
+    if (u.type !== 'distance' && u.type !== 'angle') continue;
+    const refs = u.type === 'distance' ? [u.atom1Ref, u.atom2Ref] : [u.atom1Ref, u.atom2Ref, u.atom3Ref];
+    const resolved = refs.map((ref) => resolveMeasurementAtom(ref));
+    if (resolved.some((a) => !a)) continue;
+    const value = u.type === 'distance'
+      ? resolved[0].position.distanceTo(resolved[1].position)
+      : calculateAngle(resolved[0], resolved[1], resolved[2]);
+    out.push({
+      id: u.measurementId,
+      kind: u.type,
+      atoms: resolved.map((a) => ({ atomIndex: a.userData.atomIndex, pos: a.position.toArray() })),
+      value,
+      su: measurementSu(u.type, refs),
+    });
+  }
+  return out;
 }
 
 export function calculateAngle(atom1, atom2, atom3) {
@@ -845,7 +913,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   // Angle value label — just the angle itself; the "∠O-Ba-O:" element-name
   // prefix is dropped, since the arc and the three rings already show which
   // atoms the angle is between.
-  const label = makeMeasureLabelSprite(`${angle.toFixed(1)}°`, labelStyleFor('angle'));
+  const label = makeMeasureLabelSprite(angleLabelText(angle, [atom1Ref, atom2Ref, atom3Ref]), labelStyleFor('angle'));
   label.position.copy(p2);
   label.userData.anchor = p2.clone();
   // Direction/length to slide along IF this label ends up sharing its point
@@ -881,6 +949,7 @@ export function addAngleMeasurement(atom1, atom2, atom3) {
   app.scene.add(label);
   measurements.measureLabels.push(label);
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 
@@ -936,7 +1005,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   // Compact black-and-white value pill, as a depth-tested sprite.
   const mid = pa.clone().add(pb).multiplyScalar(0.5);
   const d = pa.distanceTo(pb);
-  const label = makeMeasureLabelSprite(`${formatÅ(d)} Å`, labelStyleFor('distance'));
+  const label = makeMeasureLabelSprite(distanceLabelText(d, [atom1Ref, atom2Ref]), labelStyleFor('distance'));
   label.position.copy(mid);
   label.userData.anchor = mid.clone();
   label.userData.anchorClearance = 0; // only its own thin dashed line sits here
@@ -962,6 +1031,7 @@ export function addDistanceMeasurement(atom1, atom2) {
   app.scene.add(label);
   measurements.measureLabels.push(label);
   resolveLabelPlacement();
+  notifyMeasurementsChanged();
 }
 
 export function drawMeasureGraphics(){
@@ -972,14 +1042,7 @@ export function drawMeasureGraphics(){
     // Show preview for distance measurement (1 atom selected)
     const atom1 = measurements.selectedAtoms[0];
     const div = document.createElement('div');
-    div.className = 'measure-label';
-    div.style.background = 'rgba(255, 255, 255, 0.8)';
-    div.style.border = '2px solid #000000';
-    div.style.color = '#000000';
-    div.style.fontWeight = '700';
-    div.style.fontSize = 'var(--fs-base)';
-    div.style.padding = '4px 8px';
-    div.style.borderRadius = '4px';
+    div.className = 'measure-label measure-label-preview measure-preview-distance';
     //div.textContent = `${atom1.userData.element} — ? (click 2nd atom)`;
     div.textContent = `choose 2nd atom`;
     measureLabel = new CSS2DObject(div);
@@ -997,14 +1060,7 @@ export function drawMeasureGraphics(){
     // carries guidance text ("select vertex", etc.) since it's transient
     // picking UI, not the completed measurement's own display.
     const div = document.createElement('div');
-    div.className = 'measure-label';
-    div.style.background = 'rgba(255, 102, 0, 0.85)';
-    div.style.border = 'none';
-    div.style.color = '#ffffff';
-    div.style.fontWeight = '700';
-    div.style.fontSize = 'var(--fs-xs)';
-    div.style.padding = '2px 4px';
-    div.style.borderRadius = '4px';
+    div.className = 'measure-label measure-label-preview measure-preview-angle';
 
     if (measurements.selectedAtoms.length === 1) {
       div.textContent = `${measurements.selectedAtoms[0].userData.element} — ? — ? (select vertex)`;
@@ -1032,6 +1088,42 @@ export function clearMeasure(){
 }
 
 function formatÅ(x){ return (Math.round(x*1000)/1000).toFixed(3); }
+
+// --- CIF errors on the value labels ------------------------------------------
+// A structure read from a CIF with its errors (model/cifErrors.js) shows each
+// value with its standard uncertainty, 2.3456(12) Å / 109.47(3)°, while the
+// Features window's "Show CIF Errors" is on and the atoms are still where the
+// CIF put them. Otherwise the plain value, exactly as before.
+
+/** The measured atoms as {atomIndex, frac} (frac: the copy measured, with its
+ *  lattice translation), from refs or resolved atoms. */
+function suPoint(atomOrRef) {
+  if (!atomOrRef) return null;
+  const atomIndex = atomOrRef.atomIndex ?? atomOrRef.userData?.atomIndex;
+  const frac = atomOrRef.lastResolvedFrac ?? atomOrRef.userData?.wrappedFrac;
+  return Number.isInteger(atomIndex) && Array.isArray(frac) ? { atomIndex, frac } : null;
+}
+
+function measurementSu(kind, items) {
+  if (general.showCifErrors === false) return null;
+  const structure = fileBrowser.selectedStructure;
+  if (!structure?.cifErrors) return null;
+  const pts = items.map(suPoint);
+  if (pts.some((p) => !p)) return null;
+  return kind === 'distance' ? distanceSu(structure, pts[0], pts[1]) : angleSu(structure, pts[0], pts[1], pts[2]);
+}
+
+/** "2.3456(12) Å", or "2.346 Å" without an error. */
+function distanceLabelText(d, items) {
+  const su = measurementSu('distance', items);
+  return `${su > 0 ? formatWithSu(d, su, 3) : formatÅ(d)} Å`;
+}
+
+/** "109.47(3)°", or "109.5°" without an error. Items: end, vertex, end. */
+function angleLabelText(angle, items) {
+  const su = measurementSu('angle', items);
+  return `${su > 0 ? formatWithSu(angle, su, 1) : angle.toFixed(1)}°`;
+}
 
 
 export function updateAllMeasurements() {
@@ -1095,7 +1187,7 @@ export function updateAllMeasurements() {
         (label.userData.anchor ??= midpoint.clone()).copy(midpoint);
         label.userData.lineDir = pb.clone().sub(pa).normalize();
   label.userData.separationLength = label.scale.y * DISTANCE_LABEL_OFFSET;
-        setMeasureLabelText(label, `${formatÅ(pa.distanceTo(pb))} Å`, labelStyleFor('distance'));
+        setMeasureLabelText(label, distanceLabelText(pa.distanceTo(pb), [atom1, atom2]), labelStyleFor('distance'));
       }
     } else if (label.userData && label.userData.type === 'angle') {
       const atom1 = resolveMeasurementAtom(label.userData.atom1Ref, label.userData.atom1Position);
@@ -1108,7 +1200,7 @@ export function updateAllMeasurements() {
         (label.userData.anchor ??= new THREE.Vector3()).copy(atom2.position);
         label.userData.anchorClearance = markerClearance(vr);
         label.userData.separation = angleSeparation(toA, toB, vertexArcRadius(vr, toA.length(), toB.length()));
-        setMeasureLabelText(label, `${calculateAngle(atom1, atom2, atom3).toFixed(1)}°`, labelStyleFor('angle'));
+        setMeasureLabelText(label, angleLabelText(calculateAngle(atom1, atom2, atom3), [atom1, atom2, atom3]), labelStyleFor('angle'));
       }
     }
     label.userData?.removeHotspot?.position.copy(label.userData.anchor ?? label.position);

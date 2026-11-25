@@ -4,12 +4,14 @@
 // image refines, then fades out once converged. Driven per-frame from
 // RayTracingPipeline.render() (and its pathtrace subclass); hidden on
 // pipeline dispose. Pure DOM overlay — pointer-events none, themed via
-// --highlight-color.
+// --highlight-color. The same strip doubles as the app's busy indicator for
+// long rebuilds on large structures (showBusyProgress, below).
 
 let barEl = null;
 let fillEl = null;
 let hideTimer = null;
 let compiling = false; // true while the indeterminate "Compiling…" marquee runs
+let busy = 0; // showBusyProgress() depth: the app is busy with a long rebuild
 
 // Stacking: the strip must sit ABOVE the PNG-export backdrop (#pngExportModal,
 // position:fixed z-index:3000 on <body>) so the export accumulation stays
@@ -27,12 +29,7 @@ function ensureBar() {
   if (!document.body) return null;
   barEl = document.createElement('div');
   barEl.id = 'tracerProgress';
-  barEl.className = 'tracer-progress-bar';
-  // Explicit inline default alongside the CSS class's own `opacity: 0`:
-  // updateTracerProgress() reads bar.style.opacity back (line below) as the
-  // source of truth for "already visible" — the CSS class alone would leave
-  // it as '' instead of '0' before the first inline set.
-  barEl.style.opacity = '0';
+  barEl.className = 'tracer-progress-bar'; // .is-shown fades it in (analysisPanels.css)
   fillEl = document.createElement('div');
   fillEl.id = 'tracerProgressFill';
   fillEl.className = 'tracer-progress-fill';
@@ -48,11 +45,8 @@ function clearCompiling() {
   if (!compiling) return;
   compiling = false;
   if (fillEl) {
-    fillEl.style.animation = '';
-    fillEl.style.position = '';
-    fillEl.style.left = '';
+    fillEl.classList.remove('is-compiling');
     fillEl.style.width = '0%';
-    fillEl.style.transition = 'width 0.15s linear';
   }
 }
 
@@ -74,21 +68,21 @@ function positionBar() {
  *  started) or hideTracerProgress() (pipeline switch/dispose). Idempotent: called
  *  every frame of the compile window, it must NOT restart the marquee. */
 export function showTracerCompiling() {
+  if (busy) return;
   const bar = ensureBar();
   if (!bar) return;
   positionBar(); // keep aligned even as the marquee runs (layout/resize)
   if (compiling) return; // already animating — don't restart it each frame
   compiling = true;
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-  bar.style.opacity = '1';
-  fillEl.style.transition = 'none';
-  fillEl.style.position = 'relative';
-  fillEl.style.width = '40%';
-  fillEl.style.animation = 'tracerCompileSlide 1.1s ease-in-out infinite';
+  bar.classList.add('is-shown');
+  fillEl.style.width = ''; // the marquee segment's width is the class's
+  fillEl.classList.add('is-compiling');
 }
 
 /** Per-frame progress update from the tracer pipelines. */
 export function updateTracerProgress(samples, target) {
+  if (busy) return;
   const bar = ensureBar();
   if (!bar) return;
   clearCompiling(); // accumulation started: leave the indeterminate marquee
@@ -102,19 +96,51 @@ export function updateTracerProgress(samples, target) {
   fillEl.style.width = `${(Math.sqrt(fraction) * 100).toFixed(1)}%`;
   if (fraction < 1) {
     if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-    bar.style.opacity = '1';
-  } else if (bar.style.opacity !== '0' && !hideTimer) {
+    bar.classList.add('is-shown');
+  } else if (bar.classList.contains('is-shown') && !hideTimer) {
     // converged: let the full bar be seen briefly, then fade out
     hideTimer = setTimeout(() => {
       hideTimer = null;
-      if (barEl) barEl.style.opacity = '0';
+      if (barEl) barEl.classList.remove('is-shown');
     }, 350);
   }
 }
 
 /** Hide immediately (pipeline switch/dispose). */
 export function hideTracerProgress() {
+  if (busy) return;
   clearCompiling(); // also cancel any in-flight compiling marquee
   if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
-  if (barEl) barEl.style.opacity = '0';
+  if (barEl) barEl.classList.remove('is-shown');
+}
+
+/** Indeterminate "busy" mode for a long synchronous rebuild (a display toggle
+ *  on 10^5 atoms): the same strip, with a segment sweeping across it. The
+ *  sweep animates transform only, which the compositor runs on its own, so it
+ *  keeps moving while the main thread is blocked — the caller shows it, lets
+ *  it reach the screen (see ui/HeavyRebuild.js), then does the work. Nested calls
+ *  are counted; the tracer's own updates wait until the last hide. */
+export function showBusyProgress() {
+  const bar = ensureBar();
+  if (!bar) return;
+  busy += 1;
+  if (busy > 1) return;
+  clearCompiling();
+  if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+  positionBar();
+  bar.classList.add('is-shown');
+  fillEl.style.width = ''; // the sweep segment's width is the class's
+  fillEl.classList.add('is-busy');
+}
+
+/** End of showBusyProgress() (the last of nested calls hides the strip). */
+export function hideBusyProgress() {
+  if (!busy) return;
+  busy -= 1;
+  if (busy) return;
+  if (fillEl) {
+    fillEl.classList.remove('is-busy');
+    fillEl.style.width = '0%';
+  }
+  if (barEl) barEl.classList.remove('is-shown');
 }

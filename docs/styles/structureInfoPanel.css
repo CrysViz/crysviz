@@ -181,7 +181,11 @@
 .si-title-row {
   display: flex;
   justify-content: space-between;
-  gap: 20px;
+  /* 10px, not more: with the four buttons (✎ ❖ Aₓ Aˣ⁺) "Modify Atoms/Bonds"
+     has to stay on one line in the default sidebar — a second line makes
+     the window taller, and it grows up over the view when the selection bar
+     appears. */
+  gap: 10px;
   margin-top: 2px;
 }
 .si-title {
@@ -214,6 +218,42 @@
   border-radius: var(--radius-4);
   color: var(--fg-1);
   cursor: pointer;
+}
+/* The atom-label and charge switches beside it (Aₓ, Aˣ⁺ — ui/AtomLabelsToggle.js),
+   pressed (the active-state green of .atom-editor-button.active) while on. */
+.structure-labels-button {
+  width: 22px; /* narrower than ✎/❖: two characters, and the title needs the room */
+  font-size: var(--fs-base);
+  letter-spacing: -0.02em;
+}
+/* Aₓ / Aˣ⁺: the index low and the charge high beside the A. The glyph is one
+   inline box (the button is a flex container, whose items vertical-align
+   cannot move), and the offsets are explicit, as the button's line-height
+   is 0. */
+.structure-labels-button .annot-glyph {
+  display: inline-block;
+  line-height: 1;
+  white-space: nowrap;
+}
+.structure-labels-button sub,
+.structure-labels-button sup {
+  position: relative;
+  vertical-align: baseline;
+  font-size: 0.68em;
+  line-height: 0;
+  margin-left: 0.5px;
+}
+.structure-labels-button sub { top: 0.32em; }
+.structure-labels-button sup { top: -0.55em; }
+/* Aˣ⁺ for a structure without charges: dimmed, but still hoverable so its
+   tooltip can say why (ui/AtomLabelsToggle.js). */
+.structure-labels-button.is-unavailable {
+  opacity: 0.45;
+  cursor: default;
+}
+.structure-edit-button.active {
+  border: 1px solid rgb(var(--active-green-rgb) / 0.95);
+  box-shadow: 0 0 0 1px rgb(var(--active-green-rgb) / 0.35), inset 0 0 0 1px rgb(var(--active-green-rgb) / 0.15);
 }
 .si-wyckoff-badge {
   margin: 0 0 var(--sp-3-5) 0;
@@ -286,8 +326,12 @@
      count + Spin/Force + toggle beside a wide element name has no slack, and
      floored tracks pushed the button and toggle past the panel edge into a
      horizontal scrollbar. With .comp-right allowed to wrap, that case drops
-     the button + toggle (one unit, .comp-actions) under the count instead. */
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+     the button + toggle (one unit, .comp-actions) under the count instead.
+     The right track is floored at that wrapped width (its min-content), so
+     a wide left column — a mixed site's dots and "(Fe,K,Ni,Ta)" — has to
+     wrap instead: with both floors at 0 the left took its one-line width and
+     the button, right-aligned in a 31px track, hung over the label. */
+  grid-template-columns: minmax(0, auto) minmax(min-content, 1fr);
   align-items: center;
   column-gap: var(--sp-2);
   row-gap: var(--sp-2);
@@ -295,6 +339,35 @@
   transition: background-color 0.2s ease;
 }
 .comp-row:hover { background-color: var(--wash-0); } /* was 0.03 — Wave 2.6 */
+/* Smart line breaks for a wide left column: the toggle keeps its own slot,
+   and in the block after it (.comp-body) the label with its caret
+   (.comp-label) moves under the dots — which always stay on one line, six
+   or more of them — and only if it is still too wide does it break after a
+   comma (<wbr> in CompositionRow.js), never inside an element symbol. */
+.comp-row .comp-left { min-width: 0; }
+.comp-body {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: var(--sp-2);
+  row-gap: 2px;
+  min-width: 0;
+}
+/* The label and its caret flow as text, so a wrapped label ends with the
+   caret right after its last symbol ("Mn,Ni,Ta) ▶"), and balance gives two
+   even lines ("(Co,Fe,K," / "Mn,Ni,Ta)") rather than a lone "Ta)". */
+.comp-label {
+  display: block;
+  min-width: 0;
+  text-wrap: balance;
+}
+.comp-label .comp-expand-icon {
+  display: inline-block;
+  margin-left: var(--sp-2);
+}
+/* More than three species (CompositionRow.js LABEL_UNDER_DOTS_FROM): the
+   label always takes its own line under the dots. */
+.comp-body--stacked .comp-label { flex-basis: 100%; }
 .comp-row-name {
   /* Explicit, scale-respecting size matching Bonds'/Poly's category labels
      (styles.css's global `label` rule) so all three tabs render identically
@@ -308,6 +381,10 @@
   transition: transform 0.2s ease;
   color: var(--fg-75); /* was 0.8 — Wave 2.6 --fg-75 */
   transform: rotate(0deg);
+}
+/* An expanded category (its list shown); the carets of all three tabs. */
+.comp-expand-icon.is-expanded {
+  transform: rotate(90deg);
 }
 .comp-right {
   display: flex;
@@ -349,6 +426,27 @@
   border-left: 2px solid var(--line-1);
   padding-left: var(--sp-2);
 }
+/* Pager above a long per-atom/bond/polyhedron list (one page of rows at a
+   time, components/PagedRows.js). */
+.row-pager {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  font-size: var(--fs-xs);
+}
+.row-pager-range {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-pager .btn-mini { min-width: 24px; }
+.row-pager-goto {
+  width: 64px;
+  font-size: var(--fs-xs);
+}
 /* A mixed-site ("(K,Na)") group's row gets one dot PER element instead of a
    single blended swatch — .comp-mixed-dots is the wrapper around them, added
    alongside .dot (styles.css) rather than replacing it, so the "remove old
@@ -380,12 +478,13 @@
   width: auto;
   height: auto;
 }
-/* No `border` here for either dot class: both are <canvas> elements from
-   utils/ColorModule.js's createPieDot(), which always sets its OWN inline
-   `border: 1px solid #666` — an inline style, so it would silently win over
-   any border declared here regardless of specificity. The actual border
-   (rgba(255,255,255,0.4)) is set as an explicit inline override in JS,
-   right where the canvas is created, to actually beat it. */
+/* Both dot classes sit on createPieDot() canvases: canvas.cv-pie-dot
+   (styles.css) draws the round #666 border, and the composition rows trade
+   it for the --fg-3 hairline below (two classes, to outrank it). */
+.cv-pie-dot.comp-mixed-dot,
+.cv-pie-dot.comp-single-dot {
+  border-color: var(--fg-3);
+}
 .comp-mixed-dot {
   width: 18px;
   height: 18px;
@@ -413,15 +512,27 @@
   font-size: var(--fs-sm);
   cursor: pointer;
   transition: background-color 0.2s ease;
+  /* An off-screen row skips layout and paint: a 3D pick reveals its row in a
+     list of up to 1000, and laying them all out was most of the pick's time.
+     The (content) height a skipped row counts with is that of the last row
+     a pick scrolled to in its list (PagedRows.js scrollRowIntoView), then
+     its own once it has been on screen (auto). */
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--row-intrinsic-height, 40px);
 }
 .individual-atom-row:hover,
 .individual-bond-row:hover,
 .individual-polyhedron-row:hover {
-  /* Selection (SelectAndHighlightModule.js highlightAtomRow) sets an inline
-     background-color on the selected row, which — being inline — always
-     outranks this stylesheet rule regardless of :hover, so a selected row's
-     amber highlight is never overwritten by hovering it. */
   background-color: var(--wash-0); /* was 0.03 — Wave 2.6 */
+}
+/* The selected row (SelectAndHighlightModule.js highlightAtomRow). Same
+   specificity as the :hover rule above and declared after it, so a selected
+   row's amber highlight is never overwritten by hovering it. */
+.individual-atom-row.is-highlighted,
+.individual-bond-row.is-highlighted,
+.individual-polyhedron-row.is-highlighted {
+  background-color: rgb(var(--warn-rgb) / 0.2);
+  border-left: 3px solid var(--row-highlight-bar);
 }
 .individual-bond-row,
 .individual-polyhedron-row {
@@ -578,12 +689,14 @@
   flex: none;
   overflow: hidden;
 }
-/* No `border` here either, for the same createPieDot inline-style reason as
-   .comp-single-dot/.comp-mixed-dot above — JS sets it explicitly. */
+/* A createPieDot() canvas filling its round button, which draws the
+   border; canvas.cv-pie-dot (styles.css) keeps it inline-block. */
+.cv-pie-dot.iar-pie-canvas {
+  border: none;
+}
 .iar-pie-canvas {
   width: 100%;
   height: 100%;
-  display: block;
   pointer-events: none;
 }
 .atom-editor-button.iar-coord-btn,
@@ -740,6 +853,8 @@
    ColorEditor.js — createElementColorEditor (the category-wide editor)
    ================================================================ */
 .element-color-editor {
+  display: flex;
+  flex-direction: column;
   grid-column: 2;
   padding: var(--sp-3);
   background: var(--wash-0); /* was 0.03 — Wave 2.6 --wash-0 */
@@ -772,25 +887,35 @@
    SpinForceEditor.js — createSpinForceEditor
    ================================================================ */
 .spin-mode-switch {
-  display: inline-flex;
+  display: flex;
+  box-sizing: border-box;
+  width: 100%;
   background: var(--chrome-2); /* was #2d2d2d — Wave 2.6 near-dup fold */
   border-radius: var(--radius-md);
   padding: var(--sp-1);
   gap: var(--sp-1);
   font-size: var(--fs-sm);
-  min-width: 98%;
   margin-bottom: var(--sp-3-5);
 }
+/* Two equal halves that always fit (a 40% minimum plus padding overflowed a
+   narrow editor). The per-atom editor builds them from <div>s and the
+   per-element one (SpinForceCategoryEditor.js) from <button>s: no browser
+   button frame or font, so both look the same. */
 .spin-mode-switch-btn {
-  padding: var(--sp-2) 14px;
+  flex: 1 1 0;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 0;
   border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: var(--fw-medium);
   cursor: pointer;
   transition: 0.15s ease;
   user-select: none;
-  font-weight: var(--fw-medium);
-  min-width: 40%;
-  justify-content: center;
-  display: flex;
 }
 /* Active/inactive state — was setSwitchActive()'s four inline style writes. */
 .spin-mode-switch-btn.active {
@@ -845,6 +970,7 @@
   justify-content: center;
 }
 .spin-color-picker-section {
+  display: flex;
   margin-top: var(--sp-3);
   padding-top: var(--sp-3);
   border-top: 1px solid var(--wash-2);
@@ -876,13 +1002,17 @@
   height: 28px;
   font-size: var(--fs-sm);
 }
-/* Per-property slider rows (Gloss/Tint/Rough/Frost/IoR/…) */
+/* Per-property slider rows (Gloss/Tint/Rough/Frost/IoR/…); the ones that
+   do not apply to the chosen material type are hidden (the editor also
+   sits in the Volumetric Field window, outside #composition's [hidden]
+   rule, so it needs its own). */
 .material-prop-row {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   margin-top: var(--sp-2);
 }
+.material-prop-row[hidden] { display: none; }
 .material-prop-row input[type="range"] { flex: 1; }
 .material-prop-value {
   font-size: var(--fs-sm);
@@ -1052,7 +1182,7 @@
    flag it as "your current selection", distinct from the per-species rows
    below. */
 .si-selection-bar {
-  display: none; /* JS switches to block when the selection is non-empty */
+  /* hidden attribute while the selection is empty (SelectionActionBar.js) */
   margin-bottom: var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-radius: var(--radius-md);
@@ -1061,12 +1191,15 @@
 }
 .si-selbar-header {
   display: flex;
+  flex-wrap: wrap; /* the buttons move to a line of their own when the summary leaves no room */
   align-items: center;
   justify-content: space-between;
-  gap: var(--sp-2);
+  gap: var(--sp-1) var(--sp-2);
   margin-bottom: var(--sp-2);
 }
 .si-selbar-summary {
+  flex: 1 1 auto;
+  white-space: nowrap;
   font-size: var(--fs-sm);
   color: var(--fg-1);
   font-weight: 600;
@@ -1074,9 +1207,11 @@
 /* Compact Clear/Reset — smaller than the shared .btn-mini so they read as
    secondary actions on the bar rather than primary buttons. Scoped through
    .si-selection-bar to out-rank .cv-panel-body button's font-size (panelWindow.css). */
+.si-selection-bar .si-selbar-inspect,
 .si-selection-bar .si-selbar-clear,
 .si-selection-bar .si-selbar-reset,
 .si-selection-bar .si-selbar-coordinates-toggle,
+.si-selection-bar .si-selbar-save,
 .si-selection-bar .si-selbar-copy {
   flex: none;
   padding: 1px var(--sp-2);
@@ -1088,6 +1223,11 @@
   display: flex;
   align-items: center;
   gap: var(--sp-1);
+}
+.si-selbar-header-actions {
+  flex: 0 0 auto;
+  margin-left: auto; /* right-aligned, in one line, also when wrapped under the summary */
+  white-space: nowrap;
 }
 .si-selbar-coordinates {
   display: grid;
@@ -1110,6 +1250,9 @@
   padding: var(--sp-1) var(--sp-2);
   font: var(--fs-xs)/1.45 var(--font-mono, monospace);
   white-space: pre;
+  /* Tab stops 9 characters apart ("-12.3456" or "Si 123" plus a space): the
+     tab-separated columns line up and x, y and z all fit the window. */
+  tab-size: 9;
 }
 .si-selbar-color-row {
   display: flex;
@@ -1130,9 +1273,10 @@
 .si-selbar-dot {
   width: 100%;
   height: 100%;
-  display: block;
-  border-radius: 50%;
   pointer-events: none; /* clicks belong to the button, not the canvas */
+}
+.cv-pie-dot.si-selbar-dot {
+  border: none; /* the button already draws one */
 }
 .si-selbar-reset {
   margin-left: auto; /* push Reset to the right, dot stays next to the label */
@@ -1147,4 +1291,49 @@
 .comp-legend-widget.cv-colorbar-locked .comp-legend-sub:focus {
   box-shadow: none;
   cursor: default;
+}
+
+/* Selection bar: the Atoms | Bonds | Polyhedra view tabs and the saved
+   selections row (ui/StructureInfoPanel/SelectionActionBar.js,
+   SelectionGroups.js). The tabs reuse .segmented-control (controlPanel.css). */
+.si-selbar-tabs {
+  margin-bottom: var(--sp-2);
+}
+.si-selbar-tabs button {
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
+}
+.si-selbar-groups-block {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--line-1);
+}
+.si-selbar-groups-title {
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--fg-1);
+}
+.si-selbar-groups {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  font-size: var(--fs-xs);
+}
+.si-selbar-groups select,
+.si-selbar-groups input[type="text"] {
+  flex: 1 1 8em;
+  min-width: 6em;
+  font-size: var(--fs-xs);
+}
+.si-selection-bar .si-selbar-groups button {
+  flex: none;
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.si-selbar-empty {
+  font-size: var(--fs-xs);
+  color: var(--fg-2);
 }

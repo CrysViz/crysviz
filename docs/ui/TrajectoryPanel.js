@@ -1,17 +1,25 @@
 import { updateVisualization } from '../core/crystal-viewer.js';
 import { general, structureShip, fileBrowser } from '../state/store.js';
 import { createBondLengthControls } from './BondLengthPanel.js';
-import { updateSpins, removeSpins } from '../render/index.js';
+import { updateSpins, removeSpins, notifyColorsChanged } from '../render/index.js';
 import { updateForces, removeForces } from '../render/index.js';
 import { syncPlanesForSelectedStructure } from './PlanesPanel.js';
 import { createTrajectoryPlot } from './TrajectoryPlot.js';
-import { openPanel, refreshPanelAvailability, getPanelPref, setPanelPref } from './panels/PanelManager.js';
+import { openPanel, refreshPanelAvailability, getPanelPref, setPanelPref, rebuildPanel } from './panels/PanelManager.js';
+import { notifyActiveStructureChange } from '../state/structures.js';
 import { recenterCamera } from './WindowAndSceneControls.js';
 import { selectStructure, setRowStepJumpHandler } from './FileBrowswerPanel.js';
-import { stressMean } from '../atomistic/relaxer.js';
-import { applyFrameFast, BOND_TOPOLOGY_STRIDE } from '../render/FastFrameModule.js';
+import { pressureGPa } from '../model/index.js';
+import {
+  applyFrameFast, BOND_TOPOLOGY_STRIDE, isFrameDependentColorMode, fastFrameDisplacement,
+  PLAYBACK_TOPOLOGY_MIN_ATOMS, PLAYBACK_TOPOLOGY_DISPLACEMENT,
+} from '../render/FastFrameModule.js';
+import { LARGE_REBUILD_ATOMS } from '../render/BondsFracUpdateModule.js';
+import { peekAtoms } from '../model/materializeFrame.js';
+import { setPlaybackLock } from './HeavyRebuild.js';
 import { count as traceCount, markEvent } from '../debug/debugTrace.js';
 import { isDebugMode } from '../debug/debugMode.js';
+import { isExperimentalMode } from '../debug/experimentalMode.js';
 // Mean force magnitude over a frame's per-atom force vectors (eV/Å). Kept local
 // so the panel does not depend on the Forces-panel/histogram machinery.
 function meanForceMagnitude(structure) {
@@ -34,9 +42,8 @@ let playing = false;
 let frameStep = 1;
 let autoPlayInterval = null;
 let autoPlayRaf = 0;
-// Playback frames since the last full rebuild; every BOND_TOPOLOGY_STRIDE-th
-// frame rebuilds so bonds that form mid-trajectory appear (same cadence as the
-// MD/relax loops).
+// Playback frames since the last full rebuild; a periodic full rebuild makes
+// bonds that form mid-trajectory appear (playbackFastAllowed decides when).
 let playbackSinceFull = 0;
 
 // --- Trajectory plot (unified MD Monitor) --------------------------------
@@ -61,7 +68,7 @@ function hasPlottableData(container) {
 }
 
 function setPlotVisible(visible) {
-  if (trajPlotHostEl) trajPlotHostEl.style.display = visible ? '' : 'none';
+  if (trajPlotHostEl) trajPlotHostEl.hidden = !visible;
 }
 
 // Show the "Compute step stats" button only for a loaded trajectory that has
@@ -140,8 +147,8 @@ function computeStepStats(container) {
       meanForce[i] = Number.isFinite(mean) ? mean : NaN;
       if (Number.isFinite(mean)) hasForce = true;
 
-      // Pressure = mean of the frame's stress-tensor diagonal (NaN when absent).
-      const p = stressMean(s?.stress?.tensor);
+      // Pressure in GPa, compression positive (model/Stress.js; NaN when absent).
+      const p = pressureGPa(s?.stress?.tensor);
       pressure[i] = Number.isFinite(p) ? p : NaN;
       if (Number.isFinite(p)) hasPressure = true;
     }
@@ -200,13 +207,14 @@ function ensurePlot() {
     trajPlotHostEl.id = 'trajPlotHost';
     panelBody.appendChild(trajPlotHostEl);
   }
-  trajPlotHostEl.style.display = 'none';
+  trajPlotHostEl.hidden = true;
 
   trajPlot = createTrajectoryPlot(trajPlotHostEl, { maxPts: 5000 });
   trajPlot.onSeek((f) => {
     const container = structureShip.container[fileBrowser.selectedRowIndex];
     if (!container?.structures?.length) return;
     playing = false;
+    stopAutoPlay();
     if (trajectoryPlayerElements.playPauseBtn) trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.max(0, Math.min(container.structures.length - 1, f));
     // Clicking a point in the MD plot is a deliberate landing → proper load,
@@ -302,6 +310,31 @@ export function isLivePlotActive() {
   return liveActive;
 }
 
+// Live points reach the plot at most every LIVE_PLOT_MS. Each append is a
+// Plotly redraw of ~1.5-2 ms, a tenth of an MD step at 50+ steps per second.
+// The first point after a quiet spell goes out at once; the ones after it
+// collect and go out as one batch, so the plot still gets every point, in order.
+const LIVE_PLOT_MS = 100;
+let livePending = [];
+let livePendingTimer = 0;
+let liveLastFlush = -Infinity;
+
+function flushLivePoints() {
+  if (livePendingTimer) { clearTimeout(livePendingTimer); livePendingTimer = 0; }
+  if (!livePending.length) return;
+  const points = livePending;
+  livePending = [];
+  liveLastFlush = performance.now();
+  const plot = ensurePlot();
+  if (plot) plot.updateBatch(points);
+}
+
+function dropLivePoints() {
+  if (livePendingTimer) { clearTimeout(livePendingTimer); livePendingTimer = 0; }
+  livePending = [];
+  liveLastFlush = -Infinity;
+}
+
 /** Feed one live MD/relax step into the plot. Safe to call even if the panel
  * body isn't built yet (ensurePlot() just no-ops until it is; call
  * ensureTrajectoryPanelForLive() first so it typically is). */
@@ -311,7 +344,10 @@ export function feedLiveStep(point) {
   const plot = ensurePlot();
   if (!plot) return;
   setPlotVisible(true);
-  plot.update(point);
+  livePending.push(point);
+  const wait = LIVE_PLOT_MS - (performance.now() - liveLastFlush);
+  if (wait <= 0) flushLivePoints();
+  else if (!livePendingTimer) livePendingTimer = window.setTimeout(flushLivePoints, wait);
   // Keep the scrubber tracking the growing run. The plot streams every saved
   // frame, but the transport (slider + "N / N" indicator) is only rebuilt when
   // the panel is; without this it froze at whatever frame count it last saw,
@@ -341,6 +377,7 @@ function syncScrubberToLiveContainer() {
 /** Reset the live plot state at the start of a new run. */
 export function resetLivePlot() {
   liveActive = false;
+  dropLivePoints();
   if (trajPlot) trajPlot.clear();
   setPlotVisible(false);
   updateComputeStepStatsBtnVisibility(structureShip.container[fileBrowser.selectedRowIndex]);
@@ -349,6 +386,7 @@ export function resetLivePlot() {
 /** End the live feed (run finished/stopped/failed). Hands the plot back to the
  * container's persisted series so replay survives later panel rebuilds. */
 export function endLiveFeed() {
+  flushLivePoints();
   liveActive = false;
   updateComputeStepStatsBtnVisibility(structureShip.container[fileBrowser.selectedRowIndex]);
 }
@@ -358,7 +396,7 @@ export function endLiveFeed() {
 // on (frames of a disk-backed trajectory arrive asynchronously).
 let frameFetchToken = 0;
 function updateStructureFromFrame(frame, container, playback = null) {
-  if (!container || frame < 0 || frame >= container.structures.length) return;
+  if (!container || frame < 0 || frame >= container.structures.length) return null;
 
   // Materialise through the container seam; only the newest request renders.
   const frameRef = container.frameAt(frame);
@@ -368,24 +406,33 @@ function updateStructureFromFrame(frame, container, playback = null) {
       if (token !== frameFetchToken || !resolved) return;
       applyFrameStructure(resolved, frame, container, playback);
     });
-    return;
+    return 'pending';
   }
-  if (!frameRef) return;
+  if (!frameRef) return null;
   frameFetchToken++;
-  applyFrameStructure(frameRef, frame, container, playback);
+  return applyFrameStructure(frameRef, frame, container, playback);
 }
 
 /** May a playback step from `fromStep` to `toStep` move instances in place?
  *  Only for one system in motion (TrajectoryContainer.motionProfile) with the
  *  player in 'auto' render mode, between two frames without per-frame styling
- *  (the fast path writes positions, not colours/materials), and not when the
- *  periodic topology refresh is due. */
+ *  (the fast path applies the force/length colour maps, not stored per-frame
+ *  colours/materials), and not when the periodic topology refresh is due. */
 function playbackFastAllowed(container, fromStep, toStep, playback) {
   if (playback.forceFull || container.playbackMode === 'full') return false;
   if (typeof container.motionProfile !== 'function') return false;
   if (container.motionProfile().kind !== 'trajectory') return false;
   if (container.hasFrameStyles(fromStep) || container.hasFrameStyles(toStep)) return false;
-  return playbackSinceFull + 1 < BOND_TOPOLOGY_STRIDE;
+  // Scrubbing a large structure: never rebuild mid-drag (the release settles).
+  if (playback.lightOnly) return true;
+  // Full rebuild: small structures every BOND_TOPOLOGY_STRIDE frames (cheap
+  // there); large ones only once atoms have moved far enough for the periodic
+  // image set to drift (FastFrameModule.js, PLAYBACK_TOPOLOGY_*). Bonds keep
+  // in step in between either way (PlaybackBondsModule.js).
+  if ((peekAtoms(fileBrowser.selectedStructure)?.length ?? 0) < PLAYBACK_TOPOLOGY_MIN_ATOMS) {
+    return playbackSinceFull + 1 < BOND_TOPOLOGY_STRIDE;
+  }
+  return fastFrameDisplacement(fileBrowser.selectedStructure) < PLAYBACK_TOPOLOGY_DISPLACEMENT;
 }
 
 // playback: non-null for continuous-playback ticks ({forceFull}), which may
@@ -396,6 +443,9 @@ function applyFrameStructure(structure, frame, container, playback = null) {
     // The live Structure was updated in place by frameAt, so the meshes on
     // screen still belong to it — applyFrameFast bails (false) whenever the
     // image set or mesh no longer matches, and the full path below runs.
+    // The fast path also recolours frame-dependent colour maps (atoms by
+    // force, bonds by length) exactly as the full rebuild below would
+    // (render/FrameColorsModule.js).
     if (structure === fileBrowser.selectedStructure
       && playbackFastAllowed(container, fileBrowser.stepInput, frame, playback)
       && applyFrameFast(structure)) {
@@ -403,7 +453,7 @@ function applyFrameStructure(structure, frame, container, playback = null) {
       playbackSinceFull += 1;
       if (general.spinsActive && structure.spins?.length > 0) updateSpins(general.spinScale ?? 1.0);
       traceCount('playbackFast');
-      return;
+      return 'fast';
     }
     playbackSinceFull = 0;
     traceCount('playbackFull');
@@ -414,7 +464,14 @@ function applyFrameStructure(structure, frame, container, playback = null) {
 
   createBondLengthControls();
 
-  updateVisualization({ reRenderAtoms: true, reRenderBonds: true });
+  // Force-based atom colours are re-applied centrally inside updateVisualization
+  // (it honours the active Atoms colour mode before rendering atoms), so the
+  // full path here needs no explicit recolour — only the fast path above does,
+  // because it bypasses updateVisualization. A continuous-playback tick changes
+  // no element/user colours, so it skips the crysviz:colors-changed broadcast
+  // (composition pie dots, Polyhedron Inspector re-render); scrubbing and every
+  // settle frame still broadcast.
+  updateVisualization({ reRenderAtoms: true, reRenderBonds: true, notifyColors: !playback });
 
   // Forces and spins must be updated AFTER updateVisualization so
   // periodic.wrapped is ready; `structure` is the frame applied above.
@@ -429,6 +486,7 @@ function applyFrameStructure(structure, frame, container, playback = null) {
   } else {
     removeSpins();
   }
+  return 'full';
 }
 
 /** Mirror the current frame into the selected file-browser row's step box.
@@ -437,9 +495,15 @@ function applyFrameStructure(structure, frame, container, playback = null) {
  *  in FileBrowswerPanel); scrubbing left the box showing whatever it last had,
  *  typically 1. Assigning .value does NOT fire an 'input' event, so this can't
  *  loop back into a frame update. */
+const rowStepInputs = new WeakMap(); // row element -> its step <input>, looked up once
 function syncRowStepInput(frame) {
   const row = fileBrowser.selectedRow;
-  const input = row && row.querySelector('input[type="number"]');
+  if (!row) return;
+  let input = rowStepInputs.get(row);
+  if (input === undefined || (input && !input.isConnected)) {
+    input = row.querySelector('input[type="number"]');
+    rowStepInputs.set(row, input);
+  }
   if (input && input.value !== String(frame + 1)) input.value = String(frame + 1);
 }
 
@@ -482,15 +546,17 @@ function updateFrame(frame, container, opts = {}) {
   if (trajectoryPlayerElements.frameSlider) trajectoryPlayerElements.frameSlider.value = frame;
   syncRowStepInput(frame);
 
+  let applied = null;
   if (opts.render !== false) {
-    if (opts.full) properLoadFrame(frame, container);
-    else updateStructureFromFrame(frame, container, opts.playback ?? null);
+    if (opts.full) { properLoadFrame(frame, container); applied = 'full'; }
+    else applied = updateStructureFromFrame(frame, container, opts.playback ?? null);
     const wantRecenter = opts.forceRecenter === true
       || (opts.recenter !== false && getPanelPref('trajRecenterEachStep'));
     if (wantRecenter) recenterCamera();
   }
 
   if (trajPlot) trajPlot.setCursor(frame);
+  return applied;
 }
 
 /** The file browser's per-row step box changed (typed or spin-clicked) for
@@ -520,50 +586,140 @@ function jumpToRowStep(rowIndex) {
 /** Jump the trajectory to a specific frame. Used by the .crysviz loader to
  *  restore the step the user was viewing; reuses updateFrame so the structure,
  *  scrubber, plot cursor and force/spin arrows all follow. */
-export function showTrajectoryFrame(frame, container) {
+export function showTrajectoryFrame(frame, container, opts = {}) {
   if (!container?.structures?.length) return;
   currentFrame = Math.max(0, Math.min(container.structures.length - 1, frame));
   // Restoring a saved view should land properly loaded, like a real selection.
-  updateFrame(currentFrame, container, { full: true });
+  // Extra opts (e.g. recenter:false, used by widget-mode host control so a new
+  // frame never re-orients the camera) are forwarded to updateFrame.
+  updateFrame(currentFrame, container, { full: true, ...opts });
 }
 
 // --- Auto-play control ---
 // intervalMs 0 is the "max" speed: one frame per animation frame, as fast as
 // the scene can be shown.
+/** Large enough for the light settle and drag (see settleFrame): below
+ *  this the full rebuild is fast enough to stay exact everywhere. */
+const largeStructure = () => (peekAtoms(fileBrowser.selectedStructure)?.length ?? 0) >= LARGE_REBUILD_ATOMS;
+
+/**
+ * Settle on a frame (pause, a step button, releasing the scrubber): the exact
+ * frame, with the panels following it. On a large structure whose playback
+ * topology is still valid this is the render fast path — what is on screen
+ * after fast playback is already exact (atoms; bonds forming and breaking,
+ * render/PlaybackBondsModule.js) — plus the cheap panel refreshes a frame
+ * switch does; the full rebuild (a Bond object per pair, new meshes: seconds
+ * at 10^5 atoms) is left to whatever needs a new topology. Small structures,
+ * and any frame the fast path cannot take, get the full rebuild as before.
+ * One trade-off on the light path: bonds that formed since the last rebuild
+ * are drawn (and break/form exactly) but are not yet in structure.bonds, so
+ * the Bonds tab and histograms list the last rebuild's pairs until the next
+ * one.
+ * @param {number} frame @param {any} container
+ * @param {{forceRecenter?: boolean}} [opts]
+ */
+function settleFrame(frame, container, opts = {}) {
+  if (largeStructure()) {
+    const applied = updateFrame(frame, container, { playback: { forceFull: false }, recenter: false, render: true });
+    if (applied === 'fast') {
+      traceCount('lightSettle');
+      // What finishFrameSwitch does besides the scene rebuild, minus what a
+      // frame of one trajectory cannot change (composition, bond pairs).
+      rebuildPanel('cell');
+      notifyActiveStructureChange();
+      // A force/length colour map recoloured this frame: the colour-following
+      // panels (composition dots, …) catch up, as after a full load.
+      if (isFrameDependentColorMode()) notifyColorsChanged();
+      if (opts.forceRecenter) recenterCamera();
+      return;
+    }
+    if (applied === 'full') {
+      if (opts.forceRecenter) recenterCamera();
+      return;
+    }
+  }
+  updateFrame(frame, container, { full: true, forceRecenter: !!opts.forceRecenter });
+}
+
+// Share of a playback frame's own cost left idle before the next one, so a
+// slow frame (10^5 atoms) never queues behind the previous: input, camera
+// moves and rendering always get the main thread between frames.
+const PLAYBACK_IDLE_SHARE = 0.5;
+
 function startAutoPlay(container, intervalMs = 200) {
   if (!container || container.structures.length <= 1) return;
   stopAutoPlay();
   markEvent(intervalMs > 0 ? `play @${intervalMs}ms` : 'play @max');
+  // Bonds / periodic images / polyhedra would stall a large trajectory for
+  // seconds: greyed out with a "pause first" hint until playback stops.
+  if (largeStructure()) syncPlaybackLock(true);
 
+  // Returns how long the frame took.
   const tick = () => {
+    const t0 = performance.now();
     currentFrame += frameStep;
-    // Looping back to the start is a jump, not motion: rebuild that frame.
+    // Looping back to the start is a jump, not motion: rebuild that frame —
+    // except on a large structure, where that is a stall of seconds on every
+    // loop; there the fast path takes it when it can (it refreshes the bond
+    // list itself if the jump moved atoms that far, and the next frame
+    // rebuilds if the periodic images went stale).
     const looped = currentFrame >= container.structures.length;
     if (looped) currentFrame = 0;
-    updateFrame(currentFrame, container, { playback: { forceFull: looped } });
+    updateFrame(currentFrame, container, { playback: { forceFull: looped && !largeStructure() } });
+    return performance.now() - t0;
   };
 
+  // Self-scheduled rather than setInterval: when a frame takes longer than
+  // the interval, ticks no longer run back to back — the next one waits the
+  // rest of the interval, and at least PLAYBACK_IDLE_SHARE of the frame's
+  // cost.
   if (intervalMs > 0) {
-    autoPlayInterval = setInterval(() => { if (playing) tick(); }, intervalMs);
+    const step = () => {
+      autoPlayInterval = null;
+      if (!playing) return;
+      const spent = tick();
+      if (!playing) return;
+      autoPlayInterval = setTimeout(step, Math.max(intervalMs - spent, spent * PLAYBACK_IDLE_SHARE));
+    };
+    autoPlayInterval = setTimeout(step, intervalMs);
     return;
   }
+  // "max": one frame per animation frame while frames are cheap; a frame that
+  // overruns the animation frame waits its idle share before the next.
   const loop = () => {
-    if (!playing) { autoPlayRaf = 0; return; }
-    autoPlayRaf = requestAnimationFrame(loop);
-    tick();
+    autoPlayRaf = 0;
+    if (!playing) return;
+    const spent = tick();
+    if (!playing) return;
+    if (spent > 16) {
+      autoPlayInterval = setTimeout(() => {
+        autoPlayInterval = null;
+        if (playing) autoPlayRaf = requestAnimationFrame(loop);
+      }, spent * PLAYBACK_IDLE_SHARE);
+    } else {
+      autoPlayRaf = requestAnimationFrame(loop);
+    }
   };
   autoPlayRaf = requestAnimationFrame(loop);
 }
 
 function stopAutoPlay() {
   if (autoPlayInterval) {
-    clearInterval(autoPlayInterval);
+    clearTimeout(autoPlayInterval);
     autoPlayInterval = null;
   }
   if (autoPlayRaf) {
     cancelAnimationFrame(autoPlayRaf);
     autoPlayRaf = 0;
   }
+  syncPlaybackLock(false);
+}
+
+/** The heavy display toggles' playback lock (ui/HeavyRebuild.js) and the
+ *  panel note that explains it. @param {boolean} on */
+function syncPlaybackLock(on) {
+  setPlaybackLock(on);
+  if (trajectoryPlayerElements.lockNote) trajectoryPlayerElements.lockNote.hidden = !on;
 }
 
 // --- Main function to add panel ---
@@ -598,7 +754,7 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
             <option value="0">max</option>
           </select>
         </label>
-        <label class="trajOpt" id="renderModeOpt" hidden title="Auto moves atoms and bonds in place during playback when the frames are one system in motion; Full rebuilds every frame exactly">Render
+        <label class="trajOpt" id="renderModeOpt" title="Auto moves atoms and bonds in place during playback when the frames are one system in motion; Full rebuilds every frame exactly">Render
           <select id="renderModeSelect">
             <option value="auto">Auto</option>
             <option value="full">Full</option>
@@ -612,7 +768,8 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
           Recenter each step
         </label>
       </div>
-      <div id="trajPlotHost" style="display:none;"></div>
+      <div id="trajLockNote" class="trajRenderNote" hidden title="Bonds, periodic images, neighbour bonds and polyhedra rebuild every atom and bond: seconds on a structure this large. Pause to change them.">Large structure: pause to change bonds, images or polyhedra</div>
+      <div id="trajPlotHost" hidden></div>
     </div>
   `;
   targetPanel.appendChild(trajControlPanel);
@@ -630,7 +787,15 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
     recenterCheckbox: trajControlPanel.querySelector('#recenterEachStep'),
     renderModeOpt: trajControlPanel.querySelector('#renderModeOpt'),
     renderModeSelect: trajControlPanel.querySelector('#renderModeSelect'),
+    lockNote: trajControlPanel.querySelector('#trajLockNote'),
   };
+
+  // Speed "max" (one frame per animation frame, no interval) is experimental:
+  // offered only under ?experimental (debug/experimentalMode.js). The still
+  // faster playback modes in development live on another branch, not here.
+  if (!isExperimentalMode()) {
+    trajectoryPlayerElements.speedSelect.querySelector('option[value="0"]')?.remove();
+  }
 
   // Reflect the persisted choice; the toggle just stores the pref, read live by
   // updateStructureFromFrame on each frame change.
@@ -666,18 +831,20 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
   refreshPlotFromContainer(container);
   updateComputeStepStatsBtnVisibility(container);
 
-  // Debug mode only: show the detected kind and let playback be forced onto
-  // the exact path, to compare against the fast path.
+  // Render mode is offered to everyone: Auto moves (and, for force/length
+  // colour maps, recolours) atoms and bonds in place during playback when the
+  // frames are one system in motion (see playbackFastAllowed); Full rebuilds
+  // every frame exactly. Debug additionally shows the detected motion
+  // kind on the Auto label so the two paths can be compared.
+  const renderSelect = trajectoryPlayerElements.renderModeSelect;
   if (isDebugMode() && typeof container.motionProfile === 'function') {
-    const select = trajectoryPlayerElements.renderModeSelect;
-    select.querySelector('option[value="auto"]').textContent = `Auto (${container.motionProfile().kind})`;
-    select.value = container.playbackMode === 'full' ? 'full' : 'auto';
-    select.onchange = () => {
-      container.playbackMode = select.value === 'full' ? 'full' : 'auto';
-      markEvent(`render ${container.playbackMode}`);
-    };
-    trajectoryPlayerElements.renderModeOpt.hidden = false;
+    renderSelect.querySelector('option[value="auto"]').textContent = `Auto (${container.motionProfile().kind})`;
   }
+  renderSelect.value = container.playbackMode === 'full' ? 'full' : 'auto';
+  renderSelect.onchange = () => {
+    container.playbackMode = renderSelect.value === 'full' ? 'full' : 'auto';
+    markEvent(`render ${container.playbackMode}`);
+  };
 
   // Disable play button if only 1 frame
   if (container.structures.length <= 1) {
@@ -691,40 +858,45 @@ export function addTrajectoryPlayer(target = 'cvPanelBody-trajectory') {
     if (playing) {
       startAutoPlay(container, parseInt(trajectoryPlayerElements.speedSelect.value));
     } else {
-      // Pausing settles on the current frame — load it properly and reframe.
+      // Pausing settles on the current frame (settleFrame) and reframes.
       stopAutoPlay();
       markEvent('pause');
-      updateFrame(currentFrame, container, { full: true, forceRecenter: true });
+      settleFrame(currentFrame, container, { forceRecenter: true });
     }
   };
 
   // A single deliberate step is a settle point → proper load + always reframe.
   trajectoryPlayerElements.stepBackBtn.onclick = () => {
     playing = false;
+    stopAutoPlay();
     trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.max(0, currentFrame - frameStep);
-    updateFrame(currentFrame, container, { full: true, forceRecenter: true });
+    settleFrame(currentFrame, container, { forceRecenter: true });
   };
 
   trajectoryPlayerElements.stepFwdBtn.onclick = () => {
     playing = false;
+    stopAutoPlay();
     trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = Math.min(container.structures.length - 1, currentFrame + frameStep);
-    updateFrame(currentFrame, container, { full: true, forceRecenter: true });
+    settleFrame(currentFrame, container, { forceRecenter: true });
   };
 
   // Dragging the scrubber does fast light updates and holds the camera still;
   // releasing it (change) settles on the frame with a proper load + recenter.
   trajectoryPlayerElements.frameSlider.oninput = () => {
     playing = false;
+    stopAutoPlay();
     trajectoryPlayerElements.playPauseBtn.textContent = '▶';
     currentFrame = parseInt(trajectoryPlayerElements.frameSlider.value);
-    updateFrame(currentFrame, container, { recenter: false });
+    // Moves like playback (render fast path where it applies; a large
+    // structure never rebuilds mid-drag) — the release settles.
+    updateFrame(currentFrame, container, { recenter: false, playback: { forceFull: false, lightOnly: largeStructure() } });
   };
 
   trajectoryPlayerElements.frameSlider.onchange = () => {
     currentFrame = parseInt(trajectoryPlayerElements.frameSlider.value);
-    updateFrame(currentFrame, container, { full: true, forceRecenter: true });
+    settleFrame(currentFrame, container, { forceRecenter: true });
   };
 
   trajectoryPlayerElements.speedSelect.onchange = () => {

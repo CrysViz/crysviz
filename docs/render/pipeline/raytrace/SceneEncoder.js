@@ -21,9 +21,14 @@ import { bondKey } from '../../BondsFracUpdateModule.js';
 import { normalizePeriodicBounds } from '../../LatticeModule.js';
 import { getAtomImageStyle } from '../../AtomsFracUpdateModule.js';
 import { MAX_CUT_PLANES } from '../../MaterialStyles.js';
-import { getCutPlaneMaskSign, Plane, getIsosurfaceMaterialSettings } from '../../../model/index.js';
+import { CUT_PLANE_TOLERANCE } from '../../cutPlaneTolerance.js';
+import { getCutPlaneMaskSign, Plane, gridToWorld, blockCellRange, getIsosurfaceMaterialSettings } from '../../../model/index.js';
 import { wedgeDataForAtom, MAX_WEDGES } from '../../WedgeAtoms.js';
-import { DATA_TEX_WIDTH } from './sceneFragment.js';
+
+// Width of the scene data textures (both tracers' DATA_W). Kept here, not in
+// the shader modules: GroundPlaneModule and others load this file with every
+// page, and the shader modules pull in the tracer chunk libraries.
+export const DATA_TEX_WIDTH = 1024;
 
 // Texture/perf sanity cap on unique face planes per polyhedron. No longer the
 // vendored intersector limit: the shaders now stream planes straight from the
@@ -191,6 +196,13 @@ function makeAtlasTexture(data, width, height) {
  *  encoder's atom scan and GroundPlaneModule's duplicated bounds loop filter
  *  atoms identically (the subtle shared logic; the AABB loop itself is kept
  *  duplicated with lockstep comments). */
+/** Objects below this alpha are invisible and are not encoded: a fully
+ *  transparent atom, bond, polyhedron or arrow must cast no shadow, reflect
+ *  nothing and cost nothing (a see-through surface still costs a pass-through
+ *  per ray). Atoms keep their place in the structure's extent (ground
+ *  placement) either way. The polyhedra edges use the same floor. */
+export const INVISIBLE_ALPHA = 0.005;
+
 export function activeAtomCutPlanes() {
   const planes = general.atomCutPlanes;
   if (!Array.isArray(planes) || planes.length === 0) return [];
@@ -248,6 +260,8 @@ export class SceneEncoder {
   _gridWarned = false; // one-time entry-cap warning
   boundingRadius = 10; // max atom distance from the origin (light placement)
   minY = -5; // lowest atom point (ground plane placement; driver adds the offset)
+  _groundAtomCount = 0; // the structure's atoms at the start of the atoms texture
+  _minProjectionMemo = null; // {nx, ny, nz, value}: the last minProjection
   structureCenter = new THREE.Vector3(); // atom bounding-box center
   structureRadius = 5; // half-diagonal of the atom bounding box (from the center)
   // whole-scene world AABB (atoms + cylinder spheres + poly AABBs + cell-clipped
@@ -288,7 +302,8 @@ export class SceneEncoder {
   // translated + clipped copies (model/Isosurface.js setPeriodicBounds).
   fieldBoundsMin = new THREE.Vector3(0, 0, 0);
   fieldBoundsMax = new THREE.Vector3(1, 1, 1);
-  fieldWrap = false; // sample periodically (only needed outside the unit cell)
+  /** @type {number} 0|1|2 (uniform int) */
+  fieldWrap = 0; // 0 direct, 1 fold into the unit cell (periodic), 2 block cell images
   fieldIso = 0;
   fieldAbsMode = false;
   fieldPosColor = new THREE.Color(0x33aaff);
@@ -300,9 +315,10 @@ export class SceneEncoder {
   _fieldDimsKey = '';
 
   // ---- crystallographic lattice planes ------------------------------------
-  // planesTexture holds 6 texels/plane (see planeChunk.js); planeAtlasTexture
+  // planesTexture holds 8 texels/plane (see planeChunk.js); planeAtlasTexture
   // is the shared RGBA8 colormap atlas for Field-mode planes (a 1x1 dummy when
-  // no Field plane is present). cellWorldToFrac clips planes to the unit cell.
+  // no Field plane is present). cellWorldToFrac takes hit points to fractional
+  // cell coords, where each plane is clipped to its own box (Plane.bounds).
   planesTexture = makeDataTexture(1);
   planeCount = 0;
   cellWorldToFrac = new THREE.Matrix4();
@@ -323,6 +339,31 @@ export class SceneEncoder {
     this.gridCellsTexture.dispose();
     this.gridIndexTexture.dispose();
     this.emissiveTexture.dispose();
+  }
+
+  /**
+   * The structure's lowest point along a unit normal: the minimum over its
+   * atoms of centre · n − radius (the ground plane goes the offset beyond it,
+   * render/groundDirection.js). Along +y this is minY. Memoised for the last
+   * normal, so a still view costs nothing per tile; a view-relative ground
+   * pays one pass over the atoms per camera change.
+   * @param {{x: number, y: number, z: number}} normal
+   */
+  minProjection(normal) {
+    const { x, y, z } = normal;
+    const memo = this._minProjectionMemo;
+    if (memo && memo.nx === x && memo.ny === y && memo.nz === z) return memo.value;
+    const data = this.atomsTexture.image.data;
+    let min = Infinity;
+    for (let i = 0; i < this._groundAtomCount; i++) {
+      const d = i * 12;
+      const v = data[d] * x + data[d + 1] * y + data[d + 2] * z - data[d + 3];
+      if (v < min) min = v;
+    }
+    const value = Number.isFinite(min) ? min
+      : (this.structureCenter.x * x + this.structureCenter.y * y + this.structureCenter.z * z) - 5;
+    this._minProjectionMemo = { nx: x, ny: y, nz: z, value };
+    return value;
   }
 
   /** Cheap change detector; true when the scene must be re-encoded. Splits the
@@ -360,16 +401,12 @@ export class SceneEncoder {
     const polyGroup = groups.polyhedraGroup;
     if (polyGroup) {
       parts.push('pe', general.polyEdgeWidth ?? 1);
-      for (const mesh of polyGroup.children) {
-        if (mesh.userData?.type !== 'polyhedron') continue;
-        parts.push('p', mesh.id, mesh.visible ? 1 : 0,
-          mesh.material.color.getHex(), mesh.material.opacity);
-        const edgeLines = mesh.children?.find((c) => c.userData?.type === 'polyhedron-edges');
-        if (edgeLines?.material) {
-          parts.push(edgeLines.visible ? 1 : 0,
-            edgeLines.material.color.getHex(), edgeLines.material.opacity);
-        }
-      }
+      // One table for all polyhedra (render/PolyhedraMesh.js): its serial
+      // changes with every rebuild, styleVersion with every colour, alpha,
+      // focus or show/hide write — not with the selection glow.
+      const table = polyGroup.userData?.polyTable;
+      // geomVersion: an MD / trajectory frame moved them in place.
+      if (table) parts.push('p', table.serial, table.styleVersion, table.geomVersion);
     }
     if (general.showLattice && fileBrowser.selectedStructure?.lattice
         && (!groups.latticeGroup || groups.latticeGroup.visible)) {
@@ -391,6 +428,7 @@ export class SceneEncoder {
         JSON.stringify(structure.bondCategoryStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.bondUserStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}, dropMaterialKey),
+        JSON.stringify(structure.polyhedraElementStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.polyhedraUserStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.spinCategoryStyles ?? {}, dropMaterialKey),
         JSON.stringify(structure.forceCategoryStyles ?? {}, dropMaterialKey));
@@ -417,7 +455,11 @@ export class SceneEncoder {
         iso.meshes?.positive?.material?.color?.getHexString(),
         iso.meshes?.negative?.material?.color?.getHexString(),
         iso.meshes?.positive?.material?.opacity,
-        vals?.length, vals ? vals[0] : 0, vals ? vals[(vals.length / 2) | 0] : 0);
+        vals?.length, vals ? vals[0] : 0, vals ? vals[(vals.length / 2) | 0] : 0,
+        // placement: a moved origin, a new step or the block flag changes the
+        // world->grid map without touching dims or values
+        field.periodic === false ? 'block' : 'periodic',
+        (field.origin ?? []).join(','), (field.voxel ?? []).flat().join(','));
     }
     // crystallographic lattice planes: geometry (n/d), mode, flat colour +
     // opacity, colormap name + range, and a cheap field-identity probe so a
@@ -429,6 +471,7 @@ export class SceneEncoder {
       const f = plane.field;
       const vals = f?.values;
       parts.push('pl', plane.mode, n.x, n.y, n.z, plane.planeD,
+        plane.bounds.flat().join(','),
         mat?.color?.getHex?.(), mat?.opacity,
         plane.colormap, plane.colormapMin, plane.colormapMax,
         f ? `${f.label}|${f.nx}|${f.ny}|${f.nz}|${f.minValue}|${f.maxValue}` : 'nofield',
@@ -469,6 +512,7 @@ export class SceneEncoder {
         JSON.stringify(structure.bondCategoryStyles ?? {}),
         JSON.stringify(structure.bondUserStyles ?? {}),
         JSON.stringify(structure.polyhedraCategoryStyles ?? {}),
+        JSON.stringify(structure.polyhedraElementStyles ?? {}),
         JSON.stringify(structure.polyhedraUserStyles ?? {}),
         JSON.stringify(structure.fieldMaterial ?? {}),
         JSON.stringify(structure.spinCategoryStyles ?? {}),
@@ -505,6 +549,8 @@ export class SceneEncoder {
     if (!field || !field.values || !(field.nx > 0) || !(field.ny > 0) || !(field.nz > 0)) return null;
     if (!iso.parent) return null; // removed from the scene (clearField)
     if (field.isVisible === false) return null;
+    // a block needs two points per axis to have an extent (the raster draws nothing either)
+    if (field.periodic === false && Math.min(field.nx, field.ny, field.nz) < 2) return null;
     return field;
   }
 
@@ -783,6 +829,8 @@ export class SceneEncoder {
     // hit loop + uniform grid); gathered up front to size the texture.
     const measSpheres = this._measurementSpheres();
     const meshVisible = !!(mesh && mesh.visible);
+    this._groundAtomCount = 0;
+    this._minProjectionMemo = null;
     if (!meshVisible && measSpheres.length === 0) {
       this.atomCount = 0;
       return;
@@ -814,11 +862,12 @@ export class SceneEncoder {
         const o = i * 16;
         const radius = matrices[o]; // uniform scale; 0 = hidden instance
         if (!(radius > 0)) continue;
+        const alpha = (opacities ? opacities[i] : 1) * baseOpacity;
         if (cutPlanes.length && !(immune && immune[i] >= 0.5)) {
           const cx = matrices[o + 12], cy = matrices[o + 13], cz = matrices[o + 14];
           let cut = false;
           for (const p of cutPlanes) {
-            if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > 0) { cut = true; break; }
+            if ((cx * p.nx + cy * p.ny + cz * p.nz - p.w) * p.sign > CUT_PLANE_TOLERANCE) { cut = true; break; }
           }
           if (cut) continue;
         }
@@ -835,10 +884,15 @@ export class SceneEncoder {
         if (data[d + 1] + radius > maxY) maxY = data[d + 1] + radius;
         if (data[d + 2] - radius < minZ) minZ = data[d + 2] - radius;
         if (data[d + 2] + radius > maxZ) maxZ = data[d + 2] + radius;
+        // An invisible (alpha ~0) atom still counts for the structure's extent
+        // (ground placement, scene bound: it is still there, just not shown)
+        // but is not traced: no shadow, no reflection, no cost. The slot it
+        // started writing is reused by the next atom (n is not advanced).
+        if (alpha < INVISIBLE_ALPHA) continue;
         data[d + 4] = colors[i * 3];
         data[d + 5] = colors[i * 3 + 1];
         data[d + 6] = colors[i * 3 + 2];
-        data[d + 7] = (opacities ? opacities[i] : 1) * baseOpacity;
+        data[d + 7] = alpha;
         // per-copy override > per-atom override > per-species material >
         // element-materials-map preset (Structure.getDefaultElementMaterial)
         // (per-copy = "Link periodic copies" off, stored in atomImageStyles)
@@ -882,6 +936,9 @@ export class SceneEncoder {
     }
     this.boundingRadius = Math.sqrt(maxR2) + 3;
     this.minY = Number.isFinite(minY) ? minY : -5;
+    // the structure's own atoms (not the measurement shells appended below):
+    // what the ground plane is placed against (minProjection)
+    this._groundAtomCount = n;
     if (Number.isFinite(minX)) {
       this.structureCenter.set((minX + maxX) / 2, (minY + maxY) / 2, (minZ + maxZ) / 2);
       this.structureRadius = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2 + (maxZ - minZ) ** 2) / 2;
@@ -1039,8 +1096,10 @@ export class SceneEncoder {
       const baseOpacity = bonds.material.opacity ?? 1;
       for (let i = 0; i < bonds.count; i++) {
         const o = i * 16;
-        // zero-scaled halves are culled bonds
+        // zero-scaled halves are culled bonds; invisible halves are skipped too
         if (matrices[o] === 0 && matrices[o + 5] === 0) continue;
+        const bondAlpha = (opacities ? opacities[i] : 1) * baseOpacity;
+        if (bondAlpha < INVISIBLE_ALPHA) continue;
         _m.fromArray(matrices, o);
         // raster bond halves use a height-1 cylinder (local y in [-0.5, 0.5]);
         // the ray-traced unit cylinder spans y in [-1, 1] — pre-scale by 0.5
@@ -1063,7 +1122,7 @@ export class SceneEncoder {
           }
         }
         writeCylinder(_mInv, cylinderGeom(_m), colors[i * 3], colors[i * 3 + 1], colors[i * 3 + 2],
-          (opacities ? opacities[i] : 1) * baseOpacity, materialTexel(material));
+          bondAlpha, materialTexel(material));
       }
     }
     for (const edge of edges) {
@@ -1130,19 +1189,18 @@ export class SceneEncoder {
   _polyEdges() {
     const width = general.polyEdgeWidth ?? 1;
     if (!(width > 0)) return [];
-    const group = groups.polyhedraGroup;
-    if (!group) return [];
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    if (!table) return [];
     const radius = 0.015 * width;
     const result = [];
-    for (const mesh of group.children) {
-      if (mesh.userData?.type !== 'polyhedron' || !mesh.visible) continue;
-      const edgeLines = mesh.children?.find((c) => c.userData?.type === 'polyhedron-edges');
-      const segments = edgeLines?.userData?.segments;
-      if (!edgeLines?.visible || !segments) continue;
-      const alpha = edgeLines.material?.opacity ?? 1;
-      if (alpha <= 0.01) continue;
-      _color.copy(edgeLines.material.color);
-      for (let s = 0; s + 5 < segments.length; s += 6) {
+    const segments = table.segments;
+    for (let i = 0; i < table.n; i++) {
+      if (!table.visible[i] || !table.edgeCount[i]) continue;
+      const alpha = table.edgeOpacity[i];
+      if (alpha < INVISIBLE_ALPHA) continue;
+      _color.setRGB(table.edgeColor[3 * i], table.edgeColor[3 * i + 1], table.edgeColor[3 * i + 2]);
+      const s1 = (table.edgeStart[i] + table.edgeCount[i]) * 6;
+      for (let s = table.edgeStart[i] * 6; s + 5 < s1; s += 6) {
         const dx = segments[s + 3] - segments[s];
         const dy = segments[s + 4] - segments[s + 1];
         const dz = segments[s + 5] - segments[s + 2];
@@ -1240,11 +1298,14 @@ export class SceneEncoder {
         const style = arrowStyle(fileBrowser.selectedStructure, kind,
           srcByInstance.get(i), fallbackColor, arrowMap?.get(i));
         const shaftFocusAlpha = shaft.geometry?.attributes?.instanceOpacity?.getX(i * 2) ?? 1;
-        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
-          r: style.color[0], g: style.color[1], b: style.color[2],
-          a: (shaft.material?.opacity ?? 1) * shaftFocusAlpha,
-          matTexel: materialTexel(style.material),
-          shape: { rTop: 1 } });
+        const shaftAlpha = (shaft.material?.opacity ?? 1) * shaftFocusAlpha;
+        if (shaftAlpha >= INVISIBLE_ALPHA) {
+          result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
+            r: style.color[0], g: style.color[1], b: style.color[2],
+            a: shaftAlpha,
+            matTexel: materialTexel(style.material),
+            shape: { rTop: 1 } });
+        }
 
         tip.getMatrixAt(i, _m);
         _m2.multiplyMatrices(tip.matrixWorld, _m);
@@ -1258,11 +1319,14 @@ export class SceneEncoder {
           srcByInstance.get(i), tipFallback, arrowMap?.get(i));
         const tipColor = tipStyle.color ?? tipFallback;
         const tipFocusAlpha = tip.geometry?.attributes?.instanceOpacity?.getX(i) ?? 1;
-        result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
-          r: tipColor[0], g: tipColor[1], b: tipColor[2],
-          a: (tip.material?.opacity ?? 1) * tipFocusAlpha,
-          matTexel: materialTexel(tipStyle.material),
-          shape: { rTop: 0 } });
+        const tipAlpha = (tip.material?.opacity ?? 1) * tipFocusAlpha;
+        if (tipAlpha >= INVISIBLE_ALPHA) {
+          result.push({ invM: _m.clone().invert(), geom: cylinderGeom(_m),
+            r: tipColor[0], g: tipColor[1], b: tipColor[2],
+            a: tipAlpha,
+            matTexel: materialTexel(tipStyle.material),
+            shape: { rTop: 0 } });
+        }
       }
     };
     addMeshArrows(groups.forcesShaftMesh, groups.forcesTipMesh, 'forces');
@@ -1272,11 +1336,15 @@ export class SceneEncoder {
   }
 
   _encodePolyhedra() {
-    const group = groups.polyhedraGroup;
-    const meshes = (group?.children ?? []).filter(
-      (m) => m.userData?.type === 'polyhedron' && m.visible && this._polyPlanes(m));
-    const entries = meshes.map((mesh) => ({ kind: 'poly', mesh,
-      planes: mesh.userData.rtPlanes, aabb: mesh.userData.rtAabb }));
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    const entries = [];
+    if (table) {
+      for (let i = 0; i < table.n; i++) {
+        if (!table.visible[i] || !table.faceCount[i] || table.opacity[i] < INVISIBLE_ALPHA) continue;
+        const cached = this._polyPlanes(table, i);
+        if (cached) entries.push({ kind: 'poly', index: i, planes: cached.planes, aabb: cached.aabb });
+      }
+    }
     // layout: 4 header texels per convex body up front, then the plane texels
     let planeTexels = 0;
     for (const entry of entries) planeTexels += entry.planes.length;
@@ -1288,20 +1356,21 @@ export class SceneEncoder {
     this._polyMin = [Infinity, Infinity, Infinity];
     this._polyMax = [-Infinity, -Infinity, -Infinity];
     entries.forEach((entry, p) => {
-      const { mesh, planes, aabb } = entry;
+      const { index, planes, aabb } = entry;
       if (aabb.min.x < this._polyMin[0]) this._polyMin[0] = aabb.min.x;
       if (aabb.min.y < this._polyMin[1]) this._polyMin[1] = aabb.min.y;
       if (aabb.min.z < this._polyMin[2]) this._polyMin[2] = aabb.min.z;
       if (aabb.max.x > this._polyMax[0]) this._polyMax[0] = aabb.max.x;
       if (aabb.max.y > this._polyMax[1]) this._polyMax[1] = aabb.max.y;
       if (aabb.max.z > this._polyMax[2]) this._polyMax[2] = aabb.max.z;
-      // per-polyhedron override > per-category material, packed into the
+      // per-polyhedron override > per-category > per-element material, packed into the
       // spare header/AABB w slots (poly.key/catKey are stamped by
       // PolyhedraModule.assignPolyhedraKeys; when absent — list panel never
       // built — the default material applies)
-      const poly = structure?.polyhedra?.polyhedra?.[mesh.userData.polyIndex];
+      const poly = structure?.polyhedra?.polyhedra?.[index];
       const material = (poly?.key ? structure?.polyhedraUserStyles?.[poly.key]?.material : null)
-        ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null);
+        ?? (poly?.catKey ? structure?.polyhedraCategoryStyles?.[poly.catKey]?.material : null)
+        ?? (poly?.catKey ? structure?.polyhedraElementStyles?.[poly.catKey.startsWith('c:') ? poly.catKey.split(':')[1] : 'cage']?.material : null);
       const [matType, roughness, typeParam, reflectivity] = materialTexel(material);
       let listedReflect = reflectivity; // aabbMax.w slot (listed bit for emissive)
       if (matType === 3) {
@@ -1319,9 +1388,8 @@ export class SceneEncoder {
       }
       const d = p * 16;
       data[d] = planeOffset; data[d + 1] = planes.length; data[d + 2] = matType; data[d + 3] = roughness;
-      _color.copy(mesh.material.color);
-      data[d + 4] = _color.r; data[d + 5] = _color.g; data[d + 6] = _color.b;
-      data[d + 7] = mesh.material.opacity ?? 1;
+      data[d + 4] = table.color[3 * index]; data[d + 5] = table.color[3 * index + 1]; data[d + 6] = table.color[3 * index + 2];
+      data[d + 7] = table.opacity[index];
       data[d + 8] = aabb.min.x; data[d + 9] = aabb.min.y; data[d + 10] = aabb.min.z; data[d + 11] = typeParam;
       data[d + 12] = aabb.max.x; data[d + 13] = aabb.max.y; data[d + 14] = aabb.max.z; data[d + 15] = listedReflect;
       for (const plane of planes) {
@@ -1334,26 +1402,22 @@ export class SceneEncoder {
   }
 
   /** World-space face planes (deduped, any count up to the MAX_PLANES sanity
-   *  cap) + AABB for one polyhedron mesh, cached on its userData (dies with the
-   *  mesh on rebuild). The shader streams these planes (convexChunk.js), so
-   *  there is no fixed-array limit; returns false (and warns once) only for a
-   *  degenerate hull or one beyond the sanity cap. */
-  _polyPlanes(mesh) {
-    if (mesh.userData.rtPlanes) return true;
-    if (mesh.userData.rtPlanesUnsupported) return false;
-    const polyIndex = mesh.userData.polyIndex;
+   *  cap) + AABB for one polyhedron (row i of the polyhedra table), cached on
+   *  the table (dies with it on rebuild): { planes, aabb }, or false for a
+   *  degenerate hull or one beyond the sanity cap (warned). The shader
+   *  streams these planes (convexChunk.js), so there is no fixed-array limit. */
+  _polyPlanes(table, polyIndex) {
+    const cache = (table.rtPlanes ??= new Array(table.n));
+    if (cache[polyIndex] !== undefined) return cache[polyIndex];
+    cache[polyIndex] = false;
     const poly = fileBrowser.selectedStructure?.polyhedra?.polyhedra?.[polyIndex];
     const vertices = poly?.vertices;
-    if (!vertices || vertices.length < 4) {
-      mesh.userData.rtPlanesUnsupported = true;
-      return false;
-    }
+    if (!vertices || vertices.length < 4) return false;
     const points = vertices.map((v) => new THREE.Vector3(v[0], v[1], v[2]));
     let hull;
     try {
       hull = new ConvexHull().setFromPoints(points);
     } catch {
-      mesh.userData.rtPlanesUnsupported = true;
       return false;
     }
     // dedupe coplanar hull faces into unique (normal, constant) planes
@@ -1369,13 +1433,11 @@ export class SceneEncoder {
       console.warn(`raytrace: polyhedron with ${planes.length} faces exceeds the `
         + `${MAX_PLANES}-plane texture/perf sanity cap — skipped (should never `
         + `fire for real coordination shells)`);
-      mesh.userData.rtPlanesUnsupported = true;
       return false;
     }
     const aabb = new THREE.Box3().setFromPoints(points);
-    mesh.userData.rtPlanes = planes;
-    mesh.userData.rtAabb = aabb;
-    return true;
+    cache[polyIndex] = { planes, aabb };
+    return cache[polyIndex];
   }
 
   /** Encode the live isosurface field for the tracers: uploads field.values as
@@ -1396,14 +1458,9 @@ export class SceneEncoder {
 
     // world -> fractional [0,1]^3: invert the SAME origin + voxel*dims mapping
     // Isosurface builds for its group matrix (columns = lattice vectors).
-    const v = field.voxel;
-    const o = field.origin ?? [0, 0, 0];
-    _m.set(
-      v[0][0], v[1][0], v[2][0], o[0] ?? 0,
-      v[0][1], v[1][1], v[2][1], o[1] ?? 0,
-      v[0][2], v[1][2], v[2][2], o[2] ?? 0,
-      0, 0, 0, 1);
-    _m.scale(_scale.set(field.nx, field.ny, field.nz));
+    // (fieldGeometry.gridToWorld: voxel*n for a periodic field, voxel*(n-1)
+    // for a block, so block spacing matches the raster exactly).
+    _m.fromArray(gridToWorld(field));
     this.fieldWorldToFrac.copy(_m).invert();
 
     // The display boundary is in the STRUCTURE lattice's fractional space. The
@@ -1427,10 +1484,33 @@ export class SceneEncoder {
     this.fieldCellToFrac.multiplyMatrices(this.fieldWorldToFrac, cellToWorld);
     this._fieldForward = cellToWorld; // cell fractions -> world (scene-bounds corners)
 
-    const [bxLo, bxHi, byLo, byHi, bzLo, bzHi] = this._fieldBounds();
+    let [bxLo, bxHi, byLo, byHi, bzLo, bzHi] = this._fieldBounds();
+    const widened = bxLo < 0 || bxHi > 1 || byLo < 0 || byHi > 1 || bzLo < 0 || bzHi > 1;
+    // fieldWrap: 0 = sample the cell point directly, 1 = fold it into the unit
+    // cell (periodic field, widened bounds), 2 = test the cell images of the
+    // block (block field, widened bounds). A block at the plain unit bounds is
+    // drawn once at its true place, like the raster: no fold, no clipping, and
+    // the march box is the block's own extent in the cell (it may cross a face).
+    if (field.periodic === false) {
+      // same 1e-6 tolerance as the raster's isUnitBounds, so both agree on 1.0000001
+      const plain = [[bxLo, bxHi], [byLo, byHi], [bzLo, bzHi]]
+        .every(([lo, hi]) => Math.abs(lo) < 1e-6 && Math.abs(hi - 1) < 1e-6);
+      if (plain) {
+        let range;
+        try {
+          range = blockCellRange(field, hasLattice ? lat : null);
+        } catch (error) {
+          console.warn(`raytrace: ${error.message}; treating the block as one cell`);
+          range = [[0, 1], [0, 1], [0, 1]];
+        }
+        [[bxLo, bxHi], [byLo, byHi], [bzLo, bzHi]] = range;
+      }
+      this.fieldWrap = plain ? 0 : 2;
+    } else {
+      this.fieldWrap = widened ? 1 : 0;
+    }
     this.fieldBoundsMin.set(bxLo, byLo, bzLo);
     this.fieldBoundsMax.set(bxHi, byHi, bzHi);
-    this.fieldWrap = bxLo < 0 || bxHi > 1 || byLo < 0 || byHi > 1 || bzLo < 0 || bzHi > 1;
     // Step budget: the span in field-grid cells, so a supercell (structure
     // cell = several grid cells) is marched as finely per grid cell as before.
     const gridLen = (k) => Math.hypot(_m.elements[4 * k], _m.elements[4 * k + 1], _m.elements[4 * k + 2]);
@@ -1510,9 +1590,10 @@ export class SceneEncoder {
     this.fieldDims = [nx, ny, nz];
   }
 
-  /** Encode the visible crystallographic planes for the tracers: 6 texels per
+  /** Encode the visible crystallographic planes for the tracers: 8 texels per
    *  plane (see planeChunk.js), the cell world->fractional matrix (from the
-   *  lattice basis, for exact cell clipping), and — for Field-mode planes — a
+   *  lattice basis, for exact clipping to each plane's fractional box), and —
+   *  for Field-mode planes — a
    *  CPU-baked colormap atlas (each plane gets its own tile, so planes may
    *  reference different fields). The bake reuses Plane.bakeFieldAtlasTile, the
    *  same sampling path as the raster updateColorMap. */
@@ -1525,7 +1606,7 @@ export class SceneEncoder {
     }
 
     // world -> fractional cell coords: invert the lattice-vector basis (columns
-    // = a, b, c; origin 0), matching makeCellClippingPlanes' cell faces.
+    // = a, b, c; origin 0), matching makeFractionalBoundsClippingPlanes' faces.
     const lattice = fileBrowser.selectedStructure?.lattice;
     if (Array.isArray(lattice) && lattice.length === 3) {
       _m.set(
@@ -1567,10 +1648,10 @@ export class SceneEncoder {
       this.planeAtlasTexture = this._dummyAtlas;
     }
 
-    const texture = this._ensureCapacity('planesTexture', planes.length * 6);
+    const texture = this._ensureCapacity('planesTexture', planes.length * 8);
     const data = texture.image.data;
     planes.forEach((plane, p) => {
-      const d = p * 24;
+      const d = p * 32;
       const n = plane.planeNormal;
       const isField = atlasRects.has(plane);
       // texel 0: normal.xyz, d
@@ -1591,6 +1672,10 @@ export class SceneEncoder {
       // texel 5: atlas rect (uMin, vMin, uSize, vSize)
       const rect = atlasRects.get(plane) ?? [0, 0, 0, 0];
       data[d + 20] = rect[0]; data[d + 21] = rect[1]; data[d + 22] = rect[2]; data[d + 23] = rect[3];
+      // texel 6/7: fractional box the plane is trimmed to (min.xyz, max.xyz)
+      const b = plane.bounds;
+      data[d + 24] = b[0][0]; data[d + 25] = b[1][0]; data[d + 26] = b[2][0]; data[d + 27] = 0;
+      data[d + 28] = b[0][1]; data[d + 29] = b[1][1]; data[d + 30] = b[2][1]; data[d + 31] = 0;
     });
     texture.needsUpdate = true;
   }

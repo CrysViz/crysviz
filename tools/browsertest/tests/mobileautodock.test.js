@@ -68,6 +68,13 @@ async function dragPanelTo(page, id, left, top) {
 }
 
 async function reorderToBottom(page, id) {
+  // The phone menu slides in: press only once the title bar is on screen (a
+  // fixed short wait pressed at x < 0 while it was still sliding).
+  await page.waitForFunction((id) => {
+    const bar = document.querySelector(`.cv-panel[data-panel-id="${id}"] .cv-panel-titlebar`)?.getBoundingClientRect();
+    return !!bar && bar.left >= 0 && bar.right <= innerWidth && bar.top >= 0 && bar.bottom <= innerHeight;
+  }, id, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(100);
   const point = await page.evaluate((id) => {
     const el = document.querySelector(`.cv-panel[data-panel-id="${id}"]`);
     const bar = el.querySelector('.cv-panel-titlebar').getBoundingClientRect();

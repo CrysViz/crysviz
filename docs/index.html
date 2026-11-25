@@ -6,8 +6,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="referrer" content="no-referrer">
     <title>CrysViz</title>
-    <link rel="icon" href="./data/CrysViz_logo_white_back_logo_only.png" sizes="any">
-    <link rel="apple-touch-icon" href="./data/CrysViz_logo_white_back_logo_only.png">
+    <link rel="icon" href="./data/logo-web/CrysViz_logo_white_back_logo_only.png" sizes="any">
+    <link rel="apple-touch-icon" href="./data/logo-web/CrysViz_logo_white_back_logo_only.png">
+    <!-- Installed-app metadata; file_handlers lets the OS open structure files
+         in the installed app (StructureInputModule.js launchQueue). -->
+    <link rel="manifest" href="./manifest.webmanifest">
     <script type="module" src="./host/early.js"></script>
     <link rel="stylesheet" href="./styles/fonts.css">
     <!-- Theme base (design tokens) loads first so component CSS can use the
@@ -26,6 +29,8 @@
     <link rel="stylesheet" href="./styles/BondAtomColorPanel.css">
     <link rel="stylesheet" href="./styles/info_button_styles.css">
     <link rel="stylesheet" href="./styles/EOSPanel.css">
+    <link rel="stylesheet" href="./styles/latticeAnalysisPanel.css">
+    <link rel="stylesheet" href="./styles/fileStructureSummary.css">
     <link rel="stylesheet" href="./styles/phononPanel.css">
     <link rel="stylesheet" href="./styles/sideDock.css">
     <link rel="stylesheet" href="./styles/DummySplitPanel.css">
@@ -39,6 +44,7 @@
     <link rel="stylesheet" href="./styles/focusRegionsPanel.css">
     <link rel="stylesheet" href="./styles/warningBanners.css">
     <link rel="stylesheet" href="./styles/notagameatall.css">
+    <link rel="stylesheet" href="./styles/featureStore.css">
     <!-- Loaded after component styles so native WebKit select chrome cannot
          override the app's compact dark dropdown appearance. -->
     <link rel="stylesheet" href="./styles/formControls.css">
@@ -64,7 +70,7 @@
     <div id="mobileOverlay"></div>
     <div id="backgroundDot" class="background-dot"></div>
     <div id="ui">
-      <img src="./data/CrysViz_logo_clear_back_beta.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
+      <img src="./data/logo-web/CrysViz_logo_clear_back_beta.png" alt="Crystal Structure Viewer" class="logo" id="aboutTrigger" role="button" tabindex="0">
       <!-- Theme mode row (auto/light/dark, brightest-first) + a small
            dropdown arrow that lists the installed palettes. A palette that
            doesn't offer a mode gets that button disabled. Wired by
@@ -94,21 +100,22 @@
           <!-- <!button data-mode="live">Live</button!>  not sufficiently tested. For now disabled.-->
         </div>
         <div id="uploadSection">
-          <!-- File actions (wired by ui/StructureInputModule.js): Upload opens
+          <!-- File actions (wired by ui/StructureInputModule.js): Open opens
                the file dialog directly, Paste Text opens a modal, Download is
                a dropdown of export formats. Files can also be dropped onto the
                Files window or the 3D view. -->
           <div class="file-actions">
-            <button type="button" id="uploadButton" class="file-action-btn">📁 Upload</button>
+            <button type="button" id="uploadButton" class="file-action-btn cv-folder-icon">Open</button>
             <button type="button" id="pasteTextButton" class="file-action-btn">Paste Text</button>
             <div class="download-dropdown">
-              <button type="button" id="downloadButton" class="file-action-btn">Download ▾</button>
+              <button type="button" id="downloadButton" class="file-action-btn" aria-haspopup="true" aria-controls="downloadMenu">Download ▾</button>
               <div class="download-menu" id="downloadMenu" hidden>
                 <button type="button" id="saveButton">POSCAR</button>
                 <button type="button" id="saveCifButton">CIF (P1)</button>
                 <button type="button" id="saveCifSymButton">CIF (symmetry)</button>
                 <button type="button" id="saveCellButton">CASTEP cell</button>
                 <button type="button" id="saveGeometryButton">FHI-aims geometry</button>
+                <button type="button" id="saveExtxyzButton" title="Every frame of the row, for ASE, pymatgen or OVITO">Extended XYZ (all frames)</button>
                 <button type="button" id="qeInputButton">Quantum ESPRESSO…</button>
                 <button type="button" id="saveCrysvizButton">CrysViz</button>
                 <button type="button" id="saveImageButton">Image…</button>
@@ -125,7 +132,7 @@
           <table id="objectTable">
           <thead>
             <th class="fth" colspan="1">
-              <button type="button" id="combineTrajectoriesButton" class="combine-trajectories-button" title="Combine the checked rows into one trajectory" disabled>&#9939;</button>
+              <button type="button" id="combineTrajectoriesButton" class="combine-trajectories-button" title="Selection actions" aria-haspopup="true">&#9776;</button>
             </th>
             <th class="fth">Filename</th>
             <th class="fth">Traj.</th>
@@ -138,11 +145,33 @@
               <!-- JS-generated rows -->
             </tbody>
          </table>
-        <div id="errorPanel" class="error-panel">
+        <div id="errorPanel" class="error-panel" hidden>
          Only two structures can be compared
        </div>
+        <!-- Drag to set how tall the list grows before it scrolls
+             (FileBrowswerPanel.js initFileListResize). -->
+        <div class="cv-fb-list-resize" title="Drag to resize the list · double-click for the default height"></div>
     </div>
     
+    <!-- Feature search (ui/FeatureSearch.js): opens the search palette, same
+         as Ctrl/Cmd+F. Styled as a search field so it reads as one. -->
+    <button type="button" id="featureSearchButton" class="feature-search-trigger" aria-haspopup="dialog">
+      <svg class="feature-search-trigger-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2.4"/><path d="M15.5 15.5 21 21" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+      <span class="feature-search-trigger-text">Search panels and controls…</span>
+      <kbd class="feature-search-trigger-key" id="featureSearchButtonKey"></kbd>
+    </button>
+    <!-- Add panels / Reset to Essentials (ui/FeatureStoreModal.js): pick which
+         optional windows sit in the dock, or go back to the first-run set.
+         The badge counts removed features the selected structure has data
+         for. -->
+    <div class="feature-store-actions">
+      <button type="button" id="featureStoreButton" class="feature-store-btn" aria-haspopup="dialog">
+        <span class="feature-store-btn-label">+ Add panels</span>
+        <span class="feature-store-btn-badge" id="featureStoreBadge" hidden></span>
+      </button>
+      <button type="button" id="resetEssentialsButton" class="feature-store-reset-btn" aria-haspopup="dialog"
+        title="Keep only the essential windows in the sidebar (asks first)">Reset to Essentials</button>
+    </div>
     <!-- Unified panel dock (ui/panels/PanelManager.js). Docked panel windows
          stack inside; feature panels stay hidden until a structure loads. -->
     <div id="dock"></div>
@@ -204,6 +233,13 @@
             </span>
             <span class="toggle_text"> Neighbour Bonds</span>
           </label>
+          <label class="toggle_row toggle_container">
+            <span class="toggle_switch">
+              <input type="checkbox" id="completeFragmentsToggle">
+              <span class="toggle_slider"></span>
+            </span>
+            <span class="toggle_text">Complete Rings &amp; Fragments</span>
+          </label>
 
           <label class="toggle_row toggle_container">
             <span class="toggle_switch">
@@ -254,7 +290,17 @@
 
     </div>
     <div id="viewArea">
-      <div id="view"></div>
+      <div id="view">
+        <!-- Load progress over the 3D view (ui/BootProgress.js): from the
+             first paint, one step per stage until the first structure is
+             drawn. Reused while a large share link or .crysviz session opens. -->
+        <div id="bootProgress" class="boot-progress" role="status" aria-live="polite">
+          <div class="boot-progress-card">
+            <div class="boot-progress-text"><span id="bootProgressText">Loading CrysViz…</span> <span class="boot-progress-elapsed" id="bootProgressElapsed"></span></div>
+            <div class="boot-progress-track"><div class="boot-progress-fill" id="bootProgressFill"></div></div>
+          </div>
+        </div>
+      </div>
       <!-- Side dock shell (docs/ui/panels/SideDock.js): regular panel
            windows dock here as tabs — #splitPaneBody hosts their .cv-panel
            elements, the header strip selects the front one, and dragging a
@@ -278,7 +324,7 @@
     <div id="aboutOverlay" hidden>
       <div id="aboutModal" role="dialog" aria-modal="true" aria-labelledby="aboutTitle" tabindex="-1">
 
-        <img src="./data/CrysViz_logo_clear_back.png" alt="Crystal Structure Viewer" class="logo">
+        <img src="./data/logo-web/CrysViz_logo_clear_back.png" alt="Crystal Structure Viewer" class="logo" loading="lazy">
         <h1 id="aboutTitle" class="visually-hidden">About Crystal Structure Viewer</h1>
         <button id="aboutClose" aria-label="Close About panel">×</button>
         <div id="aboutContent" aria-live="polite">
@@ -392,10 +438,11 @@
         </div>
 
         <!-- Reset: back to the standard view (the cube is the [1,1,1] view it
-             restores). WindowAndSceneControls.js wraps it with the camera lock
+             restores); a long press opens Recenter / Recenter and fit, which
+             keep the rotation (WindowAndSceneControls.js). WindowAndSceneControls.js wraps it with the camera lock
              in .camera-reset-stack at startup: reset | divider | lock, the lock
              set apart because it is a standing mode, not another view action. -->
-        <button class="cv-tb-btn camera-tool-reset-btn" id="resetView" title="Reset view">
+        <button class="cv-tb-btn camera-tool-reset-btn" id="resetView" aria-label="Reset view" title="Reset view. Long-press to recenter without turning the view.">
           <img class="reset-icon" src="./data/icons/cube-icon.svg" alt="">
         </button>
       </div>

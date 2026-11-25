@@ -27,13 +27,18 @@
 
 import { StructureContainer } from './StructureContainer.js';
 import { TrajectoryFrameStore } from './TrajectoryFrameStore.js';
+import { pressureGPa } from './Stress.js';
+import { siteSpeciesRecord } from './siteSpecies.js';
+import { general } from '../state/store.js';
 import {
-  materializeFrame, applyFramePhysics, extractFrameStyles, applyFrameStyles,
+  materializeFrame, deferFramePhysics, hasPendingFramePhysics, peekAtoms, extractFrameStyles, applyFrameStyles,
+  extractSharedStyles, applySharedStyles, mergeSharedStyles,
 } from './materializeFrame.js';
 
 /** @typedef {import('./Structure.js').Structure} Structure */
 /** @typedef {import('./TrajectoryFrameStore.js').FramePhysics} FramePhysics */
 /** @typedef {import('./materializeFrame.js').FrameStyleRecord} FrameStyleRecord */
+/** @typedef {import('./materializeFrame.js').SharedStyleRecord} SharedStyleRecord */
 
 /**
  * Duck-typed asynchrony test with narrowing: a frame source backed by the
@@ -108,8 +113,28 @@ export class TrajectoryContainer extends StructureContainer {
     this._liveElements = null;
     /** @type {Map<number, FrameStyleRecord>} step -> that frame's deviations */
     this._frameStyles = new Map();
-    /** Frame-switch counters for the Debug window (debug/memoryAccounting.js). */
-    this.debugStats = { shown: 0, reused: 0, rebuilt: 0, detached: 0, pristine: 0 };
+    /**
+     * The styles that apply to EVERY frame (category styles, element
+     * materials, polyhedra settings: materializeFrame.SHARED_STYLE_DICTS),
+     * null while all are at default. The live Structure keeps them from
+     * frame to frame; this record follows it (_syncShared) and is what a
+     * freshly built frame gets. Never counts as a per-frame style
+     * (hasFrameStyles), so it never holds playback off the fast path.
+     * @type {SharedStyleRecord | null}
+     */
+    this._sharedStyles = null;
+    /**
+     * Does the live Structure possibly carry a style deviation that a frame
+     * switch must clear? False only right after a pristine (null-record) style
+     * pass; set by a non-null record, a parked user edit, or a park that could
+     * not run. Lets _showFrame skip the O(N) applyFrameStyles reset between two
+     * unstyled frames — the common playback case.
+     */
+    this._liveStyled = false;
+    /** Frame-switch counters for the Debug window (debug/memoryAccounting.js).
+     *  `styled` counts switches that ran the O(N) style reset (stays 0 across
+     *  a run of unstyled frames — the skip is working). */
+    this.debugStats = { shown: 0, reused: 0, rebuilt: 0, detached: 0, pristine: 0, styled: 0 };
     /**
      * How the Trajectory player renders playback frames: 'auto' takes the
      * render fast path when motionProfile() says 'trajectory'; 'full' forces
@@ -118,6 +143,37 @@ export class TrajectoryContainer extends StructureContainer {
      */
     this.playbackMode = 'auto';
     /** @type {{kind: 'trajectory' | 'dataset', maxStep: number, frames: number} | null} */
+    this._motionProfile = null;
+  }
+
+  /**
+   * Keep only these frames (ascending steps) of a freshly parsed trajectory
+   * that is not shown yet — the memory limit's "every n-th frame" / "first
+   * frames" (io/trajectoryLoadPlan.js). Their per-frame records and plot
+   * values move with them; the dropped frames' memory is released.
+   * @param {number[]} steps
+   */
+  keepFrames(steps) {
+    // The trajectory-wide styles outlive the live Structure dropped below.
+    this._syncShared();
+    const styles = new Map();
+    steps.forEach((step, i) => {
+      const rec = this._frameStyles.get(step);
+      if (rec) styles.set(i, rec);
+    });
+    this.store.frames = steps.map((step) => this.store.frames[step]);
+    this._frameStyles = styles;
+    if (this.plotSeries) {
+      for (const key of Object.keys(this.plotSeries)) {
+        const series = this.plotSeries[key];
+        if (Array.isArray(series)) this.plotSeries[key] = steps.map((step) => series[step]);
+      }
+    }
+    this.structures = new Array(this.store.frameCount);
+    this._live = null;
+    this._liveStep = -1;
+    this._liveElements = null;
+    this._liveStyled = false;
     this._motionProfile = null;
   }
 
@@ -137,6 +193,8 @@ export class TrajectoryContainer extends StructureContainer {
     const interned = new Map();
     const frames = [];
     const records = new Map();
+    /** @type {SharedStyleRecord | null} */
+    let sharedStyles = null;
     structures.forEach((structure, i) => {
       const ph = TrajectoryFrameStore.packStructure(structure);
       const key = ph.elements.join('\0');
@@ -146,11 +204,15 @@ export class TrajectoryContainer extends StructureContainer {
       frames.push(ph);
       const rec = extractFrameStyles(structure, ph);
       if (rec) records.set(i, rec);
+      // Frames that each carry their own category styles (combined rows):
+      // the first frame to carry a given one sets it for the trajectory.
+      sharedStyles = mergeSharedStyles(sharedStyles, extractSharedStyles(structure));
     });
     const container = new TrajectoryContainer({
       fileName, store: new TrajectoryFrameStore({ frames }),
     });
     container._frameStyles = records;
+    container._sharedStyles = sharedStyles;
     return container;
   }
 
@@ -170,6 +232,13 @@ export class TrajectoryContainer extends StructureContainer {
     const step = this.frameCount - 1;
     const rec = extractFrameStyles(structure, ph);
     if (rec) this._frameStyles.set(step, rec);
+    // A frame arriving from a run never resets what the trajectory already
+    // has (a category hidden during the run stays hidden): it only fills
+    // what is still at default.
+    this._syncShared();
+    const before = this._sharedStyles;
+    this._sharedStyles = mergeSharedStyles(before, extractSharedStyles(structure));
+    if (this._live && this._sharedStyles !== before) applySharedStyles(this._live, this._sharedStyles);
     this.structures.length = this.frameCount;
     return step;
   }
@@ -220,11 +289,47 @@ export class TrajectoryContainer extends StructureContainer {
   /**
    * Does frame `step` carry a per-frame style record? A frame switch between
    * two unstyled frames changes physics only, which is what lets playback
-   * move instances in place instead of rebuilding.
+   * move instances in place instead of rebuilding. The trajectory-wide
+   * styles (_sharedStyles) are not per frame and never count here: the live
+   * Structure keeps them across the switch.
    * @param {number} step
    */
   hasFrameStyles(step) {
     return this._frameStyles.has(step);
+  }
+
+  /**
+   * The styles that apply to every frame, as the live Structure has them now
+   * (null: all at default). By reference: callers must not mutate it.
+   * @returns {SharedStyleRecord | null}
+   */
+  sharedStyles() {
+    this._syncShared();
+    return this._sharedStyles;
+  }
+
+  /**
+   * Change the trajectory-wide styles once, with no walk over the frames:
+   * on the live Structure when one is shown (its styles are the record),
+   * else on the record itself. `fn` must touch only those fields.
+   * @param {(holder: any) => void} fn
+   */
+  updateSharedStyles(fn) {
+    if (this._live) {
+      fn(this._live);
+      this._syncShared();
+      return;
+    }
+    /** @type {any} */
+    const holder = {};
+    applySharedStyles(holder, this._sharedStyles, { copy: true });
+    fn(holder);
+    this._sharedStyles = extractSharedStyles(holder);
+  }
+
+  /** Take the trajectory-wide styles from the live Structure (O(1)). */
+  _syncShared() {
+    if (this._live) this._sharedStyles = extractSharedStyles(this._live);
   }
 
   /**
@@ -235,6 +340,13 @@ export class TrajectoryContainer extends StructureContainer {
    */
   _parkLive(ph) {
     if (!this._live || this._liveStep < 0) return;
+    // The trajectory-wide styles need no per-atom read: always taken.
+    this._syncShared();
+    // Still deferred (see deferFramePhysics): nothing has read the shown
+    // frame's atoms since it was switched to, so nothing can have edited them
+    // — its record is what it was — and its objects still hold the previous
+    // frame's positions, which extracting would mistake for position edits.
+    if (hasPendingFramePhysics(this._live)) return;
     if (this._live.atoms.length !== ph.elements.length) {
       // A structural edit (atoms added/removed on the shown frame) has no
       // per-index representation against this frame's physics.
@@ -243,8 +355,14 @@ export class TrajectoryContainer extends StructureContainer {
       return;
     }
     const rec = extractFrameStyles(this._live, ph);
-    if (rec) this._frameStyles.set(this._liveStep, rec);
-    else this._frameStyles.delete(this._liveStep);
+    if (rec) {
+      this._frameStyles.set(this._liveStep, rec);
+      // The live objects hold these deviations; the next switch must clear
+      // them even when the incoming frame has no record of its own.
+      this._liveStyled = true;
+    } else {
+      this._frameStyles.delete(this._liveStep);
+    }
   }
 
   /**
@@ -254,26 +372,50 @@ export class TrajectoryContainer extends StructureContainer {
    */
   _showFrame(step, ph) {
     this.debugStats.shown += 1;
+    this._syncShared();
     if (this._live && this._liveStep >= 0 && this._liveStep !== step) {
       const livePh = this.store.getFramePhysics(this._liveStep);
       // A sync source (the RAM store) always parks; an async source that
       // cannot provide the outgoing physics synchronously cannot detect
       // position edits at park time — style deviations still park fine.
       if (!isPending(livePh)) this._parkLive(/** @type {FramePhysics} */(livePh));
+      // Unparked edits are invisible here: assume the live objects are styled.
+      else this._liveStyled = true;
     }
     // The live Structure's objects can be reused only while the composition
     // is unchanged; a frame with different elements (heterogeneous
     // trajectory) rebuilds it — the normal path there, not an error.
+    let rebuilt = false;
     if (this._live && sameElements(this._liveElements, ph.elements)
-      && this._live.atoms.length === ph.elements.length) {
-      applyFramePhysics(this._live, ph);
+      && peekAtoms(this._live).length === ph.elements.length) {
+      // Per-atom part applied on first read: a playback frame that the fast
+      // path moves straight from ph.positions never builds them.
+      deferFramePhysics(this._live, ph);
       this.debugStats.reused += 1;
     } else {
       this._live = materializeFrame(this.store, ph);
+      // A new live Structure: it takes the trajectory-wide styles over (by
+      // reference, as the one it replaces had them).
+      applySharedStyles(this._live, this._sharedStyles);
       this.debugStats.rebuilt += 1;
+      rebuilt = true;
     }
     this._liveElements = ph.elements;
-    applyFrameStyles(this._live, this._frameStyles.get(step) ?? null);
+    const rec = this._frameStyles.get(step) ?? null;
+    // Atoms coloured by force hold a derived a.color that extractFrameStyles
+    // deliberately does not record, so in that mode the reset is never
+    // skipped (it is what returns a.color to the element default).
+    const derivedColors = general.atomsColor === 'force';
+    if (rec !== null || derivedColors || (!rebuilt && this._liveStyled)) {
+      applyFrameStyles(this._live, rec);
+      this.debugStats.styled += 1;
+      this._liveStyled = rec !== null || derivedColors;
+    } else {
+      // Pristine already (a fresh materialisation, or reused objects that were
+      // themselves unstyled): the per-atom/arrow reset would be a no-op. The
+      // derived-state invalidation applyFrameStyles always does still applies.
+      this._live.polyhedra = null;
+    }
     this._installLazyAsLoaded(this._live, step);
 
     if (this._liveStep >= 0) delete this.structures[this._liveStep];
@@ -343,9 +485,12 @@ export class TrajectoryContainer extends StructureContainer {
       const livePh = this.store.getFramePhysics(step);
       if (!isPending(livePh)) this._parkLive(/** @type {FramePhysics} */(livePh));
     }
+    this._syncShared();
     const physics = this.store.getFramePhysics(step);
     const build = (/** @type {FramePhysics} */ ph) => {
       const frame = materializeFrame(this.store, ph);
+      // Copies: the detached frame leaves the trajectory (overlay, copied row).
+      applySharedStyles(frame, this._sharedStyles, { copy: true });
       applyFrameStyles(frame, this._frameStyles.get(step) ?? null);
       return frame;
     };
@@ -374,7 +519,9 @@ export class TrajectoryContainer extends StructureContainer {
    * Visit every frame as a mutable Structure — the propagation primitive
    * behind "apply/reset whole trajectory". Non-shown frames are reproduced
    * from their records, mutated by `fn`, and re-parked; only the deviations
-   * `fn` actually created are kept.
+   * `fn` actually created are kept. A change `fn` makes to the trajectory-wide
+   * styles (SHARED_STYLE_DICTS, polyhedra settings) on any frame becomes the
+   * trajectory's (and the live Structure's) — there is one of them.
    * @param {(frame: Structure, index: number) => void} fn
    * @param {{skip?: Structure}} [opts]
    * @returns {Promise<void> | void}
@@ -382,19 +529,36 @@ export class TrajectoryContainer extends StructureContainer {
   forEachFrameMaterialized(fn, opts = {}) {
     /** @type {Promise<void> | null} */
     let chain = null;
+    this._syncShared();
+    // Content key of the shared record, to notice a change `fn` makes to it
+    // on a throwaway frame (whose dicts are copies). Small: category dicts.
+    const sharedKey = (/** @type {SharedStyleRecord | null} */ r) => JSON.stringify(r);
+    let sharedNow = sharedKey(this._sharedStyles);
     for (let step = 0; step < this.frameCount; step++) {
       const stepNow = step;
       const visit = (/** @type {FramePhysics} */ ph) => {
         if (stepNow === this._liveStep && this._live) {
-          if (this._live !== opts.skip) fn(this._live, stepNow);
+          if (this._live !== opts.skip) {
+            fn(this._live, stepNow);
+            this._syncShared();
+            sharedNow = sharedKey(this._sharedStyles);
+          }
           return;
         }
         const frame = materializeFrame(this.store, ph);
+        applySharedStyles(frame, this._sharedStyles, { copy: true });
         applyFrameStyles(frame, this._frameStyles.get(stepNow) ?? null);
         fn(frame, stepNow);
         const rec = extractFrameStyles(frame, ph);
         if (rec) this._frameStyles.set(stepNow, rec);
         else this._frameStyles.delete(stepNow);
+        const shared = extractSharedStyles(frame);
+        const key = sharedKey(shared);
+        if (key !== sharedNow) {
+          this._sharedStyles = shared;
+          sharedNow = key;
+          if (this._live) applySharedStyles(this._live, shared);
+        }
       };
       const physics = this.store.getFramePhysics(stepNow);
       if (isPending(physics)) {
@@ -447,7 +611,7 @@ export class TrajectoryContainer extends StructureContainer {
    * Per-frame {etotEv, meanForce, pressure} series straight from the typed
    * arrays — the store-backed answer to the Trajectory panel's "Compute step
    * stats", without building a single frame. Formulas match the panel's
-   * eager path: mean per-atom |F|, and stress trace / 3 (relaxer.stressMean).
+   * eager path: mean per-atom |F|, and the pressure in GPa (model/Stress.js).
    * @returns {{etotEv: number[], meanForce: number[] | null, pressure: number[] | null}}
    */
   stepStatsSeries() {
@@ -469,7 +633,7 @@ export class TrajectoryContainer extends StructureContainer {
         anyForce = true;
       }
       if (ph.stress) {
-        pressure[f] = (ph.stress[0][0] + ph.stress[1][1] + ph.stress[2][2]) / 3;
+        pressure[f] = pressureGPa(ph.stress);
         anyStress = true;
       }
     }
@@ -547,6 +711,13 @@ export class TrajectoryContainer extends StructureContainer {
       positions,
       forces: arrows(ph.forces, rec?.forces, false),
       spins: ph.spinRaw ? arrows(ph.spinVectors, rec?.spins, true) : null,
+      // A frame's mixed sites live in its style record (extractFrameStyles
+      // keeps the species of every non-plain site).
+      species: siteSpeciesRecord(Array.from({ length: n },
+        (_, a) => /** @type {any} */ (rec?.atoms?.get(a))?.species ?? null)),
+      energy: Number.isFinite(ph.energy) ? ph.energy : null,
+      stress: ph.stress ? ph.stress.map(r => [...r]) : null,
+      dataSource: ph.dataSource ?? null,
     };
   }
 }

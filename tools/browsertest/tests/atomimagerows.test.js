@@ -153,7 +153,7 @@ const H = require('../harness');
       document.querySelector(`#atomPanel .individual-atom-row[data-image-index="${img1}"]`));
     /** @type {HTMLElement} */ (row.querySelector('span')).click();
     const highlightedRows = [...document.querySelectorAll('#atomPanel .individual-atom-row')]
-      .filter((r) => /** @type {HTMLElement} */ (r).style.borderLeft.includes('rgb(255, 179, 71)'));
+      .filter((r) => getComputedStyle(/** @type {HTMLElement} */ (r)).borderLeftColor === 'rgb(255, 179, 71)');
     return {
       selectedInstance: atomSelection.selectedAtoms[0]?.instanceId,
       expected: img1,
@@ -170,13 +170,17 @@ const H = require('../harness');
     const { updateAtomSelectionFrom3DHit } = await import('./ui/SelectAndHighlightModule.js');
     updateAtomSelectionFrom3DHit({ instanceId: img0, object: groups.atomsMesh }, { scrollToSelection: false });
     const highlighted = [...document.querySelectorAll('#atomPanel .individual-atom-row')]
-      .find((r) => /** @type {HTMLElement} */ (r).style.borderLeft.includes('rgb(255, 179, 71)'));
+      .find((r) => getComputedStyle(/** @type {HTMLElement} */ (r)).borderLeftColor === 'rgb(255, 179, 71)');
     return { highlightedImage: Number(/** @type {HTMLElement} */ (highlighted)?.dataset.imageIndex), expected: img0 };
   }, { img0: colored.img0 });
   H.check('3D pick highlights the row of the exact copy that was hit',
     sel3d.highlightedImage === sel3d.expected, JSON.stringify(sel3d));
 
   // --- Toggle back on: source rows return, per-copy style still wins ----------------
+  // The toggle keeps the selection, and a linked selection glows every copy
+  // (the edited one too, in the highlight colour): deselect so the copy's own
+  // colour is what shows.
+  await page.evaluate(async () => (await import('./ui/SelectAndHighlightModule.js')).clearSelectedAtoms());
   await H.clickById(page, 'linkPeriodicCopiesToggle');
   await page.waitForTimeout(300);
   const relinked = await page.evaluate(async ({ img1 }) => {

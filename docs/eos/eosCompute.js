@@ -36,7 +36,8 @@ function cloneWithGeometry(structure, lattice, positionsCart, keptIndices = null
 
 /**
  * Compute an EOS scan with `runner` ({ modelInfo, compute } — NEP or PET-MAD
- * surface): nPoints target pressures evenly spaced in [pMinGPa, pMaxGPa],
+ * surface). By pressure (default): nPoints target pressures evenly spaced in
+ * [pMinGPa, pMaxGPa],
  * each fully relaxed (cell + atoms, relaxer defaults) until forces ≤ fmaxTol
  * and the measured pressure is within pressureTolGPa of the target. The scan
  * walks the targets in order and seeds every relaxation from the previous
@@ -46,6 +47,10 @@ function cloneWithGeometry(structure, lattice, positionsCart, keptIndices = null
  * and returns the completed points with stopped:true. A point that exhausts
  * maxSteps is still recorded, flagged false in the per-point `converged`
  * array (and called out through onProgress).
+ * By volume (volumeRangePct = r): nPoints cell volumes evenly spaced in
+ * V·[1 − r/100, 1 + r/100] around the base cell's volume V, each with the cell
+ * held fixed (scaled isotropically from the base) and only the atoms relaxed
+ * (forces ≤ fmaxTol); the pressure is measured at each point.
  *
  * Returns { volumes (Å³), energies (eV), pressures (GPa — MEASURED from the
  * relaxed stress, not the target), structures, converged, stopped }, sorted
@@ -58,35 +63,55 @@ export async function runEOSScan(runner, baseStructure, {
   fmaxTol = 0.01,
   maxSteps = 200,
   pressureTolGPa = 0.2,
+  volumeRangePct = null,
   onProgress = (_text) => {},
   shouldStop = /** @type {() => boolean} */ (() => false),
 } = {}) {
   const points = [];
   let stopped = false;
-  let seed = buildNEPStructure(runner, baseStructure);
+  const base = buildNEPStructure(runner, baseStructure);
+  let seed = base;
+  const byVolume = Number.isFinite(volumeRangePct) && volumeRangePct > 0;
+  const lerp = (lo, hi, i) => (nPoints > 1 ? lo + ((hi - lo) * i) / (nPoints - 1) : lo);
 
   for (let i = 0; i < nPoints; i += 1) {
     if (shouldStop()) { stopped = true; break; }
-    const target = nPoints > 1
-      ? pMinGPa + ((pMaxGPa - pMinGPa) * i) / (nPoints - 1)
-      : pMinGPa;
+    let label;
+    let target;
+    if (byVolume) {
+      // Scale the base cell (and its atoms) isotropically to this volume.
+      const factor = lerp(1 - volumeRangePct / 100, 1 + volumeRangePct / 100, i);
+      const s = Math.cbrt(factor);
+      seed = {
+        ...base,
+        lattice: base.lattice.map((row) => row.map((x) => x * s)),
+        positions: base.positions.map((p) => p.map((x) => x * s)),
+      };
+      target = 0;
+      label = `V = ${(100 * factor).toFixed(1)} % of the cell`;
+    } else {
+      target = lerp(pMinGPa, pMaxGPa, i);
+      label = `target ${target.toFixed(2)} GPa`;
+    }
 
     const relaxed = await relaxUntilConverged(runner, seed, {
       targetPressureGPa: target,
       pressureTolGPa,
+      relaxCell: !byVolume,
       fmaxTol,
       maxSteps,
       shouldStop,
       onStep: (step, _current, _out, mF) => {
-        onProgress(`point ${i + 1}/${nPoints} (target ${target.toFixed(2)} GPa) — relax step ${step}, max force ${mF.toFixed(4)} eV/Å`);
+        onProgress(`point ${i + 1}/${nPoints} (${label}) — relax step ${step}, max force ${mF.toFixed(4)} eV/Å`);
       },
     });
     if (relaxed.stopped) { stopped = true; break; } // drop the half-relaxed point
     if (!relaxed.converged) {
-      onProgress(`point ${i + 1}/${nPoints} (target ${target.toFixed(2)} GPa) — NOT converged after ${relaxed.steps} steps (P=${relaxed.pressureGPa.toFixed(2)} GPa)`);
+      onProgress(`point ${i + 1}/${nPoints} (${label}) — NOT converged after ${relaxed.steps} steps (P=${relaxed.pressureGPa.toFixed(2)} GPa)`);
     }
     // Even an unconverged endpoint beats the base structure as the next seed —
-    // it has already walked most of the way toward this pressure range.
+    // it has already walked most of the way toward this pressure range. A
+    // volume scan seeds each point from the base cell instead (above).
     seed = relaxed.structure;
 
     const structure = cloneWithGeometry(baseStructure, relaxed.structure.lattice, relaxed.structure.positions, relaxed.structure.keptIndices);

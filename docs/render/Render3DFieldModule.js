@@ -1,15 +1,23 @@
-// ReadCubeModule.js
-// Parser for Gaussian .cube volumetric files + Marching Cubes isosurface extraction
-// Exports: readCubeFile(), updateField()
+// Render3DFieldModule.js
+// Scene-side handling of volumetric fields (cube, CHGCAR, WAVECAR): parsing
+// into fields, the active field's isosurface and slices, periodic display
+// bounds, and the field panel.
+// Exports: createSlice(), clearField(), deleteField(), setActiveField(),
+//   suggestIsoValue(), toggleFieldVisibility(), applyFieldPeriodicBounds(),
+//   updateField(), parseCubeFile(), parseCHGCARFile(),
+//   revealFieldPanelForCurrentStructure(), parseWavecarFile()
 
 import * as THREE from "../external/three/three.module.js";
 
 import { initializeWithPOSCAR } from '../ui/StructureInputModule.js';
-import { fieldBrowser, updateFieldPanel } from "../ui/FieldPanel.js";
+import { fieldBrowser, updateFieldPanel, restoreStoredFieldSelection } from "../ui/FieldPanel.js";
 import { app, groups, fileBrowser, general, structureShip } from '../state/store.js';
 import { normalizePeriodicBounds } from './LatticeModule.js';
-import { readCHGCAR } from "../io/ReadChgcarModule.js";
-import { readCubeFile } from "../io/ReadCubeModule.js";
+import { readCHGCARAsync } from "../io/ReadChgcarModule.js";
+import { showLoadProgress, hideLoadProgress } from "./LoadProgressModule.js";
+import { buildCubeStructure } from "../io/ReadCubeModule.js";
+import { parseCube } from "../io/cubeParse.js";
+import { countAtomsOutsideGrid } from "../io/cubeLayout.js";
 import { applyFocusToField } from './FocusRegionModule.js';
 import { readWAVECAR } from "../io/ReadWavecarModule.js";
 import { Isosurface, FieldCatalog, FieldContainer, defaultIsoValue } from "../model/index.js";
@@ -284,10 +292,50 @@ function adoptEagerFieldContainer(container) {
   updateField();
 }
 
-export function parseCubeFile(content, fileName) {
-  // Parse the Cube file (volumetric fields are now included in the structure).
-  // Errors intentionally propagate to loadStructure and the host facade.
-  const result = readCubeFile(content, fileName);
+/**
+ * Open a cube. It is parsed once, before anything is asked. A file whose atoms
+ * lie outside its own grid box is a finite block rather than a periodic cell,
+ * so (unless `periodic` is given) the user chooses how to load it.
+ *
+ * @param {string} content
+ * @param {string} fileName
+ * @param {{ periodic?: boolean }} [options] `true` / `false` skip the dialog
+ * @returns {Promise<import('../model/index.js').StructureContainer | null>} null if cancelled
+ */
+export async function parseCubeFile(content, fileName, { periodic } = {}) {
+  // A file that does not parse throws here, before any dialog. Errors
+  // intentionally propagate to loadStructure and the host facade.
+  const cube = parseCube(content);
+
+  let asPeriodic = periodic;
+  if (typeof asPeriodic !== 'boolean') {
+    asPeriodic = true;
+    const { outside, total } = countAtomsOutsideGrid(cube);
+    if (outside > 0) {
+      const choice = await choiceDialog(
+        `${outside} of ${total} atoms in ${fileName} lie outside the grid box. `
+          + 'The file may be a finite block of data rather than a periodic cell.',
+        {
+          title: 'Cube atoms outside the grid',
+          choices: [
+            {
+              value: 'periodic', label: 'Periodic',
+              description: 'Use the grid box as the unit cell and wrap every atom into it.',
+            },
+            {
+              value: 'block', label: 'Not periodic',
+              description: 'Keep the atoms where they are, in a padded box around the atoms and the grid.',
+            },
+            { value: 'cancel', label: 'Cancel', description: 'Do not load the file.' },
+          ],
+          cancelValue: 'cancel',
+        });
+      if (choice !== 'periodic' && choice !== 'block') return null;
+      asPeriodic = choice === 'periodic';
+    }
+  }
+
+  const result = buildCubeStructure(cube, fileName, { periodic: asPeriodic });
 
   adoptEagerFieldContainer(result.structure_with_field.volumetricFields);
 
@@ -297,17 +345,41 @@ export function parseCubeFile(content, fileName) {
   return container;
 }
 
-export function parseCHGCARFile(content, fileName, source = 'CHGCAR') {
-  // Parse the CHGCAR file (volumetric fields are now included in the structure).
+/**
+ * Load a CHGCAR / ELFCAR. The numbers are read in a pool worker
+ * (io/chgcarParse.js), so the view stays responsive; the strip along the top
+ * of the view shows how far through the file it is.
+ *
+ * @param {import('../io/index.js').FileSource | Blob | string} content
+ * @param {string} fileName
+ * @param {string} [source] 'CHGCAR' or 'ELFCAR'
+ */
+export async function parseCHGCARFile(content, fileName, source = 'CHGCAR') {
   // Errors intentionally propagate to loadStructure and the host facade.
-  const result = readCHGCAR(content, fileName, source);
+  showLoadProgress(0);
+  try {
+    // The read is most of the time; the last stretch of the strip is left
+    // for building the scene, which runs here on the main thread.
+    const result = await readCHGCARAsync(content, fileName, source,
+      (percent) => showLoadProgress(0.9 * percent / 100));
+    showLoadProgress(0.95);
+    // Let that frame reach the screen before the main thread is busy again
+    // (with a timeout: a hidden tab runs no animation frames).
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => setTimeout(resolve, 0));
+      setTimeout(resolve, 100);
+    });
 
-  adoptEagerFieldContainer(result.structure_with_field.volumetricFields);
+    adoptEagerFieldContainer(result.structure_with_field.volumetricFields);
 
-  const container = initializeWithPOSCAR(result.structure_with_field, fileName);
-  updateFieldPanel();
-  console.log(`CHGCAR file parsed successfully with ${result.structure_with_field.volumetricFields ? result.structure_with_field.volumetricFields.fields.length : 0} volumetric fields`);
-  return container;
+    const container = initializeWithPOSCAR(result.structure_with_field, fileName);
+    updateFieldPanel();
+    showLoadProgress(1);
+    console.log(`CHGCAR file parsed successfully with ${result.structure_with_field.volumetricFields ? result.structure_with_field.volumetricFields.fields.length : 0} volumetric fields`);
+    return container;
+  } finally {
+    hideLoadProgress();
+  }
 }
 
 //------------------------------------------------------------
@@ -426,6 +498,65 @@ function promptForStructureFile() {
   });
 }
 
+/** The field lists changed (planes re-read them; see ui/PlanesPanel.js). */
+function notifyFieldsChanged() {
+  if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('crysviz:fields-changed'));
+}
+
+/**
+ * Put a lazily-loaded field catalog (a WAVECAR's) on a structure and point the
+ * field browser at it.
+ *
+ * A structure that already holds fields (a CHGCAR, a cube, an earlier
+ * WAVECAR) keeps them: the new tree is added next to them, each file under its
+ * own group (FieldCatalog.combine), instead of replacing the structure's
+ * FieldContainer. The container's `fields` — what a .crysviz save stores —
+ * stay the host file's own, and the field on screen stays selected. A
+ * structure without fields gets a new container holding just this catalog.
+ *
+ * @param {any} structure
+ * @param {import('../model/FieldCatalog.js').FieldCatalog} catalog
+ * @param {{fileName: string, source: string, proxySource?: any,
+ *          cellMismatch?: {structureLattice: number[][], fileLattice: number[][], deviation: number} | null}} options
+ * @returns {FieldContainer} the structure's container afterwards
+ */
+export function attachFieldCatalog(structure, catalog, { fileName, source, proxySource = null, cellMismatch = null }) {
+  const existing = structure.volumetricFields;
+  if (existing?.catalog?.nodes?.length) {
+    const previousSelection = fieldBrowser.selectedField;
+    const combined = FieldCatalog.combine([
+      { catalog: existing.catalog, label: existing.fileName },
+      { catalog, label: fileName },
+    ]);
+    existing.catalog = combined;
+    if (proxySource) existing.proxySource = proxySource;
+    if (cellMismatch) existing.cellMismatch = cellMismatch;
+    fieldBrowser.setCatalog(combined);
+    // Keep showing whatever field was on screen (setCatalog picks the first).
+    if (previousSelection && previousSelection !== fieldBrowser.selectedField) {
+      fieldBrowser.selectField(previousSelection);
+    }
+    // A band picked before a reload is back with its file.
+    restoreStoredFieldSelection(structure);
+    notifyFieldsChanged();
+    return existing;
+  }
+
+  const container = new FieldContainer({
+    fileName,
+    source,
+    fields: [],          // nothing is loaded yet; the catalog is the source of truth
+    catalog,
+    proxySource,
+  });
+  container.cellMismatch = cellMismatch;
+  structure.volumetricFields = container;
+  fieldBrowser.setCatalog(catalog);
+  restoreStoredFieldSelection(structure);
+  notifyFieldsChanged();
+  return container;
+}
+
 /**
  * Open a WAVECAR.
  *
@@ -541,27 +672,20 @@ export async function parseWavecarFile(source, fileName) {
           + ' at any time, it simply has to be recomputed.',
       });
   };
-  const container = new FieldContainer({
-    fileName,
-    source: 'WAVECAR',
-    fields: [],          // nothing is loaded yet; the catalog is the source of truth
-    catalog,
-    proxySource: wf,
-  });
-  if (usingHostCell) {
-    container.cellMismatch = {
-      structureLattice: attachTo.lattice,
-      fileLattice: wf.lattice,
-      deviation: largestLatticeDeviation(attachTo.lattice, wf.lattice),
-    };
-  }
+  const cellMismatch = usingHostCell ? {
+    structureLattice: attachTo.lattice,
+    fileLattice: wf.lattice,
+    deviation: largestLatticeDeviation(attachTo.lattice, wf.lattice),
+  } : null;
 
-  fieldBrowser.setCatalog(catalog);
+  // The structure the field ends up in: the host, or (no host) the WAVECAR's
+  // own cell, registered below.
+  const attachOptions = { fileName, source: 'WAVECAR', proxySource: wf, cellMismatch };
+  attachFieldCatalog(attachTo ?? result.structure, catalog, attachOptions);
 
   if (attachTo) {
     // No new file-browser row: the wavefunctions belong to a structure that is
     // already listed, so hand back that structure's existing container.
-    attachTo.volumetricFields = container;
     const owner = containerForStructure(attachTo);
     if (owner) {
       console.log(`WAVECAR opened and attached to the selected structure — ${wf.describe()}`);
@@ -574,9 +698,9 @@ export async function parseWavecarFile(source, fileName) {
     // which loadStructure would report as a failed load.
     console.warn('WAVECAR: the selected structure is not registered in the file browser; '
       + 'loading the file as its own entry instead.');
+    attachFieldCatalog(result.structure, catalog, { ...attachOptions, cellMismatch: null });
   }
 
-  result.structure.volumetricFields = container;
   const structureContainer = initializeWithPOSCAR(result.structure, fileName);
   console.log(`WAVECAR opened as its own structure — ${wf.describe()}`);
   announceWavecarLoaded(fileName, `${fileName} (its own cell, no atoms)`, wf);

@@ -10,6 +10,8 @@
  *   await initPeriodicWasm(init, periodic_wrapped, new URL('../compiled/periodic_wasm_bg.wasm', import.meta.url));
  */
 
+import { isMetal } from '../defaults/element_class_defaults.js';
+
 // ---------------------------------------------------------------------------
 // Module-level WASM function handle
 // ---------------------------------------------------------------------------
@@ -61,6 +63,32 @@ export function buildBondTable(elements, bondLengths, bondVisibility) {
   return { table, nElem, elementToIdx: seen };
 }
 
+// "Complete Rings & Fragments": the cutoff table of the bonds that define fragments —
+// the bond table (hidden pairs already 0), with every bond to a metal dropped
+// when general.fragmentIgnoreMetalBonds is on (see defaults/
+// element_class_defaults.js for why). Returns null when the option is off.
+// Shared by the WASM and JS paths so both see the same fragments.
+export function buildFragmentTable(general, bondTable, nElem, elementToIdx) {
+  if (!general.completeFragments) return null;
+  const table = Float64Array.from(bondTable);
+  if (general.fragmentIgnoreMetalBonds !== false) {
+    for (const [sym, idx] of elementToIdx) {
+      if (!isMetal(sym)) continue;
+      for (let k = 0; k < nElem; k++) {
+        table[idx * nElem + k] = 0;
+        table[k * nElem + idx] = 0;
+      }
+    }
+  }
+  return table;
+}
+
+// Largest ring completed in extended networks (graphite sheets, frameworks).
+export function fragmentMaxRing(general) {
+  const r = Number(general.fragmentMaxRing ?? 6);
+  return Number.isFinite(r) ? Math.max(0, Math.min(12, Math.round(r))) : 6;
+}
+
 // ---------------------------------------------------------------------------
 // Main export – identical signature to the original periodicWrapped
 // ---------------------------------------------------------------------------
@@ -100,6 +128,7 @@ export function periodicWrapped(general, frac, elements, lattice) {
   for (let i = 0; i < n; i++) {
     elemIdx[i] = elementToIdx.get(elements[i]) ?? 0;
   }
+  const fragmentTable = buildFragmentTable(general, bondTable, nElem, elementToIdx);
 
   const fracFlat = new Float64Array(3 * n);
   for (let i = 0; i < n; i++) {
@@ -126,7 +155,9 @@ export function periodicWrapped(general, frac, elements, lattice) {
     bondTable,
     nElem,
     faceTol,
-    boundsFlat
+    boundsFlat,
+    fragmentTable ?? new Float64Array(0),
+    fragmentMaxRing(general)
   );
 
   const m = result.len();

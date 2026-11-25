@@ -29,39 +29,45 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 /// the accepted coordination identical while keeping the dual hull small.
 const VORONOI_MAX_CANDS: usize = 100;
 
-/// Cap on the per-seed cage pool. The frontier BFS overshoots the "≥40 visible"
-/// target by a whole depth level, which can leave hundreds of atoms in the pool;
-/// the band hull + spread sampling are O(pool²), so trimming to the nearest ~64
-/// (well above 2×20 for dodecahedra) restores the intended cost without dropping
-/// any real coordination shell. Kept generous (≈5× the largest cage) so a sparse
-/// cage interior or a clathrate guest atom can't push a shell atom out of range.
-const POOL_CAP: usize = 96;
-
 // ---- Behaviour constants (mirror the JS module) ----
-const CAGE_TARGET_NS_DESC: [usize; 6] = [20, 12, 10, 8, 6, 4];
-const CAGE_BFS_DEPTH: i32 = 5;
-const MAX_EDGE_SPREAD: f64 = 1.60;
+// Cages: empty shells of mutually bonded framework atoms, found from the empty
+// space (see the cage block in build_candidates; mirrors findCages() and its
+// CAGE_* constants in docs/render/PolyhedraModule.js).
+const CAGE_GRID_STEP: f64 = 0.4;
+const CAGE_GRID_MAX_POINTS: f64 = 400000.0;
+const CAGE_SPLAT_RADIUS: f64 = 4.5;
+const CAGE_MIN_VOID: f64 = 0.7;
+const CAGE_SHELL_TOL: f64 = 1.35;
+const CAGE_SHELL_PAD: f64 = 0.6;
+const CAGE_SHELL_CAP: f64 = 6.5;
+const CAGE_REFINE_ITERS: usize = 8;
+const CAGE_MIN_SURFACE_SHARE: f64 = 0.6;
+const CAGE_MIN_THICKNESS: f64 = 0.15;
 const MIN_THICKNESS_RATIO: f64 = 0.08;
 const MIN_CENTER_FACE_CLEARANCE_REL: f64 = 0.10;
 const VORONOI_SOLID_ANGLE_REL: f64 = 0.10;
-const EDGE_ANGLE_DEG: f64 = 18.0;
 
 #[inline]
 fn search_radius(max_cutoff: f64) -> f64 {
     8.0_f64.min(4.0_f64.max(2.5 * max_cutoff))
 }
 
-fn min_vertex_degree_for_cage_size(n: usize) -> usize {
-    match n {
-        12 => 5,
-        20 => 3,
-        10 => 3,
-        8 => 3,
-        6 => 3,
-        4 => 2,
-        _ => 3,
-    }
-}
+/// Nesting margin (Å): a point is inside a hull only when it is at least this far
+/// inside every face. A point ON a face (MnAlCu2's Al centre is a corner of the
+/// Mn polyhedron) is not nested; at a 1e-6 tolerance rounding decided it and the
+/// JS and WASM paths kept different polyhedra. Mirrors NEST_MARGIN in
+/// docs/render/PolyhedraModule.js.
+const NEST_MARGIN: f64 = 0.01;
+
+/// Slack on the candidate–anion bond in `is_bridged_cation`: the anion already
+/// sits between candidate and centre, so this only reaches bonds the default
+/// cutoffs make too short (Pb–O 2.9 Å in PbZrO3 vs a 2.54 Å cutoff). Mirrors
+/// BRIDGE_BOND_SLACK in docs/render/PolyhedraModule.js.
+const BRIDGE_BOND_SLACK: f64 = 1.25;
+
+/// How much nearer the bridging anion must be than the candidate (see
+/// `is_bridged_cation`). Mirrors BRIDGE_NEARER in docs/render/PolyhedraModule.js.
+const BRIDGE_NEARER: f64 = 0.9;
 
 type Key = (u32, i32, i32, i32);
 
@@ -119,13 +125,6 @@ struct Cand {
     d: f64,
     elem: usize,
     radius: f64,
-}
-
-#[derive(Clone)]
-struct PoolEntry {
-    pos: Vec3,
-    src: u32,
-    shift: [i32; 3],
 }
 
 pub struct Candidate {
@@ -372,197 +371,6 @@ fn thickness_ratio(points: &[Vec3]) -> f64 {
     e_min / e_max.max(1e-12)
 }
 
-/// Edge-spread check over the hull's "real" edges (those whose two incident
-/// faces differ by more than EDGE_ANGLE — coplanar triangulation seams excluded).
-fn edge_spread_ok(hull: &Hull, pts: &[Vec3]) -> bool {
-    let cos_thr = (EDGE_ANGLE_DEG * std::f64::consts::PI / 180.0).cos();
-    // Undirected edge -> the (up to two) incident face indices.
-    let mut edge_faces: HashMap<(usize, usize), Vec<usize>> = HashMap::new();
-    for (fi, f) in hull.faces.iter().enumerate() {
-        for e in 0..3 {
-            let a = f.v[e];
-            let b = f.v[(e + 1) % 3];
-            let key = if a < b { (a, b) } else { (b, a) };
-            edge_faces.entry(key).or_default().push(fi);
-        }
-    }
-    let (mut min_l, mut max_l) = (f64::INFINITY, 0.0_f64);
-    for ((a, b), faces) in &edge_faces {
-        let include = if faces.len() >= 2 {
-            hull.faces[faces[0]].normal.dot(hull.faces[faces[1]].normal) < cos_thr
-        } else {
-            true // boundary edge (shouldn't happen on a closed hull)
-        };
-        if !include {
-            continue;
-        }
-        let l = pts[*a].dist(pts[*b]);
-        if l < min_l {
-            min_l = l;
-        }
-        if l > max_l {
-            max_l = l;
-        }
-    }
-    if !min_l.is_finite() || min_l <= 1e-9 {
-        return false;
-    }
-    (max_l / min_l) <= MAX_EDGE_SPREAD
-}
-
-/// Farthest-point spread sampling — returns N indices into `points`.
-fn pick_spread_subset(points: &[Vec3], n: usize) -> Option<Vec<usize>> {
-    if points.len() < n {
-        return None;
-    }
-    let (mut a_idx, mut b_idx, mut best) = (0usize, 1usize, -1.0_f64);
-    for i in 0..points.len() {
-        for j in (i + 1)..points.len() {
-            let d = points[i].dist2(points[j]);
-            if d > best {
-                best = d;
-                a_idx = i;
-                b_idx = j;
-            }
-        }
-    }
-    let mut chosen = vec![a_idx, b_idx];
-    while chosen.len() < n {
-        let (mut best_idx, mut best_score) = (usize::MAX, f64::NEG_INFINITY);
-        for i in 0..points.len() {
-            if chosen.contains(&i) {
-                continue;
-            }
-            let mut min_d = f64::INFINITY;
-            for &j in &chosen {
-                let d = points[i].dist2(points[j]);
-                if d < min_d {
-                    min_d = d;
-                }
-            }
-            if min_d > best_score {
-                best_score = min_d;
-                best_idx = i;
-            }
-        }
-        if best_idx == usize::MAX {
-            break;
-        }
-        chosen.push(best_idx);
-    }
-    if chosen.len() < n {
-        None
-    } else {
-        Some(chosen)
-    }
-}
-
-fn induced_degree_ok(adjacency: &[HashSet<u32>], sel: &[u32], min_deg: usize) -> bool {
-    let set: HashSet<u32> = sel.iter().cloned().collect();
-    for &u in sel {
-        let nb = &adjacency[u as usize];
-        let mut deg = 0;
-        for &v in nb {
-            if v != u && set.contains(&v) {
-                deg += 1;
-            }
-        }
-        if deg < min_deg {
-            return false;
-        }
-    }
-    true
-}
-
-/// Reusable scratch for the band 2-core test, so the per-band gate allocates nothing
-/// on the hot path (`local` is sized once to n_atoms; the rest are cleared, not freed).
-struct KCore {
-    local: Vec<i32>, // src -> local band index, else -1; restored to -1 after each call
-    srcs: Vec<u32>,
-    deg: Vec<usize>,
-    removed: Vec<bool>,
-    stack: Vec<usize>,
-}
-
-impl KCore {
-    fn new(n_atoms: usize) -> KCore {
-        KCore {
-            local: vec![-1; n_atoms],
-            srcs: Vec::new(),
-            deg: Vec::new(),
-            removed: Vec::new(),
-            stack: Vec::new(),
-        }
-    }
-
-    /// Size of the 2-core of the band's induced bond subgraph (source-level). Any accepted
-    /// cage's vertices form a min-degree-≥minDeg(N)≥2 subgraph of their band, so they lie
-    /// in the band's 2-core; a band whose 2-core has < 4 atoms cannot yield any cage and
-    /// its convex hull can be skipped. (Necessary condition — the precise per-N
-    /// `induced_degree_ok` still runs on the selected vertices.)
-    fn two_core_size(&mut self, band: &[PoolEntry], adjacency: &[HashSet<u32>]) -> usize {
-        self.srcs.clear();
-        for e in band {
-            let s = e.src as usize;
-            if self.local[s] < 0 {
-                self.local[s] = self.srcs.len() as i32;
-                self.srcs.push(e.src);
-            }
-        }
-        let m = self.srcs.len();
-        if m < 4 {
-            for &s in &self.srcs {
-                self.local[s as usize] = -1;
-            }
-            return m;
-        }
-        self.deg.clear();
-        self.deg.resize(m, 0);
-        self.removed.clear();
-        self.removed.resize(m, false);
-        for i in 0..m {
-            let mut d = 0;
-            for &t in &adjacency[self.srcs[i] as usize] {
-                let li = self.local[t as usize];
-                if li >= 0 && li as usize != i {
-                    d += 1;
-                }
-            }
-            self.deg[i] = d;
-        }
-        self.stack.clear();
-        for i in 0..m {
-            if self.deg[i] < 2 {
-                self.stack.push(i);
-            }
-        }
-        let mut alive = m;
-        while let Some(u) = self.stack.pop() {
-            if self.removed[u] {
-                continue;
-            }
-            self.removed[u] = true;
-            alive -= 1;
-            for &t in &adjacency[self.srcs[u] as usize] {
-                let li = self.local[t as usize];
-                if li >= 0 {
-                    let v = li as usize;
-                    if v != u && !self.removed[v] {
-                        self.deg[v] = self.deg[v].saturating_sub(1);
-                        if self.deg[v] < 2 {
-                            self.stack.push(v);
-                        }
-                    }
-                }
-            }
-        }
-        for &s in &self.srcs {
-            self.local[s as usize] = -1;
-        }
-        alive
-    }
-}
-
 fn centered_hull_acceptable(center: Vec3, center_radius: f64, pos_list: &[Vec3]) -> bool {
     let hull = match convex_hull(pos_list) {
         Some(h) => h,
@@ -582,17 +390,6 @@ fn centered_hull_acceptable(center: Vec3, center_radius: f64, pos_list: &[Vec3])
     true
 }
 
-fn quantile(sorted: &[f64], q: f64) -> f64 {
-    if sorted.is_empty() {
-        return 0.0;
-    }
-    let i = (sorted.len() - 1) as f64 * q;
-    let i0 = i.floor() as usize;
-    let i1 = (i0 + 1).min(sorted.len() - 1);
-    let t = i - i0 as f64;
-    sorted[i0] * (1.0 - t) + sorted[i1] * t
-}
-
 fn is_ligand_of(nbr: usize, center: usize, electroneg: &[f64], filter: bool) -> bool {
     let en_n = electroneg[nbr];
     let en_c = electroneg[center];
@@ -600,6 +397,77 @@ fn is_ligand_of(nbr: usize, center: usize, electroneg: &[f64], filter: bool) -> 
         return nbr != center;
     }
     en_n > en_c + 1e-6
+}
+
+/// Second-shell cation: `cand` is bonded to a more electronegative ANION FORMER
+/// (a nonmetal or metalloid, `anion_former[elem] != 0`) that sits clearly nearer
+/// to the centre (d < BRIDGE_NEARER × cand.d), so it is a neighbouring cation
+/// seen THROUGH that anion (Ca–O–Si in diopside, whose Ca polyhedron got 17
+/// corners without this). Over 313 test structures cations behind an anion sat
+/// at ratios ≤ 0.882, atoms of one anionic layer (LiBC's B and C) at ≥ 0.92. A
+/// partner farther out (Fe–C≡N, M–C≡O) or a metal partner (alloys) never
+/// counts. The bond gets BRIDGE_BOND_SLACK (Pb–O 2.9 Å vs a 2.54 Å cutoff).
+/// Mirrors isBridgedCation in docs/render/PolyhedraModule.js.
+fn is_bridged_cation(
+    cand: &Cand,
+    cands: &[Cand],
+    electroneg: &[f64],
+    anion_former: &[u8],
+    cutoff: &dyn Fn(usize, usize) -> f64,
+) -> bool {
+    let en_b = electroneg.get(cand.elem).copied().unwrap_or(0.0);
+    if en_b == 0.0 {
+        return false;
+    }
+    cands.iter().any(|x| {
+        if std::ptr::eq(x, cand) || anion_former.get(x.elem).copied().unwrap_or(0) == 0 {
+            return false;
+        }
+        let en_x = electroneg.get(x.elem).copied().unwrap_or(0.0);
+        if en_x == 0.0 || en_x <= en_b + 1e-6 {
+            return false;
+        }
+        if !(x.d < BRIDGE_NEARER * cand.d) {
+            return false;
+        }
+        let cut = cutoff(cand.elem, x.elem);
+        cut > 1e-3 && x.pos.sub(cand.pos).norm() <= cut * BRIDGE_BOND_SLACK
+    })
+}
+
+/// Framework bond for cage detection (chemical filter on): nonmetal–nonmetal
+/// (Si–Si, B–B, C–C, P–P), or metal–metal unless both atoms bond to one more
+/// electronegative anion former (two cations sharing an anion, Ti–O–Ti, which the
+/// default cutoffs also call a bond). A metal–nonmetal bond is a coordination
+/// bond, never framework. `nbr_i` are atom i's neighbour images, `pos_j` the
+/// image of j. Mirrors isFrameworkBond in docs/render/PolyhedraModule.js.
+fn is_framework_bond(
+    ei: usize,
+    ej: usize,
+    nbr_i: &[Neighbor],
+    pos_j: Vec3,
+    elem_idx: &[u32],
+    electroneg: &[f64],
+    anion_former: &[u8],
+    cutoff: &dyn Fn(usize, usize) -> f64,
+) -> bool {
+    let af = |e: usize| anion_former.get(e).copied().unwrap_or(0) != 0;
+    let en = |e: usize| electroneg.get(e).copied().unwrap_or(0.0);
+    if af(ei) != af(ej) {
+        return false;
+    }
+    if af(ei) {
+        return true;
+    }
+    let en_max = en(ei).max(en(ej));
+    !nbr_i.iter().any(|x| {
+        let ex = elem_idx[x.src_j as usize] as usize;
+        if !af(ex) || en(ex) <= en_max + 1e-6 {
+            return false;
+        }
+        let cut = cutoff(ej, ex);
+        cut > 1e-3 && x.pos.sub(pos_j).norm() <= cut
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -631,10 +499,12 @@ pub fn build_candidates(
     cutoff_matrix: &[f64],
     n_elem: usize,
     electroneg: &[f64],
+    anion_former: &[u8],
     radii: &[f64],
     max_cutoff: f64,
     use_chem_filter: bool,
     detect_cages: bool,
+    simple: bool,
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
@@ -643,12 +513,16 @@ pub fn build_candidates(
     cut_plane_immune: &[u8],
     cut_planes: &[f64],
     cut_plane_count: usize,
+    cage_bounds: &[f64],
     center_start: usize,
     center_end: usize,
     seed_start: usize,
     seed_end: usize,
 ) -> (Vec<Candidate>, BuildTiming) {
     let t0 = now();
+    // Fast mode never searches cages (that is half of what makes it fast), so the
+    // framework graph below is not built either.
+    let detect_cages = detect_cages && !simple;
     let n_atoms = elem_idx.len();
     let cutoff = |ei: usize, ej: usize| -> f64 {
         if ei < n_elem && ej < n_elem {
@@ -792,29 +666,222 @@ pub fn build_candidates(
         out
     };
 
-    // Base neighbours + adjacency (cage path only).
-    let mut base_neighbors: Vec<Vec<Neighbor>> = Vec::new();
-    let mut adjacency: Vec<HashSet<u32>> = vec![HashSet::new(); n_atoms];
+    // All atom images within `r` of p, the atom AT p included (mirrors
+    // gatherRadius in docs/render/PolyhedraModule.js). The image window gets
+    // half a cell of slack so rounding of an exact .5 cannot drop an image.
+    let gather_radius = |grid: &mut CellList, scratch: &mut Vec<usize>, p: Vec3, r: f64| -> Vec<(u32, [i32; 3], Vec3, f64)> {
+        let fp = cart_to_frac(p);
+        let hx = (r / bin_wa).floor() as i32 + 1;
+        let hy = (r / bin_wb).floor() as i32 + 1;
+        let hz = (r / bin_wc).floor() as i32 + 1;
+        grid.candidates(fp, hx, hy, hz, scratch);
+        let ia = 1.max((r / width_a.max(1e-6) + 0.5).ceil() as i32);
+        let ib = 1.max((r / width_b.max(1e-6) + 0.5).ceil() as i32);
+        let ic = 1.max((r / width_c.max(1e-6) + 0.5).ceil() as i32);
+        let mut out = Vec::new();
+        for &j in scratch.iter() {
+            let fj = positions[j];
+            let c0 = (fp.x - fj.x).round() as i32;
+            let c1 = (fp.y - fj.y).round() as i32;
+            let c2 = (fp.z - fj.z).round() as i32;
+            for dx in (c0 - ia)..=(c0 + ia) {
+                for dy in (c1 - ib)..=(c1 + ib) {
+                    for dz in (c2 - ic)..=(c2 + ic) {
+                        let q = base_cart[j]
+                            .add(a.scale(dx as f64))
+                            .add(b.scale(dy as f64))
+                            .add(c.scale(dz as f64));
+                        let d = q.dist(p);
+                        if d > r {
+                            continue;
+                        }
+                        out.push((j as u32, [dx, dy, dz], q, d));
+                    }
+                }
+            }
+        }
+        out
+    };
+
+    // Framework graph for the cage search (cages on only): framework-bond
+    // neighbour images per base atom as keys for an image-aware bond test, and
+    // each atom's framework degree over non-terminal partners. Mirrors fwNbrs /
+    // fwKeys / fwDeg in docs/render/PolyhedraModule.js.
+    let mut fw_count: Vec<usize> = vec![0; n_atoms];
+    let mut fw_keys: Vec<HashSet<Key>> = vec![HashSet::new(); n_atoms];
+    let mut fw_deg: Vec<usize> = vec![0; n_atoms];
+    let mut fw_lists: Vec<Vec<u32>> = vec![Vec::new(); n_atoms];
+    // What in-shell bonds are measured against (mirrors shareDeg in the JS):
+    // the framework degree, or for a metal under the chemical filter all its
+    // metal–metal contacts (a carbide's Ti–Ti are mostly bridged by C).
+    let mut share_deg: Vec<usize> = vec![0; n_atoms];
+    let is_af = |e: usize| anion_former.get(e).copied().unwrap_or(0) != 0;
     if detect_cages {
-        base_neighbors = Vec::with_capacity(n_atoms);
         for i in 0..n_atoms {
             let nbrs = neighbor_images(&mut grid, &mut scratch, base_cart[i], elem_idx[i] as usize);
-            for o in &nbrs {
-                adjacency[i].insert(o.src_j);
-                adjacency[o.src_j as usize].insert(i as u32);
+            if use_chem_filter && !is_af(elem_idx[i] as usize) {
+                share_deg[i] = nbrs.iter().filter(|o| !is_af(elem_idx[o.src_j as usize] as usize)).count();
             }
-            base_neighbors.push(nbrs);
+            for o in &nbrs {
+                if use_chem_filter
+                    && !is_framework_bond(
+                        elem_idx[i] as usize,
+                        elem_idx[o.src_j as usize] as usize,
+                        &nbrs,
+                        o.pos,
+                        elem_idx,
+                        electroneg,
+                        anion_former,
+                        &cutoff,
+                    )
+                {
+                    continue;
+                }
+                fw_keys[i].insert(image_key(o.src_j, o.shift));
+                fw_lists[i].push(o.src_j);
+            }
+            fw_count[i] = fw_lists[i].len();
+        }
+        for i in 0..n_atoms {
+            fw_deg[i] = fw_lists[i].iter().filter(|&&j| fw_count[j as usize] >= 2).count();
+            if !(use_chem_filter && !is_af(elem_idx[i] as usize)) {
+                share_deg[i] = fw_deg[i];
+            }
         }
     }
 
     let t_setup = now();
+    // Kept in the signature for the JS callers: the old seed-based cage search
+    // skipped hidden seeds; the void search checks every cage vertex instead.
+    let _ = seed_visible;
     let mut candidates: Vec<Candidate> = Vec::new();
-    // Diagnostics (cheap counters; the gate's effectiveness on this structure).
-    let mut bands_built: u32 = 0;
-    let mut bands_skipped: u32 = 0;
 
-    // ---- Centered ----
-    for ci in center_start..center_end {
+    // ---- Fast ("simple") mode: hull of the bonded ligands ----
+    // The radical-Voronoi cell, the bridged-cation test and the centred-hull test
+    // cost ~0.24 ms per centre and exist to choose the RIGHT shell where the bond
+    // cutoffs alone are ambiguous. A large MD cell (100 000 atoms of a perovskite)
+    // cannot pay that per frame, and there the cutoffs are nearly unambiguous, so a
+    // ligand is simply a cutoff neighbour that passes the element rule (and, with
+    // the chemical filter, the bridged-cation test over those neighbours). Only
+    // the degeneracy guard stays; accept() still settles nesting and builds the
+    // hulls. Allocation-free per centre (buffers are reused): the cell list returns
+    // each atom once and every image of it is a distinct (atom, shift), so no
+    // image dedupe is needed.
+    if simple {
+        // Ligand cutoff per (centre species, ligand species), 0 where the element
+        // rule forbids the pair — one table lookup replaces both tests per image.
+        let mut lig_cut = vec![0.0_f64; n_elem * n_elem];
+        for ec in 0..n_elem {
+            for ej in 0..n_elem {
+                if is_ligand_of(ej, ec, electroneg, use_chem_filter) {
+                    lig_cut[ec * n_elem + ej] = cutoff(ec, ej);
+                }
+            }
+        }
+        // Species that can have no ligand at all (O in SrTiO3: nothing is more
+        // electronegative) skip the neighbour search entirely.
+        let has_ligand: Vec<bool> = (0..n_elem)
+            .map(|ec| (0..n_elem).any(|ej| lig_cut[ec * n_elem + ej] > 1e-3))
+            .collect();
+        let mut pos_list: Vec<Vec3> = Vec::new();
+        let mut srcs: Vec<u32> = Vec::new();
+        let mut ligs: Vec<Cand> = Vec::new();
+        for ci in center_start..center_end {
+            let src = center_src[ci];
+            let shift = [center_shift[3 * ci], center_shift[3 * ci + 1], center_shift[3 * ci + 2]];
+            let center_elem = elem_idx[src as usize] as usize;
+            if center_elem >= n_elem || !has_ligand[center_elem] {
+                continue;
+            }
+            if !center_image_keys.contains(&image_key(src, shift)) {
+                continue;
+            }
+            let center_pos = Vec3::new(center_cart[3 * ci], center_cart[3 * ci + 1], center_cart[3 * ci + 2]);
+            let fp = cart_to_frac(center_pos);
+            grid.candidates(fp, nb_halo.0, nb_halo.1, nb_halo.2, &mut scratch);
+            ligs.clear();
+            let row = &lig_cut[center_elem * n_elem..(center_elem + 1) * n_elem];
+            for &j in scratch.iter() {
+                let ej = elem_idx[j] as usize;
+                if ej >= n_elem {
+                    continue;
+                }
+                let cut = row[ej];
+                if cut <= 1e-3 {
+                    continue;
+                }
+                let fj = positions[j];
+                let (dfa, dfb, dfc) = (fp.x - fj.x, fp.y - fj.y, fp.z - fj.z);
+                let c0 = dfa.round() as i32;
+                let c1 = dfb.round() as i32;
+                let c2 = dfc.round() as i32;
+                // |Δfrac_a| · width_a is a lower bound on the distance (the planes of
+                // the a family are width_a apart), so most of the 27 images are
+                // rejected per axis before any vector arithmetic. The slack keeps
+                // the bound strictly conservative against rounding.
+                let reach = cut + 1e-9;
+                for dx in (c0 - na)..=(c0 + na) {
+                    if (dfa - dx as f64).abs() * width_a > reach {
+                        continue;
+                    }
+                    for dy in (c1 - nb)..=(c1 + nb) {
+                        if (dfb - dy as f64).abs() * width_b > reach {
+                            continue;
+                        }
+                        for dz in (c2 - nc)..=(c2 + nc) {
+                            if (dfc - dz as f64).abs() * width_c > reach {
+                                continue;
+                            }
+                            let q = base_cart[j]
+                                .add(a.scale(dx as f64))
+                                .add(b.scale(dy as f64))
+                                .add(c.scale(dz as f64));
+                            let d = q.dist(center_pos);
+                            if d > cut || d < 1e-4 {
+                                continue;
+                            }
+                            if !atom_image_visible(q, j as u32, cut_plane_immune, cut_planes, cut_plane_count) {
+                                continue;
+                            }
+                            ligs.push(Cand { src_j: j as u32, shift: [dx, dy, dz], pos: q, d, elem: ej, radius: 0.0 });
+                        }
+                    }
+                }
+            }
+            // The chemical filter's second-shell test, over the bonded ligands
+            // only (~20 per centre, so it costs next to nothing): in SrTiO3 the
+            // default Sr–Ti cutoff (3.38 Å) and Ti's higher electronegativity
+            // make the 8 Ti ligands of Sr, and its hull the Ti8 cube instead of
+            // the O12 cuboctahedron. A Ti seen through a nearer O is dropped,
+            // as advanced mode does.
+            pos_list.clear();
+            srcs.clear();
+            for l in ligs.iter() {
+                if use_chem_filter && is_bridged_cation(l, &ligs, electroneg, anion_former, &cutoff) {
+                    continue;
+                }
+                pos_list.push(l.pos);
+                srcs.push(l.src_j);
+            }
+            if pos_list.len() < 4 || thickness_ratio(&pos_list) < MIN_THICKNESS_RATIO {
+                continue;
+            }
+            candidates.push(Candidate {
+                is_cage: false,
+                color_elem: center_elem as u32,
+                center_src: src as i32,
+                center_shift: shift,
+                pos_list: pos_list.clone(),
+                vertex_src_list: srcs.clone(),
+                vertex_image_list: Vec::new(),
+                ref_point: center_pos,
+            });
+        }
+    }
+
+    // ---- Centered (advanced mode; an empty range in fast mode) ----
+    let advanced_end = if simple { center_start } else { center_end };
+    for ci in center_start..advanced_end {
         let src = center_src[ci];
         let shift = [center_shift[3 * ci], center_shift[3 * ci + 1], center_shift[3 * ci + 2]];
         if !center_image_keys.contains(&image_key(src, shift)) {
@@ -834,12 +901,16 @@ pub fn build_candidates(
             cands.truncate(VORONOI_MAX_CANDS);
         }
         let center_radius = if center_elem < n_elem { radii[center_elem] } else { 1.0 };
-        let accept = |cand: &Cand| -> bool {
+        let is_ligand = |cand: &Cand| -> bool {
             if !is_ligand_of(cand.elem, center_elem, electroneg, use_chem_filter) {
                 return false;
             }
             let cut = cutoff(center_elem, cand.elem);
             cut > 1e-3 && cand.d <= cut
+        };
+        let accept = |cand: &Cand| -> bool {
+            is_ligand(cand)
+                && !(use_chem_filter && is_bridged_cation(cand, &cands, electroneg, anion_former, &cutoff))
         };
         let vor = voronoi_neighbours(center_pos, &cands, center_radius, &accept);
 
@@ -889,208 +960,237 @@ pub fn build_candidates(
 
     let t_centered = now();
 
-    // ---- Cages ----
+    // ---- Cages (uncentred): empty shells of mutually bonded framework atoms ----
+    // Mirrors findCages() in docs/render/PolyhedraModule.js (see the notes
+    // there). Only the partition that starts at seed 0 runs it, so a parallel
+    // run yields the cages once, in the serial order.
     let mut cage_pool_ms = 0.0_f64;
     let mut cage_band_ms = 0.0_f64;
     let mut cage_nloop_ms = 0.0_f64;
-    if detect_cages {
-        // Buffers reused across seeds (cleared, not reallocated).
-        let mut visited_set: HashSet<Key> = HashSet::new();
-        let mut order: Vec<PoolEntry> = Vec::new();
-        let mut frontier: Vec<PoolEntry> = Vec::new();
-        let mut next_frontier: Vec<PoolEntry> = Vec::new();
-        let mut kcore = KCore::new(n_atoms);
-
-        for seed in seed_start..seed_end {
-            if seed_visible[seed] == 0 {
-                continue;
-            }
-            let seed_elem = elem_idx[seed] as u32;
-
-            // Frontier BFS in image space: always reach depth 3, then keep going
-            // until ≥40 cut-visible images or CAGE_BFS_DEPTH. Hidden-by-plane
-            // images may still be traversed to preserve connectivity, but only
-            // visible images are retained in the pool and counted toward the stop
-            // condition.
-            let tp = now();
-            visited_set.clear();
-            order.clear();
-            frontier.clear();
-            let start = PoolEntry { pos: base_cart[seed], src: seed as u32, shift: [0, 0, 0] };
-            visited_set.insert(image_key(seed as u32, [0, 0, 0]));
-            order.push(start.clone());
-            frontier.push(start);
-            let mut depth = 0;
-            while !frontier.is_empty()
-                && depth < CAGE_BFS_DEPTH
-                && (depth < 3 || order.len() < 40)
-            {
-                next_frontier.clear();
-                for node in frontier.iter() {
-                    let (sx, sy, sz) = (node.shift[0], node.shift[1], node.shift[2]);
-                    for o in &base_neighbors[node.src as usize] {
-                        let nshift = [o.shift[0] + sx, o.shift[1] + sy, o.shift[2] + sz];
-                        let key = image_key(o.src_j, nshift);
-                        if visited_set.insert(key) {
-                            let pos = base_cart[o.src_j as usize]
-                                .add(a.scale(nshift[0] as f64))
-                                .add(b.scale(nshift[1] as f64))
-                                .add(c.scale(nshift[2] as f64));
-                            let e = PoolEntry { pos, src: o.src_j, shift: nshift };
-                            if atom_image_visible(pos, o.src_j, cut_plane_immune, cut_planes, cut_plane_count) {
-                                order.push(e.clone());
-                            }
-                            next_frontier.push(e);
-                        }
-                    }
-                }
-                std::mem::swap(&mut frontier, &mut next_frontier);
-                depth += 1;
-            }
-
-            let mut pool: Vec<PoolEntry> = order.clone();
-            cage_pool_ms += now() - tp;
-            if pool.len() < 4 {
-                continue;
-            }
-
-            let mean = |p: &[PoolEntry]| {
-                p.iter()
-                    .fold(Vec3::new(0.0, 0.0, 0.0), |acc, e| acc.add(e.pos))
-                    .scale(1.0 / p.len() as f64)
-            };
-            let mut centroid = mean(&pool);
-            if pool.len() > POOL_CAP {
-                pool.sort_by(|x, y| {
-                    x.pos
-                        .dist2(centroid)
-                        .partial_cmp(&y.pos.dist2(centroid))
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                pool.truncate(POOL_CAP);
-                centroid = mean(&pool);
-            }
-            let mut dists: Vec<f64> = pool.iter().map(|e| e.pos.dist(centroid)).collect();
-            dists.sort_by(|x, y| x.partial_cmp(y).unwrap());
-            let bands = [
-                (quantile(&dists, 0.30), quantile(&dists, 0.70)),
-                (quantile(&dists, 0.25), quantile(&dists, 0.75)),
-                (quantile(&dists, 0.20), quantile(&dists, 0.80)),
-            ];
-
-            // Per-band hull vertex sets (N-independent), built once. `spread_order`
-            // is the full farthest-first ordering of the hull vertices; since that
-            // traversal is prefix-stable, the reduce-to-N step for every target N
-            // is just a prefix of it — so it's computed once here instead of being
-            // recomputed per N below.
-            struct BandHull {
-                band: Vec<PoolEntry>,
-                base_verts: Vec<PoolEntry>,
-                spread_order: Vec<usize>,
-            }
-            let tb = now();
-            let mut band_hulls: Vec<BandHull> = Vec::with_capacity(bands.len());
-            for &(lo, hi) in &bands {
-                let band: Vec<PoolEntry> = pool
-                    .iter()
-                    .filter(|e| {
-                        let r = e.pos.dist(centroid);
-                        r >= lo && r <= hi
-                    })
-                    .cloned()
-                    .collect();
-                if band.len() < 4 {
-                    band_hulls.push(BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() });
-                    continue;
-                }
-                // Necessary condition: a cage needs ≥4 atoms each bonded to ≥2 others
-                // in the set, so a band whose induced bond 2-core is smaller can never
-                // yield a cage — skip its (expensive) convex hull. Coordination shells
-                // (no ligand–ligand bonds) have an empty 2-core and are skipped here.
-                let core = kcore.two_core_size(&band, &adjacency);
-                if core < 4 {
-                    bands_skipped += 1;
-                    band_hulls.push(BandHull { band, base_verts: Vec::new(), spread_order: Vec::new() });
-                    continue;
-                }
-                bands_built += 1;
-                let pts: Vec<Vec3> = band.iter().map(|e| e.pos).collect();
-                let base_verts: Vec<PoolEntry> = match convex_hull(&pts) {
-                    Some(h) => h.vertices.iter().map(|&vi| band[vi].clone()).collect(),
-                    None => Vec::new(),
-                };
-                let spread_order = if base_verts.len() >= 2 {
-                    let bv_pts: Vec<Vec3> = base_verts.iter().map(|e| e.pos).collect();
-                    pick_spread_subset(&bv_pts, base_verts.len()).unwrap_or_default()
-                } else {
-                    Vec::new()
-                };
-                band_hulls.push(BandHull { band, base_verts, spread_order });
-            }
-            cage_band_ms += now() - tb;
-
-            let tn = now();
-            for &target in &CAGE_TARGET_NS_DESC {
-                let mut built = false;
-                for bh in &band_hulls {
-                    if bh.band.len() < target || bh.base_verts.len() < target {
-                        continue;
-                    }
-                    // Reduce to N by spread if needed — a prefix of the band's
-                    // precomputed farthest-first ordering. The ordering indexes
-                    // base_verts directly (which are band entries), so no nearest
-                    // remapping is needed.
-                    let verts: Vec<PoolEntry> = if bh.base_verts.len() == target {
-                        bh.base_verts.clone()
-                    } else {
-                        if bh.spread_order.len() < target {
+    let mut bands_built: u32 = 0;
+    let mut bands_skipped: u32 = 0;
+    if detect_cages && seed_start == 0 && seed_end > seed_start && fw_deg.iter().any(|&d| d >= 3) {
+        let tp = now();
+        let mut h = CAGE_GRID_STEP;
+        while cell_vol / (h * h * h) > CAGE_GRID_MAX_POINTS {
+            h *= 1.25;
+        }
+        let n_a = 4.max((a.norm() / h).ceil() as i64);
+        let n_b = 4.max((b.norm() / h).ceil() as i64);
+        let n_c = 4.max((c.norm() / h).ceil() as i64);
+        let mut field = vec![CAGE_SPLAT_RADIUS; (n_a * n_b * n_c) as usize];
+        let at = |i: i64, j: i64, k: i64| -> usize {
+            ((i.rem_euclid(n_a) * n_b + j.rem_euclid(n_b)) * n_c + k.rem_euclid(n_c)) as usize
+        };
+        let ea = ((CAGE_SPLAT_RADIUS / width_a) * n_a as f64).ceil() as i64 + 1;
+        let eb = ((CAGE_SPLAT_RADIUS / width_b) * n_b as f64).ceil() as i64 + 1;
+        let ec = ((CAGE_SPLAT_RADIUS / width_c) * n_c as f64).ceil() as i64 + 1;
+        for j in 0..n_atoms {
+            let f0 = positions[j].x - positions[j].x.floor();
+            let f1 = positions[j].y - positions[j].y.floor();
+            let f2 = positions[j].z - positions[j].z.floor();
+            let px = a.x * f0 + b.x * f1 + c.x * f2;
+            let py = a.y * f0 + b.y * f1 + c.y * f2;
+            let pz = a.z * f0 + b.z * f1 + c.z * f2;
+            let ci = (f0 * n_a as f64).round() as i64;
+            let cj = (f1 * n_b as f64).round() as i64;
+            let ck = (f2 * n_c as f64).round() as i64;
+            for i in (ci - ea)..=(ci + ea) {
+                let g0 = i as f64 / n_a as f64;
+                for jj in (cj - eb)..=(cj + eb) {
+                    let g1 = jj as f64 / n_b as f64;
+                    for k in (ck - ec)..=(ck + ec) {
+                        let g2 = k as f64 / n_c as f64;
+                        let dx = a.x * g0 + b.x * g1 + c.x * g2 - px;
+                        let dy = a.y * g0 + b.y * g1 + c.y * g2 - py;
+                        let dz = a.z * g0 + b.z * g1 + c.z * g2 - pz;
+                        let d = (dx * dx + dy * dy + dz * dz).sqrt();
+                        if d >= CAGE_SPLAT_RADIUS {
                             continue;
                         }
-                        bh.spread_order[0..target]
+                        let idx = at(i, jj, k);
+                        if d < field[idx] {
+                            field[idx] = d;
+                        }
+                    }
+                }
+            }
+        }
+        cage_pool_ms += now() - tp;
+
+        let bonded = |u: &(u32, [i32; 3], Vec3, f64), w: &(u32, [i32; 3], Vec3, f64)| -> bool {
+            fw_keys[u.0 as usize].contains(&image_key(w.0, [w.1[0] - u.1[0], w.1[1] - u.1[1], w.1[2] - u.1[2]]))
+        };
+        let by_image = |x: &(u32, [i32; 3], Vec3, f64), y: &(u32, [i32; 3], Vec3, f64)| {
+            (x.0, x.1[0], x.1[1], x.1[2]).cmp(&(y.0, y.1[0], y.1[1], y.1[2]))
+        };
+        let mut seen: HashSet<Vec<Key>> = HashSet::new();
+        for i in 0..n_a {
+            for j in 0..n_b {
+                for k in 0..n_c {
+                    let v = field[((i * n_b + j) * n_c + k) as usize];
+                    if v < CAGE_MIN_VOID || v >= CAGE_SPLAT_RADIUS {
+                        continue;
+                    }
+                    let mut is_max = true;
+                    'nb: for di in -1..=1 {
+                        for dj in -1..=1 {
+                            for dk in -1..=1 {
+                                if (di != 0 || dj != 0 || dk != 0) && field[at(i + di, j + dj, k + dk)] > v {
+                                    is_max = false;
+                                    break 'nb;
+                                }
+                            }
+                        }
+                    }
+                    if !is_max {
+                        continue;
+                    }
+                    bands_built += 1;
+                    let tb = now();
+
+                    // the shell around this void, re-centred until it is stable
+                    let mut p = a
+                        .scale(i as f64 / n_a as f64)
+                        .add(b.scale(j as f64 / n_b as f64))
+                        .add(c.scale(k as f64 / n_c as f64));
+                    let mut shell: Option<Vec<(u32, [i32; 3], Vec3, f64)>> = None;
+                    let mut prev: Vec<Key> = Vec::new();
+                    for _ in 0..CAGE_REFINE_ITERS {
+                        let near = gather_radius(&mut grid, &mut scratch, p, CAGE_SHELL_CAP);
+                        if near.is_empty() {
+                            break;
+                        }
+                        let dmin = near.iter().fold(f64::INFINITY, |m, o| m.min(o.3));
+                        let cut_r = (CAGE_SHELL_TOL * dmin).max(dmin + CAGE_SHELL_PAD);
+                        let mut sh: Vec<(u32, [i32; 3], Vec3, f64)> = near
+                            .into_iter()
+                            .filter(|o| o.3 <= cut_r && fw_count[o.0 as usize] >= 2)
+                            .collect();
+                        sh.sort_by(by_image);
+                        if sh.len() < 4 {
+                            break;
+                        }
+                        let key: Vec<Key> = sh.iter().map(|o| image_key(o.0, o.1)).collect();
+                        if key == prev {
+                            shell = Some(sh);
+                            break;
+                        }
+                        prev = key;
+                        p = sh
                             .iter()
-                            .map(|&si| bh.base_verts[si].clone())
-                            .collect()
-                    };
-
-                    let pos_list: Vec<Vec3> = verts.iter().map(|e| e.pos).collect();
-                    let sel_srcs: Vec<u32> = verts.iter().map(|e| e.src).collect();
-
-                    // Cheap rejections first.
-                    if thickness_ratio(&pos_list) < 0.08 {
-                        continue;
+                            .fold(Vec3::new(0.0, 0.0, 0.0), |acc, o| acc.add(o.2))
+                            .scale(1.0 / sh.len() as f64);
                     }
-                    let min_deg = min_vertex_degree_for_cage_size(pos_list.len());
-                    if !induced_degree_ok(&adjacency, &sel_srcs, min_deg) {
-                        continue;
-                    }
-                    let hull = match convex_hull(&pos_list) {
-                        Some(h) => h,
+                    cage_band_ms += now() - tb;
+                    let mut shell = match shell {
+                        Some(s) => s,
                         None => continue,
                     };
-                    if !edge_spread_ok(&hull, &pos_list) {
+                    let tn = now();
+
+                    // translate so the centre lies in the cell; keep each cage once
+                    let fc = cart_to_frac(p);
+                    let t = [(fc.x + 1e-6).floor() as i32, (fc.y + 1e-6).floor() as i32, (fc.z + 1e-6).floor() as i32];
+                    if t != [0, 0, 0] {
+                        let off = a.scale(t[0] as f64).add(b.scale(t[1] as f64)).add(c.scale(t[2] as f64));
+                        p = p.sub(off);
+                        for o in shell.iter_mut() {
+                            o.2 = o.2.sub(off);
+                            o.1 = [o.1[0] - t[0], o.1[1] - t[1], o.1[2] - t[2]];
+                        }
+                    }
+                    let cage_key: Vec<Key> = shell.iter().map(|o| image_key(o.0, o.1)).collect();
+                    if !seen.insert(cage_key.clone()) {
+                        cage_nloop_ms += now() - tn;
                         continue;
                     }
 
-                    let ref_point = pos_list
-                        .iter()
-                        .fold(Vec3::new(0.0, 0.0, 0.0), |acc, &p| acc.add(p))
-                        .scale(1.0 / pos_list.len() as f64);
-                    candidates.push(Candidate {
-                        is_cage: true,
-                        color_elem: seed_elem,
-                        center_src: -1,
-                        center_shift: [0, 0, 0],
-                        vertex_image_list: verts.iter().map(|e| (e.src, e.shift)).collect(),
-                        vertex_src_list: sel_srcs,
-                        ref_point,
-                        pos_list,
+                    // is it a cage?
+                    let n = shell.len();
+                    let degree_ok = shell.iter().all(|u| {
+                        let in_shell = shell.iter().filter(|w| !std::ptr::eq(*w, u) && bonded(u, w)).count();
+                        in_shell >= 3 && (in_shell as f64) >= CAGE_MIN_SURFACE_SHARE * share_deg[u.0 as usize] as f64
                     });
-                    built = true;
-                    break;
+                    let mut ok = degree_ok;
+                    if ok {
+                        let mut reached = vec![false; n];
+                        reached[0] = true;
+                        let mut stack = vec![0usize];
+                        while let Some(u) = stack.pop() {
+                            for w in 0..n {
+                                if !reached[w] && bonded(&shell[u], &shell[w]) {
+                                    reached[w] = true;
+                                    stack.push(w);
+                                }
+                            }
+                        }
+                        ok = reached.iter().all(|&r| r);
+                    }
+                    let pos_list: Vec<Vec3> = shell.iter().map(|o| o.2).collect();
+                    if ok && thickness_ratio(&pos_list) < CAGE_MIN_THICKNESS {
+                        ok = false;
+                    }
+                    if ok {
+                        ok = match convex_hull(&pos_list) {
+                            Some(hull) => {
+                                let inside = |q: Vec3| hull.contains(q, -NEST_MARGIN);
+                                let r_max = shell.iter().fold(0.0_f64, |m, o| m.max(o.2.dist(p)));
+                                let keys: HashSet<Key> = cage_key.iter().cloned().collect();
+                                inside(p)
+                                    && shell.iter().all(|o| !inside(o.2))
+                                    && gather_radius(&mut grid, &mut scratch, p, r_max + 0.05)
+                                        .iter()
+                                        .all(|o| keys.contains(&image_key(o.0, o.1)) || !inside(o.2))
+                            }
+                            None => false,
+                        };
+                    }
+                    cage_nloop_ms += now() - tn;
+                    if !ok {
+                        continue;
+                    }
+                    bands_skipped += 1;
+                    // With periodic images shown, a cage on the cell boundary is
+                    // drawn at every image the display bounds hold, like an atom
+                    // there (render/LatticeModule.js): its centre's in-cell
+                    // coordinate w gets every shift n with lo <= w + n <= hi.
+                    // Without them, only the in-cell copy.
+                    let fw = [fc.x - t[0] as f64, fc.y - t[1] as f64, fc.z - t[2] as f64];
+                    let range = |k: usize| -> (i32, i32) {
+                        if cage_bounds.len() == 6 {
+                            ((cage_bounds[2 * k] - fw[k]).ceil() as i32, (cage_bounds[2 * k + 1] - fw[k]).floor() as i32)
+                        } else {
+                            (0, 0)
+                        }
+                    };
+                    let (rx, ry, rz) = (range(0), range(1), range(2));
+                    for nx in rx.0..=rx.1 {
+                        for ny in ry.0..=ry.1 {
+                            for nz in rz.0..=rz.1 {
+                                let off = a.scale(nx as f64).add(b.scale(ny as f64)).add(c.scale(nz as f64));
+                                let img: Vec<(u32, [i32; 3], Vec3)> = shell
+                                    .iter()
+                                    .map(|o| (o.0, [o.1[0] + nx, o.1[1] + ny, o.1[2] + nz], o.2.add(off)))
+                                    .collect();
+                                if !img.iter().all(|o| atom_image_visible(o.2, o.0, cut_plane_immune, cut_planes, cut_plane_count)) {
+                                    continue;
+                                }
+                                candidates.push(Candidate {
+                                    is_cage: true,
+                                    color_elem: elem_idx[img[0].0 as usize],
+                                    center_src: -1,
+                                    center_shift: [0, 0, 0],
+                                    vertex_image_list: img.iter().map(|o| (o.0, o.1)).collect(),
+                                    vertex_src_list: img.iter().map(|o| o.0).collect(),
+                                    ref_point: p.add(off),
+                                    pos_list: img.iter().map(|o| o.2).collect(),
+                                });
+                            }
+                        }
+                    }
                 }
-                let _ = built;
             }
-            cage_nloop_ms += now() - tn;
         }
     }
 
@@ -1117,6 +1217,150 @@ pub struct AcceptOutput {
     pub vert_counts: Vec<u32>,
     pub vertices: Vec<f64>,
     pub vertex_srcs: Vec<u32>,
+}
+
+/// Bounding sphere of a vertex set: centroid and the farthest vertex. A point
+/// inside the convex hull of the set is inside this sphere, which is all the
+/// nesting prefilter in `HullGrid` needs (it need not be the smallest sphere).
+fn bounding_sphere(pts: &[Vec3]) -> (Vec3, f64) {
+    let n = pts.len().max(1) as f64;
+    let c = pts
+        .iter()
+        .fold(Vec3::new(0.0, 0.0, 0.0), |acc, &p| acc.add(p))
+        .scale(1.0 / n);
+    let r = pts.iter().fold(0.0_f64, |m, &p| m.max(p.dist(c)));
+    (c, r)
+}
+
+/// Above this many grid cells a hull's bounding box is not spread over the grid
+/// but kept in a list that every query checks (a degenerate giant hull would
+/// otherwise fill thousands of cells).
+const HULL_GRID_MAX_CELLS: usize = 512;
+
+/// Uniform cell list over the accepted hulls' bounding spheres, so the nesting
+/// test of accept() looks only at the hulls whose sphere covers the query cell
+/// instead of at every hull accepted so far (O(n²): 3.7 s at 17 000 polyhedra).
+/// It only prefilters: every hull it returns still gets the exact
+/// `Hull::contains` test, and a hull it skips cannot contain the point (outside
+/// the sphere ⇒ outside the hull), so the accepted set is the linear scan's.
+/// Dense over the extent of all candidates (every sphere and query point is
+/// known before the first insert), which keeps it a flat Vec, not a hash map.
+struct HullGrid {
+    cell: f64,
+    origin: Vec3,
+    dims: [usize; 3],
+    bins: Vec<Vec<u32>>,
+    global: Vec<u32>,
+    hulls: Vec<(Hull, Vec3, f64)>,
+}
+
+impl HullGrid {
+    /// `spheres` are the candidates' bounding spheres, `points` their reference
+    /// points: the grid covers all of them. `cell` is the wanted cell edge; it
+    /// grows when the extent would need more than `max_bins` cells.
+    fn new(spheres: &[(Vec3, f64)], points: &[Vec3], cell: f64, max_bins: usize) -> Self {
+        let mut lo = [f64::INFINITY; 3];
+        let mut hi = [f64::NEG_INFINITY; 3];
+        let mut grow = |p: Vec3, r: f64| {
+            let v = [p.x, p.y, p.z];
+            if !(v.iter().all(|x| x.is_finite()) && r.is_finite()) {
+                return;
+            }
+            for k in 0..3 {
+                lo[k] = lo[k].min(v[k] - r);
+                hi[k] = hi[k].max(v[k] + r);
+            }
+        };
+        for &(c, r) in spheres {
+            grow(c, r + 1e-6);
+        }
+        for &p in points {
+            grow(p, 0.0);
+        }
+        if !lo[0].is_finite() {
+            lo = [0.0; 3];
+            hi = [0.0; 3];
+        }
+        let mut cell = cell;
+        let dims_for = |cell: f64| -> [usize; 3] {
+            let d = |k: usize| ((hi[k] - lo[k]) / cell).floor() as usize + 1;
+            [d(0), d(1), d(2)]
+        };
+        let mut dims = dims_for(cell);
+        while dims[0].saturating_mul(dims[1]).saturating_mul(dims[2]) > max_bins {
+            cell *= 1.26;
+            dims = dims_for(cell);
+        }
+        HullGrid {
+            cell,
+            origin: Vec3::new(lo[0], lo[1], lo[2]),
+            dims,
+            bins: vec![Vec::new(); dims[0] * dims[1] * dims[2]],
+            global: Vec::new(),
+            hulls: Vec::new(),
+        }
+    }
+
+    /// Cell index of a coordinate along axis `k`, or None outside the grid.
+    #[inline]
+    fn coord(&self, v: f64, k: usize) -> Option<usize> {
+        let o = [self.origin.x, self.origin.y, self.origin.z][k];
+        let g = ((v - o) / self.cell).floor();
+        if g >= 0.0 && g < self.dims[k] as f64 {
+            Some(g as usize)
+        } else {
+            None
+        }
+    }
+
+    fn insert(&mut self, hull: Hull, center: Vec3, radius: f64) {
+        let id = self.hulls.len() as u32;
+        // Slack so rounding in the centroid/radius can never drop a containing hull.
+        let r = radius + 1e-6;
+        let c = [center.x, center.y, center.z];
+        // Clamped to the grid: no query point lies outside it.
+        let range = |k: usize| -> Option<(usize, usize)> {
+            if !(c[k].is_finite() && r.is_finite()) {
+                return None;
+            }
+            let lo = self.coord(c[k] - r, k).unwrap_or(0);
+            let hi = self.coord(c[k] + r, k).unwrap_or(self.dims[k] - 1);
+            Some((lo, hi.max(lo)))
+        };
+        match (range(0), range(1), range(2)) {
+            (Some(x), Some(y), Some(z))
+                if (x.1 - x.0 + 1) * (y.1 - y.0 + 1) * (z.1 - z.0 + 1) <= HULL_GRID_MAX_CELLS =>
+            {
+                for i in x.0..=x.1 {
+                    for j in y.0..=y.1 {
+                        for k in z.0..=z.1 {
+                            self.bins[(i * self.dims[1] + j) * self.dims[2] + k].push(id);
+                        }
+                    }
+                }
+            }
+            _ => self.global.push(id),
+        }
+        self.hulls.push((hull, center, r));
+    }
+
+    /// Same answer as `hulls.iter().any(|h| h.contains(p, tol))` for tol ≤ 0.
+    fn any_contains(&self, p: Vec3, tol: f64) -> bool {
+        let test = |&id: &u32| {
+            let (h, c, r) = &self.hulls[id as usize];
+            // A non-finite sphere (global list) skips the prefilter: the exact
+            // test alone decides, as in the linear scan.
+            (!(p.dist2(*c) > r * r) || !r.is_finite()) && h.contains(p, tol)
+        };
+        if self.global.iter().any(test) {
+            return true;
+        }
+        match (self.coord(p.x, 0), self.coord(p.y, 1), self.coord(p.z, 2)) {
+            (Some(i), Some(j), Some(k)) => self.bins[(i * self.dims[1] + j) * self.dims[2] + k].iter().any(test),
+            // Outside the grid (a non-finite point): no finite sphere covers it.
+            _ => false,
+        }
+    }
 }
 
 /// Global acceptance: sort (larger-first, with the centred/cage tie rules), then keep a
@@ -1148,7 +1392,15 @@ pub fn accept(mut candidates: Vec<Candidate>) -> AcceptOutput {
     });
 
     let mut accepted_center_keys: HashSet<Key> = HashSet::new();
-    let mut accepted_hulls: Vec<Hull> = Vec::new();
+    // Grid cell ≈ the typical hull diameter: a hull then spans 2–3 cells per axis
+    // and a query cell holds a handful of hulls whatever the cell size.
+    let spheres: Vec<(Vec3, f64)> = candidates.iter().map(|c| bounding_sphere(&c.pos_list)).collect();
+    let refs: Vec<Vec3> = candidates.iter().map(|c| c.ref_point).collect();
+    let mut radii: Vec<f64> = spheres.iter().map(|s| s.1).filter(|r| r.is_finite()).collect();
+    radii.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let cell = radii.get(radii.len() / 2).map_or(1.0, |m| (2.0 * m).clamp(0.5, 50.0));
+    let max_bins = (4 * candidates.len()).clamp(4096, 1 << 21);
+    let mut accepted_hulls = HullGrid::new(&spheres, &refs, cell, max_bins);
     let mut out = AcceptOutput {
         kinds: Vec::new(),
         color_elem: Vec::new(),
@@ -1158,7 +1410,7 @@ pub fn accept(mut candidates: Vec<Candidate>) -> AcceptOutput {
         vertex_srcs: Vec::new(),
     };
 
-    for cand in &candidates {
+    for (ci, cand) in candidates.iter().enumerate() {
         if cand.is_cage {
             let conflict = cand
                 .vertex_image_list
@@ -1168,14 +1420,16 @@ pub fn accept(mut candidates: Vec<Candidate>) -> AcceptOutput {
                 continue;
             }
         }
+        // Nesting before the hull build: both reject, so the order cannot change
+        // the outcome, and a nested candidate (most of them in a cage-rich
+        // structure) never pays for its hull.
+        if accepted_hulls.any_contains(cand.ref_point, -NEST_MARGIN) {
+            continue;
+        }
         let hull = match convex_hull(&cand.pos_list) {
             Some(h) => h,
             None => continue,
         };
-        let inside = accepted_hulls.iter().any(|h| h.contains(cand.ref_point, 1e-6));
-        if inside {
-            continue;
-        }
 
         out.kinds.push(if cand.is_cage { 1 } else { 0 });
         out.color_elem.push(cand.color_elem);
@@ -1193,7 +1447,8 @@ pub fn accept(mut candidates: Vec<Candidate>) -> AcceptOutput {
         if !cand.is_cage {
             accepted_center_keys.insert(image_key(cand.center_src as u32, cand.center_shift));
         }
-        accepted_hulls.push(hull);
+        let (center, radius) = spheres[ci];
+        accepted_hulls.insert(hull, center, radius);
     }
 
     out
@@ -1208,10 +1463,12 @@ pub fn compute_polyhedra(
     cutoff_matrix: &[f64],
     n_elem: usize,
     electroneg: &[f64],
+    anion_former: &[u8],
     radii: &[f64],
     max_cutoff: f64,
     use_chem_filter: bool,
     detect_cages: bool,
+    simple: bool,
     center_src: &[u32],
     center_shift: &[i32],
     center_cart: &[f64],
@@ -1220,13 +1477,14 @@ pub fn compute_polyhedra(
     cut_plane_immune: &[u8],
     cut_planes: &[f64],
     cut_plane_count: usize,
+    cage_bounds: &[f64],
 ) -> ComputedPolyhedra {
     let n_atoms = elem_idx.len();
     let n_centers = center_src.len();
     let (candidates, bt) = build_candidates(
-        frac, elem_idx, lat, cutoff_matrix, n_elem, electroneg, radii, max_cutoff,
-        use_chem_filter, detect_cages, center_src, center_shift, center_cart, center_keys,
-        seed_visible, cut_plane_immune, cut_planes, cut_plane_count, 0, n_centers, 0, n_atoms,
+        frac, elem_idx, lat, cutoff_matrix, n_elem, electroneg, anion_former, radii, max_cutoff,
+        use_chem_filter, detect_cages, simple, center_src, center_shift, center_cart, center_keys,
+        seed_visible, cut_plane_immune, cut_planes, cut_plane_count, cage_bounds, 0, n_centers, 0, n_atoms,
     );
     let ta = now();
     let acc = accept(candidates);
@@ -1360,6 +1618,7 @@ mod tests {
         cutoff: Vec<f64>,
         n_elem: usize,
         electroneg: Vec<f64>,
+        anion_former: Vec<u8>,
         radii: Vec<f64>,
         max_cutoff: f64,
         center_src: Vec<u32>,
@@ -1370,6 +1629,7 @@ mod tests {
         cut_plane_immune: Vec<u8>,
         cut_planes: Vec<f64>,
         cut_plane_count: usize,
+        cage_bounds: Vec<f64>,
     }
 
     fn octahedron() -> Inputs {
@@ -1407,6 +1667,7 @@ mod tests {
             cutoff,
             n_elem: 2,
             electroneg,
+            anion_former: vec![0, 1],
             radii,
             max_cutoff: 2.5,
             center_src,
@@ -1417,15 +1678,30 @@ mod tests {
             cut_plane_immune: vec![0u8; n],
             cut_planes: Vec::new(),
             cut_plane_count: 0,
+            cage_bounds: Vec::new(),
         }
     }
 
     fn build(inp: &Inputs, cs: usize, ce: usize, ss: usize, se: usize) -> Vec<Candidate> {
         build_candidates(
-            &inp.frac, &inp.elem, &inp.lat, &inp.cutoff, inp.n_elem, &inp.electroneg, &inp.radii,
-            inp.max_cutoff, true, true, &inp.center_src, &inp.center_shift, &inp.center_cart,
+            &inp.frac, &inp.elem, &inp.lat, &inp.cutoff, inp.n_elem, &inp.electroneg, &inp.anion_former, &inp.radii,
+            inp.max_cutoff, true, true, false, &inp.center_src, &inp.center_shift, &inp.center_cart,
             &inp.center_keys, &inp.seed_visible, &inp.cut_plane_immune, &inp.cut_planes,
-            inp.cut_plane_count, cs, ce, ss, se,
+            inp.cut_plane_count, &inp.cage_bounds, cs, ce, ss, se,
+        )
+        .0
+    }
+
+    /// Fast mode over every centre and seed (cages requested, so the test also
+    /// shows that fast mode ignores the request).
+    fn build_fast(inp: &Inputs, chem_filter: bool) -> Vec<Candidate> {
+        let n = inp.elem.len();
+        let nc = inp.center_src.len();
+        build_candidates(
+            &inp.frac, &inp.elem, &inp.lat, &inp.cutoff, inp.n_elem, &inp.electroneg, &inp.anion_former, &inp.radii,
+            inp.max_cutoff, chem_filter, true, true, &inp.center_src, &inp.center_shift, &inp.center_cart,
+            &inp.center_keys, &inp.seed_visible, &inp.cut_plane_immune, &inp.cut_planes,
+            inp.cut_plane_count, &inp.cage_bounds, 0, nc, 0, n,
         )
         .0
     }
@@ -1463,6 +1739,211 @@ mod tests {
         assert_eq!(out.kinds, vec![0]); // one centred polyhedron
         assert_eq!(out.center_src, vec![0]); // around the cation
         assert_eq!(out.vert_counts, vec![6]); // CN-6
+    }
+
+    /// The octahedron's atoms plus extra species, as cartesian offsets (Å) from
+    /// the cation at the cell centre. `cut` and `en` are over all species.
+    fn octahedron_with(
+        extra: &[([f64; 3], u32)],
+        n_elem: usize,
+        cut: Vec<f64>,
+        en: Vec<f64>,
+        anion_former: Vec<u8>,
+        max_cutoff: f64,
+    ) -> Inputs {
+        let mut inp = octahedron();
+        let l = 20.0;
+        for (off, e) in extra {
+            for d in 0..3 {
+                inp.frac.push(0.5 + off[d] / l);
+            }
+            inp.elem.push(*e);
+        }
+        let n = inp.elem.len();
+        inp.n_elem = n_elem;
+        inp.cutoff = cut;
+        inp.electroneg = en;
+        inp.anion_former = anion_former;
+        inp.radii = vec![1.0; n_elem];
+        inp.max_cutoff = max_cutoff;
+        inp.center_cart = inp.frac.iter().map(|f| f * l).collect();
+        inp.center_src = (0..n as u32).collect();
+        inp.center_shift = vec![0i32; 3 * n];
+        inp.center_keys = (0..n as i32).flat_map(|i| [i, 0, 0, 0]).collect();
+        inp.seed_visible = vec![1u8; n];
+        inp.cut_plane_immune = vec![0u8; n];
+        inp
+    }
+
+    #[test]
+    fn cation_reached_through_a_ligand_is_not_a_corner() {
+        // Diopside's case in miniature: a second cation (species 2, more
+        // electronegative than the centre, so the electronegativity rule alone
+        // admits it) shares the +x/+y edge of the octahedron, 2.56 Å out and
+        // inside the centre–cation cutoff. It used to become a 7th corner.
+        let cut = vec![
+            0.0, 2.5, 3.0, //
+            2.5, 0.0, 2.2, //
+            3.0, 2.2, 0.0,
+        ];
+        let inp = octahedron_with(&[([2.0, 1.6, 0.0], 2)], 3, cut, vec![1.0, 3.0, 2.0], vec![0, 1, 0], 3.0);
+        let out = accept(build(&inp, 0, 1, 0, 0));
+        assert_eq!(out.center_src, vec![0]);
+        assert_eq!(out.vert_counts, vec![6], "the edge-sharing cation must not be a corner");
+        assert!(out.vertex_srcs.iter().all(|&j| inp.elem[j as usize] == 1));
+    }
+
+    #[test]
+    fn ligand_with_a_more_electronegative_partner_off_the_centre_stays() {
+        // Prussian blue / carbonyl: the ligands (species 1) are each bonded to a
+        // more electronegative atom (species 2) further out that is NOT a ligand
+        // of the centre (beyond its cutoff). They remain the corners.
+        let cut = vec![
+            0.0, 2.5, 2.4, //
+            2.5, 0.0, 1.4, //
+            2.4, 1.4, 0.0,
+        ];
+        let far = 3.15;
+        let extra = [
+            ([far, 0.0, 0.0], 2), ([-far, 0.0, 0.0], 2),
+            ([0.0, far, 0.0], 2), ([0.0, -far, 0.0], 2),
+            ([0.0, 0.0, far], 2), ([0.0, 0.0, -far], 2),
+        ];
+        let inp = octahedron_with(&extra, 3, cut, vec![1.0, 2.5, 3.0], vec![0, 1, 1], 2.5);
+        let out = accept(build(&inp, 0, 1, 0, 0));
+        assert_eq!(out.center_src, vec![0]);
+        assert_eq!(out.vert_counts, vec![6]);
+    }
+
+    #[test]
+    fn a_metal_bridge_strips_no_corners() {
+        // An alloy (CrFe11Ni3Mo): the corners (species 1, like Fe) touch a more
+        // electronegative METAL (species 2, like Mo) that is also a ligand of
+        // the centre. Metals are not anion formers, so all six corners stay.
+        let cut = vec![
+            0.0, 2.5, 3.0, //
+            2.5, 0.0, 2.5, //
+            3.0, 2.5, 0.0,
+        ];
+        let inp = octahedron_with(&[([1.6, 1.6, 1.6], 2)], 3, cut, vec![1.66, 1.83, 2.16], vec![0, 0, 0], 3.0);
+        let out = accept(build(&inp, 0, 1, 0, 0));
+        assert_eq!(out.center_src, vec![0]);
+        let n_corner_metal = out.vertex_srcs.iter().filter(|&&j| inp.elem[j as usize] == 1).count();
+        assert_eq!(n_corner_metal, 6, "every corner of the octahedron stays");
+        // ... and even as an anion former it strips nothing: it sits farther
+        // out (2.77 Å) than the corners it bonds to (2.0 Å), so it is no anion
+        // between them and the centre (the carbonyl / Prussian-blue case).
+        let cut = vec![
+            0.0, 2.5, 3.0, //
+            2.5, 0.0, 2.5, //
+            3.0, 2.5, 0.0,
+        ];
+        let inp = octahedron_with(&[([1.6, 1.6, 1.6], 2)], 3, cut, vec![1.66, 1.83, 2.16], vec![0, 0, 1], 3.0);
+        let out = accept(build(&inp, 0, 1, 0, 0));
+        let n_corner_metal = out.vertex_srcs.iter().filter(|&&j| inp.elem[j as usize] == 1).count();
+        assert_eq!(n_corner_metal, 6, "a partner farther out than the corners strips none");
+    }
+
+    /// Atoms at cartesian offsets (Å) from the centre of a 20 Å box.
+    fn boxed(atoms: &[([f64; 3], u32)], n_elem: usize, cut: Vec<f64>, en: Vec<f64>, af: Vec<u8>, max_cutoff: f64) -> Inputs {
+        let mut inp = octahedron();
+        let l = 20.0;
+        inp.frac = atoms.iter().flat_map(|(o, _)| [0.5 + o[0] / l, 0.5 + o[1] / l, 0.5 + o[2] / l]).collect();
+        inp.elem = atoms.iter().map(|(_, e)| *e).collect();
+        let n = inp.elem.len();
+        inp.n_elem = n_elem;
+        inp.cutoff = cut;
+        inp.electroneg = en;
+        inp.anion_former = af;
+        inp.radii = vec![1.0; n_elem];
+        inp.max_cutoff = max_cutoff;
+        inp.center_cart = inp.frac.iter().map(|f| f * l).collect();
+        inp.center_src = (0..n as u32).collect();
+        inp.center_shift = vec![0i32; 3 * n];
+        inp.center_keys = (0..n as i32).flat_map(|i| [i, 0, 0, 0]).collect();
+        inp.seed_visible = vec![1u8; n];
+        inp.cut_plane_immune = vec![0u8; n];
+        inp
+    }
+
+    /// The 12 corners of an icosahedron with edge `e`.
+    fn icosahedron(e: f64) -> Vec<[f64; 3]> {
+        let phi = (1.0 + 5.0_f64.sqrt()) / 2.0;
+        let s = e / 2.0;
+        let mut v = Vec::new();
+        for &a in &[-1.0, 1.0] {
+            for &b in &[-1.0, 1.0] {
+                v.push([0.0, a * s, b * s * phi]);
+                v.push([a * s, b * s * phi, 0.0]);
+                v.push([b * s * phi, 0.0, a * s]);
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn empty_b12_icosahedron_is_a_cage() {
+        // Boron-like (anion former, B–B bonds 1.75 Å): one cage, all 12 corners.
+        let atoms: Vec<([f64; 3], u32)> = icosahedron(1.75).into_iter().map(|p| (p, 0)).collect();
+        let inp = boxed(&atoms, 1, vec![2.1], vec![2.04], vec![1], 2.1);
+        let n = inp.elem.len();
+        let out = accept(build(&inp, 0, n, 0, n));
+        assert_eq!(out.kinds, vec![1], "one cage");
+        assert_eq!(out.vert_counts, vec![12]);
+    }
+
+    #[test]
+    fn a_cage_on_a_cell_corner_is_drawn_at_every_corner_with_periodic_images() {
+        // The same icosahedron centred on the box corner: one copy without
+        // periodic images, all 8 corners with them (bounds [0,1] ± 1e-3).
+        let atoms: Vec<([f64; 3], u32)> = icosahedron(1.75).into_iter().map(|p| (p, 0)).collect();
+        let mut inp = boxed(&atoms, 1, vec![2.1], vec![2.04], vec![1], 2.1);
+        for f in inp.frac.iter_mut() {
+            *f -= 0.5;
+        }
+        inp.center_cart = inp.frac.iter().map(|f| f * 20.0).collect();
+        let n = inp.elem.len();
+        let one = accept(build(&inp, 0, n, 0, n));
+        assert_eq!(one.kinds, vec![1], "one copy without periodic images");
+        inp.cage_bounds = vec![-1e-3, 1.0 + 1e-3, -1e-3, 1.0 + 1e-3, -1e-3, 1.0 + 1e-3];
+        let all = accept(build(&inp, 0, n, 0, n));
+        assert_eq!(all.kinds, vec![1; 8], "a copy on every corner");
+        assert!(all.vert_counts.iter().all(|&c| c == 12));
+        // a cage in the middle of the cell stays single
+        let mid = boxed(&atoms, 1, vec![2.1], vec![2.04], vec![1], 2.1);
+        let mut mid = mid;
+        mid.cage_bounds = inp.cage_bounds.clone();
+        assert_eq!(accept(build(&mid, 0, n, 0, n)).kinds, vec![1]);
+    }
+
+    #[test]
+    fn filled_icosahedron_is_its_guests_polyhedron() {
+        // A guest at the centre (species 1, less electronegative): no cage, and
+        // the guest gets the 12-corner centred polyhedron instead.
+        let mut atoms: Vec<([f64; 3], u32)> = icosahedron(1.75).into_iter().map(|p| (p, 0)).collect();
+        atoms.push(([0.0, 0.0, 0.0], 1));
+        let cut = vec![2.1, 2.2, 2.2, 0.0];
+        let inp = boxed(&atoms, 2, cut, vec![2.04, 0.9], vec![1, 0], 2.2);
+        let n = inp.elem.len();
+        let out = accept(build(&inp, 0, n, 0, n));
+        assert_eq!(out.kinds, vec![0], "only the guest-centred polyhedron");
+        assert_eq!(out.vert_counts, vec![12]);
+        assert_eq!(out.center_src, vec![12]);
+    }
+
+    #[test]
+    fn a_ring_is_no_cage() {
+        // A hexagon of bonded atoms (degree 2, flat): nothing.
+        let atoms: Vec<([f64; 3], u32)> = (0..6)
+            .map(|k| {
+                let t = k as f64 * std::f64::consts::PI / 3.0;
+                ([1.4 * t.cos(), 1.4 * t.sin(), 0.0], 0)
+            })
+            .collect();
+        let inp = boxed(&atoms, 1, vec![1.7], vec![2.55], vec![1], 1.7);
+        let n = inp.elem.len();
+        let out = accept(build(&inp, 0, n, 0, n));
+        assert!(out.kinds.is_empty());
     }
 
     #[test]
@@ -1518,5 +1999,223 @@ mod tests {
         assert_eq!(r[0].vertex_src_list, cand.vertex_src_list);
         assert_eq!(r[0].color_elem, cand.color_elem);
         assert!(r[0].is_cage);
+    }
+
+    #[test]
+    fn fast_mode_finds_the_octahedron() {
+        let inp = octahedron();
+        let fast = accept(build_fast(&inp, true));
+        assert_same(&fast, &accept(build(&inp, 0, 7, 0, 7)));
+    }
+
+    #[test]
+    fn fast_mode_keeps_the_element_rule_and_the_filter_switch() {
+        // The "ligands" are less electronegative than the centre: no polyhedron
+        // with the chemical filter, the octahedron without it.
+        let mut inp = octahedron();
+        inp.electroneg = vec![3.0, 1.0];
+        assert!(accept(build_fast(&inp, true)).kinds.is_empty());
+        assert_eq!(accept(build_fast(&inp, false)).vert_counts, vec![6]);
+    }
+
+    #[test]
+    fn fast_mode_drops_a_bridged_cation_with_the_filter_only() {
+        // The diopside miniature: the edge-sharing cation is seen through a
+        // nearer anion, so the chemical filter drops it in fast mode too;
+        // without the filter it is a bonded neighbour like any other.
+        let cut = vec![
+            0.0, 2.5, 3.0, //
+            2.5, 0.0, 2.2, //
+            3.0, 2.2, 0.0,
+        ];
+        let inp = octahedron_with(&[([2.0, 1.6, 0.0], 2)], 3, cut, vec![1.0, 3.0, 2.0], vec![0, 1, 0], 3.0);
+        let out = accept(build_fast(&inp, true));
+        assert_eq!(out.center_src, vec![0]);
+        assert_eq!(out.vert_counts, vec![6]);
+        let out = accept(build_fast(&inp, false));
+        assert!(out.vert_counts.contains(&7), "{:?}", out.vert_counts);
+    }
+
+    #[test]
+    fn fast_mode_finds_no_cages() {
+        let atoms: Vec<([f64; 3], u32)> = icosahedron(1.75).into_iter().map(|p| (p, 0)).collect();
+        let inp = boxed(&atoms, 1, vec![2.1], vec![2.04], vec![1], 2.1);
+        assert!(accept(build_fast(&inp, true)).kinds.is_empty(), "B–B is no ligand pair, and no cage search");
+        // the filled icosahedron still gives its guest's polyhedron
+        let mut atoms = atoms;
+        atoms.push(([0.0, 0.0, 0.0], 1));
+        let inp = boxed(&atoms, 2, vec![2.1, 2.2, 2.2, 0.0], vec![2.04, 0.9], vec![1, 0], 2.2);
+        let out = accept(build_fast(&inp, true));
+        assert_eq!(out.center_src, vec![12]);
+        assert_eq!(out.vert_counts, vec![12]);
+    }
+
+    #[test]
+    fn fast_mode_matches_advanced_on_a_periodic_perovskite() {
+        // SrTiO3, one cell: Ti's octahedron is made of periodic images of the 3 O.
+        let l = 3.905;
+        let frac = vec![0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.5, 0.0, 0.5, 0.0, 0.5, 0.5];
+        let elem = vec![0u32, 1, 2, 2, 2];
+        // Sr, Ti, O. Ti–O 2.4 Å, Sr–O 3.0 Å (Sr gets its cuboctahedron), and
+        // Sr–Ti 3.5 Å as the default cutoffs have it: the 8 Ti around Sr are
+        // reached through O and must not become its corners.
+        let cutoff = vec![
+            0.0, 3.5, 3.0, //
+            3.5, 0.0, 2.4, //
+            3.0, 2.4, 0.0,
+        ];
+        let n = 5;
+        let inp = Inputs {
+            center_cart: frac.iter().map(|f| f * l).collect(),
+            frac,
+            elem,
+            lat: vec![l, 0.0, 0.0, 0.0, l, 0.0, 0.0, 0.0, l],
+            cutoff,
+            n_elem: 3,
+            electroneg: vec![0.95, 1.54, 3.44],
+            anion_former: vec![0, 0, 1],
+            radii: vec![2.0, 1.5, 0.7],
+            max_cutoff: 3.5,
+            center_src: (0..n as u32).collect(),
+            center_shift: vec![0; 3 * n],
+            center_keys: (0..n as i32).flat_map(|i| [i, 0, 0, 0]).collect(),
+            seed_visible: vec![1; n],
+            cut_plane_immune: vec![0; n],
+            cut_planes: Vec::new(),
+            cut_plane_count: 0,
+            cage_bounds: Vec::new(),
+        };
+        let fast = accept(build_fast(&inp, true));
+        let adv = accept(build(&inp, 0, n, 0, n));
+        assert_eq!(fast.center_src, adv.center_src);
+        assert_eq!(fast.vert_counts, adv.vert_counts);
+        let mut f: Vec<u32> = fast.vertex_srcs.clone();
+        let mut a: Vec<u32> = adv.vertex_srcs.clone();
+        f.sort();
+        a.sort();
+        assert_eq!(f, a);
+        assert!(fast.vert_counts.contains(&6), "Ti octahedron from periodic O images");
+        assert!(fast.vert_counts.contains(&12), "Sr cuboctahedron, no Ti corners");
+    }
+
+    /// The pre-grid accept(): every candidate against every accepted hull.
+    fn accept_linear(mut candidates: Vec<Candidate>) -> AcceptOutput {
+        candidates.sort_by(|x, y| {
+            let (na, nb) = (x.pos_list.len(), y.pos_list.len());
+            if na != nb {
+                return nb.cmp(&na);
+            }
+            if na >= 12 && x.is_cage != y.is_cage {
+                return if x.is_cage { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+            }
+            if x.is_cage != y.is_cage {
+                return if !x.is_cage { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater };
+            }
+            std::cmp::Ordering::Equal
+        });
+        let mut keys: HashSet<Key> = HashSet::new();
+        let mut hulls: Vec<Hull> = Vec::new();
+        let mut out = AcceptOutput {
+            kinds: Vec::new(),
+            color_elem: Vec::new(),
+            center_src: Vec::new(),
+            vert_counts: Vec::new(),
+            vertices: Vec::new(),
+            vertex_srcs: Vec::new(),
+        };
+        for cand in &candidates {
+            if cand.is_cage && cand.vertex_image_list.iter().any(|&(s, sh)| keys.contains(&image_key(s, sh))) {
+                continue;
+            }
+            let hull = match convex_hull(&cand.pos_list) {
+                Some(h) => h,
+                None => continue,
+            };
+            if hulls.iter().any(|h| h.contains(cand.ref_point, -NEST_MARGIN)) {
+                continue;
+            }
+            out.kinds.push(cand.is_cage as u32);
+            out.color_elem.push(cand.color_elem);
+            out.center_src.push(if cand.is_cage { -1 } else { cand.center_src });
+            out.vert_counts.push(cand.pos_list.len() as u32);
+            for p in &cand.pos_list {
+                out.vertices.extend_from_slice(&[p.x, p.y, p.z]);
+            }
+            out.vertex_srcs.extend_from_slice(&cand.vertex_src_list);
+            if !cand.is_cage {
+                keys.insert(image_key(cand.center_src as u32, cand.center_shift));
+            }
+            hulls.push(hull);
+        }
+        out
+    }
+
+    /// Random overlapping polyhedra of mixed sizes (and a few giant and flat
+    /// ones), centred and cage, with cage corners on centre images: the grid
+    /// accept must keep exactly what the linear scan keeps, in the same order.
+    #[test]
+    fn grid_accept_matches_linear_scan() {
+        let mut seed: u64 = 0x2545F4914F6CDD1D;
+        let mut rnd = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let mut total_rejected = 0;
+        for round in 0..20 {
+            let mut cands = Vec::new();
+            let n = 50 + 40 * round;
+            for i in 0..n {
+                let cage = rnd() < 0.25;
+                let nv = 4 + (rnd() * 10.0) as usize;
+                let radius = if rnd() < 0.02 { 40.0 } else { 0.5 + 3.0 * rnd() };
+                let c = Vec3::new(15.0 * rnd(), 15.0 * rnd(), 15.0 * rnd());
+                let flat = rnd() < 0.05;
+                let mut pos_list = Vec::new();
+                let mut vertex_src_list = Vec::new();
+                let mut vertex_image_list = Vec::new();
+                for _ in 0..nv {
+                    let (u, v) = (rnd() * 2.0 - 1.0, rnd() * std::f64::consts::TAU);
+                    let w = (1.0 - u * u).sqrt();
+                    let z = if flat { 0.0 } else { u };
+                    pos_list.push(c.add(Vec3::new(w * v.cos(), w * v.sin(), z).scale(radius)));
+                    let src = (rnd() * n as f64) as u32;
+                    vertex_src_list.push(src);
+                    if cage {
+                        vertex_image_list.push((src, [0, 0, 0]));
+                    }
+                }
+                cands.push(Candidate {
+                    is_cage: cage,
+                    color_elem: (i % 3) as u32,
+                    center_src: if cage { -1 } else { i as i32 },
+                    center_shift: [0, 0, 0],
+                    pos_list,
+                    vertex_src_list,
+                    vertex_image_list,
+                    ref_point: c,
+                });
+            }
+            let copy: Vec<Candidate> = cands
+                .iter()
+                .map(|c| Candidate {
+                    is_cage: c.is_cage,
+                    color_elem: c.color_elem,
+                    center_src: c.center_src,
+                    center_shift: c.center_shift,
+                    pos_list: c.pos_list.clone(),
+                    vertex_src_list: c.vertex_src_list.clone(),
+                    vertex_image_list: c.vertex_image_list.clone(),
+                    ref_point: c.ref_point,
+                })
+                .collect();
+            let lin = accept_linear(copy);
+            let grid = accept(cands);
+            assert!(!lin.kinds.is_empty());
+            total_rejected += n - lin.kinds.len();
+            assert_same(&lin, &grid);
+        }
+        assert!(total_rejected > 100, "the random sets must exercise nesting");
     }
 }

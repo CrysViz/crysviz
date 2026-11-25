@@ -13,6 +13,10 @@ import { openAboutPanel } from './AboutPanel.js';
 //   Shift+Alt+<key>           Everything else: opening a "window" panel
 //                             (Files, Trajectory, Settings, ...) — the least
 //                             frequent action, so it gets the clunkiest combo.
+//   <key> over the structure  Plain letters, only while the mouse is over the
+//                             3D view: lock mouse rotation to an axis
+//                             (ui/RotationLock.js). Scoped to the view so a
+//                             bare letter never does anything elsewhere.
 //
 // Space is not a real modifier as far as the browser is concerned (no
 // event.spaceKey the way there's event.shiftKey) — SPACE_HELD below is
@@ -32,6 +36,11 @@ import { openAboutPanel } from './AboutPanel.js';
 // intercepted by the OS/browser before a page's JS ever sees them. Alt is
 // comparatively free of reserved letter combos on both platforms (Alt+Left/
 // Right for history navigation is the one exception, and isn't used here).
+// The single deliberate exception lives outside this file: Ctrl/Cmd+F opens
+// the feature search palette (ui/FeatureSearch.js). Find-in-page is one of
+// the few Ctrl/Cmd letters a page CAN take over, it finds next to nothing in
+// a canvas app, and a second press while the palette is open falls through to
+// the browser's own find.
 //
 // Shortcuts match on KeyboardEvent.code (the PHYSICAL key), not .key (the
 // glyph the layout prints on it) — so a shortcut lands on the same finger
@@ -59,11 +68,18 @@ import { getPanel, openPanel } from './panels/PanelManager.js';
 import { selectAdjacentStructure, selectAdjacentStep } from './FileBrowswerPanel.js';
 import { setStructurePanelOpen } from './StructureInfoPanel/General.js';
 import { setMeasureMode } from './MeasurementToolbar.js';
+import { initRotationLock, isPointerOverScene, setRotationLock } from './RotationLock.js';
+
+// Inputs that take no typing: a shortcut pressed while one has focus (after
+// ticking a checkbox, say) is meant for the app, not for the control. Range
+// sliders and selects stay "editable": they use the arrow keys themselves.
+const NON_TEXT_INPUT_TYPES = new Set(['checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file', 'image']);
 
 function isEditableTarget(el) {
   if (!el) return false;
   const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
+  if (tag === 'INPUT') return !NON_TEXT_INPUT_TYPES.has(String(el.type || 'text').toLowerCase());
+  return tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable;
 }
 
 // ---- Space held-state tracking -------------------------------------------
@@ -112,20 +128,33 @@ function isModifierOnlyCode(code) {
 const FLASH_CLASS = 'cv-shortcut-flash';
 const FLASH_MS = 500;
 
+// The stronger, longer variant for small round targets: the search's
+// colour-dot results (search/structureEntries.js).
+export const DOT_FLASH = { className: 'cv-dot-flash', ms: 1000 };
+
 /** Same orange flash, generalized to any element — used on panels (via
  *  flashPanel below) and on plain buttons that don't otherwise show any
  *  reaction to being "clicked" by a shortcut (camera alignment, Add
- *  Structure/Atoms). */
-function flashElement(el) {
+ *  Structure/Atoms). `style` picks a variant such as DOT_FLASH.
+ *  @param {Element|null|undefined} el
+ *  @param {{ className: string, ms: number }} [style] */
+export function flashElement(el, style = { className: FLASH_CLASS, ms: FLASH_MS }) {
   if (!el) return;
-  el.classList.remove(FLASH_CLASS);
-  void el.offsetWidth; // restart the animation if pressed again quickly
-  el.classList.add(FLASH_CLASS);
-  setTimeout(() => el.classList.remove(FLASH_CLASS), FLASH_MS);
+  el.classList.remove(style.className);
+  void (/** @type {HTMLElement} */ (el)).offsetWidth; // restart the animation if pressed again quickly
+  el.classList.add(style.className);
+  setTimeout(() => el.classList.remove(style.className), style.ms);
 }
 
-function flashPanel(panel) {
-  if (panel) flashElement(panel.el);
+/** Flash the part of a window the eye sees. With its title bar shrunk to the
+ *  thin strip (View / Measure / Structure by default) the window element
+ *  still spans the strip's row, so a ring round it would sit in empty space
+ *  above the visible box: flash the body then. A toolbar folded to its round
+ *  compact icon flashes the icon. Shared with the search palette. */
+export function flashPanel(panel) {
+  if (!panel) return;
+  if (panel.compact && panel.collapsed && panel.compactBtn) flashElement(panel.compactBtn);
+  else flashElement(panel.barCollapsed && !panel.collapsed ? panel.body : panel.el);
 }
 
 // Structure ('info'), Measure ('measure') and View ('view') never have their
@@ -243,14 +272,18 @@ function clickButton(selector, panelId) {
 //
 // One flat list. Each command's `default` binding is {code|key|codes, shift,
 // space, alt} (see the file header for why Y/Z use `key` and "+" uses
-// `codes`). `tier` is a display-only label (which of the four modifier
+// `codes`). `scene: true` commands only fire while the mouse is over the 3D
+// view, whatever they are bound to. `tier` is a display-only label (which of the four modifier
 // combos a command's DEFAULT belongs to); `group` further subdivides a
 // tier's column in the help/editor UI (e.g. Shift's column has Camera,
 // Measuring, Navigation, Other groups). The help UI renders commands in the
 // order they're listed here — grouped by function, not alphabetized — so
 // this array's order IS the display order; keep related commands adjacent.
 // Customizing a binding can move it to any modifier combo, independent of
-// its original tier/group.
+// its original tier/group. Windows-tier commands also name their `panel`, and
+// commands that press one control name its element id as `control`, so the
+// search palette shows the shortcut on that window's / control's result
+// instead of listing the same thing twice.
 const TIER = {
   SHIFT: { shift: true, space: false, alt: false, label: 'Shift' },
   SPACE: { shift: false, space: true, alt: false, label: 'Space' },
@@ -258,19 +291,41 @@ const TIER = {
   SHIFT_ALT: { shift: true, space: false, alt: true, label: 'Shift+Alt' },
 };
 
+// Plain keys (no modifier) for the `scene: true` commands. Not a TIER of its
+// own: those commands are camera controls, so the help lists them in the
+// Shift column under the Camera group rather than in a column of their own.
+const PLAIN = { shift: false, space: false, alt: false };
+
 function bind(tier, extra) {
   return { shift: tier.shift, space: tier.space, alt: tier.alt, ...extra };
 }
 
 const COMMANDS = [
   // -- Shift: camera alignment, navigation, help ------------------------------
-  { id: 'view-x', label: 'View X axis', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewX'), default: bind(TIER.SHIFT, { code: 'KeyX' }) },
-  { id: 'view-y', label: 'View Y axis', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewY'), default: bind(TIER.SHIFT, { key: 'y' }) },
-  { id: 'view-z', label: 'View Z axis', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewZ'), default: bind(TIER.SHIFT, { key: 'z' }) },
-  { id: 'view-a', label: 'View lattice a', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewA'), default: bind(TIER.SHIFT, { code: 'KeyA' }) },
-  { id: 'view-b', label: 'View lattice b', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewB'), default: bind(TIER.SHIFT, { code: 'KeyB' }) },
-  { id: 'view-c', label: 'View lattice c', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#viewC'), default: bind(TIER.SHIFT, { code: 'KeyC' }) },
-  { id: 'reset-view', label: 'Reset camera view', tier: 'SHIFT', group: 'Camera', action: () => clickButton('#resetView'), default: bind(TIER.SHIFT, { code: 'KeyR' }) },
+  { id: 'view-x', label: 'View X axis', tier: 'SHIFT', group: 'Camera', control: 'viewX', action: () => clickButton('#viewX'), default: bind(TIER.SHIFT, { code: 'KeyX' }) },
+  { id: 'view-y', label: 'View Y axis', tier: 'SHIFT', group: 'Camera', control: 'viewY', action: () => clickButton('#viewY'), default: bind(TIER.SHIFT, { key: 'y' }) },
+  { id: 'view-z', label: 'View Z axis', tier: 'SHIFT', group: 'Camera', control: 'viewZ', action: () => clickButton('#viewZ'), default: bind(TIER.SHIFT, { key: 'z' }) },
+  { id: 'view-a', label: 'View lattice a', tier: 'SHIFT', group: 'Camera', control: 'viewA', action: () => clickButton('#viewA'), default: bind(TIER.SHIFT, { code: 'KeyA' }) },
+  { id: 'view-b', label: 'View lattice b', tier: 'SHIFT', group: 'Camera', control: 'viewB', action: () => clickButton('#viewB'), default: bind(TIER.SHIFT, { code: 'KeyB' }) },
+  { id: 'view-c', label: 'View lattice c', tier: 'SHIFT', group: 'Camera', control: 'viewC', action: () => clickButton('#viewC'), default: bind(TIER.SHIFT, { code: 'KeyC' }) },
+  { id: 'reset-view', label: 'Reset camera view', tier: 'SHIFT', group: 'Camera', control: 'resetView', action: () => clickButton('#resetView'), default: bind(TIER.SHIFT, { code: 'KeyR' }) },
+  // Rotation lock (ui/RotationLock.js): plain keys, only with the mouse over
+  // the 3D view. Y/Z by character, like Shift+Y/Z above (see the file header).
+  { id: 'lock-rotate-x', label: 'Rotate about X only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('x'), default: bind(PLAIN, { code: 'KeyX' }) },
+  { id: 'lock-rotate-y', label: 'Rotate about Y only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('y'), default: bind(PLAIN, { key: 'y' }) },
+  { id: 'lock-rotate-z', label: 'Rotate about Z only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('z'), default: bind(PLAIN, { key: 'z' }) },
+  { id: 'lock-rotate-a', label: 'Rotate about a only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('a'), default: bind(PLAIN, { code: 'KeyA' }) },
+  { id: 'lock-rotate-b', label: 'Rotate about b only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('b'), default: bind(PLAIN, { code: 'KeyB' }) },
+  { id: 'lock-rotate-c', label: 'Rotate about c only', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('c'), default: bind(PLAIN, { code: 'KeyC' }) },
+  // Space+X/Y/Z: the screen axes as they are when pressed (x right, y up,
+  // z out of the screen). Space, not Ctrl+Shift: Ctrl+Shift+Z/Y/X are redo,
+  // Firefox's Downloads (Linux) and text direction; nor Alt: on a Mac
+  // Option+Y/Z types other characters, which the character match for Y/Z
+  // would miss. Space+X/Y/Z is used by nothing else.
+  { id: 'lock-rotate-screen-x', label: 'Rotate about screen x', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('screen-x'), default: bind(TIER.SPACE, { code: 'KeyX' }) },
+  { id: 'lock-rotate-screen-y', label: 'Rotate about screen y', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('screen-y'), default: bind(TIER.SPACE, { key: 'y' }) },
+  { id: 'lock-rotate-screen-z', label: 'Rotate about screen z', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock('screen-z'), default: bind(TIER.SPACE, { key: 'z' }) },
+  { id: 'lock-rotate-free', label: 'Free rotation', tier: 'SHIFT', group: 'Camera · mouse over structure', scene: true, action: () => setRotationLock(null), default: bind(PLAIN, { code: 'KeyR' }) },
   { id: 'next-structure', label: 'Next structure', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStructure(1), default: bind(TIER.SHIFT, { code: 'ArrowUp' }) },
   { id: 'prev-structure', label: 'Previous structure', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStructure(-1), default: bind(TIER.SHIFT, { code: 'ArrowDown' }) },
   { id: 'next-step', label: 'Next step', tier: 'SHIFT', group: 'Navigation', action: () => selectAdjacentStep(1), default: bind(TIER.SHIFT, { code: 'ArrowRight' }) },
@@ -283,38 +338,40 @@ const COMMANDS = [
   { id: 'structure-atoms', label: 'Structure: Atoms', tier: 'SPACE', group: 'Structure', action: () => focusStructureTab('atoms'), default: bind(TIER.SPACE, { code: 'KeyA' }) },
   { id: 'structure-bonds', label: 'Structure: Bonds', tier: 'SPACE', group: 'Structure', action: () => focusStructureTab('bonds'), default: bind(TIER.SPACE, { code: 'KeyB' }) },
   { id: 'structure-poly', label: 'Structure: Polyhedra', tier: 'SPACE', group: 'Structure', action: () => focusStructureTab('polyhedra'), default: bind(TIER.SPACE, { code: 'KeyP' }) },
-  { id: 'distance-mode', label: 'Distance mode', tier: 'SPACE', group: 'Measuring', action: () => selectMeasureMode('distance', 'distanceModeBtn'), default: bind(TIER.SPACE, { code: 'KeyD' }) },
-  { id: 'angle-mode', label: 'Angle mode', tier: 'SPACE', group: 'Measuring', action: () => selectMeasureMode('angle', 'angleModeBtn'), default: bind(TIER.SPACE, { code: 'KeyG' }) },
+  { id: 'distance-mode', label: 'Distance mode', tier: 'SPACE', group: 'Measuring', control: 'distanceModeBtn', action: () => selectMeasureMode('distance', 'distanceModeBtn'), default: bind(TIER.SPACE, { code: 'KeyD' }) },
+  { id: 'angle-mode', label: 'Angle mode', tier: 'SPACE', group: 'Measuring', control: 'angleModeBtn', action: () => selectMeasureMode('angle', 'angleModeBtn'), default: bind(TIER.SPACE, { code: 'KeyG' }) },
 
   // -- Shift+Space: Feature toggles --------------------------------------------
-  { id: 'toggle-atoms', label: 'Show Atoms', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showAtoms'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyA' }) },
-  { id: 'toggle-bonds', label: 'Show Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showBonds'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyB' }) },
-  { id: 'toggle-neighbour', label: 'Neighbour Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('PBCBondToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyN' }) },
-  { id: 'toggle-forces', label: 'Show Forces', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showForcesToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyF' }) },
-  { id: 'toggle-spins', label: 'Show Spins', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showSpinsToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyS' }) },
-  { id: 'toggle-polyhedra', label: 'Show Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showPolyhedra'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyP' }) },
-  { id: 'toggle-complete-polyhedra', label: 'Complete Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('completePolyhedraToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyC' }) },
-  { id: 'toggle-field', label: 'Show Volumetric Field', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showFieldToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyD' }) },
-  { id: 'toggle-planes', label: 'Show Planes', tier: 'SHIFT_SPACE', group: 'Toggles', action: () => toggleFeature('showPlanesMasterToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyL' }) },
-  { id: 'add-atoms-vacuum', label: 'Modify Structure', tier: 'SHIFT_SPACE', group: 'Other', action: () => clickButton('#addButton', 'modifyStructure'), default: bind(TIER.SHIFT_SPACE, { codes: ['Equal', 'BracketRight'] }) },
+  { id: 'toggle-atoms', label: 'Show Atoms', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showAtoms', action: () => toggleFeature('showAtoms'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyA' }) },
+  { id: 'toggle-bonds', label: 'Show Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showBonds', action: () => toggleFeature('showBonds'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyB' }) },
+  { id: 'toggle-neighbour', label: 'Neighbour Bonds', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'PBCBondToggle', action: () => toggleFeature('PBCBondToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyN' }) },
+  { id: 'toggle-complete-fragments', label: 'Complete Rings & Fragments', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'completeFragmentsToggle', action: () => toggleFeature('completeFragmentsToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyR' }) },
+  { id: 'toggle-forces', label: 'Show Forces', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showForcesToggle', action: () => toggleFeature('showForcesToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyF' }) },
+  { id: 'toggle-spins', label: 'Show Spins', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showSpinsToggle', action: () => toggleFeature('showSpinsToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyS' }) },
+  { id: 'toggle-polyhedra', label: 'Show Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showPolyhedra', action: () => toggleFeature('showPolyhedra'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyP' }) },
+  { id: 'toggle-complete-polyhedra', label: 'Complete Polyhedra', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'completePolyhedraToggle', action: () => toggleFeature('completePolyhedraToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyC' }) },
+  { id: 'toggle-field', label: 'Show Volumetric Field', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showFieldToggle', action: () => toggleFeature('showFieldToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyD' }) },
+  { id: 'toggle-planes', label: 'Show Planes', tier: 'SHIFT_SPACE', group: 'Toggles', control: 'showPlanesMasterToggle', action: () => toggleFeature('showPlanesMasterToggle'), default: bind(TIER.SHIFT_SPACE, { code: 'KeyL' }) },
+  { id: 'add-atoms-vacuum', label: 'Modify Structure', tier: 'SHIFT_SPACE', group: 'Other', control: 'addButton', action: () => clickButton('#addButton', 'modifyStructure'), default: bind(TIER.SHIFT_SPACE, { codes: ['Equal', 'BracketRight'] }) },
 
   // -- Shift+Alt: Windows -------------------------------------------------------
-  { id: 'panel-files', label: 'Files', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('files'), default: bind(TIER.SHIFT_ALT, { code: 'KeyF' }) },
-  { id: 'panel-features', label: 'Features', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('features'), default: bind(TIER.SHIFT_ALT, { code: 'KeyU' }) },
-  { id: 'panel-atomistic', label: 'Atomistic', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('backend'), default: bind(TIER.SHIFT_ALT, { code: 'KeyA' }) },
-  { id: 'panel-trajectory', label: 'Trajectory', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('trajectory'), default: bind(TIER.SHIFT_ALT, { code: 'KeyT' }) },
-  { id: 'panel-comparison', label: 'Comparison', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('comparison'), default: bind(TIER.SHIFT_ALT, { code: 'KeyC' }) },
-  { id: 'panel-forces', label: 'Forces', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('forces'), default: bind(TIER.SHIFT_ALT, { code: 'KeyR' }) },
-  { id: 'panel-spins', label: 'Spins', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('spins'), default: bind(TIER.SHIFT_ALT, { code: 'KeyN' }) },
-  { id: 'panel-field', label: 'Volumetric Field', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('field'), default: bind(TIER.SHIFT_ALT, { code: 'KeyD' }) },
-  { id: 'panel-planes', label: 'Crystal Planes', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('planes'), default: bind(TIER.SHIFT_ALT, { code: 'KeyL' }) },
-  { id: 'panel-cell', label: 'Cell & Supercell', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('cell'), default: bind(TIER.SHIFT_ALT, { code: 'KeyX' }) },
-  { id: 'panel-symmetry', label: 'Symmetry', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('symmetry'), default: bind(TIER.SHIFT_ALT, { code: 'KeyK' }) },
-  { id: 'panel-visual', label: 'Visual', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('visual'), default: bind(TIER.SHIFT_ALT, { code: 'KeyI' }) },
-  { id: 'panel-eos', label: 'EOS Fitting', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('eos'), default: bind(TIER.SHIFT_ALT, { code: 'KeyE' }) },
-  { id: 'panel-landscape', label: 'Energy Landscape', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('landscape'), default: bind(TIER.SHIFT_ALT, { code: 'KeyQ' }) },
-  { id: 'panel-custom-settings', label: 'Custom User Settings', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('customSettings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyJ' }) },
-  { id: 'panel-settings', label: 'Settings', tier: 'SHIFT_ALT', group: 'Windows', action: () => focusPanel('settings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyG' }) },
+  { id: 'panel-files', label: 'Files', tier: 'SHIFT_ALT', group: 'Windows', panel: 'files', action: () => focusPanel('files'), default: bind(TIER.SHIFT_ALT, { code: 'KeyF' }) },
+  { id: 'panel-features', label: 'Features', tier: 'SHIFT_ALT', group: 'Windows', panel: 'features', action: () => focusPanel('features'), default: bind(TIER.SHIFT_ALT, { code: 'KeyU' }) },
+  { id: 'panel-atomistic', label: 'Atomistic', tier: 'SHIFT_ALT', group: 'Windows', panel: 'backend', action: () => focusPanel('backend'), default: bind(TIER.SHIFT_ALT, { code: 'KeyA' }) },
+  { id: 'panel-trajectory', label: 'Trajectory', tier: 'SHIFT_ALT', group: 'Windows', panel: 'trajectory', action: () => focusPanel('trajectory'), default: bind(TIER.SHIFT_ALT, { code: 'KeyT' }) },
+  { id: 'panel-comparison', label: 'Comparison', tier: 'SHIFT_ALT', group: 'Windows', panel: 'comparison', action: () => focusPanel('comparison'), default: bind(TIER.SHIFT_ALT, { code: 'KeyC' }) },
+  { id: 'panel-forces', label: 'Forces', tier: 'SHIFT_ALT', group: 'Windows', panel: 'forces', action: () => focusPanel('forces'), default: bind(TIER.SHIFT_ALT, { code: 'KeyR' }) },
+  { id: 'panel-spins', label: 'Spins', tier: 'SHIFT_ALT', group: 'Windows', panel: 'spins', action: () => focusPanel('spins'), default: bind(TIER.SHIFT_ALT, { code: 'KeyN' }) },
+  { id: 'panel-field', label: 'Volumetric Field', tier: 'SHIFT_ALT', group: 'Windows', panel: 'field', action: () => focusPanel('field'), default: bind(TIER.SHIFT_ALT, { code: 'KeyD' }) },
+  { id: 'panel-planes', label: 'Crystal Planes', tier: 'SHIFT_ALT', group: 'Windows', panel: 'planes', action: () => focusPanel('planes'), default: bind(TIER.SHIFT_ALT, { code: 'KeyL' }) },
+  { id: 'panel-cell', label: 'Cell & Supercell', tier: 'SHIFT_ALT', group: 'Windows', panel: 'cell', action: () => focusPanel('cell'), default: bind(TIER.SHIFT_ALT, { code: 'KeyX' }) },
+  { id: 'panel-symmetry', label: 'Symmetry', tier: 'SHIFT_ALT', group: 'Windows', panel: 'symmetry', action: () => focusPanel('symmetry'), default: bind(TIER.SHIFT_ALT, { code: 'KeyK' }) },
+  { id: 'panel-visual', label: 'Visual', tier: 'SHIFT_ALT', group: 'Windows', panel: 'visual', action: () => focusPanel('visual'), default: bind(TIER.SHIFT_ALT, { code: 'KeyI' }) },
+  { id: 'panel-eos', label: 'EOS Fitting', tier: 'SHIFT_ALT', group: 'Windows', panel: 'eos', action: () => focusPanel('eos'), default: bind(TIER.SHIFT_ALT, { code: 'KeyE' }) },
+  { id: 'panel-landscape', label: 'Energy Landscape', tier: 'SHIFT_ALT', group: 'Windows', panel: 'landscape', action: () => focusPanel('landscape'), default: bind(TIER.SHIFT_ALT, { code: 'KeyQ' }) },
+  { id: 'panel-custom-settings', label: 'Custom User Settings', tier: 'SHIFT_ALT', group: 'Windows', panel: 'customSettings', action: () => focusPanel('customSettings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyJ' }) },
+  { id: 'panel-settings', label: 'Settings', tier: 'SHIFT_ALT', group: 'Windows', panel: 'settings', action: () => focusPanel('settings'), default: bind(TIER.SHIFT_ALT, { code: 'KeyG' }) },
+
 ];
 
 // ---- user overrides (editable bindings) ------------------------------------
@@ -420,6 +477,7 @@ function bindingKeyHtml(binding) {
 export function initKeyboardShortcuts() {
   loadOverrides();
   initSpaceTracking();
+  initRotationLock();
   addHelpTriggerButton();
 
   window.addEventListener('keydown', (event) => {
@@ -430,6 +488,7 @@ export function initKeyboardShortcuts() {
     if (recordingCommand) return; // the help modal's rebind capture handles this keydown instead
 
     for (const cmd of COMMANDS) {
+      if (cmd.scene && !isPointerOverScene()) continue;
       const binding = activeBinding(cmd);
       if (binding && bindingMatches(binding, event, spaceHeld)) {
         event.preventDefault();
@@ -671,6 +730,24 @@ export function confirmResetAllShortcuts() {
  *  cleared shortcut. Embedded under the combined Custom User Settings JSON's
  *  own "shortcuts" key (see CustomUserSettingsPanel.js) rather than saved as
  *  a separate file. */
+/** Every command, for the search palette (ui/FeatureSearch.js): its label,
+ *  help-table group, the binding in effect as display text ('' when the user
+ *  cleared it), and the action itself. */
+export function listShortcutCommands() {
+  return COMMANDS.map((cmd) => {
+    const binding = activeBinding(cmd);
+    return {
+      id: cmd.id,
+      label: cmd.label,
+      group: cmd.group,
+      shortcut: binding ? bindingTokens(binding).join(IS_MAC ? '' : '+') : '',
+      panel: cmd.panel || null, // the window a Windows-tier command opens
+      control: cmd.control || null, // the element id a command presses
+      run: cmd.action,
+    };
+  });
+}
+
 export function getShortcutOverrides() {
   return { ...overrides };
 }
@@ -697,7 +774,7 @@ function buildHelpModal() {
         <h3 id="shortcutsHelpTitle">Keyboard Shortcuts</h3>
         <button type="button" id="shortcutsHelpInfoToggle" class="shortcuts-help-info-btn" aria-expanded="false" aria-controls="shortcutsHelpNote" title="About these shortcuts">i</button>
       </div>
-      <p class="shortcuts-help-note" id="shortcutsHelpNote" hidden>Click any shortcut to rebind it — press the new key combo, or Escape to cancel. A combo already used elsewhere is rejected, not reassigned; use × to clear a shortcut entirely. Space is held like a modifier (not a real one the browser reports, so it's tracked manually). Keys match the physical key position on US, German and Swedish keyboards, except Y/Z (character-matched — German swaps their physical position) and "+" (matches both the US Equal key and the German/Nordic dedicated + key). Your customized bindings are saved automatically and included in the Custom User Settings panel's combined settings JSON, which also has a Reset to Defaults button.</p>
+      <p class="shortcuts-help-note" id="shortcutsHelpNote" hidden>Click any shortcut to rebind it — press the new key combo, or Escape to cancel. A combo already used elsewhere is rejected, not reassigned; use × to clear a shortcut entirely. Space is held like a modifier (not a real one the browser reports, so it's tracked manually). The "Camera · mouse over structure" keys take no modifier and only work while the mouse is over the 3D view: X/Y/Z or A/B/C restrict mouse rotation to that world or lattice axis, Space+X/Y/Z to the screen axis as it is when pressed (x right, y up, z out of the screen), and R frees it again. Keys match the physical key position on US, German and Swedish keyboards, except Y/Z (character-matched — German swaps their physical position) and "+" (matches both the US Equal key and the German/Nordic dedicated + key). Your customized bindings are saved automatically and included in the Custom User Settings panel's combined settings JSON, which also has a Reset to Defaults button.</p>
       <div class="shortcuts-help-columns">${columnsHtml()}</div>
       <div class="paste-modal-actions shortcuts-help-actions">
         <button type="button" id="shortcutsHelpReset">Reset to Defaults</button>

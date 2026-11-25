@@ -22,7 +22,9 @@
 //                                  needed for acceptable blending (OIT: false)
 
 import { app } from '../../state/store.js';
-import { renderCelOutlinePass } from '../CelOutlinePass.js';
+import { prepareCelOutlinePass, renderCelOutlinePass } from '../CelOutlinePass.js';
+import { renderRasterHighlightOverlay } from '../HighlightOverlay.js';
+import { renderFocusPeaking } from '../FocusPlaneModule.js';
 
 export class ForwardPipeline {
   static id = 'forward';
@@ -35,13 +37,16 @@ export class ForwardPipeline {
   // its CPU back-to-front triangle sort on camera-move end.
   needsCpuTriangleSort = true;
 
-  /** One frame: main scene pass, then the screen-space cel outline composite
-   *  (a no-op unless cel style + screen outline mode are active). Any pipeline
+  /** One frame: the cel outline pass's depth targets, the main scene pass,
+   *  then the outline composite (no-ops outside cel style). Any pipeline
    *  that ends with final color in the default framebuffer can reuse the
    *  outline pass the same way. */
   render({ renderer, scene, camera }) {
+    prepareCelOutlinePass(renderer, scene, camera);
     renderer.render(scene, camera);
     renderCelOutlinePass(renderer, scene, camera);
+    renderRasterHighlightOverlay(renderer, camera); // see-through selection ghosts
+    renderFocusPeaking(renderer, scene, camera); // DoF focus peaking while a DoF slider is dragged
   }
 
   /** No offscreen targets in the forward path. */
@@ -95,8 +100,10 @@ export class ForwardPipeline {
         // Opacity-aware: alpha = 1 polyhedra are genuinely OPAQUE (write
         // depth, skip the blend/OIT passes) so their own hidden edges and
         // objects behind them are properly occluded; alpha < 1 keeps the
-        // legacy always-transparent flags verbatim.
-        const isTransparent = opacity < 1;
+        // legacy always-transparent flags verbatim. needsTransparency: the
+        // see-through half of the one polyhedra mesh (render/PolyhedraMesh.js),
+        // whose per-vertex alpha is below 1 while the material opacity is 1.
+        const isTransparent = opacity < 1 || !!spec.needsTransparency;
         material.transparent = isTransparent;
         material.depthWrite = !isTransparent;
         material.polygonOffset = true;
@@ -105,7 +112,24 @@ export class ForwardPipeline {
         break;
       }
       case 'polyhedraEdge':
-        // Same: fully opaque edges depth-test/write like opaque geometry.
+        // Same: fully opaque edges depth-test/write like opaque geometry
+        // (needsTransparency: per-segment alpha, as for the faces).
+        material.transparent = opacity < 1 || !!spec.needsTransparency;
+        break;
+      case 'asuFace':
+        // The asymmetric-unit wedge (render/AsymmetricUnitModule.js) is a hull
+        // drawn AROUND part of the structure, so unlike a polyhedron it must
+        // never occlude what it contains: no depth write, and drawn after the
+        // opaque structure the way the isosurface is.
+        material.transparent = opacity < 1;
+        // Fully opaque, it is a solid and must depth-sort its own faces.
+        material.depthWrite = opacity >= 1;
+        if (spec.mesh) spec.mesh.renderOrder = 1;
+        break;
+      case 'asuEdge':
+        // The wedge outline reads as structure rather than as a translucent
+        // skin, so it keeps opaque geometry's flags — same as the cell lines
+        // it is drawn alongside.
         material.transparent = opacity < 1;
         break;
       case 'planeBorder':

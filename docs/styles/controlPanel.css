@@ -167,31 +167,62 @@ font-size: var(--fs-xl);
    (accent via --accent-color / --highlight-color).
    =========================================================================== */
 /* ── Planes Panel ─────────────────────────────────────── */
+/* The window body is the box; the parts stack at one spacing. Every button
+   is a .btn-mini (.highlight for Add Plane), as in the other windows. */
+.planes-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.planes-panel .btn-mini {
+  white-space: nowrap;
+}
+
+/* Spacing comes from the containers' gaps, not the global label margins. */
+.planes-panel label {
+  margin: 0;
+}
+
+.planes-panel .btn-mini:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.planes-panel .btn-mini:disabled:hover {
+  border-color: var(--wash-2);
+}
+
+.planes-panel .btn-mini.highlight:disabled:hover {
+  border-color: var(--line-dark);
+  filter: none;
+}
+
 .planes-input-section {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  width: 100%;
-  margin-bottom: var(--sp-4);
+  gap: var(--sp-4);
 }
 
 .planes-input-row {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: var(--sp-3-5);
+  gap: var(--sp-2);
 }
 
 .planes-radio-label {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
-  width: 100%;
+  gap: var(--sp-1);
+  font-size: var(--fs-base);
+  cursor: pointer;
 }
 
 .planes-radio-label input[type="radio"] {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  margin: 0;
   cursor: pointer;
   accent-color: var(--accent-color);
 }
@@ -199,58 +230,23 @@ font-size: var(--fs-xl);
 .planes-row-inputs {
   display: flex;
   flex-direction: column;
-  width: 100%;
-  align-items: stretch;
   gap: var(--sp-3);
 }
 
-/* uvwd layout: uvw cluster + d cluster separated */
-.planes-uvwd-layout {
-  grid-template-columns: none;
-}
-
-/* Cartesian x/y/z: single horizontal row of compact fields, same treatment
-   as the Miller row below. The d value/slider/bounds stay their own
-   vertically-stacked rows via .planes-d-cluster's display:contents. */
-.planes-uvw-cluster {
-  display: flex;
-  flex-direction: row;
-  gap: var(--sp-3-5);
-}
-
-.planes-uvw-cluster .planes-labeled-input {
-  flex: 1;
-  gap: var(--sp-2);
-}
-
-.planes-uvw-cluster .planes-num-input {
-  padding: var(--sp-2) var(--sp-1);
-}
-
-.planes-d-cluster {
-  display: contents;
-}
-
-/* Miller indices: single horizontal row of compact fields */
-#hklInputs {
-  flex-direction: row;
-  gap: var(--sp-3-5);
-}
-
-#hklInputs .planes-labeled-input {
-  flex: 1;
-  gap: var(--sp-2);
-}
-
-#hklInputs .planes-num-input {
-  padding: var(--sp-2) var(--sp-1);
+/* Labelled number boxes (x y z d, h k l) in equal columns, as many as fit
+   with room for a value: in a ~380px window d wraps under x, and h k l line
+   up under x y z. */
+.planes-coord-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: var(--sp-2) var(--sp-3);
 }
 
 .planes-labeled-input {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: var(--sp-3-5);
+  gap: var(--sp-1);
   min-width: 0;
 }
 
@@ -258,22 +254,20 @@ font-size: var(--fs-xl);
   font-size: var(--fs-sm);
   color: var(--fg-2);
   text-transform: lowercase;
-  letter-spacing: 0.03em;
-  text-align: left;
-  min-width: 14px;
+  min-width: 0.7em;
 }
 
 .planes-num-input {
   flex: 1;
   width: 100%;
   min-width: 0;
-  min-height: var(--control-h);
-  padding: var(--sp-2) var(--sp-3);
+  min-height: 28px;
+  padding: 3px var(--sp-1);
   background: var(--wash-1-5);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-sm);
   color: var(--fg-1);
-  font-size: var(--fs-md);
+  font-size: var(--fs-sm);
   text-align: center;
   box-sizing: border-box;
   -moz-appearance: textfield;
@@ -310,7 +304,7 @@ font-size: var(--fs-xl);
   height: 9px;
 }
 
-.planes-num-input:disabled {
+.planes-panel input:is([type="number"], [type="range"]):disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
@@ -321,109 +315,20 @@ font-size: var(--fs-xl);
   background: var(--wash-3);
 }
 
-/* d slider: real-time single-handle slider below the d text box, with
-   user-adjustable endpoint inputs underneath. */
+/* d slider (.coord-axis-slider, the Structure Info position slider)
+   between its user-adjustable ends. */
 .planes-d-slider-row {
   display: flex;
   align-items: center;
-  width: 100%;
-  padding: var(--sp-1) 0;
-}
-
-.planes-d-slider {
-  width: 100%;
-  flex: 1;
-  margin: 0;
-  height: 4px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--track-bg);
-  border-radius: 999px;
-  outline: none;
-  cursor: pointer;
-}
-
-.planes-d-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  background: transparent;
-  border-radius: 999px;
-}
-
-.planes-d-slider::-moz-range-track {
-  height: 4px;
-  background: transparent;
-  border: none;
-  border-radius: 999px;
-}
-
-.planes-d-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--accent-color);
-  border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid var(--chrome-tint-2);
-  box-shadow: 0 0 0 1px var(--line-2);
-  transition: background 0.15s;
-}
-
-.planes-d-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--accent-color);
-  border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid var(--chrome-tint-2);
-  box-shadow: 0 0 0 1px var(--line-2);
-  transition: background 0.15s;
-}
-
-.planes-d-slider:hover:not(:disabled)::-webkit-slider-thumb {
-  background: var(--highlight-color);
-}
-
-.planes-d-slider:hover:not(:disabled)::-moz-range-thumb {
-  background: var(--highlight-color);
-}
-
-.planes-d-slider:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.planes-d-slider-bounds {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  width: 100%;
+  gap: var(--sp-3);
 }
 
 .planes-d-bound-input {
-  flex: 0 0 56px;
-  width: 56px;
-  min-height: 26px;
-  padding: 3px var(--sp-1);
-  font-size: var(--fs-sm);
+  flex: 0 0 64px;
+  width: 64px;
 }
 
-.planes-viz-row {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3-5);
-  margin-bottom: var(--sp-3-5);
-}
-
-.planes-viz-label {
-  font-size: var(--fs-base);
-  color: var(--fg-75);
-  white-space: nowrap;
-}
-
-.planes-select,
-.planes-select-sm {
+.planes-select {
   background: var(--wash-1-5);
   border: 1px solid var(--wash-4);
   border-radius: var(--radius-sm);
@@ -433,94 +338,22 @@ font-size: var(--fs-xl);
   cursor: pointer;
 }
 
-.planes-select-sm {
-  padding: 3px var(--sp-2);
-  font-size: var(--fs-sm);
-}
-
-.planes-buttons-row {
-  display: flex;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-  margin-bottom: var(--sp-4);
-}
-
-/* The panel's action buttons are regular .file-action-btn buttons (like the
-   panel's own Auto Range button); only sizing lives here. They used to be a
-   one-off accent-filled recipe whose hover swapped the fill to
-   --highlight-color under --fg-1 text — on the light palettes both are dark,
-   so the label vanished on hover. */
-
-/* Table */
-.planes-table-wrapper {
-  overflow-x: auto;
-}
-
 .planes-empty-msg {
   color: var(--fg-3);
   font-size: var(--fs-base);
   text-align: center;
-  margin: var(--sp-2) 0 0;
+  margin: var(--sp-2) 0;
 }
 
-.planes-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--fs-base);
-}
-
-.planes-th {
-  padding: 5px var(--sp-3);
-  text-align: left;
-  color: var(--fg-50);
-  font-weight: var(--fw-medium);
-  border-bottom: 1px solid var(--line-1);
-}
-
-.planes-td {
-  padding: 5px var(--sp-3);
-  border-bottom: 1px solid var(--wash-1-5);
-  vertical-align: middle;
-}
-
-.planes-params-cell {
-  font-family: var(--font-mono);
-  color: var(--fg-85);
-}
-
+/* The table's ✕: a .btn-mini sized to its cell. */
 .plane-delete-btn {
-  background: none;
-  border: none;
-  color: rgb(var(--danger-bright-rgb) / 0.75);
-  font-size: var(--fs-xl);
-  cursor: pointer;
   padding: 0 var(--sp-1);
-  line-height: var(--lh-tight);
+  line-height: var(--lh-normal);
 }
 
-.plane-delete-btn:hover {
-  color: var(--danger-bright);
-}
-
-/* New Planes Panel Layout Styles */
 .planes-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--sp-3);
-}
-
-.planes-header h3 {
-  margin: 0;
-  flex: 1;
-}
-
-.planes-top-btn {
-  flex: 0 0 auto;
-  width: auto;
-  min-width: 90px;
-  padding: 5px var(--sp-4);
-  font-size: var(--fs-sm);
 }
 
 /* Table container with visible border */
@@ -528,7 +361,6 @@ font-size: var(--fs-xl);
   border: 1px solid var(--wash-3);
   border-radius: var(--radius-sm);
   overflow: auto;
-  margin-bottom: var(--sp-3);
   background: rgb(var(--shadow-rgb) / 0.15);
   max-height: 240px;
 }
@@ -654,6 +486,24 @@ font-size: var(--fs-xl);
   gap: var(--sp-1);
 }
 
+/* In a dock the table was ~60px wider than the window, and the sticky ✕
+   column sat over half of the Filter column (header included): there, d goes
+   under the plane's point and the cells pad less, so all of it fits. */
+.cv-docked .planes-uvwd-cell,
+.cv-side-docked .planes-uvwd-cell {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+.cv-docked .planes-th:not(.planes-th-narrow),
+.cv-docked .planes-td:not(.planes-td-del),
+.cv-side-docked .planes-th:not(.planes-th-narrow),
+.cv-side-docked .planes-td:not(.planes-td-del) {
+  padding-left: 3px;
+  padding-right: 3px;
+}
+
 .planes-d-inline {
   font-size: var(--fs-xs);
   line-height: var(--lh-tight);
@@ -683,43 +533,21 @@ font-size: var(--fs-xl);
   background: var(--chrome-tint-3);
 }
 
-/* Centered row of atom-derived plane buttons (create / calculate), kept on one
-   line: the pair reads as a matched set, so they share the row width evenly
-   instead of wrapping when the panel is narrow. */
+/* The atom-derived plane buttons (create / calculate) share the row; in a
+   narrow window the second goes under the first. */
 .planes-center-row {
   display: flex;
-  justify-content: center;
-  gap: var(--sp-2);
-  margin-bottom: var(--sp-3-5);
+  flex-wrap: wrap;
+  gap: var(--sp-3);
 }
 
-/* Both labels are broken onto two lines (an explicit <br> before "selection")
-   so the pair stays on one row at panel width — file-action-btn's own
-   white-space: nowrap would otherwise push the longer label past its border. */
-.planes-calc-btn {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: var(--sp-2) var(--sp-2);
-  font-size: var(--fs-sm);
-  white-space: normal;
-  text-align: center;
-  line-height: 1.25;
-}
-
-.planes-calc-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-/* file-action-btn's hover glow has no :disabled guard because its other
-   users never disable. */
-.planes-calc-btn:disabled:hover {
-  box-shadow: none;
+.planes-center-row .btn-mini {
+  flex: 1 1 auto;
 }
 
 /* Parameter / field sections */
 .planes-section-title {
-  margin: 0 0 var(--sp-3) 0;
+  margin: 0 0 var(--sp-2) 0;
   font-size: var(--fs-sm);
   font-weight: var(--fw-bold);
   color: var(--fg-2);
@@ -727,16 +555,32 @@ font-size: var(--fs-xl);
   letter-spacing: 0.06em;
 }
 
-.planes-params-section {
-  margin-top: var(--sp-3-5);
-  padding-top: var(--sp-3-5);
+.planes-params-section,
+.planes-field-section,
+.planes-cut-section {
+  padding-top: var(--sp-4);
   border-top: 1px solid var(--line-1);
 }
 
-.planes-field-section {
-  margin-top: var(--sp-3-5);
-  padding-top: var(--sp-3-5);
-  border-top: 1px solid var(--line-1);
+.planes-params-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.planes-params-section[hidden] {
+  display: none;
+}
+
+.planes-params-section > .planes-section-title {
+  margin: 0;
+}
+
+/* Show Plane and the camera-to-normal buttons. */
+.planes-show-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
 }
 
 /* Grouped field + colormap card */
@@ -747,7 +591,7 @@ font-size: var(--fs-xl);
   padding: var(--sp-3-5);
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3-5);
+  gap: var(--sp-4);
   transition: opacity 0.15s, background 0.15s, border-color 0.15s;
 }
 
@@ -760,7 +604,7 @@ font-size: var(--fs-xl);
 .planes-field-colormap-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--sp-3-5);
+  gap: var(--sp-3);
 }
 
 .planes-field-control {
@@ -790,7 +634,7 @@ font-size: var(--fs-xl);
 .planes-field-resolution-control {
   flex-direction: row;
   align-items: center;
-  gap: var(--sp-3-5);
+  gap: var(--sp-2);
 }
 
 .planes-field-resolution-control label {
@@ -798,9 +642,9 @@ font-size: var(--fs-xl);
   margin: 0;
 }
 
-.planes-field-resolution-control input {
-  flex: 1 1 auto;
-  min-width: 0;
+/* u and v share the row after the label, so 256 clears the spin buttons. */
+.planes-field-resolution-control .planes-labeled-input {
+  flex: 1 1 0;
 }
 
 .planes-full-width {
@@ -808,19 +652,31 @@ font-size: var(--fs-xl);
   box-sizing: border-box;
 }
 
-/* Cut mode sub-section — separated from the plane parameter inputs above by
-   the same rule the Plane Parameters / Field sections are separated by, since
-   it was reading as just another parameter row. */
-.planes-cut-section {
-  margin-top: var(--sp-3-5);
-  padding-top: var(--sp-3-5);
-  border-top: 1px solid var(--line-1);
+/* Camera-to-plane-normal buttons, under the Show Plane toggle. */
+.planes-view-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
 }
 
+.planes-view-label {
+  font-size: var(--fs-base);
+  color: var(--fg-75);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.planes-view-row .btn-mini {
+  flex: 1 1 auto;
+}
+
+/* The cut mode is its own sub-section (the section rule above): it acts on
+   the atoms, not on the plane's geometry. */
 .planes-cut-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-3-5);
+  gap: var(--sp-3);
 }
 
 .planes-cut-label {
@@ -830,109 +686,13 @@ font-size: var(--fs-xl);
   flex-shrink: 0;
 }
 
+/* The colormap range is the Cell window's dual-range slider (.pbnd-slider,
+   analysisPanels.css); only the thumb order is the window's own. */
 .planes-range-container {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--sp-2);
-}
-
-.planes-dual-slider {
-  position: relative;
-  height: 18px;
-}
-
-.planes-dual-slider-track,
-.planes-dual-slider-fill {
-  position: absolute;
-  top: 50%;
-  height: 4px;
-  border-radius: 999px;
-  transform: translateY(-50%);
-}
-
-.planes-dual-slider-track {
-  left: 0;
-  right: 0;
-  background: var(--track-bg);
-}
-
-.planes-field-colormap-disabled .planes-dual-slider-track {
-  background: var(--wash-1-5);
-}
-
-.planes-dual-slider-fill {
-  background: var(--accent-color);
-}
-
-.planes-field-colormap-disabled .planes-dual-slider-fill {
-  background: var(--wash-4);
-}
-
-.planes-slider {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 100%;
-  flex: 1;
-  margin: 0;
-  height: 4px;
-  transform: translateY(-50%);
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-  outline: none;
-  pointer-events: none;
-}
-
-.planes-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  background: transparent;
-}
-
-.planes-slider::-moz-range-track {
-  height: 4px;
-  background: transparent;
-  border: none;
-}
-
-.planes-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--accent-color);
-  border-radius: 50%;
-  cursor: pointer;
-  pointer-events: auto;
-  border: 2px solid var(--chrome-tint-2);
-  box-shadow: 0 0 0 1px var(--line-2);
-  transition: background 0.15s;
-}
-
-.planes-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: var(--accent-color);
-  border-radius: 50%;
-  cursor: pointer;
-  pointer-events: auto;
-  border: 2px solid var(--chrome-tint-2);
-  box-shadow: 0 0 0 1px var(--line-2);
-  transition: background 0.15s;
-}
-
-.planes-slider::-webkit-slider-thumb:hover {
-  background: var(--highlight-color);
-}
-
-.planes-slider::-moz-range-thumb:hover {
-  background: var(--highlight-color);
-}
-
-.planes-slider:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .planes-select:disabled {
@@ -951,6 +711,15 @@ font-size: var(--fs-xl);
   z-index: 3;
 }
 
+/* Once a thumb is grabbed it stays on top (PlanesPanel.js bringThumbToFront). */
+.planes-slider.is-front {
+  z-index: 3;
+}
+
+.planes-slider.is-back {
+  z-index: 2;
+}
+
 #planesRangeDisplay {
   color: var(--fg-2);
   font-size: var(--fs-sm);
@@ -962,8 +731,16 @@ font-size: var(--fs-xl);
    into the mobile/720px rung) now lives in styles/responsive.css, per
    Wave 4's single-file @media rule. */
 
-.planes-table tbody tr .planes-params-cell {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+/* Pick focus (Visual window, Focus distance row): the small button after the
+   label; .active while the next 3D click sets the focus. */
+.rt-focus-pick {
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  vertical-align: middle;
+}
+.rt-focus-pick.active {
+  background: var(--accent-color);
+  color: var(--fg-1);
 }

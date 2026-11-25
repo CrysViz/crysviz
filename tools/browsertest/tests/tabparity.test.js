@@ -33,7 +33,7 @@ const H = require('../harness');
     const restored = images.map(normAt);
     // Row click must still toggle expansion despite the new checkbox.
     /** @type {HTMLElement} */ (container.querySelector('.comp-row')).click();
-    const expanded = /** @type {HTMLElement} */ (container.querySelector('.individual-atoms')).style.display !== 'none';
+    const expanded = /** @type {HTMLElement} */ (container.querySelector('.individual-atoms')).hidden !== true;
     return {
       el,
       flagAfter: general.atomVisibility[el],
@@ -89,7 +89,7 @@ const H = require('../harness');
     const [pair, members] = [...byPair.entries()].find(([, m]) => m.length >= 2);
     const control = document.querySelector(`#infoBondControls .bond-control[data-pair="${pair}"]`);
     /** @type {HTMLElement} */ (control.querySelector('.dot')).click();
-    const editorVisible = /** @type {HTMLElement} */ (control.querySelector('.bond-cat-editor')).style.display !== 'none';
+    const editorVisible = /** @type {HTMLElement} */ (control.querySelector('.bond-cat-editor')).hidden !== true;
     // Drive the Alpha range (first range input in the category editor).
     const alphaSlider = /** @type {HTMLInputElement} */ (
       control.querySelector('.bond-cat-editor input[type="range"]'));
@@ -142,7 +142,7 @@ const H = require('../harness');
     document.querySelector('#atomBondControlSwitch button[data-mode="polyhedra"]').click();
     const controls = [...document.querySelectorAll('#infoPolyControls .poly-control')];
     return {
-      count: groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron').length,
+      count: (await import('./render/index.js')).polyhedraDrawnCount(),
       // A polyhedron survives a cut only if ALL its atoms do — the immunity
       // toggle marks center + vertex source atoms immune.
       memberAtoms: [...new Set(s.polyhedra.polyhedra
@@ -185,7 +185,7 @@ const H = require('../harness');
       cutFound: true,
       pair,
       restoredNorm: normAt(cut.instanceIds[0]),
-      polyCountUnderCut: groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron').length,
+      polyCountUnderCut: (await import('./render/index.js')).polyhedraDrawnCount(),
     };
   });
   H.check('per-pair bond immunity restores bonds culled by an active cut plane',
@@ -198,8 +198,8 @@ const H = require('../harness');
     const { updatePolyhedra } = await import('./render/index.js');
     const { setCutPlaneImmunityForAtoms } = await import('./ui/StructureInfoPanel/components/utils.js');
     const s = fileBrowser.selectedStructure;
-    const countNow = () => groups.polyhedraGroup.children
-      .filter((m) => m.userData?.type === 'polyhedron' && m.userData.mode === 'centered').length;
+    const { polyhedraInfo } = await import('./render/index.js');
+    const countNow = () => polyhedraInfo().filter((m) => m.kind === 'centered').length;
     const droppedCount = countNow();
     setCutPlaneImmunityForAtoms(memberAtoms, true); // what the header toggle does
     const before = general.polyhedraBuildCounter;

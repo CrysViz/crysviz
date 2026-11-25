@@ -1,7 +1,6 @@
 // ReadCubeModule.js
-// Gaussian .cube / .cub volumetric files → Structure + FieldContainer.
-// The text parsing itself lives in CubeParser.js (pure, node-testable).
-// Exports: readCubeFile(), PT, Bohr2Angstrom
+// Gaussian .cube files → Structure + Fields (format parsing in cubeParse.js)
+// Exports: readCubeFile(), buildCubeStructure(), readCubeStructure()
 //
 import { Structure } from '../model/index.js';
 import { invert3x3, transpose3x3, cartToFractional, normalizeFractional } from '../math/index.js';
@@ -11,7 +10,8 @@ import { FieldContainer } from '../model/index.js';
 import { computeFieldStats } from '../model/index.js';
 import { Atom } from '../model/index.js';
 import { generateID } from '../utils/index.js';
-import { parseCubeText, BOHR_TO_ANGSTROM } from './CubeParser.js';
+import { parseCube, GRADIENT_LABELS } from './cubeParse.js';
+import { boxedCubeLayout } from './cubeLayout.js';
 
 
 //------------------------------------------------------------
@@ -45,101 +45,122 @@ export const PT = {
   118: "Og"
 };
 
-export const Bohr2Angstrom = BOHR_TO_ANGSTROM; // conversion factor from Bohr to Angstroms
-
 //------------------------------------------------------------
 //  readCubeFile(content, fileName) → { fileName, structure_with_field }
+//
+//  Units and layout are handled by io/cubeParse.js; everything it returns is
+//  in Angstrom. The system is shifted so the grid origin sits at the cell
+//  corner (Field origin [0,0,0]), which is where the renderer draws the grid.
+//  The cell is the grid box n_i * step_i: exact for periodic codes (CP2K,
+//  Quantum ESPRESSO), and for a molecular Gaussian cube a box one voxel wider
+//  than the sampled points, with the same spacing.
 //------------------------------------------------------------
-/**
- * Read a Gaussian cube file into a Structure carrying its fields.
- *
- * The text is parsed by `parseCubeText` (io/CubeParser.js, which follows the
- * cubegen specification: Å or bohr axes, NVal values per point, orbital cubes);
- * this turns that plain data into the model objects. One Field per value per
- * point: a plain cube gives one, a Gradient cube four (density and its three
- * derivatives), an orbital cube one per orbital.
- *
- * The cell of the structure is the grid box (N_i · step_i), with the atoms
- * shifted by the grid origin, and every field's origin is [0,0,0] in that
- * frame. Cube grids are molecular boxes rather than periodic cells, so the
- * fields are marked `periodic: false`. Errors (a malformed header, truncated
- * data) are thrown.
- *
- * @param {string} content
- * @param {string} fileName
- */
 export function readCubeFile(content, fileName) {
-  const cube = parseCubeText(content);
-  const structure = buildCubeStructure(cube);
+  return buildCubeStructure(parseCube(content), fileName, { periodic: true });
+}
 
-  const [nx, ny, nz] = cube.counts;
-  const fields = cube.fields.map(({ label, valueUnit, values }, component) => new Field({
-    nx,
-    ny,
-    nz,
-    origin: [0, 0, 0],
-    voxel: cube.voxel.map((row) => [...row]),
+/**
+ * Build the structure and its fields from an already-parsed cube.
+ *
+ * `periodic: true` is the historical behaviour (grid box = cell, atoms wrapped).
+ * `periodic: false` treats the file as a finite block: the cell is a padded
+ * orthorhombic box around every atom and the whole grid (io/cubeLayout.js),
+ * atoms keep their Cartesian positions, and each field keeps its own grid with
+ * an `origin` inside that box and `periodic: false`. No array is padded.
+ *
+ * @param {import('./cubeParse.js').CubeData} cube
+ * @param {string} fileName
+ * @param {{ periodic: boolean }} options
+ */
+export function buildCubeStructure(cube, fileName, { periodic }) {
+  const isBlock = periodic === false;
+  const layout = isBlock ? boxedCubeLayout(cube) : null;
+  const structure = isBlock ? structureFromLayout(cube, layout) : readCubeStructure(cube);
+  const origin = layout ? layout.fieldOrigin : [0, 0, 0];
+
+  const fields = cube.values.map((values, index) => new Field({
+    nx: cube.grid[0],
+    ny: cube.grid[1],
+    nz: cube.grid[2],
+    origin: [...origin],
+    voxel: cube.voxel,
     values,
-    component,
-    label,
-    valueUnit,
-    periodic: false,
+    component: index,
+    label: datasetLabel(cube, index),
+    // 'e/bohr³' for a density (io/cubeParse.js), which NCI analysis needs
+    valueUnit: cube.valueUnits?.[index] ?? null,
+    periodic: !isBlock,
     // One pass instead of the four separate `reduce` walks this used to do
     // over an array that runs to millions of entries.
     ...computeFieldStats(values),
   }));
 
-  const container = new FieldContainer({
-    fileName: fileName,
+  structure.volumetricFields = new FieldContainer({
+    fileName,
     // An orbital cube says so where the field browser shows the source, so a
     // list of "MO n" entries is not mistaken for anything else.
-    source: cube.moIndices ? 'Cube (orbitals)' : 'Cube',
-    fields: fields,
+    source: cube.datasetIds ? 'Cube (orbitals)' : 'Cube',
+    fields,
     fieldCount: fields.length
-  });
-
-  structure.volumetricFields = container; // Attach field container to structure for easy access in rendering
-  return {
-    fileName,
-    structure_with_field: structure
-  };
+  }); // attached to the structure for easy access in rendering
+  return { fileName, structure_with_field: structure };
 }
 
-/**
- * The Structure of a parsed cube: the grid box as the cell, atoms shifted by
- * the grid origin.
- * @param {import('./CubeParser.js').CubeData} cube
- * @returns {Structure}
- */
-function buildCubeStructure(cube) {
-  const lattice = cube.lattice.map((row) => [...row]);
-  const elements = cube.atoms.map((atom) => PT[atom.Z] || "X");
-  const positions_cart = cube.atoms.map((atom) => atom.position.map((c, i) => c - cube.origin[i]));
+/** The comment label, qualified by orbital id / value index when the file
+ *  holds more than one dataset (a four-value Gaussian `Gradient` cube names
+ *  its density and the three derivatives). */
+function datasetLabel(cube, index) {
+  if (cube.datasetIds) return `${cube.label} (MO ${cube.datasetIds[index]})`.trim();
+  if (cube.values.length === 4) return `${cube.label} (${GRADIENT_LABELS[index]})`.trim();
+  if (cube.values.length > 1) return `${cube.label} (value ${index + 1})`.trim();
+  return cube.label;
+}
 
+/** Periodic structure: atoms shifted so the grid origin is the cell corner, then wrapped. */
+export function readCubeStructure(cube) {
+  const lattice = cube.lattice;
+  const elements = cube.atoms.map((a) => PT[a.atomicNumber] || "X");
+  // Shift by the grid origin so atoms and field share the cell-corner frame.
+  const positions_cart = cube.atoms.map((a) => a.position.map((c, k) => c - cube.origin[k]));
+  return assembleStructure(lattice, elements, positions_cart, true);
+}
+
+/** Block structure: Cartesian positions already inside the padded box, never wrapped. */
+function structureFromLayout(cube, layout) {
+  const elements = cube.atoms.map((a) => PT[a.atomicNumber] || "X");
+  return assembleStructure(layout.lattice, elements, layout.positions, false);
+}
+
+function assembleStructure(lattice, elements, positions_cart, wrap) {
   // --- convert cart → frac
   const latticeInverse = invert3x3(transpose3x3(lattice));
-  const positions = (
-    positions_cart.map(vec => cartToFractional(vec, lattice, latticeInverse))
-  ).map(pos => pos.map(normalizeFractional));
+  const fractional = positions_cart.map(vec => cartToFractional(vec, lattice, latticeInverse));
+  const positions = wrap ? fractional.map(pos => pos.map(normalizeFractional)) : fractional;
 
-  const atoms = positions.map((pos, i) => new Atom({
-    position: pos,
-    element: elements[i],
-    uuid: generateID([elements[i]])
-  }));
+  const atoms = [];
 
-  const periodic = runPeriodicWrapped(
+  positions.forEach((pos, i) => {
+    atoms.push(new Atom({
+      position: pos,
+      element: elements[i],
+      uuid: generateID([elements[i]])
+    }));
+  });
+
+  let periodic = runPeriodicWrapped(
     { hash: "None", wrapped: {} },
     positions,
     elements,
     lattice
   );
 
-  return new Structure({
+  const structure = new Structure({
     elements: elements,
     uniqueElements: [...new Set(elements)],
     lattice: lattice,
     atoms: atoms,
     periodic: periodic
   });
+
+  return structure;
 }

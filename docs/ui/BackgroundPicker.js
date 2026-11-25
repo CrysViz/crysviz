@@ -8,6 +8,7 @@
 import * as THREE from '../external/three/three.module.js';
 import { app, general } from '../state/store.js';
 import { applySceneFromCSS } from './ThemeManager.js';
+import { syncSceneTone } from './SceneTone.js';
 import { createColorPicker } from './ColorPickerModule.js';
 import { updateLattice, setCelOutlineColor } from '../render/index.js';
 import { captureAnchor, clampToScene, getViewRect, positionFromAnchor } from './GizmoLayout.js';
@@ -82,6 +83,7 @@ function openBackgroundColorPicker(dot) {
     // Keep an 'auto' cel outline (hull mode) contrasting against the new
     // background; the screen-space pass re-resolves it live each frame.
     setCelOutlineColor();
+    syncSceneTone();
     // Mirror the change onto the Visual swatch regardless of which dot opened
     // the picker (canvas dot or the swatch itself).
     syncBackgroundSwatch();
@@ -129,6 +131,7 @@ function openBackgroundColorPicker(dot) {
     dot.style.border = `2px solid ${getContrastingBorder(selectedHex)}`;
     if (app?.scene) app.scene.background = new THREE.Color(selectedHex);
     setCelOutlineColor();
+    syncSceneTone();
     syncBackgroundSwatch();
     closePicker();
   });
@@ -410,7 +413,7 @@ export function createBackgroundControl() {
  *  only applies it, so nothing reads the visibility back off the element. */
 export function setBackgroundDotVisible(visible) {
   const dot = document.getElementById('backgroundDot');
-  if (dot) dot.style.display = visible ? '' : 'none';
+  if (dot) dot.hidden = !visible;
 }
 
 /** A small round swatch button that opens the same background color picker,

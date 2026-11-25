@@ -15,7 +15,10 @@ import * as THREE from '../../external/three/three.module.js';
 import { app, general } from '../../state/store.js';
 import { DepthPeelPass } from '../../external/three-depthpeeling/DepthPeelPass.js';
 import { DepthPeelUtils } from '../../external/three-depthpeeling/DepthPeelUtils.js';
-import { renderCelOutlinePass } from '../CelOutlinePass.js';
+import { prepareCelOutlinePass, renderCelOutlinePass } from '../CelOutlinePass.js';
+import { renderRasterHighlightOverlay } from '../HighlightOverlay.js';
+import { renderFocusPeaking } from '../FocusPlaneModule.js';
+import { requestRender } from '../AnimateModule.js';
 import { StagedTransparencyPipeline } from './StagedTransparencyPipeline.js';
 
 export class DepthPeelPipeline extends StagedTransparencyPipeline {
@@ -26,17 +29,43 @@ export class DepthPeelPipeline extends StagedTransparencyPipeline {
   label = DepthPeelPipeline.label;
 
   _pass = null;
+  // Camera pose of the last interactive frame, to tell a moving camera (few
+  // peel layers, see render) from one at rest (the full count).
+  _lastCameraPose = null;
+  _motionFrame = false; // test-inspectable: the last frame used the motion layer count
 
-  render({ renderer, scene, camera }) {
+  /** Peel layers for this frame. While the camera moves in an interactive
+   *  frame (the animate loop, the tracers' raster preview) only
+   *  general.depthPeelMotionLayers are peeled — like the tracers' motion
+   *  low-res — and one more frame is requested, so the first frame at rest
+   *  re-renders with the full general.depthPeelLayers. PNG export and other
+   *  non-interactive renders always peel the full count. */
+  _layerCountFor(camera, interactive) {
+    const full = general.depthPeelLayers ?? 15;
+    const motion = Math.max(1, Math.min(full, general.depthPeelMotionLayers ?? full));
+    if (!interactive || motion >= full) { this._motionFrame = false; return full; }
+    camera.updateMatrixWorld();
+    const pose = [...camera.matrixWorld.elements, ...camera.projectionMatrix.elements];
+    const moved = !!this._lastCameraPose && pose.some((v, i) => v !== this._lastCameraPose[i]);
+    this._lastCameraPose = pose;
+    this._motionFrame = moved;
+    if (moved) requestRender(); // the settle frame, at the full count
+    return moved ? motion : full;
+  }
+
+  render({ renderer, scene, camera, interactive = false }) {
     if (!this._pass) {
       this._pass = new DepthPeelPass(renderer, scene, camera);
     }
     this._pass.scene = scene;
     this._pass.camera = camera;
-    this._pass.setLayerCount(general.depthPeelLayers ?? 10);
+    this._pass.setLayerCount(this._layerCountFor(camera, interactive));
     this._syncOverlayVisibility();
+    prepareCelOutlinePass(renderer, scene, camera);
     this._pass.render(renderer);
     renderCelOutlinePass(renderer, scene, camera);
+    renderRasterHighlightOverlay(renderer, camera); // see-through selection ghosts
+    renderFocusPeaking(renderer, scene, camera); // DoF focus peaking while a DoF slider is dragged
   }
 
   setSize(_width, _height) {

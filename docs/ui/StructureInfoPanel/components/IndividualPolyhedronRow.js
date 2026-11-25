@@ -1,8 +1,8 @@
 import { fileBrowser } from '../../../state/store.js';
 import { colorHexToCss, hexToRgba } from '../../../utils/ColorModule.js';
 import { createColorPicker } from '../../ColorPickerModule.js';
-import { updatePolyhedraColors, resolvePolyhedronStyle } from '../../../render/index.js';
-import { getElementAtomIndices, clampOpacity, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
+import { setPolyhedronStyles, updatePolyhedraColors, resolvePolyhedronStyle } from '../../../render/index.js';
+import { elementAtomNumber, clampOpacity, applyToOtherTrajectoryFrames, wirePressHoldPopup } from './utils.js';
 import { selectPolyhedronFromRow } from '../../SelectAndHighlightModule.js';
 import { createMaterialEditor } from './MaterialEditor.js';
 
@@ -67,7 +67,7 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   metaDisplay.className = 'poly-meta';
   const copySuffix = linked && linked.length > 1 ? ` · ×${linked.length}` : '';
   if (poly.type === 'centered' && Number.isInteger(poly.centerIndex)) {
-    const n = getElementAtomIndices(poly.centerElement).indexOf(poly.centerIndex) + 1;
+    const n = elementAtomNumber(poly.centerElement, poly.centerIndex);
     metaDisplay.textContent = `center ${poly.centerElement}${n}${copySuffix}`;
   } else {
     metaDisplay.textContent = `cage · CN ${poly.numVertices}${copySuffix}`;
@@ -81,17 +81,8 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   row.appendChild(nameContainer);
 
   // Write style fields into every member's persistent record (survives
-  // rebuilds). In linked mode this fans the edit out to all periodic copies.
-  function setMemberStyles(patch) {
-    for (const k of memberKeys) {
-      Object.assign(structure.polyhedraUserStyles[k] ??= {}, patch);
-    }
-  }
-
-  const resolved = resolvePolyhedronStyle(
-    structure, key, catKey, poly.type, poly.centerIndex, poly.colorElem);
-  const currentColor = safeColor(resolved.color);
-  const currentAlpha = clampOpacity(resolved.opacity);
+  // rebuilds) and redraw. In linked mode this fans the edit out to all periodic copies.
+  const setMemberStyles = (patch) => setPolyhedronStyles(structure, memberKeys, patch);
 
   // --- Color/alpha editor button ("Edit", swatch previews the face color) ---
   const colorBtn = document.createElement('button');
@@ -113,175 +104,198 @@ export function createIndividualPolyhedronRow(poly, polyIndex, displayNumber, op
   row.appendChild(buttonContainer);
 
   // --- Hidden editor panel ---
+  // Built on first open (ensureEditor below), not with the row: a selection
+  // in the 3D view reveals its row, which builds the whole list (up to 1000
+  // rows, or a page of a longer one), and two canvas colour pickers plus a
+  // material editor per row made picking one polyhedron take over a second on
+  // a 5000-atom cell. The empty shell is there from the start, so everything
+  // reading `.poly-color-editor`'s .hidden (General.js's UI-state capture)
+  // sees a closed editor as before.
   const editor = document.createElement('div');
   editor.className = 'poly-color-editor';
-  editor.style.display = 'none'; // read back via .style.display in General.js's UI-state capture
-
-  const picker = createColorPicker(currentColor, (hex) => {
-    // Persist across polyhedra rebuilds (structure.polyhedraUserStyles survives
-    // them); restyle in place — no geometry recompute needed.
-    setMemberStyles({ color: hex });
-    updatePolyhedraColors();
-    colorBtn.style.background = hexToRgba(hex, 0.8);
-  });
-
-  // Alpha row (same layout as the atom/bond editors)
-  const alphaRow = document.createElement('div');
-  alphaRow.className = 'si-row';
-  const alphaLabel = document.createElement('span');
-  alphaLabel.textContent = 'Alpha';
-  alphaLabel.className = 'si-row-label';
-  const alphaSlider = document.createElement('input');
-  alphaSlider.type = 'range';
-  alphaSlider.min = '0.05';
-  alphaSlider.max = '1';
-  alphaSlider.step = '0.01';
-  alphaSlider.value = String(currentAlpha);
-  const alphaValue = document.createElement('input');
-  alphaValue.type = 'number';
-  alphaValue.min = '0.05';
-  alphaValue.max = '1';
-  alphaValue.step = '0.01';
-  alphaValue.value = currentAlpha.toFixed(2);
-  alphaRow.appendChild(alphaLabel);
-  alphaRow.appendChild(alphaSlider);
-  alphaRow.appendChild(alphaValue);
-
-  function applyPolyAlpha(rawValue) {
-    const value = clampOpacity(rawValue);
-    alphaSlider.value = String(value);
-    alphaValue.value = value.toFixed(2);
-    setMemberStyles({ alpha: value });
-    updatePolyhedraColors();
-  }
-  alphaSlider.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
-  alphaValue.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
-
-  // --- Edge styling (color + alpha for this polyhedron's edge lines) ---
-  const edgeHeader = document.createElement('div');
-  edgeHeader.textContent = 'Edge';
-  edgeHeader.className = 'poly-edge-header';
-
-  const edgePicker = createColorPicker(safeColor(resolved.edgeColor), (hex) => {
-    setMemberStyles({ edgeColor: hex });
-    updatePolyhedraColors();
-  });
-
-  const currentEdgeAlpha = clampOpacity(resolved.edgeOpacity);
-  const edgeAlphaRow = document.createElement('div');
-  edgeAlphaRow.className = 'si-row';
-  const edgeAlphaLabel = document.createElement('span');
-  edgeAlphaLabel.textContent = 'Edge alpha';
-  edgeAlphaLabel.className = 'si-row-label si-row-label--wide';
-  const edgeAlphaSlider = document.createElement('input');
-  edgeAlphaSlider.type = 'range';
-  edgeAlphaSlider.min = '0.05';
-  edgeAlphaSlider.max = '1';
-  edgeAlphaSlider.step = '0.01';
-  edgeAlphaSlider.value = String(currentEdgeAlpha);
-  const edgeAlphaValue = document.createElement('input');
-  edgeAlphaValue.type = 'number';
-  edgeAlphaValue.min = '0.05';
-  edgeAlphaValue.max = '1';
-  edgeAlphaValue.step = '0.01';
-  edgeAlphaValue.value = currentEdgeAlpha.toFixed(2);
-  function applyPolyEdgeAlpha(rawValue) {
-    const value = clampOpacity(rawValue);
-    edgeAlphaSlider.value = String(value);
-    edgeAlphaValue.value = value.toFixed(2);
-    setMemberStyles({ edgeAlpha: value });
-    updatePolyhedraColors();
-  }
-  edgeAlphaSlider.oninput = (e) => applyPolyEdgeAlpha(/** @type {any} */ (e.target).value);
-  edgeAlphaValue.oninput = (e) => applyPolyEdgeAlpha(/** @type {any} */ (e.target).value);
-  edgeAlphaRow.appendChild(edgeAlphaLabel);
-  edgeAlphaRow.appendChild(edgeAlphaSlider);
-  edgeAlphaRow.appendChild(edgeAlphaValue);
-
-  const applyBtn = document.createElement('button');
-  applyBtn.textContent = 'Apply';
-  applyBtn.className = 'btn-mini highlight si-action-btn-narrow';
-  applyBtn.title = `Click: close. Press and hold: copy ${poly.catLabel} #${displayNumber}'s color/alpha to every trajectory frame.`;
-  wirePressHoldPopup(applyBtn, {
-    holdLabel: 'Apply to Trajectory',
-    onPress: (e) => {
-      e.stopPropagation();
-      editor.style.display = 'none';
-    },
-    onConfirm: (e) => {
-      e.stopPropagation();
-      // Same keys, directly transplanted onto every other frame's own
-      // polyhedraUserStyles — matching how flushStylesToAllStructures already
-      // treats these keys (index/geometry-derived, tolerated staleness).
-      const entries = memberKeys.map((k) => [k, { ...structure.polyhedraUserStyles[k] }]);
-      applyToOtherTrajectoryFrames(structure, (frame) => {
-        frame.polyhedraUserStyles ??= {};
-        for (const [k, style] of entries) frame.polyhedraUserStyles[k] = { ...style };
-      });
-    },
-  });
-
-  const resetBtn = document.createElement('button');
-  resetBtn.textContent = 'Reset';
-  resetBtn.className = 'btn-mini si-action-btn-narrow';
-  resetBtn.title = `Remove the custom color and alpha for ${poly.catLabel} #${displayNumber}.\nClick: this frame. Press and hold: whole trajectory.`;
-  wirePressHoldPopup(resetBtn, {
-    holdLabel: 'Reset Trajectory',
-    onPress: (e) => {
-      e.stopPropagation();
-      for (const k of memberKeys) delete structure.polyhedraUserStyles[k];
-      updatePolyhedraColors(); // in-place restyle; no rebuild needed
-      // Refresh the (expanded) list so swatches reflect the reverted style.
-      /** @type {any} */ (row.closest('.individual-polyhedra'))?._populatePolyhedronRows?.(true);
-    },
-    onConfirm: (e) => {
-      e.stopPropagation();
-      for (const k of memberKeys) delete structure.polyhedraUserStyles[k];
-      applyToOtherTrajectoryFrames(structure, (frame) => {
-        for (const k of memberKeys) delete frame.polyhedraUserStyles?.[k];
-      });
-      updatePolyhedraColors();
-      /** @type {any} */ (row.closest('.individual-polyhedra'))?._populatePolyhedronRows?.(true);
-    },
-  });
-
-  const editorButtonRow = document.createElement('div');
-  editorButtonRow.className = 'ipr-button-row';
-  editorButtonRow.appendChild(resetBtn);
-  editorButtonRow.appendChild(applyBtn);
-
-  // Per-polyhedron ray/path-tracing material override (wins over the
-  // category entry); fans out to every linked member's style record.
-  const materialEditor = createMaterialEditor(
-    () => structure.polyhedraUserStyles?.[key]?.material,
-    (material) => {
-      for (const k of memberKeys) {
-        const entry = (structure.polyhedraUserStyles[k] ??= {});
-        if (material) entry.material = material;
-        else delete entry.material;
-      }
-    });
-
-  editor.appendChild(picker.element);
-  editor.appendChild(alphaRow);
-  editor.appendChild(edgeHeader);
-  editor.appendChild(edgePicker.element);
-  editor.appendChild(edgeAlphaRow);
-  editor.appendChild(materialEditor);
-  editor.appendChild(editorButtonRow);
+  editor.hidden = true; // read back via .hidden in General.js's UI-state capture
   editor.onclick = (e) => e.stopPropagation();
   row.appendChild(editor);
 
+  let editorBuilt = false;
+  function ensureEditor() {
+    if (editorBuilt) return;
+    editorBuilt = true;
+    buildEditor();
+  }
+  // General.js's UI-state restore reopens an editor that was open before a
+  // panel rebuild: it builds the contents through this first.
+  /** @type {any} */ (row)._ensureEditors = ensureEditor;
+
+  function buildEditor() {
+    // Read when the editor opens, not when the row was built: the swatch kept
+    // up with recolours since (crysviz:colors-changed), and so must the editor.
+    const resolved = resolvePolyhedronStyle(
+      structure, key, catKey, poly.type, poly.centerIndex, poly.colorElem);
+    const currentColor = safeColor(resolved.color);
+    const currentAlpha = clampOpacity(resolved.opacity);
+
+    const picker = createColorPicker(currentColor, (hex) => {
+      // Persist across polyhedra rebuilds (structure.polyhedraUserStyles survives
+      // them); restyle in place — no geometry recompute needed.
+      setMemberStyles({ color: hex });
+      colorBtn.style.background = hexToRgba(hex, 0.8);
+    });
+
+    // Alpha row (same layout as the atom/bond editors)
+    const alphaRow = document.createElement('div');
+    alphaRow.className = 'si-row';
+    const alphaLabel = document.createElement('span');
+    alphaLabel.textContent = 'Alpha';
+    alphaLabel.className = 'si-row-label';
+    const alphaSlider = document.createElement('input');
+    alphaSlider.type = 'range';
+    alphaSlider.min = '0';
+    alphaSlider.max = '1';
+    alphaSlider.step = '0.01';
+    alphaSlider.value = String(currentAlpha);
+    const alphaValue = document.createElement('input');
+    alphaValue.type = 'number';
+    alphaValue.min = '0';
+    alphaValue.max = '1';
+    alphaValue.step = '0.01';
+    alphaValue.value = currentAlpha.toFixed(2);
+    alphaRow.appendChild(alphaLabel);
+    alphaRow.appendChild(alphaSlider);
+    alphaRow.appendChild(alphaValue);
+
+    function applyPolyAlpha(rawValue) {
+      const value = clampOpacity(rawValue);
+      alphaSlider.value = String(value);
+      alphaValue.value = value.toFixed(2);
+      setMemberStyles({ alpha: value });
+    }
+    alphaSlider.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
+    alphaValue.oninput = (e) => applyPolyAlpha(/** @type {any} */ (e.target).value);
+
+    // --- Edge styling (color + alpha for this polyhedron's edge lines) ---
+    const edgeHeader = document.createElement('div');
+    edgeHeader.textContent = 'Edge';
+    edgeHeader.className = 'poly-edge-header';
+
+    const edgePicker = createColorPicker(safeColor(resolved.edgeColor), (hex) => {
+      setMemberStyles({ edgeColor: hex });
+    });
+
+    const currentEdgeAlpha = clampOpacity(resolved.edgeOpacity);
+    const edgeAlphaRow = document.createElement('div');
+    edgeAlphaRow.className = 'si-row';
+    const edgeAlphaLabel = document.createElement('span');
+    edgeAlphaLabel.textContent = 'Edge alpha';
+    edgeAlphaLabel.className = 'si-row-label si-row-label--wide';
+    const edgeAlphaSlider = document.createElement('input');
+    edgeAlphaSlider.type = 'range';
+    edgeAlphaSlider.min = '0';
+    edgeAlphaSlider.max = '1';
+    edgeAlphaSlider.step = '0.01';
+    edgeAlphaSlider.value = String(currentEdgeAlpha);
+    const edgeAlphaValue = document.createElement('input');
+    edgeAlphaValue.type = 'number';
+    edgeAlphaValue.min = '0';
+    edgeAlphaValue.max = '1';
+    edgeAlphaValue.step = '0.01';
+    edgeAlphaValue.value = currentEdgeAlpha.toFixed(2);
+    function applyPolyEdgeAlpha(rawValue) {
+      const value = clampOpacity(rawValue);
+      edgeAlphaSlider.value = String(value);
+      edgeAlphaValue.value = value.toFixed(2);
+      setMemberStyles({ edgeAlpha: value });
+    }
+    edgeAlphaSlider.oninput = (e) => applyPolyEdgeAlpha(/** @type {any} */ (e.target).value);
+    edgeAlphaValue.oninput = (e) => applyPolyEdgeAlpha(/** @type {any} */ (e.target).value);
+    edgeAlphaRow.appendChild(edgeAlphaLabel);
+    edgeAlphaRow.appendChild(edgeAlphaSlider);
+    edgeAlphaRow.appendChild(edgeAlphaValue);
+
+    const applyBtn = document.createElement('button');
+    applyBtn.textContent = 'Apply';
+    applyBtn.className = 'btn-mini highlight si-action-btn-narrow';
+    applyBtn.title = `Click: close. Press and hold: copy ${poly.catLabel} #${displayNumber}'s color/alpha to every trajectory frame.`;
+    wirePressHoldPopup(applyBtn, {
+      holdLabel: 'Apply to Trajectory',
+      onPress: (e) => {
+        e.stopPropagation();
+        editor.hidden = true;
+      },
+      onConfirm: (e) => {
+        e.stopPropagation();
+        // Same keys, directly transplanted onto every other frame's own
+        // polyhedraUserStyles — matching how flushStylesToAllStructures already
+        // treats these keys (index/geometry-derived, tolerated staleness).
+        const entries = memberKeys.map((k) => [k, { ...structure.polyhedraUserStyles[k] }]);
+        applyToOtherTrajectoryFrames(structure, (frame) => {
+          frame.polyhedraUserStyles ??= {};
+          for (const [k, style] of entries) frame.polyhedraUserStyles[k] = { ...style };
+        });
+      },
+    });
+
+    const resetBtn = document.createElement('button');
+    resetBtn.textContent = 'Reset';
+    resetBtn.className = 'btn-mini si-action-btn-narrow';
+    resetBtn.title = `Remove the custom color and alpha for ${poly.catLabel} #${displayNumber}.\nClick: this frame. Press and hold: whole trajectory.`;
+    wirePressHoldPopup(resetBtn, {
+      holdLabel: 'Reset Trajectory',
+      onPress: (e) => {
+        e.stopPropagation();
+        for (const k of memberKeys) delete structure.polyhedraUserStyles[k];
+        updatePolyhedraColors(); // in-place restyle; no rebuild needed
+        // Refresh the (expanded) list so swatches reflect the reverted style.
+        /** @type {any} */ (row.closest('.individual-polyhedra'))?._populatePolyhedronRows?.(true);
+      },
+      onConfirm: (e) => {
+        e.stopPropagation();
+        for (const k of memberKeys) delete structure.polyhedraUserStyles[k];
+        applyToOtherTrajectoryFrames(structure, (frame) => {
+          for (const k of memberKeys) delete frame.polyhedraUserStyles?.[k];
+        });
+        updatePolyhedraColors();
+        /** @type {any} */ (row.closest('.individual-polyhedra'))?._populatePolyhedronRows?.(true);
+      },
+    });
+
+    const editorButtonRow = document.createElement('div');
+    editorButtonRow.className = 'ipr-button-row';
+    editorButtonRow.appendChild(resetBtn);
+    editorButtonRow.appendChild(applyBtn);
+
+    // Per-polyhedron ray/path-tracing material override (wins over the
+    // category entry); fans out to every linked member's style record.
+    const materialEditor = createMaterialEditor(
+      () => structure.polyhedraUserStyles?.[key]?.material,
+      (material) => {
+        for (const k of memberKeys) {
+          const entry = (structure.polyhedraUserStyles[k] ??= {});
+          if (material) entry.material = material;
+          else delete entry.material;
+        }
+      });
+
+    editor.appendChild(picker.element);
+    editor.appendChild(alphaRow);
+    editor.appendChild(edgeHeader);
+    editor.appendChild(edgePicker.element);
+    editor.appendChild(edgeAlphaRow);
+    editor.appendChild(materialEditor);
+    editor.appendChild(editorButtonRow);
+  }
+
   colorBtn.onclick = (e) => {
     e.stopPropagation();
-    editor.style.display = (editor.style.display === 'none') ? 'block' : 'none';
+    ensureEditor();
+    editor.hidden = !editor.hidden;
   };
 
   // --- Selection / hover ---
   // Hover tint is plain CSS (:hover, structureInfoPanel.css) — a selected row
-  // gets its amber highlight from an inline style (SelectAndHighlightModule.js
-  // highlightAtomRow), which as an inline style always outranks the :hover
-  // rule, so hovering a selected row never overwrites its highlight.
+  // gets its amber highlight from .is-highlighted (SelectAndHighlightModule.js
+  // highlightAtomRow), declared after the :hover rule at the same
+  // specificity, so hovering a selected row never overwrites its highlight.
   row.addEventListener('click', (e) => {
     e.stopPropagation();
     selectPolyhedronFromRow(key, row);

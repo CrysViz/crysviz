@@ -1,0 +1,109 @@
+diff --git a/src/ggml-cpu/ggml-cpu.c b/src/ggml-cpu/ggml-cpu.c
+index 2b3eb5b5..7cea4e8f 100644
+--- a/src/ggml-cpu/ggml-cpu.c
++++ b/src/ggml-cpu/ggml-cpu.c
+@@ -1280,6 +1280,25 @@ void ggml_compute_forward_mul_mat(
+ 
+     const bool src1_cont = ggml_is_contiguous(src1);
+ 
++    // One 2D weight matrix against a contiguous src1 (CrysViz): its rows are
++    // one ne10 x (ne11*ne12*ne13) matrix, as are dst's, so multiply them in one
++    // call. Per (i12, i13) slice a src1 with ne11 == 1 (one row per atom) would
++    // be a matrix-vector product, which the blocked kernel declines.
++    if (src1_cont && ne02 == 1 && ne03 == 1 && ne11 * ne12 * ne13 > ne11 && ggml_is_contiguous(dst)) {
++        if (llamafile_sgemm(params,
++                            ne01, ne11*ne12*ne13, ne00/ggml_blck_size(src0->type),
++                            (const char *)src0->data,
++                            nb01/ggml_type_size(src0->type),
++                            (const char *)src1->data,
++                            nb11/ggml_type_size(src1->type),
++                            (char *)dst->data,
++                            nb1/ggml_type_size(dst->type),
++                            src0->type,
++                            src1->type,
++                            dst->type))
++            return;
++    }
++
+     if (src1_cont) {
+         for (int64_t i13 = 0; i13 < ne13; i13++)
+             for (int64_t i12 = 0; i12 < ne12; i12++)
+diff --git a/src/ggml-cpu/llamafile/sgemm.cpp b/src/ggml-cpu/llamafile/sgemm.cpp
+index 34e320e2..dfea9606 100644
+--- a/src/ggml-cpu/llamafile/sgemm.cpp
++++ b/src/ggml-cpu/llamafile/sgemm.cpp
+@@ -102,6 +102,14 @@ inline __m512 sub(__m512 x, __m512 y) { return _mm512_sub_ps(x, y); }
+ inline __m512 mul(__m512 x, __m512 y) { return _mm512_mul_ps(x, y); }
+ #endif // __AVX512F__
+ 
++#if defined(__wasm_simd128__)
++// WebAssembly SIMD (128-bit, 4 floats). No FMA: madd is the generic
++// add(mul(a, b), c) (relaxed-simd's madd is not available in every browser).
++inline v128_t add(v128_t x, v128_t y) { return wasm_f32x4_add(x, y); }
++inline v128_t sub(v128_t x, v128_t y) { return wasm_f32x4_sub(x, y); }
++inline v128_t mul(v128_t x, v128_t y) { return wasm_f32x4_mul(x, y); }
++#endif  // __wasm_simd128__
++
+ #if defined(__ARM_NEON)
+ inline float32x4_t add(float32x4_t x, float32x4_t y) { return vaddq_f32(x, y); }
+ inline float32x4_t sub(float32x4_t x, float32x4_t y) { return vsubq_f32(x, y); }
+@@ -228,6 +236,13 @@ template <> inline vfloat32m8_t madd(vbfloat16m4_t a, vbfloat16m4_t b, vfloat32m
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ // VECTORIZED HORIZONTAL SUM
+ 
++#if defined(__wasm_simd128__)
++inline float hsum(v128_t x) {
++    return wasm_f32x4_extract_lane(x, 0) + wasm_f32x4_extract_lane(x, 1) +
++           wasm_f32x4_extract_lane(x, 2) + wasm_f32x4_extract_lane(x, 3);
++}
++#endif  // __wasm_simd128__
++
+ #if defined(__ARM_NEON)
+ inline float hsum(float32x4_t x) {
+     return vaddvq_f32(x);
+@@ -301,6 +316,12 @@ inline float hsum(vfloat32m8_t x) {
+ 
+ template <typename T, typename U> T load(const U *);
+ 
++#if defined(__wasm_simd128__)
++template <> inline v128_t load(const float *p) {
++    return wasm_v128_load(p);
++}
++#endif  // __wasm_simd128__
++
+ #if defined(__ARM_NEON)
+ template <> inline float32x4_t load(const float *p) {
+     return vld1q_f32(p);
+@@ -3682,10 +3703,17 @@ class tinyBLAS_PPC {
+  * @param Ctype is GGML data type of `C`
+  * @return true if this function was able to service the matmul request
+  */
++// Runtime switch (CrysViz): nonzero makes llamafile_sgemm decline every call,
++// so mul_mat takes ggml's own dot-product path, for A/B comparisons in one build.
++extern "C" { int llamafile_sgemm_disabled = 0; }
++
+ bool llamafile_sgemm(const struct ggml_compute_params * params, int64_t m, int64_t n, int64_t k,
+                      const void *A, int64_t lda, const void *B, int64_t ldb, void *C,
+                      int64_t ldc, int Atype, int Btype, int Ctype) {
+ 
++    if (llamafile_sgemm_disabled)
++        return false;
++
+     assert(m >= 0);
+     assert(n >= 0);
+     assert(k >= 0);
+@@ -3747,6 +3775,14 @@ bool llamafile_sgemm(const struct ggml_compute_params * params, int64_t m, int64
+             params->ith, params->nth};
+         tb.matmul(m, n);
+         return true;
++#elif defined(__wasm_simd128__)
++        if (n < 4)
++            return false;
++        tinyBLAS<4, v128_t, v128_t, float, float, float> tb{ params,
++            k, (const float *)A, lda,
++            (const float *)B, ldb,
++            (float *)C, ldc};
++        return tb.matmul(m, n);
+ #elif defined(__riscv_v_intrinsic)
+     #if LMUL == 1
+         tinyBLAS_RVV<vfloat32m1_t, vfloat32m1_t, float, float, float> tb{ params,

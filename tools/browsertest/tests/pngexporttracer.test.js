@@ -69,7 +69,7 @@ const H = require('../harness');
         await new Promise((resolve) => requestAnimationFrame(resolve));
       }
       const controllerAttempt = await window.crysvizHost.dispatch({
-        command: 'set_render_pipeline', args: { pipelineId: 'forward' },
+        command: 'set_renderer', args: { renderer: 'forward' },
       });
       select.value = 'forward';
       select.dispatchEvent(new Event('change', { bubbles: true }));
@@ -111,8 +111,10 @@ const H = require('../harness');
     }
   });
   H.check('UI pipeline switch is refused while tracer capture owns the pipeline',
-    !pipelineRace.during.controllerAttempt.ok
-      && pipelineRace.during.controllerAttempt.error.code === 'PNG_CAPTURE_IN_PROGRESS'
+    // A refusal is a result (applied: false), not an error: see BrowserHost's outcome handling.
+    pipelineRace.during.controllerAttempt.ok
+      && pipelineRace.during.controllerAttempt.result.applied === false
+      && pipelineRace.during.controllerAttempt.result.code === 'PNG_CAPTURE_IN_PROGRESS'
       && pipelineRace.during.pipelineUnchanged
       && pipelineRace.during.generalPipeline === 'raytrace'
       && pipelineRace.during.selected === 'raytrace', JSON.stringify(pipelineRace.during));
@@ -272,6 +274,24 @@ const H = require('../harness');
 
   // Close the overlay cleanly (not busy now → Cancel closes it).
   await page.evaluate(() => document.querySelector('.cv-crop-cancel')?.click());
+
+  // An export can start right after the tracer is switched on, before its first
+  // render() has created its targets (seen in the desktop window via the host's
+  // save_image). Pacing then must not throw: endPacedRender runs in the export's
+  // finally, and a throw there turned the export into an error.
+  const unrendered = await page.evaluate(async () => {
+    const { RayTracingPipeline } = await import('./render/pipeline/RayTracingPipeline.js');
+    const p = new RayTracingPipeline();
+    try {
+      p.beginPacedRender();
+      p.endPacedRender();
+      return { ok: true, paced: p._pacedExternally };
+    } catch (error) {
+      return { ok: false, message: error.message };
+    }
+  });
+  H.check('a never-rendered tracer can begin and end paced rendering',
+    unrendered.ok && unrendered.paced === false, JSON.stringify(unrendered));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

@@ -107,9 +107,8 @@ function disposeGL() {
 
 /**
  * Paint a sphere swatch into `canvas`. Multiple slices become longitude
- * wedges (SphereGeometry phiStart/phiLength) in the slice order the wedge
- * shader uses; together they always span the full sphere, so there are no
- * open shells to see into.
+ * wedges (SphereGeometry phiStart/phiLength); together they always span the
+ * full sphere, so there are no open shells to see into.
  * @param {HTMLCanvasElement} canvas
  * @param {Array<{color: number, fraction: number}>} slices
  */
@@ -125,12 +124,16 @@ function renderSwatchInto(canvas, slices) {
     group.add(new THREE.Mesh(geometry, material));
     phi += span;
   }
-  // Put the boundary between the first two wedges at the front-centre
-  // meridian: the dominant slice fills the right half of the swatch and the
-  // rest share the left, so every slice is visible. (SphereGeometry's phi=p
-  // faces the +Z camera when p + rotation.y = π/2.)
-  const firstSpan = Math.max(slices[0]?.fraction ?? 1, 0.002) * Math.PI * 2;
-  group.rotation.y = Math.PI / 2 - firstSpan;
+  // Pole at the camera: the wedges become a pie around the view axis, the
+  // same camera-facing split the scene's wedge shader draws (WedgeAtoms.js),
+  // so every slice shows at its true share. The wedges used to run around
+  // the vertical axis instead, and only the front half of those faces the
+  // camera — a third or fourth species sat on the hidden back half, and a
+  // (Sn, Li, Mg) site read as Sn/Li only. Tilting the +Y pole onto +Z sends
+  // phi = 0 to 9 o'clock and runs phi counter-clockwise on screen: exactly
+  // the shader's (atan(y, x) + π) / 2π, so the slices also sit where they
+  // sit on the atoms.
+  group.rotation.x = Math.PI / 2;
   scene.add(group);
   renderer.render(scene, camera);
 

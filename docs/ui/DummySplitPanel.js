@@ -38,7 +38,7 @@ export function addDummySplitPanel(target = 'cvPanelBody-splitDemo') {
       <div class="split-item-actions">
         <button type="button" class="split-item-action-btn" data-split-action="reset">Reset</button>
         <button type="button" class="split-item-action-btn" data-split-action="increment">+1</button>
-        <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand">⛶</button>
+        <button type="button" class="split-item-action-btn" data-split-action="expand" title="Expand"></button>
       </div>
     </div>
   `;

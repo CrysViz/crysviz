@@ -3,6 +3,7 @@ import * as THREE from '../external/three/three.module.js';
 import {app, groups, fileBrowser, general} from '../state/store.js';
 import {getLatticeVisSettings} from '../defaults/color_texture_defaults.js'
 import {getElementRadius} from '../defaults/radii_defaults.js'
+import {acquirePersistentMaterial} from './MaterialStyles.js'
 
 import {disposeGroup} from '../ui/WindowAndSceneControls.js'
 import {getBondCutoff} from './BondsFracUpdateModule.js'
@@ -14,7 +15,11 @@ import {
 } from '../math/index.js';
 
 import init, { periodic_wrapped } from '../compiled/periodic_wasm.js';
-import { initPeriodicWasm, periodicWrapped as wasmPeriodicWrapped } from '../compiled/periodicWasm.js';
+import {
+  initPeriodicWasm, periodicWrapped as wasmPeriodicWrapped,
+  buildBondTable, buildFragmentTable, fragmentMaxRing,
+} from '../compiled/periodicWasm.js';
+import { completeFragments } from './FragmentCompletion.js';
 
 // Runs once when the module is first imported, before anything else
 await initPeriodicWasm(
@@ -45,11 +50,16 @@ export function createLatticeLines(color = general.currentLatticeColor) {
   // user-adjustable cell line width (general.latticeLineWidth, world units).
   const settings = getLatticeVisSettings(color);
   const radius = general.latticeLineWidth ?? 0.015;
-  const material = new THREE.MeshBasicMaterial({
-    color: settings.color,
-    transparent: settings.transparent,
-    opacity: settings.opacity,
-  });
+  // Reused across rebuilds (the box is rebuilt on every trajectory frame):
+  // a fresh MeshBasicMaterial per rebuild was one of the three shader
+  // recompiles per frame. disposeGroup leaves persistent materials alone.
+  const material = acquirePersistentMaterial('lattice',
+    JSON.stringify([String(settings.color), settings.transparent, settings.opacity]),
+    () => new THREE.MeshBasicMaterial({
+      color: settings.color,
+      transparent: settings.transparent,
+      opacity: settings.opacity,
+    }));
   const UP = new THREE.Vector3(0, 1, 0);
 
   const lattice = fileBrowser.selectedStructure.lattice.map(r => [...r]);
@@ -82,6 +92,37 @@ export function createLatticeLines(color = general.currentLatticeColor) {
   });
 
   return group;
+}
+
+/**
+ * Keep the cell lines at least about a pixel wide on screen: their radius
+ * is in world units (general.latticeLineWidth), so zoomed out they fell
+ * below a pixel and showed as broken, stair-stepped lines. Called every
+ * frame before the render (AnimateModule.js); scales the cylinders'
+ * cross-section, never their length.
+ * @param {any} camera
+ * @param {any} renderer
+ */
+export function syncLatticeLineWidth(camera, renderer) {
+  const group = groups.latticeGroup;
+  if (!group || !camera || !renderer) return;
+  const radius = general.latticeLineWidth ?? 0.015;
+  if (!(radius > 0)) return;
+  const h = renderer.domElement.height;
+  let pxPerWorld;
+  if (camera.isOrthographicCamera) {
+    pxPerWorld = (h * camera.zoom) / (camera.top - camera.bottom);
+  } else {
+    const dist = app.controls ? camera.position.distanceTo(app.controls.target) : 1;
+    pxPerWorld = h / (2 * Math.tan((camera.fov * Math.PI / 180) / 2) * Math.max(dist, 1e-3));
+  }
+  const MIN_RADIUS_PX = 0.6;
+  const factor = Math.max(1, MIN_RADIUS_PX / (radius * pxPerWorld));
+  if (Math.abs((group.userData.lineWidthFactor ?? 1) - factor) < 1e-3) return;
+  group.userData.lineWidthFactor = factor;
+  for (const cyl of group.children) {
+    if (cyl.isMesh) cyl.scale.set(factor, 1, factor);
+  }
 }
 
 export function updateLattice(color = general.currentLatticeColor) {
@@ -121,6 +162,7 @@ export function latticeDirsNorm() { return cachedLatticeDirs; }
 // Defaults to the classic unit cell [0,1] per axis. Shared by the JS wrapper,
 // the WASM caller, and the hash so all three agree.
 export function normalizePeriodicBounds(b) {
+  /** @returns {[number, number]} */
   const axis = (lo, hi) => {
     let a = Number.isFinite(lo) ? lo : 0;
     let z = Number.isFinite(hi) ? hi : 1;
@@ -133,6 +175,13 @@ export function normalizePeriodicBounds(b) {
     axis(b.ymin, b.ymax),
     axis(b.zmin, b.zmax),
   ];
+}
+
+// The display boundary actually in force: general.periodicBounds while "Show
+// Periodic Images" is on, the plain unit cell otherwise (no boundary applies
+// to the atoms then either, so nothing else should follow one).
+export function activePeriodicBounds() {
+  return normalizePeriodicBounds(general.showPeriodic ? general.periodicBounds : null);
 }
 
 function periodicWrappedJS(general, frac, elements, lattice) {
@@ -190,6 +239,35 @@ function periodicWrappedJS(general, frac, elements, lattice) {
     }
   }
 
+  // The boundary set: what the cell and its display bounds show. Neighbour
+  // Bonds grows from these atoms only, so turning Complete Rings & Fragments on does
+  // not change which ghosts it adds.
+  const baseLen = newCcrds.length;
+
+  // Complete Rings & Fragments: the atoms that fragments and small rings cut by a face
+  // need from the neighbouring cells (render/FragmentCompletion.js).
+  if (general.completeFragments) {
+    const { table: bondTable, nElem, elementToIdx } = buildBondTable(
+      elements, general.bondLengths, general.bondVisibility);
+    const fragmentTable = buildFragmentTable(general, bondTable, nElem, elementToIdx);
+    const elemIdx = Uint32Array.from(elements, el => elementToIdx.get(el) ?? 0);
+    const seedShift = newFcrds.map((m, k) => {
+      const f = frac[newSrcIndex[k]];
+      return [Math.round(m[0] - f[0]), Math.round(m[1] - f[1]), Math.round(m[2] - f[2])];
+    });
+    const added = completeFragments(
+      frac, elemIdx, lattice, fragmentTable, nElem,
+      newSrcIndex, seedShift, fragmentMaxRing(general));
+    for (let k = 0; k < added.src.length; k++) {
+      const src = added.src[k], t = added.shift[k], f = frac[src];
+      const m = [f[0] + t[0], f[1] + t[1], f[2] + t[2]];
+      newElements.push(elements[src]);
+      newFcrds.push(m);
+      newCcrds.push(fracToCart([m], lattice)[0]);
+      newSrcIndex.push(src);
+    }
+  }
+
   if (general.showPBCBonds) {
     // A pair whose Bonds-tab checkbox is off contributes no bond, so it must
     // not size the neighbour (PBC-ghost) search either — skip hidden pairs.
@@ -200,8 +278,9 @@ function periodicWrappedJS(general, frac, elements, lattice) {
       .map(([, v]) => (typeof v === 'number' ? v : (v?.max ?? 0))), 0.0);
     if (maxCutoff > 1e-6) {
       const latticeInverse = invert3x3(transpose3x3(lattice));
-      // Wrapped atoms already have their Cartesian coords in newCcrds (flat
-      // [x,y,z] arrays). Snapshot the count before we append ghosts.
+      // Atoms drawn so far (boundary set + completed fragments) already have
+      // their Cartesian coords in newCcrds (flat [x,y,z] arrays). Snapshot the
+      // count before we append ghosts.
       const wrappedCart = newCcrds;
       const wrappedLen = wrappedCart.length;
       // Pre-build shift vectors as scalar arrays (no per-iteration allocations).
@@ -221,13 +300,13 @@ function periodicWrappedJS(general, frac, elements, lattice) {
 
       const origCart = frac.map(f => fracToCart([f], lattice)[0]);
 
-      // Spatial grid (cell list) over wrapped atoms; cell size = maxCutoff, so
-      // any bonding partner of a query point sits in its cell or a neighbour.
+      // Spatial grid (cell list) over the boundary atoms; cell size = maxCutoff,
+      // so any bonding partner of a query point sits in its cell or a neighbour.
       // Turns the ghost search from O(wrapped × atoms × shifts) into roughly
       // O(atoms × shifts × neighbours-per-cell).
       const invCell = 1.0 / maxCutoff;
       const grid = new Map();
-      for (let i = 0; i < wrappedLen; i++) {
+      for (let i = 0; i < baseLen; i++) {
         const p = wrappedCart[i];
         const k = `${Math.floor(p[0]*invCell)},${Math.floor(p[1]*invCell)},${Math.floor(p[2]*invCell)}`;
         let bucket = grid.get(k);
@@ -318,6 +397,18 @@ function imageShiftsOf(wrapped, frac) {
   return shifts
 }
 
+function flatFrac(frac) {
+  const out = new Float64Array(frac.length * 3)
+  for (let i = 0; i < frac.length; i++) {
+    const p = frac[i]
+    if (!p) return null
+    out[i * 3] = p[0]
+    out[i * 3 + 1] = p[1]
+    out[i * 3 + 2] = p[2]
+  }
+  return out
+}
+
 export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
     let bondLenghts = general.bondLengths
@@ -327,10 +418,15 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 
     let bounds = normalizePeriodicBounds(general.periodicBounds)
 
+    // Complete Rings & Fragments and its two settings, as one small integer: 0 = off.
+    let fragments = general.completeFragments
+      ? 1 + (general.fragmentIgnoreMetalBonds !== false ? 1 : 0) + 2 * fragmentMaxRing(general)
+      : 0
+
     let inputHash = hashInputFast(
       frac, elements, lattice, bondLenghts,
       showPeriodic, showPBCBonds, general.completePolyhedra, faceTol, bounds,
-      general.bondVisibility
+      general.bondVisibility, fragments
     )
 
     if (periodic.hash != inputHash){
@@ -345,6 +441,10 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
       // relax render fast path replays these to move every instance without
       // re-deriving the image set (see render/FastFrameModule.js).
       periodic.wrapped.imageShifts = imageShiftsOf(periodic.wrapped, frac)
+      // The source positions this wrapping was built from: where the fast
+      // path starts tracking face crossings (an atom that crosses between the
+      // rebuild and the first fast frame must be counted too).
+      periodic.wrapped.buildAtomFrac = flatFrac(frac)
       periodic.hash = inputHash
     }
     return periodic
@@ -358,7 +458,8 @@ export function runPeriodicWrapped(periodic, frac, elements,lattice) {
 // folded in via their exact 64-bit IEEE representation (two 32-bit words) so a
 // sub-ULP perturbation (e.g. 1e-6) changes the hash. MUST change whenever any of
 // the previous hashInput inputs change (frac, elements, lattice, bondLengths,
-// showPeriodic, showPBCBonds, completePolyhedra, faceTol).
+// showPeriodic, showPBCBonds, completePolyhedra, faceTol), and with the
+// Complete Rings & Fragments settings.
 const _hashF64 = new Float64Array(1);
 const _hashU32 = new Uint32Array(_hashF64.buffer);
 
@@ -377,10 +478,11 @@ function hashString(h, s) {
   return (Math.imul(h, 33) ^ 0x1f) >>> 0;
 }
 
-function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol, bounds, bondVisibility) {
+function hashInputFast(frac, elements, lattice, bondLengths, showPeriodic, showPBCBonds, completePolyhedra, faceTol, bounds, bondVisibility, fragments) {
   let h = 5381 >>> 0;
   h = (Math.imul(h, 33) ^ (showPeriodic ? 1 : 0)) >>> 0;
   h = (Math.imul(h, 33) ^ (showPBCBonds ? 1 : 0)) >>> 0;
+  h = (Math.imul(h, 33) ^ (fragments | 0)) >>> 0;
   h = (Math.imul(h, 33) ^ (completePolyhedra ? 1 : 0)) >>> 0;
   h = hashFloat(h, faceTol ?? 1e-3);
   // Display bounds (VESTA-style boundary) — changing any of the 6 values must

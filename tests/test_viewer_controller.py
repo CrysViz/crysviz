@@ -86,17 +86,41 @@ class _Host:
             if command == self.ignore_command:
                 continue
             result: object = True
-            if command == "list_structures":
-                result = [{"id": "structure-1", "name": "a.cif", "frames": 2, "active": True, "activeFrame": 0}]
+            if command == "get_state":
+                result = {"structure": None, "renderer": "forward",
+                          "structures": [{"id": "structure-1", "name": "a.cif", "frames": 2, "active": True, "activeFrame": 0}]}
+                if getattr(self, "since", None):
+                    result["sinceLastCall"], self.since = self.since, None
+            elif command == "find":
+                result = {"selection": "s1", "count": 1, "atoms": [0]}
             elif command == "load":
-                result = {"id": "structure-2", "name": payload["args"]["name"], "frames": 1, "active": True, "activeFrame": 0}
+                result = {"structure": "structure-2", "name": payload["args"]["name"], "frames": 1, "activeFrame": 0,
+                          "atomCount": 2, "revision": "r1", "formula": "Si2"}
+            elif command == "run_md":
+                result = {"jobId": "md-1", "kind": "md", "status": "running"}
+            elif command == "wait_job":
+                self.waits = getattr(self, "waits", 0) + 1
+                result = {"jobId": "md-1", "kind": "md", "status": "running" if self.waits < 2 else "done",
+                          "result": {"finalStep": 10}}
             elif command == "update_fractional_positions":
                 result = {"atomCount": 2, "fastPathApplied": False, "rebuilt": True, "fallbackReason": "FAST_PATH_UNAVAILABLE"}
-            elif command == "update_lattice":
-                result = True
-            elif command == "set_render_pipeline":
-                result = "raytrace"
-            if command == "save_image":
+            elif command == "set_lattice":
+                result = {"lattice": {}, "atomCount": 2, "revision": "r1"}
+            elif command == "set_renderer":
+                result = {"renderer": "raytrace"}
+            elif command == "set_view":
+                result = {"direction": [0, 0, 1], "up": [0, 1, 0], "zoom": 1}
+            elif command == "click_control":
+                result = {"ref": payload["args"].get("ref"), "kind": "button"}
+            # A click that makes the app download a file: the host passes it on before the response.
+            for name, body in getattr(self, "downloads", {}).get(command, []):
+                send_frame(self.connection, "download", {"name": name, "contentType": "image/png", "size": len(body)},
+                           {"file": body})
+            if command == "save_image" and payload["args"].get("format") == "svg":
+                svg = b'<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>'
+                send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": {
+                    "contentType": "image/svg+xml", "size": len(svg), "attachment": "image"}}, {"image": svg})
+            elif command == "save_image":
                 png = b"\x89PNG\r\n\x1a\nmanaged-png"
                 if self.response_mode == "bad_signature":
                     png = b"not-a-png"
@@ -110,7 +134,7 @@ class _Host:
                     "id": request_id, "ok": True,
                     "result": metadata,
                 }, attachments)
-            elif self.response_mode == "unexpected" and command == "list_structures":
+            elif self.response_mode == "unexpected" and command == "get_state":
                 send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": result}, {"extra": b"unexpected"})
             else:
                 send_frame(self.connection, "response", {"id": request_id, "ok": True, "result": result})
@@ -130,7 +154,7 @@ class ViewerControllerTests(unittest.TestCase):
             for index, source in enumerate(sources):
                 assert isinstance(source, Payload)
                 name = f"source-{index}"
-                descriptors.append({"attachment": name, "name": source.name, "format": source.format, "binary": source.format == "traj"})
+                descriptors.append({"attachment": name, "name": source.name, "format": source.format})
                 attachments[name] = source.data.encode() if isinstance(source.data, str) else source.data
             send_frame(viewer._connection, "bootstrap", {"sources": descriptors}, attachments)
         viewer._launch = launch  # type: ignore[method-assign]
@@ -156,8 +180,31 @@ class ViewerControllerTests(unittest.TestCase):
             viewer.commit_positions()
             viewer.recenter_camera()
             self.assertEqual(next(data for command, _, data in host.commands if command == "load"), {"data": b"later"})
-            for command in ("list_structures", "commit_positions", "recenter_camera"):
-                self.assertEqual(next(args for name, args, _ in host.commands if name == command), {})
+            self.assertEqual(loaded.details["atomCount"], 2)
+            sent = {name: args for name, args, _ in host.commands}
+            self.assertEqual(sent["get_state"], {"include": ["structures"]})
+            self.assertEqual(sent["select_structure"], {"structure": "structure-1", "frame": 0})
+            self.assertEqual(sent["commit_positions"], {})
+            self.assertEqual(sent["set_view"], {"recenter": True})
+        finally:
+            viewer.close()
+
+    def test_DW_6_2_load_periodic_passthrough_and_rejection(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            viewer.load(Payload("a.cube", b"x"), periodic=False)
+            viewer.load(Payload("b.cube", b"x"), periodic=True)
+            viewer.load(Payload("c.cube", b"x"))
+            loads = [args for command, args, _ in host.commands if command == "load"]
+            self.assertIs(loads[0]["periodic"], False)
+            self.assertIs(loads[1]["periodic"], True)
+            self.assertNotIn("periodic", loads[2])
+            for bad in ("false", 0, 1):
+                with self.assertRaises(TypeError):
+                    viewer.load(Payload("d.cube", b"x"), periodic=bad)  # type: ignore[arg-type]
+            self.assertEqual(len([c for c, _, _ in host.commands if c == "load"]), 3)
         finally:
             viewer.close()
 
@@ -173,7 +220,7 @@ class ViewerControllerTests(unittest.TestCase):
             for thread in threads:
                 thread.join(timeout=2)
             self.assertEqual(results, ["structure-1"] * 8)
-            self.assertEqual(sum(command == "list_structures" for command, _, _ in host.commands), 8)
+            self.assertEqual(sum(command == "get_state" for command, _, _ in host.commands), 8)
         finally:
             viewer.close()
 
@@ -196,14 +243,14 @@ class ViewerControllerTests(unittest.TestCase):
 
     def test_timeout_poisoning_and_eof_fail_pending_with_typed_errors(self):
         client, server = _pair()
-        viewer = self.start_fake(Viewer(command_timeout=0.05), _Host(server, ignore_command="recenter_camera"))
+        viewer = self.start_fake(Viewer(command_timeout=0.05), _Host(server, ignore_command="set_view"))
         with self.assertRaises(ViewerCommandTimeout):
             viewer.recenter_camera()
         with self.assertRaises(ViewerClosedError):
             viewer.list_structures()
 
         client, server = _pair()
-        viewer = self.start_fake(Viewer(), _Host(server, crash_command="list_structures"))
+        viewer = self.start_fake(Viewer(), _Host(server, crash_command="get_state"))
         with self.assertRaises(ViewerProtocolError):
             viewer.list_structures()
 
@@ -333,11 +380,94 @@ class ViewerControllerTests(unittest.TestCase):
         try:
             self.assertIsNone(viewer.rotate_camera(12.5, axis="z"))
             self.assertEqual(viewer.set_render_pipeline("raytrace"), "raytrace")
-            self.assertEqual(host.commands[-2][0], "rotate_camera")
-            self.assertEqual(host.commands[-2][1], {"angleDegrees": 12.5, "axis": "z"})
-            self.assertEqual(host.commands[-1][1], {"pipelineId": "raytrace"})
+            self.assertEqual(host.commands[-2][:2], ("set_view", {"rotate": {"axis": "z", "degrees": 12.5}}))
+            self.assertEqual(host.commands[-1][:2], ("set_renderer", {"renderer": "raytrace"}))
+            viewer.set_view(rotate={"axis": "y", "degrees": 5}, recenter=True)
+            self.assertEqual(host.commands[-1][:2], ("set_view", {"rotate": {"axis": "y", "degrees": 5}, "recenter": True}))
+            with self.assertRaises(ValueError):
+                viewer.set_view()
         finally:
             viewer.close()
+
+    def test_call_takes_snake_case_and_run_job_waits_for_the_end(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            view = viewer.run_job("run_md", temperature_k=600, steps=10, wait_s=0)
+            self.assertEqual((view["status"], view["result"]), ("done", {"finalStep": 10}))
+            self.assertEqual(host.commands[0][:2], ("run_md", {"temperatureK": 600, "steps": 10, "waitS": 0}))
+            self.assertEqual([c for c, _, _ in host.commands], ["run_md", "wait_job", "wait_job"])
+            for command in ("load", "save_image", "export_structure", "close"):
+                with self.assertRaisesRegex(ValueError, "use Viewer"):
+                    viewer.call(command)
+            with self.assertRaises(ValueError):
+                viewer.run_job("set_view")
+            camera = viewer.set_view("c", up="b", zoom=1.5)
+            self.assertEqual(camera["direction"], [0, 0, 1])
+            self.assertEqual(host.commands[-1][:2], ("set_view", {"direction": "c", "up": "b", "zoom": 1.5}))
+            with self.assertRaises(ValueError):
+                viewer.set_view()
+        finally:
+            viewer.close()
+
+    def test_every_command_is_a_method_with_its_arguments_documented(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = self.start_fake(Viewer(), host)
+        try:
+            self.assertIn("find", dir(viewer))
+            self.assertIn("run_relax", dir(viewer))
+            self.assertNotIn("export_structure", [n for n in dir(viewer) if n not in vars(Viewer)])
+            self.assertIn("where", viewer.find.__doc__)
+            self.assertIn("temperature_k", viewer.run_md.__doc__)
+            found = viewer.find(what="atoms", where={"element": "O"})
+            self.assertEqual(found["selection"], "s1")
+            self.assertEqual(host.commands[-1][:2], ("find", {"what": "atoms", "where": {"element": "O"}}))
+            # run_* blocks until the job ends; wait=False returns the job.
+            self.assertEqual(viewer.run_md(temperature_k=600)["status"], "done")
+            host.waits = 0
+            self.assertEqual(viewer.run_md(steps=5, wait=False)["status"], "running")
+            self.assertEqual(host.commands[-1][:2], ("run_md", {"steps": 5}))
+            # Typed methods win over the generated ones; unknown names stay AttributeErrors.
+            self.assertEqual(viewer.set_view.__func__, Viewer.set_view)
+            with self.assertRaisesRegex(AttributeError, "no method or browser command"):
+                viewer.no_such_command()
+            self.assertIn("open", repr(viewer))
+        finally:
+            viewer.close()
+        self.assertIn("closed", repr(viewer))
+        self.assertIn("not started", repr(Viewer()))
+
+    def test_user_changes_come_from_events_and_from_a_fresh_check(self):
+        client, server = _pair()
+        host = _Host(server)
+        seen = []
+        viewer = Viewer().on("user_changed", seen.append)
+        viewer = self.start_fake(viewer, host)
+        try:
+            send_frame(host.connection, "event", {"event": "user_changed", "data": {"note": "pushed"}})
+            for _ in range(200):
+                if seen:
+                    break
+                threading.Event().wait(0.01)
+            self.assertEqual([event.data for event in seen], [{"note": "pushed"}])
+            # take_user_changes asks the window first: an edit not yet reported comes back too.
+            host.since = {"note": "checked"}
+            self.assertEqual(viewer.take_user_changes(), [{"note": "pushed"}, {"note": "checked"}])
+            self.assertEqual(host.commands[-1][:2], ("get_state", {"include": []}))
+            self.assertEqual(viewer.take_user_changes(), [])
+        finally:
+            viewer.close()
+
+    def test_saved_image_shows_itself_in_jupyter(self):
+        from crysviz._viewer import SavedImage
+        with tempfile.TemporaryDirectory() as folder:
+            path = pathlib.Path(folder) / "x.png"
+            path.write_bytes(b"\x89PNG\r\n\x1a\nabc")
+            image = SavedImage(path)
+            self.assertEqual(image, path)
+            self.assertEqual(image._repr_png_(), path.read_bytes())
 
     def test_update_lattice_validates_and_forwards_copied_float_matrix(self):
         client, server = _pair()
@@ -348,7 +478,7 @@ class ViewerControllerTests(unittest.TestCase):
             self.assertIsNone(viewer.update_lattice(lattice))
             lattice[0][0] = 99
             command, args, _ = host.commands[-1]
-            self.assertEqual(command, "update_lattice")
+            self.assertEqual(command, "set_lattice")
             self.assertEqual(args, {"lattice": [[6.0, 0.0, 0.0], [0.5, 5.0, 0.0], [0.0, 0.0, 4.0]]})
 
             invalid_lattices = (
@@ -360,12 +490,12 @@ class ViewerControllerTests(unittest.TestCase):
                 [[float("inf"), 0, 0], [0, 1, 0], [0, 0, 1]],
                 [[1, 0, 0], [2, 0, 0], [0, 0, 1]],
             )
-            dispatched = sum(command == "update_lattice" for command, _, _ in host.commands)
+            dispatched = sum(command == "set_lattice" for command, _, _ in host.commands)
             for lattice in invalid_lattices:
                 with self.subTest(lattice=lattice):
                     with self.assertRaises(ValueError):
                         viewer.update_lattice(lattice)
-            self.assertEqual(sum(command == "update_lattice" for command, _, _ in host.commands), dispatched)
+            self.assertEqual(sum(command == "set_lattice" for command, _, _ in host.commands), dispatched)
         finally:
             viewer.close()
 
@@ -386,3 +516,70 @@ class ViewerControllerTests(unittest.TestCase):
                                 viewer.list_structures()
                 finally:
                     viewer.close()
+
+
+class UserChangeMergeTests(unittest.TestCase):
+    def test_consecutive_camera_moves_are_one_change(self):
+        from crysviz._viewer import _add_user_change
+        changes: list = []
+        for note in ({"camera": 1, "note": "a"}, {"camera": 2, "note": "b"}, {"structure": 1, "note": "s"},
+                     {"camera": 3, "note": "c"}, {"camera": 4, "note": "d"}):
+            _add_user_change(changes, note)
+        # A rotation in steps is where the camera ended; other changes keep their place.
+        self.assertEqual(changes, [{"camera": 2, "note": "b"}, {"structure": 1, "note": "s"}, {"camera": 4, "note": "d"}])
+
+
+class DownloadAndSvgTests(unittest.TestCase):
+    start_fake = None  # bound below from ViewerControllerTests
+
+    def test_app_downloads_during_a_command_are_saved_and_named_in_its_result(self):
+        client, server = _pair()
+        host = _Host(server)
+        host.downloads = {"click_control": [("view.png", b"one"), ("view.png", b"two"), ("../../.secret", b"three")]}
+        with tempfile.TemporaryDirectory() as directory:
+            folder = pathlib.Path(directory) / "downloads"
+            viewer = ViewerControllerTests.start_fake(self, Viewer(download_dir=folder), host)
+            try:
+                result = viewer.call("click_control", ref="control:files:#imageButton")
+                saved = [pathlib.Path(p) for p in result["savedFiles"]]
+                self.assertEqual([p.name for p in saved], ["view.png", "view-1.png", "secret"])
+                self.assertTrue(all(p.parent == folder for p in saved))
+                self.assertEqual([p.read_bytes() for p in saved], [b"one", b"two", b"three"])
+                # Saved because of a command, so not reported as the user's own change.
+                self.assertEqual(viewer.take_user_changes(check=False), [])
+            finally:
+                viewer.close()
+
+    def test_a_download_outside_any_command_is_the_users_and_raises_file_saved(self):
+        client, server = _pair()
+        host = _Host(server)
+        with tempfile.TemporaryDirectory() as directory:
+            viewer = ViewerControllerTests.start_fake(self, Viewer(download_dir=directory), host)
+            seen: queue.Queue[object] = queue.Queue()
+            viewer.on("file_saved", seen.put)
+            try:
+                send_frame(server, "download", {"name": "fig.svg", "contentType": "image/svg+xml", "size": 3}, {"file": b"svg"})
+                event = seen.get(timeout=3)
+                self.assertEqual(pathlib.Path(event.data["path"]).read_bytes(), b"svg")
+                self.assertFalse(event.data["byCommand"])
+                changes = viewer.take_user_changes(check=False)
+                self.assertEqual(changes[0]["files"], [event.data["path"]])
+            finally:
+                viewer.close()
+
+    def test_save_image_writes_an_svg_by_extension_and_shows_it_as_svg(self):
+        client, server = _pair()
+        host = _Host(server)
+        viewer = ViewerControllerTests.start_fake(self, Viewer(), host)
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                saved = viewer.save_image(pathlib.Path(directory) / "view.svg", vector=True)
+                self.assertEqual(host.commands[-1][1]["format"], "svg")
+                self.assertTrue(host.commands[-1][1]["vector"])
+                self.assertIn("<svg", saved._repr_svg_())
+                self.assertIsNone(saved._repr_png_())
+                with self.assertRaises(ValueError):
+                    viewer.save_image(pathlib.Path(directory) / "view.png", vector=True)
+        finally:
+            viewer.close()
+

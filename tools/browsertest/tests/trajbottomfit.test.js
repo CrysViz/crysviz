@@ -82,7 +82,7 @@ const H = require('../harness');
       atomisticOrder,
       filesOrder,
       leftIds,
-      hostVisible: !!host && host.style.display !== 'none',
+      hostVisible: !!host && !host.hidden,
       bottom,
       right,
     };

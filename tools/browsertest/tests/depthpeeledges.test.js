@@ -89,9 +89,8 @@ function redCentroid(file) {
     general.depthPeelLayers = 8;
     setPolyEdgeWidth(5);
     const s = fileBrowser.selectedStructure;
-    const meshes = () => groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
-    for (const m of meshes()) {
-      const ck = m.userData.catKey;
+    // all polyhedra are one mesh: categories from the polyhedra table
+    for (const ck of new Set(groups.polyhedraGroup.userData.polyTable.catKey)) {
       s.polyhedraCategoryStyles[ck] = {
         ...(s.polyhedraCategoryStyles[ck] || {}), alpha: 1, edgeColor: '#000000', edgeAlpha: 0.5,
       };
@@ -105,9 +104,8 @@ function redCentroid(file) {
   //        `resolution` uniform (the fail-before check) --------------------------
   const struct = await page.evaluate(async () => {
     const { app, groups } = await import('./state/store.js');
-    const meshes = () => groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
-    const edgeOf = (m) => m.children.find((c) => c.userData?.type === 'polyhedron-edges');
-    const edgeMat = edgeOf(meshes()[0]).material;
+    // the see-through half of the one polyhedra edge mesh (render/PolyhedraMesh.js)
+    const edgeMat = groups.polyhedraGroup.userData.polyTable.objects.edgeT.material;
     // Capture the compiled fragment source by wrapping onBeforeCompile, then
     // force a recompile via a full depth-peel frame.
     let frag = null;
@@ -116,6 +114,10 @@ function redCentroid(file) {
       if (typeof orig === 'function') orig.call(this, shader, r);
       frag = shader.fragmentShader;
     };
+    // The shared edge material is persistent and already compiled: a probe
+    // suffix on its cache key makes three build (and so patch) it afresh.
+    const origKey = edgeMat.customProgramCacheKey.bind(edgeMat);
+    edgeMat.customProgramCacheKey = () => `${origKey()}|probe`;
     edgeMat.needsUpdate = true;
     app.pipeline.render({ renderer: app.renderer, scene: app.scene, camera: app.camera });
     const dp = edgeMat.userData.depthPeel || {};
@@ -151,9 +153,13 @@ function redCentroid(file) {
     const { app, groups } = await import('./state/store.js');
     const THREE = await import('./external/three/three.module.js');
     const { requestRender } = await import('./render/index.js');
-    const meshes = groups.polyhedraGroup.children.filter((m) => m.userData?.type === 'polyhedron');
-    const poly = meshes[0];
-    const box = new THREE.Box3().setFromObject(poly);
+    // polyhedron 0's triangles in the shared face geometry
+    const table = groups.polyhedraGroup.userData.polyTable;
+    const box = new THREE.Box3();
+    const v = new THREE.Vector3();
+    for (let k = table.faceStart[0] * 9; k < (table.faceStart[0] + table.faceCount[0]) * 9; k += 3) {
+      box.expandByPoint(v.set(table.positions[k], table.positions[k + 1], table.positions[k + 2]));
+    }
     const centroid = box.getCenter(new THREE.Vector3());
     const polyR = box.getSize(new THREE.Vector3()).length() * 0.5;
     const mesh = groups.atomsMesh;

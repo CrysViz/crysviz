@@ -29,6 +29,7 @@
 
 import { createAtomTableEditor } from './AtomTableInput.js';
 import { createLatticeInputPanel } from './LatticeInputPanel.js';
+import { structureContent, structureRevision } from '../../model/structureRevision.js';
 import { checkAtomCollisions, conflictingCandidateIndices } from './AtomCollisionCheck.js';
 import { wireCollisionGuardedButton } from './CollisionWarningUI.js';
 import { createLatticeConstraintController } from './WyckoffLatticeConstraints.js';
@@ -51,8 +52,9 @@ import { openPeriodicTable } from '../PeriodicTableSelectPanel.js';
 import { createColorSwatch } from '../SwatchColorPicker.js';
 import {
   colorToHex,
-  applyStructureEdits,
+  commitStructureEdits,
   revertStructureToOriginal,
+  commitRevertToOriginal,
   resetLatticeToOriginal,
 } from './CommitAtoms.js';
 import { fracToCartPoint } from '../../math/index.js';
@@ -96,6 +98,25 @@ function tableRowColor(atom, species, speciesIndex) {
   return colorToHex(s.color ?? getElementDefaultColor(s.element));
 }
 
+/**
+ * Whether a row's colour is still the element default rather than one the
+ * user picked — such a row follows the new element's default colour when its
+ * element is changed (AtomTableInput's autoColor). An ordered atom's custom
+ * colour lives in userColor (the editor's own swatch and the Structure Info
+ * panel's colour picker both set it); `color` differing from `elementColor`
+ * covers a per-atom colour restored from a saved session. A disordered row's
+ * colour is its own species' `color`, null meaning the default.
+ *
+ * @param {any} atom
+ * @param {Array<{element:string,color?:number|null}>} species
+ * @param {number} speciesIndex
+ * @returns {boolean}
+ */
+function tableRowAutoColor(atom, species, speciesIndex) {
+  if (species.length === 1) return !atom.userColor && atom.color === atom.elementColor;
+  return species[speciesIndex].color == null;
+}
+
 // Every atom of `structure` as an atom-table row. The uuid is the handle the
 // commit uses to tell "this is the atom that was already there" from "this is
 // new", so an atom that somehow arrived without one (a structure built by a
@@ -125,6 +146,7 @@ export function structureToTableAtoms(structure) {
         occupancy: round4(s.occupancy),
         oxidationState: s.oxidationState,
         color: tableRowColor(atom, species, k),
+        autoColor: tableRowAutoColor(atom, species, k),
       });
     });
   });
@@ -288,7 +310,7 @@ function buildFreeformModifyEditor(body, structure) {
   body.appendChild(latticeHost);
   const latticePanel = createLatticeInputPanel(latticeHost, {
     initial: structure.lattice.map((row) => [...row]),
-    onChange: () => scheduleApply(),
+    onChange: () => { if (!reloading) scheduleApply(); },
   });
 
   const resetLatticeRow = document.createElement('div');
@@ -335,7 +357,7 @@ function buildFreeformModifyEditor(body, structure) {
     initialAtoms,
     deletable: true,
     onRowActivate,
-    onChange: () => scheduleApply(),
+    onChange: () => { if (!reloading) scheduleApply(); },
     // Only an original (baseline) atom going away is a "removal" worth listing
     // and restoring; deleting an atom you just added just drops it. The
     // baseline holds base (unsuffixed) atom uuids, but a disordered site's
@@ -352,46 +374,64 @@ function buildFreeformModifyEditor(body, structure) {
     pendingFrame = requestAnimationFrame(() => { pendingFrame = null; liveApply(); });
   }
 
-  let lastUnique = structure.uniqueElements.join(',');
+  // Set while liveApply re-renders: the colors-changed / atoms-changed events
+  // it fires echo the table's own values back, and syncing every row from the
+  // structure on each of them was a large part of an edit's cost.
+  let applyingEdit = false;
+
+  // What the table shows. The structure can change under it from elsewhere:
+  // the host (add_atoms, remove_atoms, set_element, a supercell), the Add Atom
+  // window. Committing then would write the stale table back over that change
+  // (deleting atoms the table never had), so the table is reloaded first.
+  // A reload never commits by itself: the table rounds positions (round4).
+  let syncedShape = structureRevision(structure);
+  let syncedContent = structureContent(structure);
+  let reloading = false;
+  function markSynced() {
+    syncedShape = structureRevision(structure);
+    syncedContent = structureContent(structure);
+  }
+  function reloadFromStructure() {
+    initialAtoms = structureToTableAtoms(structure);
+    reloading = true;
+    try {
+      editor.reload(initialAtoms);
+      latticePanel.setLattice(structure.lattice);
+    } finally {
+      reloading = false;
+    }
+    renderSummary();
+    markSynced();
+  }
+
   function liveApply() {
+    // Changed since the table last matched it (a change that fired no event):
+    // show it and drop this edit rather than undo that change.
+    if (structureContent(structure) !== syncedContent) {
+      reloadFromStructure();
+      return;
+    }
     const atoms = editor.getAtoms();
     const lattice = latticePanel.getLattice();
-
-    // An add or remove renumbers atom indices, so a kept selection would point
-    // at the wrong (or a now-missing) atom. Drop it BEFORE the arrays change,
-    // while the selection's indices still match the live mesh - clearing it
-    // afterwards would index past the shrunk array inside updateAtoms. A pure
-    // coordinate/colour edit leaves the set intact and keeps the selection.
-    const tableUuids = new Set(atoms.map((a) => a.uuid));
-    const setChanges = tableUuids.size !== structure.atoms.length
-      || structure.atoms.some((a) => !tableUuids.has(a.uuid));
-    if (setChanges) clearSelectedAtoms();
-
-    applyStructureEdits(structure, { atoms, lattice });
-
-    // A restored / re-added atom is back in the structure - it is no longer a
-    // pending removal.
-    const present = new Set(structure.atoms.map((a) => a.uuid));
-    for (const uuid of [...mod.removed.keys()]) if (present.has(uuid)) mod.removed.delete(uuid);
-
-    // Bond controls only need rebuilding when the element set actually changed.
-    const uniqueNow = structure.uniqueElements.join(',');
-    if (uniqueNow !== lastUnique) { createBondLengthControls(); lastUnique = uniqueNow; }
-
-    updateVisualization({
-      reRenderAtoms: true,
-      reRenderBonds: true,
-      reRenderLattice: true,
-      reRenderOther: true,
-      reRenderComposition: 'open',
-    });
-    renderSummary();
-    runCollisionWarning(atoms, lattice);
-    // An element/count/occupancy edit here changes the composition — announce it
-    // the same way a coordinate edit does (applyAtomCoordinates), so panels that
-    // aren't part of the composition rebuild (e.g. Order Structure's size
-    // options) can react instead of showing stale numbers.
-    document.dispatchEvent(new CustomEvent('crysviz:atoms-changed'));
+    // The structure's own change events would echo the table back into itself.
+    applyingEdit = true;
+    try {
+      commitStructureEdits(structure, { atoms, lattice }, {
+        afterApply: () => {
+          // A restored / re-added atom is back in the structure - it is no
+          // longer a pending removal.
+          const present = new Set(structure.atoms.map((a) => a.uuid));
+          for (const uuid of [...mod.removed.keys()]) if (present.has(uuid)) mod.removed.delete(uuid);
+        },
+        afterRender: () => {
+          renderSummary();
+          runCollisionWarning(atoms, lattice);
+        },
+      });
+    } finally {
+      applyingEdit = false;
+      markSynced();
+    }
   }
 
   // Splice a "Newly added" label row into the table just above the first atom
@@ -484,19 +524,11 @@ function buildFreeformModifyEditor(body, structure) {
   revertBtn.addEventListener('click', () => {
     // Reverting throws away every live edit, so make the user confirm.
     if (!window.confirm('Revert all changes? This restores the structure exactly as it was loaded and discards every edit (moved, added and removed atoms, and the lattice).')) return;
-    // Clear the selection first, while it still matches the live mesh - the
-    // revert rebuilds structure.atoms and updateVisualization only re-sizes the
-    // mesh afterwards, so clearing in between would index the old, larger mesh.
-    clearSelectedAtoms();
-    revertStructureToOriginal(structure);
-    delete structure._modify;
+    commitRevertToOriginal(structure);               // the shared revert (also the host's)
     initialAtoms = structureToTableAtoms(structure); // fresh uuids
     mod = ensureModifyState(structure);              // recapture baseline
     editor.reload(initialAtoms);
     latticePanel.setLattice(structure.lattice);
-    createBondLengthControls();
-    lastUnique = structure.uniqueElements.join(',');
-    updateVisualization({ reRenderAtoms: true, reRenderBonds: true, reRenderLattice: true, reRenderOther: true, reRenderComposition: 'open' });
     renderSummary();
     warningHost.innerHTML = '';
     editor.clearConflicts();
@@ -506,6 +538,15 @@ function buildFreeformModifyEditor(body, structure) {
   // Structure Info panel writes straight into structure.atoms, so mirror those
   // values into the matching (untouched) table rows.
   function syncFromStructure() {
+    if (applyingEdit) return;
+    // Atoms added, removed or re-elemented, or a new cell: the rows no longer
+    // match one to one, so rebuild the table.
+    if (structureRevision(structure) !== syncedShape) {
+      reloadFromStructure();
+      return;
+    }
+    /** @type {Array<[string, any]>} */
+    const entries = [];
     structure.atoms.forEach((atom) => {
       if (!atom.uuid) return;
       // A disordered atom has more than one table row (one per species,
@@ -514,14 +555,17 @@ function buildFreeformModifyEditor(body, structure) {
       // per-species colour edit made elsewhere (the Structure Info panel).
       const species = atom.species?.length ? atom.species : [{ element: '', color: null }];
       species.forEach((s, k) => {
-        editor.syncRow(k === 0 ? atom.uuid : `${atom.uuid}#${k}`, {
+        entries.push([k === 0 ? atom.uuid : `${atom.uuid}#${k}`, {
           x: round4(atom.position[0]),
           y: round4(atom.position[1]),
           z: round4(atom.position[2]),
           color: tableRowColor(atom, species, k),
-        });
+          autoColor: tableRowAutoColor(atom, species, k),
+        }]);
       });
     });
+    editor.syncRows(entries);
+    markSynced();
   }
   document.addEventListener('crysviz:atoms-changed', syncFromStructure);
   document.addEventListener('crysviz:colors-changed', syncFromStructure);
@@ -662,13 +706,13 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       <table class="addstructure-table">
         <thead>
           <tr>
-            <th class="wyckoff-site-th">Element</th>
-            <th class="wyckoff-site-th" title="Wyckoff letter, multiplicity and site symmetry as the lock reports them">Site</th>
-            <th class="wyckoff-site-th" title="Fractional coordinate of the orbit's representative">X</th>
-            <th class="wyckoff-site-th">Y</th>
-            <th class="wyckoff-site-th">Z</th>
-            <th class="wyckoff-site-th" title="Colour for every atom of this orbit">Col</th>
-            <th class="wyckoff-site-th"></th>
+            <th class="wyckoff-site-th wyckoff-col-element">Element</th>
+            <th class="wyckoff-site-th wyckoff-col-site" title="Wyckoff letter, multiplicity and site symmetry as the lock reports them">Site</th>
+            <th class="wyckoff-site-th wyckoff-col-coord" title="Fractional coordinate of the orbit's representative">X</th>
+            <th class="wyckoff-site-th wyckoff-col-coord">Y</th>
+            <th class="wyckoff-site-th wyckoff-col-coord">Z</th>
+            <th class="wyckoff-site-th wyckoff-col-color" title="Colour for every atom of this orbit">Col</th>
+            <th class="wyckoff-site-th wyckoff-col-icon"></th>
           </tr>
         </thead>
         <tbody></tbody>
@@ -686,6 +730,16 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   body.appendChild(status);
 
   let highlightedOrbitId = null;
+  // The orbit glow lives in the atoms mesh, which a move redraws with every
+  // glow off: light the highlighted orbit again afterwards, or drop it when
+  // the orbit is gone. Without this the glow vanished on a coordinate edit
+  // while the row still counted as lit (the next click turned it "off").
+  function reshowOrbitHighlight() {
+    if (highlightedOrbitId === null) return;
+    const orbit = getWyckoffOrbitGroups(structure).find((group) => group.orbitId === highlightedOrbitId);
+    if (orbit) highlightAtomsIn3D(orbit.atomIndices);
+    else highlightedOrbitId = null;
+  }
   /** @type {Array<{orbitId: number, representativeIndex: number, inputs: HTMLInputElement[]}>} */
   let rows = [];
 
@@ -798,6 +852,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
         // the move is projected onto the site's degrees of freedom, so the
         // typed value is rarely the value that results.
         syncCoordsFromStructure();
+        reshowOrbitHighlight();
       }
 
       coordInputs.forEach((input) => input.addEventListener('change', commitCoords));
@@ -926,15 +981,16 @@ function buildWyckoffModifyEditor(body, structure, remount) {
   body.appendChild(makeSectionHeadline('Add Site'));
 
   const addHost = document.createElement('div');
+  addHost.className = 'wyckoff-add-scroll';
   addHost.innerHTML = `
     <table class="addstructure-table addstructure-table--spaced">
       <thead><tr>
-        <th class="wyckoff-site-th">Element</th>
-        <th class="wyckoff-site-th" title="Wyckoff site to place the new atom on">Site</th>
-        <th class="wyckoff-site-th">X</th>
-        <th class="wyckoff-site-th">Y</th>
-        <th class="wyckoff-site-th">Z</th>
-        <th class="wyckoff-site-th"></th>
+        <th class="wyckoff-site-th wyckoff-col-element">Element</th>
+        <th class="wyckoff-site-th wyckoff-col-site" title="Wyckoff site to place the new atom on">Site</th>
+        <th class="wyckoff-site-th wyckoff-col-coord">X</th>
+        <th class="wyckoff-site-th wyckoff-col-coord">Y</th>
+        <th class="wyckoff-site-th wyckoff-col-coord">Z</th>
+        <th class="wyckoff-site-th wyckoff-col-add"></th>
       </tr></thead>
       <tbody><tr>
         <td class="addstructure-cell">
@@ -1206,6 +1262,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
     renderSites();
     renderOrbitSummary();
     refreshAddPreview();
+    reshowOrbitHighlight();
   }
 
   function syncCoordsFromStructure() {
@@ -1229,6 +1286,7 @@ function buildWyckoffModifyEditor(body, structure, remount) {
       return;
     }
     syncCoordsFromStructure();
+    reshowOrbitHighlight();
   }
   document.addEventListener('crysviz:atoms-changed', onExternalChange);
   document.addEventListener('crysviz:colors-changed', syncCoordsFromStructure);

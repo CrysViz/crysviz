@@ -1,0 +1,37 @@
+diff --git a/src/api/wasm/mlipcpp_wasm.cpp b/src/api/wasm/mlipcpp_wasm.cpp
+index 73e129d..df5f79b 100644
+--- a/src/api/wasm/mlipcpp_wasm.cpp
++++ b/src/api/wasm/mlipcpp_wasm.cpp
+@@ -403,6 +403,24 @@ static bool hasThreads() {
+ #endif
+ }
+ 
++// --- Matrix-product kernel (CrysViz) ------------------------------------------
++// With ggml built with GGML_LLAMAFILE (crysviz-ggml-wasm-sgemm.patch gives its
++// blocked tinyBLAS GEMM a WebAssembly SIMD path), f32 matrix products use that
++// kernel; off sends them down ggml's dot-product path, as earlier builds did.
++// For A/B comparisons; takes effect from the next prediction. Weak, so a build
++// without the kernel still links (and reports it absent).
++extern "C" __attribute__((weak)) int llamafile_sgemm_disabled;
++static bool hasBlockedGemm() {
++    return &llamafile_sgemm_disabled != nullptr;
++}
++static bool getBlockedGemm() {
++    return hasBlockedGemm() && !llamafile_sgemm_disabled;
++}
++static bool setBlockedGemm(bool on) {
++    if (hasBlockedGemm()) llamafile_sgemm_disabled = on ? 0 : 1;
++    return getBlockedGemm();
++}
++
+ EMSCRIPTEN_BINDINGS(mlipcpp) {
+     // AtomicSystem wrapper
+     class_<AtomicSystemWrapper>("AtomicSystem")
+@@ -437,4 +455,7 @@ EMSCRIPTEN_BINDINGS(mlipcpp) {
+     function("getMaxThreads", &getMaxThreads);
+     function("setNumThreads", &setNumThreads);
+     function("hasThreads", &hasThreads);
++    function("hasBlockedGemm", &hasBlockedGemm);
++    function("getBlockedGemm", &getBlockedGemm);
++    function("setBlockedGemm", &setBlockedGemm);
+ }

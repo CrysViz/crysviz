@@ -25,5 +25,5 @@ function ensureBanner() {
 export function updateForceSpinWarning() {
   const el = ensureBanner();
   if (!el) return;
-  el.style.display = (general.forcesActive && general.spinsActive) ? 'block' : 'none';
+  el.classList.toggle('is-shown', !!(general.forcesActive && general.spinsActive));
 }

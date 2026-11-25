@@ -5,10 +5,11 @@
 // The main case is a synthetic Gaussian blob written with NEGATIVE grid counts
 // (Å units) and a `.cub` name — the two things the old reader got wrong (it
 // multiplied the axes by the signed count, flipping the cell) or did not
-// recognise. The node unit tests (tools/unittest/cubereader.test.mjs) pin the
-// parser in detail; this checks that its output drives the app: the field
-// label from line 2, the atoms, a right-handed cell, the new Field unit and
-// periodicity flags, and an isosurface that actually renders. Two of the unit
+// recognise. The node unit tests (tools/unittest/cubereader.test.mjs,
+// cubeparse.test.mjs) pin the parser in detail; this checks that its output
+// drives the app: the field label from the comment lines, the atoms, a
+// right-handed cell, the Field unit and periodicity flags (atoms inside the
+// grid: periodic, no dialog), and an isosurface that actually renders. Two of the unit
 // fixtures (a Gradient cube and an orbital cube) check the multi-field paths.
 'use strict';
 const fs = require('fs');
@@ -102,10 +103,10 @@ function blobCube() {
     Math.abs(lat[0]?.[0] - 6) < 1e-6 && Math.abs(lat[1]?.[1] - 6) < 1e-6 && Math.abs(lat[2]?.[2] - 6) < 1e-6,
     JSON.stringify(lat));
   const [f0] = blob.fields;
-  H.check('one field, labelled from line 2', blob.fields.length === 1
-    && f0.label === 'Electron density from Total SCF Density', JSON.stringify(blob.fields.map((f) => f.label)));
-  H.check('cube field carries valueUnit e/bohr³ and periodic false',
-    f0?.valueUnit === 'e/bohr³' && f0?.periodic === false, JSON.stringify(f0));
+  H.check('one field, labelled from the comment lines', blob.fields.length === 1
+    && f0.label === 'Synthetic blob Electron density from Total SCF Density', JSON.stringify(blob.fields.map((f) => f.label)));
+  H.check('cube field carries valueUnit e/bohr³ and is periodic (atoms inside the grid)',
+    f0?.valueUnit === 'e/bohr³' && f0?.periodic === true, JSON.stringify(f0));
   H.check('container source is Cube', blob.source === 'Cube', blob.source);
   H.check('the field is active and its isosurface has vertices',
     blob.activeLabel === f0?.label && blob.posVerts > 0 && blob.inScene, JSON.stringify({ a: blob.activeLabel, v: blob.posVerts }));
@@ -128,7 +129,8 @@ function blobCube() {
   // --- Gradient cube: four fields -------------------------------------------
   const grad = await load(fixture('gradient_nval4.cube'), 'grad.cube');
   H.check('NVal = 4 gradient cube gives Density, ∂ρ/∂x, ∂ρ/∂y, ∂ρ/∂z',
-    JSON.stringify(grad.fields.map((f) => f.label)) === JSON.stringify(['Density', '∂ρ/∂x', '∂ρ/∂y', '∂ρ/∂z']),
+    JSON.stringify(grad.fields.map((f) => f.label.replace(/^.*\((.*)\)$/, '$1')))
+      === JSON.stringify(['Density', '∂ρ/∂x', '∂ρ/∂y', '∂ρ/∂z']),
     JSON.stringify(grad.fields.map((f) => f.label)));
   H.check('only the density of a gradient cube has a unit',
     JSON.stringify(grad.fields.map((f) => f.valueUnit)) === JSON.stringify(['e/bohr³', null, null, null]),
@@ -136,7 +138,8 @@ function blobCube() {
 
   // --- orbital cube: one field per MO ---------------------------------------
   const mo = await load(fixture('mo_two_orbitals.cube'), 'orbitals.cube');
-  H.check('orbital cube gives MO 5 and MO 6', JSON.stringify(mo.fields.map((f) => f.label)) === '["MO 5","MO 6"]',
+  H.check('orbital cube gives MO 5 and MO 6',
+    JSON.stringify(mo.fields.map((f) => f.label)) === '["MO test MO coefficients (MO 5)","MO test MO coefficients (MO 6)"]',
     JSON.stringify(mo.fields.map((f) => f.label)));
   H.check('orbital cube container says so', mo.source === 'Cube (orbitals)', mo.source);
 
@@ -150,9 +153,9 @@ function blobCube() {
       return String(e?.message || e);
     }
   }, fixture('truncated.cube'));
-  H.check('a truncated cube throws a clear error', /truncated/.test(truncated), truncated);
+  H.check('a truncated cube is refused with a clear error', /expected 24 data values/.test(truncated), truncated);
   // loadStructure reports load failures on the console too; those are expected here.
-  const unexpected = errors.filter((e) => !/truncated/.test(e));
+  const unexpected = errors.filter((e) => !/truncated|expected 24 data values/.test(e));
 
   H.check('no page errors', unexpected.length === 0, unexpected.join('\n'));
   await H.finish(browser);

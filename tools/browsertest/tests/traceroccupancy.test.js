@@ -78,11 +78,14 @@ function distance(a, b) {
     return { rayHash: await digest(ray), pathHash: await digest(path),
       rayHasMarker: ray.includes('pieAtomColor'), pathHasMarker: path.includes('pieAtomColor') };
   });
+  // Hashes re-pinned for the depth of field focused on a plane with a sharp
+  // slab (raytrace/dofChunk.js, both fragments) and the shadow rays that pass
+  // see-through and invisible objects without spending bounces (#171).
   H.check('no-occupancy ray source retains the committed byte hash',
-    sourceState.rayHash === 'febd3f5b95e07ef0b0974bc57ebd8acfd1adf9d73ae150a5e1b350d44488ae8d'
+    sourceState.rayHash === '72ac372979fc8631424075b29aa5d6d338024f059d75cdeb5f136dd855900398'
       && !sourceState.rayHasMarker, JSON.stringify(sourceState));
   H.check('no-occupancy path source retains the committed byte hash',
-    sourceState.pathHash === '9c4dfa931a5316532ad11a4125486fb56f311bc2757b3b78138ca6e5356d3964'
+    sourceState.pathHash === '6e00393da363ca05e2144ce620eab21ee27988fa4b11cc457e62917e7aeb4fc6'
       && !sourceState.pathHasMarker, JSON.stringify(sourceState));
 
   await H.setSelect(page, 'renderPipelineMenu', 'depthpeel');

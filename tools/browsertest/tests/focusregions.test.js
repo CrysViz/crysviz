@@ -134,11 +134,10 @@ const H = require('../harness');
       innerToggles: document.querySelectorAll('#cvPanelBody-focusRegions [id^="focusInner-"]').length,
       labels: [...document.querySelectorAll('#cvPanelBody-focusRegions .focus-regions-range-heading > span:first-child')]
         .map((label) => label.textContent),
-      centerInputs: document.querySelectorAll('.focus-regions-center-coordinates input').length,
+      centerInputs: document.querySelectorAll('.focus-regions-card .focus-regions-center-coordinates input').length,
       originalCenterFrac,
       adjustedCenterFrac,
       actualCenterFrac: [...first.centerFractional],
-      centerOffsetFrac: [...first.centerOffsetFrac],
       authoredOpacity: atom0.getOpacity(),
       centerDisplayOpacity: attr.getX(0),
       farDisplayOpacity: farIndex >= 0 ? attr.getX(farIndex) : null,
@@ -162,8 +161,7 @@ const H = require('../harness');
       && !result.labels.includes('Beyond opacity'), JSON.stringify(result.labels));
   H.check('the active inner region exposes editable fractional center coordinates',
     result.centerInputs === 3
-      && result.actualCenterFrac.every((value, axis) => Math.abs(value - result.adjustedCenterFrac[axis]) < 1e-9)
-      && result.centerOffsetFrac.every((value, axis) => Math.abs(value - (axis + 1) * 0.01) < 1e-9),
+      && result.actualCenterFrac.every((value, axis) => Math.abs(value - result.adjustedCenterFrac[axis]) < 1e-9),
     JSON.stringify(result));
   // The shifted center leaves atom 0 outside the 0.1 Å inner sphere, so the
   // outer opacity (0.1) composes with its authored alpha (0.6) -> 0.06.
@@ -175,6 +173,34 @@ const H = require('../harness');
   H.check('force and spin arrows follow their atom focus opacity',
     result.forceArrowOpacity <= 0.1001 && result.spinArrowOpacity <= 0.1001,
     JSON.stringify(result));
+
+  // The center is computed from the selected atoms once, then decoupled from
+  // them: moving the source atom and rebuilding the atoms leaves it where it
+  // is, and Reset goes back to the centroid the region was created with.
+  const decoupled = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { updateVisualization } = await import('./core/crystal-viewer.js');
+    const focus = await import('./render/FocusRegionModule.js');
+    const structure = fileBrowser.selectedStructure;
+    const region = structure.focusRegions[0];
+    const atom = structure.atoms[region.centerSourceIndices[0]];
+    const saved = [...atom.position];
+    const before = [...region.centerFractional];
+    atom.position = [saved[0] + 0.05, saved[1], saved[2]];
+    await updateVisualization({ reRenderAtoms: true });
+    focus.applyFocusRegions();
+    const afterMove = [...region.centerFractional];
+    atom.position = saved;
+    await updateVisualization({ reRenderAtoms: true });
+    focus.resetFocusRegionCenter(region);
+    return { before, afterMove, afterReset: [...region.centerFractional], initial: region.initialCenterFractional };
+  });
+  H.check('moving the atoms a region was created from does not move its center',
+    decoupled.afterMove.every((value, axis) => Math.abs(value - decoupled.before[axis]) < 1e-9),
+    JSON.stringify(decoupled));
+  H.check('Reset returns the center to the centroid it was created with',
+    decoupled.afterReset.every((value, axis) => Math.abs(value - result.originalCenterFrac[axis]) < 1e-9),
+    JSON.stringify(decoupled));
 
   // Each card with an inner region carries the gradient toggle (on by default)
   // and every card the polyhedra rule. Widen the first inner sphere over the
@@ -228,19 +254,21 @@ const H = require('../harness');
     general.showPolyhedra = true;
     await updatePolyhedra();
     applyFocusRegions();
-    const meshes = (groups.polyhedraGroup?.children ?? []).filter((m) => m.userData?.type === 'polyhedron');
-    const dimmed = meshes.filter((m) => m.material.opacity <= m.userData.baseOpacity * 0.1001);
-    const authored = meshes.every((m) => m.userData.baseOpacity > 0.1001);
-    const edgeDimmed = meshes.every((m) => {
-      const edge = m.children.find((c) => c.userData?.type === 'polyhedron-edges');
-      return !edge || edge.material.opacity <= m.userData.baseEdgeOpacity + 1e-6;
-    });
+    // all polyhedra are one mesh: per-polyhedron alpha lives in the
+    // polyhedra table and in the face geometry's per-vertex alpha
+    const table = groups.polyhedraGroup?.userData?.polyTable;
+    const rows = table ? [...Array(table.n).keys()].filter((i) => table.faceCount[i]) : [];
+    const dimmed = rows.filter((i) => table.opacity[i] <= table.baseOpacity[i] * 0.1001);
+    const authored = rows.every((i) => table.baseOpacity[i] > 0.1001);
+    const edgeDimmed = rows.every((i) => table.edgeOpacity[i] <= table.baseEdgeOpacity[i] + 1e-6);
+    const color = table?.faceGeometry?.getAttribute('color');
+    const gpuAlpha = rows.every((i) => Math.abs(color.array[table.faceStart[i] * 12 + 3] - table.opacity[i]) < 1e-6);
     general.showPolyhedra = false;
     await updatePolyhedra();
-    return { count: meshes.length, dimmed: dimmed.length, authored, edgeDimmed };
+    return { count: rows.length, dimmed: dimmed.length, authored, edgeDimmed, gpuAlpha };
   });
   H.check('polyhedra away from every focus scale by the outer value and keep their authored alpha',
-    polyhedra.count === 0 || (polyhedra.dimmed > 0 && polyhedra.authored && polyhedra.edgeDimmed),
+    polyhedra.count === 0 || (polyhedra.dimmed > 0 && polyhedra.authored && polyhedra.edgeDimmed && polyhedra.gpuAlpha),
     JSON.stringify(polyhedra));
 
   // The volumetric field: a synthetic blob over the cell. Its material keeps
@@ -347,6 +375,44 @@ const H = require('../harness');
   H.check('clearing every region restores the field material and drops the vertex alpha',
     reversible.fieldVertexColors === false && reversible.fieldHasAlpha === false,
     JSON.stringify(reversible));
+
+  // A region can also start at a typed center, with nothing selected: the
+  // panel's "+ Add" goes through the same createFocusRegionAt as the
+  // selection route.
+  const typed = await page.evaluate(async () => {
+    const { fileBrowser } = await import('./state/store.js');
+    const { clearSelectedAtoms, getSelectedAtoms } = await import('./ui/SelectAndHighlightModule.js');
+    const frame = () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    clearSelectedAtoms();
+    await frame();
+    const body = document.getElementById('cvPanelBody-focusRegions');
+    const inputs = [...body.querySelectorAll('input[aria-label^="New center"]')];
+    [0.25, 0.5, 0.75].forEach((value, axis) => {
+      inputs[axis].value = String(value);
+      inputs[axis].dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const add = /** @type {HTMLButtonElement} */ (body.querySelector('.focus-regions-add-at'));
+    const selectionDisabled = /** @type {HTMLButtonElement} */ (body.querySelector('.focus-regions-add')).disabled;
+    add.click();
+    await frame();
+    const regions = fileBrowser.selectedStructure.focusRegions ?? [];
+    const card = body.querySelector('.focus-regions-card');
+    return {
+      selected: getSelectedAtoms().length, selectionDisabled, inputs: inputs.length, addDisabled: add.disabled,
+      regions: regions.length, center: regions[0]?.centerFractional, sources: regions[0]?.centerSourceIndices,
+      cardCenter: [...(card?.querySelectorAll('.focus-regions-center-coordinates input') ?? [])].map((input) => Number(input.value)),
+      cardBoxed: !!card?.classList.contains('panel-section'),
+      cardLeftBorder: card ? getComputedStyle(card).borderLeftWidth : null,
+      cardTopBorder: card ? getComputedStyle(card).borderTopWidth : null,
+    };
+  });
+  H.check('with nothing selected, a region is added at the typed fractional center',
+    typed.selected === 0 && typed.selectionDisabled && typed.inputs === 3 && !typed.addDisabled
+      && typed.regions === 1 && typed.sources?.length === 0
+      && [0.25, 0.5, 0.75].every((value, axis) => Math.abs(typed.center[axis] - value) < 1e-12)
+      && [0.25, 0.5, 0.75].every((value, axis) => Math.abs(typed.cardCenter[axis] - value) < 1e-9), JSON.stringify(typed));
+  H.check('the region card is boxed like the other windows\' sections, with no accent edge',
+    typed.cardBoxed && typed.cardLeftBorder === typed.cardTopBorder, JSON.stringify(typed));
 
   H.check('no page errors', errors.length === 0, errors.join(' | '));
   await H.finish(browser);

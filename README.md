@@ -10,23 +10,24 @@ Run it in your browser at [crysviz.org](https://crysviz.org).
 <img width="600" alt="Screenshot_crysviz" src="https://raw.githubusercontent.com/CrysViz/crysviz/deploy/docs/data/CrysViz_screenshot.png" />
 
 
-CrysViz is a standalone visualisation tool built on top of Three.js. Paste a POSCAR/OUTCAR/CIF snippet, drop a local file (POSCAR, OUTCAR, CIF or QE input/output), or grab an OPTIMADE endpoint (or just Materials Project or Alexandria IDs). Your crystal structures will NOT leave your device!
+CrysViz is a standalone visualisation and analysis tool built on top of Three.js. Paste a POSCAR/CIF snippet, drop a local file, or paste an OPTIMADE structure URL or an Alexandria ID. Everything runs on your device: your crystal structures do NOT leave it.
 
 Copyright (C) 2025-2026 Florian Trybel, Abhijith S Parackal, Oscar Bulancea-Lindvall, Henricus R.A. ten Eikelder and Rickard Armiento
 
 
 ## Key Features
-- No backend required; runs entirely in the browser, no data leaves your machine. Runs in nearly every device (in particular smartphons and tablets) and in every browser. 
-- Visualise Input and output from VASP, Quantum Espresso, and CIF files.
-- Measure distances and angles.
-- Use custom bond lengths with the optional ability to display atoms outside the unit cell that are bonded neighbours.
-- Customizable color schemes can be choosen for any individual atoms 
-- Forces and spin visualisation. Dynamically for relaxaton or MD trajectories
-- Trajectory player. Load VASP OUTCARs and Quantum Espresso vc-relax output files directly and visualise the trajectories. Long MD trajecetories might be beyond your browsers memory limits.
-- Symmetry anlysis and structure refinement (powered by Moyo WASM)
-- Relxations and molecular dynamics simulations directly on your device with NEP potentials with upt to several hundred atoms. 
-- Possibility to activate a calculation backend. This allows structural relaxations with any ASE compatible calculater, e.g., MACE, UPET, VASP, QE; trajectory is added and can be played using the trajectory player.
-- Bond length histogram (angles and coordiantion numbers are comming soon).
+- No backend required: runs entirely in the browser, and no data leaves your machine. Works in nearly every browser and on nearly every device, including phones and tablets.
+- Reads VASP, Quantum ESPRESSO, CIF, XYZ, CASTEP, FHI-aims, phonopy and more; exports CIF, POSCAR and other formats, and images (raster or ray-traced).
+- Measure distances and angles; custom bond lengths, colours and radii for any atom.
+- Coordination polyhedra, charge densities and other volumetric fields as isosurfaces.
+- Forces and spins, also along relaxation and MD trajectories, with a trajectory player.
+- Symmetry analysis and structure refinement (powered by Moyo WASM).
+- Build and edit structures: atoms, supercells, lattice transformations, vacuum and slabs.
+- Relaxations and molecular dynamics directly on your device with machine-learned potentials (NEP, PET-MAD), for up to several hundred atoms.
+- Optional calculation backend for any ASE-compatible calculator (e.g. MACE, VASP, QE).
+- Phonons from phonopy: band structure, DOS and animated modes.
+- Share a structure with a link or QR code, and find any feature with Search everything (Ctrl/⌘+F).
+- Python API and an MCP server, so you or an AI assistant such as Claude can drive CrysViz (see below).
 - and many more...
 
 
@@ -42,58 +43,81 @@ This program is free software: you can redistribute it and/or modify it under th
 - **[Henricus R.A. ten Eikelder](https://github.com/RicktenE)**
 
 
-### Local in-browser installation and use
+## Installation and use
 
-If you do not want to use CrysViz over the Internet, you can run it via a webserver on your own computer:
+### In your browser
 
-* Clone the CrysViz repository from GitHub
+Open [crysviz.org](https://crysviz.org). Nothing to install.
 
-* Start the local server:
+### Locally, in your browser
 
-   ```bash
-   make serve
-   ```
-* Visit the URL shown.
+To run CrysViz without the Internet, serve it from your own computer:
 
-
-### Run CrysViz as a stand-alone application
-
-The stand-alone application uses pywebview, which requires a native GUI backend.
-This sometimes works automatically via CrysViz dependency handling,
-but if not, follow the [installation instructions for pywebview](https://pywebview.flowrl.com/guide/installation.html)).
-
-We suggest that you set up pywebview and CrysViz in a venv.
-For pywebview to access its required system packages, you may need to create it as, e.g.:
 ```bash
-python3 -m venv --system-site-packages .venv
-source .venv/bin/activate
-python -m pip install pywebview
+git clone https://github.com/CrysViz/crysviz.git
+cd crysviz
+make serve
 ```
-And then test that the pywebview backend works:
-```python
-import webview
-webview.create_window('Hello world', 'https://pywebview.flowrl.com/')
-webview.start()
-```
-Now you can install CrysViz into the venv as:
+
+Then open the URL shown.
+
+### Stand-alone application
+
+The `crysviz` Python package opens CrysViz in its own window (pywebview). It
+needs a native GUI backend, which the `qt` or `gtk` extra installs:
+
 ```bash
-python -m pip install -e .
-```
-(Good alternatives are via `pipx install` or `uv tool install` if you have these tools available.)
-
-And then run the standalone application with:
-```
-crysviz
+pip install 'crysviz[qt]'        # or 'crysviz[gtk]'
+crysviz structure.cif            # open files in a window
+crysviz --browser structure.cif  # or in your system browser, no GUI backend needed
 ```
 
-### Python API
+On Linux you can reuse the system's Qt instead of downloading it. Create the
+venv with access to the system packages, for example with uv:
+
+```bash
+uv venv --system-site-packages .venv
+uv pip install --python .venv/bin/python crysviz
+.venv/bin/crysviz
+```
+
+If the window does not open, check that pywebview works on its own (see
+[examples/README.md](examples/README.md) and the
+[pywebview installation guide](https://pywebview.flowrl.com/guide/installation.html)).
+
+The Python API and the MCP server below are newer than the latest release.
+Until the next release, install them from a checkout:
+
+```bash
+git clone https://github.com/CrysViz/crysviz.git && cd crysviz
+pip install -e '.[qt,mcp]'       # or with uv: uv pip install --python .venv/bin/python -e '.[mcp]'
+```
+
+
+## Python API
 
 If you have the standalone application installed, you can also use the Python API for visualization and remote-control from Python. For example:
 
 ```python
 from crysviz import Payload, Viewer, show
 
-payload = Payload("silicon.cif", "data_Si\n_cell_length_a 5.43\n")
+SI_CIF = """data_Si
+_cell_length_a 5.43
+_cell_length_b 5.43
+_cell_length_c 5.43
+_cell_angle_alpha 90
+_cell_angle_beta 90
+_cell_angle_gamma 90
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+Si1 Si 0.1 0.1 0.1
+"""
+
+payload = Payload("silicon.cif", SI_CIF)
 with Viewer([payload]) as viewer:
     structures = viewer.list_structures()
     viewer.select(structures[0].id, frame=0)
@@ -106,27 +130,138 @@ with Viewer([payload]) as viewer:
 viewer = show(["structure.cif"])
 ```
 
-For more, see [examples](https://github.com/CrysViz/crysviz/tree/deploy/examples).
+For more, see [examples](examples/) and the guide [agent_guides/Python.md](agent_guides/Python.md).
+
+
+## Claude and other AI assistants (MCP)
+
+`crysviz-mcp` is a local MCP server. It lets Claude, or another MCP client,
+work in a CrysViz window on your computer together with you: load and edit
+structures, find atoms, bonds, polyhedra and voids, set the view, run MD,
+relaxations and EOS scans, read symmetry, phonons and fields, export files and
+get pictures back.
+
+Install it (from a checkout until the next release, see above), then add it to
+your client.
+
+### What `crysviz-mcp` is
+
+`crysviz-mcp` is a program, not a folder. Installing CrysViz with the `mcp`
+extra puts it in the `bin` folder of the Python environment you installed
+into, next to `python`. With a venv in `.venv`:
+
+- Linux and macOS: `/path/to/.venv/bin/crysviz-mcp`
+- Windows: `C:\path\to\.venv\Scripts\crysviz-mcp.exe`
+
+With the environment active, `which crysviz-mcp` (Windows: `where crysviz-mcp`)
+prints that full path. Your MCP client starts the program itself, usually
+without your environment active, so give the client the **full path**. Check
+that it runs with `/path/to/.venv/bin/crysviz-mcp --help`.
+
+Options: `--gui qt|gtk|cef` picks the window backend (by default pywebview
+chooses), and `--export-dir DIR` sets where pictures and exported files go
+(default `./crysviz-exports`).
+
+### Connect your client
+
+Any MCP client that can start a local (stdio) server works: give it the full
+path of `crysviz-mcp` as the command. Setup for the most common clients:
+
+**Claude Code** (add `-s user` to use it in every project, not only this one):
+
+```bash
+claude mcp add crysviz -- /path/to/.venv/bin/crysviz-mcp
+```
+
+**Claude Desktop**: add this to `claude_desktop_config.json` (Settings >
+Developer > Edit Config) and restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "crysviz": { "command": "/path/to/.venv/bin/crysviz-mcp" }
+  }
+}
+```
+
+**Codex** (CLI and IDE extension): add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.crysviz]
+command = "/path/to/.venv/bin/crysviz-mcp"
+# Linux only: Codex passes a server only a few environment variables, and the
+# window needs these to open on your screen.
+env_vars = ["DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR"]
+```
+
+(`codex mcp add crysviz -- /path/to/.venv/bin/crysviz-mcp` writes the first two
+lines for you; on Linux add the `env_vars` line yourself.)
+
+**VS Code** (Copilot Chat in agent mode): run **MCP: Add Server** from the
+Command Palette, choose **Command (stdio)**, enter
+`/path/to/.venv/bin/crysviz-mcp` and the name `crysviz`, and pick the global
+(user) destination.
+
+The window opens on the first request. Then ask, for example:
+
+- "Load ~/NaCl.cif and show me the view along c."
+- "Make a 3x3x3 supercell, remove one O, relax it and tell me how far the neighbours moved."
+- "Find all TiO6 octahedra and colour them blue."
+- "Run 2 ps of MD at 600 K and export the trajectory."
+
+The window is shared. Claude leaves your camera, zoom and display settings
+alone unless you ask, and it is told about the changes you make by hand. Only
+clients on your own computer can use it; claude.ai in the browser is not
+supported yet. The tools and options are in
+[agent_guides/MCP.md](agent_guides/MCP.md), and [examples/mcp_quickstart.md](examples/mcp_quickstart.md)
+walks through a first session.
 
 ## Widget mode / embedding
 
 CrysViz can be embedded in another site as a compact interactive viewer with
-`?widget=1`. Widget mode shows only the 3D structure view (with spin arrows), a
-locked composition legend, a small CrysViz logo (top-left) that opens the full
-UI in a new tab, and a settings menu (top-right) for the cell choice
-(As loaded / Conventional / Primitive) and rendering style
-(Normal / Cel shading / Ray tracing / Path tracing).
+`?widget=1`. The full guide, with the integration steps, the complete message
+protocol and the rules for changing widget code, is
+[`agent_guides/Widget.md`](agent_guides/Widget.md); a working host page is
+[`docs/widget-embed-demo.html`](docs/widget-embed-demo.html).
+
+Widget mode shows only the 3D structure view (with spin arrows), a locked
+composition legend (lower right), a small axes gizmo (lower left) and a camera
+control (top right: view along a, b or c, and reset). The CrysViz logo (top
+left) is the menu:
+
+- **Open in CrysViz**: the same structure in the full UI, in a new tab
+- **Structures**: As loaded / Conventional / Primitive
+- **Shading**: Metallic / Matte / Cel shading (plus Ray tracing / Path tracing
+  with `tracers=1`)
+- **Bonds** and **Polyhedra** toggles
+- **Download POSCAR / CIF** of the cell shown
+- any links the embedder adds (`menuLinks`, below)
 
 **URL contract** — the embedder points an `<iframe>` at:
 
 ```
-https://crysviz.org/index.html?widget=1#load-file=<urlenc name>.crysviz|<urlenc base64 JSON>
+https://crysviz.org/index.html?widget=1[&control=1][&tracers=1][&theme=dark|light][&prefs=1]#<route>
 ```
 
-The fragment is the existing `#load-file=` loader: `filename|content`, each part
-URL-encoded, the content being base64-encoded UTF-8 of a frames-style `.crysviz`
-session (the "CrysViz" download format). The minimal session is a single frame
-with `spins` and the display toggle on:
+| Query | Effect |
+|---|---|
+| `widget=1` | widget mode (required) |
+| `control=1` | let the host page drive the widget over `postMessage` (below) |
+| `tracers=1` | offer ray and path tracing (downloads the tracer pipelines; skipped by default) |
+| `theme=dark` / `light` | force the UI theme at boot instead of following the OS; not persisted |
+| `prefs=1` | re-apply the per-structure customisations (per-atom colours, focus regions) this browser saved in the full app. Off by default: the embed has no UI to see or reset them |
+
+The fragment says where the structure comes from:
+
+| Route | Use |
+|---|---|
+| `#load-file=<name>\|<base64>` | the file in the URL: name and base64 of its UTF-8 text, each URL-encoded. Simplest, for small text files; browsers cap URL length |
+| `#load-url=<url>[\|<name>]` | fetched from an http(s) URL without cookies; the server must send `Access-Control-Allow-Origin` |
+| `#load-message` | posted by the embedding page: no size limit, binary allowed. The widget posts `{source:'crysviz-widget', type:'awaitingSession'}` to its parent, which answers `{target:'crysviz-widget', type:'loadSession', name, data}` (`data`: string, ArrayBuffer, typed array or Blob) |
+
+The file can be any format CrysViz reads, or a frames-style `.crysviz` session
+(the "CrysViz" download format; `"format": "crysviz"` is required). The minimal
+session is a single frame with `spins` and the display toggle on:
 
 ```json
 {
@@ -144,10 +279,13 @@ with `spins` and the display toggle on:
 ```
 
 Spin vectors are Cartesian magnetic moments, index-aligned to `positions`. The
-Conventional/Primitive options symmetrise the cell (via moyo) and remap the
-moments onto the new cell; a magnetic order that the smaller cell cannot carry
-(a magnetic supercell) leaves that option greyed out. The top-left logo links
-back to the same structure in the full UI (the same URL minus `widget=1`).
+Conventional/Primitive options symmetrise the cell (via moyo) on first pick
+and remap the moments onto the new cell; a magnetic order that the smaller cell
+cannot carry (a magnetic supercell) greys that option out. "Open in CrysViz"
+opens the launch data in the full UI, on the frame shown when it is a
+`.crysviz` session (a moyo-built cell, or any other file, opens as loaded): by
+URL for a `#load-file=` launch that fits, otherwise by handing the data to the
+new tab over `postMessage`.
 
 **Precomputed cells (`frameKinds`)** — a database that already knows the
 conventional and primitive cells can ship them as extra frames instead of
@@ -168,47 +306,51 @@ optional):
 }
 ```
 
-When `frameKinds` is present the widget's Structures menu simply **selects the
-matching frame** — no moyo runs and no in-browser spin remapping happens; a
-cell kind not listed is greyed out ("not provided by the database"). When
-`frameKinds` is absent the menu falls back to the moyo build path above. The
-key is widget-only: the full app ignores `frameKinds` entirely (a session with
-it loads as an ordinary multi-frame trajectory).
+When `frameKinds` is present the widget's Structures menu lists **exactly the
+shipped frames**, one entry per kind (`"loaded"` reads "As loaded", other
+strings are capitalised), and picking one selects that frame — no moyo runs
+and no in-browser spin remapping happens. `frameKinds` must be an array of
+strings with one entry per frame; otherwise it is dropped and the menu falls
+back to the moyo build path above. The key is widget-only: the full app
+ignores `frameKinds` entirely (a session with it loads as an ordinary
+multi-frame trajectory).
 
 **Menu links (`menuLinks`)** — the embedder can add its own dropdown items that
 open URLs. A top-level `menuLinks` array of `{label, url}` (same channel as
-`frameKinds`) renders as plain items in the widget menu, between the toggles and
-"Open in CrysViz"; clicking one opens `url` in a new tab. The altermagnets DB
-uses this for e.g. "Download CIF" / "Download POSCAR" links to its files
-endpoint. Validated strictly: each `label` a non-empty string (≤40 chars), each
-`url` an `http`/`https` URL that parses; invalid entries are dropped, an empty
-result shows no group. Widget-only — the full app ignores it.
+`frameKinds`) renders as plain items in the widget menu after the Download
+items; clicking one opens `url` in a new tab. The altermagnets DB uses this
+for links to its files endpoint. Validated strictly: each `label` a non-empty
+string (≤40 chars), each `url` an `http`/`https` URL that parses; invalid
+entries are dropped, an empty result shows no group. Widget-only — the full
+app ignores it.
 
 ```json
 { "menuLinks": [
-  { "label": "Download CIF", "url": "https://altermagnets.example/files/x.cif" },
-  { "label": "Download POSCAR", "url": "https://altermagnets.example/files/x.vasp" }
+  { "label": "Database entry", "url": "https://altermagnets.example/entry/x" },
+  { "label": "Download VASP inputs", "url": "https://altermagnets.example/files/x.zip" }
 ] }
 ```
 
-**Theme** — append `&theme=dark` or `&theme=light` to the URL (`?widget=1&theme=dark#load-file=…`) to force the embed's UI theme at boot; any other/absent value keeps the default (follow the OS). The choice is applied through the theme manager and is not persisted.
+**Host control (`control=1`)** — the host page can step a trajectory, switch
+between several structures loaded as frames, and link the cameras of two
+widgets. Commands go to the iframe as
+`{target:'crysviz-widget', type, …}`: `getState`, `setFrame {index, recenter?}`,
+`fitView`, `play {fps?, loop?}`, `pause`, `getCamera`, `setCamera {view}`. The
+widget answers with `{source:'crysviz-widget', type, …}`: `ready`, `state`,
+`frame`, and `camera` (the user moved the camera; moves made by host commands
+are never reported, so two linked widgets do not echo). Only the iframe's
+direct parent can drive it. See [`agent_guides/Widget.md`](agent_guides/Widget.md)
+for the fields and examples.
 
-**Saved preferences** — the full app remembers per-structure customisations
-(per-atom colours, focus regions) in the browser's storage and re-applies them
-when the same structure is loaded again. Widget mode does **not** do this by
-default: the embed has no UI to inspect, change or reset those preferences, so
-a structure always opens with its defaults (or exactly the state a `.crysviz`
-session carries). Append `&prefs=1` (`?widget=1&prefs=1#load-file=…`) to opt
-in and let the viewer's own saved customisations for that structure carry over
-into the embed.
-
-**Sandboxing** — the iframe does **not** need `allow-same-origin`: widget mode
-runs correctly in an opaque origin where browser storage is unavailable
-(theme/font preferences silently fall back to defaults). An opaque-origin embed
-does, however, require the CrysViz host to serve CORS headers
-(`Access-Control-Allow-Origin`) for its ES-module and WASM fetches — true on
-GitHub Pages (where crysviz.org is served), and something self-hosters must
-configure.
+**Sandboxing** — the iframe does **not** need `allow-same-origin`; give it
+`sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads"`
+(popups for "Open in CrysViz" and menu links, downloads for POSCAR/CIF). Widget
+mode runs correctly in an opaque origin where browser storage and web workers
+are unavailable (preferences fall back to defaults, heavy work runs on the
+main thread). An opaque-origin embed does, however, require the CrysViz host to
+serve CORS headers (`Access-Control-Allow-Origin`) for its ES-module and WASM
+fetches — true on GitHub Pages (where crysviz.org is served) and in
+`make serve`, and something self-hosters must configure.
 
 ## Third-Party Libraries
 
@@ -289,6 +431,16 @@ configure.
    - Copyright: Project Nayuki
    - Loaded on demand from jsDelivr (npm `nayuki-qr-code-generator`) to draw the
      QR code in the share-link dialog.
+
+10. httk data-generators
+   - Repository: https://github.com/httk/data-generator
+   - License: CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)
+   - Copyright: Rickard Armiento
+   - Generated with cctbx (https://cctbx.github.io/) and spglib
+     (https://spglib.readthedocs.io/).
+   - Space-group settings, symmetry operations, Wyckoff positions and
+     asymmetric units. The dataset carries its own license and provenance
+     metadata; both live in docs/data/symmetry_basics.json.
 
 ## Other Attributions
 

@@ -46,7 +46,11 @@ export const highlightHover ={
    // ray/path tracers can draw them as a post-present overlay and clear them
    // without a full mesh rebuild (which would restart the accumulation).
    currentlyHighlightedAtomInstances:[],
-   currentlyHighlightedBondInstances:[]
+   currentlyHighlightedBondInstances:[],
+   // Polyhedra table rows (render/PolyhedraMesh.js) glowing for the selection
+   // bar's Polyhedra view (SelectAndHighlightModule setSelectionView); the
+   // ghost overlays read them. Emptied when the polyhedra are rebuilt.
+   currentlyHighlightedPolyIndices:[]
 };
 
 export const atomSelection = {
@@ -108,6 +112,10 @@ export const groups = {
   forcesTipMesh: null,
   spinShaftMesh: null,
   spinTipMesh: null,
+  // Comparison spin set (structure.spins2, experimental), drawn by
+  // render/SpinModule.js alongside the primary spins.
+  spin2ShaftMesh: null,
+  spin2TipMesh: null,
   // Phonon-mode displacement arrows (render/PhononArrowModule.js), owned by
   // phonon/phononSession.js and rebuilt per animation tick.
   phononShaftMesh: null,
@@ -122,6 +130,16 @@ export const groups = {
   // THREE.Group of short cylinder dashes, rebuilt from the current structure on
   // every updateVisualization when any eligible pair is enabled.
   hydrogenBondsGroup: null,
+  // Real-space asymmetric unit ("irreducible wedge") of the detected space
+  // group (render/AsymmetricUnitModule.js). A THREE.Group holding the wedge
+  // hull, its outline, and — only when the displayed cell is not the
+  // conventional one — the conventional cell box the wedge is defined in.
+  asuGroup: null,
+  // Halo shells marking the atoms that fall inside the wedge. Its own mesh
+  // rather than a child of asuGroup: the wedge is static while this tracks
+  // atoms that move (MD playback), so it is refreshed in place — rewriting
+  // instance matrices and `count` — instead of being rebuilt with the group.
+  asuHaloMesh: null,
 };
 
 
@@ -130,9 +148,16 @@ export const groups = {
 // the "Reset rendering" button (ui/ColorPanel.js resetRenderingSettings).
 export const RENDERING_DEFAULTS = {
   renderStyle: 'metallic', // 'metallic' | 'matte' | 'cel' — atom/bond material style
+  // Atom level of detail (render/AtomLodModule.js): 'spheres' = tessellated
+  // instanced spheres; 'imposters' = one ray-cast quad per atom (pixel-exact
+  // at every zoom, a fraction of the vertex work), with atoms that are large
+  // on screen drawn as real spheres by a small near mesh; 'auto' = imposters
+  // from atomDetailImposterMin instances up.
+  atomDetail: 'auto', // 'auto' | 'spheres' | 'imposters'
   renderPipeline: 'depthpeel', // active rendering pipeline id; depthpeel self-optimizes to a plain forward pass when the scene has no transparency (DepthPeelPass fast path)
   showAllRenderPipelines: false, // HIDDEN (config-only, no GUI): list superseded/debug pipelines in the rendering dropdown
-  depthPeelLayers: 10, // peel passes for the 'depthpeel' pipeline (1-50; more = deeper transparency, slower)
+  depthPeelLayers: 15, // peel passes for the 'depthpeel' pipeline (1-50; more = deeper transparency, slower)
+  depthPeelMotionLayers: 4, // 'depthpeel': peel passes while the camera moves (1-15); the full count returns when it rests
   rtResolutionScale: 0.95, // raytrace/pathtrace pipelines: internal resolution as a fraction of the canvas
   rtTiledRender: true, // raytrace/pathtrace: render each sample in scissored tiles (one/frame) to keep the shared GPU responsive; untiled half-res while the camera moves
   rtReflectivity: 0.15, // raytrace/pathtrace pipelines: extra mirror reflectivity on opaque surfaces (0-1)
@@ -142,8 +167,9 @@ export const RENDERING_DEFAULTS = {
   rtPreviewRestDelay: 0.5, // HIDDEN (config-only, no GUI): raytrace/pathtrace seconds of no interaction before the tracer resumes (raster-preview rest delay)
   ptDenoise: true, // 'pathtrace' pipeline: edge-aware denoiser on the screen output
   ptLightSoftness: 0.3, // both tracers: light softness (0 = hard shadows, 1 = very soft; PT area-light radius / RT shadow-ray cone)
-  rtDofAperture: 0, // both tracers: depth-of-field aperture in world units (0 = off)
-  rtDofFocus: 1, // both tracers: focus distance as a factor of the camera->target distance
+  rtDofAperture: 0, // both tracers: depth-of-field lens radius SQUARED in world units (0 = off; the slider is linear in the radius)
+  rtDofFocus: 1, // both tracers: focal-plane distance as a factor of the camera->target distance
+  rtDofDepth: 0, // HIDDEN (config-only, no GUI): both tracers: half-depth (Å) of a slab around the focal plane that stays sharp (0 = thin lens)
   // Ground plane (all pipelines): the tracers draw an analytic disc; the raster
   // pipelines + preview frames draw a visually-matched raster disc mesh via
   // render/GroundPlaneModule.js. Keys keep their rt* names for persistence
@@ -156,13 +182,15 @@ export const RENDERING_DEFAULTS = {
   rtGroundOffset: 0.75, // distance from the structure bottom to the plane (all pipelines)
   rtGroundSize: 2.5, // ground disc radius in multiples of the structure radius (all pipelines)
   rtGroundReflect: 0, // ground mirror fraction (0 = matte ... 1 = mirror floor); TRACER-ONLY
+  rtGroundDirection: 'down', // which side the ground lies on: 'down' (−y), 'view-below', 'view-behind', '±x/±y/±z', '±a/±b/±c' (render/groundDirection.js)
   rtLightIntensity: 1.2, // both tracers: key-light intensity multiplier
   rtAmbient: 0.3, // both tracers: ambient/fill light strength (RT ambient term / PT sky bounce)
   rtSaturation: 1, // both tracers: post-tone-map saturation grade (output pass; 1 = neutral)
   celOutlineMode: 'screen', // cel outlines: 'screen' (post-process) | 'hull' (inverted-hull geometry)
-  celOutlineWidth: 0.025, // screen-space outline width in world units (0 = off)
+  celOutlineWidth: 0.0125, // screen-space outline width in world units (0 = off); slider 0.5
   celHullWidth: 0.025, // hull outline width in world units, atoms/bonds (0 = off)
   celHullPolyWidth: 0.025, // hull outline width in world units, polyhedra
+  celOutlineArrows: true, // screen-space cel outlines also on force/spin/phonon arrows (3D hull: never)
   // Cel outline color, shared by both outline modes. 'auto' picks black or
   // white for maximum contrast against the scene background; 'black'/'white'
   // are fixed; 'custom' uses celOutlineColor.
@@ -189,6 +217,17 @@ export const general = {
   symmetryTolerance: 0.01,
   powerMode: true,
   currentLatticeColor:null,
+  // Asymmetric-unit wedge colour. Mirrored from --asu-color by
+  // ui/ThemeManager.js the same way currentLatticeColor mirrors
+  // --lattice-color, so a palette can retint the wedge.
+  asuColor:null,
+  // Set once the user picks a wedge colour by hand, which stops a later theme
+  // change from mirroring --asu-color over their choice. The picker's Reset
+  // clears it, and the next theme read takes over again.
+  asuColorUserSet:false,
+  // Wedge face opacity (Symmetry panel slider). The outline stays opaque —
+  // dropping this to 0 leaves a readable wireframe rather than nothing.
+  asuOpacity:0.22,
   defaultBackgroundColor:null,
   useDefaultColors:true,
   // "Element Materials Map" (Visual → Colors): per-species tracer-material
@@ -258,6 +297,19 @@ export const general = {
   // independent of spinColorScale — same one-directional lock as
   // forceLengthLogScale above (render/SpinModule.js's normalizeMag()).
   spinLengthLogScale: false,
+  // Comparison spin set (structure.spins2; Spins panel "Comparison Spins",
+  // experimental). Length controls are shared with the primary set above;
+  // these are the per-set colour and diameter settings.
+  spin2Visible: true,
+  // "Highlight" toggles (Comparison Spins section): make every arrow of the
+  // primary / comparison set glow, to tell the two sets apart.
+  spinHighlightAll: false,
+  spin2HighlightAll: false,
+  spin2Radius: 0.08,
+  spin2ColorMap: 'none',
+  spin2Min: 0,
+  spin2Max: 2,
+  spin2ColorScale: 'linear',
   // Force colormap range (Forces panel min/max inputs; read with ||-defaults).
   forceMin: 0,
   forceMax: 2,
@@ -266,12 +318,18 @@ export const general = {
   // Custom legend text for the Forces color bar (ForcePanel.js), falls back
   // to "Force (eV/Å)" when unset.
   forceLegendText: null,
+  // Where the user dragged that color bar's legend text (ColorBarWidget.js
+  // legendOffset, CSS px), carried across rebuilds; null = default place.
+  forceLegendOffset: null,
   // Spin colormap normalization: 'linear' | 'log' (Spins panel Log Scale
   // toggle), same role as forceColorScale above but for SpinModule.js.
   spinColorScale: 'linear',
   // Custom legend text for the Spins color bar (SpinPanel.js), falls back
   // to "Spin (μB)" when unset.
   spinLegendText: null,
+  // Where the user dragged that color bar's legend text (ColorBarWidget.js
+  // legendOffset, CSS px), carried across rebuilds; null = default place.
+  spinLegendOffset: null,
   // Spin reference frame (Spins panel "Spin Reference Frame" dropdown): how
   // each spin's raw moments map to global Cartesian — 'file' (re-project from
   // the SAXIS the file was written with), 'cartesian', 'crystal', or 'custom'.
@@ -293,12 +351,18 @@ export const general = {
   // Custom legend text for the Atoms color bar (ColorPanel.js), falls back
   // to "Atom Force (eV/Å)" when unset.
   atomLegendText: null,
+  // Where the user dragged that color bar's legend text (ColorBarWidget.js
+  // legendOffset, CSS px), carried across rebuilds; null = default place.
+  atomLegendOffset: null,
   // Bonds "Length" mode colormap normalization: 'linear' | 'log' (ColorPanel.js
   // Log Scale toggle for the bond color bar).
   bondColorScale: 'linear',
   // Custom legend text for the Bonds color bar (ColorPanel.js), falls back
   // to "Bond Length (Å)" when unset.
   bondLegendText: null,
+  // Where the user dragged that color bar's legend text (ColorBarWidget.js
+  // legendOffset, CSS px), carried across rebuilds; null = default place.
+  bondLegendOffset: null,
   // Force arrow LENGTH normalization (Forces panel "log length" toggle),
   // independent of forceColorScale above — but turning it on also forces
   // forceColorScale to 'log' and locks that toggle, since a log-length arrow
@@ -359,6 +423,13 @@ export const general = {
   // size per bar. null uses the widget's own default.
   colorBarSize: null,
   atomSize:1.0,
+  // Atom LOD tuning (render/AtomLodModule.js; no GUI): instance count from
+  // which 'auto' switches to imposters; projected radius (CSS px) from which an
+  // imposter-mode atom in view is drawn as a real sphere; and the most such
+  // near spheres kept (past it everything stays an imposter).
+  atomDetailImposterMin: 20000,
+  atomDetailNearPx: 28,
+  atomDetailNearMax: 4096,
   mainOpacity:1.0,
   showAtoms:true,
   showBonds:true,
@@ -369,6 +440,19 @@ export const general = {
   // Off by default: most structures have no charge data, and on those that do
   // a badge per atom is a lot of extra ink to opt into rather than inherit.
   showCharges:false,
+  // Atom labels ("Fe1", "O3") on the atoms of the main view and in the
+  // inspectors (render/AtomLabelModule.js); the label button next to ✎ in the
+  // Structure window. Off by default.
+  showAtomLabels:false,
+  // Their size, a multiplier on the default (Settings ▸ Atom labels ▸ Names).
+  atomLabelScale:1.0,
+  // The charge badges' size (Settings ▸ Atom labels ▸ Charges), a multiplier.
+  chargeLabelScale:1.0,
+  // Standard uncertainties read from a CIF ("CIF errors", model/cifErrors.js),
+  // written after measured lengths and angles: 2.3456(12) Å. They are only
+  // read when the user says so at load; this switch (Features window) hides
+  // or shows them afterwards.
+  showCifErrors:true,
   showAxes:true,
   // Shaft radius of the a/b/c axes-gizmo arrows, in gizmo-scene units
   // (WindowAndSceneControls.initAxesGizmo; arrow length is 1).
@@ -384,6 +468,10 @@ export const general = {
   // arrow's tip inside the gizmo's own 3D scene instead of in the separate
   // #axesLegend box (WindowAndSceneControls.initAxesGizmo).
   gizmoLabelsOnArrows: false,
+  // Multiplier on the on-arrow a/b/c label sprite size (WindowAndSceneControls
+  // gizmoLabelScale). 1 = the app default; widget mode bumps it so the letters
+  // stay legible on the small embed compass without enlarging the arrows.
+  gizmoLabelSizeFactor: 1,
   // Side length in px of the #axesGizmo box (ui/GizmoDrag.js's resize
   // handle), or null to use the CSS default (--gizmo-size, theme.css).
   gizmoSize: null,
@@ -441,11 +529,70 @@ export const general = {
   periodicBounds:{ xmin:0, xmax:1, ymin:0, ymax:1, zmin:0, zmax:1 },
   showPBCBonds:false, // Periodic image atoms + bonds across cell (off by default)
   completePolyhedra:false, // Show the out-of-cell atoms needed to complete the polyhedra
+  // Complete Rings & Fragments: draw whole every finite bonded fragment (dimer,
+  // molecule, molecular ion) that a cell face cuts, and in chains/layers/
+  // frameworks every ring of up to fragmentMaxRing atoms through a bond leaving
+  // the cell. Built into the
+  // periodic image set (render/LatticeModule.js periodicWrapped; JS twin in
+  // render/FragmentCompletion.js, WASM in periodic_wasm_src/src/fragments.rs).
+  completeFragments:false,
+  fragmentIgnoreMetalBonds:true, // bonds to metals do not hold a fragment together
+  fragmentMaxRing:6, // largest ring completed in extended networks (0 = none)
   useWasmMath:true, // Use compiled WASM for selected math kernels (false = pure JS fallback)
   useWasmPeriodic:true, // Use compiled WASM for periodicWrapped (false = pure JS fallback)
   useWasmPolyhedra:true, // Use compiled WASM for computePolyhedra (false = pure JS fallback)
   useWasmBonds:true, // Use compiled WASM (cell list) for neighbour-bond pair finding (false = JS O(n²))
   serialPolyhedraAlgorithm:false, // true = single-threaded WASM; false = parallel over Web Workers
+  // Polyhedra search (Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced). 'advanced': radical-Voronoi
+  // coordination, bridged-cation test and cage search (~0.24 ms per centre).
+  // 'fast': the hull of each centre's bonded ligands
+  // them — linear in the atom count, no cages; meant for large MD cells.
+  // 'auto': fast when the structure has at least polyhedraFastMin atoms.
+  // "Atoms" is structure.atoms.length — the cell's own atoms, not periodic
+  // images or completing atoms: it is fixed per structure (the mode does not
+  // flip while images are toggled) and is the number the Files window shows.
+  // Both persist in this browser (savePolyhedraSearchPrefs below); they are
+  // not part of share links or .crysviz sessions.
+  polyhedraMode:'auto', // 'auto' | 'fast' | 'advanced'
+  polyhedraFastMin:2000,
+  // Polyhedra ▸ Bond breaking tolerance (render/BondBreakTolerance.js): during MD /
+  // trajectory playback a bond — and the polyhedron corner with it — that
+  // exists keeps existing until its length exceeds cutoff × (1 + this), and
+  // one that does not exist forms within the plain cutoff, so thermal
+  // vibration about a cutoff does not make it flicker. A fraction, 0–0.3;
+  // 0 = strict. Persists in this browser (saveBondBreakPrefs below), not in
+  // share links or sessions.
+  bondBreakTolerance:0.10,
+  // Polyhedra window ▸ Colour by (render/PolyhedraFrameModule.js): 'style'
+  // (the category colours) or a model/polyhedraProperties.js id — 'bld',
+  // 'angleVariance', 'quadraticElongation', 'volume', 'tiltA', 'tiltB',
+  // 'tiltC', 'rotation' — recomputed after every rebuild and MD frame.
+  // Tilt axes: 'auto' (per type, the mean orientation of its polyhedra in the
+  // frame), 'cell' (the cell axes) or 'matrix' (polyhedraTiltMatrix: the
+  // pseudo-cubic axes as rows in terms of a, b, c). polyhedraColorMap 'auto'
+  // picks a diverging map for the signed tilts, a sequential one otherwise.
+  // Range null = fit to the data on the next colouring (over the frames of a
+  // trajectory, then kept, so MD frames stay comparable). GreyOthers: the
+  // polyhedra the property does not apply to are drawn grey (else in their
+  // style colour). Edges of the coloured polyhedra: 'grey' | 'property' (the
+  // face's colour) | 'style'. Colour by, axes, matrix, map, grey and edges
+  // persist in this browser (savePolyhedraColorPrefs below), not in share
+  // links or sessions.
+  polyhedraColor:'style',
+  polyhedraTiltFrame:'auto', // 'auto' | 'cell' | 'matrix'
+  polyhedraTiltMatrix:[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  polyhedraColorMap:'auto',
+  polyhedraColorGreyOthers:true,
+  polyhedraColorEdges:'grey', // 'grey' | 'property' | 'style'
+  polyhedraColorMin:null,
+  polyhedraColorMax:null,
+  // The Colour by bar's layout, kept across window rebuilds (as the Atoms bar's).
+  polyColorBarFloating:false,
+  polyColorBarFloatPos:null,
+  polyColorBarOrientation:'horizontal',
+  polyColorBarFlipSide:false,
+  polyColorBarLocked:false,
+  polyColorLegendText:null,
   backendViewerUpdateStride:1, // Update the viewer every N backend/NEP steps during relax/MD
   backendTrajectorySaveStride:4, // Save a trajectory snapshot every N steps during relax/MD
   // Console profile of the MD/relax loop: when true, runMDSimulation prints a
@@ -458,6 +605,29 @@ export const general = {
   // thread during MD. Set false to force the in-thread path (the worker also
   // holds its own copy of the 14.9 MB model, so it costs memory).
   mdWorker:true,
+  // With an off-thread potential, draw/save step i while the worker computes
+  // step i+1 (atomistic/MD.js runMDSimulation). false = strictly sequential.
+  mdPipelineViewer:true,
+  // Run PET-MAD (mlip.cpp) in workers/mlipWorker.js instead of on the main
+  // thread (everywhere it is used: relax, MD, EFS, EOS, phonons). Set false to
+  // force the in-thread runner.
+  mlipWorker:true,
+  // CPU threads for the PET-MAD wasm when the threaded build can run (the page
+  // is cross-origin isolated — see the PET-MAD "multi-threaded" control):
+  // 'auto' = logical cores capped at 8, a number, or false for one thread.
+  mlipThreads:'auto',
+  // PET-MAD CPU matrix products: the blocked GEMM kernel (true) or ggml's
+  // dot-product path (false) — an A/B switch for the Debug window's benchmark
+  // (external/mlip_wasm/README.md "Matrix kernel").
+  mlipBlockedGemm:true,
+  // PET-MAD WebGPU result readback: 'auto' (through a canvas snapshot where
+  // that is exact, else mapAsync) or 'map' (always mapAsync) — the other A/B
+  // switch of the benchmark (external/mlip_wasm/README.md "Canvas readback").
+  mlipGpuReadback:'auto',
+  // PET-MAD WebGPU f32 matrix products: 'tile4' (vec4 accumulators) or
+  // upstream's 'reg_tile' kernel — an A/B switch for the benchmark
+  // (external/mlip_wasm/README.md "f32 matrix kernel").
+  mlipGpuMatmul:'tile4',
   // Default (true): the Features window's toggles are one shared set of
   // values across every loaded structure. Off: each file-browser row
   // remembers its own toggle values (not per trajectory step within a row)
@@ -544,6 +714,89 @@ export function saveLockPrefs() {
     localStorage.setItem(LOCK_PREFS_KEY, JSON.stringify({
       cameraLocked: app.cameraLocked,
       featuresLocked: general.featuresLocked,
+    }));
+  } catch { /* storage unavailable */ }
+}
+
+// ---- polyhedra search persistence (Features ▸ Show Polyhedra ▸ Fast | Auto | Advanced) — the same
+// convention as the lock prefs above: own key, explicit named values, read
+// here at import so the first computePolyhedra already sees them, saved
+// immediately on change.
+const POLY_SEARCH_PREFS_KEY = 'crysvizPolyhedraSearch';
+const POLY_SEARCH_MODES = ['auto', 'fast', 'advanced'];
+try {
+  const raw = localStorage.getItem(POLY_SEARCH_PREFS_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (POLY_SEARCH_MODES.includes(parsed?.mode)) general.polyhedraMode = parsed.mode;
+    if (Number.isFinite(parsed?.fastMin) && parsed.fastMin >= 0) general.polyhedraFastMin = parsed.fastMin;
+  }
+} catch { /* corrupted/missing -> defaults */ }
+
+/** Called after general.polyhedraMode / polyhedraFastMin change, so the
+ *  choice survives a reload. */
+export function savePolyhedraSearchPrefs() {
+  try {
+    localStorage.setItem(POLY_SEARCH_PREFS_KEY, JSON.stringify({
+      mode: general.polyhedraMode,
+      fastMin: general.polyhedraFastMin,
+    }));
+  } catch { /* storage unavailable */ }
+}
+
+// ---- bond breaking tolerance persistence (Features ▸ Bond breaking
+// tolerance) — the same convention as the search prefs above.
+const BOND_BREAK_PREFS_KEY = 'crysvizBondBreak';
+/** Upper bound of general.bondBreakTolerance (a fraction). */
+export const BOND_BREAK_TOLERANCE_MAX = 0.3;
+try {
+  const raw = localStorage.getItem(BOND_BREAK_PREFS_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    const tol = Number(parsed?.tolerance);
+    if (Number.isFinite(tol)) general.bondBreakTolerance = Math.max(0, Math.min(BOND_BREAK_TOLERANCE_MAX, tol));
+  }
+} catch { /* corrupted/missing -> defaults */ }
+
+/** Called after general.bondBreakTolerance changes, so it survives a reload. */
+export function saveBondBreakPrefs() {
+  try {
+    localStorage.setItem(BOND_BREAK_PREFS_KEY, JSON.stringify({ tolerance: general.bondBreakTolerance }));
+  } catch { /* storage unavailable */ }
+}
+
+// ---- polyhedra colouring persistence (Polyhedra window ▸ Colour by) — the
+// same convention as the search prefs above.
+const POLY_COLOR_PREFS_KEY = 'crysvizPolyhedraColor';
+const POLY_COLOR_IDS = ['style', 'bld', 'angleVariance', 'quadraticElongation', 'volume', 'tiltA', 'tiltB', 'tiltC', 'rotation'];
+const POLY_TILT_FRAMES = ['auto', 'cell', 'matrix'];
+const POLY_EDGE_MODES = ['grey', 'property', 'style'];
+try {
+  const raw = localStorage.getItem(POLY_COLOR_PREFS_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (POLY_COLOR_IDS.includes(parsed?.color)) general.polyhedraColor = parsed.color;
+    if (POLY_TILT_FRAMES.includes(parsed?.tiltFrame)) general.polyhedraTiltFrame = parsed.tiltFrame;
+    if (Array.isArray(parsed?.tiltMatrix) && parsed.tiltMatrix.length === 3
+        && parsed.tiltMatrix.every((row) => Array.isArray(row) && row.length === 3 && row.every(Number.isFinite))) {
+      general.polyhedraTiltMatrix = parsed.tiltMatrix;
+    }
+    if (typeof parsed?.colorMap === 'string') general.polyhedraColorMap = parsed.colorMap;
+    if (typeof parsed?.greyOthers === 'boolean') general.polyhedraColorGreyOthers = parsed.greyOthers;
+    if (POLY_EDGE_MODES.includes(parsed?.edges)) general.polyhedraColorEdges = parsed.edges;
+  }
+} catch { /* corrupted/missing -> defaults */ }
+
+/** Called after the Colour by settings change, so they survive a reload. */
+export function savePolyhedraColorPrefs() {
+  try {
+    localStorage.setItem(POLY_COLOR_PREFS_KEY, JSON.stringify({
+      color: general.polyhedraColor,
+      tiltFrame: general.polyhedraTiltFrame,
+      tiltMatrix: general.polyhedraTiltMatrix,
+      colorMap: general.polyhedraColorMap,
+      greyOthers: general.polyhedraColorGreyOthers,
+      edges: general.polyhedraColorEdges,
     }));
   } catch { /* storage unavailable */ }
 }

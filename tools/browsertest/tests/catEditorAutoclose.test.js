@@ -24,7 +24,7 @@ const H = require('../harness');
     const dot = container?.querySelector('.dot');
     const editor = container?.querySelector('.element-color-editor');
     dot?.click();
-    const openedDisplay = editor?.style.display;
+    const openedDisplay = (editor ? (editor.hidden ? 'none' : 'shown') : undefined);
     const expandRow = editor?.closest('div')?.parentElement?.querySelector('div'); // best-effort
     return { hasDot: !!dot, hasEditor: !!editor, openedDisplay };
   });
@@ -36,7 +36,7 @@ const H = require('../harness');
     const editor = container?.querySelector('.element-color-editor');
     const row = editor?.parentElement?.querySelector('div'); // the clickable row (first child)
     row?.click(); // toggles atom-list expand, should also close the editor
-    return editor?.style.display;
+    return (editor ? (editor.hidden ? 'none' : 'shown') : undefined);
   });
   H.check('atoms: expanding the atom list closes the category editor',
     atomsAfterExpand === 'none', `display=${atomsAfterExpand}`);
@@ -53,7 +53,7 @@ const H = require('../harness');
     const dot = container?.querySelector('.bond-control .dot');
     const editor = container?.querySelector('.bond-cat-editor');
     dot?.click();
-    return { hasDot: !!dot, hasEditor: !!editor, openedDisplay: editor?.style.display };
+    return { hasDot: !!dot, hasEditor: !!editor, openedDisplay: (editor ? (editor.hidden ? 'none' : 'shown') : undefined) };
   });
   H.check('bonds: category dot + editor found', bondsResult.hasDot && bondsResult.hasEditor, JSON.stringify(bondsResult));
   H.check('bonds: clicking dot opens the editor', bondsResult.openedDisplay !== 'none', JSON.stringify(bondsResult));
@@ -63,7 +63,7 @@ const H = require('../harness');
     const expandIcon = container?.querySelector('.bond-expand-icon');
     const editor = container?.querySelector('.bond-cat-editor');
     expandIcon?.click();
-    return editor?.style.display;
+    return (editor ? (editor.hidden ? 'none' : 'shown') : undefined);
   });
   H.check('bonds: expanding the bond list closes the category editor',
     bondsAfterExpand === 'none', `display=${bondsAfterExpand}`);
@@ -81,7 +81,7 @@ const H = require('../harness');
     const dot = container?.querySelector('.poly-control .dot');
     const editor = container?.querySelector('.poly-cat-editor');
     dot?.click();
-    return { hasDot: !!dot, hasEditor: !!editor, openedDisplay: editor?.style.display };
+    return { hasDot: !!dot, hasEditor: !!editor, openedDisplay: (editor ? (editor.hidden ? 'none' : 'shown') : undefined) };
   });
   if (polyResult.hasDot) {
     H.check('polyhedra: clicking dot opens the editor', polyResult.openedDisplay !== 'none', JSON.stringify(polyResult));
@@ -90,7 +90,7 @@ const H = require('../harness');
       const expandIcon = container?.querySelector('.poly-expand-icon');
       const editor = container?.querySelector('.poly-cat-editor');
       expandIcon?.click();
-      return editor?.style.display;
+      return (editor ? (editor.hidden ? 'none' : 'shown') : undefined);
     });
     H.check('polyhedra: expanding the list closes the category editor',
       polyAfterExpand === 'none', `display=${polyAfterExpand}`);

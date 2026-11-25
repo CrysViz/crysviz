@@ -9,6 +9,10 @@ import { getHeatMapColors, getBatlowColors, getHawaiiColors, getManaguaColors, g
 import { makeColorBarDraggable } from './ColorBarDrag.js';
 import { listActiveColorBars } from './ColorBarRegistry.js';
 import { applyLegendHtml, legendPlainText, wireLongPress } from '../utils/index.js';
+// Tick values and labels (unit-tested in node); re-exported for
+// render/ImageExportModule.js, which draws the same ticks into exports.
+import { computeTicks, ticksClearOfFields, formatLimit } from '../utils/ColorBarTicks.js';
+export { formatTick, computeTicks } from '../utils/ColorBarTicks.js';
 
 function createElement(tag, attributes = {}, styles = {}, textContent = "") {
   const el = document.createElement(tag);
@@ -43,82 +47,6 @@ export function colorsFor(colormap) {
     case "bgyor": return getBgyorColors();
     default: return getHeatMapColors();
   }
-}
-
-// Exported for render/ImageExportModule.js — see colorsFor above.
-export function formatTick(v) {
-  if (!isFinite(v)) return '';
-  let s = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2);
-  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '');
-  return s;
-}
-
-// Exact powers of ten print as "1e-4" / "1" / "1e3" rather than the decimal
-// expansion — matches how the log tick picker below always chooses tick
-// *values* that are clean decades once the range spans more than one.
-function formatDecadeTick(k) {
-  return k === 0 ? "1" : `1e${k}`;
-}
-
-// log10(0) is -Infinity; clamp tick values below this floor before taking a
-// log so a tick landing at/near 0 doesn't blow up its own position math.
-const LOG_EPS = 1e-6;
-
-const INNER_TICKS = 3; // labeled ticks strictly between min and max (linear, or a log range under one decade)
-const MAX_LOG_TICKS = 4; // decade ticks cap, not counting the min/max endpoints
-
-// Once a log-scaled range spans more than a decade, evenly-spaced-by-fraction
-// ticks land on odd values like "3.28" — prefer the clean decades (1e-4, 1e-3,
-// …) that fall strictly inside (min, max) instead, thinned to at most
-// MAX_LOG_TICKS if there are more decades than that.
-// Exported for render/ImageExportModule.js — see colorsFor above.
-export function computeTicks(min, max, scale) {
-  if (scale === 'log' && min > 0 && max / min > 10) {
-    const lo = Math.log10(min);
-    const hi = Math.log10(max);
-    let decades = [];
-    for (let k = Math.ceil(lo - 1e-9); k <= Math.floor(hi + 1e-9); k++) {
-      const v = Math.pow(10, k);
-      if (v > min * (1 + 1e-9) && v < max * (1 - 1e-9)) decades.push(k);
-    }
-    if (decades.length > MAX_LOG_TICKS) {
-      const n = decades.length;
-      const picked = [];
-      for (let i = 0; i < MAX_LOG_TICKS; i++) {
-        picked.push(decades[Math.round(i * (n - 1) / (MAX_LOG_TICKS - 1))]);
-      }
-      decades = [...new Set(picked)];
-    }
-    if (decades.length > 0) {
-      return decades.map(k => ({
-        value: Math.pow(10, k),
-        frac: (k - lo) / (hi - lo),
-        label: formatDecadeTick(k),
-      }));
-    }
-    // No clean decade strictly inside the range (e.g. 12 -> 130): fall
-    // through to evenly-spaced-by-fraction ticks below.
-  }
-  // Sub-decade log range (or a >10x range with no clean decade inside it):
-  // pick plain evenly-spaced-by-VALUE ticks (same numbers linear mode would
-  // show — e.g. 0.25 for [0.2, 0.3]) rather than evenly-spaced-by-POSITION
-  // ticks, whose *values* under log interpolation land on the geometric
-  // mean (0.2449… -> "0.24" here) — correct for where that position falls
-  // on a log-normalized bar, but a needlessly odd-looking number for a
-  // range this narrow. Reposition each nice value at its true log-scale
-  // fraction instead, so the tick still marks the right spot on the bar.
-  const ticks = [];
-  const lo = min > 0 ? Math.log10(min) : NaN;
-  const hi = max > 0 ? Math.log10(max) : NaN;
-  for (let i = 1; i <= INNER_TICKS; i++) {
-    const linFrac = i / (INNER_TICKS + 1);
-    const value = min + linFrac * (max - min);
-    const frac = scale === 'log' && hi > lo
-      ? (Math.log10(Math.max(value, LOG_EPS)) - lo) / (hi - lo)
-      : linFrac;
-    ticks.push({ value, frac, label: formatTick(value) });
-  }
-  return ticks;
 }
 
 const DEFAULT_BAR_LENGTH = 300; // canvas internal resolution, px
@@ -164,6 +92,18 @@ const LEGEND_GAP = 5; // tick label's far edge -> near edge of the legend
 // emptied legend went display:none along with its own click handler, and the
 // user had no way back in.
 const LEGEND_PLACEHOLDER = "Click to add legend";
+// Movement before a press on the legend becomes a drag of the legend (rather
+// than a click that starts editing it). Same threshold as ColorBarDrag.js.
+const LEGEND_DRAG_THRESHOLD = 4;
+
+/** A legend offset `{x, y}` in CSS px, or null for "none". */
+function sanitizeLegendOffset(value) {
+  const x = Number(value?.x);
+  const y = Number(value?.y);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (Math.abs(x) < 0.5 && Math.abs(y) < 0.5) return null;
+  return { x: Math.round(x), y: Math.round(y) };
+}
 
 // Min/Max are positioned like tick labels now (renderMinMax, at frac 0/1
 // on the bar — the same row the numbers renderTicks() computes actually
@@ -204,7 +144,9 @@ export function currentContrastColor() {
  *   onScaleChange?: (scale: string) => void, onAutoRange?: () => void,
  *   onLegendChange?: (legend: string) => void, isScaleLocked?: () => boolean,
  *   isLocked?: () => boolean, onLockChange?: (locked: boolean) => void,
- *   orientation?: string, flipSide?: boolean, size?: number }} [opts]
+ *   orientation?: string, flipSide?: boolean, size?: number,
+ *   legendOffset?: {x: number, y: number} | null,
+ *   onLegendOffsetChange?: (offset: {x: number, y: number} | null) => void }} [opts]
  *   legend: axis title shown alongside the bar (e.g. "Force (eV/Å)"), rotated
  *   to read bottom-to-top when the bar is vertical. Click-to-edit: the raw
  *   text can contain a few HTML tags (<b>, <i>, <sup>, <sub>) and/or LaTeX/
@@ -241,12 +183,21 @@ export function currentContrastColor() {
  *   rebuilds this widget (e.g. on a colormap switch) can carry over the
  *   user's current layout instead of resetting to horizontal/near-side/default
  *   length.
+ *   legendOffset: how far (CSS px, screen x/y) the user dragged the legend
+ *   text away from its default place beside the ticks. A floating bar's
+ *   legend can be dragged on its own; the offset applies only while the bar
+ *   floats (a docked bar has no room to move it in) and is cleared when the
+ *   orientation or side changes, since it was measured for the old layout.
+ *   onLegendOffsetChange: called with the new offset (null = back in its
+ *   default place) after a legend drag or reset; persist it like the legend
+ *   text and pass it back as `legendOffset`. getSettings().legendOffset
+ *   reflects it too.
  */
 export function createColorBar(container, colormap, minValue, maxValue, opts = {}) {
   const {
     floatingId, onLimitsCommit, onScaleChange, onAutoRange, onLegendChange,
     isScaleLocked = () => false, isLocked = () => false, onLockChange,
-    fallbackMin = 0, fallbackMax = 2, legend = '',
+    fallbackMin = 0, fallbackMax = 2, legend = '', onLegendOffsetChange,
   } = opts;
   container.innerHTML = '';
 
@@ -293,6 +244,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   const menuResetSize = createElement("button", {
     type: "button", class: "cv-colorbar-menu-item"
   }, {}, "Reset Size");
+  const menuResetLegend = createElement("button", {
+    type: "button", class: "cv-colorbar-menu-item"
+  }, {}, "Reset Legend Position");
   const menuDock = createElement("button", {
     type: "button", class: "cv-colorbar-menu-item"
   }, {}, "Dock");
@@ -305,6 +259,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   menu.appendChild(menuLogScale);
   menu.appendChild(menuAutoRange);
   menu.appendChild(menuResetSize);
+  menu.appendChild(menuResetLegend);
   menu.appendChild(menuDock);
   menu.appendChild(menuLock);
   menuWrap.appendChild(menu);
@@ -334,6 +289,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // reset unconditionally by refreshLegendContent()/positionLegend() below
   // before this ever paints, so they're not worth setting twice here.
   let currentLegendRaw = legend;
+  let legendOffset = sanitizeLegendOffset(opts.legendOffset);
   const legendLabel = createElement("div", {
     class: "cv-colorbar-legend", spellcheck: "false", title: "Click to edit legend"
   });
@@ -348,17 +304,13 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // empty, toggle_styles.css), not inline, since it needs a :hover rule —
   // invisible normally, faintly readable on hover, rather than a permanent
   // "Click to add legend" sitting on every bar with no legend right now.
+  // Set text reads at 0.85, upright; the placeholder is italic.
   function refreshLegendContent() {
-    legendLabel.style.display = "block";
     if (currentLegendRaw) {
       legendLabel.classList.remove("cv-colorbar-legend-empty");
-      legendLabel.style.opacity = "0.85";
-      legendLabel.style.fontStyle = "normal";
       applyLegendHtml(legendLabel, currentLegendRaw);
     } else {
       legendLabel.classList.add("cv-colorbar-legend-empty");
-      legendLabel.style.opacity = "";
-      legendLabel.style.fontStyle = "italic";
       legendLabel.textContent = LEGEND_PLACEHOLDER;
     }
   }
@@ -367,11 +319,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   function beginLegendEdit() {
     if (legendEditing) return;
     legendEditing = true;
-    legendLabel.style.display = "block";
     legendLabel.classList.remove("cv-colorbar-legend-empty");
     legendLabel.classList.add("cv-colorbar-legend-editing");
-    legendLabel.style.opacity = "0.85";
-    legendLabel.style.fontStyle = "normal";
     legendLabel.contentEditable = "true";
     legendLabel.textContent = currentLegendRaw;
     legendLabel.focus();
@@ -410,8 +359,52 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // just below (barOuter is a whole-widget drag handle whose pointerdown
   // listener preventDefault()s unconditionally, which otherwise steals the
   // click-to-focus before it reaches this contentEditable div).
-  legendLabel.addEventListener("pointerdown", (e) => e.stopPropagation());
-  legendLabel.addEventListener("click", () => beginLegendEdit());
+  //
+  // On a floating bar the legend can also be dragged on its own, away from
+  // (or back toward) the ticks: a press that moves past LEGEND_DRAG_THRESHOLD
+  // moves the legend instead of starting an edit. Docked, a press is only
+  // ever a click to edit.
+  /** @type {{ id: number, x: number, y: number, from: {x: number, y: number}, moved: boolean } | null} */
+  let legendDrag = null;
+  let suppressLegendClick = false;
+  legendLabel.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    if (legendEditing || !dragCtl?.isFloating() || isLocked()) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    legendDrag = { id: e.pointerId, x: e.clientX, y: e.clientY, from: legendOffset ?? { x: 0, y: 0 }, moved: false };
+    try { legendLabel.setPointerCapture(e.pointerId); } catch { /* synthetic events cannot capture */ }
+  });
+  legendLabel.addEventListener("pointermove", (e) => {
+    if (!legendDrag || e.pointerId !== legendDrag.id) return;
+    const dx = e.clientX - legendDrag.x;
+    const dy = e.clientY - legendDrag.y;
+    if (!legendDrag.moved && Math.hypot(dx, dy) < LEGEND_DRAG_THRESHOLD) return;
+    if (!legendDrag.moved) {
+      legendDrag.moved = true;
+      legendLabel.classList.add("cv-colorbar-legend-dragging");
+    }
+    e.preventDefault();
+    legendOffset = { x: legendDrag.from.x + dx, y: legendDrag.from.y + dy };
+    positionLegend();
+    positionResizeHandle();
+  });
+  const endLegendDrag = (e) => {
+    if (!legendDrag || e.pointerId !== legendDrag.id) return;
+    const { moved } = legendDrag;
+    legendDrag = null;
+    try { legendLabel.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    if (!moved) return;
+    legendLabel.classList.remove("cv-colorbar-legend-dragging");
+    // The click that follows this pointerup must not open the editor.
+    suppressLegendClick = e.type === 'pointerup';
+    setLegendOffset(legendOffset);
+  };
+  legendLabel.addEventListener("pointerup", endLegendDrag);
+  legendLabel.addEventListener("pointercancel", endLegendDrag);
+  legendLabel.addEventListener("click", () => {
+    if (suppressLegendClick) { suppressLegendClick = false; return; }
+    beginLegendEdit();
+  });
   legendLabel.addEventListener("blur", () => finishLegendEdit(true));
   legendLabel.addEventListener("keydown", (e) => {
     if (e.key === "Enter") { e.preventDefault(); legendLabel.blur(); }
@@ -425,8 +418,10 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // tickLayer, which renderTicks() wipes and rebuilds on every render —
   // that would destroy and recreate these on every value change, losing
   // focus/typing state mid-edit).
-  const minInput = createElement("input", { type: "number", value: minValue, step: "0.1", class: "cv-colorbar-value-input" });
-  const maxInput = createElement("input", { type: "number", value: maxValue, step: "0.1", class: "cv-colorbar-value-input" });
+  // Values the program sets print like the ticks (formatLimit: 5e-5, not
+  // 0.00005); typed text is left as typed.
+  const minInput = createElement("input", { type: "number", value: formatLimit(minValue), step: "0.1", class: "cv-colorbar-value-input" });
+  const maxInput = createElement("input", { type: "number", value: formatLimit(maxValue), step: "0.1", class: "cv-colorbar-value-input" });
   barOuter.appendChild(minInput);
   barOuter.appendChild(maxInput);
 
@@ -479,9 +474,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // THERE, just not all visible without scrolling the field. Scale the box
   // by the same factor AND measure the input's own current text (like
   // tickLabelSpanV — a long typed value needs more than just the scaled
-  // default), once floating (docked bars stay at the small fixed
-  // DOCKED_INPUT_FONT, so the default width is never actually too small for
-  // them). A separate function from applyInputStyle (below), not folded into
+  // default). Docked bars keep the small fixed DOCKED_INPUT_FONT but still
+  // widen to their text: Auto Range values like 0.011 or 0.00005 showed as
+  // "0.0" in the 46px box. A separate function from applyInputStyle (below), not folded into
   // it, so a plain Min/Max edit (onLimitsBlur -> renderTicks(), which needs
   // this re-run against the newly typed text) can call just this without
   // also resetting textAlign back to plainInputStyle's default "center" —
@@ -489,11 +484,29 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // reapplied on that path, unlike here where applyLayout always runs
   // before renderTicks in every OTHER caller.
   function scaledInputWidth(input) {
-    if (!(dragCtl?.isFloating() ?? false)) return `${MINMAX_WIDTH}px`;
+    const floating = dragCtl?.isFloating() ?? false;
     const fontPx = scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT);
-    measureCtx.font = `${fontPx}px 'CrysViz Sans', sans-serif`;
+    // The field's own font stack (the canvas falls back to a narrower face
+    // otherwise, and "0.00005" came out ~15px short).
+    const cs = getComputedStyle(input);
+    const family = cs.fontFamily || "'CrysViz Sans', sans-serif";
+    measureCtx.font = `${fontPx}px ${family}`;
     const textWidth = measureCtx.measureText(input.value || '').width;
-    return `${Math.max(MINMAX_WIDTH * fontScale(), textWidth + 14)}px`;
+    // The field's own padding and border (the app-wide number-input rules
+    // give it some), read from the cascade: unlike scrollWidth this is
+    // known while the window is still hidden, where fitInputToText cannot
+    // correct the estimate. +4 for the caret.
+    const px = (v) => parseFloat(v) || 0;
+    const chrome = px(cs.paddingLeft) + px(cs.paddingRight) + px(cs.borderLeftWidth) + px(cs.borderRightWidth);
+    return `${Math.max(floating ? MINMAX_WIDTH * fontScale() : MINMAX_WIDTH, Math.ceil(textWidth + chrome) + 4)}px`;
+  }
+
+  // Once laid out, widen a field whose text still scrolls (the canvas
+  // measure is only an estimate of the rendered text). A hidden field
+  // reports 0 for both and is left alone.
+  function fitInputToText(input) {
+    const over = input.scrollWidth - input.clientWidth;
+    if (over > 0) input.style.width = `${(parseFloat(input.style.width) || MINMAX_WIDTH) + over + 2}px`;
   }
 
   function applyInputStyle(input) {
@@ -560,8 +573,28 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // (never docked, never hidden mid-expand), and tickLabelSpanV() above
   // measures via canvas rather than offsetWidth specifically to sidestep
   // this, so it doesn't have the same constraint.
+  // The user's legend drag (floating only), as a leading translate: first in
+  // the transform list, it moves the legend in screen x/y whatever rotation
+  // follows.
+  function legendOffsetTransform() {
+    if (!legendOffset || !dragCtl?.isFloating()) return "";
+    return `translate(${legendOffset.x}px, ${legendOffset.y}px) `;
+  }
+
+  /** Commit a new legend offset (null = default place) and tell the caller. */
+  function setLegendOffset(next) {
+    legendOffset = sanitizeLegendOffset(next);
+    positionLegend();
+    positionResizeHandle();
+    relayoutFloating();
+    onLegendOffsetChange?.(legendOffset);
+  }
+
   function positionLegend() {
     legendLabel.style.fontSize = `${scaledFont(LEGEND_BASE_FONT, DOCKED_LEGEND_FONT)}px`;
+    legendLabel.title = dragCtl?.isFloating()
+      ? "Click to edit legend, drag to move it"
+      : "Click to edit legend";
     const horizontal = orientation === 'horizontal';
     // TICK_LABEL_SPAN_V is a fallback approximation of the tick labels'
     // rendered WIDTH in vertical mode (they sit beside the bar, not below
@@ -586,7 +619,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       legendLabel.style.right = "";
       legendLabel.style.top = flipSide ? "" : offset;
       legendLabel.style.bottom = flipSide ? offset : "";
-      legendLabel.style.transform = "translateX(-50%)";
+      legendLabel.style.transform = `${legendOffsetTransform()}translateX(-50%)`;
       legendLabel.style.transformOrigin = "";
     } else {
       legendLabel.style.top = "50%";
@@ -615,9 +648,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       // actual center, not some other point, to land on the vertically-
       // centered `top: 50%` anchor after rotation).
       legendLabel.style.transformOrigin = "";
-      legendLabel.style.transform = flipSide
+      legendLabel.style.transform = legendOffsetTransform() + (flipSide
         ? "translateX(50%) translateY(-50%) rotate(-90deg)"
-        : "translateX(-50%) translateY(-50%) rotate(-90deg)";
+        : "translateX(-50%) translateY(-50%) rotate(-90deg)");
     }
   }
 
@@ -798,6 +831,31 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   // in-progress invalid range (renderTicks() bails out before drawing
   // anything in that case) — they're the editable source of that range, so
   // they need to stay visible and in place for the user to fix it.
+  // How far a docked horizontal field is shifted inwards: it grows from the
+  // outer edge of the default MINMAX_WIDTH box towards the bar's middle, so a
+  // long value (0.00005) doesn't overhang the panel and get cut off. Floating
+  // bars keep the field centred on the bar's end.
+  function inwardShift(input) {
+    if (orientation !== 'horizontal' || (dragCtl?.isFloating() ?? false)) return 0;
+    return Math.max(0, (parseFloat(input.style.width) || MINMAX_WIDTH) - MINMAX_WIDTH) / 2;
+  }
+
+  // [start, end] of the Min and Max fields along the bar, in px from the min
+  // end, for ticksClearOfFields. Horizontal: their measured text widths;
+  // vertical: one line of the field's font.
+  function fieldSpans(length) {
+    const horizontal = orientation === 'horizontal';
+    const extent = (input) => (horizontal
+      ? (parseFloat(input.style.width) || MINMAX_WIDTH)
+      : scaledFont(INPUT_BASE_FONT, DOCKED_INPUT_FONT) * 1.5);
+    const minC = inwardShift(minInput);
+    const maxC = length - inwardShift(maxInput);
+    return {
+      minSpan: [minC - extent(minInput) / 2, minC + extent(minInput) / 2],
+      maxSpan: [maxC - extent(maxInput) / 2, maxC + extent(maxInput) / 2],
+    };
+  }
+
   function positionMinMax() {
     const horizontal = orientation === 'horizontal';
     const tickOffset = `calc(100% + ${TICK_LABEL_GAP}px)`;
@@ -807,8 +865,10 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       // renderTicks() -> here, without an applyLayout() in between — widens
       // the box to keep pace instead of clipping until the next layout pass.
       input.style.width = scaledInputWidth(input);
+      fitInputToText(input);
       if (horizontal) {
-        input.style.left = `${frac * 100}%`;
+        const shift = inwardShift(input) * (frac === 0 ? 1 : -1);
+        input.style.left = shift ? `calc(${frac * 100}% + ${shift}px)` : `${frac * 100}%`;
         input.style.right = '';
         input.style.top = flipSide ? '' : tickOffset;
         input.style.bottom = flipSide ? tickOffset : '';
@@ -824,7 +884,13 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     });
   }
 
+  // The ticks drawn last (after ticksClearOfFields), for image export.
+  let shownTicks = [];
+  // The bar length those ticks were cleared against (see barResize below).
+  let ticksLength = -1;
+
   function renderTicks() {
+    shownTicks = [];
     positionMinMax();
     // tickLabelSpanV() (positionLegend, vertical mode) needs the actual
     // current tick text to size the legend's clearance against — min/max
@@ -840,8 +906,20 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     const max = parseFloat(maxInput.value);
     if (!isFinite(min) || !isFinite(max) || min >= max) return;
 
-    const ticks = computeTicks(min, max, currentScale);
-    const tickFontSize = `${scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT)}px`;
+    const tickFontPx = scaledFont(TICK_LABEL_BASE_FONT, DOCKED_TICK_LABEL_FONT);
+    const tickFontSize = `${tickFontPx}px`;
+    // Bar length on screen: a docked horizontal bar stretches to its row
+    // (0 while the panel is still hidden — then nothing is dropped).
+    const length = horizontal ? (barOuter.clientWidth || 0) : (barOuter.clientHeight || barLength);
+    ticksLength = length;
+    measureCtx.font = `${tickFontPx}px 'CrysViz Sans', sans-serif`;
+    const geom = {
+      length,
+      ...fieldSpans(length),
+      labelSize: (text) => (horizontal ? measureCtx.measureText(text).width : tickFontPx * 1.3),
+      tickGap: tickFontPx * 0.8,
+    };
+    const ticks = shownTicks = computeTicks(min, max, currentScale, (set) => ticksClearOfFields(set, geom));
     ticks.forEach(({ frac, label: text }) => {
       const line = createElement("div", { class: "cv-colorbar-tick-line" });
       // position/color/white-space are constant (sceneWidgets.css); fontSize
@@ -919,8 +997,8 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // re-stringify it through JS's own number formatting, silently
     // dropping scientific notation the user typed (e.g. "2e-3" would come
     // back as "0.002") even though the value committed is identical.
-    if (isNaN(min) || minInput.value === "") { min = fallbackMin; minInput.value = min; }
-    if (isNaN(max) || maxInput.value === "") { max = fallbackMax; maxInput.value = max; }
+    if (isNaN(min) || minInput.value === "") { min = fallbackMin; minInput.value = formatLimit(min); }
+    if (isNaN(max) || maxInput.value === "") { max = fallbackMax; maxInput.value = formatLimit(max); }
     if (min >= max) {
       min = fallbackMin;
       max = fallbackMax;
@@ -956,7 +1034,16 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   minInput.addEventListener("pointerdown", (e) => e.stopPropagation());
   maxInput.addEventListener("pointerdown", (e) => e.stopPropagation());
 
+  // A legend offset was measured against the old layout; in another
+  // orientation or on the other side it would point somewhere arbitrary.
+  function clearLegendOffsetForRelayout() {
+    if (!legendOffset) return;
+    legendOffset = null;
+    onLegendOffsetChange?.(null);
+  }
+
   function setOrientation(next) {
+    if (next !== orientation) clearLegendOffsetForRelayout();
     orientation = next;
     applyLayout();
     render(currentColormap);
@@ -985,15 +1072,16 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     menuVertical.disabled = !floating;
     menuVertical.title = floating ? '' : 'Drag the bar into the scene to use a vertical layout';
     menuFlip.classList.toggle('cv-colorbar-menu-item-active', flipSide);
-    menuLogScale.style.display = onScaleChange ? '' : 'none';
+    menuLogScale.hidden = !onScaleChange;
     menuLogScale.classList.toggle('cv-colorbar-menu-item-active', currentScale === 'log');
     const scaleLocked = isScaleLocked();
     menuLogScale.disabled = scaleLocked;
     menuLogScale.title = scaleLocked ? '"log length" requires Log Scale — turn it off first to change this' : '';
-    menuAutoRange.style.display = onAutoRange ? '' : 'none';
-    menuResetSize.style.display = floating ? '' : 'none';
-    menuDock.style.display = floating ? '' : 'none';
-    menuLock.style.display = floating ? '' : 'none';
+    menuAutoRange.hidden = !onAutoRange;
+    menuResetSize.hidden = !floating;
+    menuResetLegend.hidden = !(floating && legendOffset);
+    menuDock.hidden = !floating;
+    menuLock.hidden = !floating;
     menuLock.textContent = isLocked() ? 'Unlock' : 'Lock';
     menuLock.classList.toggle('cv-colorbar-menu-item-active', isLocked());
   }
@@ -1040,6 +1128,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   menuFlip.addEventListener("click", (e) => {
     e.stopPropagation();
     flipSide = !flipSide;
+    clearLegendOffsetForRelayout();
     applyLayout();
     render(currentColormap);
     relayoutFloating();
@@ -1068,6 +1157,11 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // every currently-showing bar resets together, not just this one.
     general.colorBarSize = DEFAULT_BAR_LENGTH;
     for (const bar of listActiveColorBars()) bar.instance.setSize?.(DEFAULT_BAR_LENGTH);
+    closeMenu();
+  });
+  menuResetLegend.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setLegendOffset(null);
     closeMenu();
   });
   menuDock.addEventListener("click", (e) => {
@@ -1199,6 +1293,21 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
   render(colormap);
   updateMenuState();
 
+  // Tick labels sit at a fraction of the bar, the Min/Max fields keep their
+  // pixel width: when the bar's length changes on screen (a docked bar
+  // stretches with its window: drag-resizing the dock, or a window first laid
+  // out after the bar was built), the end ticks slide under the fields.
+  // Re-clear the ticks against the new length (ticksClearOfFields). A
+  // floating bar's length only changes through setSize, which re-renders
+  // anyway, so it looks the same as before.
+  const barResize = typeof ResizeObserver === 'function'
+    ? new ResizeObserver(() => {
+      const length = orientation === 'horizontal' ? barOuter.clientWidth : barOuter.clientHeight;
+      if (length > 0 && length !== ticksLength) renderTicks();
+    })
+    : null;
+  barResize?.observe(barOuter);
+
   return {
     update(cmap, scale) { render(cmap, scale); },
     remove() {
@@ -1208,6 +1317,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       document.removeEventListener("keydown", onMenuKeyDown);
       abortResizePointer?.();
       stopContrastSync();
+      barResize?.disconnect();
       dragCtl?.destroy();
       wrapper.remove();
     },
@@ -1256,6 +1366,7 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // canvas) without reaching into the widget's private closures.
     getSettings: () => ({
       orientation, flipSide, legend: currentLegendRaw,
+      legendOffset: legendOffset ? { ...legendOffset } : null,
       colormap: currentColormap,
       scale: currentScale,
       min: parseFloat(minInput.value),
@@ -1269,6 +1380,9 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
       // formatTick's 2-decimal-place "0.06".
       minText: minInput.value,
       maxText: maxInput.value,
+      // The ticks on screen (computeTicks, minus those that would touch the
+      // Min/Max fields or each other), so the export prints the same set.
+      ticks: shownTicks.map(({ frac, label }) => ({ frac, label })),
       size: barLength,
       // The tick label font size actually on screen right now (CSS px,
       // already run through scaledFont's fontScale() for a floating bar) —
@@ -1286,9 +1400,31 @@ export function createColorBar(container, colormap, minValue, maxValue, opts = {
     // log-safe value on switching to log scale) into the visible inputs and
     // re-render the ticks against it, without tearing the widget down.
     setRange(min, max) {
-      minInput.value = min;
-      maxInput.value = max;
+      minInput.value = formatLimit(min);
+      maxInput.value = formatLimit(max);
       renderTicks();
+    },
+    // A saved layout put back on this live bar (a share link or .crysviz
+    // session, ui/ShareModule.js): where it floats over the scene — or docked
+    // back into its window — its orientation (vertical only while floating),
+    // label side, legend text and length. Omitted fields stay as they are.
+    /** @param {{ floating?: boolean, anchor?: any, orientation?: string, flipSide?: boolean, legend?: string, size?: number }} [settings] */
+    applySettings({ floating, anchor, orientation: nextOrientation, flipSide: nextFlip, legend: nextLegend, size } = {}) {
+      if (floating === true && anchor) dragCtl?.floatAtAnchor(anchor);
+      else if (floating === false && dragCtl?.isFloating()) dragCtl.dockBack();
+      if (nextOrientation === 'horizontal' || nextOrientation === 'vertical') {
+        orientation = nextOrientation === 'vertical' && !(dragCtl?.isFloating()) ? 'horizontal' : nextOrientation;
+      }
+      if (nextFlip != null) flipSide = !!nextFlip;
+      if (typeof nextLegend === 'string') {
+        currentLegendRaw = nextLegend;
+        refreshLegendContent();
+      }
+      if (Number.isFinite(size)) barLength = Math.min(Math.max(size, MIN_BAR_LENGTH), MAX_BAR_LENGTH);
+      applyLayout();
+      render(currentColormap);
+      relayoutFloating();
+      updateMenuState();
     },
     // Applies a length chosen elsewhere — the resize handle's drag broadcasts
     // to every other currently-showing bar via this (ui/ColorBarRegistry.js),

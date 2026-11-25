@@ -27,6 +27,7 @@ export function openPeriodicTable(callback) {
   const selectedElementDisplay = document.createElement('div');
   selectedElementDisplay.id = 'selectedElementDisplay';
   selectedElementDisplay.className = 'pt-selected-display';
+  selectedElementDisplay.hidden = true; // until an element is picked
 
   selectedElementDisplay.innerHTML = `
     <div class="pt-selected-inner">
@@ -49,7 +50,7 @@ export function openPeriodicTable(callback) {
     display.style.background = `rgba(${hexToRgb(color).r}, ${hexToRgb(color).g}, ${hexToRgb(color).b}, 0.3)`;
     display.style.border = `1px solid ${color}`;
 
-    display.style.display = 'block';
+    display.hidden = false;
     document.getElementById('selectedElementSymbol').textContent = symbol;
     document.getElementById('selectedElementSymbol').style.color = color;
     document.getElementById('selectedElementName').textContent = element.name;

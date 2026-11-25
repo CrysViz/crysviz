@@ -5,6 +5,7 @@ import {
   lastFastFrameBail, updateForces, updateSpins,
 } from '../render/index.js';
 import { buildNEPStructure, expandKeptFracToFull } from './relaxer.js';
+import { EV_PER_A3_TO_GPA, pressureEvA3 } from '../model/index.js';
 import { transpose3x3, invert3x3, matVec, cartToFrac, fracToCart, normalizeFractionalPositions } from './math.js';
 import {
   getSymmetryDegreesOfFreedom,
@@ -16,7 +17,6 @@ import {
 const KB_EV_PER_K = 8.617333262e-5;
 const ACCEL_AFS2_PER_EVAA_AMU = 0.00964853399;
 const KE_EV_FACTOR = 103.642695; // m(amu) * v(A/fs)^2 -> eV (without 1/2)
-const EV_A3_TO_GPA = 160.21766208;
 
 const MASS_BY_SYMBOL = {
   H: 1.008, He: 4.0026, Li: 6.94, Be: 9.0122, B: 10.81, C: 12.011, N: 14.007, O: 15.999,
@@ -217,10 +217,12 @@ export function createNoThermostat() {
 
 // ── Pressure ─────────────────────────────────────────────────────────────────
 //
-// P = 2·KE/(3V) + P_virial. NEP returns σ = -W/V (see stressFromVirial in
-// nep_simple.js), and the pressure convention that rises under compression is
-// -tr(σ)/3 — verified against FCC Cu in tests/nppressure.bench.js: +118 GPa at
-// a = 3.2 Å, ~0 near the energy minimum at Cu's real lattice constant.
+// P = 2·KE/(3V) + P_virial. The calculator's stress reaches this module in the
+// app convention (eV/Å³, compression positive — model/Stress.js; NEP's raw
+// σ = -W/V is negated where the calculator output enters the app), so the
+// virial pressure is the plain trace/3. Checked against FCC Cu in
+// tests/nppressure.bench.js: +118 GPa at a = 3.2 Å, ~0 near the energy
+// minimum at Cu's real lattice constant.
 //
 // The kinetic term is NOT optional. It is what the barostat is balancing
 // against: at 300 K and normal solid densities it is a few kbar, so a barostat
@@ -237,8 +239,7 @@ export function cellVolume(lattice) {
 
 /** Virial (potential) part of the pressure, eV/Å³. */
 function virialPressureEvA3(stress) {
-  if (!Array.isArray(stress) || stress.length < 3) return NaN;
-  return -(stress[0][0] + stress[1][1] + stress[2][2]) / 3;
+  return pressureEvA3(stress);
 }
 
 /** Instantaneous pressure of an MD state, in GPa (kinetic + virial). */
@@ -248,7 +249,7 @@ export function instantaneousPressureGPa(state) {
   const kinetic = (2 * kineticEnergyEv(state.velocities, state.masses)) / (3 * volume);
   const virial = virialPressureEvA3(state.stress);
   if (!Number.isFinite(virial)) return NaN;
-  return (kinetic + virial) * EV_A3_TO_GPA;
+  return (kinetic + virial) * EV_PER_A3_TO_GPA;
 }
 
 function resolveTargetTemperature(targetTemperatureK, context) {
@@ -414,7 +415,7 @@ export function createStochasticCellBarostat({
         && state.currentTargetTemperatureK > 0
         ? state.currentTargetTemperatureK
         : temperatureK(state.velocities, state.masses, state.constrainedDof);
-      const kT = KB_EV_PER_K * temperatureTarget * EV_A3_TO_GPA; // GPa·Å³
+      const kT = KB_EV_PER_K * temperatureTarget * EV_PER_A3_TO_GPA; // GPa·Å³
 
       const tau = Math.max(1e-6, tauFs);
       const drift = (compressibility * dtFs / tau) * (pressure - targetP);
@@ -594,6 +595,17 @@ export function mdProfileMeasure(bucket, fn) {
   return result;
 }
 
+// The last run's timing breakdown (same buckets as the console profile), for
+// the Debug window's benchmark (debug/potentialBenchmark.js). The viewer /
+// plot / save buckets are only filled while general.mdProfile is on.
+/** @type {any} */
+let lastMdTiming = null;
+
+/** Timing of the most recent runMDSimulation, or null before the first. */
+export function getLastMdTiming() {
+  return lastMdTiming;
+}
+
 function logMdProfile(timing) {
   const { totalMs, steps } = timing;
   if (!steps || totalMs <= 0) return;
@@ -637,8 +649,9 @@ export async function runMDSimulation({
   barostat = createNoBarostat(),
   onStep = null,
   shouldStop = null,
-  // True when forceEvaluator does its work off the main thread (the NEP
-  // worker). Changes only how this loop yields — see nextMacrotask.
+  // True when forceEvaluator does its work off the main thread (the NEP or
+  // PET-MAD worker). Changes how this loop yields (see nextMacrotask) and lets
+  // the viewer update of one step overlap the next force evaluation (below).
   offThreadForces = false,
 } = {}) {
   if (!state) throw new Error('runMDSimulation: state is required');
@@ -651,10 +664,39 @@ export async function runMDSimulation({
   // Force evaluation happens inside integrator.step (it awaits the evaluator),
   // so the only way to separate "the potential" from "our JS" is to time the
   // evaluator itself.
+  //
+  // Pipelining (off-thread potentials, general.mdPipelineViewer): the onStep
+  // of step i (viewer update, plot, trajectory frame) is deferred and run right
+  // after step i+1's positions have been posted to the worker, so the main
+  // thread draws step i while the worker computes step i+1. Per-step wall time
+  // becomes max(potential, viewer) instead of their sum. onStep receives a
+  // snapshot of step i's state (positions, velocities, forces, stress, cell),
+  // so what it shows and saves is exactly step i. The evaluator must post its
+  // request synchronously when called (both worker clients do).
+  const pipeline = offThreadForces && general.mdPipelineViewer !== false && !!onStep;
+  /** @type {any} */
+  let deferredStep = null;
+  const runOnStep = (payload) => {
+    const t0 = performance.now();
+    onStep(payload);
+    timing.onStepMs += performance.now() - t0;
+  };
   const timedForceEvaluator = async (cell) => {
     const t = performance.now();
-    const result = await forceEvaluator(cell);
-    timing.forceEvalMs += performance.now() - t;
+    const pending = forceEvaluator(cell);
+    let overlapMs = 0;
+    if (deferredStep) {
+      const payload = deferredStep;
+      deferredStep = null;
+      const t1 = performance.now();
+      runOnStep(payload);
+      overlapMs = performance.now() - t1;
+    }
+    const result = await pending;
+    // Only the time spent WAITING for the potential counts here; the viewer
+    // work done meanwhile is already in onStepMs (so the buckets still add up
+    // to the wall time).
+    timing.forceEvalMs += Math.max(0, performance.now() - t - overlapMs);
     return result;
   };
   const totalStart = performance.now();
@@ -707,8 +749,7 @@ export async function runMDSimulation({
     const volumeA3 = cellVolume(state.lattice);
 
     if (onStep) {
-      t0 = performance.now();
-      onStep({
+      const payload = {
         step: state.step,
         timeFs: state.timeFs,
         temperatureK: temp,
@@ -718,9 +759,10 @@ export async function runMDSimulation({
         etotEv: etot,
         pressureGPa,
         volumeA3,
-        state,
-      });
-      timing.onStepMs += performance.now() - t0;
+        state: pipeline ? snapshotStepState(state) : state,
+      };
+      if (pipeline) deferredStep = payload;
+      else runOnStep(payload);
     }
     timing.steps = state.step - startStep;
 
@@ -735,16 +777,42 @@ export async function runMDSimulation({
       lastYield = performance.now();
     }
   }
+  // The last step's viewer update/frame save has nothing left to overlap.
+  if (deferredStep) {
+    const payload = deferredStep;
+    deferredStep = null;
+    runOnStep(payload);
+  }
   timing.totalMs = performance.now() - totalStart;
   timing.viewerMs = mdProfileBuckets.viewerMs;
   timing.plotMs = mdProfileBuckets.plotMs;
   timing.saveMs = mdProfileBuckets.saveMs;
+  lastMdTiming = {
+    ...timing,
+    fastFrames: mdProfileBuckets.fastFrames,
+    fullFrames: mdProfileBuckets.fullFrames,
+  };
   if (general.mdProfile) logMdProfile(timing);
 
   return {
     stopped,
     stepsRun: state.step - startStep,
     timing,
+  };
+}
+
+/** Step i's state as onStep sees it when the viewer runs one step behind the
+ *  integrator (pipelined MD): the arrays the viewer, the frame snapshot and
+ *  "Continue MD" read are copied; constants (types, masses, keptIndices) are
+ *  shared. */
+function snapshotStepState(state) {
+  return {
+    ...state,
+    lattice: clone3xN(state.lattice),
+    positions: clone3xN(state.positions),
+    velocities: clone3xN(state.velocities),
+    forces: clone3xN(state.forces),
+    stress: Array.isArray(state.stress) ? clone3xN(state.stress) : state.stress,
   };
 }
 

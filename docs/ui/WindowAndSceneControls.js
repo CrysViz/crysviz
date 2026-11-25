@@ -2,7 +2,7 @@ import * as THREE from '../external/three/three.module.js';
 import { CSS2DRenderer } from '../external/three/CSS2DRenderer.js';
 import { TrackballControls } from '../external/three/TrackballControls.js';
 import { app, groups, general, saveLockPrefs } from '../state/store.js';
-import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline, clearChargeTextureCache, rebuildChargeBadges } from '../render/index.js';
+import { setupAxisControls, setupAxisLongPress, latticeDirs, requestRender, renderFrameNow, setActivePipeline, clearChargeTextureCache, rebuildChargeBadges, clearAtomLabelTextureCache, rebuildAtomLabels } from '../render/index.js';
 import { getCellCenterAndDist} from '../render/index.js'
 import { getIsosurfaceTriangleSortingEnabled, updateStoredIsosurfaceRenderOrder } from '../model/index.js';
 import { createLockToggleButton } from './LockToggleButton.js';
@@ -10,6 +10,7 @@ import { installGestureArbiter } from './GestureArbiter.js';
 import { loadCrysVizFonts } from '../utils/index.js';
 import { configureGizmoCameraProjection, GIZMO_FOV, GIZMO_ORTHO_HALF_HEIGHT } from './GizmoLayout.js';
 import { getPanelPref } from './panels/PanelManager.js';
+import { syncSceneTone } from './SceneTone.js';
 
 const cameraPanRight = new THREE.Vector3();
 const cameraPanUp = new THREE.Vector3();
@@ -42,13 +43,16 @@ function createGizmoCamera() {
 function gizmoLabelScale() {
   // SpriteMaterial.sizeAttenuation=false makes perspective sprites screen-
   // stable with respect to depth. The scale remains world-like here, so it
-  // grows with the gizmo canvas in both projection modes.
-  return app.gizmoCamera?.isOrthographicCamera
+  // grows with the gizmo canvas in both projection modes. The general factor
+  // (1 in the full app) lets widget mode enlarge the letters without touching
+  // the arrow geometry.
+  const factor = general.gizmoLabelSizeFactor ?? 1;
+  return factor * (app.gizmoCamera?.isOrthographicCamera
     ? GIZMO_LABEL_SCREEN_SIZE * 2 * GIZMO_ORTHO_HALF_HEIGHT / 90
-    : GIZMO_LABEL_SCREEN_SIZE * 2 * Math.tan(THREE.MathUtils.degToRad(GIZMO_FOV / 2)) / 90;
+    : GIZMO_LABEL_SCREEN_SIZE * 2 * Math.tan(THREE.MathUtils.degToRad(GIZMO_FOV / 2)) / 90);
 }
 
-function updateGizmoLabelScales() {
+export function updateGizmoLabelScales() {
   const scene = app.gizmoScene;
   if (!scene?.userData) return;
   const scale = gizmoLabelScale();
@@ -69,8 +73,10 @@ function wireFontRefresh() {
   const boundedFontLoad = loadCrysVizFonts();
   document.fonts.ready.then(() => boundedFontLoad).then(() => {
     clearChargeTextureCache();
+    clearAtomLabelTextureCache();
     app.gizmoScene?.userData?.rebuildLabels?.();
     rebuildChargeBadges();
+    rebuildAtomLabels();
     requestRender();
   });
 }
@@ -90,6 +96,7 @@ export function setupCameraButtons() {
   document.getElementById('viewB').onclick = () => { const {b} = latticeDirs(); setViewDirection(b); };
   document.getElementById('viewC').onclick = () => { const {c} = latticeDirs(); setViewDirection(c); };
   document.getElementById('resetView').onclick = () => resetView();
+  setupResetLongPress(document.getElementById('resetView'));
 
   // Reset | divider | Lock, wrapped so the trio travels as one unit when the
   // panel wraps or goes to the mobile grid. The lock stands apart from the
@@ -132,6 +139,7 @@ export function setupScene() {
     general.defaultBackgroundColor = 0xE7E7E7
     general.currentLatticeColor = 0x090A09
    };
+  syncSceneTone();
 
   //
   //
@@ -200,7 +208,9 @@ export function disposeGroup(grp) {
     if (obj.geometry) { try { obj.geometry.dispose(); } catch(_){} }
     if (obj.material) {
       const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach(m => { try { m.dispose(); } catch(_){} });
+      // Rebuild-surviving materials (render/MaterialStyles.js
+      // acquirePersistentMaterial) are owned by their cache, not the group.
+      mats.forEach(m => { if (m?.userData?.persistent) return; try { m.dispose(); } catch(_){} });
     }
   });
   app.scene.remove(grp);
@@ -322,10 +332,7 @@ export function initLabelRenderer() {
   const h = view.clientHeight || window.innerHeight;
   app.labelRenderer = new CSS2DRenderer();
   app.labelRenderer.setSize(w, h);
-  app.labelRenderer.domElement.style.position = 'absolute';
-  app.labelRenderer.domElement.style.top = '0';
-  app.labelRenderer.domElement.style.left = '0';
-  app.labelRenderer.domElement.style.pointerEvents = 'none';
+  app.labelRenderer.domElement.classList.add('cv-label-layer'); // styles.css
   view.appendChild(app.labelRenderer.domElement);
 }
 
@@ -468,12 +475,12 @@ export function initAxesGizmo(){
     app.gizmoScene = null;
     app.gizmoCamera = null;
     gizmoDiv.innerHTML = '';
-    gizmoDiv.style.display = 'none';
+    gizmoDiv.hidden = true;
     return;
   }
   app.gizmoRenderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   gizmoDiv.appendChild(app.gizmoRenderer.domElement);
-  gizmoDiv.style.display = '';
+  gizmoDiv.hidden = false;
 
   // No label renderer needed for gizmo - labels are in separate legend
 
@@ -613,7 +620,7 @@ export function setGizmoLabelsOnArrows(enabled) {
     }
   }
   const legend = document.getElementById('axesLegend');
-  if (legend) legend.style.display = (general.showAxes && !enabled) ? '' : 'none';
+  if (legend) legend.hidden = !(general.showAxes && !enabled);
   requestRender();
 }
 
@@ -740,7 +747,7 @@ export function setViewDirection(dir, { refit = false } = {}) {
  * "my rotation doesn't stick, I have to switch away and back again" (the
  * extra round trip just gives the decay time to fully settle first).
  */
-function stopCameraMomentum() {
+export function stopCameraMomentum() {
   const c = app.controls;
   if (!c) return;
   c._lastAngle = 0;
@@ -786,6 +793,121 @@ export function resetView() {
 } //CAMERA RESET
 
 /**
+ * Bring the structure back to the middle of the view without turning it: the
+ * rotation stays, and so does the zoom unless `fit` (then it is fitted to the
+ * structure, as Reset view does). Panning is cleared. Reset view's long-press
+ * menu (below) and the feature search's "Recenter view".
+ */
+export function recenterView({ fit = false } = {}) {
+  if (fit) {
+    fitCameraToCurrentStructure(); // keeps the direction, clears the pan
+  } else {
+    const panX = app.cameraPan.x;
+    const panY = app.cameraPan.y;
+    resetCameraPan();
+    removeCameraPanOffset(panX, panY);
+    const { center } = getCellCenterAndDist();
+    const offset = app.camera.position.clone().sub(app.controls.target);
+    app.controls.target.copy(center);
+    app.camera.position.copy(center.clone().add(offset));
+    stopCameraMomentum();
+    app.controls.update();
+  }
+  requestRender();
+}
+
+// ---- Reset view's long-press menu ---------------------------------------
+//
+// A click on Reset view goes back to the standard [1,1,1] view, fitted. A
+// long press (mouse hold or touch) opens a small menu under it instead, the
+// Hide/Restore pattern (MeasurementToolbar.js, same popover look): Recenter
+// brings the structure back to the middle with the rotation and zoom kept
+// (after panning away, editing, or building a supercell), Recenter and fit
+// also fits the zoom to the structure; Cancel, Escape or a click elsewhere
+// close it.
+
+const RESET_LONG_PRESS_MS = 550;
+let resetMenu = null;
+
+function hideResetMenu() {
+  if (resetMenu) resetMenu.hidden = true;
+}
+
+function buildResetMenu() {
+  if (resetMenu) return resetMenu;
+  const el = document.createElement('div');
+  el.id = 'cameraResetMenu';
+  el.className = 'restore-popover camera-reset-menu';
+  el.setAttribute('role', 'menu');
+  el.hidden = true;
+  el.innerHTML = `
+    <button type="button" id="cameraRecenterBtn" class="restore-popover-btn restore-popover-all" role="menuitem"
+      title="Bring the structure back to the middle — the rotation and zoom stay">Recenter</button>
+    <button type="button" id="cameraRecenterFitBtn" class="restore-popover-btn restore-popover-cancel" role="menuitem"
+      title="Bring the structure back to the middle and fit the zoom to it — the rotation stays">Recenter and fit</button>
+    <button type="button" id="cameraResetMenuCancel" class="restore-popover-btn restore-popover-cancel" role="menuitem">Cancel</button>
+  `;
+  document.body.appendChild(el);
+  const on = (id, run) => el.querySelector(`#${id}`).addEventListener('click', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    hideResetMenu();
+    run();
+  });
+  on('cameraRecenterBtn', () => recenterView());
+  on('cameraRecenterFitBtn', () => recenterView({ fit: true }));
+  on('cameraResetMenuCancel', () => {});
+  document.addEventListener('pointerdown', (e) => {
+    if (!el.hidden && !el.contains(/** @type {Node} */ (e.target))) hideResetMenu();
+  }, true);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !el.hidden) hideResetMenu();
+  });
+  resetMenu = el;
+  return el;
+}
+
+/** Open the menu under the button (above it if there is no room below),
+ *  inside the window. */
+function showResetMenu(btn) {
+  const el = buildResetMenu();
+  el.hidden = false;
+  const r = btn.getBoundingClientRect();
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  const below = r.bottom + 6;
+  el.style.top = `${below + h > window.innerHeight - 8 ? Math.max(8, r.top - 6 - h) : below}px`;
+  el.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+  el.style.right = 'auto';
+  /** @type {HTMLElement|null} */ (el.querySelector('#cameraRecenterBtn'))?.focus({ preventScroll: true });
+}
+
+function setupResetLongPress(btn) {
+  if (!btn || btn.dataset.longPressWired) return;
+  btn.dataset.longPressWired = '1';
+  let timer = 0;
+  let fired = false;
+  const cancel = () => { clearTimeout(timer); timer = 0; };
+  btn.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    fired = false;
+    cancel();
+    timer = window.setTimeout(() => { fired = true; showResetMenu(btn); }, RESET_LONG_PRESS_MS);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((type) => btn.addEventListener(type, cancel));
+  // A touch long-press would otherwise open the browser's own menu, which
+  // steals the pointerup this relies on.
+  btn.addEventListener('contextmenu', (e) => e.preventDefault());
+  // The click that ends a long press must not also reset the view (capture:
+  // before the button's own onclick).
+  btn.addEventListener('click', (e) => {
+    if (!fired) return;
+    fired = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
+}
+
+/**
  * Fit distance/zoom to the currently selected structure. Default
  * (resetDirection:false) keeps whatever direction the camera is already
  * looking from — used for generating a supercell (SuperCellModule.js), where
@@ -815,6 +937,11 @@ export function fitCameraToCurrentStructure({ resetDirection = false } = {}) {
   if (resetDirection) app.camera.up.set(0, 1, 0);
   app.camera.position.copy(center.clone().add(dir.multiplyScalar(dist)));
   app.controls.target.copy(center);
+  // A user's zoom (wheel, pinch) lives in camera.zoom; fitting means zoom 1
+  // with the frustum/distance sized to the structure, or a zoomed-in view
+  // stays zoomed and "fit" does not fit.
+  app.camera.zoom = 1;
+  app.camera.updateProjectionMatrix();
   refitOrthographicFrustum();
   stopCameraMomentum();
   app.controls.update();
@@ -919,16 +1046,21 @@ export function recenterCamera() {
 
 
 
-// Function to collapse all individual atom (and bond/polyhedron) expansions
-export function collapseAllAtomExpansions() {
+// Function to collapse all individual atom (and bond/polyhedron) expansions.
+// `keep`: one list to leave open, with its caret — a 3D pick collapses the
+// others and reveals its row in this one, and collapsing a list only to open
+// it again made the browser restyle all of its (up to 1000) rows.
+export function collapseAllAtomExpansions(keep = null) {
   const atomsContainers = document.querySelectorAll('.individual-atoms, .individual-bonds, .individual-polyhedra');
   const expandIcons = document.querySelectorAll('.comp-expand-icon, .bond-expand-icon, .poly-expand-icon');
+  const keepIcon = keep?.closest('.comp-container, .bond-control, .poly-control')
+    ?.querySelector('.comp-expand-icon, .bond-expand-icon, .poly-expand-icon') ?? null;
 
   atomsContainers.forEach(container => {
-    container.style.display = 'none';
+    if (container !== keep) container.hidden = true;
   });
 
   expandIcons.forEach(icon => {
-    icon.style.transform = 'rotate(0deg)';
+    if (icon !== keepIcon) icon.classList.remove('is-expanded');
   });
 }

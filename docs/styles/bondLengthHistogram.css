@@ -29,6 +29,17 @@
   width: 80px;
 }
 
+/* "Group by Wyckoff" outside Wyckoff mode: greyed out, with a tooltip saying
+   why (BondLengthHistogram.js's syncWyckoffToggle). */
+.blh-wyckoff-row.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.blh-wyckoff-row.is-disabled input {
+  cursor: not-allowed;
+}
+
 .blh-pair-list {
   display: flex;
   flex-direction: column;
@@ -78,6 +89,21 @@
   flex: 1 1 auto;
 }
 
+/* The pair's own chart colour, set from BondLengthHistogram.js (it depends on
+   the structure's element pairs). */
+.blh-pair-swatch {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+/* Expanded (fullscreen) card: the header's bond count otherwise sits under
+   the ✕ close button (.split-item-close-btn, top-right). */
+.split-item.expanded.blh-pair-card h4 {
+  padding-right: 44px;
+}
+
 .blh-pair-count {
   color: var(--muted-fg);
   font-weight: var(--fw-normal);
@@ -101,7 +127,7 @@
   /* Drag the bottom edge down to make just this one chart taller — a plain
      block-level resize handle, independent of Plotly's own sizing (a
      ResizeObserver on this div calls Plotly.Plots.resize() whenever it
-     changes, see watchPlotResize in BondLengthHistogram.js). overflow other
+     changes, see watchCardResize in BondLengthHistogram.js). overflow other
      than visible is required for the native handle to appear at all. */
   resize: vertical;
   overflow: hidden;
@@ -177,7 +203,7 @@
 .blh-range-slider .blh-range-fill {
   position: absolute;
   height: 3px;
-  background: rgba(34, 197, 94, 0.9);
+  background: var(--range-fill);
   border-radius: 2px;
   top: 50%;
   transform: translateY(-50%);
@@ -263,6 +289,11 @@
   margin: 0 var(--sp-3);
 }
 
+/* A hydrogen-bond pair switched off (BondLengthPanel.js applyEnabled). */
+.bond-range-slider.is-off {
+  opacity: 0.4;
+}
+
 .bond-range-slider .background-track {
   position: absolute;
   height: 4px;
@@ -282,7 +313,7 @@
 .bond-range-slider .range-track {
   position: absolute;
   height: 4px;
-  background: rgba(6, 140, 50, 0.8);
+  background: var(--bond-range-track);
   border-radius: 2px;
   top: 50%;
   transform: translateY(-50%);
@@ -423,9 +454,12 @@
   font-size: var(--fs-lg);
   transition: transform 0.2s ease;
   color: var(--fg-75);
-  transform: rotate(0deg); /* JS overrides this inline (rotate(90deg)) on expand — the
-    inline style always wins over this class rule regardless of specificity */
+  transform: rotate(0deg);
   cursor: pointer;
+}
+
+.bond-expand-icon.is-expanded {
+  transform: rotate(90deg);
 }
 
 .bond-count {
@@ -440,15 +474,12 @@
   width: 20px;
   height: 20px;
   margin-right: var(--sp-2);
-  border: 1px solid var(--fg-3);
   cursor: pointer;
 }
 
-/* ---- category style editor (color + alpha + size), closed by default —
-   catEditor.style.display is toggled inline at runtime (dot click, expand/
-   collapse, Apply), which still overrides this base rule regardless. ---- */
+/* ---- category style editor (color + alpha + size), closed (hidden) by
+   default; dot click, expand/collapse and Apply toggle it. ---- */
 .bond-cat-editor {
-  display: none;
   margin-top: var(--sp-2);
   padding: var(--sp-3);
   background: var(--wash-0);
@@ -492,9 +523,10 @@
 }
 
 /* Reset/Apply buttons: same box as the shared .btn-mini, just narrower and
-   flush with the alpha/size rows above. Reset's background/border/color/
-   text-shadow are set inline in JS when the pair has bonds — that's a
-   species-derived gradient preview, genuinely data, not a constant. */
+   flush with the alpha/size rows above. Reset's background and color are
+   set inline in JS when the pair has bonds — that's a species-derived
+   gradient preview, genuinely data, not a constant (.is-swatch, styles.css,
+   draws its border and glyph shadow). */
 .bond-cat-btn {
   height: 32px;
   padding: 0 var(--sp-1);
@@ -508,7 +540,6 @@
 
 /* ---- individual-bond list (expandable, lazily built) ---- */
 .individual-bonds {
-  display: none;
   margin-left: 20px;
   margin-top: var(--sp-3);
   border-left: 2px solid var(--line-1);
@@ -520,6 +551,32 @@
   color: var(--fg-50);
   padding: var(--sp-1) 0;
 }
+
+/* ---- Complete Rings & Fragments settings (only while the option is on) ---- */
+.blp-fragments {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-1);
+}
+
+.blp-fragments-head {
+  font-size: var(--fs-sm);
+  color: var(--fg-50);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.blp-fragments-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.blp-fragments-row select { padding: 2px 6px; }
 
 /* ---- bottom row: Reset Bond Lengths / Reset Colors ---- */
 .blp-reset-colors-row {

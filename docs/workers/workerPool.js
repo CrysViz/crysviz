@@ -20,9 +20,15 @@ let pool = null;
 let reqCounter = 0;
 let rr = 0; // round-robin cursor for run()
 
-/** True if Web Workers are usable in this environment. */
+/**
+ * True if Web Workers are usable in this environment. Not in an opaque-origin
+ * document (a widget in a sandboxed iframe without allow-same-origin): the
+ * browser refuses to load computeWorker.js there, and a worker that failed to
+ * load reports it once, before any job listens — a later run() would wait on it
+ * forever instead of taking the caller's main-thread fallback.
+ */
 export function available() {
-  return typeof Worker !== 'undefined';
+  return typeof Worker !== 'undefined' && globalThis.origin !== 'null';
 }
 
 function create() {

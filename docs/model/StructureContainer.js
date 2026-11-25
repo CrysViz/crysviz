@@ -1,14 +1,20 @@
 import { Structure } from './Structure.js';
+import { siteSpeciesRecord } from './siteSpecies.js';
 
 export class StructureContainer {
   constructor({
     fileName = null,
     structures = [],
     finalSCF = false,
+    dataSource = null,
   } = {}) {
     this.fileName = fileName ? fileName : "Unspecified";
     this.structures = this._ensureListOfClass(structures, Structure);
     this.finalSCF=finalSCF;
+    // Where the file's energies, forces and stress came from ("VASP"), or
+    // null; a structure's own dataSource wins (model/dataSource.js).
+    /** @type {string | null} */
+    this.dataSource = typeof dataSource === 'string' && dataSource ? dataSource : null;
     // Per-frame plot series for the Trajectory panel (step / temperatureK /
     // etotEv / meanForce / pressure / ...), each a number[] 1:1 with structures.
     // Populated by live MD/relax and "Compute step stats"; null until then.
@@ -19,6 +25,12 @@ export class StructureContainer {
     // is off — see FileBrowswerPanel.js's updateStructureFromRowAndStep.
     this.cameraSnapshot = null;
     this.featureSnapshot = null;
+    // Per-structure Atom Size / Bond Diameter ({ atomSize, bondRadius }),
+    // always on (no lock). general.atomSize/bondRadius mirror the SELECTED
+    // container's values; null = adopt whatever is live when first shown.
+    // See ui/SizePrefs.js and FileBrowswerPanel.js's updateStructureFromRowAndStep.
+    /** @type {{ atomSize: number, bondRadius: number } | null} */
+    this.displaySizes = null;
     // Optional per-frame "cell kind" labels ("loaded"/"conventional"/"primitive"),
     // order-aligned with `structures`. Set by the .crysviz loader from the
     // session's top-level `frameKinds` and read ONLY by widget mode (ui/WidgetMode.js)
@@ -143,6 +155,19 @@ export class StructureContainer {
     });
   }
 
+  /**
+   * Change the styles that apply to the whole trajectory (category styles,
+   * element materials, polyhedra settings: materializeFrame.js
+   * SHARED_STYLE_DICTS) with `fn(holder)`, which edits those fields on
+   * `holder` as it would on a Structure. Here every frame is its own
+   * Structure, so `fn` runs on each; a store-backed trajectory keeps ONE
+   * record for them and changes it once (TrajectoryContainer).
+   * @param {(holder: any) => void} fn
+   */
+  updateSharedStyles(fn) {
+    this.forEachFrameMaterialized((frame) => fn(frame));
+  }
+
   /** Per-frame energies for plots; NaN where unknown. */
   energySeries() {
     return this.structures.map(s => (Number.isFinite(s?.energy) ? s.energy : NaN));
@@ -172,8 +197,14 @@ export class StructureContainer {
   /**
    * Per-frame geometry/arrow data in plain form for session serialisation
    * (ShareModule's includeFrames path). May return a Promise in subclasses.
+   * `species` is the frame's mixed / partially occupied sites
+   * (model/siteSpecies.js), null when it has none.
+   * `energy` (eV), `stress` (eV/Å³, model/Stress.js) and `dataSource` (the
+   * frame's own, model/dataSource.js) are null when the frame has none.
    * @returns {Array<{elements: string[], lattice: number[][],
-   *   positions: number[][], forces: Force[] | null, spins: Spin[] | null}>
+   *   positions: number[][], forces: Force[] | null, spins: Spin[] | null,
+   *   species: Record<number, Array<object>> | null, energy: number | null,
+   *   stress: number[][] | null, dataSource: string | null}>
    *   | Promise<Array<object>>}
    */
   framePhysicsList() {
@@ -183,6 +214,10 @@ export class StructureContainer {
       positions: frame.atoms.map(a => [...a.position]),
       forces: frame.forces?.length ? frame.forces : null,
       spins: frame.spins?.length ? frame.spins : null,
+      species: siteSpeciesRecord(frame.atoms.map(a => a.species)),
+      energy: Number.isFinite(frame.energy) ? frame.energy : null,
+      stress: frame.stress?.tensor ? frame.stress.tensor.map(r => [...r]) : null,
+      dataSource: frame.dataSource ?? null,
     }));
   }
   flushColorToAllStructures(targetStructure) {
@@ -229,7 +264,7 @@ export class StructureContainer {
     // them here, no Apply/Reset action in the app ever propagated a material
     // override to other trajectory frames.
     const STORES = ['atomImageStyles', 'bondUserStyles', 'bondCategoryStyles',
-                    'polyhedraUserStyles', 'polyhedraCategoryStyles',
+                    'polyhedraUserStyles', 'polyhedraCategoryStyles', 'polyhedraElementStyles',
                     'atomMaterials', 'atomUserMaterials',
                     'spinCategoryStyles', 'forceCategoryStyles'];
     this.forEachFrameMaterialized(structure => {

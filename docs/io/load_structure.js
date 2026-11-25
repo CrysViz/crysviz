@@ -2,6 +2,7 @@ import { Structure } from "../model/index.js";
 import { StructureContainer } from '../model/index.js';
 import { Atom, Spin } from '../model/index.js';
 import { cif_to_struct, mcif_to_magstruct } from './cif.js';
+import { buildCifErrors } from './cif/cif_errors.js';
 import { parsePWSCFin } from './ReadPWSCFinModule.js';
 import { parsePWSCFout } from './ReadPWSCFoutModule.js';
 import { parseOUTCAR } from './ReadOutcarModule.js';
@@ -12,24 +13,38 @@ import { parseCastepGeom } from './ReadCastepGeomModule.js';
 import { parseAimsGeometry } from './ReadAimsGeometryModule.js';
 import { parseAimsOut } from './ReadAimsOutModule.js';
 import { readPOSCAR } from './ReadPOSCARModule.js';
+import { optimadeJSONToPOSCAR } from './OptimadeModule.js';
 import { parseASETrajectory } from './ReadASETrajectoryModule.js';
 import {generateID} from '../utils/index.js'
 import { detectFormat, headOf, looksLike } from './formats.js';
+import { formatDataSource, hasComputedData } from '../model/dataSource.js';
 
 /*
  * The idea is that parse_any will eventually take over all parsing
  * of any kind of structure data and return back a StructureContainer
  */
-export async function parse_any(content, fileName = '', isDefault = false) {
+export async function parse_any(content, fileName = '', isDefault = false, knownFormat = '') {
 
   // Which format this is, is decided in one place (io/formats.js): by the
   // file's contents first and by its name only as the tiebreak/fallback. The
   // CIF sniffers that used to be special-cased here now live on the registry
   // alongside a sniffer for every other format, so a QE run saved as
   // `relax.out`, an aims.out called `Si.scf.out`, or a CIF called `download`
-  // all reach the right reader.
-  const formatId = detectFormat({ fileName, head: headOf(content) }).id;
+  // all reach the right reader. A caller that already sniffed the file passes
+  // `knownFormat`: a random-access format (a large .xyz) arrives here as a
+  // FileSource, which `headOf` cannot read, so without it the name alone
+  // would decide (and `run.extxyz` would be read as a POSCAR).
+  const formatId = knownFormat || detectFormat({ fileName, head: headOf(content) }).id;
+  const container = await parseByFormat(formatId, content, fileName);
+  // Where its energies, forces and stress came from (model/dataSource.js),
+  // unless the reader knew better (an ASE trajectory names its calculator).
+  const source = formatDataSource(formatId);
+  if (source && container && !container.dataSource && hasComputedData(container)) container.dataSource = source;
+  return container;
+}
 
+/** The reader for one io/formats.js id. */
+async function parseByFormat(formatId, content, fileName) {
   switch (formatId) {
     case 'traj':
       // ASE ULM trajectories are binary; `content` arrives as an ArrayBuffer.
@@ -83,6 +98,10 @@ export async function parse_any(content, fileName = '', isDefault = false) {
     case 'aims-out':
       console.log("This is probably an FHI-aims output file");
       return parseAimsOut(content, fileName);
+
+    case 'optimade':
+      // A saved or pasted OPTIMADE response: converted as the URL route does.
+      return parseByFormat('poscar', optimadeJSONToPOSCAR(content), fileName);
 
     default: {
       console.log("This is probably a POSCAR file")
@@ -164,12 +183,45 @@ export async function parse_cif(content, fileName = '', mcif = false) {
     );
   });
 
+  // Keep the symmetry the CIF declared, rather than dropping it here. The parser
+  // has already read the space-group operations and labels into `cif_struct`
+  // (io/cif/cif_parser.js); carrying them onto the Structure lets the load path
+  // compare the file's declared symmetry against the one Moyo detects from the
+  // expanded cell, and — when they agree — rebuild the Wyckoff lock in the CIF's
+  // own setting. mCIF takes a different expansion path and is left untouched.
+  const cifNumberRaw = mcif ? null : cif_struct["space_group_nbr"];
+  const cifNumber = Number.parseInt(cifNumberRaw, 10);
+  // The parser keeps operation entries as exact Fraction objects; store plain
+  // numbers so the record survives any JSON/structured clone of the Structure.
+  const opValue = (value) => (value && typeof value === 'object' && typeof value.toNumber === 'function'
+    ? value.toNumber()
+    : Number(value));
+  const symops = (cif_struct["symops"] ?? []).map(([R, t]) => [
+    R.map((row) => row.map(opValue)),
+    t.map(opValue),
+  ]);
+  const cifSymmetry = mcif ? null : {
+    symops,
+    number: Number.isFinite(cifNumber) ? cifNumber : null,
+    hmName: cif_struct["space_group_name_hm"] ?? null,
+    hall: cif_struct["space_group_name_hall"] ?? null,
+  };
+
+  // The file's standard uncertainties ("CIF errors"), when it gives any: kept
+  // as an offer until the load dialog (ui/CifSymmetryLoad.js) asks whether to
+  // read them. Each atom carries which site it is a copy of; an atom made
+  // anew later (supercell, editor) has no such record and so no error.
+  const errors = buildCifErrors(cif_struct);
+  if (errors) atoms.forEach((atom, i) => { atom.cifSite = errors.atoms[i]; });
+
   const structure = new Structure({
     elements,
     uniqueElements: [...new Set(elements)].sort(),
     lattice: cif_struct["basis"],
     atoms,
-    spins
+    spins,
+    cifSymmetry,
+    cifErrors: errors ? { cell: errors.cell, sites: errors.sites, pending: true } : null,
   });
 
   const container = new StructureContainer({

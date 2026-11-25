@@ -1,17 +1,20 @@
-// Shared Plotly grouped-bar-chart rendering for the analysis histograms
-// (BondLengthHistogram.js, CoordinationHistogram.js). Each caller owns its
-// own binning and highlight semantics; this module only owns the actual
-// Plotly call, the responsive resize, PNG export, and the bar-click wiring —
-// letting Plotly's own grouped-bar layout handle bar/group spacing and x-tick
-// collision avoidance, which the old hand-rolled canvas version did not.
+// Shared Plotly bar-chart rendering for the analysis histograms
+// (BondLengthHistogram.js, ForceHistogram.js, CoordinationHistogram.js, the
+// polyhedra histograms). Each caller owns its own binning and highlight
+// semantics; this module only owns the actual Plotly call, the responsive
+// resize, PNG export, and the bar-click wiring. Category charts (coordination
+// numbers, polyhedron types) keep Plotly's grouped bars; binned charts (bond
+// length, |F|) are stacked histograms on a numeric axis — see `bins` below.
 
 import { loadPlotly } from '../../utils/plotlyLoader.js';
 import { downloadBlob } from '../SavePanel.js';
+import { HISTOGRAM_COLORS, paletteColor } from './histogramColors.js';
 
-export const HISTOGRAM_COLORS = [
-  '#00202e', '#2c4875', '#8a508f', '#bc5090',
-  '#ff6361', '#ff8531', '#ffa600', '#ffd380',
-];
+export { HISTOGRAM_COLORS };
+
+// Plot ids drawn as binned histograms -> what fitBinEdges needs to redraw
+// their bin-edge lines after a resize.
+const binnedPlots = new Map(); // plotId -> { bins, color }
 
 // Plotly div elements that already carry a plotly_click listener — Plotly.react()
 // reuses the same DOM node across redraws, so the listener must be attached
@@ -34,26 +37,42 @@ export function togglePlotTheme(plotId) {
 }
 
 /**
- * groups: [{ label, x: string[], y: number[], customdata: any[], hovertext?:
- * string[] }, ...] — one series per bond pair / element, bars grouped by
- * shared x categories. hovertext, when given, replaces the default
+ * groups: [{ label, x, y: number[], customdata: any[], hovertext?: string[],
+ * color?, legendgroup?, legendgrouptitle? }, ...] — one series per bond pair /
+ * element / Wyckoff site. hovertext, when given, replaces the default
  * "series/x/y" hover line-for-line (e.g. the Bond Length Histogram's list of
- * actual bonds in that bin).
+ * actual bonds in that bin). `color` overrides the palette colour (the callers
+ * give site series shades of their element's colour, histogramColors.js);
+ * `legendgroup`/`legendgrouptitle` group the legend under element headings.
  *
- * `theme`, when given ('light'|'dark'), overrides the plotId's own
- * remembered theme — for a window driving many plot ids off ONE toggle (the
- * per-pair Bond Length Histogram cards) rather than each plot remembering its
- * own. `compact`, for the same low-profile-card case, skips the boundary-tick
- * dividers (only useful for disambiguating multi-series grouped bars) and
- * tightens the margins so a short chart div isn't mostly whitespace — axis
- * titles still show either way, and which ticks actually get labeled is left
- * to Plotly's own automatic category-axis thinning in BOTH modes (a separate
- * hand-picked "nice round number" thinning for compact used to pick a
- * different, coarser set of labels than the non-compact charts' automatic
- * one, which is what read as the two "not matching").
+ * Each plot id remembers its own light/dark choice (togglePlotTheme, the light/dark
+ * on every chart card, the Bond Length Histogram's per-pair cards included);
+ * `theme`, when given ('light'|'dark'), overrides it for a caller that wants
+ * one setting for several plots. `compact`, for low-profile cards, skips the boundary-tick
+ * dividers of a category chart and tightens the margins so a short chart div
+ * isn't mostly whitespace.
+ *
+ * `bins`, when given ({ width, min, max }), draws a STACKED HISTOGRAM on a
+ * numeric axis instead of grouped category bars: each group's `x` holds its
+ * bins' centres, every bin is one full-width bar made of one segment per
+ * series, and a faint line marks every bin edge (fewer when bins are only a
+ * few pixels wide), so which bars belong to which bin is plain to see however
+ * many series there are. The x ticks are a few round, horizontal values. A bin
+ * spelled out as a "0.50–1.00" category label had to turn vertical once the
+ * labels stopped fitting side by side, and in a short card ran into the axis
+ * title and was cut off; the bin's range is in its hover text instead. Empty
+ * segments are left out, so they get no hover of their own.
+ *
+ * `selected` ({ label, index }) outlines that series' bar in bin `index` — the
+ * bar whose bonds/atoms are highlighted in 3D.
+ *
+ * The count axis only ever steps by whole numbers (no "0.5 bonds"), and its
+ * step is picked from the chart's real height, so a short card gets two or
+ * three labels rather than Plotly's minimum of five crammed together.
  */
 export async function renderGroupedHistogram(plotId, {
-  groups, xTitle, yTitle, isExpanded = false, theme = undefined, compact = false,
+  groups, xTitle, yTitle, isExpanded = false, theme = undefined, compact = false, bins = undefined,
+  selected = undefined,
 }) {
   let Plotly;
   try {
@@ -63,41 +82,46 @@ export async function renderGroupedHistogram(plotId, {
     if (plot) plot.textContent = error.message;
     return false;
   }
-  if (!document.getElementById(plotId)) return false;
+  const plotEl = document.getElementById(plotId);
+  if (!plotEl) return false;
 
   const isLight = (theme ?? getPlotTheme(plotId)) === 'light';
   const paperBg = isLight ? '#ffffff' : 'rgba(0,0,0,0)';
   const fontColor = isLight ? '#121212' : '#ddd';
   const gridColor = isLight ? '#cccccc' : '#444444';
   const dividerColor = isLight ? '#999999' : '#666666';
+  const edgeColor = isLight ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.13)';
   const barLineColor = isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.3)';
   const sizes = isExpanded
     ? { tick: 16, title: 19, legend: 15 }
     : { tick: 13, title: 14, legend: 12 };
 
-  const data = groups.map((g, i) => ({
-    type: 'bar',
-    name: g.label,
-    x: g.x,
-    y: g.y,
-    customdata: g.customdata,
-    ...(g.hovertext
-      ? { hovertext: g.hovertext, hovertemplate: '%{hovertext}<extra></extra>' }
-      : { hovertemplate: `${g.label}<br>%{x}<br>%{y}<extra></extra>` }),
-    marker: {
-      color: HISTOGRAM_COLORS[i % HISTOGRAM_COLORS.length],
-      line: { color: barLineColor, width: 1 },
-    },
-  }));
+  const data = groups.map((g, i) => {
+    const isSelected = (k) => selected?.label === g.label && selected.index === k;
+    const outlined = g.y.some((_, k) => isSelected(k));
+    return {
+      type: 'bar',
+      name: g.label,
+      x: g.x,
+      // A zero-height segment in a stack would still catch the hover.
+      y: bins ? g.y.map((c) => c || null) : g.y,
+      customdata: g.customdata,
+      ...(g.hovertext
+        ? { hovertext: g.hovertext, hovertemplate: '%{hovertext}<extra></extra>' }
+        : { hovertemplate: `${g.label}<br>%{x}<br>%{y}<extra></extra>` }),
+      ...(bins ? { width: bins.width * (1 - BIN_GAP) } : {}),
+      ...(g.legendgroup ? { legendgroup: g.legendgroup, legendgrouptitle: { text: g.legendgrouptitle ?? g.legendgroup } } : {}),
+      marker: {
+        // Callers without their own colours (coordination, polyhedra) get the
+        // palette spread over their series, as histogramColors.js does.
+        color: g.color ?? paletteColor(i, groups.length),
+        line: outlined
+          ? { color: g.y.map((_, k) => (isSelected(k) ? fontColor : barLineColor)), width: g.y.map((_, k) => (isSelected(k) ? 2.5 : 1)) }
+          : { color: barLineColor, width: 1 },
+      },
+    };
+  });
 
-  // Boundary ticks/dividers disambiguate MULTI-series grouped bars (which
-  // tick a bar-group belongs to) — a compact single-series card has no such
-  // ambiguity (one bar per tick already), so skip them there: they read as
-  // visual clutter, not signal, on a short chart. Which ticks get a LABEL is
-  // otherwise left to Plotly's own automatic thinning either way (tickmode
-  // stays 'auto') — so a compact card's labeled ticks always match the same
-  // density/spacing the non-compact combined chart already picks for itself,
-  // rather than two different algorithms disagreeing on which bins to show.
   const xaxis = {
     title: { text: xTitle, font: { size: sizes.title } },
     tickfont: { size: sizes.tick },
@@ -106,7 +130,20 @@ export async function renderGroupedHistogram(plotId, {
     automargin: true,
     ticks: 'outside',
   };
-  if (!compact) {
+  if (bins) {
+    // An explicit standoff makes automargin push the bottom margin far
+    // enough for the title; Plotly's default squeezes the title against the
+    // tick labels once a short card runs out of margin.
+    xaxis.title.standoff = 8;
+    Object.assign(xaxis, {
+      type: 'linear',
+      range: [bins.min, bins.max],
+      showgrid: false,
+      zeroline: false,
+      tickangle: 0,
+    });
+  } else if (!compact) {
+    // Boundary ticks tell which tick a group of category bars belongs to.
     Object.assign(xaxis, {
       tickson: 'boundaries',
       showdividers: true,
@@ -115,8 +152,25 @@ export async function renderGroupedHistogram(plotId, {
     });
   }
 
+  // A compact card's bottom margin holds the tick labels (~30 px with their
+  // tick marks and label padding), a gap and the axis title (~18 px) outright: in a 110 px
+  // card automargin does not grow it, and the title ended up on the ticks.
+  const margin = isExpanded
+    ? { t: 20, r: 20, b: 70, l: 60 }
+    : compact
+      ? { t: 4, r: 4, b: 52, l: 44 }
+      : { t: 10, r: 10, b: 55, l: 45 };
+  const binCount = groups[0]?.y.length ?? 0;
+  const maxCount = bins
+    ? Math.max(0, ...Array.from({ length: binCount }, (_, k) => groups.reduce((sum, g) => sum + (g.y[k] || 0), 0)))
+    : groups.reduce((m, g) => g.y.reduce((a, b) => Math.max(a, b), m), 0);
+  const countStep = countTickStep(maxCount, plotEl.clientHeight - margin.t - margin.b);
+
+  if (bins) binnedPlots.set(plotId, { bins, color: edgeColor });
+  else binnedPlots.delete(plotId);
+
   const layout = {
-    barmode: 'group',
+    barmode: bins ? 'stack' : 'group',
     bargap: 0.15,
     bargroupgap: 0.08,
     paper_bgcolor: paperBg,
@@ -130,24 +184,75 @@ export async function renderGroupedHistogram(plotId, {
       gridcolor: gridColor,
       rangemode: 'tozero',
       automargin: true,
+      tick0: 0,
+      dtick: countStep,
     },
     showlegend: groups.length > 1,
     legend: {
       font: { color: fontColor, size: sizes.legend },
+      grouptitlefont: { color: fontColor, size: sizes.legend },
       bgcolor: isLight ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.3)',
+      // Series order, as the cards list them — not Plotly's reversed order
+      // for stacked bars.
+      traceorder: groups.some((g) => g.legendgroup) ? 'grouped' : 'normal',
+      tracegroupgap: 6,
     },
-    margin: isExpanded
-      ? { t: 20, r: 20, b: 70, l: 60 }
-      : compact
-        ? { t: 4, r: 4, b: 34, l: 44 }
-        : { t: 10, r: 10, b: 55, l: 45 },
+    margin,
+    // A first guess at the plot width; fitBinEdges corrects it once Plotly
+    // has laid the chart out.
+    shapes: bins ? binEdgeShapes(bins, plotEl.clientWidth - margin.l - margin.r - 60, edgeColor) : [],
   };
 
   await Plotly.react(plotId, data, layout, { responsive: true, displayModeBar: false });
+  fitBinEdges(Plotly, plotEl);
   // A frame later the card may have been collapsed, or the whole card list
   // rebuilt, so this has to re-check that the div is still there and still
   // displayed — see safeResize.
   requestAnimationFrame(() => safeResize(Plotly, plotId));
+}
+
+// Share of each bin left empty between neighbouring bars.
+const BIN_GAP = 0.14;
+// Closest two bin-edge lines may be drawn, in px: narrower bins get a line
+// every few bins instead of a grey wash.
+const MIN_EDGE_SPACING_PX = 6;
+
+/** Vertical lines at the bin edges of `bins` for a plot area `plotPx` wide. */
+function binEdgeShapes(bins, plotPx, color) {
+  const binCount = Math.round((bins.max - bins.min) / bins.width);
+  const binPx = Math.max(plotPx, 1) / Math.max(binCount, 1);
+  const every = Math.max(1, Math.ceil(MIN_EDGE_SPACING_PX / binPx));
+  const shapes = [];
+  for (let i = 0; i <= binCount; i += every) {
+    const x = bins.min + i * bins.width;
+    shapes.push({
+      type: 'line', xref: 'x', yref: 'paper', x0: x, x1: x, y0: 0, y1: 1, layer: 'below',
+      line: { color, width: 1 },
+    });
+  }
+  return shapes;
+}
+
+/** Redraws a binned plot's edge lines for its real plot-area width (after a
+ *  render or a resize), only when the thinning changed. */
+function fitBinEdges(Plotly, el) {
+  const meta = binnedPlots.get(el?.id);
+  const plotPx = el?._fullLayout?.xaxis?._length;
+  if (!meta || !plotPx) return;
+  const shapes = binEdgeShapes(meta.bins, plotPx, meta.color);
+  if (shapes.length === (el.layout?.shapes?.length ?? 0)) return;
+  Plotly.relayout(el, { shapes }).catch(() => {});
+}
+
+/** Step between count-axis ticks: whole numbers only, from the 1-2-5 series,
+ *  with labels at least ~24 px apart on an axis `axisPx` tall. Plotly's own
+ *  choice asks for at least five labels however short the axis, and goes to
+ *  0.5 steps when the counts are small. */
+function countTickStep(maxCount, axisPx) {
+  const labels = Math.max(2, Math.min(10, Math.floor((axisPx > 0 ? axisPx : 200) / 24)));
+  const rough = Math.max(1, maxCount / labels);
+  const decade = 10 ** Math.floor(Math.log10(rough));
+  return [1, 2, 5, 10].map((m) => m * decade).find((step) => step >= rough);
 }
 
 /** Plotly.Plots.resize throws "Resize must be passed a displayed plot div
@@ -161,6 +266,7 @@ function safeResize(Plotly, plotId) {
   if (!el || !el._fullLayout || !el.offsetParent || !el.clientWidth) return;
   try {
     Plotly.Plots.resize(el);
+    fitBinEdges(Plotly, el);
   } catch {
     // Raced with a collapse or a rebuild — the next render resizes it anyway.
   }
@@ -171,8 +277,9 @@ function safeResize(Plotly, plotId) {
  *  customdata payload (whatever the caller put there — bond instance ids,
  *  atom indices, ...). */
 export function onHistogramBarClick(plotId, handler) {
-  const el = document.getElementById(plotId);
-  if (!el || clickWired.has(el)) return;
+  const el = /** @type {any} */ (document.getElementById(plotId));
+  // No .on() when Plotly failed to load: the div then holds the error text.
+  if (!el || typeof el.on !== 'function' || clickWired.has(el)) return;
   clickWired.add(el);
   el.on('plotly_click', (ev) => {
     const pt = ev.points?.[0];
@@ -257,6 +364,7 @@ export async function resizeHistogramPlot(plotId) {
 /** Wipes a chart back to empty — best-effort, since there may be no chart yet. */
 export async function clearHistogramPlot(plotId) {
   try {
+    binnedPlots.delete(plotId);
     const Plotly = await loadPlotly();
     if (document.getElementById(plotId)) await Plotly.purge(plotId);
   } catch {

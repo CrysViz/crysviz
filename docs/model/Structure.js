@@ -52,11 +52,14 @@ export class Structure {
     bonds = [],
     atoms = [],
     symmetry = null,
+    cifSymmetry = null,
+    cifErrors = null,
     spins = [],
     spinFrame = null,
     forces = [],
     stress = null,
     energy = null,
+    dataSource = null,
     velocities = null,
     polyhedra = null,
     polyhedraSettings = null,
@@ -77,6 +80,24 @@ export class Structure {
     this.lattice = lattice;       // 3×3
     this.atoms = atoms;           // list of atoms
     this.symmetry = symmetry;
+    // Symmetry as DECLARED by a source CIF, kept verbatim from the file rather
+    // than re-derived: { symops: [[R,t],...] (fractional, row-major),
+    // number: IT number|null, hmName: H-M symbol|null, hall: Hall symbol|null }.
+    // This is the raw record the loader compares against Moyo's detected
+    // symmetry and, when they agree, builds the Wyckoff lock from — so the CIF's
+    // own setting and operations are preserved instead of Moyo's standardised
+    // ones. null for every non-CIF source and for CIFs that declare no symmetry.
+    this.cifSymmetry = cifSymmetry;
+    // Standard uncertainties a source CIF gave ("CIF errors"):
+    // { cell: { values:[a,b,c,α,β,γ], su:[...], resolution:[...] },
+    //   sites: [{ label, frac, su:[σx,σy,σz], resolution }], pending, toCif? }.
+    // Each atom copied from a site carries atom.cifSite = { site, R, frac }
+    // (io/cif/cif_errors.js). `pending` until the load dialog's answer: read
+    // (pending false) or not (the record is dropped). `toCif` maps a
+    // supercell's fractional coordinates to the CIF cell's. model/cifErrors.js
+    // propagates them into distances and angles and saves them with a session
+    // (ui/ShareModule.js). null for every other source.
+    this.cifErrors = cifErrors;
     this.spins = spins;           // list of spins
     // How the loaded spins' raw components map to global Cartesian, so the
     // Spins panel can re-project them (utils/spinFrame.js). Currently carries
@@ -100,6 +121,10 @@ export class Structure {
     }));
     this.stress = stress;
     this.energy = energy ?? null; // per-frame free energy in eV; null when unknown
+    // Where the energy, forces and stress came from ("VASP", "PET-MAD xs"):
+    // set by a computation in the app; null falls back to the container's
+    // (the file's), see model/dataSource.js.
+    this.dataSource = typeof dataSource === 'string' && dataSource ? dataSource : null;
     this.velocities = velocities ?? null; // per-atom [vx,vy,vz] in Å/fs; null when untracked (relax frames, loaded files)
     this.polyhedra = polyhedra;
     this.polyhedraSettings = normalizePolyhedraSettings(polyhedraSettings);
@@ -132,6 +157,12 @@ export class Structure {
     // entries are simply ignored.
     this.polyhedraUserStyles = {};
     this.polyhedraCategoryStyles = {};
+    // The Poly tab's element rows: polyhedraElementStyles[centre element, or
+    // 'cage' for every cage] -> the same fields as a category entry. A layer
+    // under the category styles (resolvePolyhedronStyle: individual >
+    // category > element > default), so it also covers categories that
+    // appear later in a trajectory.
+    this.polyhedraElementStyles = {};
     // Ray/path-tracing materials: { type: 'standard'|'metal'|'glass'|
     // 'emissive', gloss?, tint?, roughness?, ior?, intensity?, reflectivity? }
     // — reflectivity (when set) overrides the global "Reflectivity" slider for

@@ -61,6 +61,41 @@
   flex: 1;
 }
 
+/* Comparison Spins section (ui/SpinPanel.js): set apart from the
+   Draw / Overwrite / Restore buttons above it. */
+.cv-spin-compare-section {
+  margin-top: var(--sp-6);
+}
+
+/* Comparison Spins file drop zone — same look as the EOS/phonon ones. */
+.cv-spin-drop-zone {
+  margin-top: var(--sp-3);
+  border: 2px dashed var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4);
+  text-align: center;
+  cursor: pointer;
+  color: var(--muted-fg);
+  font-size: var(--fs-md);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.cv-spin-drop-zone:hover {
+  background: var(--wash-0);
+}
+
+.cv-spin-drop-zone.highlight {
+  border-color: var(--highlight-color, var(--info));
+  background: var(--wash-1-5);
+}
+
+/* Comparison Spins "Highlight" toggles (ui/SpinComparisonSection.js):
+   pressed state, same look as the Add Structure highlight toggle. */
+.cv-spin-highlight-btn.is-active {
+  background: rgb(var(--warn-rgb) / 0.35);
+  border-color: var(--warn);
+}
+
 /* --- Spin reference frame + visual rotation (ui/SpinPanel.js) --- */
 
 /* Editable "SAXIS = x y z" line, shown only in Custom frame mode:
@@ -387,6 +422,24 @@
   outline: none;
 }
 
+/* Legend text (set, or being edited); the empty placeholder's opacity and
+   italic are .cv-colorbar-legend-empty's (toggle_styles.css). */
+.cv-colorbar-legend:not(.cv-colorbar-legend-empty) {
+  opacity: 0.85;
+  font-style: normal;
+}
+
+/* On a floating bar the legend can be dragged on its own
+   (ui/ColorBarWidget.js); while being edited it stays a text field. */
+.cv-colorbar-floating .cv-colorbar-legend:not(.cv-colorbar-legend-editing) {
+  cursor: grab;
+}
+
+.cv-colorbar-legend.cv-colorbar-legend-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .cv-colorbar-tick-line {
   position: absolute;
   background: rgb(var(--shadow-rgb) / 0.55);
@@ -415,6 +468,17 @@
   z-index: 4;
   appearance: textfield;
   -moz-appearance: textfield;
+}
+
+/* Recent Chrome ignores appearance:textfield for the spinner, which then
+   takes ~15px of the field's text room that ColorBarWidget.js's width
+   measure does not count: on a bar built in a hidden window "0.12" showed
+   as "0.1" until a focus/blur re-measured it. */
+.cv-colorbar-value-input::-webkit-inner-spin-button,
+.cv-colorbar-value-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  appearance: none;
+  margin: 0;
 }
 
 /* --- Custom User Settings panel (ui/CustomUserSettingsPanel.js) ---
@@ -488,6 +552,13 @@
   font-size: var(--fs-xs);
   line-height: 1.1;
   padding: 0;
+  border: 2px solid var(--cus-tile-border);
+}
+
+/* An overridden colour / picked bond element. A category border, where a
+   grid has one, is inline (data) and only set on unselected tiles. */
+.cv-cus-color-tile.is-selected {
+  border-color: rgb(var(--danger-rgb));
 }
 
 .cv-cus-inline-input {
@@ -517,6 +588,7 @@
 }
 
 .cv-cus-json-row {
+  color: var(--fg-85);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -527,6 +599,10 @@
 
 .cv-cus-json-row:hover {
   background: var(--wash-1-5);
+}
+
+.cv-cus-json-row.is-overridden {
+  color: rgb(var(--danger-rgb));
 }
 
 .cv-cus-hint {
@@ -555,7 +631,24 @@
   justify-content: center;
   border-width: 2px;
   border-style: solid;
+  background: transparent;
+  color: var(--fg-1);
   transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+}
+
+/* Border: the element's category colour, inline (--tile-glow is the same
+   colour). An overridden radius inverts the tile instead: orange is
+   already a category colour here, so it cannot also mean "override". */
+.cv-cus-radius-tile:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 12px var(--tile-glow);
+  z-index: 2;
+}
+
+.cv-cus-radius-tile.is-overridden {
+  background: var(--tile-inverted-bg);
+  border-color: var(--tile-inverted-bg);
+  color: var(--tile-inverted-fg);
 }
 
 .cv-cus-radius-tile-symbol {
@@ -796,10 +889,8 @@
 
 /* --- Tiny toggle (ui/StructureInfoPanel/components/Immunity.js) ---
    The small round on/off dot used in tab category headers and per-pair cut-
-   plane immunity toggles. updateVisual() flips background/border-color/
-   box-shadow together as one state (not just recolours a fixed shape), so
-   that stays in JS; only the fixed geometry and the border's width/style
-   are constant enough to live here. */
+   plane immunity toggles: a hollow ring when off, a filled white dot with a
+   faint halo when on (:checked). */
 .cv-tiny-toggle-wrap {
   display: inline-flex;
   align-items: center;
@@ -827,6 +918,15 @@ input[type="checkbox"].cv-tiny-toggle {
   border-radius: 50%;
   border-style: solid;
   border-width: 1px;
+  background: var(--wash-2);
+  border-color: var(--line-3);
+  box-shadow: inset 0 0 0 1px rgb(var(--shadow-rgb) / 0.18);
+}
+
+input[type="checkbox"].cv-tiny-toggle:checked {
+  background: var(--toggle-dot-on);
+  border-color: var(--toggle-dot-on);
+  box-shadow: 0 0 0 2px var(--wash-2);
 }
 
 /* --- Histogram row (ui/PolyhedraPanel.js, ui/BondPanel.js) — one button per
@@ -872,10 +972,42 @@ input[type="checkbox"].cv-tiny-toggle {
   padding: var(--sp-3-5);
 }
 
-/* --- Custom RGB/HSV color picker (ui/ColorPickerModule.js) — the RGB/HEX
-   input rows below the SV/hue canvases. Canvas pixel geometry (WIDTH/
-   HEIGHT/HUE_WIDTH) and the wrapper sized around it stay in JS — they're
-   the picker's own layout constants, not page chrome. */
+/* --- Custom RGB/HSV color picker (ui/ColorPickerModule.js) — the SV/hue
+   canvases and the RGB/HEX input rows below them. Canvas pixel geometry
+   (WIDTH/HEIGHT/HUE_WIDTH) and the wrapper's width sized around it stay in
+   JS — they're the picker's own layout constants, not page chrome. The
+   font is the page's (--font-ui, inherited). */
+.cv-colorpicker {
+  display: inline-flex;
+  flex-direction: column;
+  user-select: none;
+  /* Never wider than its column: inside a narrow docked Structure window
+     (the Poly tab's grouped rows add an indent) the picker used to be
+     clipped. The canvases keep their drawing size and scale down. */
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.cv-colorpicker-canvases {
+  display: flex;
+  min-width: 0;
+}
+
+.cv-colorpicker-sv {
+  cursor: crosshair;
+  user-select: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  height: auto;
+}
+
+.cv-colorpicker-hue {
+  cursor: ns-resize;
+  margin-left: var(--sp-1);
+  user-select: none;
+}
+
 .cv-colorpicker-inputs-wrap {
   display: flex;
   flex-direction: column;

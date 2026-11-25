@@ -112,7 +112,7 @@ async function waitForHostFailure(page) {
         inputs: [
           { url: '/host/input-a', name: 'manifest-a', format: 'vasp' },
           { url: '/host/input-b', name: 'manifest-b', format: 'vasp' },
-          { url: '/host/input-traj', name: 'binary trajectory', format: 'traj', binary: true },
+          { url: '/host/input-traj', name: 'binary trajectory', format: 'traj' },
         ],
       }),
     });
@@ -166,7 +166,7 @@ async function waitForHostFailure(page) {
     const events = [];
     const host = window.crysvizHost;
     const off = host.subscribe((record) => events.push(record));
-    const listed = await host.dispatch({ command: 'list_structures' });
+    const listed = await host.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     off();
     return {
       descriptor: Object.getOwnPropertyDescriptor(window, 'crysvizHost'),
@@ -203,12 +203,12 @@ async function waitForHostFailure(page) {
     JSON.stringify(deferredPanels));
   H.check('manifest inputs load in order and ready is replayed',
     bootstrap.listed.ok
-      && bootstrap.listed.result.map((e) => e.name).join(',') === 'manifest-a,manifest-b,binary trajectory'
-      && bootstrap.listed.result[2].frames === 1
+      && bootstrap.listed.result.structures.map((e) => e.name).join(',') === 'manifest-a,manifest-b,binary trajectory'
+      && bootstrap.listed.result.structures[2].frames === 1
       && bootstrap.events.some((e) => e.event === 'ready'));
   H.check('host manifest takes precedence over shared state and legacy hash',
-    bootstrap.listed.ok && bootstrap.listed.result.length === 3
-      && !bootstrap.listed.result.some((entry) => entry.name === 'ignored'));
+    bootstrap.listed.ok && bootstrap.listed.result.structures.length === 3
+      && !bootstrap.listed.result.structures.some((entry) => entry.name === 'ignored'));
   H.check('ready follows every delayed ordered load',
     inputOrder.join(',') === 'manifest-a,manifest-b'
       && bootstrap.earlyEvents.filter((e) => e.event === 'structure_loaded').map((e) => e.data.name).join(',')
@@ -245,11 +245,18 @@ async function waitForHostFailure(page) {
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
 
+  // An app download handed to the host goes to its own one-use upload URL.
+  const downloadBodies = [];
+  await page.route(`${origin}/_crysviz/output/download-capability-12345678901234567890123`, async (route) => {
+    downloadBodies.push({ contentType: await route.request().headerValue('content-type'), body: route.request().postData() });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
   const protocol = await page.evaluate(async () => {
     const host = window.crysvizHost;
-    const before = await host.dispatch({ command: 'list_structures' });
-    const first = before.result[0];
-    const select = await host.dispatch({ command: 'select', args: { id: first.id, frame: 0 } });
+    const before = await host.dispatch({ command: 'get_state', args: { include: ['structures'] } });
+    const first = before.result.structures[0];
+    const select = await host.dispatch({ command: 'select_structure', args: { structure: first.id, frame: 0 } });
     const positionBefore = (await import('./state/structures.js')).getActiveStructure().atoms[0].position.slice();
     const invalid = await host.dispatch({ command: 'update_fractional_positions', args: {
       positions: [[0, 0, Number.NaN]],
@@ -276,15 +283,15 @@ async function waitForHostFailure(page) {
     const { getActiveStructure } = await import('./state/structures.js');
     const activeBeforeLattice = getActiveStructure();
     const oldLattice = activeBeforeLattice.lattice.map((row) => [...row]);
-    const invalidLatticeShape = await host.dispatch({ command: 'update_lattice', args: {
+    const invalidLatticeShape = await host.dispatch({ command: 'set_lattice', args: {
       lattice: [[3, 0, 0], [0, 3, 0]],
     } });
     const latticeAfterShape = getActiveStructure().lattice.map((row) => [...row]);
-    const invalidLatticeNonfinite = await host.dispatch({ command: 'update_lattice', args: {
+    const invalidLatticeNonfinite = await host.dispatch({ command: 'set_lattice', args: {
       lattice: [[3, 0, 0], [0, 3, 0], [0, 0, Number.NaN]],
     } });
     const latticeAfterNonfinite = getActiveStructure().lattice.map((row) => [...row]);
-    const invalidLatticeSingular = await host.dispatch({ command: 'update_lattice', args: {
+    const invalidLatticeSingular = await host.dispatch({ command: 'set_lattice', args: {
       lattice: [[3, 0, 0], [0, 3, 0], [6, 0, 0]],
     } });
     const latticeAfterSingular = getActiveStructure().lattice.map((row) => [...row]);
@@ -318,7 +325,7 @@ async function waitForHostFailure(page) {
       }
       return originalPipelineRender.apply(pipeline, args);
     };
-    const updatedLattice = await host.dispatch({ command: 'update_lattice', args: {
+    const updatedLattice = await host.dispatch({ command: 'set_lattice', args: {
       lattice: newLattice,
     } });
     await new Promise((resolve) => {
@@ -330,6 +337,8 @@ async function waitForHostFailure(page) {
       observe();
     });
     pipeline.render = originalPipelineRender;
+    // Compared now: a later step that edits atoms rebuilds the polyhedra (a new group) again.
+    const polyhedraFrameObserved = postCompletionFrameObserved && paintedPolyhedraGroup === groups.polyhedraGroup;
     const polyhedraBuildAfter = general.polyhedraBuildCounter || 0;
     const updatedStructure = getActiveStructure();
     const latticeMeshPosition = groups.latticeGroup?.children[0]?.position.toArray() || null;
@@ -348,57 +357,10 @@ async function waitForHostFailure(page) {
       },
     };
     const { createBrowserHost } = await import('./host/BrowserHost.js');
-    const throwingController = createBrowserHost({
-      updateLattice: () => {
-        const unsafe = { secret: 'not-json-safe' };
-        unsafe.self = unsafe;
-        throw Object.assign(new Error('injected lattice callback failure'), { details: unsafe });
-      },
-    });
-    const throwingLattice = await throwingController.dispatchInternal({ command: 'update_lattice', args: {
-      lattice: newLattice,
-    } });
     const fallbackController = createBrowserHost({
       applyFrameFast: () => { throw new Error('injected fast path failure'); },
       commitPositions: () => true,
     });
-    const unavailableLattice = await fallbackController.dispatchInternal({ command: 'update_lattice', args: {
-      lattice: newLattice,
-    } });
-    let releaseAsyncLattice;
-    const asyncLatticeGate = new Promise((resolve) => { releaseAsyncLattice = resolve; });
-    const asyncController = createBrowserHost({
-      updateLattice: async () => {
-        await asyncLatticeGate;
-        return true;
-      },
-    });
-    const pendingAsyncLattice = asyncController.dispatchInternal({ command: 'update_lattice', args: {
-      lattice: newLattice,
-    } });
-    const asyncLatticePendingState = await Promise.race([
-      pendingAsyncLattice.then(() => 'settled'),
-      new Promise((resolve) => setTimeout(() => resolve('pending'), 10)),
-    ]);
-    releaseAsyncLattice();
-    const asyncLattice = await pendingAsyncLattice;
-    let releaseAsyncRejection;
-    const asyncRejectionGate = new Promise((resolve) => { releaseAsyncRejection = resolve; });
-    const asyncRejectingController = createBrowserHost({
-      updateLattice: async () => {
-        await asyncRejectionGate;
-        throw new Error('async lattice callback failure');
-      },
-    });
-    const pendingAsyncRejection = asyncRejectingController.dispatchInternal({ command: 'update_lattice', args: {
-      lattice: newLattice,
-    } });
-    const asyncRejectionPendingState = await Promise.race([
-      pendingAsyncRejection.then(() => 'settled'),
-      new Promise((resolve) => setTimeout(() => resolve('pending'), 10)),
-    ]);
-    releaseAsyncRejection();
-    const asyncRejection = await pendingAsyncRejection;
     const fallback = await fallbackController.dispatchInternal({ command: 'update_fractional_positions', args: {
       positions: [[0.15, 0.25, 0.35]],
     } });
@@ -411,21 +373,128 @@ async function waitForHostFailure(page) {
       beforeCamera.position[1] - beforeCamera.target[1],
       beforeCamera.position[2] - beforeCamera.target[2],
     );
-    const rotated = await host.dispatch({ command: 'rotate_camera', args: { angleDegrees: 18, axis: 'y' } });
+    const rotated = await host.dispatch({ command: 'set_view', args: { rotate: { axis: 'y', degrees: 18 } } });
     const afterCamera = { position: app.camera.position.toArray(), target: app.controls.target.toArray() };
     const afterRadius = Math.hypot(
       afterCamera.position[0] - afterCamera.target[0],
       afterCamera.position[1] - afterCamera.target[1],
       afterCamera.position[2] - afterCamera.target[2],
     );
-    const raytrace = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'raytrace' } });
+    // set_view: the camera ends up looking along the lattice c vector.
+    const viewedC = await host.dispatch({ command: 'set_view', args: { direction: 'c' } });
+    const viewC = (() => {
+      const p = app.camera.position, t = app.controls.target;
+      const d = [p.x - t.x, p.y - t.y, p.z - t.z];
+      const c = (viewedC.result?.direction || [0, 0, 0]);
+      const cross = [d[1] * c[2] - d[2] * c[1], d[2] * c[0] - d[0] * c[2], d[0] * c[1] - d[1] * c[0]];
+      return { along: Math.hypot(...cross) / (Math.hypot(...d) * Math.hypot(...c)), sameSide: d[0] * c[0] + d[1] * c[1] + d[2] * c[2] > 0 };
+    })();
+    const badView = await host.dispatch({ command: 'set_view', args: { direction: 'q' } });
+    const state = await host.dispatch({ command: 'get_state', args: {} });
+    // The user edits by hand between two commands (here page-side, as the window's own
+    // editor and selection would): the next command, whichever it is, reports it as
+    // sinceLastCall, and the one after has nothing new to say.
+    const quiet = await host.dispatch({ command: 'get_state', args: { include: [] } });
+    const userStructure = (await import('./state/structures.js')).getActiveStructure();
+    const { setAtomElements } = await import('./ui/addToStructureModule/CommitAtoms.js');
+    const { structureToTableAtoms } = await import('./ui/addToStructureModule/StructureEditorPanel.js');
+    const highlightModule = await import('./ui/SelectAndHighlightModule.js');
+    const firstElement = userStructure.atoms[0].getRepresentativeElement();
+    const swapTo = firstElement === 'O' ? 'S' : 'O';
+    setAtomElements(userStructure, [0], swapTo, structureToTableAtoms(userStructure));
+    highlightModule.selectAtomsByInstances(userStructure.atomImages?.[0] ?? [0], {});
+    const noticed = await host.dispatch({ command: 'find', args: { what: 'atoms', limit: 1 } });
+    const afterNotice = await host.dispatch({ command: 'get_state', args: { include: [] } });
+    const userChanges = {
+      quiet: !quiet.result?.sinceLastCall, swapTo, firstElement,
+      noticed: noticed.result?.sinceLastCall ?? null, after: afterNotice.result?.sinceLastCall ?? null,
+    };
+    // Put it back for the rest of the test (the revert itself is seen by the next command).
+    setAtomElements(userStructure, [0], firstElement, structureToTableAtoms(userStructure));
+    highlightModule.selectAtomsByInstances([], {});
+    await host.dispatch({ command: 'get_state', args: { include: [] } });
+    // Pushed: with no command in between, a hand edit goes out a moment later as a
+    // user_changed event, and the next command does not report it again. An edit a
+    // host command makes sends no user_changed.
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 900));
+    const eventsBefore = window.__hostEvents.length;
+    const userChangedSince = () => window.__hostEvents.slice(eventsBefore).filter((e) => e.event === 'user_changed');
+    setAtomElements(userStructure, [0], swapTo, structureToTableAtoms(userStructure));
+    await settle();
+    const pushed = userChangedSince().map((e) => e.data);
+    const afterPush = await host.dispatch({ command: 'get_state', args: { include: [] } });
+    const hostEdit = await host.dispatch({ command: 'set_element', args: { atoms: [0], element: firstElement } });
+    await settle();
+    const pushedChanges = {
+      pushed, repeated: afterPush.result?.sinceLastCall ?? null,
+      hostEditApplied: hostEdit.ok && hostEdit.result?.applied !== false, eventsAfterHostEdit: userChangedSince().length,
+    };
+    const releaseNoteShown = !!document.getElementById('releaseNote') && !document.getElementById('releaseNote').hidden;
+    // A host command has no DOM event to trigger the on-demand redraw: the
+    // host asks for one itself, or a colour change shows only on the next click.
+    const { counters } = await import('./debug/debugTrace.js');
+    const twoFrames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    await twoFrames();
+    const rendersBefore = counters().render || 0;
+    const colored = await host.dispatch({ command: 'apply', args: { atoms: [0], action: 'color', color: '#ff0000' } });
+    await twoFrames();
+    const redrawn = { colored: colored.ok, before: rendersBefore, after: counters().render || 0 };
+
+    // The app's downloads in a host window: offered to the host (reserve, upload, done);
+    // when the host declines (no download folder in Python), the app downloads as usual.
+    const { downloadBlob } = await import('./ui/SavePanel.js');
+    const { settleDownloads } = await import('./host/downloadSink.js');
+    const reserved = [];
+    let doneCalls = 0;
+    let accept = true;
+    window.pywebview.api.reserve_download = async (capability, name, type) => {
+      reserved.push({ capability, name, type });
+      return accept ? `${location.origin}/_crysviz/output/download-capability-12345678901234567890123` : null;
+    };
+    window.pywebview.api.download_done = async () => { doneCalls += 1; return true; };
+    const anchorClicks = [];
+    const realClick = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function click() { anchorClicks.push(this.download); };
+    try {
+      downloadBlob('figure.svg', new Blob(['<svg/>'], { type: 'image/svg+xml' }));
+      await settleDownloads();
+      accept = false;
+      downloadBlob('declined.txt', new Blob(['x'], { type: 'text/plain' }));
+      await settleDownloads();
+    } finally {
+      HTMLAnchorElement.prototype.click = realClick;
+    }
+    const downloads = { reserved, doneCalls, anchorClicks };
+
+    // click_control says what a click opened; read_window takes the window refs get_state lists.
+    const imageRef = (await host.dispatch({ command: 'search_controls', args: { query: 'download image', limit: 10 } }))
+      .result?.controls?.find((c) => c.ref.endsWith('#saveImageButton'))?.ref;
+    const clicked = imageRef ? await host.dispatch({ command: 'click_control', args: { ref: imageRef } }) : null;
+    // Close the Download image dialog again (its own Escape handling).
+    for (const dialog of document.querySelectorAll('[role="dialog"][aria-label="Download image"]')) {
+      dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    }
+    const windows = await host.dispatch({ command: 'get_state', args: { include: ['windows'] } });
+    const firstWindow = windows.result?.windows?.[0];
+    const readByRef = firstWindow ? await host.dispatch({ command: 'read_window', args: { panel: firstWindow.ref } }) : null;
+
+    // revert_structure: back to the as-loaded atoms; selection origin names who selected.
+    const active = (await import('./state/structures.js')).getActiveStructure();
+    const loadedElements = [...(active.original?.elements ?? [])];
+    await host.dispatch({ command: 'set_element', args: { atoms: [0], element: 'Xe' } });
+    const reverted = await host.dispatch({ command: 'revert_structure', args: {} });
+    const afterRevert = [...active.elements];
+    await host.dispatch({ command: 'apply', args: { atoms: [0], action: 'select' } });
+    const origin = (await host.dispatch({ command: 'get_state', args: { include: ['selection'] } })).result?.selection?.origin;
+    await host.dispatch({ command: 'apply', args: { action: 'clear', what: 'selection' } });
+    const raytrace = await host.dispatch({ command: 'set_renderer', args: { renderer: 'raytrace' } });
     const raytraceState = {
       select: document.getElementById('renderPipelineMenu')?.value,
       tracerBody: document.body.classList.contains('tracer-pipeline'),
       warningVisible: document.getElementById('raytraceWarningModal')?.hidden === false,
     };
-    const unknownPipeline = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'unknown' } });
-    const raster = await host.dispatch({ command: 'set_render_pipeline', args: { pipelineId: 'forward' } });
+    const unknownPipeline = await host.dispatch({ command: 'set_renderer', args: { renderer: 'unknown' } });
+    const raster = await host.dispatch({ command: 'set_renderer', args: { renderer: 'forward' } });
     const saved = await host.dispatch({ command: 'save_image', args: {
       width: 320, height: 240, margin: 16, transparent: false, structureOnly: true,
       outputUrl: `${location.origin}/_crysviz/output/output-capability-123456789012345678901234`,
@@ -461,17 +530,13 @@ async function waitForHostFailure(page) {
       expectedCartesian,
       polyhedraBuildBefore,
       polyhedraBuildAfter,
-      polyhedraFrameObserved: postCompletionFrameObserved && paintedPolyhedraGroup === groups.polyhedraGroup,
+      polyhedraFrameObserved,
       updatedLattice,
       updatedState,
-      throwingLattice,
-      unavailableLattice,
-      asyncLatticePendingState,
-      asyncLattice,
-      asyncRejectionPendingState,
-      asyncRejection,
       fallback,
       rotated, beforeCamera, afterCamera, beforeRadius, afterRadius,
+      viewedC, viewC, badView, state, redrawn, releaseNoteShown, userChanges, pushedChanges,
+      downloads, clicked, windows, readByRef, reverted, loadedElements, afterRevert, origin,
       raytrace, raytraceState, unknownPipeline, raster, saved, invalidOutput,
       injected: window.__hostInjected === 1,
       injectedNodes: document.querySelectorAll('img[src="x"], img[onerror]').length,
@@ -479,9 +544,10 @@ async function waitForHostFailure(page) {
     };
   });
   H.check('list/select use stable opaque IDs',
-    protocol.before.result.every((entry) => /^structure-\d+$/.test(entry.id)) && protocol.select.ok);
+    protocol.before.result.structures.every((entry) => /^structure-\d+$/.test(entry.id))
+      && protocol.select.ok && protocol.select.result.structure === protocol.before.result.structures[0].id);
   H.check('invalid coordinates reject without mutation',
-    !protocol.invalid.ok && protocol.invalid.error.code === 'INVALID_POSITIONS'
+    !protocol.invalid.ok && protocol.invalid.error.code === 'INVALID_ARGS'
       && JSON.stringify(protocol.positionBefore) === JSON.stringify(protocol.positionAfterInvalid));
   H.check('commit path reports fast path and rebuild',
     protocol.committed.ok && protocol.committed.result.atomCount === 1
@@ -491,21 +557,21 @@ async function waitForHostFailure(page) {
   H.check('filename is text-only with no injected DOM',
     protocol.loaded.ok && !protocol.injected && protocol.injectedNodes === 0 && protocol.textName);
   H.check('non-plain .crysviz load returns its new container',
-    protocol.sessionLoaded.ok && /^structure-\d+$/.test(protocol.sessionLoaded.result.id)
+    protocol.sessionLoaded.ok && /^structure-\d+$/.test(protocol.sessionLoaded.result.structure)
       && protocol.sessionLoaded.result.name === 'host-session.crysviz');
   H.check('session camera survives awaited .crysviz restoration',
     protocol.sessionLoaded.ok
       && JSON.stringify(protocol.cameraAfterSession.position) === JSON.stringify(protocol.sessionCamera.position)
       && JSON.stringify(protocol.cameraAfterSession.target) === JSON.stringify(protocol.sessionCamera.target));
   H.check('invalid lattice requests reject without mutation',
-    !protocol.invalidLatticeShape.ok && protocol.invalidLatticeShape.error.code === 'INVALID_LATTICE'
-      && !protocol.invalidLatticeNonfinite.ok && protocol.invalidLatticeNonfinite.error.code === 'INVALID_LATTICE'
-      && !protocol.invalidLatticeSingular.ok && protocol.invalidLatticeSingular.error.code === 'INVALID_LATTICE'
+    !protocol.invalidLatticeShape.ok && protocol.invalidLatticeShape.error.code === 'INVALID_ARGS'
+      && !protocol.invalidLatticeNonfinite.ok && protocol.invalidLatticeNonfinite.error.code === 'INVALID_ARGS'
+      && !protocol.invalidLatticeSingular.ok && protocol.invalidLatticeSingular.error.code === 'INVALID_ARGS'
       && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterShape)
       && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterNonfinite)
       && JSON.stringify(protocol.oldLattice) === JSON.stringify(protocol.latticeAfterSingular));
   H.check('valid lattice update rebuilds geometry while preserving fractional data and camera',
-    protocol.positioned.ok && protocol.updatedLattice.ok && protocol.updatedLattice.result === true
+    protocol.positioned.ok && protocol.updatedLattice.ok && typeof protocol.updatedLattice.result.revision === 'string'
       && JSON.stringify(protocol.updatedState.lattice) === JSON.stringify(protocol.newLattice)
       && JSON.stringify(protocol.updatedState.fractional) === JSON.stringify(protocol.fractionalBeforeLattice)
       && JSON.stringify(protocol.updatedState.originalLattice) === JSON.stringify(protocol.originalLatticeBeforeUpdate)
@@ -525,24 +591,6 @@ async function waitForHostFailure(page) {
       updatedState: protocol.updatedState,
       cameraBeforeLattice: protocol.cameraBeforeLattice,
     }));
-  H.check('lattice callback failure is normalized and JSON-safe',
-    !protocol.throwingLattice.ok
-      && protocol.throwingLattice.error.code === 'LATTICE_SYNC_FAILED'
-      && protocol.throwingLattice.error.details?.cause?.message === 'injected lattice callback failure'
-      && protocol.throwingLattice.error.details?.cause?.details?.self === '[Circular]'
-      && !Object.prototype.hasOwnProperty.call(protocol.throwingLattice.error.details?.cause || {}, 'stack')
-      && (() => { try { JSON.stringify(protocol.throwingLattice); return true; } catch { return false; } })(),
-    JSON.stringify(protocol.throwingLattice));
-  H.check('lattice update reports unavailable callback',
-    !protocol.unavailableLattice.ok
-      && protocol.unavailableLattice.error.code === 'COMMAND_UNAVAILABLE');
-  H.check('lattice update awaits async callback completion and rejection',
-    protocol.asyncLatticePendingState === 'pending'
-      && protocol.asyncLattice.ok && protocol.asyncLattice.result === true
-      && protocol.asyncRejectionPendingState === 'pending'
-      && !protocol.asyncRejection.ok
-      && protocol.asyncRejection.error.code === 'LATTICE_SYNC_FAILED'
-      && protocol.asyncRejection.error.details?.cause?.message === 'async lattice callback failure');
   H.check('thrown fast path falls back to a full synchronization',
     protocol.fallback.ok && protocol.fallback.result.fastPathApplied === false
       && protocol.fallback.result.rebuilt === true
@@ -552,13 +600,58 @@ async function waitForHostFailure(page) {
       && protocol.beforeCamera.target.every((value, index) => Math.abs(value - protocol.afterCamera.target[index]) < 1e-9)
       && Math.abs(protocol.beforeRadius - protocol.afterRadius) < 1e-6
       && protocol.beforeCamera.position.some((value, index) => Math.abs(value - protocol.afterCamera.position[index]) > 1e-6));
+  H.check('set_view aims the camera along the lattice c vector',
+    protocol.viewedC.ok && protocol.viewC.along < 1e-6 && protocol.viewC.sameSide);
+  H.check('get_state reports the camera set_view just set, and the active structure',
+    protocol.state.ok && protocol.state.result.structure?.atomCount > 0
+      && protocol.state.result.camera.direction.every((value, i) =>
+        Math.abs(value - protocol.viewedC.result.direction[i] / Math.hypot(...protocol.viewedC.result.direction)) < 1e-5),
+    protocol.state.result?.camera);
+  H.check('a host-launched window shows no release note', !protocol.releaseNoteShown);
+  {
+    const u = protocol.userChanges;
+    const pair = `${u.firstElement}->${u.swapTo}`;
+    H.check('sinceLastCall: nothing to report when the user did nothing', u.quiet, u);
+    H.check('sinceLastCall: the next command reports the user\'s element change and selection',
+      u.noticed?.structure?.elementChanges?.atoms?.includes(0) && u.noticed.structure.elementChanges.pairs?.[pair] === 1
+        && u.noticed?.selection?.count >= 1 && /changed element/.test(u.noticed?.note || ''), u.noticed);
+    H.check('sinceLastCall: reported once, not again on the following command', u.after === null, u.after);
+    const p = protocol.pushedChanges;
+    H.check('user_changed: a hand edit is pushed as an event without any command',
+      p.pushed.length === 1 && p.pushed[0]?.structure?.elementChanges?.pairs?.[pair] === 1, p);
+    H.check('user_changed: a pushed change is not reported again by the next command', p.repeated === null, p.repeated);
+    H.check('user_changed: a host command\'s own edit sends no event', p.hostEditApplied === true && p.eventsAfterHostEdit === 1, JSON.stringify(p));
+  }
+  {
+    const d = protocol.downloads;
+    H.check('an app download in a host window goes to the host: reserved, uploaded, done',
+      d.reserved[0]?.name === 'figure.svg' && d.reserved[0]?.type === 'image/svg+xml' && d.doneCalls === 1
+        && !d.anchorClicks.includes('figure.svg')
+        && downloadBodies.length === 1 && downloadBodies[0].contentType === 'image/svg+xml' && downloadBodies[0].body === '<svg/>',
+      { d, downloadBodies });
+    H.check('a download the host declines is downloaded by the app as usual',
+      d.reserved[1]?.name === 'declined.txt' && d.anchorClicks.includes('declined.txt'), d);
+    H.check('click_control reports the dialog it opened',
+      protocol.clicked?.ok && protocol.clicked.result?.effects?.dialogsOpened?.some((x) => /image/i.test(x.title)),
+      protocol.clicked);
+    H.check('get_state lists windows with refs read_window takes',
+      protocol.windows.ok && protocol.windows.result.windows.every((w) => w.ref === `window:${w.id}` && typeof w.open === 'boolean')
+        && protocol.readByRef?.ok && protocol.readByRef.result.panel === protocol.windows.result.windows[0].id, protocol.readByRef);
+    H.check('revert_structure restores the as-loaded atoms',
+      protocol.reverted.ok && protocol.reverted.result.reverted === true
+        && JSON.stringify(protocol.afterRevert) === JSON.stringify(protocol.loadedElements), protocol.reverted);
+    H.check('get_state says how the selection was made', protocol.origin?.by === 'host' && protocol.origin.atom === null, protocol.origin);
+  }
+  H.check('a host command redraws without any user event', protocol.redrawn.colored && protocol.redrawn.after > protocol.redrawn.before, protocol.redrawn);
+  H.check('set_view rejects an unknown direction',
+    !protocol.badView.ok && protocol.badView.error.code === 'INVALID_ARGS');
   H.check('controller pipeline selection synchronizes UI without warning',
-    protocol.raytrace.ok && protocol.raytrace.result === 'raytrace'
+    protocol.raytrace.ok && protocol.raytrace.result.renderer === 'raytrace'
       && protocol.raytraceState.select === 'raytrace'
       && protocol.raytraceState.tracerBody && !protocol.raytraceState.warningVisible);
   H.check('controller rejects unknown pipeline and returns to raster',
-    !protocol.unknownPipeline.ok && protocol.unknownPipeline.error.code === 'INVALID_PIPELINE'
-      && protocol.raster.ok && protocol.raster.result === 'forward');
+    !protocol.unknownPipeline.ok && protocol.unknownPipeline.error.code === 'INVALID_ARGS'
+      && protocol.raster.ok && protocol.raster.result.renderer === 'forward');
   const pngBody = outputBodies[0]?.body;
   H.check('controller PNG capture uploads a nontrivial PNG to the exact output route',
     protocol.saved.ok && protocol.saved.result.contentType === 'image/png'
@@ -583,6 +676,11 @@ async function waitForHostFailure(page) {
       panels: { visual: { dock: 'left', closed: true, collapsed: false, bar: false } },
       rightDock: { order: [], front: null, collapsed: false, fraction: null, side: 'right' },
     }));
+    // Visual is a feature-store panel: whether it is closed (out of the
+    // sidebar) is the store's record, not the layout's (ui/panels/featureStore.js).
+    localStorage.setItem('featureStore', JSON.stringify({
+      version: 1, allByDefault: true, enabled: { visual: false },
+    }));
   });
   await deferredPage.goto(`${origin}/index.html`, { waitUntil: 'load', timeout: 90000 });
   await deferredPage.waitForTimeout(5000);
@@ -592,7 +690,7 @@ async function waitForHostFailure(page) {
       selectPresent: !!document.getElementById('renderPipelineMenu'),
     };
     const dispatched = await window.crysvizHost.dispatch({
-      command: 'set_render_pipeline', args: { pipelineId: 'raytrace' },
+      command: 'set_renderer', args: { renderer: 'raytrace' },
     });
     const beforeOpen = {
       bodyTracer: document.body.classList.contains('tracer-pipeline'),
@@ -600,13 +698,14 @@ async function waitForHostFailure(page) {
     };
     const { openPanel } = await import('./ui/panels/PanelManager.js');
     openPanel('visual');
+    const shownAs = (el) => (el ? getComputedStyle(el).display : undefined);
     return {
       before, dispatched, beforeOpen,
       afterOpen: {
         select: document.getElementById('renderPipelineMenu')?.value,
-        rtControls: document.getElementById('rtControlsBlock')?.style.display,
-        groundReflect: document.getElementById('rtGroundReflect')?.closest('.control-row')?.style.display,
-        renderStyle: document.getElementById('renderStyleMenu')?.closest('.control-row')?.style.display,
+        rtControls: shownAs(document.getElementById('rtControlsBlock')),
+        groundReflect: shownAs(document.getElementById('rtGroundReflect')?.closest('.control-row')),
+        renderStyle: shownAs(document.getElementById('renderStyleMenu')?.closest('.control-row')),
       },
     };
   });
@@ -646,14 +745,14 @@ async function waitForHostFailure(page) {
   await page.goto(`${origin}/index.html?_crysviz_manifest=empty`, { waitUntil: 'load', timeout: 90000 });
   await page.waitForTimeout(2500);
   const emptyManifest = await page.evaluate(async () => {
-    const dispatch = await window.crysvizHost.dispatch({ command: 'list_structures' });
+    const dispatch = await window.crysvizHost.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     return {
       dispatch,
-      defaultName: dispatch.ok ? dispatch.result[0]?.name : null,
+      defaultName: dispatch.ok ? dispatch.result.structures[0]?.name : null,
     };
   });
   H.check('empty host manifest loads the built-in default authoritatively',
-    emptyManifest.dispatch.ok && emptyManifest.dispatch.result.length === 1
+    emptyManifest.dispatch.ok && emptyManifest.dispatch.result.structures.length === 1
       // The app's built-in default (crystal-viewer.js loadDefaultStructure).
       && emptyManifest.defaultName === 'oP28-C3N4'
       && emptyManifestCompletions.length === 1 && emptyManifestCompletions[0].ok === true);
@@ -671,7 +770,7 @@ async function waitForHostFailure(page) {
   await waitForHostFailure(page);
   const failedBootstrap = await page.evaluate(async () => {
     const host = window.crysvizHost;
-    const dispatch = await host.dispatch({ command: 'list_structures' });
+    const dispatch = await host.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     const { getContainers } = await import('./state/structures.js');
     return {
       structureCount: getContainers().length,
@@ -707,7 +806,7 @@ async function waitForHostFailure(page) {
   await page.goto(`${origin}/index.html?_crysviz_manifest=dynamic-failure`, { waitUntil: 'load', timeout: 90000 });
   await waitForHostFailure(page);
   const dynamicFailure = await page.evaluate(async () => {
-    const dispatch = await window.crysvizHost.dispatch({ command: 'list_structures' });
+    const dispatch = await window.crysvizHost.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     const { getContainers } = await import('./state/structures.js');
     return {
       structureCount: getContainers().length,

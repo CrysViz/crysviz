@@ -25,8 +25,9 @@ import { SplitAtomsPipeline } from './SplitAtomsPipeline.js';
 import { SortedAtomsPipeline } from './SortedAtomsPipeline.js';
 import { WboitPipeline } from './WboitPipeline.js';
 import { DepthPeelPipeline } from './DepthPeelPipeline.js';
-import { RayTracingPipeline } from './RayTracingPipeline.js';
-import { PathTracingPipeline } from './PathTracingPipeline.js';
+// The ray/path tracing pipelines are NOT imported here — they self-register via
+// pipeline/tracers.js, imported only by the full app (at boot) and by a widget
+// embed opted in with ?tracers=1, so a default embed never downloads them.
 
 /** @type {Map<string, any>} pipeline id -> class */
 const registry = new Map();
@@ -35,9 +36,11 @@ export function registerPipeline(PipelineClass) {
   registry.set(PipelineClass.id, PipelineClass);
 }
 
-/** For the GUI dropdown: [{id, label, hidden}] in registration order. Returns
- *  ALL registered pipelines (hidden ones included, flagged); ColorPanel filters
- *  the `hidden` ones out of the dropdown unless general.showAllRenderPipelines.
+/** For the GUI dropdown: [{id, label, hidden}], visible pipelines first, each
+ *  group in registration order — the tracers register late (pipeline/tracers.js)
+ *  yet still list ahead of the hidden raster variants. Returns ALL registered
+ *  pipelines (hidden ones included, flagged); ColorPanel filters the `hidden`
+ *  ones out of the dropdown unless general.showAllRenderPipelines.
  *  `hidden` is read as an OWN static so subclasses (DepthPeel/Wboit extend the
  *  hidden SplitAtomsPipeline) don't inherit the flag. */
 export function listPipelines() {
@@ -45,7 +48,7 @@ export function listPipelines() {
     id: P.id,
     label: P.label,
     hidden: Object.prototype.hasOwnProperty.call(P, 'hidden') && !!P.hidden,
-  }));
+  })).sort((a, b) => Number(a.hidden) - Number(b.hidden));
 }
 
 /** The active pipeline instance (null only before setupScene bootstrap). */
@@ -59,7 +62,9 @@ export function getActivePipeline() {
  *  a post-present overlay instead. */
 export function isTracerPipelineActive() {
   const id = app.pipeline?.id;
-  return id === RayTracingPipeline.id || id === PathTracingPipeline.id;
+  // Compared by id string (not the classes) so this module doesn't pull the
+  // tracer pipelines into the graph — see pipeline/tracers.js.
+  return id === 'raytrace' || id === 'pathtrace';
 }
 
 /**
@@ -92,12 +97,14 @@ export function setActivePipeline(id) {
   return pipeline;
 }
 
-// Registration order = dropdown order: recommended modes first (depth peeling
-// is the default), then the tracers, then the specialized raster variants.
+// Registration order within the visible and the hidden groups (listPipelines
+// lists visible first): recommended modes first (depth peeling is the default),
+// then the tracers, then the specialized raster variants.
 registerPipeline(DepthPeelPipeline);
 registerPipeline(WboitPipeline);
 registerPipeline(ForwardPipeline);
-registerPipeline(RayTracingPipeline);
-registerPipeline(PathTracingPipeline);
+// RayTracingPipeline + PathTracingPipeline register from pipeline/tracers.js
+// when tracing is loaded (full app at boot, or ?tracers=1 widget). They still
+// slot ahead of the hidden raster variants in the visible dropdown.
 registerPipeline(SplitAtomsPipeline);
 registerPipeline(SortedAtomsPipeline);

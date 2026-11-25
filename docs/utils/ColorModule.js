@@ -1,5 +1,5 @@
 import {fileBrowser} from '../state/store.js';
-import { readStructurePrefs, saveStructurePref, scheduleStructurePrefSave } from '../state/structurePrefs.js';
+import { readStructurePrefs, saveStructurePref, scheduleStructurePrefSave, registerStructurePrefField } from '../state/structurePrefs.js';
 
 
 // Get the color for an atom (custom or default). Guards against a stale index —
@@ -103,6 +103,10 @@ export function restoreAtomColors(container) {
   return applied;
 }
 
+// Colours go on BEFORE the row is selected (and rendered) so the first
+// rebuild already paints them (state/structurePrefs.js restorer registry).
+registerStructurePrefField('colors', (container) => restoreAtomColors(container), { phase: 'beforeSelect' });
+
 export function clearAtomColor(atom) {
   return atom.resetColor();
 }
@@ -133,9 +137,9 @@ export function createPieDot(colors, size = 200) {
   canvas.width = size * dpr;
   canvas.height = size * dpr;
   updatePieDot(canvas, colors);
-  canvas.style.borderRadius = "50%";
-  canvas.style.border = "1px solid #666";
-  canvas.style.display = "inline-block";
+  // Round, bordered, inline-block: canvas.cv-pie-dot (styles.css). Callers
+  // ADD their own classes (classList.add), never replace className.
+  canvas.className = "cv-pie-dot";
   /** @type {any} */ (canvas)._colors = colors;
   return canvas;
 }
@@ -204,8 +208,19 @@ export function colorHexToCss(hex) {
 }
 
 // Helper: convert CSS color to rgba
+// One shared 2D context parses what is not plain #rrggbb: every row swatch of
+// the Structure window calls this, and a new canvas + getContext per call
+// made building a list of 1000 rows spend tens of ms on canvases alone.
+let colorParseCtx = null;
 export function hexToRgba(color, alpha = 1) {
-  const ctx = document.createElement("canvas").getContext("2d");
+  if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) {
+    const n = parseInt(color.slice(1), 16);
+    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+  }
+  const ctx = colorParseCtx ??= document.createElement("canvas").getContext("2d");
+  // A colour the context cannot parse leaves fillStyle as it was: start from
+  // black, which is what a fresh context gave such a colour.
+  ctx.fillStyle = '#000000';
   ctx.fillStyle = color;
   const computed = /** @type {string} */ (ctx.fillStyle);
   const r = parseInt(computed.substr(1, 2), 16);

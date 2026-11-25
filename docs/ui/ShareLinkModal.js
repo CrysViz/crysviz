@@ -42,11 +42,17 @@ let lockRow = null;
 let passwordField = null;
 let lockNote = null;
 
-// Set each showing: the plaintext ?state=/?z= link, and a closure that turns a
-// password into the encrypted ?e= link (null when the origin can't do crypto,
-// which hides the password field). See ShareModule.shareStructure.
-let plainURL = '';
+// Set each showing: the unprotected link, and a closure that turns a password
+// into the encrypted link (null when the origin can't do crypto, which hides the
+// password field). A link is { text, qr: { prefix, payload } }: `text` is the
+// #z= copy link, and the QR encodes prefix + payload, the #q= base32 form, as a
+// byte segment plus an alphanumeric one (5.5 bits per character instead of 8).
+// See ShareModule.shareStructure.
+/** @typedef {{ text: string, qr?: { prefix: string, payload: string } | null }} ShareLink */
+/** @type {ShareLink} */
+let plainLink = { text: '', qr: null };
 let encryptURL = null;
+let lengthNoteEl = null;
 // Bumped on every password change so a slow PBKDF2 encrypt from a stale
 // keystroke can't overwrite the field after a newer one has resolved.
 let encryptSeq = 0;
@@ -71,6 +77,7 @@ const MODAL_HTML = `
     </div>
     <p class="png-note" id="shareLinkQrNote">Generating QR code…</p>
     <textarea class="share-link-url" id="shareLinkUrl" readonly rows="3" aria-label="Share URL"></textarea>
+    <p class="png-note" id="shareLinkLengthNote" hidden></p>
     <div class="share-link-lock" id="shareLinkLock" hidden>
       <label for="shareLinkPassword">Password (optional)</label>
       <input type="password" id="shareLinkPassword" autocomplete="new-password"
@@ -101,6 +108,7 @@ function initShareLinkModal() {
   lockRow = document.getElementById('shareLinkLock');
   passwordField = /** @type {HTMLInputElement} */ (document.getElementById('shareLinkPassword'));
   lockNote = document.getElementById('shareLinkLockNote');
+  lengthNoteEl = document.getElementById('shareLinkLengthNote');
 
   passwordField.addEventListener('input', onPasswordInput);
 
@@ -116,26 +124,30 @@ function initShareLinkModal() {
 }
 
 /**
- * Open the dialog on `url` and kick off QR generation.
- * @param {string} url the plaintext share URL
- * @param {{ encryptURL?: ((password: string) => Promise<string>) | null }} [opts]
+ * Open the dialog on `link` and kick off QR generation.
+ * @param {ShareLink | string} link the unprotected share link (a bare string is
+ *   shown as-is and QR-encoded as text)
+ * @param {{ encryptURL?: ((password: string) => Promise<ShareLink>) | null, lengthNote?: string }} [opts]
  *   encryptURL turns a password into the encrypted variant; when present the
  *   dialog shows an optional password field. Omitted/null hides it.
+ *   lengthNote, when non-empty, is shown under the link (a very long link).
  */
-export function showShareLink(url, { encryptURL: enc = null } = {}) {
+export function showShareLink(link, { encryptURL: enc = null, lengthNote = '' } = {}) {
   initShareLinkModal();
-  plainURL = url;
+  plainLink = typeof link === 'string' ? { text: link, qr: null } : link;
+  lengthNoteEl.textContent = lengthNote;
+  lengthNoteEl.hidden = !lengthNote;
   encryptURL = enc;
   encryptSeq++;                 // invalidate any in-flight encrypt from last showing
   clearTimeout(encryptDebounce);
   passwordField.value = '';
   lockNote.textContent = '';
   lockRow.hidden = !enc;        // no crypto (insecure origin) -> no field
-  urlField.value = url;
+  urlField.value = plainLink.text;
   previousFocus = document.activeElement;
   modal.hidden = false;
   copyBtn.textContent = 'Copy link';
-  renderQR(url);
+  renderQR(plainLink);
   setTimeout(() => { copyBtn.focus({ preventScroll: true }); }, 0);
 }
 
@@ -148,18 +160,18 @@ function onPasswordInput() {
   if (!password || !encryptURL) {
     // Back to the unprotected link, immediately.
     lockNote.textContent = '';
-    urlField.value = plainURL;
-    renderQR(plainURL);
+    urlField.value = plainLink.text;
+    renderQR(plainLink);
     return;
   }
   lockNote.textContent = 'Encrypting…';
   encryptDebounce = setTimeout(async () => {
     try {
-      const url = await encryptURL(password);
+      const link = await encryptURL(password);
       if (seq !== encryptSeq) return; // a newer keystroke won
-      urlField.value = url;
+      urlField.value = link.text;
       lockNote.textContent = 'Encrypted — recipients need this password to open the link. Share it separately.';
-      renderQR(url);
+      renderQR(link);
     } catch (e) {
       if (seq !== encryptSeq) return;
       console.error('Failed to encrypt share link:', e);
@@ -198,16 +210,17 @@ function loadQRLib() {
   return qrLibPromise;
 }
 
-/** Draw the QR for `url`, or explain why there isn't one. Late replies are
- *  dropped if a newer showing has already replaced the URL. */
-async function renderQR(url) {
+/** Draw the QR for `link`, or explain why there isn't one. Late replies are
+ *  dropped if a newer showing has already replaced the link.
+ *  @param {ShareLink} link */
+async function renderQR(link) {
   qrBox.innerHTML = '';
   currentQR = null;
   qrActions.hidden = true;
   qrNote.textContent = 'Generating QR code…';
 
   const qrcodegen = await loadQRLib();
-  if (urlField.value !== url) return;
+  if (urlField.value !== link.text) return;
   if (!qrcodegen) {
     qrNote.textContent = 'QR code unavailable (the encoder could not be loaded — offline?). Copy the link instead.';
     return;
@@ -217,11 +230,17 @@ async function renderQR(url) {
   try {
     // LOW error correction: these URLs run right up against the format's byte
     // ceiling, and the redundancy buys nothing on a screen that isn't smudged.
-    qr = qrcodegen.QrCode.encodeText(url, qrcodegen.QrCode.Ecc.LOW);
+    const { QrCode, QrSegment } = qrcodegen;
+    qr = link.qr
+      ? QrCode.encodeSegments([
+        QrSegment.makeBytes(Array.from(new TextEncoder().encode(link.qr.prefix))),
+        QrSegment.makeAlphanumeric(link.qr.payload),
+      ], QrCode.Ecc.LOW)
+      : QrCode.encodeText(link.text, QrCode.Ecc.LOW);
   } catch {
     qrNote.textContent =
-      `Link is ${url.length} characters — too long for a QR code (the format holds about 2950). `
-      + 'Copy the link instead.';
+      `Link is ${link.text.length} characters — too long for a QR code, which holds share links `
+      + 'up to about 3 500 characters. Copy the link instead.';
     return;
   }
 

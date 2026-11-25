@@ -14,7 +14,7 @@
  */
 
 import init, { compute_polyhedra, accept_candidates } from './periodic_wasm.js';
-import { electronegativity } from '../defaults/electronegativity_defaults.js';
+import { electronegativity, ANION_FORMERS } from '../defaults/electronegativity_defaults.js';
 import { atomicRadii } from '../defaults/radii_defaults.js';
 
 // Initialise once at import (idempotent — returns the existing instance if the
@@ -27,7 +27,8 @@ await init({ module_or_path: new URL('./periodic_wasm_bg.wasm', import.meta.url)
  *
  * @param {{
  *   positions: number[][], elements: string[], lattice: number[][], maxCutoff: number,
- *   useChemicalFilter: boolean, detectCages: boolean,
+ *   useChemicalFilter: boolean, detectCages: boolean, simple?: boolean,
+ *   cageBounds?: number[][] | null,
  *   displayCenters: Array<{cart:{x:number,y:number,z:number}, src:number, shift:[number,number,number]}>,
  *   centerImageKeys: Set<string>, seedVisible: Uint8Array, cutPlaneImmune: Uint8Array,
  *   cutPlaneData: number[][], getBondCutoff:(a:string,b:string)=>number,
@@ -37,7 +38,7 @@ await init({ module_or_path: new URL('./periodic_wasm_bg.wasm', import.meta.url)
 export function marshalPolyhedraInputs(prep) {
   const {
     positions, elements, lattice, maxCutoff,
-    useChemicalFilter, detectCages,
+    useChemicalFilter, detectCages, simple = false, cageBounds = null,
     displayCenters, centerImageKeys, seedVisible, cutPlaneImmune, cutPlaneData, getBondCutoff,
   } = prep;
 
@@ -72,9 +73,11 @@ export function marshalPolyhedraInputs(prep) {
   // independent of bond visibility).
   const cutoffMatrix = new Float64Array(nElem * nElem);
   const electroneg = new Float64Array(nElem);
+  const anionFormer = new Uint8Array(nElem);
   const radii = new Float64Array(nElem);
   for (let i = 0; i < nElem; i++) {
     electroneg[i] = electronegativity[idxToElem[i]] || 0;
+    anionFormer[i] = ANION_FORMERS.has(idxToElem[i]) ? 1 : 0;
     radii[i] = atomicRadii[idxToElem[i]] || 1.0;
     for (let j = 0; j < nElem; j++) {
       cutoffMatrix[i * nElem + j] = getBondCutoff(idxToElem[i], idxToElem[j]) || 0;
@@ -117,14 +120,19 @@ export function marshalPolyhedraInputs(prep) {
     cutPlanesFlat[5 * i + 4] = plane[4];
   }
 
+  // [lo,hi] per axis for the periodic copies of boundary cages; empty = one copy.
+  const cageBoundsFlat = Float64Array.from(cageBounds ? cageBounds.flat() : []);
+
   return {
     idxToElem,
     inputs: {
       fracFlat, elemIdx, latticeFlat, cutoffMatrix, nElem,
-      electroneg, radii, maxCutoff: +maxCutoff,
+      electroneg, anionFormer, radii, maxCutoff: +maxCutoff,
       useChemicalFilter: !!useChemicalFilter, detectCages: !!detectCages,
+      // Fast mode: hull of the bonded ligands only (no Voronoi selection, no cages).
+      simple: !!simple,
       centerSrc, centerShift, centerCart, centerKeys, seedVisible,
-      cutPlaneImmune, cutPlanesFlat, cutPlaneCount: cutPlaneData.length,
+      cutPlaneImmune, cutPlanesFlat, cutPlaneCount: cutPlaneData.length, cageBoundsFlat,
       nCenters: nC, nAtoms,
     },
   };
@@ -181,9 +189,9 @@ export function computePolyhedraWasm(prep) {
   const { idxToElem, inputs: I } = marshalPolyhedraInputs(prep);
   const result = compute_polyhedra(
     I.fracFlat, I.elemIdx, I.latticeFlat, I.cutoffMatrix, I.nElem,
-    I.electroneg, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages,
+    I.electroneg, I.anionFormer, I.radii, I.maxCutoff, I.useChemicalFilter, I.detectCages, I.simple,
     I.centerSrc, I.centerShift, I.centerCart, I.centerKeys, I.seedVisible,
-    I.cutPlaneImmune, I.cutPlanesFlat, I.cutPlaneCount,
+    I.cutPlaneImmune, I.cutPlanesFlat, I.cutPlaneCount, I.cageBoundsFlat,
   );
   const timing = {
     setup: result.setup_ms(),

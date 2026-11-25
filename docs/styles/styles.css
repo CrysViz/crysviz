@@ -21,7 +21,14 @@ body {
    redefine any of them. */
 
 #ui {
-  height: 98dvh;
+  /* Exactly the screen's height with the padding below: as 98dvh plus the
+     padding it ran 22px past the bottom of the screen — clipped by the body,
+     but still scrollable, so a window brought into view (scrollIntoView, the
+     window shortcuts, the Wyckoff switch) scrolled the whole page up by that
+     much. Content-box on purpose: border-box would also take the side padding
+     out of --ui-width, narrowing the column and moving the view's centre. */
+  height: calc(100dvh - max(var(--ui-padding), env(safe-area-inset-top))
+                      - max(var(--ui-padding), env(safe-area-inset-bottom)));
   min-width: var(--ui-width);
   width:var(--ui-width);
   max-width:var(--ui-width);
@@ -232,7 +239,7 @@ body.panel-hidden #axesLegend {
   font-weight: var(--fw-medium);
 }
 
-/* File actions row (Files window): Upload / Paste Text / Download (+ Share,
+/* File actions row (Files window): Open / Paste Text / Download (+ Share,
    added once a structure loads). A wrapping flex row, not an equal-column
    grid: with a larger font scale or a narrow panel the four nowrap labels
    summed to more than the row, and equal tracks just let the labels run into
@@ -284,8 +291,23 @@ body.panel-hidden #axesLegend {
   box-shadow: 0px 0px 4px 2px var(--highlight-color);
 }
 
-/* Auto Range buttons (Forces/Spins/Atoms/Bonds/Planes panels): same look as
-   the file-action-btn (Upload etc.) buttons, but sized to sit inline next to
+/* A folder before a label (Open, the landscape loader): an SVG mask in the
+   text colour, not an emoji, which a web view without an emoji font (the
+   Python app's Qt window) shows as a box. */
+.cv-folder-icon::before {
+  content: "";
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 0.35em;
+  vertical-align: -0.2em;
+  background-color: currentColor;
+  -webkit-mask: url("../data/icons/folder-icon.svg") center / contain no-repeat;
+  mask: url("../data/icons/folder-icon.svg") center / contain no-repeat;
+}
+
+/* Auto Range buttons (Forces/Spins/Atoms/Bonds panels): same look as
+   the file-action-btn (Open etc.) buttons, but sized to sit inline next to
    a Log Scale checkbox instead of stretching to fill the row. */
 .cv-auto-range-btn {
   width: auto;
@@ -497,6 +519,10 @@ body.panel-hidden #axesLegend {
   box-shadow: none;
 }
 
+/* The secondary actions: Forget region (shown once an area is remembered)
+   and Cancel. Forget region had no rule and drew as the browser's own
+   light-grey button. */
+.png-export-modal .paste-modal-actions #pngForgetRegionBtn,
 .png-export-modal .paste-modal-actions #pngCancelBtn {
   margin-top: var(--sp-1);
   padding: var(--sp-4) var(--sp-5);
@@ -1074,7 +1100,7 @@ body.panel-hidden #axesLegend {
 }
 
 .shortcuts-help-modal {
-  width: min(760px, calc(100vw - 32px));
+  width: min(980px, calc(100vw - 32px));
   max-height: 84dvh;
   display: flex;
   flex-direction: column;
@@ -1519,7 +1545,7 @@ body.panel-hidden #axesLegend {
 }
 
 /* Preformatted context block. Monospaced through --font-mono (the token, not a
- * literal stack — see STYLE.md invariant 2) so the two lattices line up
+ * literal stack — see agent_guides/STYLE.md invariant 2) so the two lattices line up
  * column-by-column and a discrepancy is visible at a glance. */
 .lock-confirm-modal .confirm-detail {
   margin: 0 0 var(--sp-3-5) 0;
@@ -1530,6 +1556,155 @@ body.panel-hidden #axesLegend {
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
   overflow-x: auto;
+}
+
+/* CIF symmetry dialog (ui/CifSymmetryModal.js): the same full-screen overlay
+ * #confirmModal gets, with its card reusing the .lock-confirm-modal rules
+ * above, plus the symmetrise-tolerance row shown on the mismatch paths. */
+#cifSymmetryModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-confirm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--overlay);
+}
+
+#cifSymmetryModal[hidden] {
+  display: none;
+}
+
+.cif-sym-tol-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3-5) 0;
+}
+
+/* [hidden] alone loses to the row's display:flex (the .png-row trap above). */
+.cif-sym-tol-row[hidden] {
+  display: none;
+}
+
+.cif-sym-tol-row label {
+  font-size: var(--fs-sm);
+}
+
+/* Same field look as .cif-export-row's tolerance input. The attribute selector
+ * is needed to outrank the bare input[type="number"] rule in
+ * styles_file_browswer.css, which would otherwise pin the width to 45px. */
+.cif-sym-tol-row input[type="number"] {
+  width: 6.5em;
+  text-align: center;
+  border: 1px solid var(--line-1);
+  background: var(--input-bg);
+  color: var(--fg-1);
+  border-radius: var(--radius);
+  padding: 5px var(--sp-3);
+  font-size: var(--fs-md);
+}
+
+/* "Also read the errors" tick box above the choices (ui/CifSymmetryModal.js),
+ * with a one-line note on what the file gives errors for. */
+.cif-sym-errors-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0 0 var(--sp-3-5) 0;
+}
+
+.cif-sym-errors-row[hidden] {
+  display: none;
+}
+
+.cif-sym-errors-label {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.cif-sym-errors-note {
+  font-size: var(--fs-xs);
+  color: var(--fg-2);
+}
+
+/* Average Structure's warning (ui/AverageMovesModal.js): the CIF dialog's
+ * overlay and .lock-confirm-modal card, but the card sits at the left, over
+ * the sidebar, on a light scrim, so the atom a row shows in the 3D view stays
+ * in sight. The overlay's padding keeps the card's own
+ * min(440px, 100vw - 32px) width inside a phone screen. */
+#averageMovesModal {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-confirm);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  padding: var(--sp-5);
+  background: var(--overlay-20);
+}
+
+#averageMovesModal[hidden] {
+  display: none;
+}
+
+/* The atoms that move far, one button each: name, largest move, where. */
+.avg-moves-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 40vh;
+  margin: 0 0 var(--sp-3-5) 0;
+  overflow-y: auto;
+}
+
+.avg-moves-row {
+  display: grid;
+  grid-template-columns: minmax(3.5em, auto) auto minmax(0, 1fr) auto;
+  gap: var(--sp-3);
+  align-items: baseline;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--wash-1);
+  color: var(--fg-1);
+  border: none;
+  border-radius: var(--radius);
+  font-size: var(--fs-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.avg-moves-row:hover {
+  background: var(--hover-color);
+}
+
+/* The row whose atom is shown now. */
+.avg-moves-row.is-shown {
+  box-shadow: inset 0 0 0 1px var(--highlight-color);
+}
+
+.avg-moves-name {
+  font-weight: var(--fw-bold);
+}
+
+.avg-moves-where {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-2);
+}
+
+.avg-moves-show {
+  color: var(--accent-fg);
+}
+
+.avg-moves-more {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
 }
 
 /* Small Main-dock triggers, positioned immediately left of .theme-switch
@@ -1936,6 +2111,129 @@ input[type="checkbox"] {
   overflow: hidden;
 }
 
+/* "Rotation locked to …" note over the 3D view while a rotation lock
+   (ui/RotationLock.js) is on. Informational only: never takes the pointer. */
+.cv-rotation-lock-badge {
+  position: absolute;
+  top: var(--sp-4);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-overlay-widget);
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--popup-border);
+  border-radius: var(--radius);
+  background: var(--popup-bg);
+  color: var(--fg-1);
+  font-size: var(--fs-sm);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.cv-rotation-lock-badge[hidden] {
+  display: none;
+}
+/* "Loading Large File" card over everything while a big XYZ or OUTCAR is
+   parsed (io/ReadeXYZModule.js, io/ReadOutcarModule.js showProgressBar).
+   The fill's width is the progress, set from JS. */
+.cv-file-progress {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--overlay-80);
+  color: var(--on-overlay);
+  padding: 20px;
+  border-radius: var(--radius-5);
+  z-index: 9999;
+  text-align: center;
+}
+.cv-file-progress-track {
+  width: 300px;
+  height: 20px;
+  background: var(--chrome-2-5);
+  border-radius: var(--radius-5);
+  margin: var(--sp-3-5) auto;
+  overflow: hidden;
+}
+.cv-file-progress-fill {
+  height: 100%;
+  background: var(--progress-fill);
+  transition: width 0.3s;
+}
+/* Start-up (and large share link) progress over the 3D view: index.html
+   #bootProgress, driven by ui/BootProgress.js. Above the canvas, below every
+   window; it never takes a click. No continuous animation: see BootProgress.js. */
+.boot-progress {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.boot-progress[hidden] { display: none; }
+.boot-progress.is-done { opacity: 0; }
+/* The structure is already drawn (a plain start-up builds the windows after
+   it): the card waits at the bottom of the view, out of its way. */
+.boot-progress.is-compact {
+  align-items: flex-end;
+  padding-bottom: var(--sp-6);
+}
+.boot-progress-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 240px;
+  padding: var(--sp-4) var(--sp-5);
+  border-radius: var(--radius-md);
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-md);
+}
+.boot-progress-text {
+  font-size: var(--fs-sm);
+  color: var(--fg-2);
+  text-align: center;
+}
+.boot-progress-elapsed {
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+}
+.boot-progress-track {
+  position: relative;
+  width: 220px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--wash-3);
+  overflow: hidden;
+}
+.boot-progress-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  background: var(--highlight-color);
+  transform-origin: left center;
+  transform: scaleX(0.08); /* the first step, before any script has run */
+  transition: transform 0.25s ease-out;
+  /* Until the first script runs (ui/BootProgress.js startBootProgress), the
+     bar creeps on by itself once, so the first seconds of a slow start-up do
+     not look stuck. A single run, not a loop: a running animation over the
+     3D view slows its rendering. */
+  animation: boot-progress-creep 4s ease-out both;
+}
+/* From the first script on, the bar follows the download and the steps. */
+.boot-progress.is-tracking .boot-progress-fill {
+  animation: none;
+}
+@keyframes boot-progress-creep {
+  from { transform: scaleX(0.04); }
+  to { transform: scaleX(0.2); }
+}
+
 #aboutOverlay {
   position: fixed;
   inset: 0;
@@ -1979,6 +2277,20 @@ input[type="checkbox"] {
   cursor: pointer;
   line-height: var(--lh-tight);
   padding: var(--sp-1);
+}
+
+/* The About text (README, licence, citation) must be selectable and copyable
+   although `body` switches text selection off for the whole app. */
+#aboutModal,
+#aboutModal * {
+  user-select: text;
+  -webkit-user-select: text;
+  -moz-user-select: text;
+}
+
+#aboutClose {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #aboutClose:hover {
@@ -2499,56 +2811,19 @@ justify-content: center;
 #measureRow { display:flex; justify-content:space-between; gap:var(--sp-3); color:var(--info-tint); }
 
 
-/* Custom color picker as a modifiable UI component*/
-
-
-.custom-color-picker {
-  width: 200px;
-  font-family: var(--font-ui);
-  user-select: none;
-}
-
-.custom-color-picker .sb-picker {
-  position: relative;
-  width: 100%;
-  height: 150px;
-  background: red;
-  cursor: crosshair;
-  margin-bottom: var(--sp-3-5);
-}
-
-.custom-color-picker .sb-picker::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  /* Saturation/brightness gradient stops must stay literal white/black
-     regardless of theme — these are colour-space axes, not themeable UI. */
-  background:
-    linear-gradient(to right, #fff, transparent),
-    linear-gradient(to top, #000, transparent);
-}
-
-.custom-color-picker .hue-slider {
-  width: 100%;
-  margin-bottom: var(--sp-3-5);
-}
-
-.custom-color-picker .color-preview {
-  width: 100%;
-  height: 30px;
-  border: 1px solid var(--ink-3);
-  background: red;
-}
-
-
-
-
 /* Small actions */
 .btn-mini { background:transparent; border:1px solid var(--wash-2); color:var(--info-tint); padding:var(--sp-2) var(--sp-3-5); border-radius: var(--radius-sm); cursor:pointer; }
 .btn-mini:hover { transform: translateY(-1px);background:var(--wash-0); border: 1px solid var(--accent-color);}
 
 .btn-mini.highlight { background:var(--bg-color); border-color:var(--line-dark); color:var(--fg-1); }
 .btn-mini.highlight:hover { transform: translateY(-1px);filter:brightness(1.03); border: 1px solid var(--accent-color);}
+
+/* A Reset button painted with the default colour it restores (fill and
+   ink are inline: data). A dark hairline in place of the accent one, also
+   on hover; the bond pair's two-colour gradient also shadows its glyphs. */
+.btn-mini.is-swatch,
+.btn-mini.is-swatch:hover { border-color: rgb(var(--shadow-rgb) / 0.2); }
+.bond-cat-btn.is-swatch { text-shadow: 0 0 3px rgb(var(--shadow-rgb) / 0.6); }
 
 #composition h4 {
   margin: 0 0 var(--sp-3) 0;
@@ -2572,6 +2847,16 @@ justify-content: center;
   width: 10px; height: 10px; border-radius: 50%; margin-right: var(--sp-3);
   border: 1px solid var(--fg-3);
 }
+/* Pie-dot canvas (utils/ColorModule.js createPieDot). canvas.-qualified so
+   it outranks the single-class rules of the rows that host one (.dot,
+   .bond-cat-dot, .iar-pie-canvas, ...), as the inline style it replaces
+   did; a row that wants another border says so with two classes
+   (structureInfoPanel.css). */
+canvas.cv-pie-dot {
+  border-radius: 50%;
+  border: 1px solid var(--swatch-border);
+  display: inline-block;
+}
 /* --sp-2, not --sp-3: the Structure panel's category row shares 266px between
    this cluster and count + Spin/Force + toggle, and 2px per gap here is what
    keeps that right-hand group on one line (structureInfoPanel.css .comp-row). */
@@ -2580,6 +2865,20 @@ justify-content: center;
   display: inline-flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3); background: var(--bg-color);
   border: 1px solid var(--accent-color); border-radius: var(--radius-md);
+}
+/* The CSS2DRenderer's label overlay (WindowAndSceneControls.js
+   initLabelRenderer): laid over the canvas, never taking a click itself
+   (labels that need one opt back in, see .measure-label). */
+.cv-label-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+/* The three.js scene canvas (ui/SceneInteraction.js): no browser zoom,
+   scroll or long-press menu over it. */
+.cv-scene-canvas {
+  touch-action: none;
 }
 #view canvas {
   cursor: pointer; /* for click affordance */
@@ -2598,6 +2897,11 @@ justify-content: center;
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+/* Pick focus armed (render/FocusPlaneModule.js setFocusPick): the next click
+   on the 3D view sets the focal plane. */
+#view canvas.cv-focus-pick {
+  cursor: crosshair;
 }
 
 
@@ -2621,7 +2925,10 @@ touch-action: none;
 }
 
 #axesLegend{
-position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px));
+/* Centred on the gizmo's centre line: bottom at the gizmo's centre, then
+   translate (not transform, which the breakpoints use) down by half its height. */
+position: fixed; left: calc(var(--gizmo-left) + var(--gizmo-size) + 8px); bottom: calc(var(--gizmo-bottom) + var(--split-reserve-bottom, 0px) + var(--gizmo-size) / 2);
+translate: 0 50%;
 background: var(--float-panel-bg);
 border: 1px solid var(--line-2);
 border-radius: var(--radius);
@@ -3109,7 +3416,7 @@ body > #structureInfoContent {
  * hide-drag. See dragSelectKind === 'select' in ui/SceneInteraction.js. */
 .cv-drag-select-rect.select-mode {
   border-color: var(--highlight-color);
-  background: rgb(255 140 0 / 0.14);
+  background: var(--select-drag-bg);
 }
 
 .tool-icon {
@@ -3146,6 +3453,37 @@ body > #structureInfoContent {
   backdrop-filter: blur(6px); white-space:nowrap;
 }
 
+/* The "choose 2nd atom" / "select vertex" prompt while a measurement is being
+ * picked sits centred on the last atom picked, and has no remove button: let
+ * clicks through, or clicking that atom again (which drops it from the
+ * measurement) would land on the prompt instead. */
+.measure-label.measure-label-preview {
+  pointer-events: none;
+}
+
+/* The picking previews (render/MeasurementModule.js drawMeasureGraphics):
+   "choose 2nd atom" on a light label, and the angle prompt in the angle
+   arc's orange. Two classes, so they also beat responsive.css's phone
+   .measure-label size. */
+.measure-label.measure-preview-distance {
+  background: var(--measure-preview-bg);
+  border: 2px solid var(--label-ink);
+  color: var(--label-ink);
+  font-weight: 700;
+  font-size: var(--fs-base);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--radius-4);
+}
+.measure-label.measure-preview-angle {
+  background: rgb(var(--angle-preview-rgb) / 0.85);
+  border: none;
+  color: var(--angle-preview-fg);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  padding: 2px var(--sp-1);
+  border-radius: var(--radius-4);
+}
+
 /* Hover target for a measurement's remove button. The measurement's value
  * label is a depth-tested WebGL sprite now (so it clips correctly behind
  * atoms), which cannot host a DOM child — this invisible box is pinned to the
@@ -3175,20 +3513,22 @@ body > #structureInfoContent {
   font-size: calc(var(--measure-remove-size, 16px) * 0.72);
   padding: 0;
   border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--measure-remove-border);
   /* Solid white, not a theme/backdrop-blur tint — this button floats over
    * the 3D viewport itself, not a panel, and the viewport renders black
    * regardless of UI theme, so anything less than a fully opaque, fixed
-   * light color reads as invisible against it. */
-  background: #ffffff;
-  color: #2a2a2a;
+   * light color reads as invisible against it. The --measure-remove-*
+   * tokens are defined once in themes/default/theme.css and no palette
+   * overrides them. */
+  background: var(--measure-remove-bg);
+  color: var(--measure-remove-fg);
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   opacity: 0;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 1px 3px var(--measure-remove-shadow);
   transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
@@ -3199,8 +3539,8 @@ body > #structureInfoContent {
 
 .measure-label-remove:hover {
   background: var(--danger-fill);
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.6);
+  color: var(--measure-remove-hover-fg);
+  border-color: var(--measure-remove-hover-border);
 }
 
 /* Dock toggle - always top left. One more scene window: the same chrome as

@@ -49,7 +49,12 @@ done
 
 # devserver.py also sends Cache-Control: no-store — plain http.server sends
 # none, so Firefox can execute the PREVIOUS version of a just-edited module.
-python3 ../devserver.py "$PORT" --bind 127.0.0.1 --directory ../../docs >/dev/null 2>&1 &
+# CRYSVIZ_COI=1 serves with cross-origin isolation headers (SharedArrayBuffer,
+# the threaded PET-MAD wasm) — for the mlip benchmarks; the default suite runs
+# un-isolated like GitHub Pages.
+COI_FLAG=()
+if [ "${CRYSVIZ_COI:-0}" = "1" ]; then COI_FLAG=(--coi); fi
+python3 ../devserver.py "$PORT" --bind 127.0.0.1 --directory ../../docs ${COI_FLAG[@]+"${COI_FLAG[@]}"} >/dev/null 2>&1 &
 SERVER_PID=$!
 XVFB_PID=""
 if [ "$platform" != "Darwin" ]; then
@@ -111,10 +116,25 @@ else
   TESTS=(tests/*.test.js)
 fi
 
+# A test that hangs (e.g. awaiting a dialog nobody answers) would otherwise stall
+# the whole run with no output. Cap each file — generously, the tracer tests
+# take minutes under software GL — and report the hang as a failure. macOS has no
+# coreutils `timeout` by default; there tests run uncapped, as before.
+TEST_TIMEOUT="${TEST_TIMEOUT:-900}"
+TIMEOUT_CMD=()
+if command -v timeout >/dev/null 2>&1; then
+  TIMEOUT_CMD=(timeout --kill-after=10 "$TEST_TIMEOUT")
+fi
+
 FAILED=0
 for t in "${TESTS[@]}"; do
   echo "== $t"
-  if ! node "$t"; then
+  rc=0
+  ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} node "$t" || rc=$?
+  if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+    echo "  TEST DRIVER ERROR: $t timed out after ${TEST_TIMEOUT}s"
+  fi
+  if [ "$rc" -ne 0 ]; then
     FAILED=1
   fi
 done

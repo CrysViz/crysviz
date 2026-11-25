@@ -184,6 +184,7 @@ export function accountContainer(container, seen = new WeakSet(), opts = {}) {
   if (isTrajectory) {
     storeBytes = add(walk(container.store));
     recordBytes = add(walk(container._frameStyles));
+    recordBytes += add(walk(container._sharedStyles ?? null));
     liveBytes = add(walk(container._live));
   } else if (container && Array.isArray(container.structures)) {
     structureBytes = add(walk(container.structures));
