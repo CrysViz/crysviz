@@ -750,3 +750,9 @@
 @media (prefers-reduced-motion: reduce) {
   .boot-progress-fill { animation: none; }
 }
+
+/* Camera sync card (toggle_styles.css .camera_sync_dot): the waiting dot
+   stays still for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .camera_sync_status[data-state="waiting"] .camera_sync_dot { animation: none; }
+}

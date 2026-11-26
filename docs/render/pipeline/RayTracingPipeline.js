@@ -841,17 +841,22 @@ export class RayTracingPipeline extends ForwardPipeline {
     // ("the bar never starts"). The snapshot only advances on a detected move,
     // so slow creep still accumulates against the last reset point and cannot
     // ghost unboundedly.
+    // The first traced frame has no snapshot yet: it takes one and resets, but
+    // is NOT motion. Treating it as motion sized the targets for motion low-res
+    // and spent the 16-sample resize boost there, and the next (still) frame's
+    // size change hard-reset all of it away.
     camera.updateMatrixWorld();
     const elements = camera.matrixWorld.elements;
     const zoom = camera.zoom ?? 1;
-    let cameraIsMoving = !this._lastCameraState || Math.abs(zoom - this._lastZoom) > 1e-5;
-    if (!cameraIsMoving) {
+    const firstFrame = !this._lastCameraState;
+    let cameraIsMoving = !firstFrame && Math.abs(zoom - this._lastZoom) > 1e-5;
+    if (!firstFrame && !cameraIsMoving) {
       for (let i = 0; i < 16; i++) {
         if (Math.abs(elements[i] - this._lastCameraState[i]) > 1e-4) { cameraIsMoving = true; break; }
       }
     }
-    if (cameraIsMoving) {
-      if (!this._lastCameraState) this._lastCameraState = new Float64Array(16);
+    if (firstFrame || cameraIsMoving) {
+      if (firstFrame) this._lastCameraState = new Float64Array(16);
       this._lastCameraState.set(elements);
       this._lastZoom = zoom;
       this.resetAccumulation();

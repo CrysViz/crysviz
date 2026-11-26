@@ -225,7 +225,9 @@ const CATALOGUE = {
   // The list, its snapshot and the selection survive a reload.
   await choose('https://raw.githubusercontent.com/someone/pet-models/main/ni.gguf');
   await page.reload({ waitUntil: 'load' });
-  await page.waitForTimeout(1500);
+  // 'load' fires seconds before start-up has built the windows
+  // (core/fullApp.js; its Relax tab builds the potential selector): wait for it.
+  await H.waitFor(page, () => !!document.querySelector('#BackendPotentialSelector [data-role="mlip-model"]'), { timeout: 60000, interval: 250 });
   await openControls();
   const reloaded = await listState();
   H.check('after a reload the catalogue, the link and the selected model are still there',

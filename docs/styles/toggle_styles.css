@@ -380,6 +380,208 @@ body.cv-busy * {
   background: var(--wash-3, var(--wash-2));
 }
 
+/* "Sync camera across tabs" (ui/CameraPanel.js): a card of its own at the
+   foot of the Camera panel. The link state (data-state: off, waiting for
+   another tab, linked) shows in the status pill's dot, and once linked in
+   the card's border and icon too. The three-way switch is native radios
+   drawn as a segmented control. */
+.camera_sync {
+  margin-top: var(--sp-5);
+  padding: var(--sp-3-5);
+  background: var(--wash-1);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+  transition: border-color 0.2s;
+}
+.camera_sync[data-state="linked"] {
+  border-color: rgb(var(--ok-rgb) / 0.6);
+}
+.camera_sync label {
+  /* Not the app's form-label look (the plain `label` rule in styles.css). */
+  margin: 0;
+  color: inherit;
+}
+
+.camera_sync_head {
+  display: flex;
+  flex-wrap: wrap;  /* a wide status drops to its own line; the title never wraps */
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+}
+.camera_sync_icon {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.8;
+}
+.camera_sync[data-state="linked"] .camera_sync_icon {
+  color: var(--ok);
+  opacity: 1;
+}
+.camera_sync_title {
+  flex: 1 1 auto;
+  margin: 0;
+  white-space: nowrap;
+  /* The size of the panel's own labels ("Rotate & pan speed"), a step bolder. */
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  color: var(--fg-1);
+}
+.camera_sync_status[data-state="off"] {
+  display: none;  /* the switch already says Off */
+}
+.camera_sync_status {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 1px var(--sp-2);
+  font-size: var(--fs-xs);
+  color: var(--fg-75);
+  white-space: nowrap;
+  background: var(--wash-2);
+  border-radius: var(--radius-24);
+}
+.camera_sync_dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fg-50);
+}
+.camera_sync_status[data-state="waiting"] .camera_sync_dot {
+  background: var(--warn);
+  animation: camera-sync-wait 1.6s ease-in-out infinite;
+}
+.camera_sync_status[data-state="linked"] .camera_sync_dot {
+  background: var(--ok);
+}
+@keyframes camera-sync-wait {
+  50% { opacity: 0.3; }
+}
+
+.camera_sync_modes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--sp-1);
+  margin-top: var(--sp-3-5);
+  padding: var(--sp-1);
+  background: var(--wash-2);
+  border: 1px solid var(--line-1);
+  border-radius: var(--radius-md);
+}
+.camera_sync .camera_sync_mode {
+  position: relative;
+  padding: var(--sp-2) var(--sp-1);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  text-align: center;
+  white-space: nowrap;
+  color: var(--fg-75);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+.camera_sync_mode input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.camera_sync .camera_sync_mode:not(:has(input:checked)):hover {
+  color: var(--fg-1);
+  background: var(--wash-1);
+}
+.camera_sync .camera_sync_mode:has(input:checked) {
+  color: var(--on-accent);
+  background: var(--highlight-color);
+}
+.camera_sync .camera_sync_mode:has(input[value="off"]:checked) {
+  color: var(--fg-1);
+  background: var(--wash-3);
+}
+.camera_sync_mode:has(input:focus-visible) {
+  outline: 2px solid var(--highlight-color);
+  outline-offset: 1px;
+}
+.camera_sync_mode:has(input:disabled) {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.camera_sync_hint {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--fg-75);
+}
+
+.camera_sync_options {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line-1);
+}
+.camera_sync_options[hidden],
+.camera_sync_check[hidden],
+.camera_sync_align[hidden] {
+  display: none;
+}
+.camera_sync_check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-base);
+  cursor: pointer;
+}
+/* The pill's off track in the card's neutral wash (the theme's --switch-off
+   tints it in some palettes); on, the highlight like the toggles above. */
+.camera_sync_check .toggle_slider {
+  background-color: var(--wash-3);
+}
+.camera_sync_check input:checked + .toggle_slider {
+  background-color: var(--highlight-color);
+}
+.camera_sync_align {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+  color: var(--fg-1);
+  background: transparent;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-4);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+.camera_sync_align:hover {
+  background: var(--wash-2);
+}
+.camera_sync_align:focus-visible {
+  outline: 2px solid var(--highlight-color);
+  outline-offset: 1px;
+}
+.camera_sync_btn_icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
 .camera_label,
 .camera_label_r,
 .camera_label-pnr {
