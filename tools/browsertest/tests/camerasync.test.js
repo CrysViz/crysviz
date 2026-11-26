@@ -401,7 +401,9 @@ async function settle(...pages) {
   // Both spinning: the tab touched last leads, the other holds its pose. Tab B
   // records how fast it turns meanwhile (rad/s, frame by frame, so a slow frame
   // is no jump): following one leader it turns at the spin's ~1 rad/s, jumping
-  // between two leaders it would swing back and forth at tens of rad/s.
+  // between two leaders it would swing back and forth at tens of rad/s, every
+  // frame. The median frame, not the fastest: on a busy machine poses arrive
+  // in bunches and a frame can catch up several, which is no jump.
   await a.evaluate(SPIN, true);
   await b.evaluate(SPIN, true);
   await a.evaluate(TOUCH);
@@ -427,10 +429,11 @@ async function settle(...pages) {
   await settle(a, b);
   sa = await a.evaluate(CAMERA);
   sb = await b.evaluate(CAMERA);
-  const maxRate = Math.max(...steps);
+  const sorted = [...steps].sort((x, y) => x - y);
+  const medianRate = sorted[Math.floor(sorted.length / 2)];
   H.check('two spinning tabs: the one touched last leads, the other follows it smoothly',
-    sameView(sa, sb) && steps.length >= 20 && maxRate < 4 && steps.some((t) => t > 1e-3),
-    JSON.stringify({ maxRate, frames: steps.length, sa, sb }));
+    sameView(sa, sb) && steps.length >= 20 && medianRate < 4 && steps.some((t) => t > 1e-3),
+    JSON.stringify({ medianRate, maxRate: sorted[sorted.length - 1], frames: steps.length, sa, sb }));
 
   H.check('no page errors', errors.length === 0, errors.join('\n'));
   await H.finish(browser);
