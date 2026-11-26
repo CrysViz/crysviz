@@ -2,11 +2,22 @@
 // "Sync camera across tabs"). Each tab that has sync on follows the others:
 // turning or zooming one turns and zooms the rest.
 //
-// Modes (what this tab copies from the others; a choice per tab):
-//   'rotation'  direction, up and zoom, relative to each tab's own structure
-//               (ui/CameraView.js), so different structures turn together
-//   'view'      also the rotation centre and the pan: the whole view, for the
-//               same structure shown two ways (renderer, colours, settings)
+// Modes (a choice per tab):
+//   'view'   the same view: the same angle and zoom as the other tabs,
+//            measured against each tab's own structure (ui/CameraView.js), so
+//            different structures turn together. With "Also match pan and
+//            rotation centre" (for the same structure in several tabs) also
+//            those.
+//   'turns'  the same turns: this tab keeps its own angle and zoom, and turns
+//            and zooms by as much as the others. It stores an offset from the
+//            shared view (a rotation and a zoom factor), taken when it joins
+//            and kept until "Line up all tabs with this one" drops it.
+//
+// The offset: every tab sends the shared view, its own camera with its offset
+// taken off, and follows the shared view with its offset put back on. A
+// 'view' tab has no offset. The rotation offset L sits on the world side
+// (own = L · shared), so a drag that turns one tab's picture to the left turns
+// every tab's picture to the left, whatever its own angle.
 //
 // Transport and security
 //   * BroadcastChannel: the browser delivers messages only to pages of the
@@ -20,12 +31,14 @@
 //
 // Protocol (channel 'crysviz-camera-sync')
 //   { v:1, type:'hello', from }                      a tab switched sync on: synced tabs answer with a pose
-//   { v:1, type:'pose', from, to?, view, target, pan, projection, touchedAt }
-//                                                    a tab's camera: a CameraView `view`, plus its
+//   { v:1, type:'bye', from }                        a tab switched sync off or closed
+//   { v:1, type:'pose', from, to?, align?, view, target, pan, projection, touchedAt }
+//                                                    a tab's shared view: a CameraView `view`, plus its
 //                                                    rotation centre [x,y,z] and pan {x,y} for 'view'
 //                                                    mode, 'parallel' or 'perspective', and when its
 //                                                    user last touched it (ms since 1970); `to` (the
-//                                                    answer to a hello) is for that tab only
+//                                                    answer to a hello) is for that tab only; `align`
+//                                                    tells 'turns' tabs to drop their offsets
 //
 // A parallel camera zooms with its zoom factor, a perspective one by moving in.
 // Both are measured against the view fitted to the structure, so a pose from
@@ -57,14 +70,17 @@ const CHANNEL = 'crysviz-camera-sync';
 const VERSION = 1;
 /** Easing time constant toward another tab's pose, in seconds. */
 const TAU_S = 0.04;
-export const CAMERA_SYNC_MODES = ['rotation', 'view'];
-const DEFAULT_MODE = 'rotation';
+export const CAMERA_SYNC_MODES = ['view', 'turns'];
 
 const tabId = (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`).slice(0, 64);
 
 /** @type {BroadcastChannel|null} */
 let channel = null;
-let mode = CAMERA_SYNC_MODES.includes(getPanelPref('cameraSyncMode')) ? getPanelPref('cameraSyncMode') : DEFAULT_MODE;
+let mode = 'view';
+/** 'view' mode copies the rotation centre and the pan too (a panelPref). */
+let centre = getPanelPref('cameraSyncCentre') === true;
+/** This tab's offset from the shared view: own orientation = rotation · shared, own magnification = zoom × shared. */
+const offset = { rotation: new THREE.Quaternion(), zoom: 1 };
 /** The latest pose from another tab, eased toward until reached. */
 let goal = null;
 /** The camera as last sent or applied, as numbers (see rawPose). */
@@ -76,6 +92,9 @@ let following = false;
 /** When this tab's user last touched it (Date.now()), sent with each pose. */
 let touchedAt = 0;
 const listeners = new Set();
+/** Other tabs with sync on, as heard (hello, pose) until they say bye. */
+const peers = new Set();
+const MAX_PEERS = 64;
 
 export function cameraSyncSupported() {
   return typeof BroadcastChannel === 'function';
@@ -89,7 +108,16 @@ export function getCameraSyncMode() {
   return mode;
 }
 
-/** Call `fn()` whenever sync is switched on or off or its mode changes. */
+/** How many other tabs this tab is synced with (0 while off). */
+export function cameraSyncPeerCount() {
+  return peers.size;
+}
+
+export function getCameraSyncCentre() {
+  return centre;
+}
+
+/** Call `fn()` whenever sync is switched on or off or its mode or options change. */
 export function onCameraSyncChange(fn) {
   listeners.add(fn);
 }
@@ -98,23 +126,52 @@ function changed() {
   listeners.forEach((fn) => fn());
 }
 
-/** What this tab copies from the others: 'rotation' or 'view'. */
+function dropOffset() {
+  offset.rotation.identity();
+  offset.zoom = 1;
+}
+
+/**
+ * 'view' (the same view as the other tabs) or 'turns' (this tab's own angle and
+ * zoom, turned along). Changing to 'view' while on glides to the others' view;
+ * changing to 'turns' keeps the view (it is the shared one, no offset yet).
+ */
 export function setCameraSyncMode(next) {
-  if (!CAMERA_SYNC_MODES.includes(next)) return;
+  if (!CAMERA_SYNC_MODES.includes(next) || next === mode) return;
   mode = next;
-  setPanelPref('cameraSyncMode', next);
+  if (mode === 'view') {
+    dropOffset();
+    if (channel) post({ type: 'hello' });  // their answers bring the shared view
+  }
   changed();
+}
+
+/** Whether 'view' mode also copies the rotation centre and the pan (remembered). */
+export function setCameraSyncCentre(on) {
+  centre = !!on;
+  setPanelPref('cameraSyncCentre', centre);
+  changed();
+}
+
+/** Turn the other synced tabs to this tab's view, and drop every tab's offset. */
+export function lineUpCameraSync() {
+  if (!channel) return;
+  dropOffset();
+  onUserInput();
+  sendPose(undefined, { align: true });
 }
 
 /**
  * Switch sync on or off for this tab. Switching on follows the tabs already
- * in sync; `lead` instead makes them follow this tab's current view (it also
- * works when sync is already on).
+ * in sync ('view'), or takes its offset from them ('turns'); `lead` instead
+ * makes them follow this tab's current view, as lineUpCameraSync.
  */
 export function setCameraSync(on, { lead = false } = {}) {
   if (on && !cameraSyncSupported()) return;
   if (!on) {
     if (!channel) return;
+    post({ type: 'bye' });
+    peers.clear();
     channel.close();
     channel = null;
     goal = null;
@@ -128,6 +185,7 @@ export function setCameraSync(on, { lead = false } = {}) {
     channel = new BroadcastChannel(CHANNEL);
     channel.onmessage = onMessage;
     following = false;
+    dropOffset();
     USER_INPUT.forEach((type) => document.addEventListener(type, onUserInput, { capture: true, passive: true }));
     // The camera as it is now is not a move of ours: nothing to send yet.
     last = rawPose();
@@ -136,15 +194,18 @@ export function setCameraSync(on, { lead = false } = {}) {
     if (!lead) post({ type: 'hello' });
     changed();
   }
-  if (lead) {
-    onUserInput();
-    sendPose();
-  }
+  if (lead) lineUpCameraSync();
 }
+
+// A closing or reloading tab leaves (a crashed one stays counted until it is
+// back); one restored from the back/forward cache says hello again.
+globalThis.addEventListener?.('pagehide', () => { if (channel) post({ type: 'bye' }); });
+globalThis.addEventListener?.('pageshow', (e) => { if (channel && e.persisted) post({ type: 'hello' }); });
 
 onPanelsReset(() => {
   setCameraSync(false);
-  setCameraSyncMode(DEFAULT_MODE);
+  setCameraSyncMode('view');
+  setCameraSyncCentre(false);
 });
 
 /** Input that makes this tab lead again after following (see the header). */
@@ -213,9 +274,52 @@ function currentPose() {
   }
 }
 
-function sendPose(to = undefined) {
+/** How much bigger than fitted the structure looks: a parallel camera's zoom, a perspective camera's zoom over its distance. */
+function magnification(view, projection) {
+  return projection === 'parallel' ? view.zoom : view.zoom / view.distance;
+}
+
+/** `pose` (this tab's camera kind) with the magnification times `factor`, turned by `rotation`. */
+function transformed(pose, rotation, factor) {
+  const view = pose.view;
+  const parallel = projectionOf(app.camera) === 'parallel';
+  return {
+    ...pose,
+    view: {
+      direction: new THREE.Vector3().fromArray(view.direction).applyQuaternion(rotation).toArray(),
+      up: new THREE.Vector3().fromArray(view.up).applyQuaternion(rotation).toArray(),
+      distance: parallel ? view.distance : view.distance / factor,
+      zoom: parallel ? view.zoom * factor : view.zoom,
+    },
+  };
+}
+
+const inverseRotation = new THREE.Quaternion();
+
+/** This tab's pose with its offset taken off: what it sends. */
+function toShared(pose) {
+  return transformed(pose, inverseRotation.copy(offset.rotation).invert(), 1 / offset.zoom);
+}
+
+/** A shared pose (in this tab's camera kind) with this tab's offset put on: what it follows. */
+function fromShared(pose) {
+  return transformed(pose, offset.rotation, offset.zoom);
+}
+
+/** In 'turns' mode, the offset that keeps this tab where it is under the shared pose `shared`. */
+function takeOffset(shared) {
+  const here = currentPose();
+  if (!here) return;
+  const projection = projectionOf(app.camera);
+  viewQuaternion(here.view, qTo);
+  viewQuaternion(shared.view, qFrom);
+  offset.rotation.copy(qTo).multiply(qFrom.invert());
+  offset.zoom = clampRange(magnification(here.view, projection) / magnification(shared.view, projection), 1e-3, 1e3);
+}
+
+function sendPose(to = undefined, extra = {}) {
   const pose = currentPose();
-  if (pose) post({ type: 'pose', ...pose, touchedAt, ...(to ? { to } : {}) });
+  if (pose) post({ type: 'pose', ...toShared(pose), touchedAt, ...(to ? { to } : {}), ...extra });
   last = rawPose();
 }
 
@@ -259,43 +363,59 @@ function readPose(data) {
 const clampRange = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
 
 /**
- * `pose` from a camera of the kind `projection`, with its zoom in this camera's terms.
- * How much bigger than fitted the structure looks: a parallel camera's zoom, a
- * perspective camera's zoom over its distance (both 1 when fitted).
+ * `pose` from a camera of the kind `projection`, with its zoom in this camera's
+ * terms: the same magnification (1 when fitted, see magnification()).
  */
 function inOwnProjection(pose, projection) {
   const own = projectionOf(app.camera);
   if ((projection !== 'parallel' && projection !== 'perspective') || projection === own) return pose;
   const view = pose.view;
-  const magnification = projection === 'parallel' ? view.zoom : view.zoom / view.distance;
+  const seen = magnification(view, projection);
   if (own === 'parallel') {
     // A parallel view does not depend on the distance: this camera stays where it is.
     const here = currentPose();
     if (!here) return null;
-    return { ...pose, view: { ...view, zoom: clampRange(magnification, 1e-4, 1e4), distance: here.view.distance } };
+    return { ...pose, view: { ...view, zoom: clampRange(seen, 1e-4, 1e4), distance: here.view.distance } };
   }
   const zoom = app.camera.zoom;
-  return { ...pose, view: { ...view, zoom, distance: clampRange(zoom / magnification, 1e-4, 1e4) } };
+  return { ...pose, view: { ...view, zoom, distance: clampRange(zoom / seen, 1e-4, 1e4) } };
 }
 
 function onMessage(event) {
   const data = event.data;
   if (!data || typeof data !== 'object' || data.v !== VERSION) return;
   if (typeof data.from !== 'string' || data.from.length === 0 || data.from.length > 64 || data.from === tabId) return;
-  if (data.type === 'hello') {
+  if (data.type === 'bye') {
+    if (peers.delete(data.from)) changed();
+  } else if (data.type === 'hello') {
+    addPeer(data.from);
     sendPose(data.from);
   } else if (data.type === 'pose') {
+    const read = readPose(data);
+    if (!read) return;
+    addPeer(data.from);
     if (data.to !== undefined && data.to !== tabId) return;  // an answer to another tab's hello
     const theirs = inRange(data.touchedAt, 0, Number.MAX_SAFE_INTEGER) ? data.touchedAt : 0;
     // Leading a spin, this tab was touched last: that tab has not heard it yet.
     if (!following && spinning() && theirs < touchedAt) return;
-    const read = readPose(data);
-    const pose = read && inOwnProjection(read, data.projection);
-    if (pose) {
-      goal = pose;
-      following = true;
+    const shared = inOwnProjection(read, data.projection);
+    if (!shared) return;
+    if (data.align === true) dropOffset();
+    else if (mode === 'turns' && data.to === tabId) {
+      // Joining in 'turns': keep this tab's view, and turn along from here.
+      takeOffset(shared);
+      return;
     }
+    goal = fromShared(shared);
+    following = true;
   }
+}
+
+/** Count `id` as a linked tab (a hello, or a pose that passed the checks). */
+function addPeer(id) {
+  if (peers.has(id) || peers.size >= MAX_PEERS) return;
+  peers.add(id);
+  changed();
 }
 
 // ---- the frame loop ------------------------------------------------------
@@ -321,7 +441,7 @@ const ratioLerp = (from, to, a) => from * (to / from) ** a;
 
 /** Apply the goal pose, `a` of the way from the current one (1: all the way). */
 function easeTowardGoal(a) {
-  const absolute = mode === 'view';
+  const absolute = mode === 'view' && centre;
   const from = currentPose();
   if (!from) return;
   viewQuaternion(from.view, qFrom);

@@ -1,14 +1,18 @@
 // Camera sync across tabs (ui/CameraSync.js, Camera panel "Sync camera across tabs"):
-//   - two tabs of one browser, each with the button Off: turning one leaves the other alone
-//   - a click switches a tab on; a tab switched on second takes the first one's view
+//   - two tabs of one browser, each with the switch Off: turning one leaves the other alone
+//   - Same view switches a tab on; a tab switched on second takes the first one's view
 //   - turning or zooming either tab turns the other one (the tab you touch leads)
 //   - the other tab eases to a jump over a few frames instead of snapping
-//   - 'rotation' mode keeps each tab's own centre and pan; 'view' copies them too
+//   - Same view keeps each tab's own centre and pan; "Also match pan and rotation centre" copies them
 //   - an idle pair sends nothing (no echo between the tabs)
 //   - malformed messages on the channel (wrong version, NaN, out of range, missing
 //     fields, a forged own id) move nothing
-//   - a long press opens the menu (mode, "Make other tabs match this one", Cancel)
-//     and does not also toggle sync; "Make other tabs match" turns the others
+//   - the switch in its window, docked and floating, clicked for real: the options
+//     show while on, "Also match pan and rotation centre" only for Same view
+//   - the status says Off, linked to N tabs, or no other tab yet (after the other says bye)
+//   - Same turns keeps the tab's own angle and zoom when it joins, and turns and
+//     zooms with the others both ways (a fixed rotation and zoom factor apart)
+//   - "Line up all tabs with this one" turns the others to this view and drops the offset
 //   - switching a tab off stops it following
 //   - a perspective tab and a parallel tab zoom together (zoom factor <-> distance)
 //   - a tab spinning by itself (Random) holds the leading tab's pose instead of
@@ -23,17 +27,36 @@ const CAMERA = async () => {
   const back = new THREE.Vector3(0, 0, 1).applyQuaternion(app.camera.quaternion);
   const up = new THREE.Vector3(0, 1, 0).applyQuaternion(app.camera.quaternion);
   const r = (v) => +v.toFixed(4);
-  const btn = document.getElementById('cameraSyncBtn');
+  const card = document.querySelector('.camera_sync');
   return {
+    q: app.camera.quaternion.toArray(),
     dir: back.toArray().map(r),
     up: up.toArray().map(r),
     zoom: r(app.camera.zoom),
     target: app.controls.target.toArray().map(r),
     pan: [app.cameraPan.x, app.cameraPan.y].map(r),
-    pressed: btn?.getAttribute('aria-pressed'),
-    state: btn?.querySelector('.camera_sync_state')?.textContent,
+    sync: card?.querySelector('input[name="cameraSyncMode"]:checked')?.value,
+    options: card ? !card.querySelector('.camera_sync_options').hidden : null,
+    status: card?.querySelector('.camera_sync_status_text')?.textContent,
   };
 };
+
+/** The Sync switch set to `value` (off, view, turns), as picking it does. */
+const SYNC = async (value) => {
+  document.getElementById({ off: 'cameraSyncOff', view: 'cameraSyncView', turns: 'cameraSyncTurns' }[value]).click();
+};
+
+/** Quaternions [x,y,z,w]: a·b, the inverse, and the angle between two rotations. */
+const qmul = ([ax, ay, az, aw], [bx, by, bz, bw]) => [
+  aw * bx + ax * bw + ay * bz - az * by,
+  aw * by - ax * bz + ay * bw + az * bx,
+  aw * bz + ax * by - ay * bx + az * bw,
+  aw * bw - ax * bx - ay * by - az * bz,
+];
+const qinv = ([x, y, z, w]) => [-x, -y, -z, w];
+const qangle = (a, b) => 2 * Math.acos(Math.min(1, Math.abs(a.reduce((s, v, i) => s + v * b[i], 0))));
+/** Tab B's camera rotation relative to tab A's, on the world side (qB = offset · qA). */
+const offsetOf = (ca, cb) => qmul(cb.q, qinv(ca.q));
 
 const TURN = async ([x, y, z]) => {
   const THREE = await import('./external/three/three.module.js');
@@ -86,20 +109,24 @@ async function settle(...pages) {
 
   // ---- off: independent ----------------------------------------------------------
   const b0 = await b.evaluate(CAMERA);
-  H.check('both tabs have the Sync button, Off', b0.pressed === 'false' && b0.state === 'Off'
-    && (await a.evaluate(CAMERA)).state === 'Off', JSON.stringify(b0));
+  H.check('both tabs have the Sync switch, Off, no options shown', b0.sync === 'off' && b0.options === false
+    && b0.status === 'Off' && (await a.evaluate(CAMERA)).sync === 'off', JSON.stringify(b0));
   await a.evaluate(TURN, [1, 0.2, 0.3]);
   await settle(a, b);
   H.check('with sync off, turning tab A leaves tab B alone', sameView(await b.evaluate(CAMERA), b0),
     JSON.stringify(await b.evaluate(CAMERA)));
 
   // ---- on: B joins and takes A's view ---------------------------------------------
-  await H.clickById(a, 'cameraSyncBtn');
-  await H.clickById(b, 'cameraSyncBtn');
+  await a.evaluate(SYNC, 'view');
+  await settle(a);
+  const alone = await a.evaluate(CAMERA);
+  await b.evaluate(SYNC, 'view');
   await settle(b, a);
   let ca = await a.evaluate(CAMERA);
   let cb = await b.evaluate(CAMERA);
-  H.check('a click switches sync on (lit, mode shown)', ca.pressed === 'true' && ca.state === 'Rotation & zoom', JSON.stringify(ca));
+  H.check('Same view switches sync on (options shown); alone it waits, then both are linked',
+    ca.sync === 'view' && ca.options === true && alone.status === 'Waiting for tabs'
+    && ca.status === 'Linked to 1 tab' && cb.status === 'Linked to 1 tab', JSON.stringify({ alone, ca, cb }));
   H.check('the tab switched on second takes the view of the first', sameView(ca, cb), JSON.stringify({ ca, cb }));
 
   // ---- A leads ---------------------------------------------------------------------
@@ -148,14 +175,14 @@ async function settle(...pages) {
   await a.evaluate(PAN, [1.5, -0.7]);
   await settle(a, b);
   cb = await b.evaluate(CAMERA);
-  H.check("'rotation' mode keeps tab B's own pan", close(cb.pan, [0, 0]), JSON.stringify(cb));
-  await b.evaluate(async () => (await import('./ui/CameraSync.js')).setCameraSyncMode('view'));
+  H.check("Same view keeps tab B's own pan", close(cb.pan, [0, 0]), JSON.stringify(cb));
+  await b.evaluate(() => document.getElementById('cameraSyncCentre').click());
   await a.evaluate(PAN, [0.5, 0.2]);
   await settle(a, b);
   ca = await a.evaluate(CAMERA);
   cb = await b.evaluate(CAMERA);
-  H.check("'view' mode copies the pan and the centre too", close(ca.pan, cb.pan) && close(ca.target, cb.target)
-    && sameView(ca, cb) && cb.state === 'Whole view', JSON.stringify({ ca, cb }));
+  H.check('"Also match pan and rotation centre" copies the pan and the centre', close(ca.pan, cb.pan) && close(ca.target, cb.target)
+    && sameView(ca, cb), JSON.stringify({ ca, cb }));
 
   // ---- no echo -----------------------------------------------------------------------
   const counted = await a.evaluate(async () => {
@@ -194,39 +221,26 @@ async function settle(...pages) {
   }, tabBId);
   await settle(b, a);
   const cbAfter = await b.evaluate(CAMERA);
-  H.check('malformed messages move nothing', sameView(cb, cbAfter) && cb.zoom === cbAfter.zoom && close(cb.target, cbAfter.target),
+  H.check('malformed messages move nothing and count no tab', sameView(cb, cbAfter) && cb.zoom === cbAfter.zoom
+    && close(cb.target, cbAfter.target) && cbAfter.status === 'Linked to 1 tab',
     JSON.stringify({ cb, cbAfter }));
 
-  // ---- long press: the menu ----------------------------------------------------------
-  // A real mouse hold on the button in its window (Visual ▸ Camera), as the user does it,
-  // with the window docked and floating (floating windows sit on a higher layer).
+  // ---- the switch in its window ----------------------------------------------------
+  // Picked with the real control (Visual ▸ Camera), with the window docked and floating.
   await b.evaluate(async () => {
     const { openPanel } = await import('./ui/panels/PanelManager.js');
     openPanel('visual');
   });
   await b.waitForTimeout(500);
-  const holdSyncButton = async () => {
-    await b.locator('#cameraSyncBtn').scrollIntoViewIfNeeded();
-    const box = await b.locator('#cameraSyncBtn').boundingBox();
-    await b.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-    await b.mouse.down();
-    await b.waitForTimeout(800);
-    await b.mouse.up();
-    await b.waitForTimeout(200);
-    return b.evaluate(() => {
-      const btn = document.getElementById('cameraSyncBtn');
-      const menu = document.getElementById('cameraSyncMenu');
-      const r = menu && !menu.hidden ? menu.getBoundingClientRect() : null;
-      // On top where it opened, not behind the window that holds the button.
-      const top = r ? document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) : null;
-      return {
-        open: !!r,
-        onTop: !!top && menu.contains(top),
-        topIs: top ? `${top.tagName}#${top.id}.${top.className}` : null,
-        checked: menu?.querySelector('[aria-checked="true"]')?.id,
-        pressed: btn.getAttribute('aria-pressed'),
-      };
-    });
+  const SHOWN = () => {
+    const row = document.querySelector('.camera_sync');
+    const visible = (el) => !!el && el.getClientRects().length > 0;
+    return {
+      sync: row.querySelector('input[name="cameraSyncMode"]:checked')?.value,
+      centre: visible(row.querySelector('.camera_sync_check')),
+      align: visible(row.querySelector('#cameraSyncAlign')),
+      hint: row.querySelector('.camera_sync_hint').textContent,
+    };
   };
   for (const placement of ['docked', 'floating']) {
     if (placement === 'floating') {
@@ -237,32 +251,74 @@ async function settle(...pages) {
       });
       await b.waitForTimeout(500);
     }
-    const press = await holdSyncButton();
-    H.check(`${placement} window: a long press opens the menu on top, the current mode checked, and does not toggle sync`,
-      press.open && press.onTop && press.checked === 'cameraSyncModeView' && press.pressed === 'true', JSON.stringify(press));
-    await b.keyboard.press('Escape');
+    await b.locator('.camera_sync').scrollIntoViewIfNeeded();
+    await b.locator('label.camera_sync_mode', { hasText: 'Same turns' }).click();
+    const turns = await b.evaluate(SHOWN);
+    await b.locator('label.camera_sync_mode', { hasText: 'Same view' }).click();
+    const view = await b.evaluate(SHOWN);
+    H.check(`${placement} window: clicking the switch changes mode; Same view offers pan and centre, Same turns Line up`,
+      turns.sync === 'turns' && turns.align && !turns.centre && /own angle/.test(turns.hint)
+      && view.sync === 'view' && !view.align && view.centre && view.hint !== turns.hint, JSON.stringify({ turns, view }));
   }
-  H.check('Escape closes the menu', await b.evaluate(() => document.getElementById('cameraSyncMenu').hidden));
-
-  // "Make other tabs match this one": B turns while its sync is off, then leads.
-  await H.clickById(b, 'cameraSyncBtn');
-  await b.evaluate(TURN, [0.3, -1, 0.2]);
+  await b.evaluate(() => document.getElementById('cameraSyncCentre').click());  // back to angle and zoom only
   await settle(b, a);
-  H.check('a tab switched off stops sending', !sameView(await a.evaluate(CAMERA), await b.evaluate(CAMERA)));
-  await H.clickById(b, 'cameraSyncLead');
+
+  // ---- Same turns ----------------------------------------------------------------------
+  // B leaves, takes its own angle and zoom, and joins in Same turns: it keeps them.
+  await b.evaluate(SYNC, 'off');
+  await b.evaluate(TURN, [0.3, -1, 0.2]);
+  await b.evaluate(ZOOM, 2);
+  await settle(b, a);
+  const aLeft = await a.evaluate(CAMERA);
+  H.check('a tab switched off stops sending, and the other tab sees it leave',
+    !sameView(aLeft, await b.evaluate(CAMERA)) && aLeft.status === 'Waiting for tabs', JSON.stringify(aLeft));
+  const bOwn = await b.evaluate(CAMERA);
+  await b.evaluate(SYNC, 'turns');
   await settle(b, a);
   ca = await a.evaluate(CAMERA);
   cb = await b.evaluate(CAMERA);
-  H.check('"Make other tabs match this one" switches sync on and turns the others to this view',
-    cb.pressed === 'true' && sameView(ca, cb), JSON.stringify({ ca, cb }));
+  H.check('joining in Same turns keeps the tab\'s own angle and zoom, and the other tab\'s',
+    sameView(cb, bOwn) && cb.zoom === bOwn.zoom && !sameView(ca, cb), JSON.stringify({ ca, cb, bOwn }));
+  const offset0 = offsetOf(ca, cb);
+  const ratio0 = cb.zoom / ca.zoom;
+  // A turns and zooms: B turns and zooms by as much, from its own angle.
+  await a.evaluate(TURN, [-0.6, 0.5, 0.7]);
+  await a.evaluate(ZOOM, 1.4);
+  await settle(a, b);
+  ca = await a.evaluate(CAMERA);
+  cb = await b.evaluate(CAMERA);
+  H.check('Same turns: tab A turning and zooming turns and zooms tab B as much (same offset and zoom ratio)',
+    !sameView(cb, bOwn) && qangle(offsetOf(ca, cb), offset0) < 3e-3 && Math.abs(cb.zoom / ca.zoom / ratio0 - 1) < 3e-3,
+    JSON.stringify({ ca, cb, angle: qangle(offsetOf(ca, cb), offset0), ratio: cb.zoom / ca.zoom, ratio0 }));
+  // B leads: A (Same view) turns as much, the offset stays.
+  await b.evaluate(TURN, [0.9, 0.1, -0.4]);
+  await settle(b, a);
+  ca = await a.evaluate(CAMERA);
+  cb = await b.evaluate(CAMERA);
+  H.check('Same turns: tab B turning turns tab A as much',
+    qangle(offsetOf(ca, cb), offset0) < 3e-3 && !sameView(ca, cb), JSON.stringify({ ca, cb, angle: qangle(offsetOf(ca, cb), offset0) }));
+
+  // ---- Line up ----------------------------------------------------------------------------
+  await b.evaluate(() => document.getElementById('cameraSyncAlign').click());
+  await settle(b, a);
+  ca = await a.evaluate(CAMERA);
+  cb = await b.evaluate(CAMERA);
+  H.check('"Line up all tabs with this one" turns the other tab to this view', sameView(ca, cb)
+    && Math.abs(ca.zoom - cb.zoom) < 1e-3, JSON.stringify({ ca, cb }));
+  await a.evaluate(TURN, [0.2, 0.8, 0.5]);
+  await settle(a, b);
+  ca = await a.evaluate(CAMERA);
+  cb = await b.evaluate(CAMERA);
+  H.check('after Line up, the tabs turn as one (offset dropped)', sameView(ca, cb), JSON.stringify({ ca, cb }));
 
   // ---- off: stops following ---------------------------------------------------------
-  await H.clickById(b, 'cameraSyncBtn');
+  await b.evaluate(SYNC, 'off');
   cb = await b.evaluate(CAMERA);
   await a.evaluate(TURN, [1, 1, -0.2]);
   await settle(a, b);
   const cbOff = await b.evaluate(CAMERA);
-  H.check('switched off, tab B no longer follows', cbOff.pressed === 'false' && sameView(cb, cbOff), JSON.stringify(cbOff));
+  H.check('switched off, tab B no longer follows', cbOff.sync === 'off' && cbOff.options === false && sameView(cb, cbOff),
+    JSON.stringify(cbOff));
 
   // ---- perspective and parallel tabs zoom together ----------------------------------
   /** The relative view (ui/CameraView.js) and the camera kind. */
@@ -284,7 +340,7 @@ async function settle(...pages) {
     app.camera.position.sub(t).multiplyScalar(f).add(t);
     app.controls.update();
   };
-  await H.clickById(b, 'cameraSyncBtn');  // B on again ('view' mode from the menu test)
+  await b.evaluate(SYNC, 'view');  // B on again
   await settle(b, a);
   await a.evaluate(PROJECTION, false);
   await a.evaluate(DOLLY, 0.5);
@@ -334,8 +390,9 @@ async function settle(...pages) {
   H.check('touched, the spinning tab leads: the other tab follows its spin',
     !sameView(sb, bBefore) && sameView(sa, sb), JSON.stringify({ bBefore, sa, sb }));
   // Both spinning: the tab touched last leads, the other holds its pose. Tab B
-  // records its per-frame turn meanwhile: following one leader it turns a little
-  // each frame, jumping between two leaders it would swing back and forth.
+  // records how fast it turns meanwhile (rad/s, frame by frame, so a slow frame
+  // is no jump): following one leader it turns at the spin's ~1 rad/s, jumping
+  // between two leaders it would swing back and forth at tens of rad/s.
   await a.evaluate(SPIN, true);
   await b.evaluate(SPIN, true);
   await a.evaluate(TOUCH);
@@ -343,11 +400,13 @@ async function settle(...pages) {
   await b.evaluate(() => {
     window.__spinSteps = [];
     let prev = null;
-    const sample = async () => {
+    let prevTime = 0;
+    const sample = async (time) => {
       const { app } = await import('./state/store.js');
       const q = app.camera.quaternion.clone();
-      if (prev) window.__spinSteps.push(prev.angleTo(q));
+      if (prev && time > prevTime) window.__spinSteps.push(prev.angleTo(q) / ((time - prevTime) / 1000));
       prev = q;
+      prevTime = time;
       if (window.__spinSteps.length < 50) requestAnimationFrame(sample);
     };
     requestAnimationFrame(sample);
@@ -359,10 +418,10 @@ async function settle(...pages) {
   await settle(a, b);
   sa = await a.evaluate(CAMERA);
   sb = await b.evaluate(CAMERA);
-  const maxStep = Math.max(...steps);
+  const maxRate = Math.max(...steps);
   H.check('two spinning tabs: the one touched last leads, the other follows it smoothly',
-    sameView(sa, sb) && steps.length >= 20 && maxStep < 0.05 && steps.some((t) => t > 1e-4),
-    JSON.stringify({ maxStep, frames: steps.length, sa, sb }));
+    sameView(sa, sb) && steps.length >= 20 && maxRate < 4 && steps.some((t) => t > 1e-3),
+    JSON.stringify({ maxRate, frames: steps.length, sa, sb }));
 
   H.check('no page errors', errors.length === 0, errors.join('\n'));
   await H.finish(browser);

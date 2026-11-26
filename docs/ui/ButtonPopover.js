@@ -1,8 +1,7 @@
 // A button whose long press (mouse hold or touch) opens a small menu under it,
 // in the Hide/Restore popover look (.restore-popover, MeasurementToolbar.js):
-// Reset view's Recenter menu (WindowAndSceneControls.js) and the Camera
-// panel's Sync tabs menu (CameraPanel.js). A plain click still does the
-// button's own job; the click that ends a long press does not.
+// Reset view's Recenter menu (WindowAndSceneControls.js). A plain click still
+// does the button's own job; the click that ends a long press does not.
 
 const LONG_PRESS_MS = 550;
 
