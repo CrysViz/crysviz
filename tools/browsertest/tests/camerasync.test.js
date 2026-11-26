@@ -86,9 +86,18 @@ const PAN = async ([dx, dy]) => {
 const close = (a, b, tol = 2e-3) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= tol);
 const sameView = (a, b) => close(a.dir, b.dir) && close(a.up, b.up);
 
+// Wait until every page's camera has stopped moving (a follower eases toward
+// the leader, and slower under load), not for a fixed time.
 async function settle(...pages) {
   for (const p of pages) await p.bringToFront();
-  await pages[0].waitForTimeout(600);
+  await pages[0].waitForTimeout(400);
+  let last = '';
+  for (let i = 0; i < 40; i++) {
+    const now = JSON.stringify(await Promise.all(pages.map((p) => p.evaluate(CAMERA))));
+    if (now === last) return;
+    last = now;
+    await pages[0].waitForTimeout(150);
+  }
 }
 
 (async () => {
