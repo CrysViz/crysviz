@@ -214,7 +214,7 @@ print(json.dumps({'energy': a.get_potential_energy(), 'forces': a.get_forces().t
 
       // The address and the model are remembered across a reload.
       await page.reload({ waitUntil: 'load' });
-      await page.waitForTimeout(1500);
+      await H.waitForAppStart(page, { atLeast: 1500 }); // the Backend window exists once start-up is done
       const remembered = await page.evaluate(async (sel) => {
         const { openPanel } = await import('./ui/panels/PanelManager.js');
         openPanel('backend');

@@ -883,6 +883,10 @@ export function createTrajectoryPlot(hostEl, options = {}) {
         // 1:1 with xValues (a gap in the line, thanks to connectgaps:false).
         const target = xValues.length + 1;
         for (const arr of series.values()) while (arr.length < target) arr.push(NaN);
+        // Count this point now: a series that first appears in a LATER point
+        // of the same batch is NaN-filled to sampleCount (ensureSeries), and a
+        // count left at the batch start would put its first value too early.
+        recomputeSampleCount();
         // x-coordinate for this sample: the real step number / time when
         // present, else the next running index.
         const px = point[xKey];

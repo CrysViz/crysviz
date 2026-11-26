@@ -146,6 +146,11 @@ async function shown(target) {
 
   // A failing fetch surfaces the widget's boot-error notice (not a blank embed).
   // (Leave the page first: a goto that only changes the hash would not reload.)
+  // Not before the embed's start-up has finished: the structure shows before
+  // ui/WidgetMode.js is imported, and leaving mid-import logs a boot failure.
+  // initWidgetMode turns showSpinsOnCopies on (off by default) once imported.
+  await H.waitFor(page, async () => (await import('./state/store.js')).general.showSpinsOnCopies || null,
+    { timeout: 30000, interval: 250 });
   await page.goto('about:blank');
   await page.goto(`${BASE}?widget=1#load-url=${encodeURIComponent('https://data.example.test/missing.crysviz')}`,
     { waitUntil: 'load', timeout: 90000 });

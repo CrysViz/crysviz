@@ -40,6 +40,15 @@ async function waitForHostFailure(page) {
   return terminal;
 }
 
+// The page is ready once its start-up has finished (host/early.js markReady):
+// for a host launch, after the manifest loaded and its completion was posted.
+// A fixed sleep is not enough, as a host launch builds the windows first.
+async function waitForHostReady(page) {
+  return H.waitFor(page,
+    () => window.__hostEvents?.some((record) => record.event === 'ready'),
+    { timeout: 90000, interval: 100 });
+}
+
 (async () => {
   const first = await H.launchApp();
   const { browser, page, errors } = first;
@@ -157,9 +166,7 @@ async function waitForHostFailure(page) {
   } finally {
     releaseFirstInput();
   }
-  const hostReady = await H.waitFor(page,
-    () => window.__hostEvents?.some((record) => record.event === 'ready'),
-    { timeout: 90000, interval: 100 });
+  const hostReady = await waitForHostReady(page);
   if (!hostReady) throw new Error(`host did not become ready: ${JSON.stringify(await page.evaluate(() => window.__hostEvents))}`);
 
   const bootstrap = await page.evaluate(async () => {
@@ -742,8 +749,10 @@ async function waitForHostFailure(page) {
       body: JSON.stringify({ version: 1, inputs: [] }),
     });
   });
+  const emptyStart = Date.now();
   await page.goto(`${origin}/index.html?_crysviz_manifest=empty`, { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(2500);
+  const emptyReady = await waitForHostReady(page);
+  const emptyReadyMs = Date.now() - emptyStart;
   const emptyManifest = await page.evaluate(async () => {
     const dispatch = await window.crysvizHost.dispatch({ command: 'get_state', args: { include: ['structures'] } });
     return {
@@ -755,7 +764,8 @@ async function waitForHostFailure(page) {
     emptyManifest.dispatch.ok && emptyManifest.dispatch.result.structures.length === 1
       // The app's built-in default (crystal-viewer.js loadDefaultStructure).
       && emptyManifest.defaultName === 'oP28-C3N4'
-      && emptyManifestCompletions.length === 1 && emptyManifestCompletions[0].ok === true);
+      && emptyManifestCompletions.length === 1 && emptyManifestCompletions[0].ok === true,
+    JSON.stringify({ emptyReady, emptyReadyMs, emptyManifest, emptyManifestCompletions }));
   await page.unroute('**/_crysviz/manifest/empty{,/complete}');
 
   await page.route('**/_crysviz/manifest/failing{,/complete}', async (route) => {
@@ -867,7 +877,7 @@ async function waitForHostFailure(page) {
   // The legacy loader splits before decoding. An encoded pipe and percent sign
   // therefore remain legal filename characters and are decoded exactly once.
   await page.goto(`${origin}/index.html`, { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(2500);
+  if (!await waitForHostReady(page)) throw new Error('plain page host did not become ready');
   const hashResult = await page.evaluate(async (poscar) => {
     const filename = '100%|pipe.vasp';
     const encoded = `${encodeURIComponent(filename)}|${encodeURIComponent(btoa(poscar))}`;

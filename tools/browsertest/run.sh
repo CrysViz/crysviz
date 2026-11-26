@@ -29,20 +29,13 @@ DISPLAY_NUM="${DISPLAY_NUM:-99}"
 # Both the port and the X display must be private to THIS checkout. A second
 # working tree (git worktree) running its own tests otherwise wins the race for
 # :99 / 8123 and this run silently tests the OTHER tree's docs/ — every
-# assertion still executes, against the wrong source. Probe upward instead.
-port_free() {
-  python3 -c "import socket, sys; s = socket.socket(); s.settimeout(0.2); busy = s.connect_ex(('127.0.0.1', $1)) == 0; s.close(); sys.exit(1 if busy else 0)"
-}
-for _ in $(seq 20); do
-  # `if`, not `&&`: under `set -e` a bare failing command at the end of an
-  # AND-list still aborts the script.
-  if port_free "$PORT"; then break; fi
-  PORT=$(( PORT + 1 ))
-done
-if ! port_free "$PORT"; then
+# assertion still executes, against the wrong source. Probe upward instead
+# (devserver.py --find-free: by binding, so a hung server's port counts as taken).
+if ! FREE_PORT=$(python3 ../devserver.py "$PORT" --bind 127.0.0.1 --find-free 20 2>/dev/null); then
   echo "no free port for the app server near ${PORT}" >&2
   exit 1
 fi
+PORT="$FREE_PORT"
 while [ -e "/tmp/.X${DISPLAY_NUM}-lock" ] && [ "$DISPLAY_NUM" -lt 120 ]; do
   DISPLAY_NUM=$(( DISPLAY_NUM + 1 ))
 done

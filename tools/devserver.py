@@ -12,12 +12,19 @@ for an export that is plainly there. Serving no-store removes the whole class
 of problem. Used by `make serve` and tools/browsertest/run.sh.
 
     python3 tools/devserver.py [port] [--directory DIR] [--bind HOST]
+    python3 tools/devserver.py [port] [--bind HOST] --find-free N
+
+--find-free prints the first port from `port` on (N tries) that this server
+could bind, and exits; `make serve` and tools/browsertest/run.sh use it to
+step past a taken port.
 """
 
 import argparse
 import functools
 import http.server
+import socket
 import socketserver
+import sys
 
 
 # Cross-origin isolation headers (--coi): make the page crossOriginIsolated so
@@ -51,6 +58,27 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+def find_free_port(host, start, tries):
+    """The first port from `start` that a server can bind on `host`, or None.
+
+    Bind, not connect: a hung server whose accept queue is full answers no
+    connection, so a connect probe took its port for free and the server then
+    failed with "Address already in use". SO_REUSEADDR as in main(), so a
+    port left in TIME_WAIT still counts as free.
+    """
+    for port in range(start, start + tries):
+        probe = socket.socket()
+        probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            probe.bind((host, port))
+            return port
+        except OSError:
+            print(f'port {port} is taken, trying {port + 1}', file=sys.stderr)
+        finally:
+            probe.close()
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('port', nargs='?', type=int, default=8000)
@@ -60,7 +88,15 @@ def main():
     parser.add_argument('--bind', default='127.0.0.1')
     parser.add_argument('--coi', action='store_true',
                         help='send cross-origin isolation headers (threaded PET-MAD)')
+    parser.add_argument('--find-free', type=int, metavar='N',
+                        help='print the first free port from PORT on (N tries) and exit')
     args = parser.parse_args()
+    if args.find_free is not None:
+        port = find_free_port(args.bind, args.port, args.find_free)
+        if port is None:
+            sys.exit(1)
+        print(port)
+        return
     NoCacheHandler.coi = args.coi
 
     socketserver.TCPServer.allow_reuse_address = True

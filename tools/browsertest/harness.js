@@ -179,9 +179,27 @@ async function launchApp({ navigate = true, gpu = process.env.CRYSVIZ_GPU || fal
   });
   if (navigate) {
     await page.goto(URL, { waitUntil: 'load', timeout: 90000 }); // 'networkidle' can hang
-    await page.waitForTimeout(5000); // init + default structure load
+    await waitForAppStart(page, { atLeast: 5000 }); // init + default structure load
   }
   return { browser, page, errors, marker };
+}
+
+/**
+ * Wait (after a goto or reload) until the app's start-up has finished: the
+ * start-up overlay (#bootProgress, ui/BootProgress.js) is done or hidden,
+ * which host/early.js does once the host is ready (or the boot failed). A
+ * fixed wait was too short on a busy machine: tests then reached into an app
+ * whose scene or windows did not exist yet. `atLeast` keeps the old fixed
+ * wait as a floor, so a test sees no less settling time than before.
+ */
+async function waitForAppStart(page, { atLeast = 0, timeout = 90000 } = {}) {
+  const t0 = Date.now();
+  await page.waitForFunction(() => {
+    const el = document.getElementById('bootProgress');
+    return !el || el.hidden || el.classList.contains('is-done');
+  }, null, { timeout, polling: 100 }).catch(() => { /* the test's own checks report it */ });
+  const left = atLeast - (Date.now() - t0);
+  if (left > 0) await page.waitForTimeout(left);
 }
 
 async function webglAvailable(page) {
@@ -304,7 +322,7 @@ function crash(err) {
 }
 
 module.exports = {
-  launchApp, webglAvailable, loadDefaultStructure, setSelect, setSlider,
+  launchApp, waitForAppStart, webglAvailable, loadDefaultStructure, setSelect, setSlider,
   clickById, waitFor, shotCanvas, darkFraction, nonUniformFraction,
   check, finish, crash, processMemory, CANVAS_CLIP,
 };

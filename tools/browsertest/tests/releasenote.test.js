@@ -24,7 +24,7 @@ async function note(page) {
 
 async function reload(page) {
   await page.reload({ waitUntil: 'load' });
-  await page.waitForTimeout(4000); // init + the card's settle delay
+  await H.waitForAppStart(page, { atLeast: 4000 }); // start-up, then the card (a frame later)
 }
 
 async function prefs(page) {

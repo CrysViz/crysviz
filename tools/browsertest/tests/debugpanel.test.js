@@ -98,7 +98,16 @@ export default Plotly;
   const url = new URL(process.env.CRYSVIZ_URL || 'http://localhost:8123/index.html');
   url.searchParams.set('debug', '');
   await page.goto(url.toString(), { waitUntil: 'load', timeout: 90000 });
-  await page.waitForTimeout(5000);
+  // Wait for two sampler ticks (1 s apart by default), not a fixed time: on a
+  // loaded machine start-up alone can outlast a fixed sleep, and the memory
+  // plot check below needs samples recorded BEFORE OUTCAR.play is loaded.
+  await page.evaluate(async () => {
+    const sampler = await import('./debug/debugSampler.js');
+    const end = Date.now() + 60000;
+    while (Date.now() < end && sampler.getDebugHistory().samples.length < 2) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  });
 
   const on = await page.evaluate(async () => {
     const pm = await import('./ui/panels/PanelManager.js');
@@ -280,12 +289,20 @@ export default Plotly;
     const autoLabel = select.querySelector('option[value="auto"]').textContent;
     const playFor = async (ms) => {
       const before = trace.counters();
+      // The browser's own animation frames meanwhile: on a busy machine they
+      // run well under 60 f/s, and "one frame per animation frame" is all
+      // "max" can deliver then.
+      let frames = 0;
+      let counting = true;
+      const count = () => { if (!counting) return; frames += 1; requestAnimationFrame(count); };
+      requestAnimationFrame(count);
       document.getElementById('playPauseBtn').click();
       await new Promise((r) => setTimeout(r, ms));
       document.getElementById('playPauseBtn').click();
+      counting = false;
       await new Promise((r) => setTimeout(r, 300));
       const after = trace.counters();
-      return { fast: (after.playbackFast || 0) - (before.playbackFast || 0), full: (after.playbackFull || 0) - (before.playbackFull || 0), applied: (after.frameApplied || 0) - (before.frameApplied || 0) };
+      return { fast: (after.playbackFast || 0) - (before.playbackFast || 0), full: (after.playbackFull || 0) - (before.playbackFull || 0), applied: (after.frameApplied || 0) - (before.frameApplied || 0), frames };
     };
     select.value = 'full'; select.dispatchEvent(new Event('change'));
     const fullRun = await playFor(1000);
@@ -302,7 +319,7 @@ export default Plotly;
     return { mode: container.playbackMode, autoLabel, fullRun, maxRun, benchOn, benchOff: !anim.isRenderBenchmark(), renderMs: s.renderMs, capacity: s.renderCapacityFps, renderFps: s.renderFps, markers: sampler.getDebugHistory().markers.map((m) => m.label).slice(-16) };
   });
   H.check('Render control shows the detected kind and Full forces the exact path', modes.autoLabel === 'Auto (trajectory)' && modes.fullRun.fast === 0 && modes.fullRun.full > 0 && modes.mode === 'auto', JSON.stringify({ label: modes.autoLabel, full: modes.fullRun, mode: modes.mode }));
-  H.check('"max" speed plays one frame per animation frame (well above the 20 f/s tick cap)', modes.maxRun.applied >= 25 && modes.maxRun.fast > 0, JSON.stringify(modes.maxRun));
+  H.check('"max" speed plays one frame per animation frame (well above the 20 f/s tick cap)', modes.maxRun.applied >= Math.min(25, 0.8 * modes.maxRun.frames) && modes.maxRun.frames > 0 && modes.maxRun.fast > 0, JSON.stringify(modes.maxRun));
   H.check('Bench render toggles the uncapped GPU-synced loop and yields a scene time and capacity', modes.benchOn && modes.benchOff && modes.renderMs > 0 && modes.capacity > 0 && modes.renderFps > 0, JSON.stringify({ on: modes.benchOn, off: modes.benchOff, ms: modes.renderMs, cap: modes.capacity, fps: modes.renderFps }));
   H.check('render mode, play @max and bench markers recorded', modes.markers.some((l) => l === 'render full') && modes.markers.some((l) => l === 'play @max') && modes.markers.includes('bench render on'), JSON.stringify(modes.markers));
 

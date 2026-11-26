@@ -17,14 +17,10 @@ SERVE_PORT ?= 8000
 SERVE_TRIES ?= 20
 
 serve:
-	@host='$(SERVE_HOST)'; port=$(SERVE_PORT); max=$$(( $(SERVE_PORT) + $(SERVE_TRIES) )); \
-	while [ $$port -lt $$max ] && ! python3 -c "import socket, sys; s = socket.socket(); s.settimeout(0.2); busy = s.connect_ex(('$$host', $$port)) == 0; s.close(); sys.exit(1 if busy else 0)"; do \
-		echo "port $$port is taken, trying $$(( port + 1 ))"; \
-		port=$$(( port + 1 )); \
-	done; \
-	if [ $$port -ge $$max ]; then \
-		echo "no free port in $(SERVE_PORT)..$$(( max - 1 ))" >&2; exit 1; \
-	fi; \
+	@host='$(SERVE_HOST)'; \
+	port=$$(python3 tools/devserver.py $(SERVE_PORT) --bind "$$host" --find-free $(SERVE_TRIES)) || { \
+		echo "no free port in $(SERVE_PORT)..$$(( $(SERVE_PORT) + $(SERVE_TRIES) - 1 ))" >&2; exit 1; \
+	}; \
 	echo "Open:"; \
 	echo "* http://$$host:$$port/index.html"; \
 	exec python3 tools/devserver.py $$port --directory docs --bind "$$host"

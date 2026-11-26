@@ -95,7 +95,10 @@ const forgetVisible = (page) => page.evaluate(() => {
 
   // A reload of the tab keeps it (sessionStorage).
   await page.reload({ waitUntil: 'load' });
-  await page.waitForTimeout(1500);
+  // Not a fixed wait: YBCO loaded before the start-up is done races the
+  // boot's own example structure, the scene ends up framed differently, and
+  // the automatic box after Forget region is not the one first measured.
+  await H.waitForAppStart(page);
   await H.loadDefaultStructure(page);
   await openDialog(page);
   await chooseRegion(page);
